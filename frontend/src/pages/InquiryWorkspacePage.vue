@@ -1,7 +1,7 @@
 <template>
  <main class="inquiry-workspace" v-loading="busy">
-  <header v-if="!item" class="workspace-heading">
-   <div><el-tag v-if="department" class="module-chip" effect="plain">{{ moduleLabel }}</el-tag><h2>{{ title }}</h2><p>{{ subtitle }}</p></div>
+  <header v-if="!item" class="workspace-heading" :class="{ 'workspace-heading--procurement': view === 'PROCUREMENT' }">
+   <div><el-tag v-if="department && view !== 'PROCUREMENT'" class="module-chip" effect="plain">{{ moduleLabel }}</el-tag><h2>{{ title }}</h2><p>{{ subtitle }}</p></div>
    <div v-if="view==='SALES'" class="heading-actions"><el-button @click="router.push('/sales/settings/inquiry-templates')">询盘模板</el-button><el-button type="primary" plain @click="router.push('/emails')">从邮箱转入询盘</el-button></div>
   </header>
   <div v-if="!item" class="toolbar list-toolbar"><el-input v-model="keyword" placeholder="搜索编号、客户、产品或规格" clearable @change="loadList"/><el-select v-model="state" clearable placeholder="全部状态" @change="loadList"><el-option v-for="o in states" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-button @click="loadList">刷新</el-button><el-button v-if="view==='SALES'&&canWrite" type="primary" @click="openCreateDialog">上传或新建客户询盘</el-button></div>
@@ -179,6 +179,10 @@ watch(view,()=>void initial())
 .workspace-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 2px 0 24px; padding: 24px 26px; background: linear-gradient(120deg,#f3f9fb 0%,#eef6fb 52%,#f7fafc 100%); border: 1px solid #d8e8ef; border-radius: 14px; }
 .workspace-heading h2 { margin: 0; font-size: 28px; letter-spacing: -.5px; color: #12334d; }
 .workspace-heading p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.workspace-heading--procurement { min-height: 0; margin-bottom: 20px; padding: 20px 22px; border-left: 4px solid #4ac1ff; }
+.workspace-heading--procurement > div { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.workspace-heading--procurement h2 { color: #141817; font-size: 22px; letter-spacing: -.3px; }
+.workspace-heading--procurement p { margin: 0; padding: 5px 10px; border-radius: 999px; background: #eaf8ff; color: #60717c; font-size: 12px; }
 .module-chip { margin-bottom: 10px; color: var(--brand); border-color: #9fc9d6; background: #f6fcfd; }
 .heading-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .list-toolbar { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(31,65,91,.04); }
@@ -243,6 +247,7 @@ watch(view,()=>void initial())
 @media (max-width: 760px) {
   .inquiry-workspace { padding: 0; }
   .workspace-heading { align-items: flex-start; flex-direction: column; gap: 16px; padding:20px; }
+  .workspace-heading--procurement > div { align-items: flex-start; flex-direction: column; gap: 8px; }
   .workspace-heading h2 { font-size: 23px; }
   .heading-actions { width:100%; justify-content:flex-start; }
   .list-toolbar { padding: 12px; gap: 10px; }

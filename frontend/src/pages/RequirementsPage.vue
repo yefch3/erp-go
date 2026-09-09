@@ -3,8 +3,6 @@
     <div class="page-head">
       <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
-      <span class="grow" />
-      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
     </div>
 
     <el-card shadow="never">
@@ -689,9 +687,6 @@ onMounted(load)
   margin: 0;
   color: var(--proc-ink);
   font-size: 22px;
-}
-.grow {
-  flex: 1;
 }
 .head-note,
 .sub {

@@ -220,7 +220,7 @@ export default {
   },
   procurementNav: {
     title: '采购管理导航', workbench: '采购工作台', pendingSourcing: '待接单任务', sourcing: '售前询价',
-    requirements: '实单询价', orders: '采购订单', backToWorkbench: '返回采购工作台',
+    requirements: '实单询价', orders: '采购订单',
   },
   salesNav: {
     intakes: '待复核询盘', inquiries: '客户询盘', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘',

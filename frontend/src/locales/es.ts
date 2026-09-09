@@ -220,7 +220,7 @@ export default {
   },
   procurementNav: {
     title: 'Navegación de compras', workbench: 'Panel', pendingSourcing: 'Por iniciar cotización', sourcing: 'Cotización de preventa',
-    requirements: 'Recotización de contrato', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
+    requirements: 'Recotización de contrato', orders: 'Órdenes de compra',
   },
   salesNav: {
     intakes: 'Consultas por revisar', inquiries: 'Consultas de clientes', inquiryTemplates: 'Plantillas de consulta', quotations: 'Cotizaciones a clientes', backToInquiries: 'Volver a consultas de clientes',

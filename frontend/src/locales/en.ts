@@ -220,7 +220,7 @@ export default {
   },
   procurementNav: {
     title: 'Procurement navigation', workbench: 'Workbench', pendingSourcing: 'To start RFQ', sourcing: 'Pre-sales RFQ',
-    requirements: 'Contract re-quotation', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
+    requirements: 'Contract re-quotation', orders: 'Purchase orders',
   },
   salesNav: {
     intakes: 'Inquiries to review', inquiries: 'Customer inquiries', inquiryTemplates: 'Inquiry templates', quotations: 'Customer quotations', backToInquiries: 'Back to customer inquiries',

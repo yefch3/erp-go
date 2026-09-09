@@ -6,7 +6,6 @@
         <div class="title-row"><h1>{{ pageTitle }}</h1><span class="perspective-label">{{ isSalesView ? '销售视角' : '采购视角' }}</span></div>
         <p>{{ pageSubtitle }}</p>
       </div>
-      <el-button v-if="!isSalesView" @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
     </header>
     <section class="list-card">
       <div class="context-bar">

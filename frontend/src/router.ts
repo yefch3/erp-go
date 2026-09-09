@@ -84,6 +84,7 @@ export const router = createRouter({
         { path: 'warehouses/receipts', component: () => import('./pages/WarehouseReceiptsPage.vue') },
         { path: 'warehouses/imports', component: () => import('./pages/WarehouseImportsPage.vue') },
         { path: 'warehouses/settings', component: () => import('./pages/WarehouseSettingsPage.vue') },
+        // 兼容旧书签；采购现在直接进入售前询价，不再展示虚构的工作台。
         { path: 'procurement', redirect: '/procurement/sourcing' },
         { path: 'procurement/intakes', redirect: (to) => ({ path: '/sales/intakes', query: to.query }) },
         { path: 'procurement/settings/inquiry-templates', redirect: (to) => ({ path: '/sales/settings/inquiry-templates', query: to.query }) },
