@@ -142,6 +142,8 @@
       <!-- A page, not a drawer: the mail's id lives in the URL, so a refresh
            reopens the same mail and the browser's back button returns to the
            list, at the page it was on. -->
+      <div class="panes" :class="{ 'has-open': openedInbound || outboundOpen }">
+      <div class="reader-col">
       <template v-if="openedInbound">
         <div class="detail-top">
           <el-button link class="back-btn" @click="backToList">
@@ -510,7 +512,14 @@
         </div>
       </template>
 
-      <template v-else>
+      <!-- 三栏下右边永远在，没选信时给一句话而不是一片空白——空白
+           看着像坏了。 -->
+      <div v-if="!openedInbound && !outboundOpen" class="reader-empty">
+        {{ t('emails.pickAMail') }}
+      </div>
+      </div><!-- /reader-col -->
+
+      <div class="list-col">
       <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
@@ -962,7 +971,8 @@
           {{ t('emails.nextPage') }}
         </el-button>
       </div>
-      </template>
+      </div><!-- /list-col -->
+      </div><!-- /panes -->
     </section>
 
     <EmailComposer
@@ -4272,9 +4282,14 @@ async function doUnsuppress(row: Suppression) {
   width: 100%;
   margin-bottom: 14px;
 }
+/* 三栏：文件夹 | 列表 | 阅读区。
+   pane 自己竖着排，是为了让同步横幅横跨两列——那条横幅说的是整个信箱的
+   状态，缩进任何一列都读着像只跟那一列有关。 */
 .pane {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   /* One ground for everything on this side — the list, the four folders that
      are tables, the reading page, and the mail's own frame, which is given
      this same colour. The only white left on it is white that means
@@ -4930,3 +4945,64 @@ async function doUnsuppress(row: Suppression) {
   margin-top: 4px;
 }
 </style>
+
+
+/* ---------------------------------------------------------------- 三栏 */
+/* 列表和阅读区并排。**模板里阅读区写在列表前面**（原来是 v-if/v-else 的两
+   个分支，谁在前无所谓），这里用 order 把列表拉到左边——比搬动三百多行
+   模板安全得多，而且以后哪一栏要挪位置也只是改一个数字。 */
+.panes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.list-col {
+  order: 1;
+  flex: 0 1 420px;
+  min-width: 0;
+}
+.reader-col {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+  /* 自己滚，别把整页拉长：左边列表要一直看得见，这正是三栏的意义。 */
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+/* 没选信时右边说一句话。一片空白看着像坏了。 */
+.reader-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+}
+
+/* 窄屏退回从前那种「打开信就换页」：三栏挤在一起两边都读不了。
+   1180px 是 208(左栏) + 420(列表) + 阅读区最少 500 上下再加间距。 */
+@media (max-width: 1180px) {
+  .panes {
+    display: block;
+  }
+  .list-col,
+  .reader-col {
+    flex: none;
+    width: auto;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  /* 开着信就只显示信，没开就只显示列表——也就是改版之前的行为。 */
+  .panes.has-open .list-col,
+  .panes:not(.has-open) .reader-col {
+    display: none;
+  }
+  .reader-empty {
+    display: none;
+  }
+}

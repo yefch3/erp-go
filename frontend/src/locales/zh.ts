@@ -1906,6 +1906,7 @@ export default {
     toTrash: '删除',
     restore: '恢复',
     emptyFolder: '这里是空的',
+    pickAMail: '在左边选一封邮件',
     threadCount: '此会话共 {n} 封往来，点击任意一封展开',
     threadOut: '我发出',
     threadIn: '对方',
