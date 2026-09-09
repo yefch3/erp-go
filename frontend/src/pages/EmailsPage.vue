@@ -295,7 +295,12 @@
 
           <!-- 「⋯」里是其余全部动作。分组用分隔线，顺序按「和这封信的关系
                有多近」：转发存档 → 标记 → 挪去哪儿 → 带出系统。 -->
-          <el-dropdown trigger="click" placement="bottom-end" @command="onReaderCommand">
+          <el-dropdown
+            v-if="readerMenuAvailable"
+            trigger="click"
+            placement="bottom-end"
+            @command="onReaderCommand"
+          >
             <button type="button" class="tb" :aria-label="t('emails.moreActions')">
               <el-icon><MoreFilled /></el-icon>
             </button>
@@ -1810,6 +1815,25 @@ const canMoveOpened = computed(
     && folder.value !== 'junk'
     && openedInbound.value?.folder !== 'SENT',
 )
+
+// 「⋯」里到底有没有东西。一个点开是空的菜单比没有这颗按钮更糟。
+//
+// 改成图标条时这条守卫一度掉了：站在已发送里、又没有写信和导出权限的人，
+// 那颗「⋯」点开是一片空白。条件是下面菜单里每一项的条件求或——多一项就
+// 要在这里也添一笔，这是这种守卫的代价，但比一个空菜单便宜。
+const readerMenuAvailable = computed(() => {
+  const m = openedInbound.value
+  if (!m) return false
+  const inbound = isInboundView.value
+  return (
+    canWrite.value // 作为附件转发
+    || (inbound && folder.value !== 'junk' && folder.value !== 'trash') // 标为未读/归档
+    || folder.value === 'junk' // 不是垃圾邮件
+    || folder.value === 'trash' // 还原
+    || canMoveOpened.value // 移动到
+    || (canExport.value && !!m.threadKey) // 导出
+  )
+})
 
 // 「⋯」菜单只有一个出口，省得每一项各写一个 @click——它们本来就是一组
 // 「对这封信做点什么」，一个 command 串把它们摊在一处，加一项也只改一处。
