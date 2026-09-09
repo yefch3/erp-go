@@ -1,11 +1,6 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('orders.title') }}</h2>
-      <span class="head-note">{{ t('orders.subtitle') }}</span>
-      <span class="grow" />
-      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
-    </div>
+  <div class="purchase-orders-page">
+    <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
@@ -535,6 +530,7 @@ import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Order {
   id: string
@@ -1576,19 +1572,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  margin: 0;
-  font-size: 20px;
-}
-.grow {
-  flex: 1;
-}
 .head-note,
 .sub {
   font-size: 12px;

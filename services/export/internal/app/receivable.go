@@ -46,11 +46,16 @@ type ReceivableRow struct {
 	OverdueDays int32
 	DueUnset    bool
 	// 收款结清（只在 ClosedOnly 视图里非空）：为什么不催了、谁定的。
-	ClosedCategory  string
-	ClosedNote      string
-	ClosedByName    string
-	ClosedAt        string
-	ManuallyEntered bool
+	ClosedCategory                    string
+	ClosedNote                        string
+	ClosedByName                      string
+	ClosedAt                          string
+	ManuallyEntered                   bool
+	ExecutionConditionStatus          string
+	ExecutionConditionType            string
+	ExecutionConditionConfirmedAt     string
+	ExecutionConditionConfirmedByName string
+	ExecutionConditionNote            string
 }
 
 // ReceivableFilter 收窄清单。两个开关互斥地各管一件事：只看逾期的，
@@ -102,7 +107,12 @@ func (s *Service) ListReceivableDue(ctx context.Context, tenantID int64, f Recei
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
 			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
 			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
-			ManuallyEntered: r.CustomerID == 0,
+			ManuallyEntered:                   r.CustomerID == 0,
+			ExecutionConditionStatus:          r.ExecutionConditionStatus,
+			ExecutionConditionType:            r.ExecutionConditionType,
+			ExecutionConditionConfirmedAt:     r.ExecutionConditionConfirmedAt,
+			ExecutionConditionConfirmedByName: r.ExecutionConditionConfirmedByName,
+			ExecutionConditionNote:            r.ExecutionConditionNote,
 		})
 	}
 	return out, total, nil

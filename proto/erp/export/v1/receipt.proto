@@ -43,6 +43,9 @@ service ReceiptService {
   // 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
   // closed_only 翻面就是「已完成」页。
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
+  // Finance releases an executing contract to Procurement and Logistics by
+  // recording one of the four approved execution conditions.
+  rpc ConfirmContractExecutionCondition(ConfirmContractExecutionConditionRequest) returns (ConfirmContractExecutionConditionResponse);
   // 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
   rpc RecordContractReceipt(RecordContractReceiptRequest) returns (RecordContractReceiptResponse);
   // Add a receivable that existed before the company started using ERP.
@@ -367,6 +370,11 @@ message ReceivableDue {
   string closed_at = 18;
   // True only for an opening record entered directly by Finance.
   bool manually_entered = 19;
+  string execution_condition_status = 20; // NOT_APPLICABLE | WAITING | READY
+  string execution_condition_type = 21;
+  string execution_condition_confirmed_at = 22;
+  string execution_condition_confirmed_by_name = 23;
+  string execution_condition_note = 24;
 }
 
 message ListReceivableDueRequest {
@@ -381,6 +389,21 @@ message ListReceivableDueRequest {
 message ListReceivableDueResponse {
   repeated ReceivableDue items = 1;
   erp.common.v1.PageMeta meta = 2;
+}
+
+message ConfirmContractExecutionConditionRequest {
+  int64 contract_id = 1;
+  // PREPAYMENT_RECEIVED | LETTER_OF_CREDIT_RECEIVED |
+  // NO_PREPAYMENT_REQUIRED | SPECIAL_APPROVAL
+  string condition_type = 2;
+  string note = 3;
+}
+message ConfirmContractExecutionConditionResponse {
+  string status = 1;
+  string condition_type = 2;
+  string confirmed_at = 3;
+  string confirmed_by_name = 4;
+  string note = 5;
 }
 
 // ReceivableReminder 是应收提醒收件箱里的一条。

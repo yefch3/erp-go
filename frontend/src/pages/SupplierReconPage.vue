@@ -1,13 +1,8 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('supplierRecon.eyebrow') }}</div>
-        <h1>{{ t('supplierRecon.title') }}</h1>
-        <p>{{ t('supplierRecon.subtitle') }}</p>
-      </div>
-      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button>
-    </header>
+    <WorkflowPageHeader :title="t('supplierRecon.title')" :description="t('supplierRecon.subtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
+    </WorkflowPageHeader>
 
     <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -383,6 +378,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { backfillRequest, get, patch, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -898,51 +894,63 @@ onMounted(() => {
   min-width: 0;
   margin: 0 auto;
 }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
-.page-head .eyebrow {
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  color: var(--el-text-color-secondary);
-}
-.page-head h1 {
-  margin: 4px 0 6px;
-  font-size: 26px;
-}
-.page-head p {
-  margin: 0;
-  color: var(--el-text-color-regular);
-}
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #dce8ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(25, 72, 91, .035);
 }
 .metric {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 86px;
-  padding: 12px 16px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: 62px;
+  overflow: hidden;
+  padding: 10px 16px 10px 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.metric + .metric { border-left: 1px solid #e5edf1; }
+.metric::before {
+  position: absolute;
+  top: 17px;
+  left: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ac1ff;
+  content: '';
 }
 .metric.is-warn {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
+  background: #fffdf9;
 }
+.metric.is-warn::before { background: #e5a33b; }
 .metric-label {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .metric-value {
-  font-size: 26px;
+  color: #141817;
+  font-size: 22px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .metric-hint {
+  grid-column: 1 / -1;
+  overflow: hidden;
   font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-placeholder);
 }
 /* 卡片是 flex column，link 按钮默认撑满一行会让文字居中——按内容宽度
@@ -956,9 +964,13 @@ onMounted(() => {
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  border-color: #dceaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(25, 72, 91, .05);
 }
+.page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
+.page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
 .filters {
   display: flex;
   align-items: center;
@@ -1021,9 +1033,9 @@ onMounted(() => {
 .detail-summary { margin-bottom: 18px; }
 .detail-heading { margin: 0 0 10px; font-size: 15px; }
 .metric.is-alarm {
-  border-color: var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
+  background: #fffafb;
 }
+.metric.is-alarm::before { background: #ff6b72; }
 .po-no {
   font-variant-numeric: tabular-nums;
 }
@@ -1056,9 +1068,8 @@ onMounted(() => {
   color: var(--el-color-warning);
 }
 @media (max-width: 768px) {
-  .page-head { flex-direction: column; align-items: stretch; }
-  .page-head > :deep(.el-button) { align-self: flex-start; }
   .metrics { grid-template-columns: 1fr; }
+  .metric + .metric { border-top: 1px solid #e5edf1; border-left: 0; }
   .panel { padding: 12px; }
   .filters { align-items: stretch; }
   .filters :deep(.el-input) { width: 100%; max-width: none !important; }

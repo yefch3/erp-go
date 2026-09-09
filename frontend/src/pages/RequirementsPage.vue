@@ -1,11 +1,6 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('requirements.title') }}</h2>
-      <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
-      <span class="grow" />
-      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
-    </div>
+  <div class="requirements-page">
+    <WorkflowPageHeader :title="t('requirements.title')" :description="t('requirements.readOnlyHint')" />
 
     <el-card shadow="never">
       <div class="filters">
@@ -50,8 +45,8 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button type="primary" plain @click="openBatchReview(row)">
-              {{ t('requirements.prepareOrder') }}
+            <el-button :type="row.waitingRequote ? 'primary' : 'success'" plain @click="openBatchReview(row)">
+              {{ row.waitingRequote ? t('requirements.reviewPendingRequote') : t('requirements.prepareOrder') }}
             </el-button>
           </template>
         </el-table-column>
@@ -69,8 +64,8 @@
     </el-card>
 
     <el-dialog v-model="batchReviewOpen" :title="activeBatch?.label" width="920px" destroy-on-close>
-      <el-alert type="info" :closable="false" show-icon class="alert">
-        {{ t('requirements.batchApprovalHint') }}
+      <el-alert :type="activeBatch?.waitingRequote ? 'warning' : 'info'" :closable="false" show-icon class="alert">
+        {{ activeBatch?.waitingRequote ? t('requirements.waitingRequoteHint') : t('requirements.batchApprovalHint') }}
       </el-alert>
       <section v-for="group in activeSupplierGroups" :key="group.key" class="supplier-group">
         <div class="supplier-group-head">
@@ -79,7 +74,7 @@
             <span v-if="group.factoryNames" class="sub supplier-factories">{{ group.factoryNames }}</span>
           </div>
           <el-button
-            v-if="canApprovalRequest"
+            v-if="canApprovalRequest && !activeBatch?.waitingRequote"
             type="success"
             plain
             @click="goOrder(group.lines)"
@@ -262,6 +257,8 @@ import { useRouter } from 'vue-router'
 import { get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import { purchaseBatchKey } from '../lib/requirements'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Requirement {
   id: string
@@ -319,6 +316,7 @@ interface PurchaseBatch {
   requiredDate: string
   sourceLabels: string
   statusLabels: string
+  waitingRequote: boolean
   lines: Requirement[]
 }
 
@@ -365,6 +363,7 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
       sourceLabels: [...new Set(lines.map((line) => line.source === 'MANUAL' ? t('requirements.manual') : line.contractNo).filter(Boolean))].join('、'),
       statusLabels: [...new Set(lines.map((line) => t(`requirements.statuses.${line.status}`)))].join('、'),
+      waitingRequote: lines.some((line) => line.status === 'WAITING_REQUOTE'),
       lines,
     }
   })
@@ -417,8 +416,8 @@ async function load() {
     // 工厂这批只供得了 80 吨，剩下的 20 吨仍然是要买的活儿。从前这页只列
     // 「一点没买」的，一旦下了第一张单整批就从眼前消失了——等于告诉采购员
     // 这事办完了。剩下的得靠人记着，正是这类事情最容易掉的地方。
-    const [pending, partial] = await Promise.all(
-      ['PENDING', 'PARTIALLY_ORDERED'].map((state) =>
+    const pending = await Promise.all(
+      ['WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED'].map((state) =>
         get<{ requirements: Requirement[] }>(
           '/requirements',
           { page: page.value, page_size: pageSize, status: state, keyword: keyword.value },
@@ -426,7 +425,7 @@ async function load() {
       ),
     )
     const seen = new Set<string>()
-    rows.value = [...(pending.requirements ?? []), ...(partial.requirements ?? [])]
+    rows.value = pending.flatMap((result) => result.requirements ?? [])
       .filter((line) => Number(line.availableQty ?? 0) > 0)
       .filter((line) => {
         if (seen.has(line.id)) return false
@@ -523,10 +522,6 @@ function canReopen(row: Requirement): boolean {
 
 function onSelect(rows: Requirement[]) {
   selected.value = rows
-}
-
-function purchaseBatchKey(row: Requirement): string {
-  return row.quotationId || row.quotationNo || row.contractId || row.contractNo || `MANUAL-${row.id}`
 }
 
 // The order itself is raised on the purchase-order page — one dialog, not two
@@ -665,23 +660,35 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  margin: 0;
-  font-size: 20px;
-}
-.grow {
-  flex: 1;
+.requirements-page {
+  --proc-blue: #4ac1ff;
+  --proc-green: #1fbf6c;
+  --proc-ink: #141817;
+  --proc-canvas: #f5f7fb;
+  --proc-surface: #fff;
+  --el-color-primary: var(--proc-blue);
+  --el-color-success: var(--proc-green);
+  color: var(--proc-ink);
 }
 .head-note,
 .sub {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: #66727d;
+}
+.requirements-page :deep(.el-card) {
+  border-color: #dfeaf0;
+  border-radius: 12px;
+  background: var(--proc-surface);
+  box-shadow: 0 10px 28px rgb(20 24 23 / 5%);
+}
+.requirements-page :deep(.el-table) {
+  --el-table-header-bg-color: #eef9fe;
+  --el-table-header-text-color: #24323a;
+  --el-table-row-hover-bg-color: #f0fbf6;
+}
+.requirements-page :deep(.el-table th.el-table__cell) {
+  border-bottom-color: #d9edf5;
+  font-weight: 650;
 }
 .filters {
   display: flex;
@@ -701,7 +708,7 @@ onMounted(load)
   font-weight: 500;
 }
 .batch-no {
-  color: var(--el-color-primary);
+  color: #159fdc;
   font-weight: 600;
 }
 .batch-products {
@@ -712,7 +719,7 @@ onMounted(load)
   margin-top: 14px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
-  background: var(--el-fill-color-lighter);
+  background: #f5fbf8;
 }
 .supplier-group-head {
   display: flex;

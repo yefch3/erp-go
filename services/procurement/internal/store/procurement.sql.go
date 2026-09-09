@@ -384,7 +384,7 @@ WHERE tenant_id = $1::bigint
 ORDER BY
     -- Outstanding work first, then by when it is needed. A requirement with
     -- no date sorts last rather than first, which is what NULLS LAST buys.
-    CASE WHEN status = 'PENDING' THEN 0 WHEN status = 'PARTIALLY_ORDERED' THEN 1 ELSE 2 END,
+    CASE WHEN status = 'WAITING_REQUOTE' THEN 0 WHEN status = 'PENDING' THEN 1 WHEN status = 'PARTIALLY_ORDERED' THEN 2 ELSE 3 END,
     required_date NULLS LAST,
     id DESC
 LIMIT $8::int OFFSET $7::int
@@ -536,7 +536,7 @@ UPDATE purchase_requirements SET
 WHERE tenant_id = $1
   AND contract_id = $3
   AND contract_version_id <> $4
-  AND status = 'PENDING'
+  AND status IN ('WAITING_REQUOTE','PENDING')
 RETURNING id, contract_item_id, product_name
 `
 
@@ -702,7 +702,7 @@ INSERT INTO purchase_requirements (
     owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
     sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
     factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
-    source_payment_terms, source_incoterm, source_valid_until
+    source_payment_terms, source_incoterm, source_valid_until, status
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -730,7 +730,8 @@ INSERT INTO purchase_requirements (
     $29::text, $30::text::numeric,
     nullif($31::text,'')::numeric, $32::text,
     $33::text, $34::text,
-    nullif($35::text,'')::date
+    nullif($35::text,'')::date,
+    coalesce(nullif($36::text,''),'PENDING')
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -756,6 +757,11 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     source_payment_terms = excluded.source_payment_terms,
     source_incoterm     = excluded.source_incoterm,
     source_valid_until  = excluded.source_valid_until,
+    status = CASE
+                 WHEN purchase_requirements.ordered_qty = 0
+                      AND purchase_requirements.status IN ('WAITING_REQUOTE','PENDING','SUPERSEDED','CANCELLED')
+                 THEN excluded.status ELSE purchase_requirements.status
+             END,
     -- 合同重发或换版时刷新属主：负责人转手后，新版本生效即改归属。
     -- 事件不带属主（0）则保留原值，别把已知的抹成未知。
     owner_id   = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_id
@@ -768,11 +774,6 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     -- buying anything. Only automatic closures are revived: once a buyer has
     -- ordered against it the row belongs to that order, and PENDING would
     -- invite a second purchase of the same goods.
-    status = CASE
-                 WHEN purchase_requirements.status IN ('SUPERSEDED', 'CANCELLED')
-                      AND purchase_requirements.ordered_qty = 0
-                 THEN 'PENDING' ELSE purchase_requirements.status
-             END,
     closed_reason = CASE
                         WHEN purchase_requirements.status IN ('SUPERSEDED', 'CANCELLED')
                              AND purchase_requirements.ordered_qty = 0
@@ -818,6 +819,7 @@ type UpsertRequirementParams struct {
 	SourcePaymentTerms  string
 	SourceIncoterm      string
 	SourceValidUntil    string
+	InitialStatus       string
 }
 
 // Money and quantities cross this boundary as text, same rule as export: Go
@@ -868,6 +870,7 @@ func (q *Queries) UpsertRequirement(ctx context.Context, arg UpsertRequirementPa
 		arg.SourcePaymentTerms,
 		arg.SourceIncoterm,
 		arg.SourceValidUntil,
+		arg.InitialStatus,
 	)
 	var id int64
 	err := row.Scan(&id)

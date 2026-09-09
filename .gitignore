@@ -39,3 +39,6 @@ coverage.out
 
 # D2 local isolated runtime
 .d2-environment/
+
+# D3 local isolated runtime
+.d3-environment/

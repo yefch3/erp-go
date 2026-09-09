@@ -55,12 +55,15 @@ export const router = createRouter({
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
-        { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
-        { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
+        // 合同开始执行后直接进入财务与下游任务，旧“执行一览”书签统一回到外销合同。
+        { path: 'contract-execution', redirect: (to) => ({ path: '/contracts', query: to.query }) },
+        // 旧“出运单”入口已并入船期管理，保留重定向兼容历史书签。
+        { path: 'shipments', redirect: '/shipping/schedules' },
         // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
         // 走各自案件详情里的只读“船运协作”，不直接进入这里。
         { path: 'shipping', redirect: '/shipping/sourcing' },
         { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
+        { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
@@ -84,6 +87,7 @@ export const router = createRouter({
         { path: 'warehouses/receipts', component: () => import('./pages/WarehouseReceiptsPage.vue') },
         { path: 'warehouses/imports', component: () => import('./pages/WarehouseImportsPage.vue') },
         { path: 'warehouses/settings', component: () => import('./pages/WarehouseSettingsPage.vue') },
+        // 兼容旧书签；采购现在直接进入售前询价，不再展示虚构的工作台。
         { path: 'procurement', redirect: '/procurement/sourcing' },
         { path: 'procurement/intakes', redirect: (to) => ({ path: '/sales/intakes', query: to.query }) },
         { path: 'procurement/settings/inquiry-templates', redirect: (to) => ({ path: '/sales/settings/inquiry-templates', query: to.query }) },
@@ -105,7 +109,9 @@ export const router = createRouter({
         { path: 'supplier-invoices', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-payments', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-statements', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
-        { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
+        // 银行流水已并进入账/出账，不再保留独立业务页面。旧书签落到入账，
+        // 避免历史链接进入一个已经退役的界面。
+        { path: 'bank-transactions', redirect: (to) => ({ path: '/customer-recon', query: to.query }) },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },

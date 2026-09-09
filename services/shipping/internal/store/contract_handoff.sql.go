@@ -63,7 +63,7 @@ SELECT id,contract_id,contract_no,contract_version_id,version_no,customer_id,cus
 FROM contract_shipping_handoffs
 WHERE tenant_id=$1
  AND ($2::text='' OR status=$2::text)
-ORDER BY CASE status WHEN 'PENDING' THEN 0 ELSE 1 END,created_at DESC,id DESC
+ORDER BY CASE status WHEN 'WAITING_REQUOTE' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,created_at DESC,id DESC
 `
 
 type ListContractShippingHandoffsParams struct {
@@ -162,7 +162,7 @@ func (q *Queries) MarkContractShippingHandoffScheduled(ctx context.Context, arg 
 const supersedeOldContractShippingHandoffs = `-- name: SupersedeOldContractShippingHandoffs :exec
 UPDATE contract_shipping_handoffs SET status='SUPERSEDED'
 WHERE tenant_id=$1 AND contract_id=$2
-  AND contract_version_id<>$3 AND status='PENDING'
+  AND contract_version_id<>$3 AND status IN ('WAITING_REQUOTE','PENDING')
 `
 
 type SupersedeOldContractShippingHandoffsParams struct {
@@ -189,7 +189,8 @@ INSERT INTO contract_shipping_handoffs (
  $14::text::numeric,$15,$16,$17,
  nullif($18::text,'')::date,nullif($19::text,'')::date,
  nullif($20::text,'')::date,$21,
- CASE WHEN $12::bool THEN 'CUSTOMER_MANAGED' ELSE 'PENDING' END
+ CASE WHEN $12::bool THEN 'CUSTOMER_MANAGED'
+      ELSE coalesce(nullif($22::text,''),'PENDING') END
 )
 ON CONFLICT (tenant_id,contract_version_id,batch_no) DO NOTHING
 `
@@ -216,6 +217,7 @@ type UpsertContractShippingHandoffParams struct {
 	EstimatedArrival   string
 	ValidUntil         string
 	Remark             string
+	InitialStatus      string
 }
 
 func (q *Queries) UpsertContractShippingHandoff(ctx context.Context, arg UpsertContractShippingHandoffParams) error {
@@ -241,6 +243,7 @@ func (q *Queries) UpsertContractShippingHandoff(ctx context.Context, arg UpsertC
 		arg.EstimatedArrival,
 		arg.ValidUntil,
 		arg.Remark,
+		arg.InitialStatus,
 	)
 	return err
 }

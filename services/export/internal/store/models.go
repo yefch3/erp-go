@@ -40,6 +40,7 @@ type Contract struct {
 	FilePending               bool
 	ApprovalRequestKey        string
 	ApprovalInstanceID        int64
+	ExecutionConditionType    string
 }
 
 type ContractAttachment struct {

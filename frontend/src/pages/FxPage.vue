@@ -1,18 +1,22 @@
 <template>
  <div class="fx-page">
-  <header><div><h1>汇率</h1><p>查看系统参考汇率，确认本公司报价使用的有效汇率。</p></div><div><el-button :loading="loading" @click="load">刷新</el-button><el-button v-if="auth.can('fx:rate:write')" type="primary" @click="edit()">确认有效汇率</el-button></div></header>
+  <WorkflowPageHeader title="汇率" description="查看系统参考汇率，确认本公司报价使用的有效汇率。">
+   <template #actions><el-button :loading="loading" @click="load">刷新</el-button><el-button v-if="auth.can('fx:rate:write')" type="primary" @click="edit()">确认有效汇率</el-button></template>
+  </WorkflowPageHeader>
   <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-  <el-table :data="rows" v-loading="loading" max-height="620" stripe empty-text="暂无汇率，可手工录入并确认有效值">
-   <el-table-column label="币种对" min-width="145"><template #default="{row}">1 {{row.baseCurrency}} → {{row.quoteCurrency}}</template></el-table-column>
-   <el-table-column label="系统参考值" min-width="140"><template #default="{row}">{{row.systemRate||'暂无参考值'}}</template></el-table-column>
-   <el-table-column label="有效汇率" min-width="140"><template #default="{row}"><strong v-if="row.rate">{{row.rate}}</strong><el-tag v-else type="warning">尚未确认</el-tag></template></el-table-column>
-   <el-table-column label="系统更新时间" min-width="180"><template #default="{row}">{{date(row.systemUpdatedAt)}}</template></el-table-column>
-   <el-table-column prop="confirmedBy" label="确认人" min-width="100" />
-   <el-table-column label="确认时间" min-width="180"><template #default="{row}">{{date(row.confirmedAt)}}</template></el-table-column>
-   <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
-   <el-table-column v-if="auth.can('fx:rate:write')" label="操作" width="120" fixed="right"><template #default="{row}"><el-button link type="primary" @click="edit(row)">{{row.rate?'修改有效值':'确认有效值'}}</el-button></template></el-table-column>
-  </el-table>
-  <p class="footnote">系统参考值刷新后，有效汇率保持不变。已确认报价和合同保留当时的汇率。</p>
+  <section class="panel">
+   <el-table :data="rows" v-loading="loading" max-height="620" empty-text="暂无汇率，可手工录入并确认有效值">
+    <el-table-column label="币种对" min-width="145"><template #default="{row}"><span class="currency-pair">1 {{row.baseCurrency}} → {{row.quoteCurrency}}</span></template></el-table-column>
+    <el-table-column label="系统参考值" min-width="140"><template #default="{row}">{{row.systemRate||'暂无参考值'}}</template></el-table-column>
+    <el-table-column label="有效汇率" min-width="140"><template #default="{row}"><strong v-if="row.rate">{{row.rate}}</strong><el-tag v-else type="warning" effect="plain">尚未确认</el-tag></template></el-table-column>
+    <el-table-column label="系统更新时间" min-width="180"><template #default="{row}">{{date(row.systemUpdatedAt)}}</template></el-table-column>
+    <el-table-column prop="confirmedBy" label="确认人" min-width="100" />
+    <el-table-column label="确认时间" min-width="180"><template #default="{row}">{{date(row.confirmedAt)}}</template></el-table-column>
+    <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
+    <el-table-column v-if="auth.can('fx:rate:write')" label="操作" width="120" fixed="right"><template #default="{row}"><el-button link type="primary" @click="edit(row)">{{row.rate?'修改有效值':'确认有效值'}}</el-button></template></el-table-column>
+   </el-table>
+   <p class="footnote">系统参考值刷新后，有效汇率保持不变。已确认报价和合同保留当时的汇率。</p>
+  </section>
   <el-dialog v-model="open" title="确认有效汇率" width="min(520px, 94vw)" :close-on-click-modal="false">
    <el-form label-position="top" @submit.prevent="save">
     <div class="pair"><el-form-item label="基础币种"><el-input v-model="form.base" maxlength="3" placeholder="USD" /></el-form-item><el-form-item label="目标币种"><el-input v-model="form.quote" maxlength="3" placeholder="CNY" /></el-form-item></div>
@@ -28,6 +32,7 @@ import {onMounted,reactive,ref} from 'vue'
 import {ElMessage} from 'element-plus'
 import {get,post} from '../api'
 import {useAuthStore} from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 interface Rate {baseCurrency:string;quoteCurrency:string;rate:string;confirmedBy:string;confirmedAt:string;remark:string;systemRate:string;systemUpdatedAt:string}
 const auth=useAuthStore(),rows=ref<Rate[]>([]),loading=ref(false),saving=ref(false),open=ref(false),error=ref('')
 const form=reactive({base:'USD',quote:'CNY',rate:'',remark:''})
@@ -38,5 +43,5 @@ async function save(){if(saving.value)return;const base=form.base.trim().toUpper
 onMounted(load)
 </script>
 <style scoped>
-.fx-page{padding:24px;max-width:1600px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}h1{margin:0;color:#173b52}header p,.footnote{color:#63778a}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}strong{color:#146d83} .el-alert{margin-bottom:16px}@media(max-width:640px){.fx-page{padding:12px}header{align-items:flex-start;flex-direction:column}}
+.fx-page{max-width:1680px;margin:auto;color:#141817}.panel{overflow:hidden;padding:0 16px 12px;border:1px solid #dceaf0;border-radius:12px;background:#fff;box-shadow:0 8px 26px rgba(25,72,91,.05)}.fx-page :deep(.el-table){--el-table-header-bg-color:#eef9fe;--el-table-header-text-color:#24323a;--el-table-row-hover-bg-color:#f0fbf6}.fx-page :deep(.el-table th.el-table__cell){border-bottom-color:#d9edf5;font-weight:650}.currency-pair{color:#159fdc;font-weight:600}.footnote{margin:12px 2px 0;color:#63778a;font-size:12px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}strong{color:#146d83}.el-alert{margin-bottom:16px}@media(max-width:640px){.panel{padding:0 10px 10px}.pair{grid-template-columns:1fr}}
 </style>

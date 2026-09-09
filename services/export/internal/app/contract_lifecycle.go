@@ -239,29 +239,9 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, _, _, _ 
 			"请先上传客户签署件（文件类型选「客户签回」），再确认签署").
 			WithMeta("version_no", strconv.Itoa(int(view.Version.VersionNo)))
 	}
-	event := effectiveEvent(view)
-	if view.Contract.QuotationID != 0 {
-		quotation, _, quotationErr := s.GetQuotation(ctx, tenantID, view.Contract.QuotationID)
-		if quotationErr != nil {
-			return "", quotationErr
-		}
-		event.QuotationID = quotation.ID
-		event.QuotationNo = quotation.QuoteNo
-		event.SourceCustomerSelectionID = quotation.SourceCustomerSelectionID
-		shipments, shipmentErr := s.ListQuotationShipments(ctx, tenantID, view.Contract.QuotationID)
-		if shipmentErr != nil {
-			return "", shipmentErr
-		}
-		for _, shipment := range shipments {
-			event.Shipments = append(event.Shipments, effectiveEventShipment{
-				BatchNo: shipment.BatchNo, ShipmentGroupKey: shipment.ShipmentGroupKey,
-				CarrierForwarder: shipment.CarrierForwarder, ServiceOptionName: shipment.ServiceOptionName,
-				CustomerManaged: shipment.CustomerManaged, Currency: shipment.Currency, FreightAmount: shipment.FreightAmount,
-				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
-				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
-				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
-			})
-		}
+	event, err := s.hydrateEffectiveEvent(ctx, tenantID, view)
+	if err != nil {
+		return "", err
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -388,6 +368,7 @@ type contractEffectiveEvent struct {
 	TotalAmount               string `json:"total_amount"`
 	DeliveryDate              string `json:"delivery_date"`
 	Incoterm                  string `json:"incoterm"`
+	PortOfLoading             string `json:"port_of_loading,omitempty"`
 	PortOfDischarge           string `json:"port_of_discharge,omitempty"`
 	QuotationID               int64  `json:"quotation_id"`
 	QuotationNo               string `json:"quotation_no"`
@@ -463,10 +444,46 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 		CustomerID: view.Contract.CustomerID, CustomerName: view.Contract.CustomerName,
 		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		DeliveryDate: view.Version.DeliveryDate, Incoterm: view.Version.Incoterm,
-		PortOfDischarge: view.Version.PortOfDischarge,
+		PortOfLoading: view.Version.PortOfLoading, PortOfDischarge: view.Version.PortOfDischarge,
 		SalesEmployeeID: view.Contract.SalesEmployeeID, SalesEmployee: view.Contract.SalesEmployee,
 		Items: items,
 	}
+}
+
+func (s *Service) hydrateEffectiveEvent(ctx context.Context, tenantID int64, view ContractView) (contractEffectiveEvent, error) {
+	event := effectiveEvent(view)
+	if view.Contract.QuotationID != 0 {
+		quotation, _, err := s.GetQuotation(ctx, tenantID, view.Contract.QuotationID)
+		if err != nil {
+			return contractEffectiveEvent{}, err
+		}
+		event.QuotationID = quotation.ID
+		event.QuotationNo = quotation.QuoteNo
+		event.SourceCustomerSelectionID = quotation.SourceCustomerSelectionID
+		shipments, err := s.ListQuotationShipments(ctx, tenantID, view.Contract.QuotationID)
+		if err != nil {
+			return contractEffectiveEvent{}, err
+		}
+		for _, shipment := range shipments {
+			event.Shipments = append(event.Shipments, effectiveEventShipment{
+				BatchNo: shipment.BatchNo, ShipmentGroupKey: shipment.ShipmentGroupKey,
+				CarrierForwarder: shipment.CarrierForwarder, ServiceOptionName: shipment.ServiceOptionName,
+				CustomerManaged: shipment.CustomerManaged, Currency: shipment.Currency, FreightAmount: shipment.FreightAmount,
+				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
+				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
+				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+			})
+		}
+	}
+	// Even without a retained pre-sales option, Logistics needs one visible work
+	// item. Commercial choices stay empty because D3 only opens re-quotation.
+	if len(event.Shipments) == 0 {
+		event.Shipments = append(event.Shipments, effectiveEventShipment{
+			BatchNo: 1, Currency: event.Currency, FreightAmount: "0",
+			PortOfLoading: event.PortOfLoading, PortOfDischarge: event.PortOfDischarge,
+		})
+	}
+	return event, nil
 }
 
 func remainingProcurementQty(total, opening string) string {

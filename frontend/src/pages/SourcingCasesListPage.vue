@@ -6,7 +6,6 @@
         <div class="title-row"><h1>{{ pageTitle }}</h1><span class="perspective-label">{{ isSalesView ? '销售视角' : '采购视角' }}</span></div>
         <p>{{ pageSubtitle }}</p>
       </div>
-      <el-button v-if="!isSalesView" @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
     </header>
     <section class="list-card">
       <div class="context-bar">
@@ -84,7 +83,7 @@ const auth = useAuthStore()
 const isSalesView = computed(() => route.path.startsWith('/sales/'))
 const isPendingView = computed(() => route.path === '/procurement/sourcing/pending')
 const pageEyebrow = computed(() => isSalesView.value ? 'CUSTOMER INQUIRIES' : 'PROCUREMENT SOURCING')
-const pageTitle = computed(() => isSalesView.value ? '客户询盘' : isPendingView.value ? '待接单任务' : '全部寻源项目')
+const pageTitle = computed(() => isSalesView.value ? '客户询盘' : isPendingView.value ? '待接单任务' : '售前询价')
 const pageSubtitle = computed(() => isSalesView.value
   ? '查看客户需求、采购进度和客户报价；供应商询价与成本操作由采购侧完成。'
   : isPendingView.value

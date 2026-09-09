@@ -1,14 +1,8 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('contracts.title') }}</h2>
-      <span class="grow" />
-      <!-- Most deals here are negotiated by email and come back as a signed
-           PDF, so writing one up directly is the primary action; generating
-           from a quotation is the secondary one. -->
-      <el-button v-if="canWrite" type="primary" @click="openDirect">录入执行中合同</el-button>
-
-    </div>
+  <div class="contracts-page">
+    <WorkflowPageHeader :title="t('contracts.title')" :description="t('contracts.listSubtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openDirect">{{t('contracts.enterExecuting')}}</el-button></template>
+    </WorkflowPageHeader>
 
     <el-card shadow="never">
       <div class="filters">
@@ -23,13 +17,13 @@
         <el-select v-model="status" :placeholder="t('contracts.allStatus')" clearable style="width: 170px" @change="reload">
           <el-option v-for="s in STATUSES" :key="s" :value="s" :label="contractStatusLabel(s)" />
         </el-select>
-        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
+        <el-select v-model="ownerFilter" clearable filterable :placeholder="t('contracts.responsibleSales')" style="width: 220px" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
       <el-table :data="contracts" v-loading="loading">
-        <el-table-column prop="contractNo" label="系统合同号" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
-        <el-table-column label="原合同号" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
+        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.externalContractNo')" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
         <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" />
         <el-table-column :label="t('contracts.amount')" width="140" align="right">
           <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
@@ -42,8 +36,8 @@
             <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
-        <el-table-column label="操作" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'继续处理':'查看'}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.updatedAt')" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination
@@ -360,8 +354,10 @@
               {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.conditionConfirmedAt" :label="t('contracts.conditionConfirmation')" :span="2">
-            {{ detail.contract.conditionConfirmedByName }} · {{ formatTime(detail.contract.conditionConfirmedAt) }}<div class="sub">{{ detail.contract.conditionConfirmationNote }}</div>
+          <el-descriptions-item v-if="detail.contract.status === 'EXECUTING'" :label="t('contracts.conditionConfirmation')">
+            <el-tag :type="detail.contract.conditionConfirmedAt ? 'success' : 'warning'" effect="light">
+              {{ detail.contract.conditionConfirmedAt ? t('contracts.conditionReady') : t('contracts.conditionWaiting') }}
+            </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.terms')" :span="2">
             <div class="terms">{{ detail.version.terms || '—' }}</div>
@@ -955,6 +951,7 @@ const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
 interface Contract {
@@ -1107,7 +1104,7 @@ interface ChangeLine { productName?:string;uomCode?:string; productId: string; s
 const STATUSES = ['PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
 const ownerFilter=ref('')
 const filterOwners=ref<{id:string;name:string}[]>([])
-function contractStatusLabel(s:string){return ({DRAFT:'待上级确认',PENDING_APPROVAL:'待上级确认',PENDING_SIGN:'待签字',EFFECTIVE:'执行中',EXECUTING:'执行中',COMPLETED:'已完成'} as Record<string,string>)[s]||s}
+function contractStatusLabel(s:string){return t(`contracts.statuses.${s}`)}
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']
@@ -2049,17 +2046,10 @@ onUnmounted(stopListening)
 .src-tag {
   margin-left: 6px;
 }
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-}
+.contracts-page :deep(.el-card) { border-color:#dceaf0; border-radius:12px; box-shadow:0 10px 28px rgb(20 24 23 / 5%); }
+.contracts-page :deep(.el-table) { --el-table-header-bg-color:#eef9fe; --el-table-header-text-color:#24323a; --el-table-row-hover-bg-color:#f0fbf6; }
+.contracts-page :deep(.el-table th.el-table__cell) { height:48px; border-bottom-color:#d9edf5; font-weight:650; }
+.contracts-page :deep(.el-table td.el-table__cell) { padding:13px 0; border-bottom-color:#e7eff3; color:#141817; }
 .filters {
   display: flex;
   gap: 10px;

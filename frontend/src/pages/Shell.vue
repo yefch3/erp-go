@@ -313,7 +313,7 @@
           </el-dropdown>
         </div>
       </el-header>
-      <el-main class="content">
+      <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
         <router-view />
       </el-main>
     </el-container>
@@ -443,18 +443,19 @@ const salesItems = computed(() => [
   ...(auth.can('sales:inquiry:read')
     ? [
          { path: '/sales/inquiries', label: t('salesNav.inquiries') },
-         { path: '/sales/quotations', label: '客户报价' },
+         { path: '/sales/quotations', label: t('salesNav.quotations') },
          { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
        ]
     : []),
   ...(auth.can('export:contract:read')
     ? [
         { path: '/contracts', label: t('menu.contracts') },
-        { path: '/contract-execution', label: t('menu.contractExecution') },
       ]
     : []),
 ])
-const hasSales = computed(() => salesItems.value.length > 0)
+// 合同只读权限也会授予财务，供入账页下钻核对合同；它不代表财务需要整组
+// 销售导航。只有真正参与客户询盘的岗位才显示“销售”入口。
+const hasSales = computed(() => auth.can('sales:inquiry:read') && salesItems.value.length > 0)
 const salesActive = computed(() =>
   salesItems.value.some((item) => isSalesItemActive(item.path)) ||
   route.path.startsWith('/sales/') ||
@@ -462,16 +463,16 @@ const salesActive = computed(() =>
   route.path.startsWith('/contract-execution'),
 )
 
-// 物流：货离开公司之后的事。
+// 物流分成售前询价、合同执行后的实单询价和正式船期管理。
 const logisticsItems = computed(() => [
-  ...(auth.can('export:shipment:read')
-    ? [{ path: '/shipments', label: t('menu.shipments') }]
-    : []),
   ...(auth.can('shipping:sourcing:read')
     ? [{ path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
     : []),
   ...(auth.can('shipping:schedule:read')
-    ? [{ path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') }]
+    ? [
+        { path: '/shipping/requirements', label: t('shipping.executionInquiryTitle') },
+        { path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') },
+      ]
     : []),
 ])
 const hasLogistics = computed(() => logisticsItems.value.length > 0)
@@ -529,6 +530,15 @@ const procurementItems = computed(() => [
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
 ].filter((item) => item.allowed))
 
+// Element Plus teleports dialogs and drawers under <body>, outside .content.
+// Core business workspaces share one palette, including those overlays.
+const operationsThemeClass = 'operations-theme'
+const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value)
+watch(operationsThemeActive, (active) => {
+  document.body.classList.toggle(operationsThemeClass, active)
+}, { immediate: true })
+onUnmounted(() => document.body.classList.remove(operationsThemeClass))
+
 function isSalesItemActive(path: string) {
   if (path === '/sales/inquiries') return route.path === path || route.path.startsWith('/sales/inquiries/')
   return route.path === path
@@ -540,9 +550,8 @@ function isProcurementItemActive(path: string) {
   return route.path === path
 }
 
-// 财务只有四个直接入口，不再为单个入口套一层同名分组。
+// 银行流水不再作为独立业务页面；收付款记录分别归入入账和出账。
 const financeItems = computed(() => [
-  { path: '/bank-transactions', label: t('financeNav.bankTransactions'), allowed: auth.can('procurement:payment:read') },
   { path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
   { path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
   { path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },
@@ -862,6 +871,67 @@ async function changePassword() {
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
 .topbar { justify-content: flex-end; }
 .content { background: #f3f6fa; }
+.content--procurement,
+.content--logistics {
+  --el-color-primary: #4ac1ff;
+  --el-color-primary-light-3: #7fd2ff;
+  --el-color-primary-light-5: #a5e0ff;
+  --el-color-primary-light-7: #c9edff;
+  --el-color-primary-light-8: #ddf4ff;
+  --el-color-primary-light-9: #eefaff;
+  --el-color-success: #1fbf6c;
+  --el-color-success-light-9: #eefbf4;
+  --el-text-color-primary: #141817;
+  --el-bg-color: #fff;
+  background: #f5f7fb;
+}
+:is(.content--procurement, .content--logistics) :deep(.workspace-heading) {
+  border-color: #d5edf7;
+  background: linear-gradient(120deg, #eefaff 0%, #fff 62%, #effcf5 100%);
+}
+:is(.content--procurement, .content--logistics) :deep(.module-chip) {
+  border-color: #9bdcff;
+  color: #138fc9;
+  background: #eefaff;
+}
+:is(.content--procurement, .content--logistics) :deep(.el-table) {
+  --el-table-header-bg-color: #eef9fe;
+  --el-table-header-text-color: #24323a;
+  --el-table-row-hover-bg-color: #f0fbf6;
+}
+:is(.content--procurement, .content--logistics) :deep(.el-card) {
+  border-color: #dfeaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgb(20 24 23 / 5%);
+}
+:is(.content--procurement, .content--logistics) :deep(.el-radio-button__inner) {
+  border-color: #d8e8ef;
+  color: #53636d;
+}
+:is(.content--procurement, .content--logistics) :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  border-color: #4ac1ff;
+  background: #4ac1ff;
+  color: #141817;
+  box-shadow: -1px 0 0 0 #4ac1ff;
+}
+:global(body.operations-theme) {
+  --el-color-primary: #4ac1ff;
+  --el-color-primary-light-3: #7fd2ff;
+  --el-color-primary-light-5: #a5e0ff;
+  --el-color-primary-light-7: #c9edff;
+  --el-color-primary-light-8: #ddf4ff;
+  --el-color-primary-light-9: #eefaff;
+  --el-color-success: #1fbf6c;
+  --el-color-success-light-9: #eefbf4;
+  --el-text-color-primary: #141817;
+}
+:global(body.operations-theme .el-dialog),
+:global(body.operations-theme .el-drawer) {
+  border: 1px solid #dfeaf0;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(20 24 23 / 14%);
+}
 @media (max-width: 1000px) {
   .shell { position: relative; }
   .side { display: none; }
