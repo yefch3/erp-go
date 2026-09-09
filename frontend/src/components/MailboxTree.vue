@@ -551,7 +551,8 @@ defineExpose({ reload: load })
   background: transparent;
   font-size: 13px;
   color: var(--el-text-color-primary);
-  cursor: pointer;
+  /* 同 .folder：这一栏是导航，不是一排按钮。 */
+  cursor: default;
   text-align: left;
 }
 .mbox:focus-visible {
@@ -624,7 +625,8 @@ defineExpose({ reload: load })
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  /* 同 .folder。 */
+  cursor: default;
 }
 .custom-acts {
   display: none;
@@ -648,9 +650,12 @@ defineExpose({ reload: load })
   color: var(--el-color-primary);
   background: var(--el-fill-color);
 }
+/* 「＋ 新建文件夹」是动作，不是文件夹：小手留着。上面那条把整栏改成箭头，
+   这里单独抬回来。 */
 .new-folder {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  cursor: pointer;
 }
 /* 设置，不是文件夹。跟着文件夹的缩进走（它属于这个箱），但不给悬停高亮，
    免得看着像又一个能点进去的文件夹。 */
@@ -758,7 +763,12 @@ defineExpose({ reload: load })
   border-radius: var(--mail-pill);
   font-size: var(--mail-text);
   color: var(--el-text-color-regular);
-  cursor: pointer;
+  /* 箭头，不是小手。和列表那一栏同一条规矩：一列文件夹是「我的东西在哪儿」
+     的导航，不是一排按钮；每一格都变成小手，整栏看着像在催人点。Foxmail、
+     Outlook、Apple Mail 的左栏都是箭头。
+     下面那几个真正的控件（新建文件夹、改名、删除、留副本的勾选框）仍然是
+     小手——那时它还起到瞄准的作用。 */
+  cursor: default;
   text-align: left;
   transition: background var(--mail-fast) var(--mail-ease);
 }

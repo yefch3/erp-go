@@ -228,24 +228,17 @@
              timestamp — and only the first says anything about the recipient.
              Claiming the second as the first would be the system inventing a
              fact about a customer. -->
+        <!-- 这三档都**不挂 tooltip**，和列表那一侧同一个理由：措辞本身已经
+             把话说完了。「可能已打开」四个字就是那句提示的意思，「没带追踪」
+             也是；再弹一块解释只是让鼠标扫过去时蹦一个气泡。
+             完整时间还在：鼠标停在时间上有浏览器自带的 title。 -->
         <div v-if="openedInbound.folder === 'SENT'" class="readback">
           <span class="rb-label">{{ t('reader.openedLabel') }}</span>
-          <el-tooltip
-            v-if="openedInbound.openedAt"
-            :content="t('emails.openedHint', { at: zonedStamp(openedInbound.openedAt) })"
-            placement="top"
-            :show-after="0"
-          >
-            <span class="rb-yes">
-              {{ t('emails.maybeOpened') }} · {{ shortTime(openedInbound.openedAt) }}
-            </span>
-          </el-tooltip>
-          <el-tooltip v-else-if="openedInbound.tracked" :content="t('reader.noOpenHint')" placement="top" :show-after="0">
-            <span class="rb-no">{{ t('emails.noOpenYet') }}</span>
-          </el-tooltip>
-          <el-tooltip v-else :content="t('reader.noTrackingHint')" placement="top" :show-after="0">
-            <span class="rb-off">{{ t('reader.noTracking') }}</span>
-          </el-tooltip>
+          <span v-if="openedInbound.openedAt" class="rb-yes" :title="zonedStamp(openedInbound.openedAt)">
+            {{ t('emails.maybeOpened') }} · {{ shortTime(openedInbound.openedAt) }}
+          </span>
+          <span v-else-if="openedInbound.tracked" class="rb-no">{{ t('emails.noOpenYet') }}</span>
+          <span v-else class="rb-off">{{ t('reader.noTracking') }}</span>
         </div>
         <!-- 图标条，照 Foxmail：常用的四件事各一颗图标，其余全收进「⋯」。
              从前这里是六到八颗**带文字**的按钮，阅读区窄一点就换行成两排，
@@ -736,11 +729,10 @@
           />
           <el-button @click="reload">{{ common('query') }}</el-button>
         </template>
-        <!-- The mailbox is polled every couple of minutes; this is for the
-             person who just told a customer "resend it" and is waiting. -->
-        <el-button v-if="folder === 'inbox' && !isSearching" :loading="syncing" @click="syncNow">
-          {{ t('emails.syncNow') }}
-        </el-button>
+        <!-- 这里从前有一颗「立即收信」。**去掉了**：信箱本来就在自动收——
+             打开这一页时拉一次（syncOnOpen），之后守着 IDLE，服务器一有新信
+             就推过来。一颗按钮摆在那儿反而是在说「不点它就收不到」，而那不
+             是真的；真正没收到的时候点它也没用，那时该看的是上面那条横幅。 -->
         <!-- Clears the unread marks of this view only — the button sits above
              this list, so it does what this list shows.
              Not in junk or the trash: nobody reads their spam folder to the
@@ -1699,7 +1691,6 @@ const mailboxSent = ref<SentMail[]>([])
 const unreadCount = ref(0)
 // Where the next inbound page starts; empty means this is the last one.
 const nextCursor = ref('')
-const syncing = ref(false)
 const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
@@ -3621,37 +3612,6 @@ async function reauth() {
 //
 // No success toast either: the arriving mail is the news, and a green bar
 // saying "收到 0 封新邮件" is a notification about nothing.
-async function syncNow() {
-  syncing.value = true
-  try {
-    const d = await post<{ fetched: number; detail: string; pending?: boolean; needsReauth?: boolean }>(
-      '/mailbox/sync',
-      undefined,
-      mailHostRequest,
-    )
-    if (d.detail) {
-      syncBanner.value = buildSyncBanner({ detail: d.detail, needsReauth: d.needsReauth })
-      ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
-      return
-    }
-    syncBanner.value = { text: '', offerReauth: false }
-    // 还在收，不是出错。一个从没同步过的邮箱首次要收几分钟，而请求前面的 nginx
-    // 只等 60 秒 —— 服务端到点就先答话，这里要把它说成"进行中"而不是红字报错，
-    // 否则用户会以为坏了，然后反复点，反复排队。
-    if (d.pending) {
-      ElMessage({ type: 'info', message: t('emails.syncPending') })
-    }
-    // The list refreshes in place, under the mail if one is open — and that
-    // mail's own thread with it, so a reply that just arrived joins the
-    // conversation being read rather than waiting for a reopen.
-    load()
-    if (openedInbound.value) loadThread(openedInbound.value)
-    refreshUnread()
-  } finally {
-    syncing.value = false
-  }
-}
-
 // The badge is what tells somebody there is work waiting, so it refreshes
 // independently of whichever folder happens to be open.
 async function refreshAttentionCount() {
