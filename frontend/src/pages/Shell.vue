@@ -454,7 +454,9 @@ const salesItems = computed(() => [
       ]
     : []),
 ])
-const hasSales = computed(() => salesItems.value.length > 0)
+// 合同只读权限也会授予财务，供入账页下钻核对合同；它不代表财务需要整组
+// 销售导航。只有真正参与客户询盘的岗位才显示“销售”入口。
+const hasSales = computed(() => auth.can('sales:inquiry:read') && salesItems.value.length > 0)
 const salesActive = computed(() =>
   salesItems.value.some((item) => isSalesItemActive(item.path)) ||
   route.path.startsWith('/sales/') ||
@@ -549,9 +551,8 @@ function isProcurementItemActive(path: string) {
   return route.path === path
 }
 
-// 财务只有四个直接入口，不再为单个入口套一层同名分组。
+// 银行流水不再作为独立业务页面；收付款记录分别归入入账和出账。
 const financeItems = computed(() => [
-  { path: '/bank-transactions', label: t('financeNav.bankTransactions'), allowed: auth.can('procurement:payment:read') },
   { path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
   { path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
   { path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },

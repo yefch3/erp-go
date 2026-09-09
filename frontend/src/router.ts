@@ -108,7 +108,9 @@ export const router = createRouter({
         { path: 'supplier-invoices', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-payments', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-statements', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
-        { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
+        // 银行流水已并进入账/出账，不再保留独立业务页面。旧书签落到入账，
+        // 避免历史链接进入一个已经退役的界面。
+        { path: 'bank-transactions', redirect: (to) => ({ path: '/customer-recon', query: to.query }) },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },
