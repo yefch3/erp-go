@@ -1370,6 +1370,7 @@ import {
   type VerifyResponse,
   settleMailbox,
 } from '../lib/mailUnlock'
+import type { DropTarget } from '../lib/dragMails'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
@@ -3199,27 +3200,44 @@ function onDragMails(payload: { ids: string[]; accounts: number[] }) {
   dragging.value = payload
 }
 
-// 放下了。走的是和「移动到」下拉、批量工具条同一个接口——拖拽只是同一件事
-// 的第三个入口，不是另一条路径。
-async function onDropMails(_accountId: number, folderId: number) {
+// 放下了。
+//
+// 两种落法，走的都是**已经存在的**那条路——拖拽是同一件事的又一个入口，
+// 不是另一套后端：
+//
+//   挪 —— 和「移动到」下拉、批量工具条同一个 /inbound-mails/move
+//   标 —— 和阅读区的「归档 / 删除」同一个 /inbound-mails/{id}/mark
+//
+// 为什么不能都用「挪」：视图看的是 deleted_at / archived_at 两个时间戳，
+// 不是 folder。见 lib/dragMails 上那段。
+async function onDropMails(_accountId: number, target: DropTarget) {
   const ids = dragging.value?.ids ?? []
   dragging.value = null
   if (!ids.length || bulkBusy.value) return
   bulkBusy.value = true
   try {
-    const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
-      ids,
-      folderId: String(folderId),
-      wholeThread: true,
-    })
-    const moved = Number(d.moved ?? 0)
-    const failed = d.failedIds?.length ?? 0
-    if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
-    else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+    if (target.kind === 'move') {
+      const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
+        ids,
+        folderId: String(target.folderId),
+        wholeThread: true,
+      })
+      const moved = Number(d.moved ?? 0)
+      const failed = d.failedIds?.length ?? 0
+      if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
+      else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+    } else {
+      // 一封一条请求，和 bulkMark 同一个做法：标记接口是按单封设计的，
+      // inChunks 控着并发不把网关打满。
+      const failed = await inChunks(ids, (id) =>
+        post(`/inbound-mails/${id}/mark`, { ...target.flags, wholeThread: true }, quietErrors),
+      )
+      reportBulk(ids.length, failed, t('emails.bulkDone', { n: ids.length - failed }))
+    }
   } catch {
     // 后端的原因拦截器已经弹了
   } finally {
-    // 只清掉刚挪走的那几封，不清整份勾选：拖的可能是一封没勾的，那时勾选
+    // 只清掉刚处理的那几封，不清整份勾选：拖的可能是一封没勾的，那时勾选
     // 里还留着别的信，替人清掉是替人做决定。
     picked.value = picked.value.filter((id) => !ids.includes(id))
     bulkBusy.value = false

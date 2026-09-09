@@ -399,16 +399,20 @@ function onDragStart(m: MailRow, ev: DragEvent) {
   // 必须写点什么进去，否则 Firefox 根本不认这是一次拖拽。内容本身不用：
   // 放下时读的是页面自己记着的那份（dragover 里读不到 dataTransfer）。
   ev.dataTransfer.setData('text/plain', ids.join(','))
-  // 拖多封时默认的拖影是被按住的那一行，看不出在拖几封。换成一个数字牌。
-  if (ids.length > 1) {
-    const chip = document.createElement('div')
-    chip.className = 'drag-chip'
-    chip.textContent = t('emails.pickedN', { n: ids.length })
-    document.body.appendChild(chip)
-    ev.dataTransfer.setDragImage(chip, 12, 12)
-    // 下一帧再删：setDragImage 是同步截图的，这一帧之内不能从文档里拿走。
-    requestAnimationFrame(() => chip.remove())
-  }
+  // 拖影换成一张小卡片，照 Foxmail。
+  //
+  // 默认拖影是**整行的半透明快照**——三行式之后那是 340×86 的一大块，跟着
+  // 光标走的时候把左栏那几格文件夹遮掉大半，而那正是此刻要看清的地方。
+  // 一个信封加个数字够了：手上拿着几封信，这是唯一需要知道的事。
+  const chip = document.createElement('div')
+  chip.className = 'drag-chip'
+  chip.textContent = ids.length > 1 ? `✉ ${ids.length}` : '✉'
+  document.body.appendChild(chip)
+  // 偏移一点，让卡片在光标的右下方而不是压在光标底下——压着的话看不出
+  // 光标尖正指着哪一格。
+  ev.dataTransfer.setDragImage(chip, -8, -4)
+  // 下一帧再删：setDragImage 是同步截图的，这一帧之内不能从文档里拿走。
+  requestAnimationFrame(() => chip.remove())
 }
 
 function onDragEnd() {
@@ -469,7 +473,11 @@ function ariaFor(m: MailRow) {
   padding: 7px 14px;
   border-bottom: 1px solid var(--mail-divider);
   background: var(--mail-surface);
-  cursor: pointer;
+  /* 箭头，不是小手。
+     小手是「这是个链接/按钮」的意思，而一列邮件不是一排按钮——每一行都变成
+     小手，整片列表看着像在催人点。Foxmail、Outlook、Apple Mail 的邮件列表
+     都是箭头；真正的控件（星标、勾选框）才是小手，那时它还起到瞄准的作用。 */
+  cursor: default;
   position: relative;
   transition: box-shadow var(--mail-fast) var(--mail-ease),
     background var(--mail-fast) var(--mail-ease);
@@ -591,7 +599,8 @@ function ariaFor(m: MailRow) {
   text-align: start;
   font: inherit;
   color: inherit;
-  cursor: pointer;
+  /* 同 .row：整行是内容，不是按钮。 */
+  cursor: default;
 }
 .body:focus-visible {
   outline: 2px solid var(--el-color-primary);

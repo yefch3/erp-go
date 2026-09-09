@@ -138,6 +138,27 @@ func (q *Queries) ClearInboundArchived(ctx context.Context, arg ClearInboundArch
 	return err
 }
 
+const clearInboundNotJunk = `-- name: ClearInboundNotJunk :exec
+UPDATE email_inbound SET not_junk = FALSE
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearInboundNotJunkParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 挪进垃圾邮件：把「不是垃圾」那个平反标记去掉。
+//
+// 和上面那条同一个道理，只是方向相反。视图是这么算的（mail_view_of）：
+// folder='JUNK' 且 not_junk 为真时算**收件箱**，不是垃圾邮件。所以一封平反过
+// 的信再挪回垃圾邮件，不清这个标记的话，folder 是 JUNK 而视图仍然说它在收件
+// 箱——列表上它没动，服务器上却已经进了垃圾箱，两边从此各说各的。
+func (q *Queries) ClearInboundNotJunk(ctx context.Context, arg ClearInboundNotJunkParams) error {
+	_, err := q.db.Exec(ctx, clearInboundNotJunk, arg.TenantID, arg.ID)
+	return err
+}
+
 const countFolder = `-- name: CountFolder :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint

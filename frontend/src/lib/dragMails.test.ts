@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canDropInto, draggedRows } from './dragMails'
+import { canDropInto, draggedRows, dropTargetFor } from './dragMails'
 
 interface Row {
   id: string
@@ -68,5 +68,46 @@ describe('canDropInto', () => {
     // 挪一半失败——一格都不亮，比亮了再报「成功 3 失败 2」清楚。
     expect(canDropInto([7, 8], 7)).toBe(false)
     expect(canDropInto([7, 8], 8)).toBe(false)
+  })
+})
+
+describe('dropTargetFor', () => {
+  it('收件箱是「挪」，用 0 这个约定', () => {
+    expect(dropTargetFor('inbox')).toEqual({ kind: 'move', folderId: 0 })
+  })
+
+  it('自建文件夹是「挪」，用它自己的 id', () => {
+    expect(dropTargetFor('F:项目A', { folderId: 12 })).toEqual({ kind: 'move', folderId: 12 })
+  })
+
+  it('自建文件夹没带 id 就不接', () => {
+    // 服务端要靠 id 找那个文件夹。让它亮起来再报「文件夹不存在」是最差的。
+    expect(dropTargetFor('F:项目A')).toBeNull()
+  })
+
+  it('垃圾邮件是「挪」，id 从这个箱的垃圾箱来', () => {
+    // 真的挪进服务器的垃圾箱——服务商的过滤器靠这个学，只打个标记它学不到。
+    expect(dropTargetFor('junk', { junkFolderId: 9 })).toEqual({ kind: 'move', folderId: 9 })
+  })
+
+  it('这个箱没有垃圾箱时不接', () => {
+    expect(dropTargetFor('junk')).toBeNull()
+  })
+
+  it('回收站和归档是「标」，不是「挪」', () => {
+    // 视图看的是 deleted_at / archived_at，不是 folder。写成「挪」的话，信会
+    // 从收件箱消失却不出现在回收站里——这是这两条最要紧的地方。
+    expect(dropTargetFor('trash')).toEqual({ kind: 'mark', flags: { deleted: true } })
+    expect(dropTargetFor('archive')).toEqual({ kind: 'mark', flags: { archived: true } })
+  })
+
+  it('已发送、草稿箱、星标、待处理、拒收名单都不接', () => {
+    // 已发送：挪进去之后一封收到的信会显示成「我发出的」。
+    // 草稿箱：ERP 的草稿是另一张表。
+    // 星标：是标签不是位置。
+    // 后两个根本不是邮件文件夹。
+    for (const key of ['sent', 'drafts', 'starred', 'scheduled', 'attention', 'suppressions']) {
+      expect(dropTargetFor(key, { folderId: 3, junkFolderId: 9 })).toBeNull()
+    }
   })
 })

@@ -548,10 +548,28 @@ func (s *Service) resolveMoveTarget(ctx context.Context, tenantID, folderID int6
 	if err != nil {
 		return moveTarget{}, apierr.NotFound("MAIL_FOLDER_NOT_FOUND", "文件夹不存在")
 	}
-	if f.Role != roleCustom {
-		return moveTarget{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "只能挪进自建文件夹或收件箱")
+	switch f.Role {
+	case roleCustom:
+		return moveTarget{accountID: f.AccountID, host: f.HostName, erp: f.HostName}, nil
+	case roleJunk:
+		// 「标为垃圾邮件」。这是把信真的挪进服务器的垃圾箱，不是打个标记——
+		// 服务商的过滤器靠这个学，只在 ERP 里记一笔它学不到。
+		//
+		// erp 写 'JUNK' 而不是主机上那个文件夹名：视图是按 folder 的值算的
+		// （mail_view_of），写成「垃圾邮件」三个字的话它会被当成一个**自建
+		// 文件夹**（F:垃圾邮件），左栏凭空多出一个同名的格子。
+		return moveTarget{accountID: f.AccountID, host: f.HostName, erp: roleJunk}, nil
 	}
-	return moveTarget{accountID: f.AccountID, host: f.HostName, erp: f.HostName}, nil
+	// 其余系统文件夹一律不收，各有各的理由：
+	//
+	//   已发送  —— 挪进去之后这封信在界面上就成了「我发出的」，而它是收到的。
+	//   草稿箱  —— ERP 的草稿是另一张表，一封收到的信变不成草稿。
+	//   回收站  —— 视图看的是 deleted_at 不是 folder，改 folder 会让它从收件箱
+	//             消失却不出现在回收站里。走标记那条路（MarkInbound deleted）。
+	//   归档    —— 同上，看的是 archived_at。
+	//   虚拟    —— Gmail 的「重要」「已加星标」是标签不是文件夹，挪进去会让
+	//             同一封信被存两遍。
+	return moveTarget{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "只能挪进自建文件夹、收件箱或垃圾邮件")
 }
 
 // batchMoveItem 是待挪的一封信在库里的身份。
@@ -701,9 +719,19 @@ func (s *Service) moveGroup(ctx context.Context, tenantID, ownerID int64, g move
 			failed = append(failed, it.id)
 			continue
 		}
-		if target.erp == "INBOX" && it.archived {
+		if target.erp == roleInbox && it.archived {
 			if err := s.q.ClearInboundArchived(ctx, store.ClearInboundArchivedParams{TenantID: tenantID, ID: it.id}); err != nil {
 				s.log.Warn("moved to inbox but could not clear archived_at", "id", it.id, "err", err)
+			}
+		}
+		// 挪进垃圾邮件：平反标记要一起去掉，否则 folder 是 JUNK 而视图仍然
+		// 说它在收件箱。见 ClearInboundNotJunk 上的说明。
+		//
+		// 无条件清，不先读一遍它是不是真的置着：一次写比一次读加一次写便宜，
+		// 而「本来就是 FALSE」再写一次 FALSE 什么也不会发生。
+		if target.erp == roleJunk {
+			if err := s.q.ClearInboundNotJunk(ctx, store.ClearInboundNotJunkParams{TenantID: tenantID, ID: it.id}); err != nil {
+				s.log.Warn("moved to junk but could not clear not_junk", "id", it.id, "err", err)
 			}
 		}
 		moved++

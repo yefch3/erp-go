@@ -1842,6 +1842,16 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 UPDATE email_inbound SET archived_at = NULL
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
+-- name: ClearInboundNotJunk :exec
+-- 挪进垃圾邮件：把「不是垃圾」那个平反标记去掉。
+--
+-- 和上面那条同一个道理，只是方向相反。视图是这么算的（mail_view_of）：
+-- folder='JUNK' 且 not_junk 为真时算**收件箱**，不是垃圾邮件。所以一封平反过
+-- 的信再挪回垃圾邮件，不清这个标记的话，folder 是 JUNK 而视图仍然说它在收件
+-- 箱——列表上它没动，服务器上却已经进了垃圾箱，两边从此各说各的。
+UPDATE email_inbound SET not_junk = FALSE
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
 
 -- name: SetKeepSentCopy :execrows
 -- 「发送后自己往已发送里留一份副本」这个开关。
