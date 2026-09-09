@@ -1,6 +1,6 @@
 <template>
   <div class="requirements-page">
-    <ProcurementPageHeader :title="t('requirements.title')" :description="t('requirements.readOnlyHint')" />
+    <WorkflowPageHeader :title="t('requirements.title')" :description="t('requirements.readOnlyHint')" />
 
     <el-card shadow="never">
       <div class="filters">
@@ -258,7 +258,7 @@ import { get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
-import ProcurementPageHeader from '../components/ProcurementPageHeader.vue'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Requirement {
   id: string

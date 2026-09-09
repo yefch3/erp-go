@@ -476,6 +476,8 @@ export default {
   },
   shipping: {
     title: 'Shipping schedules',
+    executionInquiryTitle: 'Contract enquiries', executionInquiryHint: 'Created after Finance confirms execution conditions. Pre-sales freight is reference-only; current prices still need to be requested.',
+    executionInquiryEmpty: 'No contract freight enquiries', executionInquirySearch: 'Search contract, customer, port or pre-sales reference',
     create: 'New schedule', edit: 'Edit schedule', scheduleNo: 'Schedule no.', contractNo: 'Contract no.',
     customer: 'Customer', carrier: 'Carrier / forwarder', vessel: 'Vessel', voyage: 'Voyage', vesselVoyage: 'Vessel / voyage',
     loadingPort: 'Port of loading', dischargePort: 'Port of discharge', responsible: 'Responsible', remark: 'Remark',
@@ -2290,7 +2292,7 @@ export default {
       'as the reverse-proxy configuration.',
   },
   presalesShipping: {
-    presalesTag: 'Pre-sales freight', executionTag: 'Order execution', workspaceTitle: 'Pre-sales freight enquiries', scheduleTitle: 'Formal shipping schedules', workspaceHint: 'Collect carrier quotes and estimated dates for customer quotations. This does not mean a vessel has been booked.', scheduleHint: 'Manage carriers, voyages, routes, arrival progress and exceptions after the customer places an order.', enterSchedules: 'Open formal schedules', backToPresales: 'Back to pre-sales enquiries',
+    presalesTag: 'Pre-sales freight', executionTag: 'Order execution', workspaceTitle: 'Pre-sales enquiries', scheduleTitle: 'Shipping schedules', workspaceHint: 'Compare freight quotes and estimated dates before the customer confirms an order. This does not mean a vessel has been booked.', scheduleHint: 'Manage carriers, voyages, routes, arrival progress and exceptions after the customer places an order.', enterSchedules: 'Open shipping schedules', backToPresales: 'Back to pre-sales enquiries',
     currentTitle: 'Freight enquiries requiring action', submittedTitle: 'Submitted carrier quotes',
     currentHint: 'A task appears automatically when Sales opens a sourcing case. Accept it, contact carriers outside the system, then add each company quote separately.',
     submittedHint: 'Quotes already shared with the responsible salesperson are retained by carrier. Add another company at any time without replacing existing quotes.',

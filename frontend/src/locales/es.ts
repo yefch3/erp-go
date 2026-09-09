@@ -485,6 +485,8 @@ export default {
   },
   shipping: {
     title: 'Calendario marítimo',
+    executionInquiryTitle: 'Consultas de contrato', executionInquiryHint: 'Se crean cuando Finanzas confirma las condiciones de ejecución. El flete de preventa es solo una referencia; aún deben solicitarse precios actuales.',
+    executionInquiryEmpty: 'No hay consultas logísticas de contrato', executionInquirySearch: 'Buscar contrato, cliente, puerto o referencia de preventa',
     create: 'Nuevo itinerario', edit: 'Editar itinerario', scheduleNo: 'N.º de itinerario', contractNo: 'N.º de contrato',
     customer: 'Cliente', carrier: 'Naviera / agente', vessel: 'Buque', voyage: 'Viaje', vesselVoyage: 'Buque / viaje',
     loadingPort: 'Puerto de carga', dischargePort: 'Puerto de destino', responsible: 'Responsable', remark: 'Notas',
@@ -2299,7 +2301,7 @@ export default {
       'proxy inverso está bien configurado.',
   },
   presalesShipping: {
-    presalesTag: 'Flete de preventa', executionTag: 'Ejecución del pedido', workspaceTitle: 'Consultas de flete de preventa', scheduleTitle: 'Calendario marítimo formal', workspaceHint: 'Recopila cotizaciones y fechas estimadas para la oferta al cliente. No implica una reserva.', scheduleHint: 'Gestiona navieras, viajes, rutas, llegadas e incidencias después del pedido.', enterSchedules: 'Abrir calendario formal', backToPresales: 'Volver a consultas de preventa',
+    presalesTag: 'Flete de preventa', executionTag: 'Ejecución del pedido', workspaceTitle: 'Consultas de preventa', scheduleTitle: 'Calendario marítimo', workspaceHint: 'Compara cotizaciones y fechas estimadas antes de que el cliente confirme el pedido. No implica una reserva.', scheduleHint: 'Gestiona navieras, viajes, rutas, llegadas e incidencias después del pedido.', enterSchedules: 'Abrir calendario marítimo', backToPresales: 'Volver a consultas de preventa',
     currentTitle: 'Consultas de flete pendientes', submittedTitle: 'Cotizaciones de navieras enviadas',
     currentHint: 'La tarea aparece cuando Ventas abre el caso. Acéptala, contacta a las navieras fuera del sistema y agrega cada cotización por separado.',
     submittedHint: 'Las cotizaciones enviadas a Ventas se conservan por empresa. Se pueden agregar más sin reemplazar las existentes.',

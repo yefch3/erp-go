@@ -478,6 +478,8 @@ export default {
   },
   shipping: {
     title: '船期管理',
+    executionInquiryTitle: '实单询价', executionInquiryHint: '财务确认合同执行条件后生成；售前物流报价只作参考，当前等待重新询价。',
+    executionInquiryEmpty: '暂无实单物流询价任务', executionInquirySearch: '搜索合同、客户、港口或售前参考',
     create: '新增船期', edit: '编辑船期', scheduleNo: '船期编号', contractNo: '合同编号',
     customer: '客户', carrier: '船公司/货代', vessel: '船名', voyage: '航次', vesselVoyage: '船名 / 航次',
     loadingPort: '起运港', dischargePort: '目的港', responsible: '负责人', remark: '备注',
@@ -2284,7 +2286,7 @@ export default {
       '记不上就不放行。来源地址只在反向代理配置正确时可信。',
   },
   presalesShipping: {
-    presalesTag: '售前运费', executionTag: '订单执行', workspaceTitle: '售前船运询价', scheduleTitle: '正式船期管理', workspaceHint: '只处理销售报价阶段的船运公司报价和预计日期，不代表已经订船。', scheduleHint: '维护客户正式下单后的承运方、航次、路线、到港进度和异常变化。', enterSchedules: '进入正式船期管理', backToPresales: '返回售前船运询价',
+    presalesTag: '售前运费', executionTag: '订单执行', workspaceTitle: '售前询价', scheduleTitle: '船期管理', workspaceHint: '处理客户成交前的物流询价、报价比较和预计日期，不代表已经订船。', scheduleHint: '维护客户正式下单后的承运方、航次、路线、到港进度和异常变化。', enterSchedules: '进入船期管理', backToPresales: '返回售前询价',
     currentTitle: '当前要处理的运费任务', submittedTitle: '已提交的船运公司报价',
     currentHint: '销售建立采购询价后，任务会自动到这里。船运人员接手并人工询价，再把每家公司的报价逐份加入案件。',
     submittedHint: '这里按船运公司保留已经交给负责销售的报价，可继续添加下一家公司，不会覆盖已有报价。',

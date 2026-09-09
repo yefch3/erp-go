@@ -1,6 +1,6 @@
 <template>
   <div class="purchase-orders-page">
-    <ProcurementPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
+    <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
@@ -530,7 +530,7 @@ import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { useAuthStore } from '../stores/auth'
-import ProcurementPageHeader from '../components/ProcurementPageHeader.vue'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Order {
   id: string

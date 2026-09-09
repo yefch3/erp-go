@@ -1,13 +1,13 @@
 <template>
- <main class="inquiry-workspace" :class="{ 'inquiry-workspace--procurement': view === 'PROCUREMENT' }" v-loading="busy">
-  <ProcurementPageHeader v-if="!item && view === 'PROCUREMENT'" :title="title" :description="subtitle" />
+ <main class="inquiry-workspace" :class="{ 'inquiry-workspace--operations': view === 'PROCUREMENT' || view === 'LOGISTICS' }" v-loading="busy">
+  <WorkflowPageHeader v-if="!item && (view === 'PROCUREMENT' || view === 'LOGISTICS')" :title="title" :description="subtitle" />
   <header v-else-if="!item" class="workspace-heading">
    <div><el-tag v-if="department" class="module-chip" effect="plain">{{ moduleLabel }}</el-tag><h2>{{ title }}</h2><p>{{ subtitle }}</p></div>
    <div v-if="view==='SALES'" class="heading-actions"><el-button @click="router.push('/sales/settings/inquiry-templates')">询盘模板</el-button><el-button type="primary" plain @click="router.push('/emails')">从邮箱转入询盘</el-button></div>
   </header>
   <el-card v-if="!item" class="inquiry-list-panel" shadow="never">
-   <div class="toolbar list-toolbar"><el-input v-model="keyword" :placeholder="view==='PROCUREMENT'?'搜索询盘编号、客户、产品或规格':'搜索编号、客户、产品或规格'" clearable @change="loadList"/><el-select v-model="state" clearable placeholder="全部状态" @change="loadList"><el-option v-for="o in states" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-button @click="loadList">刷新</el-button><el-button v-if="view==='SALES'&&canWrite" type="primary" @click="openCreateDialog">上传或新建客户询盘</el-button></div>
-   <el-table class="inquiry-list-table" :data="items" stripe @row-dblclick="open"><el-table-column label="询盘编号" width="170"><template #default="{row}"><span class="inquiry-number">{{row.number}}</span></template></el-table-column><el-table-column prop="body.customer" label="客户" width="140" show-overflow-tooltip/><el-table-column prop="owner" label="负责销售" width="90"/><el-table-column label="产品项数" width="90"><template #default="{row}">{{row.body.products?.length||0}}</template></el-table-column><el-table-column v-if="department" label="总需求数量" width="115"><template #default="{row}">{{productTotal(row.body.products,'quantity','unit')}}</template></el-table-column><el-table-column v-if="view==='LOGISTICS'" label="总重量 / 总体积" min-width="180"><template #default="{row}">{{productTotal(row.body.products,'weight')}} / {{productTotal(row.body.products,'volume')}}</template></el-table-column><el-table-column v-if="department" prop="body.delivery" label="交货要求" width="110"/><el-table-column v-if="view==='LOGISTICS'" prop="body.loadingPort" label="装货港" min-width="120"/><el-table-column v-if="view==='LOGISTICS'" prop="body.destinationPort" label="目的港" min-width="120"/><el-table-column v-if="view==='LOGISTICS'" prop="body.incoterm" label="贸易条件" min-width="100"/><el-table-column v-if="department" :label="view==='PROCUREMENT'?'已提交工厂报价':'已提交报价数'" width="125"><template #default="{row}">{{view==='PROCUREMENT'?row.procurementCount:row.logisticsCount}}</template></el-table-column><el-table-column label="提交时间" width="140"><template #default="{row}">{{displayTime(row.submittedAt)}}</template></el-table-column><el-table-column label="状态" width="85"><template #default="{row}"><el-tag effect="light" :type="row.state==='WITHDRAWN'?'info':row.state==='INQUIRING'?'success':'warning'">{{view==='QUOTATIONS'?offerStateLabel(row.id):stateLabel(row)}}</el-tag></template></el-table-column><el-table-column label="操作" width="155" align="center"><template #default="{row}"><el-button :link="view!=='PROCUREMENT'" :plain="view==='PROCUREMENT'" type="primary" @click="open(row)">{{view==='PROCUREMENT'?(row.procurementCount>0?'查看 / 继续报价':'录入工厂报价'):department?(row.logisticsCount>0?'查看并报价':'去报价'):'打开详情 →'}}</el-button></template></el-table-column></el-table>
+   <div class="toolbar list-toolbar"><el-input v-model="keyword" :placeholder="department?'搜索询盘编号、客户、产品或规格':'搜索编号、客户、产品或规格'" clearable @change="loadList"/><el-select v-model="state" clearable placeholder="全部状态" @change="loadList"><el-option v-for="o in states" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-button @click="loadList">刷新</el-button><el-button v-if="view==='SALES'&&canWrite" type="primary" @click="openCreateDialog">上传或新建客户询盘</el-button></div>
+   <el-table class="inquiry-list-table" :data="items" stripe @row-dblclick="open"><el-table-column label="询盘编号" width="170"><template #default="{row}"><span class="inquiry-number">{{row.number}}</span></template></el-table-column><el-table-column prop="body.customer" label="客户" width="140" show-overflow-tooltip/><el-table-column prop="owner" label="负责销售" width="90"/><el-table-column label="产品项数" width="90"><template #default="{row}">{{row.body.products?.length||0}}</template></el-table-column><el-table-column v-if="department" label="总需求数量" width="115"><template #default="{row}">{{productTotal(row.body.products,'quantity','unit')}}</template></el-table-column><el-table-column v-if="view==='LOGISTICS'" label="总重量 / 总体积" min-width="180"><template #default="{row}">{{productTotal(row.body.products,'weight')}} / {{productTotal(row.body.products,'volume')}}</template></el-table-column><el-table-column v-if="department" prop="body.delivery" label="交货要求" width="110"/><el-table-column v-if="view==='LOGISTICS'" prop="body.loadingPort" label="装货港" min-width="120"/><el-table-column v-if="view==='LOGISTICS'" prop="body.destinationPort" label="目的港" min-width="120"/><el-table-column v-if="view==='LOGISTICS'" prop="body.incoterm" label="贸易条件" min-width="100"/><el-table-column v-if="department" :label="view==='PROCUREMENT'?'已提交工厂报价':'已提交物流报价'" width="125"><template #default="{row}">{{view==='PROCUREMENT'?row.procurementCount:row.logisticsCount}}</template></el-table-column><el-table-column label="提交时间" width="140"><template #default="{row}">{{displayTime(row.submittedAt)}}</template></el-table-column><el-table-column label="状态" width="85"><template #default="{row}"><el-tag effect="light" :type="row.state==='WITHDRAWN'?'info':row.state==='INQUIRING'?'success':'warning'">{{view==='QUOTATIONS'?offerStateLabel(row.id):stateLabel(row)}}</el-tag></template></el-table-column><el-table-column label="操作" width="155" align="center"><template #default="{row}"><el-button :link="!department" :plain="department" type="primary" @click="open(row)">{{view==='PROCUREMENT'?(row.procurementCount>0?'查看 / 继续报价':'录入工厂报价'):department?(row.logisticsCount>0?'查看 / 继续报价':'录入物流报价'):'打开详情 →'}}</el-button></template></el-table-column></el-table>
    <el-pagination class="list-pagination" v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="total" layout="total, sizes, prev, pager, next" @change="loadList"/>
   </el-card>
   <template v-else>
@@ -72,7 +72,7 @@ import {get,post} from '../api'
 import {isAxiosError} from 'axios'
 import InquiryProducts from '../components/InquiryProducts.vue'
 import CustomerOfferEditor from '../components/CustomerOfferEditor.vue'
-import ProcurementPageHeader from '../components/ProcurementPageHeader.vue'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import {onLive} from '../live'
 import {useAuthStore} from '../stores/auth'
 import type {InquiryTemplate} from '../lib/inquiryTemplates'
@@ -82,9 +82,9 @@ import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,pastePrices,char
 const props=defineProps<{view:'SALES'|'QUOTATIONS'|'PROCUREMENT'|'LOGISTICS'}>()
 const {t}=useI18n()
 const view=computed(()=>props.view),route=useRoute(),router=useRouter(),auth=useAuthStore()
-const title=computed(()=>view.value==='PROCUREMENT'?t('sourcing.title'):({SALES:'客户询盘',QUOTATIONS:'客户报价',LOGISTICS:'物流询价'}[view.value]||''))
+const title=computed(()=>view.value==='PROCUREMENT'?t('sourcing.title'):view.value==='LOGISTICS'?t('presalesShipping.workspaceTitle'):({SALES:'客户询盘',QUOTATIONS:'客户报价'}[view.value]||''))
 const moduleLabel=computed(()=>view.value==='PROCUREMENT'?'客户成交前':'运输报价')
-const subtitle=computed(()=>view.value==='PROCUREMENT'?t('sourcing.subtitle'):({SALES:'整理客户需求，提交询价并跟进处理进度。',QUOTATIONS:'查看采购与物流已提交的报价。',LOGISTICS:'查看客户运输需求，录入并提交运输报价。'}[view.value]||''))
+const subtitle=computed(()=>view.value==='PROCUREMENT'?t('sourcing.subtitle'):view.value==='LOGISTICS'?t('presalesShipping.workspaceHint'):({SALES:'整理客户需求，提交询价并跟进处理进度。',QUOTATIONS:'查看采购与物流已提交的报价。'}[view.value]||''))
 const department=computed(()=>view.value==='PROCUREMENT'||view.value==='LOGISTICS')
 const canWrite=computed(()=>auth.can(view.value==='SALES'?'sales:inquiry:write':view.value==='PROCUREMENT'?'procurement:sourcing:write':'shipping:sourcing:write'))
 const offerStates=ref<Record<string,{status:string;confirmedAt:string}>>({})
@@ -187,17 +187,17 @@ watch(view,()=>void initial())
 .heading-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .list-toolbar { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(31,65,91,.04); }
 .list-toolbar > .el-input { width: 320px; margin-right: auto; }
-.inquiry-workspace--procurement { --ink:#141817; --muted:#66727d; --line:#dfeaf0; --brand:#159fdc; }
-.inquiry-workspace--procurement .inquiry-list-panel { overflow:hidden; border-color:#dfeaf0; border-radius:14px; background:#fff; box-shadow:0 10px 28px rgb(20 24 23 / 5%); }
-.inquiry-workspace--procurement .list-toolbar { margin-bottom:14px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table) { margin-bottom:14px; border:0; border-radius:0; --el-table-header-bg-color:#eef9fe; --el-table-header-text-color:#24323a; --el-table-row-hover-bg-color:#f0fbf6; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table th.el-table__cell) { height:48px; border-bottom-color:#d9edf5; font-weight:650; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table td.el-table__cell) { padding:13px 0; border-bottom-color:#e7eff3; color:#141817; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table .el-table__row--striped td.el-table__cell) { background:#fbfdfe; }
+.inquiry-workspace--operations { --ink:#141817; --muted:#66727d; --line:#dfeaf0; --brand:#159fdc; }
+.inquiry-workspace--operations .inquiry-list-panel { overflow:hidden; border-color:#dfeaf0; border-radius:14px; background:#fff; box-shadow:0 10px 28px rgb(20 24 23 / 5%); }
+.inquiry-workspace--operations .list-toolbar { margin-bottom:14px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.inquiry-workspace--operations :deep(.inquiry-list-table) { margin-bottom:14px; border:0; border-radius:0; --el-table-header-bg-color:#eef9fe; --el-table-header-text-color:#24323a; --el-table-row-hover-bg-color:#f0fbf6; }
+.inquiry-workspace--operations :deep(.inquiry-list-table th.el-table__cell) { height:48px; border-bottom-color:#d9edf5; font-weight:650; }
+.inquiry-workspace--operations :deep(.inquiry-list-table td.el-table__cell) { padding:13px 0; border-bottom-color:#e7eff3; color:#141817; }
+.inquiry-workspace--operations :deep(.inquiry-list-table .el-table__row--striped td.el-table__cell) { background:#fbfdfe; }
 .inquiry-number { color:#159fdc; font-weight:600; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table .el-button--primary.is-plain) { color:#159fdc; border-color:#9bdcff; background:#f4fbff; }
-.inquiry-workspace--procurement :deep(.inquiry-list-table .el-button--primary.is-plain:hover) { color:#141817; border-color:#4ac1ff; background:#4ac1ff; }
-.inquiry-workspace--procurement .list-pagination { justify-content:flex-end; margin:0; }
+.inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain) { color:#159fdc; border-color:#9bdcff; background:#f4fbff; }
+.inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain:hover) { color:#141817; border-color:#4ac1ff; background:#4ac1ff; }
+.inquiry-workspace--operations .list-pagination { justify-content:flex-end; margin:0; }
 .inquiry-workspace :deep(.el-table) { border: 1px solid var(--line); border-radius: 12px; --el-table-header-bg-color: #f4f8fa; --el-table-header-text-color: #486174; --el-table-row-hover-bg-color: #f0f8fa; }
 .inquiry-workspace :deep(.el-table th.el-table__cell) { height: 48px; font-weight: 600; }
 .inquiry-workspace :deep(.el-table td.el-table__cell) { padding: 13px 0; color: #334155; }

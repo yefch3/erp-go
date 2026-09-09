@@ -56,11 +56,13 @@ export const router = createRouter({
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
         { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
-        { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
+        // 旧“出运单”入口已并入船期管理，保留重定向兼容历史书签。
+        { path: 'shipments', redirect: '/shipping/schedules' },
         // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
         // 走各自案件详情里的只读“船运协作”，不直接进入这里。
         { path: 'shipping', redirect: '/shipping/sourcing' },
         { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
+        { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。

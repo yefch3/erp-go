@@ -313,7 +313,7 @@
           </el-dropdown>
         </div>
       </el-header>
-      <el-main class="content" :class="{ 'content--procurement': procurementActive }">
+      <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
         <router-view />
       </el-main>
     </el-container>
@@ -462,16 +462,16 @@ const salesActive = computed(() =>
   route.path.startsWith('/contract-execution'),
 )
 
-// 物流：货离开公司之后的事。
+// 物流分成售前询价、合同执行后的实单询价和正式船期管理。
 const logisticsItems = computed(() => [
-  ...(auth.can('export:shipment:read')
-    ? [{ path: '/shipments', label: t('menu.shipments') }]
-    : []),
   ...(auth.can('shipping:sourcing:read')
     ? [{ path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
     : []),
   ...(auth.can('shipping:schedule:read')
-    ? [{ path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') }]
+    ? [
+        { path: '/shipping/requirements', label: t('shipping.executionInquiryTitle') },
+        { path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') },
+      ]
     : []),
 ])
 const hasLogistics = computed(() => logisticsItems.value.length > 0)
@@ -530,12 +530,13 @@ const procurementItems = computed(() => [
 ].filter((item) => item.allowed))
 
 // Element Plus teleports dialogs and drawers under <body>, outside .content.
-// Mark procurement routes on the body so those overlays inherit the same palette.
-const procurementThemeClass = 'procurement-theme'
-watch(procurementActive, (active) => {
-  document.body.classList.toggle(procurementThemeClass, active)
+// Procurement and logistics share one palette, including those overlays.
+const operationsThemeClass = 'operations-theme'
+const operationsThemeActive = computed(() => procurementActive.value || logisticsActive.value)
+watch(operationsThemeActive, (active) => {
+  document.body.classList.toggle(operationsThemeClass, active)
 }, { immediate: true })
-onUnmounted(() => document.body.classList.remove(procurementThemeClass))
+onUnmounted(() => document.body.classList.remove(operationsThemeClass))
 
 function isSalesItemActive(path: string) {
   if (path === '/sales/inquiries') return route.path === path || route.path.startsWith('/sales/inquiries/')
@@ -870,7 +871,8 @@ async function changePassword() {
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
 .topbar { justify-content: flex-end; }
 .content { background: #f3f6fa; }
-.content--procurement {
+.content--procurement,
+.content--logistics {
   --el-color-primary: #4ac1ff;
   --el-color-primary-light-3: #7fd2ff;
   --el-color-primary-light-5: #a5e0ff;
@@ -883,37 +885,37 @@ async function changePassword() {
   --el-bg-color: #fff;
   background: #f5f7fb;
 }
-.content--procurement :deep(.workspace-heading) {
+:is(.content--procurement, .content--logistics) :deep(.workspace-heading) {
   border-color: #d5edf7;
   background: linear-gradient(120deg, #eefaff 0%, #fff 62%, #effcf5 100%);
 }
-.content--procurement :deep(.module-chip) {
+:is(.content--procurement, .content--logistics) :deep(.module-chip) {
   border-color: #9bdcff;
   color: #138fc9;
   background: #eefaff;
 }
-.content--procurement :deep(.el-table) {
+:is(.content--procurement, .content--logistics) :deep(.el-table) {
   --el-table-header-bg-color: #eef9fe;
   --el-table-header-text-color: #24323a;
   --el-table-row-hover-bg-color: #f0fbf6;
 }
-.content--procurement :deep(.el-card) {
+:is(.content--procurement, .content--logistics) :deep(.el-card) {
   border-color: #dfeaf0;
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 10px 28px rgb(20 24 23 / 5%);
 }
-.content--procurement :deep(.el-radio-button__inner) {
+:is(.content--procurement, .content--logistics) :deep(.el-radio-button__inner) {
   border-color: #d8e8ef;
   color: #53636d;
 }
-.content--procurement :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+:is(.content--procurement, .content--logistics) :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
   border-color: #4ac1ff;
   background: #4ac1ff;
   color: #141817;
   box-shadow: -1px 0 0 0 #4ac1ff;
 }
-:global(body.procurement-theme) {
+:global(body.operations-theme) {
   --el-color-primary: #4ac1ff;
   --el-color-primary-light-3: #7fd2ff;
   --el-color-primary-light-5: #a5e0ff;
@@ -924,8 +926,8 @@ async function changePassword() {
   --el-color-success-light-9: #eefbf4;
   --el-text-color-primary: #141817;
 }
-:global(body.procurement-theme .el-dialog),
-:global(body.procurement-theme .el-drawer) {
+:global(body.operations-theme .el-dialog),
+:global(body.operations-theme .el-drawer) {
   border: 1px solid #dfeaf0;
   background: #fff;
   box-shadow: 0 18px 48px rgb(20 24 23 / 14%);
