@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="requirements-page">
     <div class="page-head">
       <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
@@ -50,7 +50,7 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button :type="row.waitingRequote ? 'warning' : 'primary'" plain @click="openBatchReview(row)">
+            <el-button :type="row.waitingRequote ? 'primary' : 'success'" plain @click="openBatchReview(row)">
               {{ row.waitingRequote ? t('requirements.reviewPendingRequote') : t('requirements.prepareOrder') }}
             </el-button>
           </template>
@@ -262,6 +262,7 @@ import { useRouter } from 'vue-router'
 import { get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import { purchaseBatchKey } from '../lib/requirements'
 
 interface Requirement {
   id: string
@@ -527,10 +528,6 @@ function onSelect(rows: Requirement[]) {
   selected.value = rows
 }
 
-function purchaseBatchKey(row: Requirement): string {
-  return row.quotationId || row.quotationNo || row.contractId || row.contractNo || `MANUAL-${row.id}`
-}
-
 // The order itself is raised on the purchase-order page — one dialog, not two
 // that can drift apart. This carries the picked lines across so the buyer does
 // not have to find them again by product name.
@@ -667,15 +664,31 @@ onMounted(load)
 </script>
 
 <style scoped>
+.requirements-page {
+  --proc-blue: #4ac1ff;
+  --proc-green: #1fbf6c;
+  --proc-ink: #141817;
+  --proc-canvas: #f5f7fb;
+  --proc-surface: #fff;
+  --el-color-primary: var(--proc-blue);
+  --el-color-success: var(--proc-green);
+  color: var(--proc-ink);
+}
 .page-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
   margin-bottom: 16px;
+  padding: 18px 20px;
+  border: 1px solid #d8eef8;
+  border-left: 4px solid var(--proc-blue);
+  border-radius: 12px;
+  background: linear-gradient(110deg, #eefaff 0%, var(--proc-surface) 64%, #effcf5 100%);
 }
 .page-head h2 {
   margin: 0;
-  font-size: 20px;
+  color: var(--proc-ink);
+  font-size: 22px;
 }
 .grow {
   flex: 1;
@@ -683,7 +696,27 @@ onMounted(load)
 .head-note,
 .sub {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: #66727d;
+}
+.head-note {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eaf8ff;
+}
+.requirements-page :deep(.el-card) {
+  border-color: #dfeaf0;
+  border-radius: 12px;
+  background: var(--proc-surface);
+  box-shadow: 0 10px 28px rgb(20 24 23 / 5%);
+}
+.requirements-page :deep(.el-table) {
+  --el-table-header-bg-color: #eef9fe;
+  --el-table-header-text-color: #24323a;
+  --el-table-row-hover-bg-color: #f0fbf6;
+}
+.requirements-page :deep(.el-table th.el-table__cell) {
+  border-bottom-color: #d9edf5;
+  font-weight: 650;
 }
 .filters {
   display: flex;
@@ -703,7 +736,7 @@ onMounted(load)
   font-weight: 500;
 }
 .batch-no {
-  color: var(--el-color-primary);
+  color: #159fdc;
   font-weight: 600;
 }
 .batch-products {
@@ -714,7 +747,7 @@ onMounted(load)
   margin-top: 14px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
-  background: var(--el-fill-color-lighter);
+  background: #f5fbf8;
 }
 .supplier-group-head {
   display: flex;

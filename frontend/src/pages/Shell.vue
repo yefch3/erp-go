@@ -313,7 +313,7 @@
           </el-dropdown>
         </div>
       </el-header>
-      <el-main class="content">
+      <el-main class="content" :class="{ 'content--procurement': procurementActive }">
         <router-view />
       </el-main>
     </el-container>
@@ -862,6 +862,32 @@ async function changePassword() {
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
 .topbar { justify-content: flex-end; }
 .content { background: #f3f6fa; }
+.content--procurement {
+  --el-color-primary: #4ac1ff;
+  --el-color-primary-light-3: #7fd2ff;
+  --el-color-primary-light-5: #a5e0ff;
+  --el-color-primary-light-7: #c9edff;
+  --el-color-primary-light-8: #ddf4ff;
+  --el-color-primary-light-9: #eefaff;
+  --el-color-success: #1fbf6c;
+  --el-color-success-light-9: #eefbf4;
+  --el-text-color-primary: #141817;
+  --el-bg-color: #fff;
+  background: #f5f7fb;
+}
+.content--procurement :deep(.workspace-heading) {
+  border-color: #d5edf7;
+  background: linear-gradient(120deg, #eefaff 0%, #fff 62%, #effcf5 100%);
+}
+.content--procurement :deep(.module-chip) {
+  border-color: #9bdcff;
+  color: #138fc9;
+  background: #eefaff;
+}
+.content--procurement :deep(.el-table) {
+  --el-table-header-bg-color: #eef9fe;
+  --el-table-row-hover-bg-color: #f0fbf6;
+}
 @media (max-width: 1000px) {
   .shell { position: relative; }
   .side { display: none; }
