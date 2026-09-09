@@ -72,7 +72,7 @@
   }
 }
 
-/* 拖多封邮件时手上跟着的那个数字牌。
+/* 拖邮件时手上跟着的那张小卡片，照 Foxmail 那个小信封。
    写在全局而不是组件里：setDragImage 要一个**已经在文档里**的元素，所以它
    是 append 到 body 上的，组件的 scoped 样式够不着它。
    拖影是同步截的一张图，所以它必须在这一帧里就已经是最终样子——不能靠
@@ -81,12 +81,20 @@
   position: fixed;
   top: -1000px;
   left: -1000px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 小。默认拖影是整行的快照（三行式之后是 340×86 的一大块），跟着光标走
+     的时候把左栏那几格文件夹遮掉大半——而那正是此刻要看清的地方。 */
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color);
+  background: #fff;
+  color: var(--el-text-color-primary);
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
 }

@@ -138,23 +138,24 @@
              的 mailboxRail 里。固定视图用文案，自建的用服务器上的名字；能改名
              删除的只有自建的。 -->
         <template v-for="item in railFor(b.id)" v-else :key="item.key">
-          <!-- 收件箱能接：把信从自建文件夹拖回来。别的固定视图不接——
-               星标/归档/垃圾/回收站是「状态」，不是「位置」，MOVE 到不了
-               它们那儿（那几件事走的是标记接口，不是移动接口）。 -->
+          <!-- 哪几格接得住由 dropTargetFor 说了算（收件箱、垃圾邮件、回收站、
+               归档接，已发送/草稿箱/星标不接，各自的理由写在那儿）。这里
+               一律挂上监听，接不接由它回 null 决定——把判断散到模板里，
+               下次加一格就又要在两处改。 -->
           <button
             v-if="!item.name"
             type="button"
             class="folder sub"
             :class="{
               on: modelValue === b.id && folder === item.key,
-              droppable: item.key === 'inbox' && canDrop(b.id),
-              over: item.key === 'inbox' && over === `${b.id}:0`,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
             }"
             :title="item.hostName"
             @click="emit('select', b.id, item.key)"
-            @dragover="item.key === 'inbox' && onDragOver(b.id, 0, $event)"
-            @dragleave="item.key === 'inbox' && onDragLeave(b.id, 0)"
-            @drop="item.key === 'inbox' && onDrop(b.id, 0, $event)"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
           >
             <el-icon class="ficon"><component :is="item.icon" /></el-icon>
             <span class="fname">{{ t(`emails.folders.${item.key}`) }}</span>
@@ -170,9 +171,16 @@
             v-else-if="!item.custom"
             type="button"
             class="folder sub"
-            :class="{ on: modelValue === b.id && folder === item.key }"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
+            }"
             :title="item.hostName"
             @click="emit('select', b.id, item.key)"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
           >
             <el-icon class="ficon"><Folder /></el-icon>
             <span class="fname">{{ item.name }}</span>
@@ -182,12 +190,12 @@
             class="folder sub custom"
             :class="{
               on: modelValue === b.id && folder === item.key,
-              droppable: canDrop(b.id),
-              over: over === `${b.id}:${item.folder!.id}`,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
             }"
-            @dragover="onDragOver(b.id, item.folder!.id, $event)"
-            @dragleave="onDragLeave(b.id, item.folder!.id)"
-            @drop="onDrop(b.id, item.folder!.id, $event)"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
           >
             <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
               <el-icon class="ficon"><Folder /></el-icon>
@@ -274,14 +282,14 @@ import { get, post } from '../api'
 import { CaretRight, Star, SwitchButton, Folder } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
-import { canDropInto } from '../lib/dragMails'
+import { canDropInto, dropTargetFor, type DropTarget } from '../lib/dragMails'
 import {
   expandedAfterSwitch,
   parseExpanded,
   splitFolders,
   toggleExpanded,
   type FolderDef, mailboxRail } from '../lib/mailFolders'
-import type { CustomFolder } from '../lib/mailFolders'
+import type { CustomFolder, RailItem } from '../lib/mailFolders'
 
 export interface Mailbox {
   id: number
@@ -338,8 +346,8 @@ const emit = defineEmits<{
   createFolder: [accountId: number]
   renameFolder: [folder: CustomFolder]
   deleteFolder: [folder: CustomFolder]
-  /** 把拖着的那几封放进这个文件夹。folderId = 0 表示收件箱。 */
-  dropMails: [accountId: number, folderId: number]
+  /** 把拖着的那几封放进这一格。做什么由 DropTarget 说（挪 or 标）。 */
+  dropMails: [accountId: number, target: DropTarget]
 }>()
 
 const { t } = useI18n()
@@ -351,28 +359,39 @@ const adding = ref(false)
 /** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
 const over = ref('')
 
-/** 这个信箱的文件夹现在接不接得住。规则和理由见 lib/dragMails。 */
-const canDrop = (accountId: number) => canDropInto(props.dragAccounts ?? [], accountId)
+/** 这个信箱的这一格，放下之后要做什么。null = 不接。规则见 lib/dragMails。 */
+function targetOf(accountId: number, item: RailItem): DropTarget | null {
+  if (!canDropInto(props.dragAccounts ?? [], accountId)) return null
+  return dropTargetFor(item.key, {
+    folderId: item.folder?.id,
+    // 左栏那个「垃圾邮件」是固定视图，不带 id：从这个箱的文件夹清单里按
+    // 角色找出真正的那个。服务器没有垃圾箱的账号找不到，那一格就不接。
+    junkFolderId: (props.hostFolders[accountId] ?? []).find((f) => f.role === 'JUNK')?.id,
+  })
+}
 
-const dropKey = (accountId: number, folderId: number) => `${accountId}:${folderId}`
+const canDrop = (accountId: number, item: RailItem) => targetOf(accountId, item) !== null
 
-function onDragOver(accountId: number, folderId: number, ev: DragEvent) {
-  if (!canDrop(accountId)) return
+const dropKey = (accountId: number, key: string) => `${accountId}:${key}`
+
+function onDragOver(accountId: number, item: RailItem, ev: DragEvent) {
+  if (!canDrop(accountId, item)) return
   // preventDefault 才算「我接」——不调用的话浏览器一律当成不接，光标是禁止符。
   ev.preventDefault()
   if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
-  over.value = dropKey(accountId, folderId)
+  over.value = dropKey(accountId, item.key)
 }
 
-function onDragLeave(accountId: number, folderId: number) {
-  if (over.value === dropKey(accountId, folderId)) over.value = ''
+function onDragLeave(accountId: number, item: RailItem) {
+  if (over.value === dropKey(accountId, item.key)) over.value = ''
 }
 
-function onDrop(accountId: number, folderId: number, ev: DragEvent) {
+function onDrop(accountId: number, item: RailItem, ev: DragEvent) {
   over.value = ''
-  if (!canDrop(accountId)) return
+  const target = targetOf(accountId, item)
+  if (!target) return
   ev.preventDefault()
-  emit('dropMails', accountId, folderId)
+  emit('dropMails', accountId, target)
 }
 
 const split = computed(() => splitFolders(props.folders))
