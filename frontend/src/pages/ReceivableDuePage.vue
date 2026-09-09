@@ -800,40 +800,44 @@ onMounted(() => {
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #dce8ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(25, 72, 91, .035);
 }
 .metric {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 88px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: 62px;
   overflow: hidden;
-  padding: 14px 38px 14px 16px;
-  border: 1px solid #dceaf0;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 7px 20px rgba(25, 72, 91, .04);
+  padding: 10px 16px 10px 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
+.metric + .metric { border-left: 1px solid #e5edf1; }
 .metric::before {
   position: absolute;
-  top: 16px;
-  right: 17px;
-  width: 7px;
-  height: 7px;
+  top: 17px;
+  left: 16px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #4ac1ff;
   content: '';
 }
 .metric.is-alarm {
-  border-color: #f2c9cc;
-  background: #fff;
+  background: #fffafb;
 }
 .metric.is-alarm::before { background: #ff6b72; }
 .metric.is-warn {
-  border-color: #ecdab4;
-  background: #fff;
+  background: #fffdf9;
 }
 .metric.is-warn::before { background: #e5a33b; }
 .metric-label {
@@ -842,13 +846,17 @@ onMounted(() => {
 }
 .metric-value {
   color: #141817;
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .metric-hint {
+  grid-column: 1 / -1;
+  overflow: hidden;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-placeholder);
 }
 .panel {
@@ -927,6 +935,7 @@ onMounted(() => {
 }
 @media (max-width: 768px) {
   .metrics { grid-template-columns: 1fr; }
+  .metric + .metric { border-top: 1px solid #e5edf1; border-left: 0; }
   .panel { padding: 12px; }
   .filters { align-items: stretch; }
   .filters :deep(.el-input) { width: 100%; max-width: none !important; }
