@@ -1300,17 +1300,29 @@ RETURNING id, account_id, folder, imap_uid, message_id;
 -- which. A mail rescued from junk (not_junk) is a decision the other way and
 -- is included.
 --
+-- 也横跨**信箱**。这一条改过两次，值得记下来为什么落在这里：
+--
+--   一开始不分箱——那时一个人只有一个箱，"分箱"根本不存在。
+--   多绑之后收紧成「只搜当前这个箱」，理由是列表明明只列一个箱的信，搜索
+--   却横跨两个箱，看着像串味。
+--   现在放开成「搜手上开着的全部箱」。收紧那一版把问题看反了：搜索存在的
+--   意义正是**不知道东西在哪儿**。一个人有 263 和 Gmail 两个箱，记得客户
+--   说过"钢卷"，不记得那封信落在哪个箱——收紧之后他得站到每个箱里各搜
+--   一遍，也就是让人代替搜索干活。
+--
+-- 搜哪些箱由调用方给，且只能是**令牌验过的那些**（见网关 searchMail）。
+-- 空数组 = 不限，留给一个箱都没绑的人。
+--
 -- name: SearchMail :many
 WITH hits AS (
-    SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-           snippet, search_text, is_read, is_starred, has_attachments,
+    SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+           subject, snippet, search_text, is_read, is_starred, has_attachments,
            received_at, sent_at
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
-      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
-      AND (sqlc.narg(account_id)::bigint IS NULL
-           OR account_id = sqlc.narg(account_id)::bigint)
+      AND (cardinality(sqlc.arg(account_ids)::bigint[]) = 0
+           OR account_id = ANY(sqlc.arg(account_ids)::bigint[]))
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -1328,8 +1340,11 @@ WITH hits AS (
 -- The match window is cut here, after LIMIT, so lowering a whole mail body to
 -- find the offset happens for the fifty rows on screen and not for every row
 -- the scan touched.
-SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-       is_read, is_starred, has_attachments, received_at, sent_at,
+-- account_id 跟着每一行回去：结果横跨信箱之后，「这封信在哪个箱」和「在哪个
+-- 文件夹」是同一类信息——不说的话，一列混着两个箱的信而没有任何区分。
+-- 界面还要用它：点开一封别的箱的信之前得先换成那个箱的令牌。
+SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+       subject, is_read, is_starred, has_attachments, received_at, sent_at,
        CASE
            WHEN position(lower(sqlc.arg(keyword)::text) in lower(search_text)) > 0
            THEN substring(search_text
@@ -1353,8 +1368,8 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND (sqlc.narg(account_id)::bigint IS NULL
-       OR account_id = sqlc.narg(account_id)::bigint)
+  AND (cardinality(sqlc.arg(account_ids)::bigint[]) = 0
+       OR account_id = ANY(sqlc.arg(account_ids)::bigint[]))
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
   AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%';

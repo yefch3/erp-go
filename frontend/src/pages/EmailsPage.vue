@@ -19,6 +19,24 @@
       >
         {{ t('emails.compose') }}
       </el-button>
+      <!-- 搜索在左栏，不在列表上方——因为它**不属于任何一个文件夹**。
+           摆在列表头上的那些天，它看着像「筛这一列」，而它做的是「翻遍所有
+           信箱所有文件夹」，两件事差得远。左栏是这一页里唯一比文件夹更高
+           的位置，Foxmail、Gmail、Outlook 都把它放在这儿。
+
+           锁着的时候不出现：搜索要的正是令牌。 -->
+      <el-input
+        v-if="!locked && !isListFilterView"
+        v-model="keyword"
+        class="rail-search"
+        :placeholder="t('emails.searchAll')"
+        clearable
+        @keyup.enter="reload"
+        @clear="reload"
+      >
+        <template #prefix>🔍</template>
+      </el-input>
+
       <!-- No colleague picker here. This page is "my mail" and stays that
            way; reading somebody else's is a separate, read-only surface. A
            filter here also let a supervisor requeue or abandon a colleague's
@@ -698,17 +716,25 @@
           </el-button>
         </template>
         <template v-else>
-        <h2>{{ t(`emails.folders.${folder}`) }}</h2>
+        <!-- 搜索的时候标题说的是搜索，不是文件夹。列表里此刻是所有信箱、
+             所有文件夹的命中，顶着「收件箱」三个字会让人以为收件箱里就这
+             么几封。 -->
+        <h2 v-if="isSearching">
+          {{ t('emails.searchResults', { q: keyword.trim() }) }}
+        </h2>
+        <h2 v-else>{{ t(`emails.folders.${folder}`) }}</h2>
+        <el-button v-if="isSearching" link @click="clearSearch">
+          {{ t('emails.searchClear') }}
+        </el-button>
         <span class="grow" />
-        <!-- Not every folder is searchable. The scheduled list is short by
-             nature and the query behind it takes no keyword; a box that
-             silently ignores what is typed into it is worse than none. -->
-        <!-- 草稿箱同理，只是一直漏在这条规矩外面：ListDrafts 不收关键词，
-             所以在草稿箱里搜什么、按几次回车，回来的都是整份草稿列表。 -->
-        <template v-if="isSearchable">
+        <!-- 待处理和拒收名单的筛选框留在这儿，没跟着搬到左栏。
+             左栏那个搜的是**邮件**；这两张表一个是 ERP 自己的投递记录、
+             一个是拒收地址名单，都不是邮件，全局搜索到不了它们。同一个框
+             在这两处做另一件事，才是真的会让人误解的那种复用。 -->
+        <template v-if="isListFilterView">
           <el-input
             v-model="keyword"
-            :placeholder="t(`emails.search.${searchKey}`)"
+            :placeholder="t(`emails.search.${folder}`)"
             clearable
             style="width: 260px"
             @keyup.enter="reload"
@@ -718,7 +744,7 @@
         </template>
         <!-- The mailbox is polled every couple of minutes; this is for the
              person who just told a customer "resend it" and is waiting. -->
-        <el-button v-if="folder === 'inbox'" :loading="syncing" @click="syncNow">
+        <el-button v-if="folder === 'inbox' && !isSearching" :loading="syncing" @click="syncNow">
           {{ t('emails.syncNow') }}
         </el-button>
         <!-- Clears the unread marks of this view only — the button sits above
@@ -731,8 +757,11 @@
         <!-- Junk out in one click — into the trash, not oblivion. The mail
              worth finding in a spam folder is the customer enquiry the filter
              got wrong, and that is noticed the next day. -->
+        <!-- 搜索时不出现：那两个按钮清的是**整个文件夹**，而此刻 total 数
+             的是命中数。顶着「3 封」按下去清掉整个垃圾箱，是这一栏里最不能
+             出的那种错。 -->
         <el-button
-          v-if="folder === 'junk' && total > 0"
+          v-if="folder === 'junk' && total > 0 && !isSearching"
           type="danger"
           plain
           :loading="emptying"
@@ -741,7 +770,7 @@
           {{ t('emails.emptyJunk') }}
         </el-button>
         <el-button
-          v-if="folder === 'trash' && total > 0"
+          v-if="folder === 'trash' && total > 0 && !isSearching"
           type="danger"
           plain
           :loading="emptying"
@@ -756,11 +785,13 @@
       </div>
 
       <!-- ------------------------ inbox / starred / archive / junk / trash -->
-      <template v-if="isInboundView">
+      <!-- 搜索时也走这一块，站在哪个文件夹都一样：命中来自所有文件夹，
+           拿草稿箱那张表去渲染它们没有意义。 -->
+      <template v-if="isSearching || isInboundView">
         <!-- Spam is the host's verdict, shown read-only as a safety net: the
              mis-flagged customer inquiry is the one mail worth finding here. -->
         <el-alert
-          v-if="folder === 'trash'"
+          v-if="folder === 'trash' && !isSearching"
           type="info"
           :closable="false"
           show-icon
@@ -769,7 +800,7 @@
           {{ t('emails.trashRetention') }}
         </el-alert>
         <el-alert
-          v-if="folder === 'junk'"
+          v-if="folder === 'junk' && !isSearching"
           type="info"
           :closable="false"
           show-icon
@@ -780,7 +811,9 @@
         <MailList
           v-model:selected="picked"
           :mails="inbound"
-          :folder="folder"
+          :accounts="mailboxLabels"
+          :current-account="currentAccount"
+          :folder="isSearching ? 'inbox' : folder"
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
@@ -1336,6 +1369,7 @@ import {
   initialMailbox,
   clearAll,
   forgetMailbox,
+  searchScopeHeader,
   unlockedMailboxes,
   useMailbox,
   type VerifyResponse,
@@ -1555,36 +1589,64 @@ const isKeysetView = computed(
 )
 // Junk and the trash get a delete-everything button instead: marking a spam
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
+// 搜索时也不出现，和「清空垃圾箱」同一个理由，只是后果更隐蔽：那两个按钮
+// 至少会弹一句确认，这一个按下去就把**整个文件夹**标成已读了——而屏幕上
+// 摆着的是几封跨文件夹、跨信箱的命中。按钮自己的注释写着「它做的是这个列表
+// 显示的事」，搜索一开这句话就不成立了。
 const canMarkAllRead = computed(
-  () => isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash',
+  () => isInboundView.value && !isSearching.value
+    && folder.value !== 'junk' && folder.value !== 'trash',
 )
-// 后端真的会按关键词过滤的文件夹。定时和草稿的查询都不收关键词，给它们一个
-// 搜索框只是让人对着一个不起作用的框反复按回车。
-const isSearchable = computed(
-  () => folder.value !== 'scheduled' && folder.value !== 'drafts',
-)
-const searchKey = computed(() => {
-  if (folder.value === 'sent') return 'sent'
-  if (isInboundView.value) return 'inbox'
-  return folder.value
-})
-
 const keyword = ref('')
 
 // Two characters, matching the server's floor. One character matches most of
 // the mailbox, which is not a result set — it is the mailbox with extra steps.
 // Counted in characters rather than bytes, because one Chinese character is a
 // word's worth of meaning.
+//
+// **几乎不再看站在哪个文件夹。** 从前这里加着 isInboundView，因为搜索框长
+// 在列表头上，一个文件夹一个框；框挪到左栏之后它就是这一页唯一的搜索，站在
+// 草稿箱里打字也该搜——搜的本来就不是"这个文件夹"。
+//
+// 例外是下面那两张不是邮件的表。
 const isSearching = computed(
-  () => isInboundView.value && [...keyword.value.trim()].length >= 2,
+  () => !isListFilterView.value && [...keyword.value.trim()].length >= 2,
 )
+
+// 这两张表不是邮件：待处理是 ERP 自己的投递记录，拒收名单是一串地址。
+// 全局搜索翻的是收到的信，到不了它们，所以它们各自留着自己的筛选框。
+const isListFilterView = computed(
+  () => folder.value === 'attention' || folder.value === 'suppressions',
+)
+
+// 退出搜索：清掉关键词，回到刚才那个文件夹。
+//
+// 单独一个按钮，因为清空输入框那个小叉在左栏里，而人的眼睛此刻在右边的
+// 结果上。
+function clearSearch() {
+  keyword.value = ''
+  reload()
+}
+
+// 信箱号 → 地址。搜索结果横跨信箱，每一行得说自己是哪个箱的。
+const mailboxLabels = computed(() => {
+  const out: Record<number, string> = {}
+  for (const b of mailboxes.value) out[b.id] = b.email
+  return out
+})
 // 列表按哪一列排。地址栏说了算（applyRoute 写它），这里只是镜像。
 const sort = ref<MailSort>(DEFAULT_SORT)
 const sortSide = computed(() => (folder.value === 'sent' ? 'sent' : 'inbox'))
 const listSort = computed(() => sortFor(sortSide.value, sort.value))
-// 排序栏给哪几列。收件箱带着关键词时不给：搜索走的是另一条按会话匹配的
-// 查询，服务端拒绝在它上面再排序——一条点了会报错的排序栏比没有更糟。
+// 排序栏给哪几列。**搜索时一列都不给**：搜索走的是另一条查询，那条只按
+// 时间倒序回，请求里根本没有排序参数——排序栏摆在那儿，点了什么都不会变，
+// 而箭头还会翻个面，看着像"排了但排错了"。
+//
+// 已发送从前是个例外（那条查询搜索和排序可以同时用），而搜索框搬到左栏
+// 之后，站在已发送里打字走的也是全局搜索那条路了——例外跟着消失，这里
+// 不再单开一条 return。
 const sortFields = computed<SortField[]>(() => {
+  if (isSearching.value) return []
   if (folder.value === 'sent') return sortFieldsFor('sent')
   if (!isInboundView.value || keyword.value.trim()) return []
   return sortFieldsFor('inbox')
@@ -2413,6 +2475,10 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
+// 点开搜索结果里别的箱的那封信时置上。见 openInbound：那一次切箱是跟着信
+// 走的，令牌和导航都已经在那儿办妥了，下面那个 watch 靠它分辨。
+let keepSearchOnSwitch = false
+
 // 切信箱 = 重新开始翻这个箱。
 //
 // 游标必须清掉：它编的是**上一个箱**的排序位置，带着它翻新箱会从一个毫无
@@ -2421,8 +2487,19 @@ function reload() {
 // 也写进地址栏。仓库的习惯是可分享的状态放 URL，而这里还有一层：不写的话
 // 刷新会回到默认箱，而人以为自己还在另一个箱里；浏览器后退更糟——它会退回
 // 一个属于**上一个箱**的游标，然后拿它去翻当前这个箱。
+//
+// 例外是「跟着搜索结果走」的那一次，见开头第一个分支。
 watch(currentAccount, (now, before) => {
   if (!before || now === before) return
+  if (keepSearchOnSwitch) {
+    keepSearchOnSwitch = false
+    // 令牌和导航都在 openInbound 里办妥了，列表要留着搜索结果，所以这里
+    // 不重新导航、不清关键词。只补两样跟着「当前这个箱」走的东西。
+    // 自建文件夹不用管：上面那个 watch 单独在做。
+    refreshUnread()
+    checkSyncHealth()
+    return
+  }
   // 换一把令牌。**必须在发请求之前**——令牌决定服务端给你看哪个箱
   // （见网关 requireMailUnlock），带着旧箱那把去拉新箱的列表，拿回来的
   // 还是旧箱的信。
@@ -2490,15 +2567,24 @@ async function load() {
       // different shape — not the folder list with a parameter. Gmail works
       // the same way, and for the same reason: somebody who remembers a
       // phrase does not remember where they filed it.
+      //
+      // 它也横跨**信箱**，同一个理由再往上一层：不记得落在哪个文件夹的人，
+      // 更不记得落在哪个箱。所以这一条请求要报上手上开着的全部令牌——服务端
+      // 没有「这个人有哪些令牌」的索引，范围只能由持有者报、由服务端逐把核。
       const d = await get<{
-        hits: { mail: InboundMail; folder: string; matchSnippet: string }[]
+        hits: {
+          mail: InboundMail
+          folder: string
+          matchSnippet: string
+          accountId?: number | string
+        }[]
         meta: { total: string }
         nextCursor: string
       }>('/mail-search', {
         page_size: pageSize,
         keyword: keyword.value,
         cursor: applied?.cursor ?? '',
-      })
+      }, { headers: { 'X-Mail-Unlock-All': searchScopeHeader() } })
       inbound.value = (d.hits ?? []).map((h) => ({
         ...h.mail,
         // The text around the hit replaces the opening line: showing the
@@ -2506,6 +2592,7 @@ async function load() {
         // makes the result look like a mistake.
         snippet: h.matchSnippet,
         matchFolder: h.folder,
+        matchAccount: Number(h.accountId ?? 0),
       }))
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -2594,6 +2681,25 @@ async function load() {
 
 // A row click is a navigation; the route watcher does the fetching.
 function openInbound(row: MailRow) {
+  // 搜索结果横跨信箱，所以点开一封之前可能要先**换到它所在的那个箱**。
+  //
+  // 不换的话，读的是 B 收到的信，而写信框的发件人还跟着 A——「读 B 的信、
+  // 从 A 回过去」正是按箱发信要消掉的那件事，而且不会有任何报错。附件预览、
+  // 会话串、标记已读也都跟着令牌走。
+  //
+  // 换不过去（那个箱刚被退出）就照常打开：正文按 owner 取得到，只是回信仍
+  // 用当前这个箱——比点了没反应强。
+  const acct = Number(row.matchAccount ?? 0)
+  if (isSearching.value && acct && acct !== currentAccount.value && useMailbox(acct)) {
+    // 这一次切箱是「跟着这封信走」，不是「换个箱重新开始翻」：关键词和
+    // 这一屏搜索结果都要留着。下面那个 watch 靠这个旗子分辨。
+    keepSearchOnSwitch = true
+    currentAccount.value = acct
+    // acct 一起写进地址栏：不写的话，刷新或后退会把 currentAccount 拉回
+    // 上一个箱，而令牌已经是这个箱的——左边高亮一个箱、右边是另一个箱的信。
+    pushState({ mail: row.id, acct: String(acct) })
+    return
+  }
   pushState({ mail: row.id })
 }
 
@@ -4319,6 +4425,17 @@ async function doUnsuppress(row: Suppression) {
 .compose {
   width: 100%;
   margin-bottom: 14px;
+}
+/* 搜索框在写信和信箱树之间。间距比 .compose 小一档：写信是这一栏的主按钮，
+   搜索紧跟着它，两者是一组「我要做点什么」，和下面那棵「我的东西在哪儿」
+   的树隔开。 */
+.rail-search {
+  margin-bottom: 12px;
+}
+.rail-search :deep(.el-input__prefix) {
+  /* 放大镜按emoji渲染时基线偏高，压回文字中线。 */
+  font-size: 13px;
+  opacity: 0.65;
 }
 /* 三栏：文件夹 | 列表 | 阅读区。
    pane 自己竖着排，是为了让同步横幅横跨两列——那条横幅说的是整个信箱的
