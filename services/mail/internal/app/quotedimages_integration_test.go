@@ -324,3 +324,90 @@ func TestTheSentCopySwitchOnlyReachesYourOwnMailbox(t *testing.T) {
 		t.Errorf("报的不是「不在你名下」：%v", err)
 	}
 }
+
+// 合并发送的信，会话里要显示**全部**收件人和抄送。
+//
+// 报上来的样子：客户在 Gmail 里看到「to erptest, Fangchen」，我们自己的会话
+// 里只有 erptest 一个，抄送那一行是空的。原因是 email_messages.to_email 只
+// 存了第一个人——合并发送一行代表好几个人，完整名单在 email_message_recipients
+// 上，而那张表以前没人读。
+func TestAMergedSendShowsEveryRecipientAndCc(t *testing.T) {
+	f := newFolderFixture(t, 9811)
+	ctx := context.Background()
+	const thread = "merged-cast"
+
+	var msgID int64
+	if err := f.pool.QueryRow(ctx, `INSERT INTO email_messages
+		(tenant_id, message_key, sender_id, sender_name, from_email, to_email,
+		 subject, body, body_format, thread_key, send_mode, status, queued_at, sent_at)
+		VALUES ($1, gen_random_uuid(), $2, '我', 'me@263.net', 'ana@buyer.example',
+		        '报价', '正文', 'TEXT', $3, 'MERGED', 'ACCEPTED', now(), now())
+		RETURNING id`, f.tenantID, f.me, thread).Scan(&msgID); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct{ kind, email, name string }{
+		{"TO", "ana@buyer.example", ""},
+		{"TO", "bob@buyer.example", "Bob"},
+		{"CC", "boss@buyer.example", "Boss"},
+	} {
+		if _, err := f.pool.Exec(ctx, `INSERT INTO email_message_recipients
+			(tenant_id, message_id, kind, email, name) VALUES ($1,$2,$3,$4,$5)`,
+			f.tenantID, msgID, r.kind, r.email, r.name); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := f.svc.GetMailThread(ctx, f.tenantID, f.me, 0, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("应该只有一封，拿到 %d 封", len(items))
+	}
+	it := items[0]
+
+	if !strings.Contains(it.ToAll, "ana@buyer.example") ||
+		!strings.Contains(it.ToAll, "bob@buyer.example") {
+		t.Errorf("收件人不全，只照着 to_email 显示了：%q", it.ToAll)
+	}
+	if !strings.Contains(it.Cc, "boss@buyer.example") {
+		t.Errorf("抄送丢了：%q", it.Cc)
+	}
+	// 名字有就带上，和 Gmail 一样显示成人而不是一串地址。
+	if !strings.Contains(it.ToAll, "Bob") {
+		t.Errorf("有名字却没显示：%q", it.ToAll)
+	}
+}
+
+// 分别发送的信没有明细行（一行本来就只对一个人），必须退回 to_email。
+//
+// 生产上 78 封分别发送的信明细行为 0——没有这条退路的话，它们的收件人会
+// 整个变成空白。
+func TestASeparateSendFallsBackToItsOwnRecipient(t *testing.T) {
+	f := newFolderFixture(t, 9812)
+	ctx := context.Background()
+	const thread = "separate-one"
+
+	if _, err := f.pool.Exec(ctx, `INSERT INTO email_messages
+		(tenant_id, message_key, sender_id, sender_name, from_email, to_email,
+		 subject, body, body_format, thread_key, send_mode, status, queued_at, sent_at)
+		VALUES ($1, gen_random_uuid(), $2, '我', 'me@263.net', 'solo@buyer.example',
+		        '报价', '正文', 'TEXT', $3, 'SEPARATE', 'ACCEPTED', now(), now())`,
+		f.tenantID, f.me, thread); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := f.svc.GetMailThread(ctx, f.tenantID, f.me, 0, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("应该只有一封，拿到 %d 封", len(items))
+	}
+	if items[0].ToAll != "solo@buyer.example" {
+		t.Errorf("没有明细行时收件人应该退回 to_email，拿到 %q", items[0].ToAll)
+	}
+	if items[0].Cc != "" {
+		t.Errorf("没有抄送却给出了 %q", items[0].Cc)
+	}
+}

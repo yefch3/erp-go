@@ -912,9 +912,31 @@ SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        -- 谁写的、写给谁的，两腿填同一个意思。counterparty 在两腿上说的不是
        -- 同一件事（这腿是收件人，下面那腿是发件人），界面上却是同一列。
        m.from_email, m.sender_name AS from_name,
-       m.to_email AS to_all,
-       -- 发出的这一腿没有抄送可给：email_messages 上没有 cc 这一列。
-       '' AS cc
+       -- 收件人和抄送从明细表来，不是从 to_email 来。
+       --
+       -- 合并发送的信**一行代表好几个人**：email_messages.to_email 只存了
+       -- 其中第一个，完整名单在 email_message_recipients 上。照着 to_email
+       -- 显示的后果是，一封抄了同事的信在会话里看着像只发给了一个人——
+       -- 而客户在 Gmail 里看到的是两个，两边对不上。
+       --
+       -- 分别发送的信没有明细行（一行本来就只对一个人），所以 coalesce 退回
+       -- to_email。生产上 78 封分别发送的信明细行为 0，这条退路是必须的。
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'TO'
+       ), m.to_email)::text AS to_all,
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'CC'
+       ), '')::text AS cc
 FROM email_messages m
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
   AND m.sender_id = sqlc.arg(owner_id)::bigint
