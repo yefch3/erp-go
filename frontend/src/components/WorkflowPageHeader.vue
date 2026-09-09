@@ -47,6 +47,11 @@ defineProps<{ title: string; description: string }>()
   gap: 8px;
   margin-left: auto;
 }
+.actions :deep(.el-button--primary:not(.is-plain)) {
+  --el-button-text-color: #103a4e;
+  --el-button-hover-text-color: #102f3d;
+  font-weight: 600;
+}
 @media (max-width: 760px) {
   .procurement-page-header { align-items: flex-start; flex-direction: column; gap: 8px; padding: 16px; }
   .procurement-page-header p { border-radius: 8px; }

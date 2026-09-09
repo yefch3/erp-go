@@ -17,7 +17,7 @@
         <el-select v-model="status" :placeholder="t('contracts.allStatus')" clearable style="width: 170px" @change="reload">
           <el-option v-for="s in STATUSES" :key="s" :value="s" :label="contractStatusLabel(s)" />
         </el-select>
-        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
+        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" style="width: 220px" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
