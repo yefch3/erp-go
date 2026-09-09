@@ -804,34 +804,51 @@ onMounted(() => {
   gap: 12px;
 }
 .metric {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-height: 90px;
-  padding: 14px 16px;
+  min-height: 88px;
+  overflow: hidden;
+  padding: 14px 38px 14px 16px;
   border: 1px solid #dceaf0;
   border-radius: 12px;
-  background: linear-gradient(145deg, #fff 15%, #f7fcff 100%);
+  background: #fff;
   box-shadow: 0 7px 20px rgba(25, 72, 91, .04);
 }
+.metric::before {
+  position: absolute;
+  top: 16px;
+  right: 17px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ac1ff;
+  content: '';
+}
 .metric.is-alarm {
-  border-color: var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
+  border-color: #f2c9cc;
+  background: #fff;
 }
+.metric.is-alarm::before { background: #ff6b72; }
 .metric.is-warn {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
+  border-color: #ecdab4;
+  background: #fff;
 }
+.metric.is-warn::before { background: #e5a33b; }
 .metric-label {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .metric-value {
-  font-size: 26px;
+  color: #141817;
+  font-size: 25px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .metric-hint {
   font-size: 12px;
+  line-height: 1.45;
   color: var(--el-text-color-placeholder);
 }
 .panel {
