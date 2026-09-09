@@ -4944,8 +4944,6 @@ async function doUnsuppress(row: Suppression) {
 .rail-grow + .rail-lock {
   margin-top: 4px;
 }
-</style>
-
 
 /* ---------------------------------------------------------------- 三栏 */
 /* 列表和阅读区并排。**模板里阅读区写在列表前面**（原来是 v-if/v-else 的两
@@ -4960,7 +4958,7 @@ async function doUnsuppress(row: Suppression) {
 }
 .list-col {
   order: 1;
-  flex: 0 1 420px;
+  flex: 0 0 clamp(280px, 34%, 400px);
   min-width: 0;
 }
 .reader-col {
@@ -4984,8 +4982,11 @@ async function doUnsuppress(row: Suppression) {
 }
 
 /* 窄屏退回从前那种「打开信就换页」：三栏挤在一起两边都读不了。
-   1180px 是 208(左栏) + 420(列表) + 阅读区最少 500 上下再加间距。 */
-@media (max-width: 1180px) {
+   900px 才退：三栏在 1000px 左右是能用的——Foxmail 就是在这个宽度下
+   跑三栏的，它的列表列只有 200 出头。原来写 1180 是照着「列表固定 420」
+   算的，而 420 本身就太宽了；列表改成按比例伸缩之后，这条线可以退到
+   真正挤不下的地方。 */
+@media (max-width: 900px) {
   .panes {
     display: block;
   }
@@ -5006,3 +5007,4 @@ async function doUnsuppress(row: Suppression) {
     display: none;
   }
 }
+</style>
