@@ -1,19 +1,14 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('inquiryTemplates.eyebrow') }}</div>
-        <h1>{{ t('inquiryTemplates.title') }}</h1>
-        <p>{{ t('inquiryTemplates.subtitle') }}</p>
-      </div>
-      <div class="head-actions">
+    <WorkflowPageHeader :title="t('inquiryTemplates.title')" :description="t('inquiryTemplates.subtitle')">
+      <template #actions><div class="head-actions">
         <el-button @click="router.push('/sales/inquiries')">← {{ t('salesNav.inquiries') }}</el-button>
         <el-button v-if="canWrite" type="primary" @click="openCreate()">{{ t('inquiryTemplates.create') }}</el-button>
-      </div>
-    </header>
+      </div></template>
+    </WorkflowPageHeader>
 
     <section class="panel">
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table v-loading="loading" :data="rows">
         <el-table-column :label="t('inquiryTemplates.colName')" min-width="200">
           <template #default="{ row }">
             {{ row.name }}
@@ -141,6 +136,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { get, post, put } from '../api'
@@ -306,5 +302,5 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.row-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.editor-notice{margin-bottom:16px}.editor-form{display:flex;flex-wrap:wrap;gap:0 12px}.description-item{width:100%}.fields-head{display:flex;align-items:baseline;gap:12px;margin:6px 0 10px}.fields-title{font-weight:600;color:#173042}.fields-hint{flex:1;color:#7b8992;font-size:12px}@media(max-width:850px){.page-head{flex-direction:column;gap:14px}.head-actions{flex-wrap:wrap}}
+.page{min-height:100%;color:#141817}.head-actions{display:flex;gap:8px}.panel{overflow:hidden;background:#fff;border:1px solid #dceaf0;border-radius:12px;padding:0 16px 12px;box-shadow:0 10px 28px rgb(20 24 23 / 5%)}.panel :deep(.el-table){--el-table-header-bg-color:#eef9fe;--el-table-header-text-color:#24323a;--el-table-row-hover-bg-color:#f0fbf6}.panel :deep(th.el-table__cell){height:48px;border-bottom-color:#d9edf5;font-weight:650}.panel :deep(td.el-table__cell){padding:13px 0;border-bottom-color:#e7eff3;color:#141817}.row-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.editor-notice{margin-bottom:16px}.editor-form{display:flex;flex-wrap:wrap;gap:0 12px}.description-item{width:100%}.fields-head{display:flex;align-items:baseline;gap:12px;margin:6px 0 10px}.fields-title{font-weight:600;color:#24323a}.fields-hint{flex:1;color:#60717c;font-size:12px}@media(max-width:850px){.head-actions{flex-wrap:wrap}}
 </style>

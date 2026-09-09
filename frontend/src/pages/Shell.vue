@@ -450,7 +450,6 @@ const salesItems = computed(() => [
   ...(auth.can('export:contract:read')
     ? [
         { path: '/contracts', label: t('menu.contracts') },
-        { path: '/contract-execution', label: t('menu.contractExecution') },
       ]
     : []),
 ])
@@ -532,9 +531,9 @@ const procurementItems = computed(() => [
 ].filter((item) => item.allowed))
 
 // Element Plus teleports dialogs and drawers under <body>, outside .content.
-// Procurement and logistics share one palette, including those overlays.
+// Core business workspaces share one palette, including those overlays.
 const operationsThemeClass = 'operations-theme'
-const operationsThemeActive = computed(() => procurementActive.value || logisticsActive.value)
+const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value)
 watch(operationsThemeActive, (active) => {
   document.body.classList.toggle(operationsThemeClass, active)
 }, { immediate: true })

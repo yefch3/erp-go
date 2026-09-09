@@ -1,14 +1,8 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('contracts.title') }}</h2>
-      <span class="grow" />
-      <!-- Most deals here are negotiated by email and come back as a signed
-           PDF, so writing one up directly is the primary action; generating
-           from a quotation is the secondary one. -->
-      <el-button v-if="canWrite" type="primary" @click="openDirect">录入执行中合同</el-button>
-
-    </div>
+  <div class="contracts-page">
+    <WorkflowPageHeader :title="t('contracts.title')" description="查看客户合同、审批状态与执行进度。">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openDirect">录入执行中合同</el-button></template>
+    </WorkflowPageHeader>
 
     <el-card shadow="never">
       <div class="filters">
@@ -957,6 +951,7 @@ const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
 interface Contract {
@@ -2051,17 +2046,10 @@ onUnmounted(stopListening)
 .src-tag {
   margin-left: 6px;
 }
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-}
+.contracts-page :deep(.el-card) { border-color:#dceaf0; border-radius:12px; box-shadow:0 10px 28px rgb(20 24 23 / 5%); }
+.contracts-page :deep(.el-table) { --el-table-header-bg-color:#eef9fe; --el-table-header-text-color:#24323a; --el-table-row-hover-bg-color:#f0fbf6; }
+.contracts-page :deep(.el-table th.el-table__cell) { height:48px; border-bottom-color:#d9edf5; font-weight:650; }
+.contracts-page :deep(.el-table td.el-table__cell) { padding:13px 0; border-bottom-color:#e7eff3; color:#141817; }
 .filters {
   display: flex;
   gap: 10px;

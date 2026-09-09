@@ -55,7 +55,8 @@ export const router = createRouter({
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
-        { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
+        // 合同开始执行后直接进入财务与下游任务，旧“执行一览”书签统一回到外销合同。
+        { path: 'contract-execution', redirect: (to) => ({ path: '/contracts', query: to.query }) },
         // 旧“出运单”入口已并入船期管理，保留重定向兼容历史书签。
         { path: 'shipments', redirect: '/shipping/schedules' },
         // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
