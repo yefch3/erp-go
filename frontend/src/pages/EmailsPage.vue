@@ -428,12 +428,19 @@
                 @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
                 @selection-clear="closeExcelMenu"
               />
-              <pre
+              <!-- 纯文本也走同一个沙箱 frame。以前它是直接插值渲染的，于是
+                   正文里的网址只是一行字——点不动，只能手工选中复制。包成
+                   <pre> 交给 MailBody 之后链接是真链接，而且 frame 文档里那句
+                   <base target="_blank"> 让它在新标签页打开。
+
+                   不在页面里 v-html：收到的信一律只在沙箱里渲染，这条由
+                   scripts/check-mail-sandbox.sh 守着——我第一版就是踩了它。 -->
+              <MailBody
                 v-else
-                class="in-text"
-                :data-mail-id="it.direction === 'IN' ? it.id : ''"
-                @mouseover="onPlainTextHover"
-              >{{ it.body }}</pre>
+                :html="plainTextToHtml(it.body)"
+                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-clear="closeExcelMenu"
+              />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
               <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
                    时的顺序一致。 -->
@@ -458,12 +465,12 @@
             @selection-context="openTextExcelMenu($event, openedInbound.id)"
             @selection-clear="closeExcelMenu"
           />
-          <pre
+          <MailBody
             v-else
-            class="in-text"
-            :data-mail-id="openedInbound.id"
-            @mouseover="onPlainTextHover"
-          >{{ openedInbound.bodyText }}</pre>
+            :html="plainTextToHtml(openedInbound.bodyText)"
+            @selection-context="openTextExcelMenu($event, openedInbound.id)"
+            @selection-clear="closeExcelMenu"
+          />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -1276,6 +1283,7 @@ import { needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
+import { plainTextToHtml } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
@@ -4896,6 +4904,15 @@ async function doUnsuppress(row: Suppression) {
   word-break: break-word;
   font-family: inherit;
   margin: 0;
+}
+/* 纯文本信里的网址。看起来要像链接——不然人还是不会去点它，而这正是
+   这次要修的那件事。见 lib/linkifyText。 */
+.in-text a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.in-text a:hover {
+  text-decoration: underline;
 }
 
 .opened {
