@@ -902,7 +902,14 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 
 func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest) (*mailv1.SearchMailResponse, error) {
 	op := operator(ctx)
-	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
+	// account_ids 是现在的字段，account_id 是它之前那个单数的。两个都认：
+	// 换版本时网关和这个服务不是同一刻起来的，中间那几秒旧网关只会发单数
+	// 那一个，丢掉它就是「搜索几秒钟内搜遍全部信箱」——比搜不到更糟。
+	accounts := req.GetAccountIds()
+	if len(accounts) == 0 && req.GetAccountId() > 0 {
+		accounts = []int64{req.GetAccountId()}
+	}
+	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID, accounts,
 		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
@@ -912,6 +919,7 @@ func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest)
 		hits = append(hits, &mailv1.SearchHit{
 			Mail:         inboundToProto(h.InboundView),
 			Folder:       h.Folder,
+			AccountId:    h.AccountID,
 			MatchSnippet: h.MatchSnippet,
 		})
 	}

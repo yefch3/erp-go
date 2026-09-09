@@ -994,7 +994,17 @@ func (s *Server) searchMail(w http.ResponseWriter, r *http.Request) {
 		Keyword: q.Get("keyword"),
 		Cursor:  q.Get("cursor"),
 		Page:    pageFromQuery(r),
-		// 搜哪个箱由令牌决定，和收件箱、已发送同一条理由。
+		// 搜哪些箱**仍然由令牌决定**，只是不再限于一把。
+		//
+		// 收件箱和已发送列的是一个箱，所以它们用当前这一把；搜索问的是
+		// 「那封信在哪儿」，所以范围是手上开着的全部箱。变的是范围，没变的
+		// 是「范围由验过的令牌划定，不由调用方说了算」——退出了哪个箱，
+		// 那把令牌就核不过，那个箱也就搜不到了。
+		AccountIds: s.unlockedAccountsFor(r),
+		// 单数那个也一起发，只为换版本那几秒：这一批先起来的可能是网关，
+		// 而还没换的旧服务只认 account_id——不发的话它读到 0，那几秒里
+		// 搜索会把这个人**全部**信箱一起搜了，包括刚退出的那个。
+		// 退回「只搜当前箱」是错的方向里安全的那一边。
 		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {

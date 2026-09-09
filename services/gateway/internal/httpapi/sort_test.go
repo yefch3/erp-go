@@ -24,14 +24,22 @@ func TestBothMailboxListsForwardTheirSort(t *testing.T) {
 	}
 }
 
-// 搜索也只搜令牌里那个箱：网关得把它递到服务层，和收件箱、已发送一样。
-func TestSearchForwardsTheUnlockedMailbox(t *testing.T) {
+// 搜索的范围由**令牌**划，不由调用方说了算。
+//
+// 这条从前是「只搜令牌里那一个箱」，现在是「手上开着的那些箱」——变的是
+// 范围，没变的是范围从哪儿来。这里钉住的是没变的那一半：当前这把令牌开的
+// 箱一定在范围里，且请求参数里随口写的箱号进不来。
+//
+// 报上来的额外令牌要真的核过才算数，那一半在 mailunlock_search_test.go：
+// 这里没有 Redis，s.Unlock 是空的。
+func TestSearchScopeComesFromTheToken(t *testing.T) {
 	rec := &recorder{}
 	s := &Server{Emails: rec}
-	req := httptest.NewRequest("GET", "/api/mail-search?keyword=steel", nil)
+	req := httptest.NewRequest("GET", "/api/mail-search?keyword=steel&account_id=99", nil)
 	req = req.WithContext(withUnlockedAccount(req.Context(), 7))
 	s.searchMail(httptest.NewRecorder(), req)
-	if rec.search.GetAccountId() != 7 {
-		t.Fatalf("搜索没带上解锁的信箱：account_id=%d，于是站在 A 箱里能搜出 B 箱的信", rec.search.GetAccountId())
+	got := rec.search.GetAccountIds()
+	if len(got) != 1 || got[0] != 7 {
+		t.Fatalf("搜索的范围应该是令牌开的那个箱：account_ids=%v", got)
 	}
 }

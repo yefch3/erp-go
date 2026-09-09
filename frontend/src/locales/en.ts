@@ -1727,12 +1727,12 @@ export default {
     tabCampaigns: 'Campaigns',
     tabAttention: 'Needs attention',
     tabSuppressions: 'Do-not-contact',
+    // Only these two left: the mail folders' boxes were folded into the one
+    // global search in the rail, and these two lists are not mail (delivery
+    // records, blocked addresses) so they keep their own filter.
     search: {
-      drafts: 'Search draft subjects',
-      sent: 'Search recipient or subject',
       attention: 'Search recipient or address',
       suppressions: 'Search address',
-      inbox: 'Search sender or subject',
     },
     privacyNote: 'Each recipient receives their own separate message. Nobody sees anyone else’s address.',
     privacyNoteMerged: 'Merged send: everybody receives the SAME message, and the To/CC lists are visible to all of them.',
@@ -1926,6 +1926,9 @@ export default {
     receivedAt: 'Received',
     emptyInbox: 'The inbox is empty',
     searchEmpty: 'No mail contains “{q}”. Search looks at the subject, the sender and the body, but not junk or trash.',
+    searchAll: 'Search all mailboxes',
+    searchResults: 'Search “{q}”',
+    searchClear: 'Leave search',
     syncNow: 'Check mail now',
     showDetails: 'Details',
     replyToMismatch: 'Note: replying goes to {addr}, not the sender’s address',

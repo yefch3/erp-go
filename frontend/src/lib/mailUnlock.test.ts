@@ -5,6 +5,7 @@ import {
   currentToken,
   forgetMailbox,
   saveTokens,
+  searchScopeHeader,
   useMailbox,
   unlockedMailboxes,
 } from './mailUnlock'
@@ -120,5 +121,47 @@ describe('mailUnlock', () => {
     clearAll()
     expect(currentToken()).toBe('')
     expect(allTokens()).toEqual([])
+  })
+
+  // 搜索横跨信箱，范围由这个头报上去、由服务端逐把核对。
+  describe('searchScopeHeader', () => {
+    it('报的是手上全部的箱，不是当前这一个', () => {
+      saveTokens([
+        { accountId: 1, email: 'a@263.net', token: 'tok-a' },
+        { accountId: 2, email: 'b@gmail.com', token: 'tok-b' },
+      ])
+      useMailbox(1)
+      // 少报一把，那个箱就搜不到——「搜所有邮箱」这件事整个失效，而且是
+      // 静静失效：结果少了几封，没有任何提示。
+      expect(searchScopeHeader().split(',').sort()).toEqual(['tok-a', 'tok-b'])
+    })
+
+    it('退出过的箱不再报上去', () => {
+      saveTokens([
+        { accountId: 1, email: 'a@263.net', token: 'tok-a' },
+        { accountId: 2, email: 'b@gmail.com', token: 'tok-b' },
+      ])
+      forgetMailbox(2)
+      expect(searchScopeHeader()).toBe('tok-a')
+    })
+
+    it('一把都没有时是空串，不是逗号', () => {
+      // 空串时请求头整个不带内容，服务端 Split 出来的是一个空片段并跳过。
+      // 这里要是回 "," 或 ",,"，那边就是几次无谓的 Redis 往返。
+      expect(searchScopeHeader()).toBe('')
+    })
+
+    it('封顶 32 把，和服务端的上限对齐', () => {
+      // 每一把是服务端的一次 Redis 往返。上限那边也有，这里先截是为了不去
+      // 发一个几 KB 的请求头。
+      saveTokens(
+        Array.from({ length: 40 }, (_, i) => ({
+          accountId: i + 1,
+          email: `a${i}@x.com`,
+          token: `tok-${i}`,
+        })),
+      )
+      expect(searchScopeHeader().split(',')).toHaveLength(32)
+    })
   })
 })

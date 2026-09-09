@@ -1724,12 +1724,11 @@ export default {
     tabCampaigns: '群发记录',
     tabAttention: '待处理',
     tabSuppressions: '拒收名单',
+    // 只剩这两个：邮件那几个文件夹的搜索框已经合成左栏那一个全局的，
+    // 而这两张表不是邮件（投递记录、拒收地址），各自留着自己的筛选框。
     search: {
-      drafts: '搜索草稿主题',
-      sent: '搜索收件人或主题',
       attention: '搜索收件人或邮箱',
       suppressions: '搜索邮箱',
-      inbox: '搜索发件人或主题',
     },
     privacyNote: '每位收件人单独收到一封邮件，彼此看不到对方的地址。',
     privacyNoteMerged: '合并发送：所有收件人收到同一封邮件，收件人和抄送名单互相可见。',
@@ -1923,6 +1922,9 @@ export default {
     receivedAt: '收到时间',
     emptyInbox: '收件箱是空的',
     searchEmpty: '没有找到包含「{q}」的邮件。搜索会看主题、发件人和正文，但不含垃圾邮件和回收站。',
+    searchAll: '搜索所有邮箱',
+    searchResults: '搜索「{q}」',
+    searchClear: '退出搜索',
     syncNow: '立即收信',
     showDetails: '详情',
     replyToMismatch: '注意：点「回复」会发给 {addr}，与发件人地址不一致',

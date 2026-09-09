@@ -152,6 +152,71 @@ func (u *UnlockStore) Revoke(ctx context.Context, tenantID, employeeID int64, to
 
 const mailUnlockHeader = "X-Mail-Unlock"
 
+// mailUnlockAllHeader 是浏览器手上**全部**令牌，逗号分隔。
+//
+// 只有搜索用得上，所以它是单独一个头、不是把 X-Mail-Unlock 改成列表：
+// 另外 33 条路由的口径没有变，一条请求仍然只开一个箱。
+//
+// 为什么走请求头而不是查询串：令牌是凭据，查询串会进访问日志、浏览器历史
+// 和 Referer。为什么不是请求体：搜索是 GET，而带请求体的 GET 到处都不被
+// 中间层善待。「全部退出」那条走的是请求体，因为它本来就是 POST。
+//
+// 服务端不保存「这个人有哪些令牌」的索引（键里含令牌本身，反查不到），
+// 所以只能由持有者报上来——和 lockAllMailboxes 同一个道理。报上来的每一把
+// 都要回 Redis 核对，所以报假的没有用：核不过的直接丢掉。
+const mailUnlockAllHeader = "X-Mail-Unlock-All"
+
+// maxUnlockTokensPerRequest 是一次请求最多核几把令牌。
+//
+// 每把是一次 Redis 往返，而请求头是调用方给的——不封顶的话，一个 8 KB 的
+// 头能变成几百次往返。一个人绑几十个信箱已经不是这套东西要服务的场景了。
+const maxUnlockTokensPerRequest = 32
+
+// unlockedAccountsFor 把浏览器报上来的令牌逐把核过，回「这次请求可以搜哪些
+// 信箱」。
+//
+// 核不过的**静静丢掉**，不是整条请求报错：手上的令牌各有各的到期时间，
+// 退出过的那个箱留下的死令牌是常态。因为其中一把过期就让整次搜索失败，
+// 等于让人为了搜东西先去把每个箱重新登录一遍。
+//
+// 回空切片表示不限信箱——一个箱都没绑的人。这和 unlockedAccount 回
+// accountAll 是同一个口径。
+func (s *Server) unlockedAccountsFor(r *http.Request) []int64 {
+	primary := unlockedAccount(r.Context())
+	if primary == accountAll {
+		// 令牌本身就不限箱，报再多也还是不限箱。
+		return nil
+	}
+	// 当前这一把先进去，然后才轮到额外那些。
+	//
+	// **顺序是有意的**：核不了额外令牌（没有 Unlock）时也得回一个「就这一个
+	// 箱」，不能回 nil——nil 在下游是「不限信箱」，于是核对能力缺失会静静
+	// 放大搜索范围。门那一层缺 Unlock 时是 403，所以这条走不到；但一个在
+	// 失败时会自己变宽的范围，不该靠别处挡着才安全。
+	out := []int64{primary}
+	if s.Unlock == nil {
+		return out
+	}
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	seen := map[int64]bool{primary: true}
+	for i, tok := range strings.Split(r.Header.Get(mailUnlockAllHeader), ",") {
+		if i >= maxUnlockTokensPerRequest {
+			break
+		}
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		acct, ok := s.Unlock.Check(r.Context(), op.TenantID, op.EmployeeID, tok)
+		if !ok || acct == accountAll || seen[acct] {
+			continue
+		}
+		seen[acct] = true
+		out = append(out, acct)
+	}
+	return out
+}
+
 // writeUnlockJSON wraps a plain value in the standard envelope. The proto
 // writer cannot help here because these responses have no proto message.
 func writeUnlockJSON(w http.ResponseWriter, v any) {

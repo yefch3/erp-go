@@ -367,17 +367,35 @@ message SearchHit {
   // when the search was worth doing: a match in the fourth paragraph does not
   // appear in a snippet of the first.
   string match_snippet = 3;
+  // 这封信在哪个信箱。结果横跨信箱之后必须说——不说的话一列里混着两个箱
+  // 的信，看不出哪封是哪个箱的；而且点开之前要先换成那个箱的令牌。
+  int64 account_id = 4;
 }
 
 message SearchMailRequest {
   string keyword = 1;
   string cursor = 2;
   erp.common.v1.PageRequest page = 3;
-  // 只搜这个信箱。0 = 我全部信箱（旧令牌和一个箱都没绑的人）。
+  // 只搜这个信箱。account_ids 之前的那一个，现在只在**换版本那几秒**里
+  // 起作用，两边都还发着、也都还读着：
   //
-  // 网关从解锁令牌里取，不认调用方传的：站在 A 箱里搜出 B 箱的信，是
-  // 「按邮箱分」这条口径从搜索这个门绕回来了——切到 B 才能搜 B。
+  //   新网关 + 旧服务：旧服务只认这一个，网关照发当前那个箱 —— 范围退回
+  //                    「只搜当前箱」，比范围突然放开安全。
+  //   旧网关 + 新服务：旧网关只发这一个，新服务把它当成单元素的 account_ids。
+  //
+  // 不标 deprecated：唯一的读取点是那条兼容分支，标了之后 staticcheck 会
+  // 在那儿报警，而压掉警告的注释比这段说明更没用。
   int64 account_id = 4;
+  // 搜这些信箱。空 = 不限（一个箱都没绑的人）。
+  //
+  // 从「当前这一个箱」改成「手上开着的这些箱」：搜索存在的意义正是不知道
+  // 东西在哪个箱里，逼人一个箱一个箱地搜，等于让人代替搜索干活。
+  //
+  // **网关只放进令牌验过的那些**，不认调用方随口给的号码：浏览器验证成功
+  // 时每个箱各拿到一把令牌，请求把它们一起报上来，网关逐把回 Redis 核对。
+  // 退出了哪个箱，那把令牌就没了，那个箱也就从搜索范围里消失——「退出」
+  // 仍然是真的退出。
+  repeated int64 account_ids = 5;
 }
 
 message SearchMailResponse {

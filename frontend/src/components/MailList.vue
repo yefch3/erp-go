@@ -91,6 +91,7 @@
         @keydown.enter.prevent="emit('open', m)"
         @keydown.space.prevent="emit('open', m)"
       >
+        <span v-if="otherMailbox(m)" class="in-mailbox">{{ otherMailbox(m) }}</span>
         <span v-if="m.matchFolder" class="in-folder">{{ folderLabel(m.matchFolder) }}</span>
         <span class="who">
           <!-- A sent mail is about who it went to; a received one about who
@@ -218,6 +219,10 @@ export interface MailRow {
   // Search results only. The search crossed folders, so a result that does not
   // say where it was found leaves the person to open it to find out.
   matchFolder?: string
+  // 同上，再往上一层：搜索也横跨信箱，所以命中还要说自己是哪个箱的。
+  // 不说的话，一列里混着 263 和 Gmail 的信而没有任何区分——「哪个箱」正是
+  // 搜索之前不知道、搜索之后最想知道的那件事。
+  matchAccount?: number
   // Sent folder only: when the open-tracking pixel was fetched, and whether
   // this mail carried one at all. Both needed — an empty openedAt alone cannot
   // tell "nobody opened it" from "nobody was watching".
@@ -238,6 +243,12 @@ const props = defineProps<{
   // what acts on a selection, and it also has to survive this component being
   // re-rendered by a reload.
   selected?: string[]
+  // 信箱号 → 地址，给搜索结果上那个信箱标签用。空表就不显示标签——
+  // 清单还没加载完的那一瞬间，显示一个光秃秃的号码比什么都不显示更糟。
+  accounts?: Record<number, string>
+  // 此刻站在哪个箱。**只有别的箱的命中才挂标签**：站在 263 里搜，每一行都
+  // 标着"263"是一列一模一样的噪声，而那几行 Gmail 的正因此淹在里面。
+  currentAccount?: number
   // 现在按哪一列排，以及这份列表允许按哪几列排。两个都不给就没有排序栏。
   sort?: MailSort
   sortFields?: SortField[]
@@ -337,6 +348,20 @@ function folderLabel(folder: string) {
     default:
       return t('emails.folders.inbox')
   }
+}
+
+// 这封命中来自**别的**信箱时，回它的地址；否则空串（不挂标签）。
+//
+// 只标别的箱，不标当前这个：站在 263 里搜，每一行都标着 263 是一列一模一样
+// 的噪声，而那几行 Gmail 的正因此淹在里面。人要看见的是"这封不在我以为的
+// 那个箱里"。
+//
+// 认不出的号码也不标：清单还没加载完的那一瞬间，一个光秃秃的数字比什么都
+// 不显示更糟。
+function otherMailbox(m: MailRow): string {
+  const id = m.matchAccount ?? 0
+  if (!id || id === props.currentAccount) return ''
+  return props.accounts?.[id] ?? ''
 }
 
 function actionsFor(m: MailRow) {
@@ -705,7 +730,8 @@ function ariaFor(m: MailRow) {
 }
 /* Where this result was found. Quiet — it is context for the row, not the
    point of it, and every row in a result set carries one. */
-.in-folder {
+.in-folder,
+.in-mailbox {
   flex: none;
   align-self: center;
   font-size: 11px;
@@ -716,6 +742,17 @@ function ariaFor(m: MailRow) {
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
   white-space: nowrap;
+}
+
+/* 信箱标签比文件夹标签重：它说的是「这封不在你以为的那个箱里」，是一列
+   搜索结果里最容易看漏、看漏了最费解的一件事。地址可能很长，收窄到一眼
+   能认出是哪家的程度就够。 */
+.in-mailbox {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 
 /* 已读三态：绿的一眼能扫到（这一列存在的目的），灰的居次，没追踪的压到
