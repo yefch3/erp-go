@@ -529,6 +529,14 @@ const procurementItems = computed(() => [
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
 ].filter((item) => item.allowed))
 
+// Element Plus teleports dialogs and drawers under <body>, outside .content.
+// Mark procurement routes on the body so those overlays inherit the same palette.
+const procurementThemeClass = 'procurement-theme'
+watch(procurementActive, (active) => {
+  document.body.classList.toggle(procurementThemeClass, active)
+}, { immediate: true })
+onUnmounted(() => document.body.classList.remove(procurementThemeClass))
+
 function isSalesItemActive(path: string) {
   if (path === '/sales/inquiries') return route.path === path || route.path.startsWith('/sales/inquiries/')
   return route.path === path
@@ -886,7 +894,41 @@ async function changePassword() {
 }
 .content--procurement :deep(.el-table) {
   --el-table-header-bg-color: #eef9fe;
+  --el-table-header-text-color: #24323a;
   --el-table-row-hover-bg-color: #f0fbf6;
+}
+.content--procurement :deep(.el-card) {
+  border-color: #dfeaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgb(20 24 23 / 5%);
+}
+.content--procurement :deep(.el-radio-button__inner) {
+  border-color: #d8e8ef;
+  color: #53636d;
+}
+.content--procurement :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  border-color: #4ac1ff;
+  background: #4ac1ff;
+  color: #141817;
+  box-shadow: -1px 0 0 0 #4ac1ff;
+}
+:global(body.procurement-theme) {
+  --el-color-primary: #4ac1ff;
+  --el-color-primary-light-3: #7fd2ff;
+  --el-color-primary-light-5: #a5e0ff;
+  --el-color-primary-light-7: #c9edff;
+  --el-color-primary-light-8: #ddf4ff;
+  --el-color-primary-light-9: #eefaff;
+  --el-color-success: #1fbf6c;
+  --el-color-success-light-9: #eefbf4;
+  --el-text-color-primary: #141817;
+}
+:global(body.procurement-theme .el-dialog),
+:global(body.procurement-theme .el-drawer) {
+  border: 1px solid #dfeaf0;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(20 24 23 / 14%);
 }
 @media (max-width: 1000px) {
   .shell { position: relative; }

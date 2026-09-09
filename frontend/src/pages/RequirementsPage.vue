@@ -1,9 +1,6 @@
 <template>
   <div class="requirements-page">
-    <div class="page-head">
-      <h2>{{ t('requirements.title') }}</h2>
-      <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
-    </div>
+    <ProcurementPageHeader :title="t('requirements.title')" :description="t('requirements.readOnlyHint')" />
 
     <el-card shadow="never">
       <div class="filters">
@@ -261,6 +258,7 @@ import { get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
+import ProcurementPageHeader from '../components/ProcurementPageHeader.vue'
 
 interface Requirement {
   id: string
@@ -672,31 +670,10 @@ onMounted(load)
   --el-color-success: var(--proc-green);
   color: var(--proc-ink);
 }
-.page-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-  padding: 18px 20px;
-  border: 1px solid #d8eef8;
-  border-left: 4px solid var(--proc-blue);
-  border-radius: 12px;
-  background: linear-gradient(110deg, #eefaff 0%, var(--proc-surface) 64%, #effcf5 100%);
-}
-.page-head h2 {
-  margin: 0;
-  color: var(--proc-ink);
-  font-size: 22px;
-}
 .head-note,
 .sub {
   font-size: 12px;
   color: #66727d;
-}
-.head-note {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: #eaf8ff;
 }
 .requirements-page :deep(.el-card) {
   border-color: #dfeaf0;

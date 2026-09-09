@@ -904,7 +904,7 @@ export default {
     title: 'Purchase orders',
     subtitle: 'Buyers track drafts and approvals here; approved orders continue into fulfilment, delivery and cancellation',
     create: 'Create order',
-    createHint: 'Only products selected in Purchases pending are included. Add or edit suppliers in Basic Data before submitting.',
+    createHint: 'Only products selected in Contract re-quotation are included. Add or edit suppliers in Basic Data before submitting.',
     edit: 'Edit draft',
     editAndResubmit: 'Edit and resubmit',
     searchPlaceholder: 'Search order no. or supplier',

@@ -913,7 +913,7 @@ export default {
     editFor: 'Editar orden · {no}',
     updated: 'Orden {no} guardada como borrador',
     notEditable: 'El estado de la orden cambió y ya no se puede editar',
-    createHint: 'Solo se incluyen los productos seleccionados en Compras pendientes. Mantenga los proveedores en Datos básicos.',
+    createHint: 'Solo se incluyen los productos seleccionados en Recotización de contrato. Mantenga los proveedores en Datos básicos.',
     edit: 'Editar borrador',
     editAndResubmit: 'Editar y reenviar',
     searchPlaceholder: 'Buscar n.º de orden o proveedor',
