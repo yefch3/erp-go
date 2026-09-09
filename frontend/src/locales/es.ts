@@ -1918,6 +1918,7 @@ export default {
     toTrash: 'Eliminar',
     restore: 'Restaurar',
     emptyFolder: 'Nada por aquí',
+    pickAMail: 'Elija un mensaje a la izquierda',
     threadCount: '{n} mensajes en esta conversación; haga clic para expandir',
     threadOut: 'Enviado',
     threadIn: 'Recibido',

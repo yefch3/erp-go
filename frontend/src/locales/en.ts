@@ -1909,6 +1909,7 @@ export default {
     toTrash: 'Delete',
     restore: 'Restore',
     emptyFolder: 'Nothing here',
+    pickAMail: 'Pick a message on the left',
     threadCount: '{n} messages in this conversation — click any to expand',
     threadOut: 'Sent',
     threadIn: 'Received',
