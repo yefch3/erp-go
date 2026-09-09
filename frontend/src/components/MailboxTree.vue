@@ -138,13 +138,23 @@
              的 mailboxRail 里。固定视图用文案，自建的用服务器上的名字；能改名
              删除的只有自建的。 -->
         <template v-for="item in railFor(b.id)" v-else :key="item.key">
+          <!-- 收件箱能接：把信从自建文件夹拖回来。别的固定视图不接——
+               星标/归档/垃圾/回收站是「状态」，不是「位置」，MOVE 到不了
+               它们那儿（那几件事走的是标记接口，不是移动接口）。 -->
           <button
             v-if="!item.name"
             type="button"
             class="folder sub"
-            :class="{ on: modelValue === b.id && folder === item.key }"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: item.key === 'inbox' && canDrop(b.id),
+              over: item.key === 'inbox' && over === `${b.id}:0`,
+            }"
             :title="item.hostName"
             @click="emit('select', b.id, item.key)"
+            @dragover="item.key === 'inbox' && onDragOver(b.id, 0, $event)"
+            @dragleave="item.key === 'inbox' && onDragLeave(b.id, 0)"
+            @drop="item.key === 'inbox' && onDrop(b.id, 0, $event)"
           >
             <el-icon class="ficon"><component :is="item.icon" /></el-icon>
             <span class="fname">{{ t(`emails.folders.${item.key}`) }}</span>
@@ -170,7 +180,14 @@
           <div
             v-else
             class="folder sub custom"
-            :class="{ on: modelValue === b.id && folder === item.key }"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: canDrop(b.id),
+              over: over === `${b.id}:${item.folder!.id}`,
+            }"
+            @dragover="onDragOver(b.id, item.folder!.id, $event)"
+            @dragleave="onDragLeave(b.id, item.folder!.id)"
+            @drop="onDrop(b.id, item.folder!.id, $event)"
           >
             <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
               <el-icon class="ficon"><Folder /></el-icon>
@@ -257,6 +274,7 @@ import { get, post } from '../api'
 import { CaretRight, Star, SwitchButton, Folder } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
+import { canDropInto } from '../lib/dragMails'
 import {
   expandedAfterSwitch,
   parseExpanded,
@@ -299,6 +317,14 @@ const props = defineProps<{
   locked: boolean
   /** 每个信箱在服务器上的全部文件夹（带角色）。由页面拉取，这里只画。 */
   hostFolders: Record<number, CustomFolder[]>
+  /**
+   * 正在被拖的那几封分别属于哪些信箱。空数组 = 现在没在拖。
+   *
+   * 只有**同一个箱**的文件夹接得住：一封 A 箱的信挪不进 B 箱的文件夹，
+   * 服务端会拒（folders.go 里那条 target.accountID != it.accountID）。
+   * 与其让人拖过去再看到一条失败提示，不如那一格干脆不亮。
+   */
+  dragAccounts?: number[]
 }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
@@ -312,11 +338,42 @@ const emit = defineEmits<{
   createFolder: [accountId: number]
   renameFolder: [folder: CustomFolder]
   deleteFolder: [folder: CustomFolder]
+  /** 把拖着的那几封放进这个文件夹。folderId = 0 表示收件箱。 */
+  dropMails: [accountId: number, folderId: number]
 }>()
 
 const { t } = useI18n()
 const boxes = ref<Mailbox[]>([])
 const adding = ref(false)
+
+// -------------------------------------------------------------- 接住拖拽
+
+/** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
+const over = ref('')
+
+/** 这个信箱的文件夹现在接不接得住。规则和理由见 lib/dragMails。 */
+const canDrop = (accountId: number) => canDropInto(props.dragAccounts ?? [], accountId)
+
+const dropKey = (accountId: number, folderId: number) => `${accountId}:${folderId}`
+
+function onDragOver(accountId: number, folderId: number, ev: DragEvent) {
+  if (!canDrop(accountId)) return
+  // preventDefault 才算「我接」——不调用的话浏览器一律当成不接，光标是禁止符。
+  ev.preventDefault()
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+  over.value = dropKey(accountId, folderId)
+}
+
+function onDragLeave(accountId: number, folderId: number) {
+  if (over.value === dropKey(accountId, folderId)) over.value = ''
+}
+
+function onDrop(accountId: number, folderId: number, ev: DragEvent) {
+  over.value = ''
+  if (!canDrop(accountId)) return
+  ev.preventDefault()
+  emit('dropMails', accountId, folderId)
+}
 
 const split = computed(() => splitFolders(props.folders))
 const perMailbox = computed(() => split.value.perMailbox)
@@ -516,6 +573,25 @@ defineExpose({ reload: load })
   display: flex;
   align-items: center;
   padding: 0;
+}
+
+/* 拖拽时：能接的那几格轻轻标一下，光标停在哪一格上那一格实心。
+   两档而不是一档：只标"停在哪儿"的话，人拖起来要挨个试才知道哪些能放；
+   只标"哪些能放"的话，又看不出手上这一下会落在哪儿。 */
+.folder.droppable {
+  outline: 1px dashed var(--el-color-primary-light-5);
+  outline-offset: -2px;
+}
+.folder.over {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+  background: var(--el-color-primary-light-9);
+}
+/* 里面的按钮和图标不接拖：它们是 .folder 的子元素，光标压到它们身上时
+   dragleave 会在父元素上触发一次，高亮就闪。 */
+.folder.droppable *,
+.folder.over * {
+  pointer-events: none;
 }
 .custom-main {
   flex: 1;
