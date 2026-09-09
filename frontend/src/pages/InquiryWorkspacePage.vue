@@ -1,7 +1,7 @@
 <template>
  <main class="inquiry-workspace" v-loading="busy">
   <header v-if="!item" class="workspace-heading">
-   <div><el-tag v-if="department" class="module-chip" effect="plain">报价协作</el-tag><h2>{{ title }}</h2><p>{{view==='SALES'?'整理客户需求，提交询价并跟进处理进度。':view==='QUOTATIONS'?'查看采购与物流已提交的报价。':'查看客户需求，填写并提交报价。'}}</p></div>
+   <div><el-tag v-if="department" class="module-chip" effect="plain">{{ moduleLabel }}</el-tag><h2>{{ title }}</h2><p>{{ subtitle }}</p></div>
    <div v-if="view==='SALES'" class="heading-actions"><el-button @click="router.push('/sales/settings/inquiry-templates')">询盘模板</el-button><el-button type="primary" plain @click="router.push('/emails')">从邮箱转入询盘</el-button></div>
   </header>
   <div v-if="!item" class="toolbar list-toolbar"><el-input v-model="keyword" placeholder="搜索编号、客户、产品或规格" clearable @change="loadList"/><el-select v-model="state" clearable placeholder="全部状态" @change="loadList"><el-option v-for="o in states" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-button @click="loadList">刷新</el-button><el-button v-if="view==='SALES'&&canWrite" type="primary" @click="openCreateDialog">上传或新建客户询盘</el-button></div>
@@ -78,7 +78,9 @@ import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImpo
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type Product} from '../lib/inquiryWorkspace'
 const props=defineProps<{view:'SALES'|'QUOTATIONS'|'PROCUREMENT'|'LOGISTICS'}>()
 const view=computed(()=>props.view),route=useRoute(),router=useRouter(),auth=useAuthStore()
-const title=computed(()=>({SALES:'客户询盘',QUOTATIONS:'客户报价',PROCUREMENT:'采购询价',LOGISTICS:'物流询价'}[view.value]))
+const title=computed(()=>({SALES:'客户询盘',QUOTATIONS:'客户报价',PROCUREMENT:'售前询价',LOGISTICS:'物流询价'}[view.value]))
+const moduleLabel=computed(()=>view.value==='PROCUREMENT'?'客户成交前':'运输报价')
+const subtitle=computed(()=>({SALES:'整理客户需求，提交询价并跟进处理进度。',QUOTATIONS:'查看采购与物流已提交的报价。',PROCUREMENT:'处理客户成交前的询价，录入工厂原始报价并提交销售。',LOGISTICS:'查看客户运输需求，录入并提交运输报价。'}[view.value]))
 const department=computed(()=>view.value==='PROCUREMENT'||view.value==='LOGISTICS')
 const canWrite=computed(()=>auth.can(view.value==='SALES'?'sales:inquiry:write':view.value==='PROCUREMENT'?'procurement:sourcing:write':'shipping:sourcing:write'))
 const offerStates=ref<Record<string,{status:string;confirmedAt:string}>>({})
