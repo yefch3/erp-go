@@ -79,6 +79,24 @@
       <template v-if="activeTab === 'pending'">
         <div v-loading="loading" class="pending-content">
           <InquiryTodos @count="inquiryPendingCount=$event" />
+          <section v-if="visibleExecutionProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>实单采购询价</h3><p>合同已满足执行条件，等待采购按合同批次重新询价。</p></div><el-tag type="warning" effect="plain">{{ executionProcurementTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleExecutionProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
+              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单采购待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · {{ row.productNames }}</div><div class="item-summary">共 {{ row.productCount }} 项产品，要求到货 {{ row.requiredDate || '待确认' }}</div></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleExecutionShippingTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>实单物流询价</h3><p>合同已满足执行条件，等待物流按运输批次重新询价。</p></div><el-tag type="warning" effect="plain">{{ executionShippingTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleExecutionShippingTasks" class="home-table sourcing-todo-table">
+              <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
+              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/shipping/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
+            </el-table>
+          </section>
           <section v-if="visibleProcurementTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>{{ t('todos.procurementTasks') }}</h3><p>{{ t('todos.procurementTasksHint') }}</p></div><el-tag type="warning" effect="plain">{{ procurementPendingTotal }} {{ t('todos.items') }}</el-tag></div>
             <el-table :data="visibleProcurementTasks" class="home-table sourcing-todo-table">
@@ -117,7 +135,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!inquiryPendingCount&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!inquiryPendingCount&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -212,6 +230,9 @@ interface Todo { task: Task; instance: Instance; dueAt: string; priority: string
 interface ProcurementTaskCase { id:string; caseNo:string; customerName:string; title:string; updatedAt:string; openReworkCount:number|string; myOpenReworkCount:number|string }
 interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; requestType:string; productName:string; supplierName:string; reason:string; createdAt:string; assignedBuyerId:string|number; status:string }
 interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string; finalRecheckTaskId?:string|number }
+interface ExecutionRequirement { id:string; contractId:string; contractNo:string; customerName:string; productName:string; requiredDate:string; status:string }
+interface ExecutionProcurementTask { key:string; contractNo:string; customerName:string; productNames:string; productCount:number; requiredDate:string }
+interface ExecutionShippingTask { id:string; contractNo:string; customerName:string; batchNo:number; portOfLoading:string; portOfDischarge:string; status:string }
 type HomeTab = 'pending' | 'submitted' | 'responsible' | 'reminders' | 'handled'
 
 const HomeEmpty = defineComponent({
@@ -237,6 +258,10 @@ const procurementTasks = ref<ProcurementReworkTask[]>([])
 const procurementTasksAvailable = ref(false)
 const shippingTasks = ref<ShippingReworkTask[]>([])
 const shippingTasksAvailable = ref(false)
+const executionProcurementTasks = ref<ExecutionProcurementTask[]>([])
+const executionProcurementTasksAvailable = ref(false)
+const executionShippingTasks = ref<ExecutionShippingTask[]>([])
+const executionShippingTasksAvailable = ref(false)
 const finalShippingResolveOpen = ref(false)
 const finalShippingSaving = ref(false)
 const finalShippingResolveForm = reactive({id:'',note:'',currency:'USD',freightAmount:'',estimatedDeparture:'',estimatedArrival:'',validUntil:''})
@@ -257,13 +282,15 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0))
-const combinedPendingAvailable = computed(() => inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value)
+const combinedPendingTotal = computed(() => inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0))
+const combinedPendingAvailable = computed(() => inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
 })
 const visibleShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return shippingTasks.value.filter(row=>!query||[row.caseNo,row.caseTitle,row.productName,row.carrierForwarder,row.reason].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
+const visibleExecutionProcurementTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionProcurementTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.productNames].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
+const visibleExecutionShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionShippingTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.portOfLoading,row.portOfDischarge].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 
 const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
@@ -339,6 +366,50 @@ async function loadPendingCount() {
 async function loadProcurementTasks() { procurementTasks.value=[]; procurementTasksAvailable.value=true }
 
 async function loadShippingTasks(){shippingTasks.value=[];shippingTasksAvailable.value=true}
+
+async function loadExecutionProcurementTasks() {
+  if (!auth.can('procurement:requirement:read')) {
+    executionProcurementTasks.value = []
+    executionProcurementTasksAvailable.value = false
+    return
+  }
+  try {
+    const data = await get<{ requirements: ExecutionRequirement[] }>('/requirements', { page: 1, page_size: 200, status: 'WAITING_REQUOTE' }, quietErrors)
+    const groups = new Map<string, ExecutionRequirement[]>()
+    for (const row of data.requirements ?? []) {
+      const key = row.contractId || row.contractNo
+      groups.set(key, [...(groups.get(key) ?? []), row])
+    }
+    executionProcurementTasks.value = [...groups.entries()].map(([key, rows]) => ({
+      key,
+      contractNo: rows[0]?.contractNo ?? '',
+      customerName: rows[0]?.customerName ?? '',
+      productNames: [...new Set(rows.map(row => row.productName).filter(Boolean))].join('、'),
+      productCount: rows.length,
+      requiredDate: [...rows.map(row => row.requiredDate).filter(Boolean)].sort()[0] ?? '',
+    }))
+    executionProcurementTasksAvailable.value = true
+  } catch {
+    executionProcurementTasks.value = []
+    executionProcurementTasksAvailable.value = false
+  }
+}
+
+async function loadExecutionShippingTasks() {
+  if (!auth.can('shipping:schedule:read')) {
+    executionShippingTasks.value = []
+    executionShippingTasksAvailable.value = false
+    return
+  }
+  try {
+    const data = await get<{ handoffs: ExecutionShippingTask[] }>('/shipping/contract-handoffs', {}, quietErrors)
+    executionShippingTasks.value = (data.handoffs ?? []).filter(row => row.status === 'WAITING_REQUOTE')
+    executionShippingTasksAvailable.value = true
+  } catch {
+    executionShippingTasks.value = []
+    executionShippingTasksAvailable.value = false
+  }
+}
 function shippingReworkLabel(value:string){return value==='ADD_CARRIER'?'增加船运公司':value==='REQUOTE'?'更新船运报价/船期':'重新议价'}
 function handleShippingTaskAction(command:string,row:ShippingReworkTask){if(command==='open'){void router.push('/shipping/sourcing');return}if(command==='resolve')void resolveShippingTask(row)}
 async function resolveShippingTask(row:ShippingReworkTask){if(Number(row.finalRecheckTaskId||0)>0){Object.assign(finalShippingResolveForm,{id:String(row.id),note:'',currency:'USD',freightAmount:'',estimatedDeparture:'',estimatedArrival:'',validUntil:''});finalShippingResolveOpen.value=true;return}const result=await ElMessageBox.prompt('请说明已完成的询价、议价或新增船运公司结果。','完成船运补充任务',{inputPlaceholder:'例如：已录入该船运公司的最新报价版本',inputValidator:(value:string)=>!!value.trim()||'请填写处理结果'}).catch(()=>null);if(!result)return;await post(`/shipping/sourcing-reworks/${row.id}/resolve`,{resolution_note:result.value});await refreshAll();ElMessage.success('船运补充任务已完成')}
@@ -447,8 +518,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {
