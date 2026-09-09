@@ -1,11 +1,15 @@
 <template>
   <div class="home-page">
     <section class="home-head workflow-head">
-      <div>
+      <div class="head-copy">
         <span class="eyebrow">{{ t('todos.eyebrow') }}</span>
         <h1>{{ t('todos.greeting', { name: auth.employeeName }) }}</h1>
-        <p class="employee-context">{{ auth.employeeDepartment || t('todos.departmentUnset') }} · {{ today }}</p>
-        <p>{{ t('todos.subtitle') }}</p>
+        <div class="head-meta">
+          <span>{{ auth.employeeDepartment || t('todos.departmentUnset') }}</span>
+          <span class="meta-separator" aria-hidden="true" />
+          <span>{{ today }}</span>
+        </div>
+        <p class="head-subtitle">{{ t('todos.subtitle') }}</p>
       </div>
       <div class="head-actions">
         <span v-if="updatedAt" class="updated">{{ t('todos.updatedAt', { time: updatedAt }) }}</span>
@@ -240,11 +244,14 @@ const HomeEmpty = defineComponent({
   setup(props) { return () => h(ElEmpty, { description: props.description, imageSize: 88 }) },
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const today = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date())
+const today = computed(() => new Intl.DateTimeFormat(
+  locale.value === 'zh' ? 'zh-CN' : locale.value === 'es' ? 'es-ES' : 'en-US',
+  { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' },
+).format(new Date()))
 const activeTab = ref<HomeTab>('pending')
 const todos = ref<Todo[]>([])
 const submitted = ref<Instance[]>([])
@@ -593,12 +600,14 @@ onUnmounted(() => {
 
 <style scoped>
 .home-page { max-width: 1500px; margin: 0 auto; color: #141817; }
-.home-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
-.workflow-head { min-height: 78px; padding: 18px 20px; border: 1px solid #d8eef8; border-left: 4px solid #4ac1ff; border-radius: 12px; background: linear-gradient(110deg, #eefaff 0%, #fff 64%, #effcf5 100%); }
-.eyebrow { color: #148fc7; font-size: 11px; font-weight: 700; letter-spacing: .13em; }
-.home-head h1 { margin: 5px 0 3px; color: #141817; font-size: 22px; line-height: 1.3; }
-.home-head p { margin: 0; color: #60717c; font-size: 13px; }
-.home-head .employee-context { display: inline-block; margin: 0 8px 3px 0; color: #52636d; font-size: 12px; }
+.home-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+.workflow-head { min-height: 72px; padding: 16px 20px; border: 1px solid #d8eef8; border-left: 4px solid #4ac1ff; border-radius: 12px; background: linear-gradient(110deg, #eefaff 0%, #fff 64%, #effcf5 100%); }
+.head-copy { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 14px; row-gap: 3px; }
+.eyebrow { grid-column: 1 / -1; color: #158fc5; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.home-head h1 { grid-column: 1; grid-row: 2; margin: 0; color: #141817; font-size: 22px; line-height: 1.3; }
+.head-meta { grid-column: 2; grid-row: 2; display: flex; align-items: center; gap: 8px; color: #63747d; font-size: 12px; }
+.meta-separator { width: 3px; height: 3px; border-radius: 50%; background: #9eb0b8; }
+.head-subtitle { grid-column: 1 / -1; margin: 0; color: #60717c; font-size: 13px; }
 .head-actions { display: flex; align-items: center; gap: 12px; }
 .updated { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
 .pending-content { min-height: 260px; }
@@ -608,17 +617,17 @@ onUnmounted(() => {
 .todo-source-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .approval-source-head { padding-bottom: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.summary-card { position: relative; min-height: 108px; overflow: hidden; padding: 16px 18px; text-align: left; border: 1px solid #dceaf0; border-radius: 12px; background: linear-gradient(145deg, #fff 15%, #f7fcff 100%); color: inherit; box-shadow: 0 7px 20px rgba(25, 72, 91, .04); }
-.summary-card::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: #4ac1ff; content: ''; }
+.summary-card { position: relative; min-height: 98px; overflow: hidden; padding: 15px 17px; text-align: left; border: 1px solid #dce8ed; border-radius: 12px; background: #fff; color: inherit; box-shadow: 0 5px 16px rgba(25, 72, 91, .035); }
+.summary-card::before { position: absolute; top: 15px; right: 16px; width: 7px; height: 7px; border-radius: 50%; background: #4ac1ff; content: ''; }
 .summary-card:not(:disabled) { cursor: pointer; }
 .summary-card:nth-child(2)::before, .summary-card:nth-child(4)::before { background: #1fbf6c; }
-.summary-card.active { border-color: #8dd8f8; box-shadow: 0 9px 24px rgba(74, 193, 255, .12); }
+.summary-card.active { border-color: #8dd8f8; background: #f5fbfe; box-shadow: 0 7px 20px rgba(74, 193, 255, .1); }
 .summary-card.danger { border-color: #ffc8cc; background: #fffafa; }
 .summary-card.danger::before { background: #ff6b72; }
 .summary-card span, .summary-card small { display: block; color: #6a7a83; }
 .summary-card span { font-size: 13px; }
 .summary-card small { font-size: 12px; }
-.summary-card strong { display: block; margin: 7px 0 3px; color: #141817; font-size: 27px; font-variant-numeric: tabular-nums; }
+.summary-card strong { display: block; margin: 6px 0 2px; color: #141817; font-size: 26px; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .summary-card:disabled { opacity: 1; }
 .work-card { border-color: #dceaf0; border-radius: 12px; box-shadow: 0 8px 26px rgba(25, 72, 91, .05); }
 .home-page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
@@ -638,6 +647,6 @@ onUnmounted(() => {
 .doc-link:hover { text-decoration: underline; }
 .no-link { color: var(--el-text-color-placeholder); font-size: 13px; }
 .pager { justify-content: flex-end; margin-top: 18px; }
-@media (max-width: 900px) { .home-head { align-items: flex-start; flex-direction: column; } .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .home-head { align-items: flex-start; flex-direction: column; } .head-copy { grid-template-columns: 1fr; } .home-head h1, .head-meta, .head-subtitle { grid-column: 1; grid-row: auto; } .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .summary-grid { grid-template-columns: 1fr; } .head-actions { width: 100%; justify-content: space-between; } }
 </style>

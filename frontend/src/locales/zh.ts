@@ -1428,7 +1428,7 @@ export default {
   },
   todos: {
     title: '我的待办',
-    eyebrow: 'PERSONAL WORKSPACE',
+    eyebrow: '我的工作台',
     greeting: '你好，{name}',
     subtitle: '集中处理与你有关的审批和后续业务事项。',
     departmentUnset: '未设置部门',
