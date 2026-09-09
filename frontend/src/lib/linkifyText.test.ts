@@ -92,3 +92,28 @@ describe('其余的照旧', () => {
     expect(linkifyText('第一行\n  第二行')).toBe('第一行\n  第二行')
   })
 })
+
+describe('包成交给沙箱 frame 的那份 HTML', () => {
+  test('外面是 pre，里面的网址是锚点', async () => {
+    const { plainTextToHtml } = await import('./linkifyText')
+    const out = plainTextToHtml('Zoom: https://x.com/j/1')
+    expect(out.startsWith('<pre')).toBe(true)
+    expect(out.endsWith('</pre>')).toBe(true)
+    expect(out).toContain('<a href="https://x.com/j/1"')
+  })
+
+  test('换行靠 pre-wrap 保住，不靠 <br>', async () => {
+    const { plainTextToHtml } = await import('./linkifyText')
+    const out = plainTextToHtml('第一行\n第二行')
+    expect(out).toContain('white-space:pre-wrap')
+    expect(out).toContain('第一行\n第二行')
+    expect(out).not.toContain('<br')
+  })
+
+  test('正文里的标签仍然是转义的——包一层不该松掉这条', async () => {
+    const { plainTextToHtml } = await import('./linkifyText')
+    const out = plainTextToHtml('<img src=x onerror=alert(1)>')
+    expect(out).not.toContain('<img')
+    expect(out).toContain('&lt;img')
+  })
+})

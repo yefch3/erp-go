@@ -428,14 +428,18 @@
                 @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
                 @selection-clear="closeExcelMenu"
               />
-              <!-- v-html 而不是插值：里面的内容先转义、再只由我们自己加锚点，
-                   除了 <a> 一个来自正文的标签都不会有。见 lib/linkifyText。 -->
-              <pre
+              <!-- 纯文本也走同一个沙箱 frame。以前它是直接插值渲染的，于是
+                   正文里的网址只是一行字——点不动，只能手工选中复制。包成
+                   <pre> 交给 MailBody 之后链接是真链接，而且 frame 文档里那句
+                   <base target="_blank"> 让它在新标签页打开。
+
+                   不在页面里 v-html：收到的信一律只在沙箱里渲染，这条由
+                   scripts/check-mail-sandbox.sh 守着——我第一版就是踩了它。 -->
+              <MailBody
                 v-else
-                class="in-text"
-                :data-mail-id="it.direction === 'IN' ? it.id : ''"
-                @mouseover="onPlainTextHover"
-                v-html="linkifyText(it.body)"
+                :html="plainTextToHtml(it.body)"
+                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-clear="closeExcelMenu"
               />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
               <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
@@ -461,12 +465,11 @@
             @selection-context="openTextExcelMenu($event, openedInbound.id)"
             @selection-clear="closeExcelMenu"
           />
-          <pre
+          <MailBody
             v-else
-            class="in-text"
-            :data-mail-id="openedInbound.id"
-            @mouseover="onPlainTextHover"
-            v-html="linkifyText(openedInbound.bodyText)"
+            :html="plainTextToHtml(openedInbound.bodyText)"
+            @selection-context="openTextExcelMenu($event, openedInbound.id)"
+            @selection-clear="closeExcelMenu"
           />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
@@ -1280,7 +1283,7 @@ import { needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
-import { linkifyText } from '../lib/linkifyText'
+import { plainTextToHtml } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {

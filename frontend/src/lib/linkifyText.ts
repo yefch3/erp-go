@@ -84,3 +84,24 @@ export function linkifyText(text: string | undefined | null): string {
     return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`
   })
 }
+
+/**
+ * 把纯文本正文包成一份能交给 MailBody 的 HTML。
+ *
+ * 为什么不是在页面里 v-html：收到的信一律只在沙箱 frame 里渲染，这条规矩由
+ * scripts/check-mail-sandbox.sh 守着。纯文本看起来「安全得不需要沙箱」，但
+ * 把它单独开一个口子就意味着以后每加一处渲染都要重新判断一次安全性，而那条
+ * 守卫存在的原因正是「改了三处、漏了两处，没有任何东西提醒」。
+ *
+ * 走 frame 还白得一件事：MailBody 的文档里有 <base target="_blank">，链接
+ * 自然在新标签页打开，不会把信本身换成目标网页。
+ *
+ * pre 的样式写在行内：frame 里是另一个文档，外面 .in-text 那条 scoped 规则
+ * 到不了这里。
+ */
+export function plainTextToHtml(text: string | undefined | null): string {
+  return '<pre style="white-space:pre-wrap;word-break:break-word;margin:0;' +
+    'font-family:inherit;font-size:14px;line-height:1.6">' +
+    linkifyText(text) +
+    '</pre>'
+}
