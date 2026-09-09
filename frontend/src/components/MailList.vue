@@ -125,16 +125,14 @@
                同一套——「可能已打开」而不是「已读」：像素被加载只是参考，
                客户回信才是确凿的已读，列表上把它说成事实等于替系统编造一个
                关于客户的事实。第三态（没带追踪）压最淡但不省略：省略了它，
-               「未打开」的缺席就有两种读法。 -->
-          <el-tooltip
-            v-if="folder === 'sent'"
-            :content="readMark(m).hint"
-            placement="top"
-            :show-after="0"
-            :hide-after="0"
-          >
-            <span class="readmark" :class="readMark(m).cls">{{ readMark(m).label }}</span>
-          </el-tooltip>
+               「未打开」的缺席就有两种读法。
+
+               **不挂 tooltip**：措辞本身已经把话说完了（「可能已打开」这四个
+               字就是那句提示的意思），再弹一块解释只是让人扫一列已发送时
+               一路蹦出气泡。 -->
+          <span v-if="folder === 'sent'" class="readmark" :class="readMark(m).cls">
+            {{ readMark(m).label }}
+          </span>
           <!-- 按大小排的时候把大小摆出来——否则排了也看不出排了什么。 -->
           <span v-if="showSize" class="size">{{ humanSize(m.rawSize) }}</span>
           <time class="when" :datetime="m.receivedAt" :title="zonedStamp(m.receivedAt)">{{ listTime(m.receivedAt) }}</time>
@@ -295,18 +293,17 @@ function sentWho(m: MailRow): string {
 }
 
 // 对方是否已读的三态。判断顺序即优先级：真加载过 > 带着像素但没动静 > 根本没在看。
-function readMark(m: MailRow): { cls: string; label: string; hint: string } {
+function readMark(m: MailRow): { cls: string; label: string } {
   if (m.openedAt) {
     return {
       cls: 'opened',
       label: t('emails.maybeOpened'),
-      hint: t('emails.openedHint', { at: zonedStamp(m.openedAt) }),
     }
   }
   if (m.tracked) {
-    return { cls: 'watched', label: t('emails.noOpenYet'), hint: t('reader.noOpenHint') }
+    return { cls: 'watched', label: t('emails.noOpenYet') }
   }
-  return { cls: 'off', label: t('reader.noTracking'), hint: t('reader.noTrackingHint') }
+  return { cls: 'off', label: t('reader.noTracking') }
 }
 
 function isPicked(m: MailRow) {

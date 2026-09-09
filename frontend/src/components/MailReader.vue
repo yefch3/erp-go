@@ -42,26 +42,15 @@
       <el-tag size="small" :type="statusType(mail.status)" effect="plain">
         {{ t(`emails.statuses.${mail.status}`) }}
       </el-tag>
+      <!-- 三档都**不挂 tooltip**：措辞本身已经把话说完了。「可能已打开」
+           四个字就是那句提示的意思，「没带追踪」也是；再弹一块解释只是让
+           鼠标扫过去时蹦一个气泡。完整时间还在，用浏览器自带的 title。 -->
       <span class="rb-label">{{ t('reader.openedLabel') }}</span>
-      <el-tooltip
-        v-if="mail.openedAt"
-        :content="t('emails.openedHint', { at: zonedStamp(mail.openedAt) })"
-        placement="top"
-        :show-after="0"
-      >
-        <span class="rb-yes">{{ t('emails.maybeOpened') }} · {{ shortTime(mail.openedAt) }}</span>
-      </el-tooltip>
-      <el-tooltip
-        v-else-if="mail.trackingEnabled"
-        :content="t('reader.noOpenHint')"
-        placement="top"
-        :show-after="0"
-      >
-        <span class="rb-no">{{ t('emails.noOpenYet') }}</span>
-      </el-tooltip>
-      <el-tooltip v-else :content="t('reader.noTrackingHint')" placement="top" :show-after="0">
-        <span class="rb-off">{{ t('reader.noTracking') }}</span>
-      </el-tooltip>
+      <span v-if="mail.openedAt" class="rb-yes" :title="zonedStamp(mail.openedAt)">
+        {{ t('emails.maybeOpened') }} · {{ shortTime(mail.openedAt) }}
+      </span>
+      <span v-else-if="mail.trackingEnabled" class="rb-no">{{ t('emails.noOpenYet') }}</span>
+      <span v-else class="rb-off">{{ t('reader.noTracking') }}</span>
     </div>
 
     <!-- Anything that needs a person is said here, above the mail, because
