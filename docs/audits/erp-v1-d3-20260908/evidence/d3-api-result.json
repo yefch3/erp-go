@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-09-09T02:17:14.3817097-04:00",
+  "automatedContractId": "4",
+  "manualContractId": "5",
+  "manualContractStatus": "EXECUTING",
+  "productCount": 3,
+  "preReleaseQueuesEmpty": true,
+  "postReleaseProcurementStatus": "WAITING_REQUOTE",
+  "postReleaseShippingStatus": "WAITING_REQUOTE",
+  "finalSupplierLocked": false,
+  "finalForwarderLocked": false
+}

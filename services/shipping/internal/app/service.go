@@ -18,7 +18,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 11
+const SchemaVersion int32 = 12
 
 type databasePinger interface{ Ping(context.Context) error }
 

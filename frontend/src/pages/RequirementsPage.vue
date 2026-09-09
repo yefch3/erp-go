@@ -50,8 +50,8 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button type="primary" plain @click="openBatchReview(row)">
-              {{ t('requirements.prepareOrder') }}
+            <el-button :type="row.waitingRequote ? 'warning' : 'primary'" plain @click="openBatchReview(row)">
+              {{ row.waitingRequote ? t('requirements.reviewPendingRequote') : t('requirements.prepareOrder') }}
             </el-button>
           </template>
         </el-table-column>
@@ -69,8 +69,8 @@
     </el-card>
 
     <el-dialog v-model="batchReviewOpen" :title="activeBatch?.label" width="920px" destroy-on-close>
-      <el-alert type="info" :closable="false" show-icon class="alert">
-        {{ t('requirements.batchApprovalHint') }}
+      <el-alert :type="activeBatch?.waitingRequote ? 'warning' : 'info'" :closable="false" show-icon class="alert">
+        {{ activeBatch?.waitingRequote ? t('requirements.waitingRequoteHint') : t('requirements.batchApprovalHint') }}
       </el-alert>
       <section v-for="group in activeSupplierGroups" :key="group.key" class="supplier-group">
         <div class="supplier-group-head">
@@ -79,7 +79,7 @@
             <span v-if="group.factoryNames" class="sub supplier-factories">{{ group.factoryNames }}</span>
           </div>
           <el-button
-            v-if="canApprovalRequest"
+            v-if="canApprovalRequest && !activeBatch?.waitingRequote"
             type="success"
             plain
             @click="goOrder(group.lines)"
@@ -319,6 +319,7 @@ interface PurchaseBatch {
   requiredDate: string
   sourceLabels: string
   statusLabels: string
+  waitingRequote: boolean
   lines: Requirement[]
 }
 
@@ -365,6 +366,7 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
       sourceLabels: [...new Set(lines.map((line) => line.source === 'MANUAL' ? t('requirements.manual') : line.contractNo).filter(Boolean))].join('、'),
       statusLabels: [...new Set(lines.map((line) => t(`requirements.statuses.${line.status}`)))].join('、'),
+      waitingRequote: lines.some((line) => line.status === 'WAITING_REQUOTE'),
       lines,
     }
   })
@@ -417,8 +419,8 @@ async function load() {
     // 工厂这批只供得了 80 吨，剩下的 20 吨仍然是要买的活儿。从前这页只列
     // 「一点没买」的，一旦下了第一张单整批就从眼前消失了——等于告诉采购员
     // 这事办完了。剩下的得靠人记着，正是这类事情最容易掉的地方。
-    const [pending, partial] = await Promise.all(
-      ['PENDING', 'PARTIALLY_ORDERED'].map((state) =>
+    const pending = await Promise.all(
+      ['WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED'].map((state) =>
         get<{ requirements: Requirement[] }>(
           '/requirements',
           { page: page.value, page_size: pageSize, status: state, keyword: keyword.value },
@@ -426,7 +428,7 @@ async function load() {
       ),
     )
     const seen = new Set<string>()
-    rows.value = [...(pending.requirements ?? []), ...(partial.requirements ?? [])]
+    rows.value = pending.flatMap((result) => result.requirements ?? [])
       .filter((line) => Number(line.availableQty ?? 0) > 0)
       .filter((line) => {
         if (seen.has(line.id)) return false

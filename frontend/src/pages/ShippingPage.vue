@@ -15,15 +15,15 @@
           <el-card v-if="handoffs.length" shadow="never" class="schedule-card handoff-card">
             <div class="section-title">
               <div><h3>{{ t('shipping.contractHandoffs') }}</h3><p>{{ t('shipping.contractHandoffsHint') }}</p></div>
-              <el-tag type="warning">{{ handoffs.filter(item => item.status === 'PENDING').length }}</el-tag>
+              <el-tag type="warning">{{ handoffs.filter(item => item.status === 'WAITING_REQUOTE' || item.status === 'PENDING').length }}</el-tag>
             </div>
             <el-table :data="handoffs">
               <el-table-column prop="contractNo" :label="t('shipping.contractNo')" width="170" />
               <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="130" />
-              <el-table-column :label="t('shipping.freightBatch')" min-width="180"><template #default="{ row }">#{{ row.batchNo }} · {{ row.carrierForwarder || t('shipping.customerManaged') }}</template></el-table-column>
+              <el-table-column :label="t('shipping.freightBatch')" min-width="210"><template #default="{ row }">#{{ row.batchNo }}<template v-if="row.carrierForwarder"> · {{ t('shipping.presalesReference') }}：{{ row.carrierForwarder }}</template></template></el-table-column>
               <el-table-column :label="t('shipping.route')" min-width="190"><template #default="{ row }">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</template></el-table-column>
               <el-table-column :label="t('shipping.estimatedSailing')" width="210"><template #default="{ row }">{{ row.estimatedDeparture || '—' }} → {{ row.estimatedArrival || '—' }}</template></el-table-column>
-              <el-table-column :label="t('common.status')" width="130"><template #default="{ row }"><el-tag :type="row.status === 'PENDING' ? 'warning' : 'info'">{{ t(`shipping.handoffStatuses.${row.status}`) }}</el-tag></template></el-table-column>
+              <el-table-column :label="t('common.status')" width="150"><template #default="{ row }"><el-tag :type="['WAITING_REQUOTE','PENDING'].includes(row.status) ? 'warning' : 'info'">{{ t(`shipping.handoffStatuses.${row.status}`) }}</el-tag></template></el-table-column>
               <el-table-column v-if="auth.can('shipping:schedule:write')" :label="t('common.actions')" width="130"><template #default="{ row }"><el-button v-if="row.status === 'PENDING'" link type="primary" @click="openHandoff(row)">{{ t('shipping.createFromHandoff') }}</el-button></template></el-table-column>
             </el-table>
           </el-card>

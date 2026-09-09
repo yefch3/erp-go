@@ -175,6 +175,24 @@ func (s *Server) setReceivableDueDate(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) confirmContractExecutionCondition(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ConditionType string `json:"conditionType"`
+		Note          string `json:"note"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.ConfirmContractExecutionCondition(r.Context(), &exv1.ConfirmContractExecutionConditionRequest{
+		ContractId: idFromPath(r), ConditionType: body.ConditionType, Note: body.Note,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) reopenReceivable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`

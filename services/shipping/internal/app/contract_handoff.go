@@ -53,6 +53,7 @@ func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, even
 				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
 				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
 				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+				InitialStatus: "WAITING_REQUOTE",
 			}); err != nil {
 				return err
 			}

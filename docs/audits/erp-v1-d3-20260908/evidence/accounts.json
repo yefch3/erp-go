@@ -1,0 +1,12 @@
+{
+  "baseUrl": "http://127.0.0.1:25274",
+  "gateway": "http://127.0.0.1:28181",
+  "password": "D3-Acceptance-2026!",
+  "accounts": {
+    "buyer": "p1@d3.example.test",
+    "sales": "s1@d3.example.test",
+    "finance": "f1@d3.example.test",
+    "boss": "b1@d3.example.test",
+    "logistics": "l1@d3.example.test"
+  }
+}

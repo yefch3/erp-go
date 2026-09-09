@@ -144,6 +144,19 @@
         <el-table-column :label="t('receivableDue.effectiveDate')" width="120">
           <template #default="{ row }">{{ row.effectiveDate || '—' }}</template>
         </el-table-column>
+        <el-table-column :label="t('receivableDue.executionCondition')" min-width="180">
+          <template #default="{ row }">
+            <span v-if="row.executionConditionStatus === 'NOT_APPLICABLE'">—</span>
+            <div v-else-if="row.executionConditionStatus === 'READY'" class="condition-ready">
+              <el-tag type="success" effect="light">{{ t('receivableDue.executionReady') }}</el-tag>
+              <div class="sub">{{ conditionLabel(row.executionConditionType) }}</div>
+            </div>
+            <el-button v-else-if="canWrite && !row.manuallyEntered" type="primary" @click="openCondition(row)">
+              {{ t('receivableDue.confirmExecution') }}
+            </el-button>
+            <el-tag v-else type="warning" effect="plain">{{ t('receivableDue.executionWaiting') }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('receivableDue.owner')" min-width="110">
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
@@ -183,6 +196,31 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <el-dialog v-model="conditionOpen" :title="t('receivableDue.confirmExecutionTitle')" width="min(560px, 94vw)" destroy-on-close>
+      <template v-if="conditionRow">
+        <p class="close-target">{{ conditionRow.contractNo }} · {{ conditionRow.customerName }}</p>
+        <el-alert type="info" :closable="false" :title="t('receivableDue.confirmExecutionHint')" />
+        <el-form label-position="top" class="condition-form">
+          <el-form-item :label="t('receivableDue.executionCondition')" required>
+            <el-radio-group v-model="conditionForm.conditionType" class="condition-options">
+              <el-radio v-for="type in EXECUTION_CONDITIONS" :key="type" :value="type" border>
+                {{ conditionLabel(type) }}
+              </el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item :label="t('receivableDue.conditionNote')">
+            <el-input v-model="conditionForm.note" type="textarea" :rows="2" :placeholder="t('receivableDue.conditionNoteHint')" />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="conditionOpen=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="conditionBusy" :disabled="!conditionForm.conditionType" @click="submitCondition">
+          {{ t('receivableDue.confirmAndRelease') }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="detailOpen" :title="t('receivableDue.detailTitle')" width="min(820px, 96vw)">
       <template v-if="detailRow">
@@ -375,6 +413,36 @@ interface Row {
   closedByName: string
   closedAt: string
   manuallyEntered: boolean
+  executionConditionStatus: string
+  executionConditionType: string
+  executionConditionConfirmedAt: string
+  executionConditionConfirmedByName: string
+  executionConditionNote: string
+}
+
+const EXECUTION_CONDITIONS = ['PREPAYMENT_RECEIVED', 'LETTER_OF_CREDIT_RECEIVED', 'NO_PREPAYMENT_REQUIRED', 'SPECIAL_APPROVAL'] as const
+const conditionOpen = ref(false)
+const conditionBusy = ref(false)
+const conditionRow = ref<Row | null>(null)
+const conditionForm = reactive({ conditionType: '', note: '' })
+
+function conditionLabel(type: string) {
+  return type ? t(`receivableDue.executionConditions.${type}`) : '—'
+}
+function openCondition(row: Row) {
+  conditionRow.value = row
+  Object.assign(conditionForm, { conditionType: '', note: '' })
+  conditionOpen.value = true
+}
+async function submitCondition() {
+  if (!conditionRow.value || !conditionForm.conditionType) return
+  conditionBusy.value = true
+  try {
+    await post(`/receivable-due/${conditionRow.value.contractId}/execution-condition`, conditionForm)
+    conditionOpen.value = false
+    ElMessage.success(t('receivableDue.executionReleased'))
+    await load()
+  } finally { conditionBusy.value = false }
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -836,6 +904,10 @@ onMounted(() => {
   margin: 0 0 10px;
   font-weight: 600;
 }
+.condition-form { margin-top: 16px; }
+.condition-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.condition-options :deep(.el-radio) { margin: 0; min-height: 42px; }
+.condition-ready { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .close-figures {
   display: flex;
   gap: 24px;
@@ -857,5 +929,6 @@ onMounted(() => {
   .filters { align-items: stretch; }
   .filters :deep(.el-input) { width: 100%; max-width: none !important; }
   .pager { justify-content: flex-start; overflow-x: auto; }
+  .condition-options { grid-template-columns: 1fr; }
 }
 </style>

@@ -726,6 +726,12 @@ SELECT
     coalesce(cl.note, '')::text            AS closed_note,
     coalesce(cl.closed_by_name, '')::text  AS closed_by_name,
     coalesce(cl.created_at::text, '')::text AS closed_at,
+    CASE WHEN c.status <> 'EXECUTING' OR c.customer_id = 0 THEN 'NOT_APPLICABLE'
+         WHEN c.condition_confirmed_at IS NULL THEN 'WAITING' ELSE 'READY' END::text AS execution_condition_status,
+    c.execution_condition_type,
+    coalesce(c.condition_confirmed_at::text, '')::text AS execution_condition_confirmed_at,
+    c.condition_confirmed_by_name AS execution_condition_confirmed_by_name,
+    c.condition_confirmation_note AS execution_condition_note,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
@@ -780,25 +786,30 @@ type ListReceivableDueParams struct {
 }
 
 type ListReceivableDueRow struct {
-	ID              int64
-	ContractNo      string
-	CustomerID      int64
-	CustomerName    string
-	SalesEmployeeID int64
-	SalesEmployee   string
-	DueDate         string
-	EffectiveDate   string
-	Currency        string
-	TotalAmount     string
-	ReceivedAmount  string
-	OpenAmount      string
-	OverdueDays     int32
-	DueUnset        bool
-	ClosedCategory  string
-	ClosedNote      string
-	ClosedByName    string
-	ClosedAt        string
-	Total           int64
+	ID                                int64
+	ContractNo                        string
+	CustomerID                        int64
+	CustomerName                      string
+	SalesEmployeeID                   int64
+	SalesEmployee                     string
+	DueDate                           string
+	EffectiveDate                     string
+	Currency                          string
+	TotalAmount                       string
+	ReceivedAmount                    string
+	OpenAmount                        string
+	OverdueDays                       int32
+	DueUnset                          bool
+	ClosedCategory                    string
+	ClosedNote                        string
+	ClosedByName                      string
+	ClosedAt                          string
+	ExecutionConditionStatus          string
+	ExecutionConditionType            string
+	ExecutionConditionConfirmedAt     string
+	ExecutionConditionConfirmedByName string
+	ExecutionConditionNote            string
+	Total                             int64
 }
 
 // 财务的到期清单：还没收完的生效合同，按该收的日子排，逾期的在最前。
@@ -847,6 +858,11 @@ func (q *Queries) ListReceivableDue(ctx context.Context, arg ListReceivableDuePa
 			&i.ClosedNote,
 			&i.ClosedByName,
 			&i.ClosedAt,
+			&i.ExecutionConditionStatus,
+			&i.ExecutionConditionType,
+			&i.ExecutionConditionConfirmedAt,
+			&i.ExecutionConditionConfirmedByName,
+			&i.ExecutionConditionNote,
 			&i.Total,
 		); err != nil {
 			return nil, err

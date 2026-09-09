@@ -459,6 +459,7 @@ func (s *Server) Router() http.Handler {
 		// 事后改一份合同的应收到期日。合同的常规编辑口只对草稿开放、且只放
 		// 销售属主过，所以财务这条路自己开一个门，和「确认完成」并排。
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/due-date", s.setReceivableDueDate)
+		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/execution-condition", s.confirmContractExecutionCondition)
 		// 应收提醒按登录人隔离，同时要求具备收款读取权限，避免首页或徽标成为权限后门。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-reminders", s.listReceivableReminders)
 		r.With(s.perm("export:receipt:read")).Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)

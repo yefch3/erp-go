@@ -19,29 +19,30 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ReceiptService_ListBankAccounts_FullMethodName            = "/erp.export.v1.ReceiptService/ListBankAccounts"
-	ReceiptService_CreateBankAccount_FullMethodName           = "/erp.export.v1.ReceiptService/CreateBankAccount"
-	ReceiptService_ListTransactions_FullMethodName            = "/erp.export.v1.ReceiptService/ListTransactions"
-	ReceiptService_GetTransaction_FullMethodName              = "/erp.export.v1.ReceiptService/GetTransaction"
-	ReceiptService_RecordTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/RecordTransaction"
-	ReceiptService_AllocateReceipt_FullMethodName             = "/erp.export.v1.ReceiptService/AllocateReceipt"
-	ReceiptService_ReverseAllocation_FullMethodName           = "/erp.export.v1.ReceiptService/ReverseAllocation"
-	ReceiptService_MarkIrrelevant_FullMethodName              = "/erp.export.v1.ReceiptService/MarkIrrelevant"
-	ReceiptService_ReopenTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/ReopenTransaction"
-	ReceiptService_SettleTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/SettleTransaction"
-	ReceiptService_RevokeSettlement_FullMethodName            = "/erp.export.v1.ReceiptService/RevokeSettlement"
-	ReceiptService_ListOpenReceivables_FullMethodName         = "/erp.export.v1.ReceiptService/ListOpenReceivables"
-	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
-	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
-	ReceiptService_RecordContractReceipt_FullMethodName       = "/erp.export.v1.ReceiptService/RecordContractReceipt"
-	ReceiptService_CreateManualReceivable_FullMethodName      = "/erp.export.v1.ReceiptService/CreateManualReceivable"
-	ReceiptService_ReverseContractReceipt_FullMethodName      = "/erp.export.v1.ReceiptService/ReverseContractReceipt"
-	ReceiptService_CloseReceivable_FullMethodName             = "/erp.export.v1.ReceiptService/CloseReceivable"
-	ReceiptService_SetReceivableDueDate_FullMethodName        = "/erp.export.v1.ReceiptService/SetReceivableDueDate"
-	ReceiptService_ReopenReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/ReopenReceivable"
-	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
-	ReceiptService_MarkReceivableRemindersRead_FullMethodName = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
-	ReceiptService_UpdateManualReceivable_FullMethodName      = "/erp.export.v1.ReceiptService/UpdateManualReceivable"
+	ReceiptService_ListBankAccounts_FullMethodName                  = "/erp.export.v1.ReceiptService/ListBankAccounts"
+	ReceiptService_CreateBankAccount_FullMethodName                 = "/erp.export.v1.ReceiptService/CreateBankAccount"
+	ReceiptService_ListTransactions_FullMethodName                  = "/erp.export.v1.ReceiptService/ListTransactions"
+	ReceiptService_GetTransaction_FullMethodName                    = "/erp.export.v1.ReceiptService/GetTransaction"
+	ReceiptService_RecordTransaction_FullMethodName                 = "/erp.export.v1.ReceiptService/RecordTransaction"
+	ReceiptService_AllocateReceipt_FullMethodName                   = "/erp.export.v1.ReceiptService/AllocateReceipt"
+	ReceiptService_ReverseAllocation_FullMethodName                 = "/erp.export.v1.ReceiptService/ReverseAllocation"
+	ReceiptService_MarkIrrelevant_FullMethodName                    = "/erp.export.v1.ReceiptService/MarkIrrelevant"
+	ReceiptService_ReopenTransaction_FullMethodName                 = "/erp.export.v1.ReceiptService/ReopenTransaction"
+	ReceiptService_SettleTransaction_FullMethodName                 = "/erp.export.v1.ReceiptService/SettleTransaction"
+	ReceiptService_RevokeSettlement_FullMethodName                  = "/erp.export.v1.ReceiptService/RevokeSettlement"
+	ReceiptService_ListOpenReceivables_FullMethodName               = "/erp.export.v1.ReceiptService/ListOpenReceivables"
+	ReceiptService_GetContractReceipts_FullMethodName               = "/erp.export.v1.ReceiptService/GetContractReceipts"
+	ReceiptService_ListReceivableDue_FullMethodName                 = "/erp.export.v1.ReceiptService/ListReceivableDue"
+	ReceiptService_ConfirmContractExecutionCondition_FullMethodName = "/erp.export.v1.ReceiptService/ConfirmContractExecutionCondition"
+	ReceiptService_RecordContractReceipt_FullMethodName             = "/erp.export.v1.ReceiptService/RecordContractReceipt"
+	ReceiptService_CreateManualReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/CreateManualReceivable"
+	ReceiptService_ReverseContractReceipt_FullMethodName            = "/erp.export.v1.ReceiptService/ReverseContractReceipt"
+	ReceiptService_CloseReceivable_FullMethodName                   = "/erp.export.v1.ReceiptService/CloseReceivable"
+	ReceiptService_SetReceivableDueDate_FullMethodName              = "/erp.export.v1.ReceiptService/SetReceivableDueDate"
+	ReceiptService_ReopenReceivable_FullMethodName                  = "/erp.export.v1.ReceiptService/ReopenReceivable"
+	ReceiptService_ListReceivableReminders_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableReminders"
+	ReceiptService_MarkReceivableRemindersRead_FullMethodName       = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
+	ReceiptService_UpdateManualReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/UpdateManualReceivable"
 )
 
 // ReceiptServiceClient is the client API for ReceiptService service.
@@ -87,6 +88,9 @@ type ReceiptServiceClient interface {
 	// 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
 	// closed_only 翻面就是「已完成」页。
 	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
+	// Finance releases an executing contract to Procurement and Logistics by
+	// recording one of the four approved execution conditions.
+	ConfirmContractExecutionCondition(ctx context.Context, in *ConfirmContractExecutionConditionRequest, opts ...grpc.CallOption) (*ConfirmContractExecutionConditionResponse, error)
 	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
 	RecordContractReceipt(ctx context.Context, in *RecordContractReceiptRequest, opts ...grpc.CallOption) (*RecordContractReceiptResponse, error)
 	// Add a receivable that existed before the company started using ERP.
@@ -258,6 +262,16 @@ func (c *receiptServiceClient) ListReceivableDue(ctx context.Context, in *ListRe
 	return out, nil
 }
 
+func (c *receiptServiceClient) ConfirmContractExecutionCondition(ctx context.Context, in *ConfirmContractExecutionConditionRequest, opts ...grpc.CallOption) (*ConfirmContractExecutionConditionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmContractExecutionConditionResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_ConfirmContractExecutionCondition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) RecordContractReceipt(ctx context.Context, in *RecordContractReceiptRequest, opts ...grpc.CallOption) (*RecordContractReceiptResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RecordContractReceiptResponse)
@@ -391,6 +405,9 @@ type ReceiptServiceServer interface {
 	// 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
 	// closed_only 翻面就是「已完成」页。
 	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
+	// Finance releases an executing contract to Procurement and Logistics by
+	// recording one of the four approved execution conditions.
+	ConfirmContractExecutionCondition(context.Context, *ConfirmContractExecutionConditionRequest) (*ConfirmContractExecutionConditionResponse, error)
 	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
 	RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error)
 	// Add a receivable that existed before the company started using ERP.
@@ -463,6 +480,9 @@ func (UnimplementedReceiptServiceServer) GetContractReceipts(context.Context, *G
 }
 func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableDue not implemented")
+}
+func (UnimplementedReceiptServiceServer) ConfirmContractExecutionCondition(context.Context, *ConfirmContractExecutionConditionRequest) (*ConfirmContractExecutionConditionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmContractExecutionCondition not implemented")
 }
 func (UnimplementedReceiptServiceServer) RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecordContractReceipt not implemented")
@@ -764,6 +784,24 @@ func _ReceiptService_ListReceivableDue_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_ConfirmContractExecutionCondition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmContractExecutionConditionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).ConfirmContractExecutionCondition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_ConfirmContractExecutionCondition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).ConfirmContractExecutionCondition(ctx, req.(*ConfirmContractExecutionConditionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_RecordContractReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RecordContractReceiptRequest)
 	if err := dec(in); err != nil {
@@ -988,6 +1026,10 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReceivableDue",
 			Handler:    _ReceiptService_ListReceivableDue_Handler,
+		},
+		{
+			MethodName: "ConfirmContractExecutionCondition",
+			Handler:    _ReceiptService_ConfirmContractExecutionCondition_Handler,
 		},
 		{
 			MethodName: "RecordContractReceipt",

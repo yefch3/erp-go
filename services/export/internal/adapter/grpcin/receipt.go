@@ -195,7 +195,12 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
 			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
 			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
-			ManuallyEntered: r.ManuallyEntered,
+			ManuallyEntered:                   r.ManuallyEntered,
+			ExecutionConditionStatus:          r.ExecutionConditionStatus,
+			ExecutionConditionType:            r.ExecutionConditionType,
+			ExecutionConditionConfirmedAt:     r.ExecutionConditionConfirmedAt,
+			ExecutionConditionConfirmedByName: r.ExecutionConditionConfirmedByName,
+			ExecutionConditionNote:            r.ExecutionConditionNote,
 		})
 	}
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -268,6 +273,17 @@ func (h *ReceiptHandler) SetReceivableDueDate(ctx context.Context, req *exv1.Set
 		return nil, err
 	}
 	return &exv1.SetReceivableDueDateResponse{DueDate: due}, nil
+}
+
+func (h *ReceiptHandler) ConfirmContractExecutionCondition(ctx context.Context, req *exv1.ConfirmContractExecutionConditionRequest) (*exv1.ConfirmContractExecutionConditionResponse, error) {
+	result, err := h.svc.ConfirmContractExecutionCondition(ctx, grpcx.TenantID(ctx), req.GetContractId(), req.GetConditionType(), req.GetNote(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ConfirmContractExecutionConditionResponse{
+		Status: result.Status, ConditionType: result.ConditionType, ConfirmedAt: result.ConfirmedAt,
+		ConfirmedByName: result.ConfirmedByName, Note: result.Note,
+	}, nil
 }
 
 func (h *ReceiptHandler) ReopenReceivable(ctx context.Context, req *exv1.ReopenReceivableRequest) (*exv1.ReopenReceivableResponse, error) {

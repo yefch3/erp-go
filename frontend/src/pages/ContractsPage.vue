@@ -360,8 +360,10 @@
               {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.conditionConfirmedAt" :label="t('contracts.conditionConfirmation')" :span="2">
-            {{ detail.contract.conditionConfirmedByName }} · {{ formatTime(detail.contract.conditionConfirmedAt) }}<div class="sub">{{ detail.contract.conditionConfirmationNote }}</div>
+          <el-descriptions-item v-if="detail.contract.status === 'EXECUTING'" :label="t('contracts.conditionConfirmation')">
+            <el-tag :type="detail.contract.conditionConfirmedAt ? 'success' : 'warning'" effect="light">
+              {{ detail.contract.conditionConfirmedAt ? t('contracts.conditionReady') : t('contracts.conditionWaiting') }}
+            </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.terms')" :span="2">
             <div class="terms">{{ detail.version.terms || '—' }}</div>
