@@ -381,7 +381,7 @@
             </div>
           </details>
           <div
-            v-for="it in threadItems"
+            v-for="it in threadForDisplay"
             :key="it.direction + it.id"
             :data-thread-item="threadItemKey(it)"
             class="thread-item"
@@ -2638,6 +2638,13 @@ interface ThreadItem {
   }[]
 }
 const threadItems = ref<ThreadItem[]>([])
+// 界面上最新的排最前。
+//
+// **只翻显示，不翻数据。** threadItems 保持服务端给的时间正序，因为「最新的
+// 是最后一条」这个约定被好几处依赖着（默认展开哪一条、附件按发生顺序摊平），
+// 而一条会话本身就是按时间发生的——把顺序倒进数据里，后面每一个读它的人都
+// 要先想一遍「这里到底是正序还是倒序」。
+const threadForDisplay = computed(() => [...threadItems.value].reverse())
 
 // 整条会话的附件，按时间顺序摊平。threadItems 本身就是按发生顺序来的，所以
 // 这里不再排序——文件的顺序就是对话的顺序。
