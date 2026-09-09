@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <section class="home-head">
+    <section class="home-head workflow-head">
       <div>
         <span class="eyebrow">{{ t('todos.eyebrow') }}</span>
         <h1>{{ t('todos.greeting', { name: auth.employeeName }) }}</h1>
@@ -22,7 +22,7 @@
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'UPCOMING' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('UPCOMING')">
         <span>{{ t('todos.summaryUpcoming') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.upcoming : '—' }}</strong><small>{{ t('todos.summaryUpcomingHint') }}</small>
       </button>
-      <button class="summary-card danger" :class="{ active: activeTab === 'reminders' && reminderTiming === 'OVERDUE' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('OVERDUE')">
+      <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'OVERDUE', danger: reminderSummaryAvailable && reminderSummary.overdue > 0 }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('OVERDUE')">
         <span>{{ t('todos.summaryOverdue') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.overdue : '—' }}</strong><small>{{ t('todos.summaryOverdueHint') }}</small>
       </button>
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderRead === 'UNREAD' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateUnreadReminders">
@@ -592,12 +592,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.home-page { max-width: 1500px; margin: 0 auto; }
-.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
-.eyebrow { color: #0f8c82; font-size: 12px; font-weight: 700; letter-spacing: .14em; }
-.home-head h1 { margin: 6px 0 4px; font-size: 28px; line-height: 1.25; }
-.home-head p { margin: 0; color: var(--el-text-color-secondary); }
-.home-head .employee-context { margin-bottom: 5px; color: var(--el-text-color-regular); font-size: 13px; }
+.home-page { max-width: 1500px; margin: 0 auto; color: #141817; }
+.home-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.workflow-head { min-height: 78px; padding: 18px 20px; border: 1px solid #d8eef8; border-left: 4px solid #4ac1ff; border-radius: 12px; background: linear-gradient(110deg, #eefaff 0%, #fff 64%, #effcf5 100%); }
+.eyebrow { color: #148fc7; font-size: 11px; font-weight: 700; letter-spacing: .13em; }
+.home-head h1 { margin: 5px 0 3px; color: #141817; font-size: 22px; line-height: 1.3; }
+.home-head p { margin: 0; color: #60717c; font-size: 13px; }
+.home-head .employee-context { display: inline-block; margin: 0 8px 3px 0; color: #52636d; font-size: 12px; }
 .head-actions { display: flex; align-items: center; gap: 12px; }
 .updated { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
 .pending-content { min-height: 260px; }
@@ -607,14 +608,21 @@ onUnmounted(() => {
 .todo-source-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .approval-source-head { padding-bottom: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.summary-card { min-height: 116px; padding: 18px 20px; text-align: left; border: 1px solid var(--el-border-color-light); border-radius: 12px; background: var(--el-bg-color); color: inherit; }
+.summary-card { position: relative; min-height: 108px; overflow: hidden; padding: 16px 18px; text-align: left; border: 1px solid #dceaf0; border-radius: 12px; background: linear-gradient(145deg, #fff 15%, #f7fcff 100%); color: inherit; box-shadow: 0 7px 20px rgba(25, 72, 91, .04); }
+.summary-card::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: #4ac1ff; content: ''; }
 .summary-card:not(:disabled) { cursor: pointer; }
-.summary-card.active { border-left: 4px solid var(--el-color-primary); }
-.summary-card.danger { border-left: 4px solid var(--el-color-danger); }
-.summary-card span, .summary-card small { display: block; color: var(--el-text-color-secondary); }
-.summary-card strong { display: block; margin: 8px 0 4px; color: var(--el-text-color-primary); font-size: 28px; }
+.summary-card:nth-child(2)::before, .summary-card:nth-child(4)::before { background: #1fbf6c; }
+.summary-card.active { border-color: #8dd8f8; box-shadow: 0 9px 24px rgba(74, 193, 255, .12); }
+.summary-card.danger { border-color: #ffc8cc; background: #fffafa; }
+.summary-card.danger::before { background: #ff6b72; }
+.summary-card span, .summary-card small { display: block; color: #6a7a83; }
+.summary-card span { font-size: 13px; }
+.summary-card small { font-size: 12px; }
+.summary-card strong { display: block; margin: 7px 0 3px; color: #141817; font-size: 27px; font-variant-numeric: tabular-nums; }
 .summary-card:disabled { opacity: 1; }
-.work-card { border-radius: 12px; }
+.work-card { border-color: #dceaf0; border-radius: 12px; box-shadow: 0 8px 26px rgba(25, 72, 91, .05); }
+.home-page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
+.home-page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
 .home-tabs :deep(.el-tabs__header) { margin-bottom: 18px; }
 .filters { display: grid; grid-template-columns: minmax(260px, 1fr) 190px 180px auto; gap: 12px; margin-bottom: 16px; }
 .reminder-filters { grid-template-columns: minmax(240px, 1fr) 160px 160px 140px auto auto; }

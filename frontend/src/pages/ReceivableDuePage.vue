@@ -1,13 +1,8 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('receivableDue.eyebrow') }}</div>
-        <h1>{{ t('receivableDue.title') }}</h1>
-        <p>{{ t('receivableDue.subtitle') }}</p>
-      </div>
-      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('receivableDue.addManual') }}</el-button>
-    </header>
+    <WorkflowPageHeader :title="t('receivableDue.title')" :description="t('receivableDue.subtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openManual">{{ t('receivableDue.addManual') }}</el-button></template>
+    </WorkflowPageHeader>
 
     <el-dialog v-model="manualOpen" :title="t('receivableDue.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -369,6 +364,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, patch, post } from '../api'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -800,22 +796,8 @@ onMounted(() => {
   min-width: 0;
   margin: 0 auto;
 }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
-.page-head .eyebrow {
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  color: var(--el-text-color-secondary);
-}
-.page-head h1 {
-  margin: 4px 0 6px;
-  font-size: 26px;
-}
-.page-head p {
-  margin: 0;
-  color: var(--el-text-color-regular);
-}
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -825,11 +807,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-height: 86px;
-  padding: 12px 16px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  min-height: 90px;
+  padding: 14px 16px;
+  border: 1px solid #dceaf0;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #fff 15%, #f7fcff 100%);
+  box-shadow: 0 7px 20px rgba(25, 72, 91, .04);
 }
 .metric.is-alarm {
   border-color: var(--el-color-danger-light-5);
@@ -855,9 +838,13 @@ onMounted(() => {
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  border-color: #dceaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(25, 72, 91, .05);
 }
+.page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
+.page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
 .filters {
   display: flex;
   align-items: center;
@@ -922,8 +909,6 @@ onMounted(() => {
   color: var(--el-color-warning);
 }
 @media (max-width: 768px) {
-  .page-head { flex-direction: column; align-items: stretch; }
-  .page-head > :deep(.el-button) { align-self: flex-start; }
   .metrics { grid-template-columns: 1fr; }
   .panel { padding: 12px; }
   .filters { align-items: stretch; }
