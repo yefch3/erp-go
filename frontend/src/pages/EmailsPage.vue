@@ -1036,7 +1036,7 @@
       ref="composer"
       v-model="composing"
       :mailboxes="composableMailboxes"
-      :current-account="currentAccount"
+      :current-account="composeAccount"
       @sent="onSent"
       @saved="onDraftSaved"
     />
@@ -1424,6 +1424,12 @@ interface InboundMail {
   hasRaw?: boolean
   // Set only on search results: which folder the hit was found in.
   matchFolder?: string
+  // 同上，跨信箱那一维：这条命中是哪个箱的。列表行上用来挂信箱标签。
+  matchAccount?: number
+  // 这封信落在哪个信箱。**只在单封读取时有值**，服务端给的。
+  // 写信框的发件人读它（见 composeAccount）：站在 A 箱里点开的可能是 B 箱
+  // 收到的信，回信得从 B 发出去。
+  accountId?: number | string
   // Which mailbox folder this copy sits in. 'SENT' is what tells the reader
   // to show 对方是否已读 — once both are an InboundMail, nothing else does.
   folder?: string
@@ -1633,6 +1639,26 @@ const mailboxLabels = computed(() => {
   const out: Record<number, string> = {}
   for (const b of mailboxes.value) out[b.id] = b.email
   return out
+})
+
+// 写信框默认从哪个箱发。
+//
+// **打开着一封信的时候，跟着那封信走**，不跟着左栏的高亮走。搜索横跨信箱，
+// 站在 A 箱里点开的可能是 B 箱收到的信——跟着高亮走就是「读 B 的信、从 A
+// 回过去」，客户看到的发件人和他寄到的地址对不上，而且没有任何提示。
+//
+// 没开着信（点「写邮件」）时才是左栏那个箱：那时没有别的信息可依据，而人
+// 正站在那个箱上。
+//
+// 这封信是从哪个箱来的由服务端说（单封读取带回 accountId），不由前端记——
+// 刷新一下、或者别人把带 ?mail= 的链接发过来，前端手里什么都没有。
+// 要求那个箱**还开着**（composableMailboxes 是发件人下拉的那份名单）：
+// 退出过的箱不在下拉里，指过去的话下拉会是空白一格，而人只会看到「发件人
+// 没填」却不知道为什么。退回左栏那个箱，至少是个能选中的选项。
+const composeAccount = computed(() => {
+  const own = Number(openedInbound.value?.accountId ?? 0)
+  if (own && composableMailboxes.value.some((b) => b.id === own)) return own
+  return currentAccount.value
 })
 // 列表按哪一列排。地址栏说了算（applyRoute 写它），这里只是镜像。
 const sort = ref<MailSort>(DEFAULT_SORT)
@@ -2475,10 +2501,6 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
-// 点开搜索结果里别的箱的那封信时置上。见 openInbound：那一次切箱是跟着信
-// 走的，令牌和导航都已经在那儿办妥了，下面那个 watch 靠它分辨。
-let keepSearchOnSwitch = false
-
 // 切信箱 = 重新开始翻这个箱。
 //
 // 游标必须清掉：它编的是**上一个箱**的排序位置，带着它翻新箱会从一个毫无
@@ -2487,19 +2509,8 @@ let keepSearchOnSwitch = false
 // 也写进地址栏。仓库的习惯是可分享的状态放 URL，而这里还有一层：不写的话
 // 刷新会回到默认箱，而人以为自己还在另一个箱里；浏览器后退更糟——它会退回
 // 一个属于**上一个箱**的游标，然后拿它去翻当前这个箱。
-//
-// 例外是「跟着搜索结果走」的那一次，见开头第一个分支。
 watch(currentAccount, (now, before) => {
   if (!before || now === before) return
-  if (keepSearchOnSwitch) {
-    keepSearchOnSwitch = false
-    // 令牌和导航都在 openInbound 里办妥了，列表要留着搜索结果，所以这里
-    // 不重新导航、不清关键词。只补两样跟着「当前这个箱」走的东西。
-    // 自建文件夹不用管：上面那个 watch 单独在做。
-    refreshUnread()
-    checkSyncHealth()
-    return
-  }
   // 换一把令牌。**必须在发请求之前**——令牌决定服务端给你看哪个箱
   // （见网关 requireMailUnlock），带着旧箱那把去拉新箱的列表，拿回来的
   // 还是旧箱的信。
@@ -2680,26 +2691,17 @@ async function load() {
 }
 
 // A row click is a navigation; the route watcher does the fetching.
+// 点开一封信**不动左栏**。
+//
+// 搜索结果横跨信箱，一开始这里会跟着切到那封信所在的箱——左边的高亮跟着
+// 跳。那是错的：搜索是「翻遍所有箱找那封信」，不是「换个箱重新开始翻」。
+// 左栏跳来跳去等于每点一条结果就换一次上下文，而人只是想看看这几封是什么。
+//
+// 那次切箱本来要解决的是「回信从哪个地址发出去」——不解决的话，读的是 B
+// 收到的信而写信框的发件人还跟着左边高亮的 A，「读 B 的信、从 A 回过去」。
+// 现在那件事由**这封信自己**回答：单封读取会带回 accountId，写信框和
+// replyingAddress 都读它。信箱跟着信走，左栏跟着人走，两件事分开。
 function openInbound(row: MailRow) {
-  // 搜索结果横跨信箱，所以点开一封之前可能要先**换到它所在的那个箱**。
-  //
-  // 不换的话，读的是 B 收到的信，而写信框的发件人还跟着 A——「读 B 的信、
-  // 从 A 回过去」正是按箱发信要消掉的那件事，而且不会有任何报错。附件预览、
-  // 会话串、标记已读也都跟着令牌走。
-  //
-  // 换不过去（那个箱刚被退出）就照常打开：正文按 owner 取得到，只是回信仍
-  // 用当前这个箱——比点了没反应强。
-  const acct = Number(row.matchAccount ?? 0)
-  if (isSearching.value && acct && acct !== currentAccount.value && useMailbox(acct)) {
-    // 这一次切箱是「跟着这封信走」，不是「换个箱重新开始翻」：关键词和
-    // 这一屏搜索结果都要留着。下面那个 watch 靠这个旗子分辨。
-    keepSearchOnSwitch = true
-    currentAccount.value = acct
-    // acct 一起写进地址栏：不写的话，刷新或后退会把 currentAccount 拉回
-    // 上一个箱，而令牌已经是这个箱的——左边高亮一个箱、右边是另一个箱的信。
-    pushState({ mail: row.id, acct: String(acct) })
-    return
-  }
   pushState({ mail: row.id })
 }
 
@@ -3310,13 +3312,11 @@ async function replyToInbound() {
 
 // 回复全部：收件人是发信人（有 Reply-To 用它），原信 To 和 Cc 里其余的人进
 // 抄送，去掉我名下全部信箱的地址。规则和测试在 lib/replyAll。
-// 这次回信会从哪个地址发出去。写信框的发件人默认就是「当前在看的那个箱」
-// （见 EmailComposer 的 fromAccount），所以这里同源取，两边不会各说各的。
-// 合并视图（currentAccount = 0）下没有「当前的箱」，退回默认箱——那也正是
-// 那种情况下发信会用的箱。
+// 这次回信会从哪个地址发出去。写信框的发件人读的是同一个来源
+// （composeAccount → EmailComposer 的 fromAccount），所以两边不会各说各的。
 function replyingAddress(): string {
   const boxes = mailboxes.value
-  const cur = boxes.find((b) => b.id === currentAccount.value)
+  const cur = boxes.find((b) => b.id === composeAccount.value)
   return (cur ?? boxes.find((b) => b.isDefault) ?? boxes[0])?.email ?? ''
 }
 
@@ -4454,17 +4454,13 @@ async function doUnsuppress(row: Suppression) {
      actually use. */
   background: var(--mail-ground);
   padding: 14px 16px;
-  /* The list responds to the width IT has, not the window's: the app shell's
-     nav and this page's rail both take a fixed slice first, so a viewport
-     query would be answering a different question.
+  /* 这里从前建着一个名叫 mailbox 的 CSS 容器，给邮件行的「窄了就收」用。
+     **它已经删了**，连同那几条规则一起——见 MailList.vue 里那段说明。
 
-     On .pane rather than on .mailbox because inline-size containment stops an
-     element contributing its content's width to its ancestors — put it on the
-     page root and the shell's main column, which sizes to content, collapses
-     to its padding. A flex item with min-width:0 already has a definite width
-     from layout, so containing it costs nothing. */
-  container-type: inline-size;
-  container-name: mailbox;
+     留个记号在这儿，因为这是个值得记住的坑：改成三栏之后 .pane 同时装着
+     列表列和阅读区，容器测的是两列之和（一千多），而真正的列表列只有
+     280–400px。规则一条都没触发，行里的东西溢出来叠在一起，看着像渲染
+     出错。**容器建在哪一层，量的就是哪一层**，而布局改动会悄悄换掉那一层。 */
 }
 /* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists, and
    Element Plus paints a table white. Left alone they would put back exactly

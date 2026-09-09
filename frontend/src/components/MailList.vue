@@ -82,6 +82,15 @@
            a mail is a state change in this app, not a document to fetch; the
            action buttons then sit outside it, which a link could not do
            without nesting interactive elements inside itself. -->
+      <!-- 三行，照 Foxmail：发件人+日期 / 主题 / 摘要。
+           从前是一行 —— 发件人 | 主题 — 摘要 | 日期 —— 那是给一条**整页宽**
+           的列表设计的。改成三栏之后列表列只有 280–400px，一行里塞不下四样
+           东西，于是它们直接叠在一起（发件人压着主题、主题压着日期），因为
+           .who 是定宽不收缩的而 .body 没有 overflow:hidden 兜住溢出。
+
+           窄列里横着排不下的东西，竖着排得下：每一行自己占满整列的宽度，
+           长了就省略号，不会挤到别人身上。这也正是所有窄列表（Foxmail、
+           Outlook 的紧凑列、手机上的邮件 app）都是多行的原因。 -->
       <div
         class="body"
         role="button"
@@ -91,16 +100,41 @@
         @keydown.enter.prevent="emit('open', m)"
         @keydown.space.prevent="emit('open', m)"
       >
-        <span v-if="otherMailbox(m)" class="in-mailbox">{{ otherMailbox(m) }}</span>
-        <span v-if="m.matchFolder" class="in-folder">{{ folderLabel(m.matchFolder) }}</span>
-        <span class="who">
-          <!-- A sent mail is about who it went to; a received one about who
-               it came from. Same column, different question. -->
-          {{ folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail) }}
+        <!-- 第一行：谁，以及什么时候。一列邮件先被扫的就是这两样。 -->
+        <span class="l1">
+          <span class="who">
+            <!-- A sent mail is about who it went to; a received one about who
+                 it came from. Same column, different question. -->
+            {{ folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail) }}
+          </span>
           <!-- One row per conversation; this is how many messages it holds. -->
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
+          <!-- 对方是否已读，只在已发送里出现。三态和详情页同一套，措辞也
+               同一套——「可能已打开」而不是「已读」：像素被加载只是参考，
+               客户回信才是确凿的已读，列表上把它说成事实等于替系统编造一个
+               关于客户的事实。第三态（没带追踪）压最淡但不省略：省略了它，
+               「未打开」的缺席就有两种读法。 -->
+          <el-tooltip
+            v-if="folder === 'sent'"
+            :content="readMark(m).hint"
+            placement="top"
+            :show-after="0"
+            :hide-after="0"
+          >
+            <span class="readmark" :class="readMark(m).cls">{{ readMark(m).label }}</span>
+          </el-tooltip>
+          <!-- 按大小排的时候把大小摆出来——否则排了也看不出排了什么。 -->
+          <span v-if="showSize" class="size">{{ humanSize(m.rawSize) }}</span>
+          <time class="when" :datetime="m.receivedAt" :title="zonedStamp(m.receivedAt)">{{ listTime(m.receivedAt) }}</time>
         </span>
-        <span class="line">
+
+        <!-- 第二行：主题，以及它属于哪儿。标签跟着主题走而不是跟着发件人，
+             照 Gmail：标签回答的是「这封信被归到哪里」，和主题是一句话。 -->
+        <span class="l2">
+          <!-- title 带完整地址：窄列里这个标签会被压成「fangch…」，认得出是
+               另一个箱但认不出是哪个，鼠标停一下就知道了。 -->
+          <span v-if="otherMailbox(m)" class="in-mailbox" :title="otherMailbox(m)">{{ otherMailbox(m) }}</span>
+          <span v-if="m.matchFolder" class="in-folder">{{ folderLabel(m.matchFolder) }}</span>
           <!-- Split into text runs and rendered as elements rather than
                through v-html: the matched string is whatever somebody typed
                into a search box, and the snippet is text from a stranger's
@@ -111,49 +145,33 @@
               <template v-else>{{ part.text }}</template>
             </template>
           </span>
-          <span v-if="m.snippet" class="snip">
-            —
-            <template v-for="(part, i) in split(m.snippet)" :key="i">
-              <mark v-if="part.hit">{{ part.text }}</mark>
-              <template v-else>{{ part.text }}</template>
-            </template>
-          </span>
+          <el-tooltip
+            v-if="m.hasAttachments"
+            :content="t('emails.attachments')"
+            placement="top"
+            :show-after="0"
+            :hide-after="0"
+          >
+            <el-icon class="clip"><Paperclip /></el-icon>
+          </el-tooltip>
+        </span>
+
+        <!-- 第三行：摘要。没有摘要就整行不出现，行高跟着缩——空着一行会让
+             这一封看起来比邻居"轻"，而它并不是。 -->
+        <span v-if="m.snippet" class="snip">
+          <template v-for="(part, i) in split(m.snippet)" :key="i">
+            <mark v-if="part.hit">{{ part.text }}</mark>
+            <template v-else>{{ part.text }}</template>
+          </template>
         </span>
       </div>
 
-      <!-- 对方是否已读，只在已发送里出现。三态和详情页同一套，措辞也同一套
-           ——「可能已打开」而不是「已读」：像素被加载只是参考，客户回信才是
-           确凿的已读，列表上把它说成事实等于替系统编造一个关于客户的事实。
-           第三态（没带追踪，纯文本信或当时没有公网地址）压最淡但不省略：
-           省略了它，「未打开」的缺席就有两种读法。 -->
-      <el-tooltip
-        v-if="folder === 'sent'"
-        :content="readMark(m).hint"
-        placement="top"
-        :show-after="0"
-        :hide-after="0"
-      >
-        <span class="readmark" :class="readMark(m).cls">{{ readMark(m).label }}</span>
-      </el-tooltip>
-
-      <el-tooltip
-        v-if="m.hasAttachments"
-        :content="t('emails.attachments')"
-        placement="top"
-        :show-after="0"
-        :hide-after="0"
-      >
-        <el-icon class="clip"><Paperclip /></el-icon>
-      </el-tooltip>
-
-      <!-- Time and actions share one cell: the actions appear where the date
-           was, so the row does not reflow under the cursor and the next row
-           down stays where the eye left it. -->
-      <div class="tail" :class="{ wide: showSize }">
-        <!-- 按大小排的时候把大小摆出来——否则排了也看不出排了什么。 -->
-        <span v-if="showSize" class="size">{{ humanSize(m.rawSize) }}</span>
-        <time class="when" :datetime="m.receivedAt" :title="zonedStamp(m.receivedAt)">{{ listTime(m.receivedAt) }}</time>
-        <div class="acts">
+      <!-- 行内按钮浮在右边，不占布局宽度。
+           从前它们和日期共用一格（悬停时替换日期），那是一行式布局里为了
+           「行不要在光标下重排」；三行之后日期在第一行，按钮再挤进去就要
+           和日期抢那 46px。浮起来是同一个目的的另一种做法：布局不动，
+           而且窄列里也不会把主题挤掉。 -->
+      <div class="acts">
           <el-tooltip
             v-for="a in actionsFor(m)"
             :key="a.key"
@@ -174,7 +192,6 @@
               <el-icon><component :is="a.icon" /></el-icon>
             </button>
           </el-tooltip>
-        </div>
       </div>
     </li>
   </ul>
@@ -425,10 +442,14 @@ function ariaFor(m: MailRow) {
 
 .row {
   display: flex;
-  align-items: center;
+  /* 顶部对齐，不是居中：勾选框和星标属于第一行（发件人那一行），
+     居中的话它们会飘到主题旁边，看着像在标记主题。 */
+  align-items: flex-start;
   gap: 6px;
-  height: var(--mail-row-h);
-  padding: var(--mail-row-pad);
+  /* 高度由内容定。三行是常态，没有摘要的（投递记录、空正文）自然是两行，
+     不必为它留一条空行——空着一行会让那一封看起来比邻居"轻"。
+     三行约 76px，和 Foxmail 一档：再紧就分不出三行，再松一屏就少两封。 */
+  padding: 7px 14px;
   border-bottom: 1px solid var(--mail-divider);
   background: var(--mail-surface);
   cursor: pointer;
@@ -460,12 +481,14 @@ function ariaFor(m: MailRow) {
   background: var(--el-color-primary-light-9);
 }
 
-/* 宽度写死，是为了让下面那个空位能对得上：一个靠内容撑开的宽度没法复制。 */
+/* 宽度写死，是为了让下面那个空位能对得上：一个靠内容撑开的宽度没法复制。
+   高度对齐第一行（发件人那一行），不是整行：三行高的行里居中会让它飘到
+   主题旁边，看着像在标记主题。 */
 .pick {
   flex: none;
   width: 22px;
   margin-right: 2px;
-  height: 100%;
+  height: 21px;
 }
 /* 投递记录那一行的空位——列要对齐，哪怕这一行没有框可以勾。 */
 .pick-gap {
@@ -481,7 +504,8 @@ function ariaFor(m: MailRow) {
   display: grid;
   place-items: center;
   width: 24px;
-  height: 100%;
+  /* 同 .pick：跟第一行走。 */
+  height: 21px;
   padding: 0;
   background: none;
   border: none;
@@ -503,16 +527,14 @@ function ariaFor(m: MailRow) {
   width: 24px;
 }
 
+/* 三行竖着排。每一行自己占满整列的宽度，长了就省略号——这正是横排做不到
+   的：横排里定宽的发件人不肯收缩，一挤就溢出来盖在邻居身上。 */
 .body {
   display: flex;
-  /* Centred, not baseline-aligned. On a baseline the text sits against the
-     top of a fixed-height row and every line in the list reads as if it had
-     slipped upwards — which is exactly how it looked. */
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 1px;
   flex: 1;
   min-width: 0;
-  height: 100%;
   border: none;
   background: none;
   text-align: start;
@@ -526,16 +548,33 @@ function ariaFor(m: MailRow) {
   border-radius: 4px;
 }
 
+/* 每一行内部都是「一个会收缩的主角 + 几个配角」。min-width: 0 是主角能收缩
+   的前提：flex 子项默认不会缩到内容宽度以下，少了这一条，长地址就会把日期
+   顶出列外——那正是改版前那一版的毛病。
+
+   overflow: hidden 是兜底，不是靠它排版。上一版之所以能叠成一团，是因为
+   溢出的东西可以画到框外面去；这里封住那条路，将来再有什么想不到的内容
+   （超长的标签、别的语言）也只会被切掉，不会盖住邻居。 */
+.l1,
+.l2 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.snip {
+  min-width: 0;
+}
+
 .who {
-  flex: none;
-  width: var(--mail-who-w);
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* A line box of its own, so the sender and the subject sit on the same
-     centre line rather than each finding its own. */
-  line-height: var(--mail-row-h);
   font-size: var(--mail-text);
+  line-height: 1.45;
   color: var(--el-text-color-regular);
 }
 .unread .who {
@@ -544,7 +583,7 @@ function ariaFor(m: MailRow) {
 }
 
 .tcount {
-  margin-left: 4px;
+  flex: none;
   font-size: var(--mail-meta);
   font-weight: 400;
   color: var(--el-text-color-secondary);
@@ -552,25 +591,32 @@ function ariaFor(m: MailRow) {
 
 /* Subject and snippet on one line, the snippet giving up its space first:
    what the mail is about survives truncation, the preview of it does not. */
-.line {
-  flex: 1;
-  min-width: 0;
+/* 主题是第二行的主角。min-width 是一条底线：标签和主题同在一行，而标签
+   （信箱地址）可以很长——不设底线的话，窄列里标签会把主题挤成 0 宽，
+   于是这一行只剩两个标签，看不出这封信是关于什么的。宁可标签被切短。 */
+.subj {
+  flex: 1 1 auto;
+  min-width: 5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: var(--mail-row-h);
   font-size: var(--mail-text);
-  color: var(--el-text-color-secondary);
-}
-.subj {
+  line-height: 1.45;
   color: var(--el-text-color-regular);
 }
 .unread .subj {
   font-weight: 700;
   color: var(--el-text-color-primary);
 }
+/* 摘要压一号、压一档灰：它是第三顺位的信息，和主题同样重就等于没有层次。
+   单行省略——两行会让每一行的高度取决于摘要长度，一列邮件的节奏就乱了。 */
 .snip {
-  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--mail-sub);
+  line-height: 1.45;
+  color: var(--el-text-color-secondary);
 }
 
 .clip {
@@ -578,21 +624,9 @@ function ariaFor(m: MailRow) {
   color: var(--el-text-color-secondary);
   font-size: 14px;
 }
-
-.tail {
-  flex: none;
-  width: var(--mail-when-w);
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 10px;
-}
 /* 带着大小的时候让它宽一点，但别把主题那一列挤没了。 */
-.tail.wide {
-  width: auto;
-  min-width: var(--mail-when-w);
-}
 .size {
+  flex: none;
   font-size: var(--mail-meta);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
@@ -642,6 +676,7 @@ function ariaFor(m: MailRow) {
   margin-left: 2px;
 }
 .when {
+  flex: none;
   font-size: var(--mail-meta);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
@@ -652,16 +687,20 @@ function ariaFor(m: MailRow) {
 }
 
 /* Hidden until the row is under the cursor or holds focus — the list is for
-   reading, and three icons on every line would make it a control panel. */
+   reading, and three icons on every line would make it a control panel.
+   浮在右边，不占布局宽度：三行之后日期在第一行，按钮再挤进那一行就要和它
+   抢那 46px，而这一列总共也就 300 出头。自带底色，好让下面的文字不透上来。 */
 .acts {
   display: none;
   gap: 2px;
-}
-.row:hover .when,
-.row:focus-within .when,
-.row:hover .size,
-.row:focus-within .size {
-  display: none;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--mail-row-hover);
+  box-shadow: 0 0 0 4px var(--mail-row-hover);
 }
 .row:hover .acts,
 .row:focus-within .acts {
@@ -691,32 +730,19 @@ function ariaFor(m: MailRow) {
   outline-offset: -2px;
 }
 
-/* Narrow: the sender column gives up width first, then the snippet goes. The
-   subject is the last thing standing, because it is the only part with a
-   chance of being read at this size.
+/* 这里从前有三条 @container：宽度不够时先让发件人变窄、再藏摘要、再整个
+   藏掉发件人。**它们全部删掉了**，因为三行式布局不需要它们，而它们上一版
+   造成的正是那次文字叠在一起的事故：
 
-   Keyed to the mailbox container, not the viewport — this list sits beside a
-   rail inside an app shell, so the window's width says very little about how
-   much room the row actually has. */
-/* Measured against the pane, which is far narrower than the window: at a
-   1280px screen the app's nav and this page's rail leave it about 770px. The
-   first cut here was set as if it had the whole window and dropped the snippet
-   on an ordinary desktop. */
-@container mailbox (max-width: 700px) {
-  .who {
-    width: 132px;
-  }
-}
-@container mailbox (max-width: 520px) {
-  .snip {
-    display: none;
-  }
-}
-@container mailbox (max-width: 400px) {
-  .who {
-    display: none;
-  }
-}
+   容器建在 .pane 上，而 .pane 从三栏改版之后同时装着列表列**和**阅读区，
+   宽度一千多；真正的列表列只有 280–400px。于是「窄了就收」的规则一条都没
+   触发，定宽 184px 的发件人不肯收缩、摘要也还在，一行四样东西塞进 340px，
+   直接溢出到邻居身上——发件人压着主题、主题压着日期。查了半天像是渲染
+   出错，其实是一条**永远为假**的媒体查询。
+
+   竖着排就没有这个问题：每一行是一个独立的收缩上下文，窄到什么程度都只是
+   省略号更早出现。所以这几条规则连同它们要修的问题一起消失，而不是把断点
+   改小——一条要靠正确的容器才成立的规则，是下一次同样事故的种子。 */
 
 
 /* The matched words. A background wash rather than a colour change, so a hit
@@ -730,27 +756,31 @@ function ariaFor(m: MailRow) {
 }
 /* Where this result was found. Quiet — it is context for the row, not the
    point of it, and every row in a result set carries one. */
+/* 两个标签都**可以被压缩**：它们和主题同在第二行，而主题是主角。
+   flex-shrink 留着（不是 flex: none），压到 3em 以下就没意义了，所以给个
+   底，再往下由 .subj 的 min-width 决定谁先让位。 */
 .in-folder,
 .in-mailbox {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 3em;
   align-self: center;
   font-size: 11px;
   line-height: 1.6;
   padding: 0 6px;
-  margin-right: 8px;
   border-radius: 9px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 信箱标签比文件夹标签重：它说的是「这封不在你以为的那个箱里」，是一列
-   搜索结果里最容易看漏、看漏了最费解的一件事。地址可能很长，收窄到一眼
-   能认出是哪家的程度就够。 */
+   搜索结果里最容易看漏、看漏了最费解的一件事。
+   收得比从前更窄（8em），而且**允许再收缩**：它和主题同在第二行，一个不肯
+   收缩的长地址会把主题挤成两三个字。地址是配角，主题是主角。 */
 .in-mailbox {
-  max-width: 12em;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 8em;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }

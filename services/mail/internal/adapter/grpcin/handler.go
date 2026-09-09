@@ -839,7 +839,8 @@ func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest)
 
 func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 	m := &mailv1.InboundMail{
-		Id: v.ID, FromEmail: v.FromEmail, FromName: v.FromName,
+		Id: v.ID, AccountId: v.AccountID,
+		FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
 		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,

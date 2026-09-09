@@ -15,7 +15,11 @@ import (
 
 // InboundView is one received message as the API returns it.
 type InboundView struct {
-	ID             int64
+	ID int64
+	// 这封信落在哪个信箱。搜索横跨信箱之后必须跟着信走：一封 B 箱收到的信
+	// 可能是站在 A 箱里点开的，而「点回复从哪个地址发出去」得看这封信是
+	// 哪个箱收到的，不能看左边高亮着谁——那就是「读 B 的信、从 A 回过去」。
+	AccountID      int64
 	FromEmail      string
 	FromName       string
 	ToEmail        string
@@ -389,7 +393,8 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	}
 
 	v := InboundView{
-		ID: row.ID, FromEmail: row.FromEmail, FromName: row.FromName,
+		ID: row.ID, AccountID: row.AccountID,
+		FromEmail: row.FromEmail, FromName: row.FromName,
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
