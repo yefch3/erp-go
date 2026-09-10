@@ -1959,6 +1959,13 @@ export default {
     noDrafts: '草稿箱是空的',
     noSubject: '（无主题）',
     draftRecipients: '{n} 位收件人',
+    // 草稿箱的三行式列表和右边的预览。
+    draftTo: '写给',
+    draftNoRecipient: '（还没写收件人）',
+    draftNoBody: '（正文是空的）',
+    draftAndMore: '{first} 等 {n} 人',
+    editDraft: '接着写',
+    pickADraft: '选一封草稿，右边看内容；双击接着写。',
     savedAt: '保存时间',
     discardTitle: '放弃这封邮件？',
     discardHint: '还没保存的内容会丢失。也可以先存成草稿。',

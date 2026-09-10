@@ -15,7 +15,8 @@ const sent: PickableMail[] = [
   { id: 's2', kind: 'ERP' },
   { id: 's3', kind: 'HOST' },
 ]
-const pools = { inbound, sent }
+const drafts: PickableMail[] = [{ id: 'd1' }, { id: 'd2' }]
+const pools = { inbound, sent, drafts }
 
 describe('哪批行能勾', () => {
   it('已发送算的是已发送那批，不是收件箱那批', () => {
@@ -30,8 +31,13 @@ describe('哪批行能勾', () => {
     }
   })
 
-  it('表格类的文件夹不走这套（它们用 el-table 自己的选择）', () => {
-    for (const f of ['drafts', 'scheduled', 'attention', 'suppressions']) {
+  it('草稿箱算的是草稿那批——它已经是邮件列表了，不再是表格', () => {
+    expect(selectableRows('drafts', pools).map((m) => m.id)).toEqual(['d1', 'd2'])
+    expect(isListFolder('drafts')).toBe(true)
+  })
+
+  it('还留在表格里的那几个不走这套（它们用 el-table 自己的选择）', () => {
+    for (const f of ['scheduled', 'attention', 'suppressions']) {
       expect(selectableRows(f, pools)).toEqual([])
       expect(isListFolder(f)).toBe(false)
     }
