@@ -139,6 +139,15 @@ service EmailService {
   rpc GetInboundExcelConversionJob(GetInboundExcelConversionJobRequest) returns (GetInboundExcelConversionJobResponse);
   // 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
   // 缓存，不再转换。
+  // 把从别处复制来的一段 HTML 净化成可以放进正文的表格。
+  //
+  // 剪贴板里的 HTML 是不可信输入，落进浏览器那个 contenteditable 就和登录态
+  // 同一个 origin。净化放在服务端而不是前端：净化器是最不能靠"看着对"的一类
+  // 代码，而前端测试跑在纯 node 里没有 DOMParser，写在那边测不了。
+  //
+  // 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
+  // 前端据此退回纯文本那条路。
+  rpc CleanPastedTable(CleanPastedTableRequest) returns (CleanPastedTableResponse);
   rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
   // 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
   // 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
@@ -421,6 +430,16 @@ message ListInboundResponse {
 
 message GetInboundRequest {
   int64 id = 1;
+}
+
+message CleanPastedTableRequest {
+  // 剪贴板里那份 text/html，原样。
+  string html = 1;
+}
+
+message CleanPastedTableResponse {
+  // 净化过、可以直接插进正文的表格。空串 = 认不出表格。
+  string table = 1;
 }
 
 message PreviewInboundAttachmentRequest {

@@ -939,6 +939,13 @@ func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest)
 	return &mailv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
 }
 
+// CleanPastedTable 是纯计算，不碰库也不碰邮箱服务器——它在这个服务里，是
+// 因为净化器该和已有的那道发信白名单待在一起（同一份 bluemonday，同一套
+// Go 测试），而不是因为它需要这里的任何东西。
+func (h *Handler) CleanPastedTable(_ context.Context, req *mailv1.CleanPastedTableRequest) (*mailv1.CleanPastedTableResponse, error) {
+	return &mailv1.CleanPastedTableResponse{Table: app.CleanPastedTable(req.GetHtml())}, nil
+}
+
 func (h *Handler) PreviewInboundAttachment(ctx context.Context, req *mailv1.PreviewInboundAttachmentRequest) (*mailv1.PreviewInboundAttachmentResponse, error) {
 	op := operator(ctx)
 	url, err := h.svc.PreviewInboundAttachment(ctx, grpcx.TenantID(ctx), op.ID,
