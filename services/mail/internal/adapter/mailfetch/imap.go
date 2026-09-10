@@ -10,16 +10,20 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-imap/commands"
+	"github.com/emersion/go-imap/responses"
 
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/xoauth2"
 	"github.com/sgao19/erp-go/services/mail/internal/app"
@@ -114,7 +118,7 @@ func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, s
 		uids = uids[:limit]
 	}
 
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -157,7 +161,7 @@ func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder stri
 		uids = uids[uint32(len(uids))-limit:]
 	}
 
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -182,7 +186,7 @@ func (f *IMAP) FetchByUIDs(ctx context.Context, acct app.MailAccount, folder str
 		return out, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
 	out.UIDValidity = mbox.UidValidity
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -220,7 +224,9 @@ func (f *IMAP) TrashFolder(ctx context.Context, acct app.MailAccount) (string, e
 // keeps the archive on the ERP side.
 func (f *IMAP) ArchiveFolder(ctx context.Context, acct app.MailAccount) (string, error) {
 	name, err := f.specialFolderOrEmpty(acct, imap.ArchiveAttr,
-		[]string{"Archive", "Archives", "归档"})
+		// 263 的归档叫「已归档」，不声明属性：不猜这个名字的话 263 的归档一直
+		// 留在 ERP 侧，服务器上那个文件夹空着。
+		[]string{"Archive", "Archives", "归档", "已归档"})
 	if err != nil || name != "" {
 		return name, err
 	}
@@ -285,6 +291,156 @@ func (f *IMAP) specialFolderOrEmpty(acct app.MailAccount, attr string, guesses [
 	return name, err
 }
 
+// 按字节数切批，而不是按封数。
+//
+// **限流用错了单位是这段代码存在的理由。** 原来一次要 50 封的完整内容，压在
+// 一条 90 秒的命令里——那等于假设每封信一样大。50 封普通信几 MB，绰绰有余；
+// 里面混进一封 55 MB 的，90 秒内就要跑出 5 Mbit/s 以上的持续速度，跨太平洋
+// 做不到。而这一批下不完，收信游标就不前进：下一轮还是同一批、同一封、同样
+// 超时。那个信箱从此不再收新信，而在 #370 之前这个卡死还会被显示成「请重新
+// 登录」——员工重输授权码，当然修不好。
+//
+// 现在：先问一句每封多大（RFC822.SIZE 只回数字，不回内容），按累计字节切批，
+// 每批的期限跟着它的字节数走。
+const (
+	// maxFetchBytes 是一批最多下多少。20 MB 在 90 秒里要 227 KB/s，跨太平洋
+	// 的常见速度够得着；再大就该让它自己一批、自己一个更长的期限。
+	maxFetchBytes = 20 << 20
+	// minFetchRate 是给大批算期限时假设的最低速度。取得很保守：宁可等，
+	// 不可因为估高了速度而在半路超时——超时的代价是这一批白下，重来。
+	minFetchRate = 200 << 10 // 200 KB/s
+	// maxFetchTimeoutFactor 是单批期限最多放大到基准的几倍。基准是
+	// MAIL_SYNC_TIMEOUT（默认 90 秒），所以默认封顶 15 分钟。有个顶是因为
+	// 一条永远下不完的命令会把一个 worker 永久占住。
+	maxFetchTimeoutFactor = 10
+)
+
+// fetchSized 把一串 UID 按字节数分成几批下下来。
+//
+// **严格按 UID 从小到大，一批彻底失败就停在那里。** 已经下到的交出去，收信
+// 游标只前进到那一批之前；失败那封下一轮从头再来，那时它排在最前面、独占
+// 一批、拿到自己的期限，多半就成了。
+//
+// 不跳过是有意的：允许「跳过失败的、继续下后面的」，游标就会越过那封信，它
+// 从此永远收不到，而且没有人会发现。宁可这个信箱慢一轮，不能悄悄丢信。
+func (f *IMAP) fetchSized(c *client.Client, uids []uint32) ([]app.RawMessage, error) {
+	if len(uids) == 0 {
+		return nil, nil
+	}
+	sizes, err := f.fetchSizes(c, uids)
+	if err != nil {
+		// 问不到大小不该让收信停摆：退回原来的做法，一批下完。
+		f.log.Warn("could not read message sizes, falling back to one batch", "err", err)
+		return f.fetchUIDs(c, uids)
+	}
+
+	base := f.timeout
+	defer func() { c.Timeout = base }()
+
+	var out []app.RawMessage
+	for _, batch := range splitBySize(uids, sizes, maxFetchBytes) {
+		bytes := int64(0)
+		for _, u := range batch {
+			bytes += sizes[u]
+		}
+		c.Timeout = fetchTimeoutFor(base, bytes)
+		started := time.Now()
+		msgs, err := f.fetchUIDs(c, batch)
+		took := time.Since(started)
+		if err != nil {
+			// 这一批一封都没下来。把之前批次的交出去，游标停在这里。
+			f.log.Warn("fetch failed; the mailbox stops here until next pass",
+				"uids", len(batch), "first_uid", batch[0], "bytes", bytes,
+				"took", took.Round(time.Second), "deadline", c.Timeout, "err", err)
+			if len(out) == 0 {
+				return nil, err
+			}
+			return out, nil
+		}
+		if took > base {
+			f.log.Info("slow fetch", "uids", len(batch), "first_uid", batch[0],
+				"bytes", bytes, "took", took.Round(time.Second),
+				"rate_kbps", ratePerSecond(bytes, took)/1024)
+		}
+		out = append(out, msgs...)
+	}
+	return out, nil
+}
+
+// fetchSizes 问每封信多大。RFC822.SIZE 只回一个数字，不回内容——和上面问
+// 「有哪些 UID」是同一类的廉价查询，一次往返。
+func (f *IMAP) fetchSizes(c *client.Client, uids []uint32) (map[uint32]int64, error) {
+	seq := new(imap.SeqSet)
+	for _, u := range uids {
+		seq.AddNum(u)
+	}
+	msgs := make(chan *imap.Message, 16)
+	done := make(chan error, 1)
+	go func() { done <- c.UidFetch(seq, []imap.FetchItem{imap.FetchUid, imap.FetchRFC822Size}, msgs) }()
+	sizes := make(map[uint32]int64, len(uids))
+	for m := range msgs {
+		sizes[m.Uid] = int64(m.Size)
+	}
+	if err := <-done; err != nil {
+		return nil, err
+	}
+	return sizes, nil
+}
+
+// splitBySize 按累计字节切批，保持 UID 从小到大。
+//
+// 单封就超过上限的自成一批：它挡不住别人，别人也不必陪它等。大小不明的
+// （服务器没报）按上限算，宁可把它单独拎出来，也不要让它混在一批里把整批
+// 的期限估低。
+func splitBySize(uids []uint32, sizes map[uint32]int64, limit int64) [][]uint32 {
+	ordered := append([]uint32(nil), uids...)
+	sort.Slice(ordered, func(a, b int) bool { return ordered[a] < ordered[b] })
+
+	var out [][]uint32
+	var cur []uint32
+	var curBytes int64
+	for _, u := range ordered {
+		size, ok := sizes[u]
+		if !ok || size <= 0 {
+			size = limit
+		}
+		if len(cur) > 0 && curBytes+size > limit {
+			out = append(out, cur)
+			cur, curBytes = nil, 0
+		}
+		cur = append(cur, u)
+		curBytes += size
+		if curBytes >= limit {
+			out = append(out, cur)
+			cur, curBytes = nil, 0
+		}
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// fetchTimeoutFor 给一批算期限：基准打底，再按字节数折算，封顶。
+func fetchTimeoutFor(base time.Duration, bytes int64) time.Duration {
+	if base <= 0 {
+		base = 90 * time.Second
+	}
+	need := base + time.Duration(bytes/minFetchRate)*time.Second
+	if max := base * maxFetchTimeoutFactor; need > max {
+		return max
+	}
+	return need
+}
+
+// ratePerSecond 是每秒多少字节，给日志用。
+func ratePerSecond(bytes int64, took time.Duration) int64 {
+	if took <= 0 {
+		return 0
+	}
+	return int64(float64(bytes) / took.Seconds())
+}
+
 // fetchUIDs downloads exactly these messages over an already-selected mailbox.
 func (f *IMAP) fetchUIDs(c *client.Client, uids []uint32) ([]app.RawMessage, error) {
 	seq := new(imap.SeqSet)
@@ -342,17 +498,35 @@ func (f *IMAP) VerifyLogin(ctx context.Context, acct app.MailAccount) error {
 
 // login authenticates by whichever door the account was bound through: a
 // bearer token over XOAUTH2 for OAuth bindings, LOGIN for everything else.
+//
+// 登录成功之后紧接着自报家门（见 imapid.go）。这里是唯一的登录入口——
+// 同步、绑定校验、IDLE 三条路都走它——所以放在这儿才能保证每一条连接都报过。
 func (f *IMAP) login(c *client.Client, acct app.MailAccount) error {
 	if acct.AuthKind == "OAUTH" {
 		if err := c.Authenticate(xoauth2.NewSASL(acct.Email, acct.Secret)); err != nil {
-			return fmt.Errorf("Google 拒绝了访问令牌：%w", err)
+			return credentialOrTransport(fmt.Errorf("Google 拒绝了访问令牌：%w", err))
 		}
+		announceID(c, f.log)
 		return nil
 	}
 	if err := c.Login(acct.Login(), acct.Secret); err != nil {
-		return fmt.Errorf("邮箱拒绝了这个授权码：%w", err)
+		return credentialOrTransport(fmt.Errorf("邮箱拒绝了这个授权码：%w", err))
 	}
+	announceID(c, f.log)
 	return nil
+}
+
+// credentialOrTransport 给登录失败定性。
+//
+// go-imap 的 Login 把「服务器说 NO」和「连接中途断了」返回成同一种普通错误，
+// 所以先问一句是不是线路问题：是就原样返回（横幅只会说"暂时连不上"），
+// 不是才打上 CredentialRejected——那是整条同步链上唯一一种"重新登录能修好"
+// 的失败。263 在握手中途掐线是真会发生的事，不能被记成授权码错。
+func credentialOrTransport(err error) error {
+	if app.TransportFailure(err) {
+		return err
+	}
+	return app.NewCredentialRejected(err)
 }
 
 func (f *IMAP) dial(acct app.MailAccount) (*client.Client, error) {
@@ -423,9 +597,21 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 
 	done := make(chan error, 1)
 	go func() {
-		// Restarting IDLE every 24 minutes stays under the RFC's 29-minute
-		// server logout allowance with room to spare.
-		done <- c.Idle(stop, &client.IdleOptions{LogoutTimeout: 24 * time.Minute})
+		// PollInterval: -1 是关键的一行。**服务器不支持 IDLE 时，go-imap 会
+		// 悄悄退化成「挂着这条连接、每 60 秒发一个 NOOP」**——那不是推送，
+		// 是把轮询伪装成推送，而且比普通轮询更贵：连接一断就要重新握手加
+		// 登录，而普通轮询用的是连接池里的连接。
+		//
+		// 263 实测就是这种：它声明的能力里没有 IDLE（AUTH=PLAIN ID IMAP4
+		// IMAP4rev1 MOVE UIDPLUS XLIST），生产上那个每 66 秒一次的"掉线"，
+		// 正是这个 60 秒 NOOP 节奏加一次往返。
+		//
+		// 负数让 go-imap 直接答 ErrExtensionUnsupported，我们据此把这个箱
+		// 交给轮询，一条连接都不占。
+		done <- c.Idle(stop, &client.IdleOptions{
+			LogoutTimeout: app.IdleRestartEvery,
+			PollInterval:  -1,
+		})
 	}()
 
 	timer := time.NewTimer(maxWait)
@@ -447,6 +633,9 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 		case err := <-done:
 			if news {
 				return true, nil
+			}
+			if errors.Is(err, client.ErrExtensionUnsupported) {
+				return false, app.ErrPushUnsupported
 			}
 			return false, err
 		}
@@ -550,28 +739,149 @@ func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder stri
 // The UIDs change in the destination and the host does not reliably say what
 // they became, which is why nothing here tries to track them: anything that
 // needs to find a moved message afterwards looks it up by Message-ID.
-func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) (err error) {
+func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) (_ map[uint32]uint32, err error) {
 	if len(uids) == 0 || to == "" {
-		return nil
+		return nil, nil
 	}
 	c, err := f.borrow(acct)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Released rather than logged out: the next command on this
 	// mailbox reuses it. A failed command discards it instead.
 	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(from, false); err != nil {
-		return fmt.Errorf("打开 %s 失败：%w", from, err)
+		return nil, fmt.Errorf("打开 %s 失败：%w", from, err)
 	}
 	set := new(imap.SeqSet)
 	for _, u := range uids {
 		set.AddNum(u)
 	}
-	if err := c.UidMove(set, to); err != nil {
-		return fmt.Errorf("移动到 %s 失败：%w", to, err)
+	moved, err := moveKeepingCopyUID(c, set, to)
+	if err != nil {
+		return nil, fmt.Errorf("移动到 %s 失败：%w", to, err)
 	}
-	return nil
+	return moved, nil
+}
+
+// moveKeepingCopyUID 是 go-imap 的 UidMove，但把应答留下来。
+//
+// go-imap 的 move() 执行完就只看 status.Err()，把 [COPYUID 世代 旧 新] 这条
+// 应答码整个扔掉了——而那正是「挪过去之后它叫什么号」唯一的来源。这里照
+// 它的路子走一遍（有 MOVE 用 MOVE，没有就 COPY + 标删除 + EXPUNGE，163 就是
+// 后一种），只是自己拿着 status。
+func moveKeepingCopyUID(c *client.Client, set *imap.SeqSet, dest string) (map[uint32]uint32, error) {
+	hasMove, err := c.Support("MOVE")
+	if err != nil {
+		return nil, err
+	}
+	var cmd imap.Commander
+	if hasMove {
+		cmd = &commands.Uid{Cmd: &commands.Move{SeqSet: set, Mailbox: dest}}
+	} else {
+		cmd = &commands.Uid{Cmd: &commands.Copy{SeqSet: set, Mailbox: dest}}
+	}
+	// **应答码在两个不同的地方**，这是这段代码的全部要点：
+	//
+	//   · COPY（RFC 4315）把 [COPYUID …] 放在**加标签的完成响应**里。
+	//   · MOVE（RFC 6851 §4.3）放在**未加标签的 OK** 里，在 EXPUNGE 之前发，
+	//     因为加标签的那条要等挪完才发。
+	//
+	// c.Execute 的返回值只有加标签的那条。传 nil 当处理器的话，MOVE 的
+	// COPYUID 根本到不了我们手上——每次挪信都退回按 Message-ID 搜索，而 263
+	// 不认那种搜索，于是「信已移动，但没能确认它的新位置」。163 反倒是对的：
+	// 它不声明 MOVE，走 COPY，码在加标签的那条里。
+	seen := &copyUIDSeen{}
+	status, err := c.Execute(cmd, seen)
+	if err != nil {
+		return nil, err
+	}
+	if err := status.Err(); err != nil {
+		return nil, err
+	}
+	moved := copyUIDMap(status)
+	if len(moved) == 0 {
+		moved = copyUIDMap(seen.status)
+	}
+	if !hasMove {
+		// COPY 只是复制，原件还在源文件夹里：标删除再清掉，这才是"挪"。
+		// 和 go-imap 的 moveFallback 一样，只是 COPYUID 已经先接住了。
+		item := imap.FormatFlagsOp(imap.AddFlags, true)
+		if err := c.UidStore(set, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
+			return moved, err
+		}
+		if err := c.Expunge(nil); err != nil {
+			return moved, err
+		}
+	}
+	return moved, nil
+}
+
+// copyUIDSeen 接住命令执行过程中未加标签的 [COPYUID …]。
+//
+// 只认这一个码，其余一律交还（ErrUnhandled），免得挡了 go-imap 自己要处理的
+// 那些未加标签的响应（EXPUNGE、EXISTS、CAPABILITY 之类）。
+type copyUIDSeen struct{ status *imap.StatusResp }
+
+func (u *copyUIDSeen) Handle(resp imap.Resp) error {
+	if s, ok := resp.(*imap.StatusResp); ok && s.Code == "COPYUID" {
+		u.status = s
+		return nil
+	}
+	return responses.ErrUnhandled
+}
+
+// copyUIDMap 把 [COPYUID 世代 旧集合 新集合] 解成「旧 UID → 新 UID」。
+//
+// 两个集合按位置一一对应（RFC 4315）。任何一步解不出来就返回空 map：这条
+// 应答是锦上添花，解不出来的后果只是回到按 Message-ID 搜索的老路。
+func copyUIDMap(status *imap.StatusResp) map[uint32]uint32 {
+	if status == nil || status.Code != "COPYUID" || len(status.Arguments) < 3 {
+		return nil
+	}
+	src, err1 := imap.ParseSeqSet(respArg(status.Arguments[1]))
+	dst, err2 := imap.ParseSeqSet(respArg(status.Arguments[2]))
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	from, to := expandSet(src), expandSet(dst)
+	if len(from) == 0 || len(from) != len(to) {
+		return nil
+	}
+	out := make(map[uint32]uint32, len(from))
+	for i := range from {
+		out[from[i]] = to[i]
+	}
+	return out
+}
+
+// respArg 把应答码里的一个参数变成字符串。go-imap 解出来的类型不固定
+// （atom 是 string 或 RawString，数字可能已经是 uint32），这里一律收。
+func respArg(v interface{}) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case imap.RawString:
+		return string(x)
+	case []byte:
+		return string(x)
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+// expandSet 把 1:3,7 展开成 [1 2 3 7]。COPYUID 里的集合都是有限的，不会有 *。
+func expandSet(set *imap.SeqSet) []uint32 {
+	var out []uint32
+	for _, r := range set.Set {
+		if r.Stop == 0 || r.Stop < r.Start {
+			return nil
+		}
+		for u := r.Start; u <= r.Stop; u++ {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // AppendMessage files an already-sent message into a folder on the host.
@@ -708,11 +1018,11 @@ func (f *IMAP) FolderStatus(ctx context.Context, acct app.MailAccount, folder st
 	}
 	defer func() { f.release(acct, c, err) }()
 
-	st, err := c.Status(folder, []imap.StatusItem{imap.StatusUidNext, imap.StatusUnseen})
+	st, err := c.Status(folder, []imap.StatusItem{imap.StatusUidNext, imap.StatusUnseen, imap.StatusUidValidity})
 	if err != nil {
 		return app.FolderStatus{}, fmt.Errorf("查询 %s 的状态失败：%w", folder, err)
 	}
-	return app.FolderStatus{UIDNext: st.UidNext, Unseen: st.Unseen}, nil
+	return app.FolderStatus{UIDNext: st.UidNext, Unseen: st.Unseen, UIDValidity: st.UidValidity}, nil
 }
 
 // SearchFlagged names every starred message in a folder, however old.
@@ -835,4 +1145,93 @@ func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folde
 		return nil, fmt.Errorf("读取 %s 的信件标识失败：%w", folder, err)
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------- 自建文件夹
+
+// ListFolders 列出服务器上所有文件夹的名字（已经解过 UTF-7，是人看的样子）。
+func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.HostFolder, err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { f.release(acct, c, err) }()
+	boxes := make(chan *imap.MailboxInfo, 64)
+	done := make(chan error, 1)
+	go func() { done <- c.List("", "*", boxes) }()
+	var out []app.HostFolder
+	for b := range boxes {
+		role := roleHint(b.Attributes)
+		out = append(out, app.HostFolder{Name: b.Name, Special: role != "", Role: role})
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("列出文件夹失败：%w", err)
+	}
+	return out, nil
+}
+
+// roleHint 把 LIST 给的属性翻成角色：special-use（RFC 6154）说明这是服务器
+// 自带的草稿/已发送/垃圾/回收站/归档；\All \Flagged \Important 和 \Noselect
+// 是虚拟的（内容是别处的信的映射，或只是层级容器）。没有属性回空串，交给
+// 服务层猜名字。
+func roleHint(attrs []string) string {
+	for _, a := range attrs {
+		switch a {
+		case imap.DraftsAttr:
+			return "DRAFTS"
+		case imap.SentAttr:
+			return "SENT"
+		case imap.JunkAttr:
+			return "JUNK"
+		case imap.TrashAttr:
+			return "TRASH"
+		case imap.ArchiveAttr:
+			return "ARCHIVE"
+		case imap.NoSelectAttr, imap.AllAttr, imap.FlaggedAttr, imap.ImportantAttr:
+			// 内容是别处的信的映射（Gmail 的全部邮件/已加星标/重要），或者根本
+			// 选不进去的层级容器。当文件夹同步下来会把同一封信存好几遍。
+			return "VIRTUAL"
+		}
+	}
+	return ""
+}
+
+// CreateFolder 在服务器上建一个文件夹。go-imap 会把名字编成 UTF-7，中文名
+// 在 Foxmail 里显示正常。
+func (f *IMAP) CreateFolder(ctx context.Context, acct app.MailAccount, name string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Create(name); err != nil {
+		return fmt.Errorf("新建文件夹 %s 失败：%w", name, err)
+	}
+	return nil
+}
+
+// RenameFolder 改名。服务器上信的 UID 不变（RFC 3501：RENAME 保留内容）。
+func (f *IMAP) RenameFolder(ctx context.Context, acct app.MailAccount, oldName, newName string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Rename(oldName, newName); err != nil {
+		return fmt.Errorf("重命名文件夹 %s 失败：%w", oldName, err)
+	}
+	return nil
+}
+
+// DeleteFolder 删文件夹。调用方先确认里面没信——服务器会连信一起删。
+func (f *IMAP) DeleteFolder(ctx context.Context, acct app.MailAccount, name string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Delete(name); err != nil {
+		return fmt.Errorf("删除文件夹 %s 失败：%w", name, err)
+	}
+	return nil
 }

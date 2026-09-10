@@ -133,6 +133,10 @@ func (s *Server) Router() http.Handler {
 		s.limitPublic("img", publicImageBudget, s.serveMailImage))
 	// The open-tracking pixel. Also login-free, and also deliberately
 	// indistinguishable between a real key and a made-up one.
+	// 超大附件的公开取件口。和图片那条同样的三件事：限流、统一 404、
+	// 不带会话——收件人是外面的人，token 就是全部凭据。
+	r.Get("/api/public/mail-files/{token}",
+		s.limitPublic("file", publicImageBudget, s.serveMailFile))
 	r.Get("/api/public/mail-open/{key}",
 		s.limitPublic("pixel", publicPixelBudget, s.serveOpenPixel))
 	// Google sends the browser back here after its own login page. State is
@@ -783,6 +787,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)
 		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/mail-file-links/withdraw", s.withdrawMailFileLink)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
 		r.With(s.perm("mail:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
 		r.With(s.perm("mail:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)
@@ -810,6 +815,13 @@ func (s *Server) Router() http.Handler {
 		// 最多的一封 40 个，一个一个点不是办法。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Get("/api/inbound-mails/{id}/attachments/download", s.downloadInboundAttachments)
+		// 自建文件夹（Issue #362）：建在邮件服务器上，Foxmail 里也看得到。
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-folders", s.listMailFolders)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mail-folders", s.createMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Put("/api/mail-folders/{id}", s.renameMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Delete("/api/mail-folders/{id}", s.deleteMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/move", s.moveInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/move", s.moveInboundBatch)
 		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
 		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)
@@ -874,6 +886,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
 		r.With(s.perm("mail:email:read")).Get("/api/my-mailboxes", s.listMyMailboxes)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
+		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/keep-sent-copy", s.setKeepSentCopy)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
 		r.Post("/api/customer-offer", s.customerOffer)
 		r.Get("/api/fx/effective", s.fxEffective)

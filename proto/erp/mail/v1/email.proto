@@ -143,6 +143,16 @@ service EmailService {
   // 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
   // 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
   rpc DownloadInboundAttachments(DownloadInboundAttachmentsRequest) returns (DownloadInboundAttachmentsResponse);
+
+  // ---- 自建文件夹（Issue #362）。文件夹真的建在邮件服务器上。 ----
+  rpc ListMailFolders(ListMailFoldersRequest) returns (ListMailFoldersResponse);
+  rpc CreateMailFolder(CreateMailFolderRequest) returns (CreateMailFolderResponse);
+  rpc RenameMailFolder(RenameMailFolderRequest) returns (RenameMailFolderResponse);
+  rpc DeleteMailFolder(DeleteMailFolderRequest) returns (DeleteMailFolderResponse);
+  // 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
+  rpc MoveInbound(MoveInboundRequest) returns (MoveInboundResponse);
+  // 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+  rpc MoveInboundBatch(MoveInboundBatchRequest) returns (MoveInboundBatchResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -151,6 +161,15 @@ service EmailService {
   rpc ListMyMailboxes(ListMyMailboxesRequest) returns (ListMyMailboxesResponse);
   // 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
   rpc SetDefaultMailbox(SetDefaultMailboxRequest) returns (SetDefaultMailboxResponse);
+  // 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+  // 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+  rpc SetKeepSentCopy(SetKeepSentCopyRequest) returns (SetKeepSentCopyResponse);
+  // 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+  // 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+  // 的进程，一个人点两下就能把内存吃光。
+  rpc FetchAttachmentLink(FetchAttachmentLinkRequest) returns (FetchAttachmentLinkResponse);
+  // 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+  rpc WithdrawAttachmentLink(WithdrawAttachmentLinkRequest) returns (WithdrawAttachmentLinkResponse);
   // 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
   rpc UnbindMailbox(UnbindMailboxRequest) returns (UnbindMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -275,6 +294,12 @@ message InboundMail {
   // 去重，前端不用再对着 "Name <a@x>, b@y" 这种东西写解析器。
   repeated MailParty to_parties = 32;
   repeated MailParty cc_parties = 33;
+  // 这封信落在哪个信箱。只在单封读取时有值。
+  //
+  // 搜索横跨信箱之后必须跟着信走：一封 B 箱收到的信可能是站在 A 箱里点开
+  // 的，而「点回复从哪个地址发出去」得看这封信是哪个箱收到的，不能看左边
+  // 高亮着谁——那就是「读 B 的信、从 A 回过去」。
+  int64 account_id = 34;
 }
 
 // 邮件头里的一个人：显示名可空，地址小写。
@@ -348,17 +373,35 @@ message SearchHit {
   // when the search was worth doing: a match in the fourth paragraph does not
   // appear in a snippet of the first.
   string match_snippet = 3;
+  // 这封信在哪个信箱。结果横跨信箱之后必须说——不说的话一列里混着两个箱
+  // 的信，看不出哪封是哪个箱的；而且点开之前要先换成那个箱的令牌。
+  int64 account_id = 4;
 }
 
 message SearchMailRequest {
   string keyword = 1;
   string cursor = 2;
   erp.common.v1.PageRequest page = 3;
-  // 只搜这个信箱。0 = 我全部信箱（旧令牌和一个箱都没绑的人）。
+  // 只搜这个信箱。account_ids 之前的那一个，现在只在**换版本那几秒**里
+  // 起作用，两边都还发着、也都还读着：
   //
-  // 网关从解锁令牌里取，不认调用方传的：站在 A 箱里搜出 B 箱的信，是
-  // 「按邮箱分」这条口径从搜索这个门绕回来了——切到 B 才能搜 B。
+  //   新网关 + 旧服务：旧服务只认这一个，网关照发当前那个箱 —— 范围退回
+  //                    「只搜当前箱」，比范围突然放开安全。
+  //   旧网关 + 新服务：旧网关只发这一个，新服务把它当成单元素的 account_ids。
+  //
+  // 不标 deprecated：唯一的读取点是那条兼容分支，标了之后 staticcheck 会
+  // 在那儿报警，而压掉警告的注释比这段说明更没用。
   int64 account_id = 4;
+  // 搜这些信箱。空 = 不限（一个箱都没绑的人）。
+  //
+  // 从「当前这一个箱」改成「手上开着的这些箱」：搜索存在的意义正是不知道
+  // 东西在哪个箱里，逼人一个箱一个箱地搜，等于让人代替搜索干活。
+  //
+  // **网关只放进令牌验过的那些**，不认调用方随口给的号码：浏览器验证成功
+  // 时每个箱各拿到一把令牌，请求把它们一起报上来，网关逐把回 Redis 核对。
+  // 退出了哪个箱，那把令牌就没了，那个箱也就从搜索范围里消失——「退出」
+  // 仍然是真的退出。
+  repeated int64 account_ids = 5;
 }
 
 message SearchMailResponse {
@@ -393,6 +436,38 @@ message PreviewInboundAttachmentResponse {
 
 message DownloadInboundAttachmentsRequest {
   int64 inbound_id = 1;
+}
+
+message MailFolder {
+  int64 id = 1;
+  int64 account_id = 2;
+  string name = 3;
+  // 列表接口的 view 参数用它：'F:' + 服务器上的名字。只有自建的（CUSTOM）有。
+  string view_key = 4;
+  // INBOX / SENT / JUNK / TRASH / ARCHIVE / DRAFTS / SYSTEM / CUSTOM。左栏按它定
+  // 图标、位置和能不能改名删除；只有 CUSTOM 能。
+  string role = 5;
+}
+message ListMailFoldersRequest { int64 account_id = 1; }
+message ListMailFoldersResponse { repeated MailFolder folders = 1; }
+message CreateMailFolderRequest { int64 account_id = 1; string name = 2; }
+message RenameMailFolderRequest { int64 id = 1; string name = 2; }
+message CreateMailFolderResponse { MailFolder folder = 1; }
+message RenameMailFolderResponse { MailFolder folder = 1; }
+message DeleteMailFolderRequest { int64 id = 1; }
+message DeleteMailFolderResponse {}
+message MoveInboundRequest { int64 id = 1; int64 folder_id = 2; }
+message MoveInboundResponse {}
+message MoveInboundBatchRequest {
+  repeated int64 ids = 1;
+  int64 folder_id = 2;
+  // 列表一行是一条会话：勾的是行，挪的是整条会话。
+  bool whole_thread = 3;
+}
+message MoveInboundBatchResponse {
+  // 实际挪成功的封数（整条会话一起挪时比勾选的行数多）。
+  int32 moved = 1;
+  repeated int64 failed_ids = 2;
 }
 
 message DownloadInboundAttachmentsResponse {
@@ -434,6 +509,20 @@ message ThreadItem {
   // 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了，
   // 再在下面列一遍只会让每封信都挂着一堆看不懂的 image001.png。
   repeated InboundAttachment attachments = 10;
+
+  // 谁写的、写给谁的，两个方向都按同一个意思填。
+  //
+  // counterparty（上面第 6 个）在两个方向上说的**不是同一件事**：我发出的那
+  // 行它是收件人，收到的那行它是发件人。界面上却是同一列，于是同一条会话里
+  // 上下两行的地址一个是「发给谁」一个是「谁发的」，看的人无从分辨——这正是
+  // 它被报上来的原因。它保留着不动（别处在用），新的四个字段才是有确定含义的。
+  string from_email = 11;
+  string from_name = 12;
+  // 整段收件人，不是第一个：群发给七个人的信这里要看到七个。收到的那一腿
+  // 有原头（to_all），没有就退回 to_email；发出的那一腿一行就是一个收件人。
+  string to_all = 13;
+  // 只有收到的那一腿有。发出的那一腿没有存抄送——email_messages 上没有这一列。
+  string cc = 14;
 }
 
 message GetMailThreadResponse {
@@ -584,6 +673,9 @@ message SyncMailboxResponse {
   // 收件箱这一程还没跑完，但后台仍在继续。不是错误：一个九千封的邮箱首次
   // 同步本来就要几分钟，而调用方（浏览器、以及它前面的 nginx）等不了那么久。
   bool pending = 3;
+  // 这次失败是授权码被拒，重新登录才修得好。为 false 时前端不该劝人重登：
+  // 服务器掐线、网络超时之类，自己会重试。
+  bool needs_reauth = 4;
 }
 
 message RecordOpenRequest {
@@ -707,6 +799,10 @@ message MailAccount {
   // 哪个，光看地址不一定分得清。
   string smtp_host = 10;
   string imap_host = 11;
+  // 发完信我们要不要自己往这个箱的已发送里留一份。**这是解析后的结果**，
+  // 不是数据库里那个可空列：没人表过态时它等于按主机猜出来的那个值，所以
+  // 界面上永远显示的是「实际会发生什么」，而不是一个空。
+  bool keep_sent_copy = 16;
   // 这个箱里有多少封没读。左侧那排角标读的就是它。
   //
   // 多信箱之后这个数字是**切换的理由**：不显示的话，另一个箱里躺着客户的
@@ -720,6 +816,8 @@ message MailAccount {
   // 解绑 ≠ 删除：这一行还在，历史邮件照样读得到、搜得到，只是不再收发。
   // 界面据此把它标成「已解绑」并收起收发相关的动作。
   string unbound_at = 14;
+  // last_error 是不是凭据问题。横幅上那颗「重新登录邮箱」只认它。
+  bool needs_reauth = 15;
 }
 
 message GetMyMailAccountRequest {
@@ -750,6 +848,29 @@ message SetDefaultMailboxRequest {
 }
 
 message SetDefaultMailboxResponse {}
+
+message SetKeepSentCopyRequest {
+  int64 account_id = 1;
+  bool keep = 2;
+}
+
+message SetKeepSentCopyResponse {}
+
+message FetchAttachmentLinkRequest {
+  string token = 1;
+}
+
+message FetchAttachmentLinkResponse {
+  // 短期有效的存储地址，网关拿它把浏览器重定向过去。
+  string url = 1;
+  string file_name = 2;
+}
+
+message WithdrawAttachmentLinkRequest {
+  int64 attachment_id = 1;
+}
+
+message WithdrawAttachmentLinkResponse {}
 
 message GetMyMailAccountResponse {
   MailAccount account = 1;

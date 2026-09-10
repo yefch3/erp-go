@@ -215,14 +215,17 @@ func decodeHeader(v string) string {
 //   - AuthService：登录、激活、找回密码。登录之前当然没有登录态，身份由
 //     密码/邀请令牌/重置令牌证明。经逐个查证，这些 handler 都不读上下文
 //     里的公司号。（管理员替员工改密码走的是 DirectoryService，不在此列。）
-//   - mail FetchImage / RecordOpen：邮件里的图片与已读回执，取的人是收件
-//     的陌生人，永远不会登录。两者都由不可猜的令牌定位（RecordOpen 的
-//     查询叫 FindMessageByKeyAnyTenant——名字就写明了不看公司号）。
+//   - mail FetchImage / RecordOpen / FetchAttachmentLink：邮件里的图片、
+//     已读回执、超大附件的下载，取的人是收件的陌生人，永远不会登录。三者
+//     都由不可猜的令牌定位（RecordOpen 的查询叫 FindMessageByKeyAnyTenant
+//     ——名字就写明了不看公司号；FetchAttachmentLink 的 ResolveAttachmentToken
+//     同理，注释里也写了为什么不带租户）。
 //   - grpc.health：健康探针，机器不登录。
 func tenantlessAllowed(method string) bool {
 	switch method {
 	case "/erp.mail.v1.EmailService/FetchImage",
-		"/erp.mail.v1.EmailService/RecordOpen":
+		"/erp.mail.v1.EmailService/RecordOpen",
+		"/erp.mail.v1.EmailService/FetchAttachmentLink":
 		return true
 	}
 	return strings.HasPrefix(method, "/erp.iam.v1.AuthService/") ||

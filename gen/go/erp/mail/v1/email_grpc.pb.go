@@ -71,9 +71,18 @@ const (
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_PreviewInboundAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PreviewInboundAttachment"
 	EmailService_DownloadInboundAttachments_FullMethodName   = "/erp.mail.v1.EmailService/DownloadInboundAttachments"
+	EmailService_ListMailFolders_FullMethodName              = "/erp.mail.v1.EmailService/ListMailFolders"
+	EmailService_CreateMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/CreateMailFolder"
+	EmailService_RenameMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/RenameMailFolder"
+	EmailService_DeleteMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/DeleteMailFolder"
+	EmailService_MoveInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MoveInbound"
+	EmailService_MoveInboundBatch_FullMethodName             = "/erp.mail.v1.EmailService/MoveInboundBatch"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
+	EmailService_SetKeepSentCopy_FullMethodName              = "/erp.mail.v1.EmailService/SetKeepSentCopy"
+	EmailService_FetchAttachmentLink_FullMethodName          = "/erp.mail.v1.EmailService/FetchAttachmentLink"
+	EmailService_WithdrawAttachmentLink_FullMethodName       = "/erp.mail.v1.EmailService/WithdrawAttachmentLink"
 	EmailService_UnbindMailbox_FullMethodName                = "/erp.mail.v1.EmailService/UnbindMailbox"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
@@ -218,6 +227,15 @@ type EmailServiceClient interface {
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(ctx context.Context, in *DownloadInboundAttachmentsRequest, opts ...grpc.CallOption) (*DownloadInboundAttachmentsResponse, error)
+	// ---- 自建文件夹（Issue #362）。文件夹真的建在邮件服务器上。 ----
+	ListMailFolders(ctx context.Context, in *ListMailFoldersRequest, opts ...grpc.CallOption) (*ListMailFoldersResponse, error)
+	CreateMailFolder(ctx context.Context, in *CreateMailFolderRequest, opts ...grpc.CallOption) (*CreateMailFolderResponse, error)
+	RenameMailFolder(ctx context.Context, in *RenameMailFolderRequest, opts ...grpc.CallOption) (*RenameMailFolderResponse, error)
+	DeleteMailFolder(ctx context.Context, in *DeleteMailFolderRequest, opts ...grpc.CallOption) (*DeleteMailFolderResponse, error)
+	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
+	MoveInbound(ctx context.Context, in *MoveInboundRequest, opts ...grpc.CallOption) (*MoveInboundResponse, error)
+	// 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+	MoveInboundBatch(ctx context.Context, in *MoveInboundBatchRequest, opts ...grpc.CallOption) (*MoveInboundBatchResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
@@ -226,6 +244,15 @@ type EmailServiceClient interface {
 	ListMyMailboxes(ctx context.Context, in *ListMyMailboxesRequest, opts ...grpc.CallOption) (*ListMyMailboxesResponse, error)
 	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
 	SetDefaultMailbox(ctx context.Context, in *SetDefaultMailboxRequest, opts ...grpc.CallOption) (*SetDefaultMailboxResponse, error)
+	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+	SetKeepSentCopy(ctx context.Context, in *SetKeepSentCopyRequest, opts ...grpc.CallOption) (*SetKeepSentCopyResponse, error)
+	// 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+	// 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+	// 的进程，一个人点两下就能把内存吃光。
+	FetchAttachmentLink(ctx context.Context, in *FetchAttachmentLinkRequest, opts ...grpc.CallOption) (*FetchAttachmentLinkResponse, error)
+	// 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+	WithdrawAttachmentLink(ctx context.Context, in *WithdrawAttachmentLinkRequest, opts ...grpc.CallOption) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -798,6 +825,66 @@ func (c *emailServiceClient) DownloadInboundAttachments(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *emailServiceClient) ListMailFolders(ctx context.Context, in *ListMailFoldersRequest, opts ...grpc.CallOption) (*ListMailFoldersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailFoldersResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMailFolders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) CreateMailFolder(ctx context.Context, in *CreateMailFolderRequest, opts ...grpc.CallOption) (*CreateMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_CreateMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) RenameMailFolder(ctx context.Context, in *RenameMailFolderRequest, opts ...grpc.CallOption) (*RenameMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenameMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_RenameMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) DeleteMailFolder(ctx context.Context, in *DeleteMailFolderRequest, opts ...grpc.CallOption) (*DeleteMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_DeleteMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) MoveInbound(ctx context.Context, in *MoveInboundRequest, opts ...grpc.CallOption) (*MoveInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_MoveInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) MoveInboundBatch(ctx context.Context, in *MoveInboundBatchRequest, opts ...grpc.CallOption) (*MoveInboundBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveInboundBatchResponse)
+	err := c.cc.Invoke(ctx, EmailService_MoveInboundBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMailThreadResponse)
@@ -822,6 +909,36 @@ func (c *emailServiceClient) SetDefaultMailbox(ctx context.Context, in *SetDefau
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetDefaultMailboxResponse)
 	err := c.cc.Invoke(ctx, EmailService_SetDefaultMailbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SetKeepSentCopy(ctx context.Context, in *SetKeepSentCopyRequest, opts ...grpc.CallOption) (*SetKeepSentCopyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetKeepSentCopyResponse)
+	err := c.cc.Invoke(ctx, EmailService_SetKeepSentCopy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) FetchAttachmentLink(ctx context.Context, in *FetchAttachmentLinkRequest, opts ...grpc.CallOption) (*FetchAttachmentLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FetchAttachmentLinkResponse)
+	err := c.cc.Invoke(ctx, EmailService_FetchAttachmentLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) WithdrawAttachmentLink(ctx context.Context, in *WithdrawAttachmentLinkRequest, opts ...grpc.CallOption) (*WithdrawAttachmentLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawAttachmentLinkResponse)
+	err := c.cc.Invoke(ctx, EmailService_WithdrawAttachmentLink_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1087,6 +1204,15 @@ type EmailServiceServer interface {
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error)
+	// ---- 自建文件夹（Issue #362）。文件夹真的建在邮件服务器上。 ----
+	ListMailFolders(context.Context, *ListMailFoldersRequest) (*ListMailFoldersResponse, error)
+	CreateMailFolder(context.Context, *CreateMailFolderRequest) (*CreateMailFolderResponse, error)
+	RenameMailFolder(context.Context, *RenameMailFolderRequest) (*RenameMailFolderResponse, error)
+	DeleteMailFolder(context.Context, *DeleteMailFolderRequest) (*DeleteMailFolderResponse, error)
+	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
+	MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error)
+	// 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+	MoveInboundBatch(context.Context, *MoveInboundBatchRequest) (*MoveInboundBatchResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
@@ -1095,6 +1221,15 @@ type EmailServiceServer interface {
 	ListMyMailboxes(context.Context, *ListMyMailboxesRequest) (*ListMyMailboxesResponse, error)
 	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
 	SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error)
+	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+	SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error)
+	// 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+	// 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+	// 的进程，一个人点两下就能把内存吃光。
+	FetchAttachmentLink(context.Context, *FetchAttachmentLinkRequest) (*FetchAttachmentLinkResponse, error)
+	// 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+	WithdrawAttachmentLink(context.Context, *WithdrawAttachmentLinkRequest) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -1303,6 +1438,24 @@ func (UnimplementedEmailServiceServer) PreviewInboundAttachment(context.Context,
 func (UnimplementedEmailServiceServer) DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DownloadInboundAttachments not implemented")
 }
+func (UnimplementedEmailServiceServer) ListMailFolders(context.Context, *ListMailFoldersRequest) (*ListMailFoldersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailFolders not implemented")
+}
+func (UnimplementedEmailServiceServer) CreateMailFolder(context.Context, *CreateMailFolderRequest) (*CreateMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) RenameMailFolder(context.Context, *RenameMailFolderRequest) (*RenameMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenameMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) DeleteMailFolder(context.Context, *DeleteMailFolderRequest) (*DeleteMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) MoveInboundBatch(context.Context, *MoveInboundBatchRequest) (*MoveInboundBatchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveInboundBatch not implemented")
+}
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
 }
@@ -1311,6 +1464,15 @@ func (UnimplementedEmailServiceServer) ListMyMailboxes(context.Context, *ListMyM
 }
 func (UnimplementedEmailServiceServer) SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetDefaultMailbox not implemented")
+}
+func (UnimplementedEmailServiceServer) SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetKeepSentCopy not implemented")
+}
+func (UnimplementedEmailServiceServer) FetchAttachmentLink(context.Context, *FetchAttachmentLinkRequest) (*FetchAttachmentLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchAttachmentLink not implemented")
+}
+func (UnimplementedEmailServiceServer) WithdrawAttachmentLink(context.Context, *WithdrawAttachmentLinkRequest) (*WithdrawAttachmentLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawAttachmentLink not implemented")
 }
 func (UnimplementedEmailServiceServer) UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnbindMailbox not implemented")
@@ -2308,6 +2470,114 @@ func _EmailService_DownloadInboundAttachments_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ListMailFolders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailFoldersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMailFolders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMailFolders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMailFolders(ctx, req.(*ListMailFoldersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_CreateMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CreateMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CreateMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CreateMailFolder(ctx, req.(*CreateMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_RenameMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).RenameMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_RenameMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).RenameMailFolder(ctx, req.(*RenameMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_DeleteMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).DeleteMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_DeleteMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).DeleteMailFolder(ctx, req.(*DeleteMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_MoveInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).MoveInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_MoveInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).MoveInbound(ctx, req.(*MoveInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_MoveInboundBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveInboundBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).MoveInboundBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_MoveInboundBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).MoveInboundBatch(ctx, req.(*MoveInboundBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2358,6 +2628,60 @@ func _EmailService_SetDefaultMailbox_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).SetDefaultMailbox(ctx, req.(*SetDefaultMailboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SetKeepSentCopy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetKeepSentCopyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SetKeepSentCopy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SetKeepSentCopy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SetKeepSentCopy(ctx, req.(*SetKeepSentCopyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_FetchAttachmentLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchAttachmentLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).FetchAttachmentLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_FetchAttachmentLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).FetchAttachmentLink(ctx, req.(*FetchAttachmentLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_WithdrawAttachmentLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawAttachmentLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).WithdrawAttachmentLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_WithdrawAttachmentLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).WithdrawAttachmentLink(ctx, req.(*WithdrawAttachmentLinkRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2812,6 +3136,30 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _EmailService_DownloadInboundAttachments_Handler,
 		},
 		{
+			MethodName: "ListMailFolders",
+			Handler:    _EmailService_ListMailFolders_Handler,
+		},
+		{
+			MethodName: "CreateMailFolder",
+			Handler:    _EmailService_CreateMailFolder_Handler,
+		},
+		{
+			MethodName: "RenameMailFolder",
+			Handler:    _EmailService_RenameMailFolder_Handler,
+		},
+		{
+			MethodName: "DeleteMailFolder",
+			Handler:    _EmailService_DeleteMailFolder_Handler,
+		},
+		{
+			MethodName: "MoveInbound",
+			Handler:    _EmailService_MoveInbound_Handler,
+		},
+		{
+			MethodName: "MoveInboundBatch",
+			Handler:    _EmailService_MoveInboundBatch_Handler,
+		},
+		{
 			MethodName: "GetMailThread",
 			Handler:    _EmailService_GetMailThread_Handler,
 		},
@@ -2822,6 +3170,18 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetDefaultMailbox",
 			Handler:    _EmailService_SetDefaultMailbox_Handler,
+		},
+		{
+			MethodName: "SetKeepSentCopy",
+			Handler:    _EmailService_SetKeepSentCopy_Handler,
+		},
+		{
+			MethodName: "FetchAttachmentLink",
+			Handler:    _EmailService_FetchAttachmentLink_Handler,
+		},
+		{
+			MethodName: "WithdrawAttachmentLink",
+			Handler:    _EmailService_WithdrawAttachmentLink_Handler,
 		},
 		{
 			MethodName: "UnbindMailbox",

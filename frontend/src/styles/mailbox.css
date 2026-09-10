@@ -49,10 +49,9 @@
   --mail-text: 14px;
   --mail-sub: 13px;
   --mail-meta: 12px;
-  --mail-who-w: 184px;
-  /* Wide enough for the date, and for the three round action buttons that
-     take its place on hover without the row twitching. */
-  --mail-when-w: 108px;
+  /* 从前这里还有 --mail-who-w（发件人列宽）和 --mail-when-w（日期列宽）。
+     邮件行改成三行式之后没有"列"了：每一行自己占满整列，谁长谁省略号，
+     没有需要提前分配的宽度。 */
 
   /* Shape. The rail's capsule and the list's rounded ends are the same idea
      applied at two scales. */
@@ -71,4 +70,31 @@
   :root {
     --mail-fast: 1ms;
   }
+}
+
+/* 拖邮件时手上跟着的那张小卡片，照 Foxmail 那个小信封。
+   写在全局而不是组件里：setDragImage 要一个**已经在文档里**的元素，所以它
+   是 append 到 body 上的，组件的 scoped 样式够不着它。
+   拖影是同步截的一张图，所以它必须在这一帧里就已经是最终样子——不能靠
+   过渡或者异步加载的字体。 */
+.drag-chip {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 小。默认拖影是整行的快照（三行式之后是 340×86 的一大块），跟着光标走
+     的时候把左栏那几格文件夹遮掉大半——而那正是此刻要看清的地方。 */
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color);
+  background: #fff;
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
 }

@@ -53,6 +53,11 @@ type FolderStatus struct {
 	// 它在这里只有一个用途：和我们库里的数不一致时，说明有人在别的客户端
 	// 上读过或删过信，那也是一次值得全量同步的变化。
 	Unseen uint32
+	// UIDValidity 是这个文件夹此刻的编号世代。和 mail_sync_state 里存的比：
+	// 不一样，我们手里所有 UID 都作废——它们指向别的信，或者什么都不指。
+	// 写回操作在判断「这封信还在不在」之前必须先看它，不然换代之后每个
+	// 旧 UID 都"不在"，会把一堆没做成的删除当成已完成静默作废掉。
+	UIDValidity uint32
 }
 
 type Mailbox interface {
@@ -64,6 +69,14 @@ type Mailbox interface {
 	// current-generation — in practice they come from a Message-ID search
 	// moments earlier over the same connection pool.
 	FetchByUIDs(ctx context.Context, acct MailAccount, folder string, uids []uint32) (FetchResult, error)
+	// ListFolders 列出服务器上所有文件夹的名字（不含特殊属性的判断，那是
+	// SentFolder 那一组的事）。
+	ListFolders(ctx context.Context, acct MailAccount) ([]HostFolder, error)
+	// CreateFolder / RenameFolder / DeleteFolder 在服务器上真的建、改、删一个
+	// 文件夹。名字是人写的（中文也行），UTF-7 编码由适配器负责。
+	CreateFolder(ctx context.Context, acct MailAccount, name string) error
+	RenameFolder(ctx context.Context, acct MailAccount, oldName, newName string) error
+	DeleteFolder(ctx context.Context, acct MailAccount, name string) error
 	// FolderStatus asks the host two numbers about a folder and nothing else:
 	// how far its UIDs have advanced, and how many messages are unread.
 	//
@@ -89,7 +102,13 @@ type Mailbox interface {
 	// no such place — a plain IMAP server has no archive concept at all.
 	ArchiveFolder(ctx context.Context, acct MailAccount) (string, error)
 	// MoveMessages moves mail between folders on the host.
-	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) error
+	// MoveMessages 把信挪到另一个文件夹，返回「旧 UID → 新 UID」。
+	//
+	// 新 UID 来自服务器应答里的 COPYUID（UIDPLUS 扩展，我们接的每一家都
+	// 支持）。拿到它，之后彻底删除、恢复就直接按 UID 操作，不用再按
+	// Message-ID 搜——263 不认那种搜索。服务器没给时返回空 map，调用方回退
+	// 到搜索。
+	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) (map[uint32]uint32, error)
 	// FindUIDByMessageID follows a message that has moved: its UID changed,
 	// its Message-ID did not.
 	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
@@ -585,6 +604,13 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 
 	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 	if err != nil {
+		// 只记凭据类的失败。ForAccount 也会因为"已解绑 / 已暂停"而失败，那些
+		// 不该往一个不存在或休眠的账号上写错误；而 Google 授权被撤销（换过
+		// 密码、在安全页里撤了）正是这里失败，不记的话页面永远不会给那颗
+		// "重新登录"——它是唯一修得好这件事的按钮。
+		if IsCredentialRejected(err) {
+			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+		}
 		return 0, err
 	}
 
@@ -599,7 +625,7 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// long as it took somebody to notice, while the page went on showing
 		// the last successful sync as though it were current. Silence is the
 		// bug: the mailbox has to be able to say it is not receiving.
-		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error())
+		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), IsCredentialRejected(err))
 		return 0, err
 	}
 	// Cleared on the way back up, so a recovered mailbox stops complaining
@@ -631,6 +657,15 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 	} else if _, err := s.syncFolder(ctx, jcfg, acct, "JUNK", actual); err != nil {
 		s.log.Warn("junk-folder sync failed", "account", acct.AccountID, "err", err)
 	}
+
+	// 自建文件夹和服务器自带、ERP 也认得是真文件夹的那些（163 的病毒文件夹、
+	// QQ 的其他文件夹），内容一起收进来。员工在 Foxmail 里把信拖进「重要客户」
+	// 之后 ERP 也看得到，就是靠这一段——那条 v1 边界到此为止。
+	//
+	// 不收的：归档和回收站（ERP 的归档/删除是"行留在收件箱加个标记、服务器
+	// 那份挪走"，收进来同一封信会多出一行）、草稿箱（下一期）、虚拟文件夹
+	// （Gmail 的标签，收进来会把每封信存好几遍）。判断在 syncableRole。
+	s.syncExtraFolders(ctx, cfg, acct)
 
 	// The host's own read state, taken back over the newest slice of the
 	// inbox. This is the half of two-way sync that carries somebody else's
@@ -690,7 +725,16 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 		state = store.GetSyncStateRow{} // never synced
 	}
 
+	// 计时分两段。fetchTook 只算「从服务器上把信搬下来」那几段，started 算
+	// 整趟。分开是因为合在一起量出来的不是下载速度：解析、入库、存原件都在
+	// 本机，快得多，混进去会把速度报得高出一个数量级。#389 第一版就把计时
+	// 起点放在 Fetch 之后，那个 rate_kbps 量的其实是入库速度。
+	started := time.Now()
+	var fetchTook time.Duration
+
+	fetchAt := time.Now()
 	res, err := s.mailbox.Fetch(ctx, acct, actual, uint32(state.LastUid), cfg.BatchSize)
+	fetchTook += time.Since(fetchAt)
 	if err != nil {
 		return 0, err
 	}
@@ -703,17 +747,23 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			"account", acct.AccountID, "folder", logical,
 			"was", state.UidValidity, "now", res.UIDValidity)
 		state = store.GetSyncStateRow{}
+		fetchAt = time.Now()
 		res, err = s.mailbox.Fetch(ctx, acct, actual, 0, cfg.BatchSize)
+		fetchTook += time.Since(fetchAt)
 		if err != nil {
 			return 0, err
 		}
 	}
 
 	stored := 0
+	// 收了多少字节、花了多久：没有这两个数，「这个信箱为什么慢」只能靠翻
+	// 日志算时间差，而一封大信卡住整个信箱那次，正是因为没人看得见它。
+	var bytes int64
 	highest := uint32(state.LastUid)
 	lowest := uint32(state.LowUid)
 	ingestBatch := func(msgs []RawMessage, validity uint32) {
 		for _, m := range msgs {
+			bytes += int64(len(m.Raw))
 			// Stamped here rather than in the adapter: the validity belongs to
 			// the fetch, not to the message, and every message in one fetch
 			// shares it.
@@ -743,7 +793,9 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			TenantID: cfg.TenantID, AccountID: acct.AccountID, Folder: logical,
 		})
 		if err == nil && held < cfg.HistoryCap {
+			fetchAt = time.Now()
 			old, err := s.mailbox.FetchBelow(ctx, acct, actual, lowest, cfg.BatchSize)
+			fetchTook += time.Since(fetchAt)
 			if err != nil {
 				s.log.Warn("history backfill failed",
 					"account", acct.AccountID, "folder", logical, "err", err)
@@ -760,6 +812,15 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 		UidValidity: int64(res.UIDValidity), LastUid: int64(highest), LowUid: int64(lowest),
 	}); err != nil {
 		s.log.Error("could not record sync progress", "account", acct.AccountID, "err", err)
+	}
+	if stored > 0 {
+		// rate_kbps 按 fetch 算，不按 took 算：它要回答的是「这个信箱的线路
+		// 有多快」，而 took 里还含着本机的解析和入库。
+		s.log.Info("folder synced", "account", acct.AccountID, "folder", logical,
+			"new", stored, "bytes", bytes,
+			"fetch", fetchTook.Round(time.Millisecond),
+			"took", time.Since(started).Round(time.Millisecond),
+			"rate_kbps", bytesPerSecond(bytes, fetchTook)/1024)
 	}
 	return stored, nil
 }
@@ -923,8 +984,18 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 	}
 
 	for _, a := range parsed.Attachments {
-		key := fmt.Sprintf("mail/inbound/%d/%d/att/%d-%s", tenantID, acct.AccountID, id, safeName(a.FileName))
-		if s.files != nil {
+		key := ""
+		switch {
+		case a.Oversized:
+			// 太大，内容没留。**这一行照样登记**：名字、类型、真实大小都在，
+			// 只是没有文件可下。空的 file_key 一路下去就是「从来没存过」，
+			// 界面据此说实话（见 MailAttachments 的 hint）。原件在对象存储里
+			// 完整留着，「转发为附件」取得回来。
+			s.log.Warn("an incoming attachment was too large to keep, recording it without the file",
+				"account", acct.AccountID, "file", a.FileName,
+				"size", a.TrueSize, "limit", maxAttachmentBytes)
+		case s.files != nil:
+			key = fmt.Sprintf("mail/inbound/%d/%d/att/%d-%s", tenantID, acct.AccountID, id, safeName(a.FileName))
 			if err := s.putRaw(ctx, key, a.Data); err != nil {
 				s.log.Warn("could not store an incoming attachment", "file", a.FileName, "err", err)
 				key = ""
@@ -932,7 +1003,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		}
 		if err := s.q.InsertInboundAttachment(ctx, store.InsertInboundAttachmentParams{
 			TenantID: tenantID, InboundID: id, FileName: a.FileName,
-			ContentType: a.ContentType, FileSize: int64(len(a.Data)), FileKey: key,
+			// 真实大小，不是我们读下来多少。原来这里记的是截断后的长度，
+			// 于是那一行连「它其实多大」都查不到了。
+			ContentType: a.ContentType, FileSize: a.TrueSize, FileKey: key,
 			// What the body points at when it embeds this part. Empty for an
 			// ordinary attachment, which is most of them.
 			ContentID: a.ContentID,
@@ -1258,6 +1331,8 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 
 func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsWaiter, accountID int64) {
 	backoff := time.Minute
+	// 这台服务器的 IDLE 撑不撑得住。掐得太勤就停掉推送、交给轮询，见 idledrop.go。
+	var health idleHealth
 	for ctx.Err() == nil {
 		// 没人在看了就收摊。每一圈开头查一次——IDLE 一圈最长 25 分钟，所以
 		// 一个箱从「没人看」到连接真正释放最多隔一圈。管理器每分钟扫一次，
@@ -1277,8 +1352,51 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			// account comes back; holding a loop open for it helps nobody.
 			return
 		}
-		news, err := waiter.WaitForNews(ctx, acct, "INBOX", 25*time.Minute)
+		// 这台服务器的 IDLE 被判定为没用，正在冷静期：不开连接，睡到期满
+		// 再试。这段时间里收信全靠两分钟一轮的轮询——新信最多晚两分钟，
+		// 换掉每分钟一次的重新登录。
+		if !health.idleWorthTrying(time.Now()) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(idlePauseCheckEvery):
+			}
+			continue
+		}
+		// 比 IDLE 的续命间隔略长：正常情况下是续命先到，这个只是兜底。
+		startedAt := time.Now()
+		news, err := waiter.WaitForNews(ctx, acct, "INBOX", IdleRestartEvery+time.Minute)
 		if err != nil {
+			if errors.Is(err, ErrPushUnsupported) {
+				// 这台服务器没有推送这回事。别再为它挂连接——两分钟一轮的
+				// 轮询本来就在跑，而且用的是连接池里的连接，比挂着一条自己
+				// 的便宜。隔一阵再问一次：服务商会升级。
+				s.log.Info("host has no IMAP push; leaving this mailbox to the poller",
+					"account", accountID, "retry_in", idleRetryAfter)
+				health.quietUntil = time.Now().Add(idleRetryAfter)
+				continue
+			}
+			if BenignIdleDrop(err) {
+				if !health.noteIdleRun(time.Now(), time.Since(startedAt), true) {
+					// 连着几圈都撑不到一分半。再重连下去只是每分钟登录一次。
+					s.log.Info("host keeps cutting idle connections; falling back to polling",
+						"account", accountID, "quiet_for", idleRetryAfter)
+					continue
+				}
+				// 对方挂了电话。263 几分钟就来一次，不是故障：记一条 Info 留
+				// 个脚印，然后重连——不退避。退避是留给拒绝我们的服务器的。
+				//
+				// 但要有个最小间隔：一台连上就挂的服务器会让这个循环以握手
+				// 的速度空转。几秒钟，和推送的时效性比不算什么。
+				s.log.Info("idle connection closed by host, reconnecting", "account", accountID)
+				backoff = time.Minute
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(benignReconnectDelay):
+				}
+				continue
+			}
 			s.log.Warn("idle watch dropped", "account", accountID, "err", err)
 			select {
 			case <-ctx.Done():
@@ -1293,6 +1411,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			continue
 		}
 		backoff = time.Minute
+		health.noteIdleRun(time.Now(), time.Since(startedAt), false)
 		if news {
 			if n, err := s.SyncMailbox(ctx, cfg, accountID); err != nil {
 				s.log.Warn("push-triggered sync failed", "account", accountID, "err", err)
@@ -1301,4 +1420,63 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			}
 		}
 	}
+}
+
+// syncExtraFolders 把自建文件夹和服务器自带的真文件夹里的信也收进来。
+//
+// 只在全量那一档跑（有人在看的箱），跟着 syncOne 走。一个箱通常只多零到
+// 三个文件夹，代价可控；真多到几十个的，每轮多花的时间也只落在那一个箱上。
+//
+// 收哪些文件夹**读的是登记表**，不是当场问服务器：登记发生在打开邮箱页那
+// 一下（前端每次切信箱都会列一次文件夹）。两件事在现实里一起发生——页面一开，
+// 列文件夹和拉列表都会打上来，而"有人在看"正是全量同步这一档的条件。这样
+// 每轮同步省掉一次 LIST 往返。
+//
+// 每个文件夹自己一条同步游标（mail_sync_state 的主键带 folder），所以第一次
+// 会把整个文件夹拉一遍，之后增量。ERP 自己挪进去的信 UID 已经在库里，
+// InsertInbound 是 ON CONFLICT DO NOTHING，重复拉到只是空转。
+//
+// 一个文件夹失败不影响别的，也不影响收件箱——收件箱早在上面就已经交差了。
+func (s *Service) syncExtraFolders(ctx context.Context, cfg SyncConfig, acct MailAccount) {
+	rows, err := s.q.ListFoldersToSync(ctx, store.ListFoldersToSyncParams{
+		TenantID: cfg.TenantID, AccountID: acct.AccountID,
+		Roles: []string{roleCustom, roleSystem}, RowLimit: maxFoldersPerPass,
+	})
+	if err != nil {
+		s.log.Warn("could not list folders to sync", "account", acct.AccountID, "err", err)
+		return
+	}
+	for _, r := range rows {
+		fcfg := cfg
+		if r.Role == roleSystem && fcfg.HistoryCap > extraFolderHistoryCap {
+			// 服务器自带、我们不认得的那些（病毒、广告、订阅）：留一层浅的
+			// 就够。自建文件夹是员工自己归的类，按收件箱的深度留。
+			fcfg.HistoryCap = extraFolderHistoryCap
+		}
+		if _, err := s.syncFolder(ctx, fcfg, acct, r.HostName, r.HostName); err != nil {
+			s.log.Warn("folder sync failed", "account", acct.AccountID, "folder", r.HostName, "err", err)
+		}
+	}
+}
+
+// extraFolderHistoryCap 是服务器自带、ERP 不认得的那些文件夹留多少历史。
+// 和垃圾邮件同一个数：旧的广告和病毒邮件是价值最低的信。
+const extraFolderHistoryCap = 100
+
+// maxFoldersPerPass 是一趟同步最多碰几个额外文件夹。
+//
+// 一个人能建的文件夹没有上限，每个文件夹至少一次 IMAP 往返；建了几十个的
+// 账号会把自己那一格时间片吃光，挤到同一批里别人的箱。查询按「最久没同步的
+// 排前面」轮着给，所以有上限也不会漏，只是最坏多等几轮。
+//
+// 12 是照分档的余量取的：有人在看的那一档每个箱大约 19 秒，收件箱/已发送/
+// 垃圾邮件之外还剩得下十来次往返。
+const maxFoldersPerPass = 12
+
+// bytesPerSecond 是每秒多少字节，只给日志用。
+func bytesPerSecond(bytes int64, took time.Duration) int64 {
+	if took <= 0 {
+		return 0
+	}
+	return int64(float64(bytes) / took.Seconds())
 }

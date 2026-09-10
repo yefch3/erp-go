@@ -41,7 +41,7 @@ func TestOtherHostsAreNotInlineCandidates(t *testing.T) {
 func TestWithNoStorageNothingIsInlined(t *testing.T) {
 	s := &Service{}
 	body := `<img src="https://erp.example.com/api/public/mail-images/aaa">`
-	got, imgs := s.InlineMailImages(t.Context(), body)
+	got, imgs := s.InlineMailImages(t.Context(), 1, 2, body)
 	if got != body || len(imgs) != 0 {
 		t.Fatalf("rewrote without being able to carry anything: %q / %v", got, imgs)
 	}

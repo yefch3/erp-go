@@ -59,8 +59,8 @@ func (u *UnlockStore) key(tenantID, employeeID int64, token string) string {
 // a derived token could be reconstructed by anything that knows the inputs,
 // and the whole point is that only this browser session holds it.
 //
-// accountID 存在值里。accountAll 表示「这个人的全部箱」——那是**旧令牌**
-// 的语义，见 legacyAllMailboxes。
+// accountID 存在值里。accountAll（0）表示「这个人的全部箱」——只发给一个箱
+// 都没绑的人。
 func (u *UnlockStore) Grant(ctx context.Context, tenantID, employeeID, accountID int64) (string, int, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -74,19 +74,22 @@ func (u *UnlockStore) Grant(ctx context.Context, tenantID, employeeID, accountID
 	return token, int(u.ttl.Seconds()), nil
 }
 
-// accountAll 是「这把令牌不限信箱」。
-//
-// 只有两种情况会出现：换版本之前发出去、还没到期的那些旧令牌（值是 "1"），
-// 以及一个箱都没绑的人拿到的那把通行证。
+// accountAll 是「这把令牌不限信箱」：一个箱都没绑的人拿到的那把通行证，
+// 好让活动、草稿那几个不碰邮件内容的页面进得去。
 const accountAll int64 = 0
 
-// legacyAllMailboxes 认出换版本之前发出去的旧令牌。
+// 值就是信箱 id，"0" 是不限箱（accountAll）。
 //
-// 旧令牌的值写死是 "1"，而新令牌的值是信箱 id。这两者会撞：id 恰好是 1 的
-// 那个信箱，它的新令牌看起来和旧令牌一模一样。撞了的后果只是「这把令牌
-// 被当成不限信箱」——比让全公司在部署那一刻集体重新输一次授权码轻，而且
-// 12 小时之内旧令牌就全过期了，这个歧义跟着一起消失。
-func legacyAllMailboxes(v string) bool { return v == "1" }
+// 从前这里还认 8 月 31 日改版前的旧令牌（值写死 "1"，没有信箱这一维），把它
+// 当成不限箱。那条兼容是个自撞：id 恰好是 1 的信箱，新令牌的值也是 "1"——
+// 于是那个箱一直被当成「不限箱」，收件箱里列的是这个人**全部**信箱的信，
+// 左边高亮着它、右边混着别的箱的信，而且没有任何报错。当时以为 12 小时后
+// 旧令牌过期歧义就消失，可令牌是 30 天滑动续期，而且 1 号箱的新令牌会一直
+// 签成 "1"，歧义永远在。
+//
+// 现在 "1" 就是 1 号箱。改版前的旧令牌若还活着，会被当成 1 号箱的：不是
+// 自己的箱就什么都列不出来，退出再进一次就好——比 1 号箱的主人永远看着
+// 一锅粥强。
 
 // Check reports whether this token is currently good for this person, and
 // extends it while it is being used. The token is bound to the identity in
@@ -112,13 +115,9 @@ func (u *UnlockStore) Check(ctx context.Context, tenantID, employeeID int64, tok
 	if err != nil {
 		return 0, false
 	}
-	acct := accountAll
-	if !legacyAllMailboxes(v) {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		acct = n
+	acct, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, false
 	}
 	left, err := u.rdb.TTL(ctx, key).Result()
 	if err != nil {
@@ -152,6 +151,71 @@ func (u *UnlockStore) Revoke(ctx context.Context, tenantID, employeeID int64, to
 }
 
 const mailUnlockHeader = "X-Mail-Unlock"
+
+// mailUnlockAllHeader 是浏览器手上**全部**令牌，逗号分隔。
+//
+// 只有搜索用得上，所以它是单独一个头、不是把 X-Mail-Unlock 改成列表：
+// 另外 33 条路由的口径没有变，一条请求仍然只开一个箱。
+//
+// 为什么走请求头而不是查询串：令牌是凭据，查询串会进访问日志、浏览器历史
+// 和 Referer。为什么不是请求体：搜索是 GET，而带请求体的 GET 到处都不被
+// 中间层善待。「全部退出」那条走的是请求体，因为它本来就是 POST。
+//
+// 服务端不保存「这个人有哪些令牌」的索引（键里含令牌本身，反查不到），
+// 所以只能由持有者报上来——和 lockAllMailboxes 同一个道理。报上来的每一把
+// 都要回 Redis 核对，所以报假的没有用：核不过的直接丢掉。
+const mailUnlockAllHeader = "X-Mail-Unlock-All"
+
+// maxUnlockTokensPerRequest 是一次请求最多核几把令牌。
+//
+// 每把是一次 Redis 往返，而请求头是调用方给的——不封顶的话，一个 8 KB 的
+// 头能变成几百次往返。一个人绑几十个信箱已经不是这套东西要服务的场景了。
+const maxUnlockTokensPerRequest = 32
+
+// unlockedAccountsFor 把浏览器报上来的令牌逐把核过，回「这次请求可以搜哪些
+// 信箱」。
+//
+// 核不过的**静静丢掉**，不是整条请求报错：手上的令牌各有各的到期时间，
+// 退出过的那个箱留下的死令牌是常态。因为其中一把过期就让整次搜索失败，
+// 等于让人为了搜东西先去把每个箱重新登录一遍。
+//
+// 回空切片表示不限信箱——一个箱都没绑的人。这和 unlockedAccount 回
+// accountAll 是同一个口径。
+func (s *Server) unlockedAccountsFor(r *http.Request) []int64 {
+	primary := unlockedAccount(r.Context())
+	if primary == accountAll {
+		// 令牌本身就不限箱，报再多也还是不限箱。
+		return nil
+	}
+	// 当前这一把先进去，然后才轮到额外那些。
+	//
+	// **顺序是有意的**：核不了额外令牌（没有 Unlock）时也得回一个「就这一个
+	// 箱」，不能回 nil——nil 在下游是「不限信箱」，于是核对能力缺失会静静
+	// 放大搜索范围。门那一层缺 Unlock 时是 403，所以这条走不到；但一个在
+	// 失败时会自己变宽的范围，不该靠别处挡着才安全。
+	out := []int64{primary}
+	if s.Unlock == nil {
+		return out
+	}
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	seen := map[int64]bool{primary: true}
+	for i, tok := range strings.Split(r.Header.Get(mailUnlockAllHeader), ",") {
+		if i >= maxUnlockTokensPerRequest {
+			break
+		}
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		acct, ok := s.Unlock.Check(r.Context(), op.TenantID, op.EmployeeID, tok)
+		if !ok || acct == accountAll || seen[acct] {
+			continue
+		}
+		seen[acct] = true
+		out = append(out, acct)
+	}
+	return out
+}
 
 // writeUnlockJSON wraps a plain value in the standard envelope. The proto
 // writer cannot help here because these responses have no proto message.
@@ -198,7 +262,7 @@ func withUnlockedAccount(ctx context.Context, accountID int64) context.Context {
 
 // unlockedAccount 取出这次请求解开的是哪个信箱。
 //
-// 返回 accountAll（0）表示不限——旧令牌，或者一个箱都没绑的人。调用方拿到
+// 返回 accountAll（0）表示不限——一个箱都没绑的人。调用方拿到
 // 0 时照旧行为走（默认箱 / 全部），这样换版本那一刻不会有人被挡在外面。
 func unlockedAccount(ctx context.Context) int64 {
 	if v, ok := ctx.Value(unlockedAccountKey{}).(int64); ok {

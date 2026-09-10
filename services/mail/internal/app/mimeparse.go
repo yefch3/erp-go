@@ -51,7 +51,14 @@ type ParsedMail struct {
 type ParsedAttachment struct {
 	FileName    string
 	ContentType string
-	Data        []byte
+	// 附件的内容。Oversized 为真时是空的——那种情况下我们**不留半截**。
+	Data []byte
+	// 这个附件真实有多大，不是我们读下来多少。两者只在 Oversized 时不同，
+	// 而正是那时候界面上要显示的是真实大小，否则「25 MB」既是假的、又刚好
+	// 像个正常数字。
+	TrueSize int64
+	// 超过 maxAttachmentBytes：内容没留，只留这一行。
+	Oversized bool
 	// Content-ID, angle brackets stripped. Set only when the message gave the
 	// part a name of its own to be pointed at by — which in practice means a
 	// picture the body embeds, a signature logo above all.
@@ -211,16 +218,36 @@ func collectLeaf(ent *emsg.Entity, out *ParsedMail) {
 
 	if disp == "attachment" || (contentID != "" && !selfNamedBody) ||
 		(filename != "" && !strings.HasPrefix(ct, "text/")) {
-		data, err := io.ReadAll(io.LimitReader(ent.Body, maxAttachmentBytes))
+		// 读到上限**再多一个字节**。多出来的那个字节就是「它其实更大」的
+		// 证据，而这正是原来缺的一步：io.LimitReader 读满上限就当作文件到
+		// 头了，**不报错**，于是一个 30 MB 的附件被截成正好 25 MB 存了下来，
+		// 入库时还把 25 MB 记成它的真实大小。界面上那一行看起来完全正常——
+		// 名字对、大小是个合理的数字、能点下载——下下来的文件打不开，而且
+		// 没有任何地方说过这件事。
+		//
+		// 这个「+1 再比一次」的写法这个服务里本来就在用（attachment.go、
+		// imagecache.go 都是），只有这里漏了。
+		data, err := io.ReadAll(io.LimitReader(ent.Body, maxAttachmentBytes+1))
 		if err != nil {
 			return
 		}
-		out.Attachments = append(out.Attachments, ParsedAttachment{
+		att := ParsedAttachment{
 			FileName:    attachmentName(decodeHeader(filename), ct, contentID),
 			ContentType: ct,
-			Data:        data,
 			ContentID:   contentID,
-		})
+			TrueSize:    int64(len(data)),
+		}
+		if int64(len(data)) > maxAttachmentBytes {
+			// 超了就一个字节都不留。剩下的边读边丢地数完，只为拿到真实
+			// 大小——不占内存，而这个数正是界面上要显示的那个「31.5 MB」。
+			// 留半截才是最坏的选择：那是给人一个打不开的文件，还不告诉他。
+			n, _ := io.Copy(io.Discard, ent.Body)
+			att.TrueSize = int64(len(data)) + n
+			att.Oversized = true
+		} else {
+			att.Data = data
+		}
+		out.Attachments = append(out.Attachments, att)
 		return
 	}
 

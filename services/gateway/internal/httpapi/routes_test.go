@@ -51,6 +51,8 @@ func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
 		"GET /api/my-mailboxes",
 		// 换写信时默认用哪个箱。
 		"POST /api/my-mailboxes/default",
+		"POST /api/my-mailboxes/keep-sent-copy",
+		"POST /api/mail-file-links/withdraw",
 		"POST /api/my-mailboxes/unbind",
 		// 绑定/登录邮箱。**存邮箱凭据的路只有这一条**，它要先拿这一对去
 		// 邮件服务器真的登录一次，成功了才落库。
@@ -369,5 +371,23 @@ func TestAttachmentBundleDownloadRouteIsRegistered(t *testing.T) {
 	const want = "GET /api/inbound-mails/{id}/attachments/download"
 	if !routeSet(t)[want] {
 		t.Fatalf("缺少路由：%s", want)
+	}
+}
+
+// 自建文件夹那一组地址。少一条，左栏的「新建文件夹」或详情页的「移动到」
+// 点了拿到 404，catch 里只会说一句失败。
+func TestCustomFolderRoutesAreRegistered(t *testing.T) {
+	routes := routeSet(t)
+	for _, want := range []string{
+		"GET /api/mail-folders",
+		"POST /api/mail-folders",
+		"PUT /api/mail-folders/{id}",
+		"DELETE /api/mail-folders/{id}",
+		"POST /api/inbound-mails/{id}/move",
+		"POST /api/inbound-mails/move",
+	} {
+		if !routes[want] {
+			t.Errorf("缺少路由：%s", want)
+		}
 	}
 }

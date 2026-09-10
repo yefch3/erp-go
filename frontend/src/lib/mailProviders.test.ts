@@ -9,7 +9,10 @@ describe('mailProviders', () => {
     expect(providerForAddress('me@163.com')?.code).toBe('netease163')
     expect(providerForAddress('me@QQ.com')?.code).toBe('qq')
     expect(providerForAddress('me@foxmail.com')?.code).toBe('qq')
-    expect(providerForAddress('me@hotmail.com')?.code).toBe('outlook')
+    // 微软已经关掉了个人邮箱的密码登录（IMAP 服务器声明 LOGINDISABLED），
+    // 绑不上的东西不该出现在下拉里。没有预设 = 走「其他」手填，那条路对
+    // Outlook 同样绑不上，但至少不是一个骗人的选项。
+    expect(providerForAddress('me@hotmail.com')).toBeNull()
   })
 
   it('认不出企业邮的域名，这是对的', () => {

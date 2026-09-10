@@ -80,6 +80,11 @@ func TestPublicMailMethodsPassWithoutATenant(t *testing.T) {
 	for _, method := range []string{
 		"/erp.mail.v1.EmailService/FetchImage",
 		"/erp.mail.v1.EmailService/RecordOpen",
+		// 超大附件的下载。漏掉它的表现是：整个功能在生产上一点用没有——
+		// 公开路由每次都被这道拦截拒在服务层之前，而对外看到的是一个
+		// 404，和「token 不存在」长得一模一样，从外面完全看不出区别。
+		// 这条测试就是为了让下一个公开方法不必再靠翻日志才发现。
+		"/erp.mail.v1.EmailService/FetchAttachmentLink",
 	} {
 		var buf bytes.Buffer
 		log := slog.New(slog.NewTextHandler(&buf, nil))

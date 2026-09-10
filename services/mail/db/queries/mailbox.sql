@@ -43,7 +43,7 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 -- UpsertMailAccountShell 的 ON CONFLICT (tenant_id, email) **口径不一致**
 -- ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
 -- 一声不吭。
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -60,7 +60,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
 --
 -- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -234,7 +234,7 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota
+       hourly_quota, daily_quota, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint;
@@ -245,8 +245,11 @@ SET verified_at = now(), last_error = '', updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountFailed :exec
+-- auth_failed 和 last_error 一起写：文本给人看，位给程序判。
 UPDATE mail_accounts
-SET last_error = sqlc.arg(last_error)::text, updated_at = now()
+SET last_error = sqlc.arg(last_error)::text,
+    auth_failed = sqlc.arg(auth_failed)::boolean,
+    updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetMailAccountActive :exec
@@ -269,9 +272,9 @@ ORDER BY id;
 --
 -- 和 GetMyMailAccount 一样不选 secret_enc：这是设置页读的，凭据永远不回
 -- 浏览器。
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at, unbound_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
@@ -431,19 +434,18 @@ WITH visible AS (
       -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
       AND (sqlc.narg(account_id)::bigint IS NULL
            OR account_id = sqlc.narg(account_id)::bigint)
-      AND CASE sqlc.arg(view)::text
-            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-            -- The trash holds mail deleted from anywhere, junk included.
-            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-          END
+      -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+      -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+      -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+      -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+      -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
       AND NOT is_bounce
-      AND CASE sqlc.arg(view)::text
-            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-            WHEN 'JUNK'    THEN deleted_at IS NULL
-            ELSE archived_at IS NULL AND deleted_at IS NULL
+      AND CASE
+            WHEN sqlc.arg(view)::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
           END
       AND (sqlc.arg(keyword)::text = ''
            OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -494,19 +496,18 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR account_id = sqlc.narg(account_id)::bigint)
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
       END
   AND (sqlc.arg(keyword)::text = ''
        OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -535,19 +536,18 @@ SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND NOT is_read
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
       END
 RETURNING account_id, folder, imap_uid;
 
@@ -605,6 +605,19 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
+-- name: ListInboundThreadMembers :many
+-- 一条会话在一个信箱里的全部成员（没删的）。批量移动从列表来，列表一行是
+-- 一条会话，挪就得整条会话一起挪；只挪最新那封会把行留在原地、少一封。
+-- AccountID 不可省：同一条会话可能同时在两个信箱里（客户抄送了两个地址）。
+SELECT id, folder, imap_uid, message_id, archived_at
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND thread_key = sqlc.arg(thread_key)::text
+  AND deleted_at IS NULL
+ORDER BY id;
+
 -- name: GetInbound :one
 -- The ERP's delivery record is joined on for the same reason ListSentUnified
 -- joins it: 对方是否已读 is knowable only there, and 已发送 opens this row
@@ -618,6 +631,7 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
+       i.imap_uid, i.archived_at,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -894,7 +908,35 @@ WHERE (sqlc.arg(keyword)::text = ''
 -- 两边都会出现——比把收到的也合起来要好，因为那几封确实是同一批。
 SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        m.to_email AS counterparty, m.sender_name AS who,
-       coalesce(m.sent_at, m.queued_at) AS at
+       coalesce(m.sent_at, m.queued_at) AS at,
+       -- 谁写的、写给谁的，两腿填同一个意思。counterparty 在两腿上说的不是
+       -- 同一件事（这腿是收件人，下面那腿是发件人），界面上却是同一列。
+       m.from_email, m.sender_name AS from_name,
+       -- 收件人和抄送从明细表来，不是从 to_email 来。
+       --
+       -- 合并发送的信**一行代表好几个人**：email_messages.to_email 只存了
+       -- 其中第一个，完整名单在 email_message_recipients 上。照着 to_email
+       -- 显示的后果是，一封抄了同事的信在会话里看着像只发给了一个人——
+       -- 而客户在 Gmail 里看到的是两个，两边对不上。
+       --
+       -- 分别发送的信没有明细行（一行本来就只对一个人），所以 coalesce 退回
+       -- to_email。生产上 78 封分别发送的信明细行为 0，这条退路是必须的。
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'TO'
+       ), m.to_email)::text AS to_all,
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'CC'
+       ), '')::text AS cc
 FROM email_messages m
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
   AND m.sender_id = sqlc.arg(owner_id)::bigint
@@ -904,7 +946,11 @@ SELECT 'IN' AS direction, i.id, i.subject,
        CASE WHEN i.body_html <> '' THEN i.body_html ELSE i.body_text END AS body,
        CASE WHEN i.body_html <> '' THEN 'HTML' ELSE 'TEXT' END AS body_format,
        i.from_email AS counterparty, i.from_name AS who,
-       coalesce(i.sent_at, i.received_at) AS at
+       coalesce(i.sent_at, i.received_at) AS at,
+       i.from_email, i.from_name,
+       -- 原头优先：群发给七个人的信要看到七个，只有没存下原头时才退回第一个。
+       CASE WHEN i.to_all <> '' THEN i.to_all ELSE i.to_email END AS to_all,
+       i.cc
 FROM email_inbound i
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
@@ -913,29 +959,29 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
        OR i.account_id = sqlc.narg(account_id)::bigint)
   AND i.thread_key = sqlc.arg(thread_key)::text
   AND NOT i.is_bounce
-  -- A mail speaks once per conversation. Gmail files a copy of every send
-  -- into the SENT folder, and the host mirror syncs that copy in as one more
-  -- inbound row — the same physical mail under a second id. Unguarded, a
-  -- reply sent from the ERP appears twice (its OUT row and its mirror), and
-  -- a self-addressed mail twice (its INBOX copy and its SENT copy). A SENT
-  -- copy is therefore silenced when the mail it duplicates is already in the
-  -- thread; one without a Message-ID cannot be proven a duplicate and stays.
-  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND (
-    -- the mirror of a mail this service sent: its Message-ID was minted
-    -- from the outbound row's message_key
-    EXISTS (
-      SELECT 1 FROM email_messages sent
-      WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
-        AND sent.message_key::text = split_part(i.message_id, '@', 1)
-    )
-    -- the SENT copy of a mail another folder already shows (a mail sent to
-    -- yourself from any client: the INBOX copy is the one that stays)
-    OR EXISTS (
-      SELECT 1 FROM email_inbound twin
-      WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
-        AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
-        AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
-    )
+  -- A mail speaks once per conversation. 两条规则，各挡一种重复。
+  --
+  -- 一、**这封信就是我们自己发出去的那一封**：它的 Message-ID 是从 OUT 那一行
+  -- 的 message_key 生成的。上面那一腿已经把它作为「我发出」列过一次了，这里
+  -- 再列一次就是同一封信出现两遍。
+  --
+  -- 不限文件夹是有意的。原来只挡 SENT，因为当时想到的只有「Gmail 把每封发出
+  -- 的信也塞进已发送」。可**发给自己名下另一个信箱**时，那封信会落进那个箱的
+  -- 收件箱——照样是同一封信的第二次出现，界面上一条写着收件人、一条写着发件人，
+  -- 看着像是重复发了两遍。测试时几乎必然撞上，因为测试就是发给自己。
+  AND NOT (i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_messages sent
+    WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
+      AND sent.message_key::text = split_part(i.message_id, '@', 1)
+  ))
+  -- 二、别的客户端发的信，在已发送里留了一份，而同一封信在别的文件夹里也有
+  -- （给自己发的信：收件箱那份是留下的那一份）。这一条只对已发送成立——
+  -- 反过来会把收件箱那份也挡掉，两份都没了。
+  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_inbound twin
+    WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
+      AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
+      AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
   ))
 ORDER BY at;
 
@@ -1155,6 +1201,9 @@ LIMIT sqlc.arg(row_limit)::int;
 UPDATE email_inbound
 SET folder = sqlc.arg(new_folder)::text,
     imap_uid = sqlc.arg(new_uid)::bigint,
+    -- 回到了正位，「挪去了哪里」这条记录作废。
+    host_folder = '',
+    host_uid = 0,
     not_junk = FALSE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
@@ -1168,7 +1217,8 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- owner_id and raw_key are here for the one outcome that destroys something:
 -- a message already in our recycle bin that the host has now purged is purged
 -- here too, and that means removing its objects before its row.
-SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at,
+       host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
@@ -1250,17 +1300,29 @@ RETURNING id, account_id, folder, imap_uid, message_id;
 -- which. A mail rescued from junk (not_junk) is a decision the other way and
 -- is included.
 --
+-- 也横跨**信箱**。这一条改过两次，值得记下来为什么落在这里：
+--
+--   一开始不分箱——那时一个人只有一个箱，"分箱"根本不存在。
+--   多绑之后收紧成「只搜当前这个箱」，理由是列表明明只列一个箱的信，搜索
+--   却横跨两个箱，看着像串味。
+--   现在放开成「搜手上开着的全部箱」。收紧那一版把问题看反了：搜索存在的
+--   意义正是**不知道东西在哪儿**。一个人有 263 和 Gmail 两个箱，记得客户
+--   说过"钢卷"，不记得那封信落在哪个箱——收紧之后他得站到每个箱里各搜
+--   一遍，也就是让人代替搜索干活。
+--
+-- 搜哪些箱由调用方给，且只能是**令牌验过的那些**（见网关 searchMail）。
+-- 空数组 = 不限，留给一个箱都没绑的人。
+--
 -- name: SearchMail :many
 WITH hits AS (
-    SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-           snippet, search_text, is_read, is_starred, has_attachments,
+    SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+           subject, snippet, search_text, is_read, is_starred, has_attachments,
            received_at, sent_at
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
-      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
-      AND (sqlc.narg(account_id)::bigint IS NULL
-           OR account_id = sqlc.narg(account_id)::bigint)
+      AND (cardinality(sqlc.arg(account_ids)::bigint[]) = 0
+           OR account_id = ANY(sqlc.arg(account_ids)::bigint[]))
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -1278,8 +1340,11 @@ WITH hits AS (
 -- The match window is cut here, after LIMIT, so lowering a whole mail body to
 -- find the offset happens for the fifty rows on screen and not for every row
 -- the scan touched.
-SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-       is_read, is_starred, has_attachments, received_at, sent_at,
+-- account_id 跟着每一行回去：结果横跨信箱之后，「这封信在哪个箱」和「在哪个
+-- 文件夹」是同一类信息——不说的话，一列混着两个箱的信而没有任何区分。
+-- 界面还要用它：点开一封别的箱的信之前得先换成那个箱的令牌。
+SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+       subject, is_read, is_starred, has_attachments, received_at, sent_at,
        CASE
            WHEN position(lower(sqlc.arg(keyword)::text) in lower(search_text)) > 0
            THEN substring(search_text
@@ -1303,8 +1368,8 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND (sqlc.narg(account_id)::bigint IS NULL
-       OR account_id = sqlc.narg(account_id)::bigint)
+  AND (cardinality(sqlc.arg(account_ids)::bigint[]) = 0
+       OR account_id = ANY(sqlc.arg(account_ids)::bigint[]))
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
   AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%';
@@ -1493,8 +1558,18 @@ SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active AND unbound_at IS N
 -- name: GetInboundByFolderUID :one
 -- 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
 -- 同一封信——IDLE 推送让同步抢在收尾之前把挪过去的信当新邮件下载了一遍。
-SELECT id, owner_id, raw_key, message_id
+SELECT id, owner_id, raw_key, message_id, host_folder, host_uid
 FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: SetInboundHostLocation :exec
+-- 信在服务器上被挪去了哪里（从 MOVE/COPY 的 COPYUID 里接到的）。
+UPDATE email_inbound
+SET host_folder = sqlc.arg(host_folder)::text,
+    host_uid = sqlc.arg(host_uid)::bigint
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text
@@ -1648,3 +1723,179 @@ UPDATE mail_accounts
    AND id = sqlc.arg(id)::bigint
    AND employee_id = sqlc.arg(employee_id)::bigint
    AND unbound_at IS NULL;
+
+-- ============================================================ 自建文件夹
+
+-- name: ListMailFolders :many
+SELECT id, account_id, name, host_name, role, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+ORDER BY name;
+
+-- name: GetMailFolder :one
+SELECT id, account_id, name, host_name, role, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: CreateMailFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
+        sqlc.arg(name)::text, sqlc.arg(host_name)::text, sqlc.arg(role)::text, sqlc.arg(created_by)::bigint)
+RETURNING id, account_id, name, host_name, role, created_by, created_at;
+
+-- name: UpsertHostFolder :one
+-- 每次列文件夹，把服务器 LIST 回来的每一个登记进来（或刷新角色）。角色由
+-- 调用方按可信度算好传进来；名字对系统文件夹就是服务器名。
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
+        sqlc.arg(host_name)::text, sqlc.arg(host_name)::text, sqlc.arg(role)::text, sqlc.arg(created_by)::bigint)
+-- 服务器对改名/删除答过「默认文件夹」的，已经被标成 SYSTEM（SetMailFolderRole）；
+-- 名单认不出它、按名字又算成 CUSTOM 时不能把这个判断盖掉——服务器的话比名单
+-- 可信。其余情况角色跟着最新的判断走（比如猜名单补全后从 SYSTEM 变 ARCHIVE）。
+ON CONFLICT (tenant_id, account_id, host_name) DO UPDATE
+SET role = CASE
+             -- 服务器答过「默认文件夹」的已经是 SYSTEM，名单认不出它、按名字
+             -- 算成 CUSTOM 时不能盖掉：服务器的话比名单可信。
+             WHEN mail_folders.role IN ('SYSTEM', 'VIRTUAL') AND EXCLUDED.role = 'CUSTOM'
+               THEN mail_folders.role
+             -- VIRTUAL 也不能降成 SYSTEM。两者的区别只在「同步不同步」，而
+             -- 判错的代价不对称：把 Gmail 的标签当成真文件夹同步，每封信会
+             -- 按标签存好几遍；反过来只是少列一个文件夹。
+             WHEN mail_folders.role = 'VIRTUAL' AND EXCLUDED.role = 'SYSTEM'
+               THEN mail_folders.role
+             ELSE EXCLUDED.role
+           END
+RETURNING id, account_id, name, host_name, role, created_by, created_at;
+
+-- name: ListFoldersToSync :many
+-- 这一轮同步哪几个文件夹：只挑能装信的（自建、服务器自带的真文件夹），
+-- 最久没同步的排前面，一次最多这么多个。
+--
+-- **有上限**是因为一个人能建的文件夹没有上限，而每个文件夹至少一次 IMAP
+-- 往返。建了几十个文件夹的账号会把自己那一格时间片吃光，挤到同一批里别人的
+-- 箱——分档算出来的余量是按「一个箱多零到三个文件夹」估的。
+--
+-- 轮着来，所以有上限也不会漏：这一轮没轮到的，下一轮排在最前面。
+SELECT f.host_name, f.role
+FROM mail_folders f
+LEFT JOIN mail_sync_state s
+       ON s.tenant_id = f.tenant_id AND s.account_id = f.account_id AND s.folder = f.host_name
+WHERE f.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND f.account_id = sqlc.arg(account_id)::bigint
+  AND f.role = ANY(sqlc.arg(roles)::text[])
+ORDER BY s.last_synced_at ASC NULLS FIRST, f.host_name
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: FindInboundMovedElsewhere :many
+-- 这些信现在是不是躺在**别的**文件夹里。
+--
+-- 对账发现收件箱里一封信不见了，要判断它去哪了。挪进自建文件夹这一种，同一趟
+-- 同步已经先把它从新文件夹收了进来（syncExtraFolders 排在对账前面），所以查库
+-- 就够，不用再问一次服务器。
+--
+-- 只看自建和服务器自带的那些：收件箱/已发送/垃圾邮件三个逻辑名排除掉，不然
+-- 一封发给自己的信（收件箱和已发送各一份、同一个 Message-ID）会被当成「从
+-- 收件箱挪进了已发送」。
+SELECT message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder NOT IN ('INBOX', 'SENT', 'JUNK')
+  AND deleted_at IS NULL
+  AND message_id = ANY(sqlc.arg(message_ids)::text[])
+ORDER BY id DESC;
+
+-- name: SetMailFolderRole :exec
+-- 服务器对改名/删除答「默认文件夹」时把它标成系统：服务器的拒绝是最后的裁判。
+UPDATE mail_folders SET role = sqlc.arg(role)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: RenameMailFolder :exec
+UPDATE mail_folders
+SET name = sqlc.arg(name)::text, host_name = sqlc.arg(host_name)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: DeleteMailFolder :exec
+DELETE FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: CountInboundInFolder :one
+-- 文件夹里还有没有信（没被删除的）。删文件夹之前问一句：有信就不删，
+-- 让人先把信挪走——静默把信一起删掉是最坏的结果。
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND deleted_at IS NULL;
+
+-- name: RenameInboundFolder :execrows
+-- 文件夹在服务器上改了名，行里存的名字跟着改。触发器会重算视图。
+UPDATE email_inbound
+SET folder = sqlc.arg(new_folder)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(old_folder)::text;
+
+-- name: ClearInboundArchived :exec
+-- 挪回收件箱：归档标记去掉，不然它落在归档视图里。
+UPDATE email_inbound SET archived_at = NULL
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ClearInboundNotJunk :exec
+-- 挪进垃圾邮件：把「不是垃圾」那个平反标记去掉。
+--
+-- 和上面那条同一个道理，只是方向相反。视图是这么算的（mail_view_of）：
+-- folder='JUNK' 且 not_junk 为真时算**收件箱**，不是垃圾邮件。所以一封平反过
+-- 的信再挪回垃圾邮件，不清这个标记的话，folder 是 JUNK 而视图仍然说它在收件
+-- 箱——列表上它没动，服务器上却已经进了垃圾箱，两边从此各说各的。
+UPDATE email_inbound SET not_junk = FALSE
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+
+-- name: SetKeepSentCopy :execrows
+-- 「发送后自己往已发送里留一份副本」这个开关。
+--
+-- 按 (tenant, employee, id) 三个一起限定，不是只按 id：id 是从浏览器来的，
+-- 只按它更新等于谁都能改别人信箱的设置。返回改了几行，调用方据此分辨
+-- 「关掉了」和「这个箱不在你名下」——两者都不该静默成功。
+UPDATE mail_accounts
+SET keep_sent_copy = sqlc.arg(keep_sent_copy)::boolean, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND id = sqlc.arg(id)::bigint;
+
+-- name: EnsureAttachmentToken :one
+-- 给一个附件配公开取件口，已经有的就复用。
+--
+-- 复用是要紧的：同一封信重试时不能每次换一个地址，否则先收到的那个人手上
+-- 那条链接就废了，而他不会知道为什么。
+--
+-- 按 (tenant, id) 限定：id 来自我们自己的附件表，但仍然带上租户——发链接
+-- 这件事跨租户一次就够糟了。
+UPDATE email_attachments
+SET token = coalesce(token, sqlc.arg(token)::text)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+RETURNING coalesce(token, '')::text;
+
+-- name: ResolveAttachmentToken :one
+-- 公开下载路由用：token → 这个文件是什么、在哪。
+--
+-- **不带租户**，因为调用方是收件人的浏览器，没有会话也就没有租户。token 是
+-- 随机不可猜的，知道一个也只能换来它自己那个文件。同 ResolveImage。
+--
+-- 撤回的查不出来：status 一变，链接立刻失效，而行还留着——客户问「你发我的
+-- 链接打不开」时答得上来是被撤回了，而不是一句查无此物。
+SELECT file_name, file_key, file_size, content_type
+FROM email_attachments
+WHERE token = sqlc.arg(token)::text
+  AND status = 'ACTIVE';
+
+-- name: WithdrawAttachmentLink :execrows
+-- 撤回一个已经发出去的下载链接。行留着，只是不再服务。
+UPDATE email_attachments
+SET status = 'WITHDRAWN'
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND token IS NOT NULL;

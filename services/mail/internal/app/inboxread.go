@@ -15,7 +15,11 @@ import (
 
 // InboundView is one received message as the API returns it.
 type InboundView struct {
-	ID             int64
+	ID int64
+	// 这封信落在哪个信箱。搜索横跨信箱之后必须跟着信走：一封 B 箱收到的信
+	// 可能是站在 A 箱里点开的，而「点回复从哪个地址发出去」得看这封信是
+	// 哪个箱收到的，不能看左边高亮着谁——那就是「读 B 的信、从 A 回过去」。
+	AccountID      int64
 	FromEmail      string
 	FromName       string
 	ToEmail        string
@@ -172,11 +176,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
-	}
+	view = normalizeView(view)
 	sort, err := normalizeListSort(sort, inboundSortColumns)
 	if err != nil {
 		return InboundPage{}, err
@@ -393,7 +393,8 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	}
 
 	v := InboundView{
-		ID: row.ID, FromEmail: row.FromEmail, FromName: row.FromName,
+		ID: row.ID, AccountID: row.AccountID,
+		FromEmail: row.FromEmail, FromName: row.FromName,
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
@@ -444,7 +445,10 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	// sanitiser produces — it percent-encodes spaces in URLs on the way
 	// through, and matching the raw form would miss those.
 	embedded := s.embeddedSwap(ctx, tenantID, id)
-	sanitised := SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded))
+	// 补链接放在净化之后：只加锚点，不做任何净化，输入必须是已经过滤干净的。
+	// 发信方把地址写成光秃秃的文字是常事（事务性邮件尤其多），净化器不管这个
+	// ——它只负责把危险的东西去掉，不负责把不是链接的变成链接。
+	sanitised := LinkifyBareURLs(SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded)))
 	// 自家像素在这里拆掉，拆在本地化之后：图片缓存刻意不缓存我们自己的主机，
 	// 于是那条地址会原样留到浏览器手里，由浏览器去把它拉一次 —— 那正是它要
 	// 记录的「打开」。见 ownpixel.go。
@@ -493,9 +497,19 @@ type ThreadItem struct {
 	Body         string
 	Quoted       string
 	BodyFormat   string
+	// Counterparty 在两个方向上说的**不是同一件事**：我发出的那行它是收件人，
+	// 收到的那行它是发件人。界面上却是同一列，于是一条会话里上下两行的地址
+	// 一个是「发给谁」一个是「谁发的」，看的人无从分辨。留着不动是因为别处
+	// 在用；下面四个才是两腿含义一致的。
 	Counterparty string
 	Who          string
 	At           time.Time
+	FromEmail    string
+	FromName     string
+	// 整段收件人，不是第一个：群发给七个人的信这里要看到七个。
+	ToAll string
+	// 只有收到的那一腿有：email_messages 上没有存抄送。
+	Cc string
 	// 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了。
 	Attachments []Attachment
 }
@@ -546,6 +560,10 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	// because the two legs number their rows in different tables and an
 	// inbound 7 is not an outbound 7.
 	files := map[string][]Attachment{}
+	// 我们自己发出去的那几条，正文里可能带着一条**当时**签发的存储地址：写信框
+	// 把阅读视图那段 HTML 抄进了引用（见 quotedimages.go）。那条地址早过期了，
+	// 回头看已发送就是一个裂开的图标。这张表按对象 key 给出刚签的一条。
+	freshImages := map[string]string{}
 	if fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
 		TenantID: tenantID, OwnerID: ownerID, AccountID: accountID, ThreadKey: threadKey,
 	}); err == nil {
@@ -560,6 +578,13 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 		// ingest: a URL minted when the mail arrived would have expired long
 		// before anybody opened the thread.
 		flat = s.signDownloads(ctx, flat)
+		// PreviewURL 而不是 DownloadURL：前者是「浏览器就地渲染」那一条，后者
+		// 带下载附件的处置头，塞进 <img> 只会让浏览器去下载一个文件。
+		for _, a := range flat {
+			if a.FileKey != "" && a.PreviewURL != "" {
+				freshImages[a.FileKey] = a.PreviewURL
+			}
+		}
 		for i, f := range fs {
 			k := f.Direction + ":" + strconv.FormatInt(f.MessageID, 10)
 			files[k] = append(files[k], flat[i])
@@ -573,22 +598,35 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body, quoted := r.Body, ""
-		if r.Direction == "IN" && r.BodyFormat == "HTML" {
+		if r.BodyFormat == "HTML" {
 			// The fold matters most here and for the reason this view exists:
 			// turn sixteen of a conversation is turns one to fifteen stacked
 			// up, and the thread already shows those separately.
-			// Embedded before the sanitiser, remote after — see GetInbound.
-			body, quoted = SplitQuotedHistory(
-				stripOwnPixel(
+			//
+			// **两个方向都折。** 原来只折收到的，理由大概是"我们自己写的还要
+			// 折什么"——可回复带的引用恰恰是最长的那一段：写的两行在最上面，
+			// 底下是整条往来。不折的话，会话里我们发出的每一条都把历史再摊
+			// 一遍，正是这个视图要消灭的东西。
+			if r.Direction == "IN" {
+				// Embedded before the sanitiser, remote after — see GetInbound.
+				body = LinkifyBareURLs(stripOwnPixel(
 					s.localiseImages(ctx,
 						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
 						swaps[r.ID]),
 					s.selfHost))
+			} else {
+				// 我们自己发出去的：引用里借来的那张图，地址是发信当天签的，
+				// 现在早过期了。按 key 换成刚签的一条。
+				body = refreshStorageImageLinks(body, freshImages)
+			}
+			body, quoted = SplitQuotedHistory(body)
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
 			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
+			FromEmail: r.FromEmail, FromName: r.FromName,
+			ToAll: r.ToAll, Cc: r.Cc,
 			// 内嵌图片在这里剔除，而不是在 SQL 里：判断的依据是「正文有没有
 			// 真的引用那个 cid」，而正文只有到这一步才拿得到。同 GetInbound。
 			Attachments: hideEmbedded(
@@ -751,10 +789,9 @@ func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 // sits above a list, and it should do what the list shows. Marking the junk
 // view read must not silently clear the inbox.
 func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, view string) (int64, error) {
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
+	view, err := knownView(view)
+	if err != nil {
+		return 0, err
 	}
 	touched, err := s.q.MarkViewRead(ctx, store.MarkViewReadParams{
 		TenantID: tenantID, OwnerID: ownerID, View: view,
@@ -1155,4 +1192,29 @@ func (s *Service) touchMailboxRead(ctx context.Context, tenantID, accountID int6
 	}); err != nil {
 		s.log.Warn("could not record mailbox read time", "account", accountID, "err", err)
 	}
+}
+
+// normalizeView 把请求里的 view 收口到已知的几档。认不得的回落到收件箱：
+// 一个坏参数最多只能让人看到默认那一片。自建文件夹是 'F:' 加服务器名，
+// 由 mail_view_of 生成、前端原样传回，这里放行。
+func normalizeView(view string) string {
+	switch {
+	case view == "STARRED", view == "ARCHIVE", view == "TRASH", view == "JUNK":
+		return view
+	case strings.HasPrefix(view, "F:") && len(view) > 2:
+		return view
+	default:
+		return "INBOX"
+	}
+}
+
+// knownView 是 normalizeView 的严格版，给写操作用。列表认不得视图回落到
+// 收件箱，最多让人看到默认那一片；「全部已读」要是也回落，就会把真正收件箱
+// 的未读全标掉——前端传错一个键（比如 undefined）就是这个后果。所以这里
+// 认不得就拒绝，一封都不动。
+func knownView(view string) (string, error) {
+	if normalizeView(view) == view {
+		return view, nil
+	}
+	return "", apierr.Invalid("MAIL_VIEW_UNKNOWN", "不认识的视图："+view)
 }

@@ -31,6 +31,7 @@
 import { computed, nextTick, onMounted, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { embeddedAttachmentID } from '../lib/mailExcel'
+import { safeExternalHref } from '../lib/frameLink'
 
 const { t } = useI18n()
 const props = defineProps<{ html: string }>()
@@ -221,6 +222,36 @@ function bindSelectionBubble() {
     // beat after mouseup, and reading it too early keeps a stale bubble open.
     schedule(0)
   }
+  // 链接由**父窗口**去开，不指望 frame 自己能开。
+  //
+  // 文档里有 <base target="_blank">，sandbox 也给了 allow-popups，按规范这
+  // 就够了——可线上就是点不动。这类行为在不同浏览器、不同 sandbox 组合下
+  // 的差别很难复现，也很难保证以后不变，所以不赌它：拦下来交给父窗口，那
+  // 边没有任何 sandbox 限制，是条确定的路。
+  //
+  // 顺带把协议白名单挪到了「点击那一刻」。净化器已经过滤过一遍，但净化和
+  // 开链接是两件事——一个管存进来的 HTML，一个管我们要不要替使用者去打开
+  // 这个地址。两道都设，谁也不替谁。见 lib/frameLink。
+  d.addEventListener('click', (event) => {
+    const target = event.target
+    const anchor = target instanceof Element ? target.closest('a[href]') : null
+    if (!anchor) return
+    // 不管开不开得成，都不让 frame 自己去导航：开不成时原地不动，比把信
+    // 换成一个打不开的页面好。
+    event.preventDefault()
+    const href = safeExternalHref(anchor.getAttribute('href'))
+    if (!href) return
+    // mailto 用一个临时锚点点一下，交给系统的邮件客户端；window.open 对它
+    // 会先开一个空白页再关掉，闪一下。
+    if (href.startsWith('mailto:')) {
+      const a = document.createElement('a')
+      a.href = href
+      a.rel = 'noopener noreferrer'
+      a.click()
+      return
+    }
+    window.open(href, '_blank', 'noopener,noreferrer')
+  })
   d.addEventListener('mousedown', () => {
     dragging = true
   })

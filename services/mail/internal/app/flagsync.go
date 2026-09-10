@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -205,13 +206,25 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	for _, row := range moves {
 		acct, err := s.ForAccount(ctx, cfg.TenantID, row.AccountID)
 		if err != nil {
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			s.failOrRetire(ctx, row, err)
 			continue
 		}
 		if err := s.publishMove(ctx, acct, row); err != nil {
+			if s.moveIsMoot(ctx, cfg.TenantID, acct, row) {
+				// 信已经不在原文件夹里了——别的客户端先动了手。要的结果（它不
+				// 在收件箱里）已经达到，这条操作没有意义了，作废。生产上真发生
+				// 过：员工在 Foxmail 里删了，我们拿着一个不存在的 UID 重试到
+				// 1265 次，期间这个账号的读状态对账一直被它挡着。
+				s.log.Info("folder move retired: message already gone from the host",
+					"account", row.AccountID, "flag", row.Flag, "uid", row.ImapUid)
+				if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+					s.log.Warn("could not clear a moot move", "id", row.ID, "err", err)
+				}
+				continue
+			}
 			s.log.Warn("folder move failed", "account", row.AccountID,
 				"flag", row.Flag, "op", row.Op, "uid", row.ImapUid, "err", err)
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			s.failOrRetire(ctx, row, err)
 			continue
 		}
 		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
@@ -238,42 +251,63 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []store.ClaimFlagOpsRow) {
 	trash, err := s.specialFolderOf(ctx, acct, "trash")
 	if err != nil {
-		s.failOps(ctx, rows, err)
-		return
-	}
-	ids := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r.MessageID != "" {
-			ids = append(ids, r.MessageID)
+		for _, r := range rows {
+			s.failOrRetire(ctx, r, err)
 		}
-	}
-	found, err := s.mailbox.FindUIDsByMessageIDs(ctx, acct, trash, ids)
-	if err != nil {
-		s.failOps(ctx, rows, err)
 		return
 	}
-
+	// 先用挪进回收站时记下来的 UID；只有没记录的才去按 Message-ID 搜。
+	// 263 不认那种搜索，所以对 263 来说这一步就是"能不能彻底删除"的分界。
 	uids := make([]uint32, 0, len(rows))
-	var inTrash, elsewhere []store.ClaimFlagOpsRow
+	var inTrash, elsewhere, unknown []store.ClaimFlagOpsRow
 	for _, r := range rows {
-		uid, ok := found[r.MessageID]
-		if !ok {
-			// Not in the trash. Usually somebody got there first, but it can
-			// also mean the move that should have put it there never ran —
-			// see publishMove, which knows how to look. Rare, so it keeps the
-			// slow one-at-a-time path rather than complicating this one.
-			elsewhere = append(elsewhere, r)
+		if uid, ok := s.knownHostUID(ctx, r, trash); ok {
+			uids = append(uids, uid)
+			inTrash = append(inTrash, r)
 			continue
 		}
-		uids = append(uids, uid)
-		inTrash = append(inTrash, r)
+		unknown = append(unknown, r)
+	}
+	if len(unknown) > 0 {
+		ids := make([]string, 0, len(unknown))
+		for _, r := range unknown {
+			if r.MessageID != "" {
+				ids = append(ids, r.MessageID)
+			}
+		}
+		found, err := s.mailbox.FindUIDsByMessageIDs(ctx, acct, trash, ids)
+		if err != nil {
+			// 这一支也要走带上限的版本。263 不认 HEADER Message-Id 的 SEARCH
+			// （"can't search that criteria"）：从前走到这里的操作永远到不了
+			// MOVE、也就永远碰不到别处的上限。有记录的那些不受搜索失败连累。
+			for _, r := range unknown {
+				s.failOrRetire(ctx, r, err)
+			}
+			unknown = nil
+		}
+		for _, r := range unknown {
+			uid, ok := found[r.MessageID]
+			if !ok {
+				// Not in the trash. Usually somebody got there first, but it can
+				// also mean the move that should have put it there never ran —
+				// publishMove's PURGE branch handles both, one message at a time.
+				elsewhere = append(elsewhere, r)
+				continue
+			}
+			uids = append(uids, uid)
+			inTrash = append(inTrash, r)
+		}
 	}
 
 	if len(uids) > 0 {
 		if err := s.mailbox.PurgeMessages(ctx, acct, trash, uids); err != nil {
 			s.log.Warn("batch purge failed", "account", acct.AccountID,
 				"n", len(uids), "err", err)
-			s.failOps(ctx, inTrash, err)
+			// 逐条走带上限的版本：一次总是失败的批量清理，不能像从前那样
+			// 把整批操作永远留在队列里，顺带封死这个账号的读状态对账。
+			for _, r := range inTrash {
+				s.failOrRetire(ctx, r, err)
+			}
 		} else {
 			for _, r := range inTrash {
 				if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
@@ -289,13 +323,98 @@ func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []st
 		if err := s.publishMove(ctx, acct, r); err != nil {
 			s.log.Warn("folder move failed", "account", r.AccountID,
 				"flag", r.Flag, "op", r.Op, "uid", r.ImapUid, "err", err)
-			s.failOps(ctx, []store.ClaimFlagOpsRow{r}, err)
+			s.failOrRetire(ctx, r, err)
 			continue
 		}
 		if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
 			s.log.Warn("could not clear a published move", "id", r.ID, "err", err)
 		}
 	}
+}
+
+// maxFlagOpAttempts 是一条写回操作最多试几次。
+//
+// 退避只是让失败变慢，不让它停：一条永远失败的操作按最长 12 分钟一次，一天
+// 仍然是 120 次连接，而且只要它还在队列里，CountPendingFlagOps 就大于零，这个
+// 账号的读状态对账（ReconcileFlags）就一直不跑。生产上有三条操作分别重试了
+// 992、993、1265 次，对应的账号从 8 月 25 日起就没再和 Foxmail 对过已读。
+//
+// 20 次按现在的退避约合三四个小时：一次真正的临时故障（服务器抖一下、网络
+// 断一会儿）早就过去了；还在失败的，就不是临时的。
+const maxFlagOpAttempts = 20
+
+// hostCannotSearch 认出「这台服务器根本不会按 Message-ID 搜」。
+//
+// 263 答 "UID SEARCH search error: can't search that criteria"。这不是抖动，
+// 是能力缺失：同一条操作重试二十次也是同样的答复。
+//
+// 为什么要单独认出来：**队列非空时对账整个不跑**（见 ReconcileFlags 开头，
+// 那是为了不让服务器的状态盖掉还没写回去的本地改动）。于是一条永远做不成的
+// 操作会把这个信箱的读状态对账挡上好几个小时——挡住的时间里，在别处挪走、
+// 删掉的信，ERP 这边一直不知道。实测就是这个后果：263 的收件箱里已经没有的
+// 三封信，在 ERP 里还挂着。
+//
+// 认得出就当场退役，不占着队列。代价是这一条写回没做成——ERP 和服务器在这
+// 一封信上不一致，日志里记着。比起挡住整个信箱的对账，这是小的那一边。
+//
+// **只认这一种说法**，不认泛泛的失败：错判会把一条本来能成功的写回扔掉。
+func hostCannotSearch(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "can't search that criteria") ||
+		strings.Contains(m, "cannot search that criteria")
+}
+
+// failOrRetire 记一次失败；到了上限就放弃，而不是永远重试。
+func (s *Service) failOrRetire(ctx context.Context, row store.ClaimFlagOpsRow, cause error) {
+	if row.Attempts+1 >= maxFlagOpAttempts || hostCannotSearch(cause) {
+		s.log.Warn("folder move given up",
+			"account", row.AccountID, "flag", row.Flag, "op", row.Op,
+			"uid", row.ImapUid, "attempts", row.Attempts+1,
+			"permanent", hostCannotSearch(cause), "err", cause)
+		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+			s.log.Warn("could not retire a failed move", "id", row.ID, "err", err)
+		}
+		return
+	}
+	s.failOps(ctx, []store.ClaimFlagOpsRow{row}, cause)
+}
+
+// moveIsMoot 问服务器：这封信还在原文件夹里吗。
+//
+// 只对「挪出去」的操作有意义（删除、归档）。挪回来（恢复）走 Message-ID
+// 查找，本来就不依赖旧 UID。问不到时按「还在」处理——宁可多重试，也不
+// 因为一次网络抖动把一条正当的删除作废掉。
+//
+// **先看 UIDVALIDITY。** 文件夹换代之后我们手里的 UID 全部作废，按 UID 去查
+// 每一封都"不在"——不是信没了，是编号没意义了。这时不能作废操作；让它按
+// 退避走到上限、留一条告警，人还能看见。静默作废是所有结果里最坏的一种。
+func (s *Service) moveIsMoot(ctx context.Context, tenantID int64, acct MailAccount, row store.ClaimFlagOpsRow) bool {
+	if row.Op != opAdd || (row.Flag != flagTrash && row.Flag != flagArchive) {
+		return false
+	}
+	home, err := s.hostFolder(ctx, acct, row.Folder)
+	if err != nil {
+		return false
+	}
+	state, err := s.q.GetSyncState(ctx, store.GetSyncStateParams{
+		TenantID: tenantID, AccountID: acct.AccountID, Folder: row.Folder,
+	})
+	if err != nil {
+		return false
+	}
+	st, err := s.mailbox.FolderStatus(ctx, acct, home)
+	if err != nil || st.UIDValidity == 0 || int64(st.UIDValidity) != state.UidValidity {
+		return false
+	}
+	live, err := s.mailbox.FetchFlags(ctx, acct, home, []uint32{uint32(row.ImapUid)})
+	if err != nil {
+		return false
+	}
+	_, stillThere := live[uint32(row.ImapUid)]
+	return !stillThere
 }
 
 func (s *Service) failOps(ctx context.Context, rows []store.ClaimFlagOpsRow, cause error) {
@@ -508,7 +627,34 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 		}
 	}
 
-	deleted, archived, vanished, saved, junked, purged := 0, 0, 0, 0, 0, 0
+	// 挪进了我们现在也同步的文件夹（员工在 Foxmail 里把信拖进「重要客户」）。
+	// 同一趟同步已经先把那封信从新文件夹收了进来——syncExtraFolders 排在对账
+	// 前面，这个顺序是有意的——所以查库就够，不用再问一次服务器。
+	//
+	// 不跟过去的话，一封信会变成两行：一行在回收站里挂着"消失了"，一行在
+	// 文件夹里正常显示。垃圾箱那条路上踩过同一个坑，见上面那个 case。
+	movedTo := map[string]store.FindInboundMovedElsewhereRow{}
+	ids := make([]string, 0, len(missing))
+	for _, r := range missing {
+		if r.MessageID != "" {
+			ids = append(ids, r.MessageID)
+		}
+	}
+	if len(ids) > 0 {
+		found, err := s.q.FindInboundMovedElsewhere(ctx, store.FindInboundMovedElsewhereParams{
+			TenantID: tenantID, AccountID: acct.AccountID, MessageIds: ids,
+		})
+		if err != nil {
+			s.log.Warn("could not check whether the mail was filed elsewhere", "err", err)
+		}
+		for _, f := range found {
+			if _, seen := movedTo[f.MessageID]; !seen {
+				movedTo[f.MessageID] = f
+			}
+		}
+	}
+
+	deleted, archived, vanished, saved, junked, moved, purged := 0, 0, 0, 0, 0, 0, 0
 	for _, r := range missing {
 		switch {
 		// Checked before the trash, because it is the case that must never be
@@ -546,6 +692,18 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 				}
 			}
 			junked++
+
+		// 挪进了自建 / 服务器自带的文件夹。跟过去合并：行还是带着历史的那一
+		// 行，只是换了文件夹；新文件夹那趟同步先落下的年轻副本被清掉。
+		case r.MessageID != "" && movedTo[r.MessageID].Folder != "":
+			m := movedTo[r.MessageID]
+			if err := s.mergeRepoint(ctx, tenantID, acct.AccountID,
+				folder, r.ImapUid, m.Folder, m.ImapUid, r.MessageID); err != nil {
+				s.log.Warn("could not follow mail filed into another folder",
+					"account", acct.AccountID, "message_id", r.MessageID, "to", m.Folder, "err", err)
+				continue
+			}
+			moved++
 
 		case r.MessageID != "" && inTrash[r.MessageID]:
 			if r.DeletedAt.Valid {
@@ -590,7 +748,7 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 				if r.MessageID == "" {
 					continue
 				}
-				_, stillBinned, err := s.mailbox.FindUIDByMessageID(ctx, acct, trash, r.MessageID)
+				stillBinned, err := s.stillOnHost(ctx, acct, trash, r.HostFolder, r.HostUid, r.MessageID)
 				if err != nil {
 					s.log.Warn("could not confirm a host purge, so leaving the mail alone",
 						"account", acct.AccountID, "message_id", r.MessageID, "err", err)
@@ -624,10 +782,10 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 			vanished++
 		}
 	}
-	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 || junked > 0 || purged > 0 {
+	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 || junked > 0 || moved > 0 || purged > 0 {
 		s.log.Info("mail followed from the host",
 			"account", acct.AccountID, "folder", folder,
-			"in_trash", deleted, "archived", archived, "vanished", vanished,
+			"in_trash", deleted, "archived", archived, "vanished", vanished, "filed_elsewhere", moved,
 			"rescued", saved, "junked", junked, "purged", purged)
 	}
 }
@@ -679,18 +837,9 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		}
 		if row.Op == opAdd {
 			// Straight out of the folder it is still sitting in.
-			return s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, trash)
+			return s.moveAway(ctx, acct, row, home, trash)
 		}
-		// Restoring: it left the source folder when it was deleted, so it has
-		// to be found in the trash by Message-ID before it can come back.
-		if err := s.moveBack(ctx, acct, trash, home, row.MessageID); err != nil {
-			return err
-		}
-		// It is back where it belongs, under a new UID. Following it is not
-		// optional: the row still points at the number the mail had before it
-		// was deleted, and the next sync would see an unknown message in the
-		// folder and file the restored mail a second time.
-		return s.repoint(ctx, acct, row, home, row.Folder)
+		return s.bringBack(ctx, acct, row, trash, home)
 
 	case flagArchive:
 		archive, err := s.specialFolderOf(ctx, acct, "archive")
@@ -707,25 +856,26 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 			return nil
 		}
 		if row.Op == opAdd {
-			return s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, archive)
+			return s.moveAway(ctx, acct, row, home, archive)
 		}
-		if err := s.moveBack(ctx, acct, archive, home, row.MessageID); err != nil {
-			return err
-		}
-		return s.repoint(ctx, acct, row, home, row.Folder)
+		return s.bringBack(ctx, acct, row, archive, home)
 
 	case flagNotJunk:
 		junk, err := s.specialFolderOf(ctx, acct, "junk")
 		if err != nil {
 			return err
 		}
-		if err := s.mailbox.MoveMessages(ctx, acct, junk, []uint32{uint32(row.ImapUid)}, "INBOX"); err != nil {
+		moved, err := s.mailbox.MoveMessages(ctx, acct, junk, []uint32{uint32(row.ImapUid)}, "INBOX")
+		if err != nil {
 			return err
 		}
 		// The message now lives in the inbox under a new UID. Following it is
 		// not optional here: leave the row pointing at the old spam UID and
 		// the next sync sees an unknown message in the inbox and files it a
-		// second time.
+		// second time. COPYUID says the new number outright; without it, search.
+		if newUID, ok := moved[uint32(row.ImapUid)]; ok {
+			return s.repointTo(ctx, row, "INBOX", int64(newUID))
+		}
 		return s.repoint(ctx, acct, row, "INBOX", "INBOX")
 
 	case flagPurge:
@@ -734,6 +884,15 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		trash, err := s.specialFolderOf(ctx, acct, "trash")
 		if err != nil {
 			return err
+		}
+		// 先用挪进回收站时记下来的 UID：有它就不用搜（263 不认搜索）。
+		if uid, ok := s.knownHostUID(ctx, row, trash); ok {
+			if err := s.mailbox.PurgeMessages(ctx, acct, trash, []uint32{uid}); err != nil {
+				return err
+			}
+			s.log.Info("purged from the host for good",
+				"account", acct.AccountID, "folder", trash, "uid", uid)
+			return nil
 		}
 		uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, trash, row.MessageID)
 		if err != nil {
@@ -767,6 +926,79 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		s.log.Info("purged from the host for good",
 			"account", acct.AccountID, "folder", trash, "uid", uid)
 		return nil
+	}
+	return nil
+}
+
+// moveAway 把信挪出它的正位（进回收站、进归档），并记下它到了哪里。
+//
+// 记下来的那个 (host_folder, host_uid) 是之后一切操作的钥匙：彻底删除、恢复、
+// 对账里问"还在回收站吗"，都直接按 UID 来，不再按 Message-ID 搜——263 不认
+// 那种搜索。服务器没给 COPYUID 就不记，那些路径各自回退到搜索。
+func (s *Service) moveAway(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow, home, dest string) error {
+	moved, err := s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, dest)
+	if err != nil {
+		return err
+	}
+	newUID, ok := moved[uint32(row.ImapUid)]
+	if !ok {
+		return nil
+	}
+	if err := s.q.SetInboundHostLocation(ctx, store.SetInboundHostLocationParams{
+		TenantID: row.TenantID, AccountID: row.AccountID,
+		Folder: row.Folder, ImapUid: row.ImapUid,
+		HostFolder: dest, HostUid: int64(newUID),
+	}); err != nil {
+		// 挪已经成功了；记不下位置只是让之后的操作退回搜索那条路。
+		s.log.Warn("moved a mail but could not record where it went",
+			"account", row.AccountID, "uid", row.ImapUid, "to", dest, "err", err)
+	}
+	return nil
+}
+
+// bringBack 把信从回收站/归档挪回正位。
+//
+// 知道它在那边的 UID 就直接挪，回来的新 UID 从 COPYUID 拿，行的身份当场改
+// 过来（RepointInbound 顺手清掉 host_* 记录）。不知道就走老路：按 Message-ID
+// 在那边找到它，挪回来，再按 Message-ID 找一次新号。
+//
+// 改行的身份不是可选项：行还指着它被删之前的号，下一次同步会在文件夹里看
+// 见一封"不认识"的信，把恢复回来的这封再存一遍。
+func (s *Service) bringBack(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow, from, home string) error {
+	if uid, ok := s.knownHostUID(ctx, row, from); ok {
+		moved, err := s.mailbox.MoveMessages(ctx, acct, from, []uint32{uid}, home)
+		if err != nil {
+			return err
+		}
+		if newUID, ok := moved[uid]; ok {
+			return s.repointTo(ctx, row, row.Folder, int64(newUID))
+		}
+		return s.repoint(ctx, acct, row, home, row.Folder)
+	}
+	if err := s.moveBack(ctx, acct, from, home, row.MessageID); err != nil {
+		return err
+	}
+	return s.repoint(ctx, acct, row, home, row.Folder)
+}
+
+// knownHostUID 查这封信记下来的服务器位置；只有记录指向 expect 那个文件夹
+// 才算数——记着"在归档里"的信，彻底删除时不能拿那个 UID 去回收站里删。
+func (s *Service) knownHostUID(ctx context.Context, row store.ClaimFlagOpsRow, expect string) (uint32, bool) {
+	r, err := s.q.GetInboundByFolderUID(ctx, store.GetInboundByFolderUIDParams{
+		TenantID: row.TenantID, AccountID: row.AccountID,
+		Folder: row.Folder, ImapUid: row.ImapUid,
+	})
+	if err != nil || r.HostUid <= 0 || r.HostFolder != expect {
+		return 0, false
+	}
+	return uint32(r.HostUid), true
+}
+
+// repointTo 是 repoint 的"新号已知"版本：不搜，直接改行的身份。
+func (s *Service) repointTo(ctx context.Context, row store.ClaimFlagOpsRow, erpFolder string, newUID int64) error {
+	if err := s.mergeRepoint(ctx, row.TenantID, row.AccountID,
+		row.Folder, row.ImapUid, erpFolder, newUID, row.MessageID); err != nil {
+		s.log.Warn("could not repoint a moved mail", "id", row.ID, "err", err)
 	}
 	return nil
 }
@@ -809,11 +1041,15 @@ func (s *Service) purgeStranded(ctx context.Context, acct MailAccount, home, tra
 	}
 	s.log.Info("mail marked for permanent deletion never reached the host trash; moving it there first",
 		"account", acct.AccountID, "folder", home, "uid", uid)
-	if err := s.mailbox.MoveMessages(ctx, acct, home, []uint32{uid}, trash); err != nil {
+	moved, err := s.mailbox.MoveMessages(ctx, acct, home, []uint32{uid}, trash)
+	if err != nil {
 		return 0, false, err
 	}
 	// A move assigns a new UID in the destination, so the old one is no use
-	// here: find it again where it now lives.
+	// here. COPYUID names the new one; a host that does not say gets searched.
+	if newUID, ok := moved[uid]; ok {
+		return newUID, true, nil
+	}
 	return s.mailbox.FindUIDByMessageID(ctx, acct, trash, messageID)
 }
 
@@ -904,5 +1140,24 @@ func (s *Service) moveBack(ctx context.Context, acct MailAccount, from, to, mess
 		// act on.
 		return nil
 	}
-	return s.mailbox.MoveMessages(ctx, acct, from, []uint32{uid}, to)
+	_, err = s.mailbox.MoveMessages(ctx, acct, from, []uint32{uid}, to)
+	return err
+}
+
+// stillOnHost 问"这封信还在那个文件夹里吗"。记了 UID 就按 UID 查（一次
+// FETCH），没记就按 Message-ID 搜（263 不认）。
+func (s *Service) stillOnHost(ctx context.Context, acct MailAccount, folder, hostFolder string, hostUID int64, messageID string) (bool, error) {
+	if hostUID > 0 && hostFolder == folder {
+		live, err := s.mailbox.FetchFlags(ctx, acct, folder, []uint32{uint32(hostUID)})
+		if err != nil {
+			return false, err
+		}
+		_, there := live[uint32(hostUID)]
+		return there, nil
+	}
+	if messageID == "" {
+		return false, nil
+	}
+	_, there, err := s.mailbox.FindUIDByMessageID(ctx, acct, folder, messageID)
+	return there, err
 }

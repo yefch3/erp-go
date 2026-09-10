@@ -529,6 +529,23 @@ func (h *Handler) FetchImage(ctx context.Context, req *mailv1.FetchImageRequest)
 	return &mailv1.FetchImageResponse{Content: b, ContentType: contentType}, nil
 }
 
+// FetchAttachmentLink 同 FetchImage：从公开路由进来，token 就是全部凭据。
+// 回的是地址不是内容——理由见 OpenAttachmentLink。
+func (h *Handler) FetchAttachmentLink(ctx context.Context, req *mailv1.FetchAttachmentLinkRequest) (*mailv1.FetchAttachmentLinkResponse, error) {
+	url, name, err := h.svc.OpenAttachmentLink(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.FetchAttachmentLinkResponse{Url: url, FileName: name}, nil
+}
+
+func (h *Handler) WithdrawAttachmentLink(ctx context.Context, req *mailv1.WithdrawAttachmentLinkRequest) (*mailv1.WithdrawAttachmentLinkResponse, error) {
+	if err := h.svc.WithdrawAttachmentLink(ctx, grpcx.TenantID(ctx), req.GetAttachmentId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.WithdrawAttachmentLinkResponse{}, nil
+}
+
 func (h *Handler) ListSenders(ctx context.Context, _ *mailv1.ListSendersRequest) (*mailv1.ListSendersResponse, error) {
 	rows, err := h.svc.ListSenders(ctx, grpcx.TenantID(ctx), operator(ctx))
 	if err != nil {
@@ -760,10 +777,11 @@ func (h *Handler) GetMyMailAccount(ctx context.Context, req *mailv1.GetMyMailAcc
 func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 	return &mailv1.MailAccount{
 		Id: v.ID, Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
-		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
+		VerifiedAt: v.VerifiedAt, LastError: v.LastError, NeedsReauth: v.AuthFailed, IsActive: v.IsActive,
 		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
 		Unread: v.Unread, LastReadAt: v.LastReadAt, UnboundAt: v.UnboundAt,
+		KeepSentCopy: v.KeepSentCopy,
 	}
 }
 
@@ -800,6 +818,17 @@ func (h *Handler) SetDefaultMailbox(ctx context.Context, req *mailv1.SetDefaultM
 	return &mailv1.SetDefaultMailboxResponse{}, nil
 }
 
+func (h *Handler) SetKeepSentCopy(ctx context.Context, req *mailv1.SetKeepSentCopyRequest) (*mailv1.SetKeepSentCopyResponse, error) {
+	op := operator(ctx)
+	// 同 SetDefaultMailbox：op.ID 来自登录令牌，「那个信箱是不是他的」由
+	// SQL 的 WHERE 判定，不是他的就影响零行、翻成 404。
+	if err := h.svc.SetKeepSentCopy(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetAccountId(), req.GetKeep()); err != nil {
+		return nil, err
+	}
+	return &mailv1.SetKeepSentCopyResponse{}, nil
+}
+
 func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest) (*mailv1.RecordOpenResponse, error) {
 	// Never reports whether the key was real. The gateway serves the same
 	// image either way, so telling it apart here would only create a way to
@@ -810,7 +839,8 @@ func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest)
 
 func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 	m := &mailv1.InboundMail{
-		Id: v.ID, FromEmail: v.FromEmail, FromName: v.FromName,
+		Id: v.ID, AccountId: v.AccountID,
+		FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
 		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
@@ -873,7 +903,14 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 
 func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest) (*mailv1.SearchMailResponse, error) {
 	op := operator(ctx)
-	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
+	// account_ids 是现在的字段，account_id 是它之前那个单数的。两个都认：
+	// 换版本时网关和这个服务不是同一刻起来的，中间那几秒旧网关只会发单数
+	// 那一个，丢掉它就是「搜索几秒钟内搜遍全部信箱」——比搜不到更糟。
+	accounts := req.GetAccountIds()
+	if len(accounts) == 0 && req.GetAccountId() > 0 {
+		accounts = []int64{req.GetAccountId()}
+	}
+	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID, accounts,
 		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
@@ -883,6 +920,7 @@ func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest)
 		hits = append(hits, &mailv1.SearchHit{
 			Mail:         inboundToProto(h.InboundView),
 			Folder:       h.Folder,
+			AccountId:    h.AccountID,
 			MatchSnippet: h.MatchSnippet,
 		})
 	}
@@ -1011,6 +1049,8 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 			Direction: v.Direction, Id: v.ID, Subject: v.Subject,
 			Body: v.Body, Quoted: v.Quoted, BodyFormat: v.BodyFormat,
 			Counterparty: v.Counterparty, Who: v.Who,
+			FromEmail: v.FromEmail, FromName: v.FromName,
+			ToAll: v.ToAll, Cc: v.Cc,
 		}
 		if !v.At.IsZero() {
 			it.At = v.At.Format(time.RFC3339)
@@ -1113,7 +1153,12 @@ func (h *Handler) SyncMailbox(ctx context.Context, req *mailv1.SyncMailboxReques
 	op := operator(ctx)
 	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
-		return &mailv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
+		return &mailv1.SyncMailboxResponse{
+			Fetched: 0, Detail: err.Error(),
+			// 只有授权码被拒才劝人重登。服务器掐线、超时之类自己会重试，
+			// 劝人重输授权码只会让他反复做一件修不好任何东西的事。
+			NeedsReauth: app.IsCredentialRejected(err),
+		}, nil
 	}
 	// pending 不填 Detail：Detail 是给错误用的，前端见到它就弹红字。还在收
 	// 不是错误。
@@ -1269,4 +1314,66 @@ func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
 		}
 	}
 	return out
+}
+
+// ---------------------------------------------------------- 自建文件夹
+
+func folderToProto(f app.MailFolder) *mailv1.MailFolder {
+	return &mailv1.MailFolder{Id: f.ID, AccountId: f.AccountID, Name: f.Name, ViewKey: f.ViewKey(), Role: f.Role}
+}
+
+func (h *Handler) ListMailFolders(ctx context.Context, req *mailv1.ListMailFoldersRequest) (*mailv1.ListMailFoldersResponse, error) {
+	op := operator(ctx)
+	fs, err := h.svc.ListMailFolders(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.MailFolder, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, folderToProto(f))
+	}
+	return &mailv1.ListMailFoldersResponse{Folders: out}, nil
+}
+
+func (h *Handler) CreateMailFolder(ctx context.Context, req *mailv1.CreateMailFolderRequest) (*mailv1.CreateMailFolderResponse, error) {
+	op := operator(ctx)
+	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.CreateMailFolderResponse{Folder: folderToProto(f)}, nil
+}
+
+func (h *Handler) RenameMailFolder(ctx context.Context, req *mailv1.RenameMailFolderRequest) (*mailv1.RenameMailFolderResponse, error) {
+	op := operator(ctx)
+	f, err := h.svc.RenameMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(), req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.RenameMailFolderResponse{Folder: folderToProto(f)}, nil
+}
+
+func (h *Handler) DeleteMailFolder(ctx context.Context, req *mailv1.DeleteMailFolderRequest) (*mailv1.DeleteMailFolderResponse, error) {
+	op := operator(ctx)
+	if err := h.svc.DeleteMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.DeleteMailFolderResponse{}, nil
+}
+
+func (h *Handler) MoveInbound(ctx context.Context, req *mailv1.MoveInboundRequest) (*mailv1.MoveInboundResponse, error) {
+	op := operator(ctx)
+	if err := h.svc.MoveInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(), req.GetFolderId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.MoveInboundResponse{}, nil
+}
+
+func (h *Handler) MoveInboundBatch(ctx context.Context, req *mailv1.MoveInboundBatchRequest) (*mailv1.MoveInboundBatchResponse, error) {
+	op := operator(ctx)
+	moved, failed, err := h.svc.MoveInboundBatch(ctx, grpcx.TenantID(ctx), op.ID, req.GetIds(), req.GetFolderId(), req.GetWholeThread())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.MoveInboundBatchResponse{Moved: int32(moved), FailedIds: failed}, nil
 }

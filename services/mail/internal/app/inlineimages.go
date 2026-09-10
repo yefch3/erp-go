@@ -47,10 +47,22 @@ type InlineImage struct {
 // Images this cannot resolve — a withdrawn token, a row that vanished, bytes
 // that will not read — are left as they are, to be absolutised into an http
 // link by the caller. A missing logo must never cost somebody their send.
-func (s *Service) InlineMailImages(ctx context.Context, html string) (string, []InlineImage) {
+// 两类图片，同一个待遇。我们自己发布过的（/api/public/mail-images/，签名图和
+// 写信时插的图）走 token；回复引用里借来的（对象存储上的收件附件）走 key，
+// 见 inlineQuotedStorageImages。后者原来完全没人管，于是一条会过期的地址就
+// 那样发给了客户。
+func (s *Service) InlineMailImages(
+	ctx context.Context, tenantID, ownerID int64, html string,
+) (string, []InlineImage) {
 	if s.files == nil || html == "" {
 		return html, nil
 	}
+	html, published := s.inlinePublishedImages(ctx, html)
+	html, quoted := s.inlineQuotedStorageImages(ctx, tenantID, ownerID, html)
+	return html, append(published, quoted...)
+}
+
+func (s *Service) inlinePublishedImages(ctx context.Context, html string) (string, []InlineImage) {
 	tokens := mailImageTokens(html)
 	if len(tokens) == 0 {
 		return html, nil

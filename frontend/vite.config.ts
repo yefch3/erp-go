@@ -6,7 +6,11 @@ import { isLiveEventsRequest } from './viteProxyPolicy.ts'
 export default defineConfig({
   plugins: [vue()],
   server: {
-    port: 5173,
+    // 默认还是 5173（本地 npm run dev 的习惯不变），但允许用 PORT 覆盖：
+    // 同一台机器上要开第二个 dev server 时（比如一边留着自己的，一边让
+    // 工具另起一个），5173 已经被占着，写死就起不来。没有 strictPort，
+    // 所以就算不给 PORT，vite 也会自己顺延到下一个空端口。
+    port: Number(process.env.PORT) || 5173,
     proxy: {
       '/api': {
         target: process.env.VITE_GATEWAY_URL || 'http://localhost:8080',

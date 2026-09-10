@@ -19,6 +19,24 @@
       >
         {{ t('emails.compose') }}
       </el-button>
+      <!-- 搜索在左栏，不在列表上方——因为它**不属于任何一个文件夹**。
+           摆在列表头上的那些天，它看着像「筛这一列」，而它做的是「翻遍所有
+           信箱所有文件夹」，两件事差得远。左栏是这一页里唯一比文件夹更高
+           的位置，Foxmail、Gmail、Outlook 都把它放在这儿。
+
+           锁着的时候不出现：搜索要的正是令牌。 -->
+      <el-input
+        v-if="!locked && !isListFilterView"
+        v-model="keyword"
+        class="rail-search"
+        :placeholder="t('emails.searchAll')"
+        clearable
+        @keyup.enter="reload"
+        @clear="reload"
+      >
+        <template #prefix>🔍</template>
+      </el-input>
+
       <!-- No colleague picker here. This page is "my mail" and stays that
            way; reading somebody else's is a separate, read-only surface. A
            filter here also let a supervisor requeue or abandon a colleague's
@@ -36,9 +54,15 @@
         :counts="folderCounts"
         :tokens-version="tokensChanged"
         :locked="locked === true"
+        :host-folders="hostFolders"
+        :drag-accounts="dragging?.accounts ?? []"
         @select="pickFolder"
         @changed="onMailboxesChanged"
         @added="tokensChanged++"
+        @create-folder="createFolder"
+        @rename-folder="renameFolder"
+        @delete-folder="deleteFolder"
+        @drop-mails="onDropMails"
       />
 
       <span class="rail-grow" />
@@ -114,18 +138,23 @@
       <!-- The mailbox saying it is not receiving. Without this, a revoked
            authorisation fails every poll in silence while the page goes on
            showing the last successful sync as though it were current. -->
+      <!-- 那颗「重新登录邮箱」只在授权码真被拒时出现（后端的 needsReauth）。
+           从前只要有错误就显示它：263 隔几分钟掐一次空闲连接，每掐一次员工
+           就被劝去重输一遍授权码，而重输从来没修好过任何东西。规则和测试在
+           lib/syncBanner。 -->
       <el-alert
-        v-if="syncError"
-        type="error"
+        v-if="syncBanner.text"
+        :type="syncBanner.offerReauth ? 'error' : 'warning'"
         :closable="false"
         show-icon
         class="sync-error"
       >
         <div class="sync-error-body">
-          <span>{{ t('emails.syncBroken', { e: syncError }) }}</span>
-          <el-button size="small" type="primary" plain @click="reauth">
+          <span>{{ t('emails.syncBroken', { e: syncBanner.text }) }}</span>
+          <el-button v-if="syncBanner.offerReauth" size="small" type="primary" plain @click="reauth">
             {{ t('emails.reauth') }}
           </el-button>
+          <span v-else class="sync-retrying">{{ t('emails.syncRetrying') }}</span>
         </div>
       </el-alert>
 
@@ -133,6 +162,8 @@
       <!-- A page, not a drawer: the mail's id lives in the URL, so a refresh
            reopens the same mail and the browser's back button returns to the
            list, at the page it was on. -->
+      <div class="panes" :class="{ 'has-open': openedInbound || outboundOpen }">
+      <div class="reader-col">
       <template v-if="openedInbound">
         <div class="detail-top">
           <el-button link class="back-btn" @click="backToList">
@@ -197,108 +228,147 @@
              timestamp — and only the first says anything about the recipient.
              Claiming the second as the first would be the system inventing a
              fact about a customer. -->
+        <!-- 这三档都**不挂 tooltip**，和列表那一侧同一个理由：措辞本身已经
+             把话说完了。「可能已打开」四个字就是那句提示的意思，「没带追踪」
+             也是；再弹一块解释只是让鼠标扫过去时蹦一个气泡。
+             完整时间还在：鼠标停在时间上有浏览器自带的 title。 -->
         <div v-if="openedInbound.folder === 'SENT'" class="readback">
           <span class="rb-label">{{ t('reader.openedLabel') }}</span>
-          <el-tooltip
-            v-if="openedInbound.openedAt"
-            :content="t('emails.openedHint', { at: zonedStamp(openedInbound.openedAt) })"
-            placement="top"
-            :show-after="0"
-          >
-            <span class="rb-yes">
-              {{ t('emails.maybeOpened') }} · {{ shortTime(openedInbound.openedAt) }}
-            </span>
-          </el-tooltip>
-          <el-tooltip v-else-if="openedInbound.tracked" :content="t('reader.noOpenHint')" placement="top" :show-after="0">
-            <span class="rb-no">{{ t('emails.noOpenYet') }}</span>
-          </el-tooltip>
-          <el-tooltip v-else :content="t('reader.noTrackingHint')" placement="top" :show-after="0">
-            <span class="rb-off">{{ t('reader.noTracking') }}</span>
-          </el-tooltip>
+          <span v-if="openedInbound.openedAt" class="rb-yes" :title="zonedStamp(openedInbound.openedAt)">
+            {{ t('emails.maybeOpened') }} · {{ shortTime(openedInbound.openedAt) }}
+          </span>
+          <span v-else-if="openedInbound.tracked" class="rb-no">{{ t('emails.noOpenYet') }}</span>
+          <span v-else class="rb-off">{{ t('reader.noTracking') }}</span>
         </div>
+        <!-- 图标条，照 Foxmail：常用的四件事各一颗图标，其余全收进「⋯」。
+             从前这里是六到八颗**带文字**的按钮，阅读区窄一点就换行成两排，
+             而第二排的起点和第一排对齐，看着像两组不相干的东西。图标不换行
+             ——它们加起来不到 160px，怎么窄都放得下。
+
+             图标没有文字，所以每一颗都挂 tooltip，show-after 0：浏览器自带
+             的 title 要等将近一秒，等它出来光标早走了，图标就成了猜谜。 -->
         <div class="in-actions">
           <template v-if="canWrite">
-            <el-button size="small" type="primary" plain @click="replyToInbound">
-              ↩ {{ t('emails.reply') }}
-            </el-button>
-            <!-- 只在原信不止发给我一个人时出现：一封只发给我的信，「回复」和
-                 「回复全部」是同一件事，两颗一样的按钮只会让人挑。 -->
-            <el-button
-              v-if="hasOtherRecipients"
-              size="small"
-              type="primary"
-              plain
-              @click="replyAllToInbound"
-            >
-              ↩↩ {{ t('emails.replyAll') }}
-            </el-button>
-            <!-- A split button rather than a third one in the row: forwarding
-                 as an attachment is the same intent taken further, not a
-                 separate errand, and it is rare enough that giving it equal
-                 width would misstate how often it is wanted. -->
-            <el-dropdown size="small" split-button @click="forwardInbound">
-              ↪ {{ t('emails.forward') }}
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    :disabled="!openedInbound.hasRaw"
-                    @click="forwardInboundAsAttachment"
-                  >
-                    {{ t('emails.forwardAsAttachment') }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.reply')" @click="replyToInbound">↩</button>
+            </el-tooltip>
+            <!-- 常驻，不按「原信有没有别人」来显示。
+
+                 从前它只在算出来的抄送非空时才出现，看着聪明，实际上把一颗
+                 按钮的存在和一条业务规则绑死了：抄送要去掉**本人名下全部
+                 信箱**的地址，而一个人绑了两个箱、一封信正好发给这两个箱时，
+                 抄送就是空的——于是「明明发给了多个人却没有回复全部」。真实
+                 发生过。而且按钮时有时无本身就难用：人记不住它什么时候在。 -->
+            <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAllToInbound">↩↩</button>
+            </el-tooltip>
+            <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forwardInbound">↪</button>
+            </el-tooltip>
           </template>
-          <!-- Taking the exchange out of the system. A split button because
-               there are two errands behind one intent: print it now for the
-               person standing next to you, or save the file to attach to
-               something. Both go through the same audited endpoint. -->
-          <el-dropdown
-            v-if="canExport && openedInbound.threadKey"
-            size="small"
-            split-button
-            :disabled="exporting"
-            @click="printThread"
+          <!-- 删除在最右，和前三颗隔一条线：前三颗是「继续这封信」，它是
+               「结束这封信」，误触的代价也不一样。 -->
+          <span v-if="deleteAction" class="tb-sep" aria-hidden="true" />
+          <el-tooltip
+            v-if="deleteAction"
+            :content="deleteAction.label"
+            placement="bottom"
+            :show-after="0"
+            :hide-after="0"
           >
-            {{ t('emails.exportPrint') }}
+            <button
+              type="button"
+              class="tb tb-danger"
+              :aria-label="deleteAction.label"
+              @click="deleteAction.run()"
+            ><el-icon><Delete /></el-icon></button>
+          </el-tooltip>
+
+          <span class="grow" />
+
+          <!-- 「⋯」里是其余全部动作。分组用分隔线，顺序按「和这封信的关系
+               有多近」：转发存档 → 标记 → 挪去哪儿 → 带出系统。 -->
+          <el-dropdown
+            v-if="readerMenuAvailable"
+            trigger="click"
+            placement="bottom-end"
+            @command="onReaderCommand"
+          >
+            <button type="button" class="tb" :aria-label="t('emails.moreActions')">
+              <el-icon><MoreFilled /></el-icon>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="saveThread">
-                  {{ t('emails.exportSave') }}
+                <el-dropdown-item
+                  v-if="canWrite"
+                  command="forwardAttachment"
+                  :disabled="!openedInbound.hasRaw"
+                >
+                  {{ t('emails.forwardAsAttachment') }}
                 </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="isInboundView && folder !== 'junk' && folder !== 'trash'"
+                  command="unread"
+                  :divided="canWrite"
+                >
+                  {{ t('emails.markUnread') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="folder === 'junk'" command="notJunk" :divided="canWrite">
+                  {{ t('emails.notJunk') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="isInboundView && folder === 'archive'" command="unarchive">
+                  {{ t('emails.unarchive') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-else-if="isInboundView && folder !== 'junk' && folder !== 'trash'"
+                  command="archive"
+                >
+                  {{ t('emails.archive') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="folder === 'trash'" command="restore" :divided="canWrite">
+                  {{ t('emails.restore') }}
+                </el-dropdown-item>
+
+                <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。
+
+                     文件夹**平铺**在这里，没有再套一层子菜单：Element Plus 的
+                     嵌套下拉不好用，而多一层对使用者也没有好处——一个人手上
+                     的自建文件夹通常就那么几个。 -->
+                <template v-if="canMoveOpened">
+                  <el-dropdown-item disabled divided class="menu-head">
+                    {{ t('emails.moveTo') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="isCustomFolderKey(folder)" command="move:0">
+                    {{ t('emails.moveToInbox') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-for="cf in currentCustomFolders"
+                    :key="cf.id"
+                    :command="`move:${cf.id}`"
+                    :disabled="folder === cf.viewKey || moving"
+                  >
+                    {{ cf.name }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="!currentCustomFolders.length" disabled>
+                    {{ t('emails.noFoldersYet') }}
+                  </el-dropdown-item>
+                </template>
+
+                <!-- Taking the exchange out of the system. Two errands behind
+                     one intent: print it now for the person standing next to
+                     you, or save the file to attach to something. Both go
+                     through the same audited endpoint. -->
+                <template v-if="canExport && openedInbound.threadKey">
+                  <el-dropdown-item command="print" divided :disabled="exporting">
+                    {{ t('emails.exportPrint') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="save" :disabled="exporting">
+                    {{ t('emails.exportSave') }}
+                  </el-dropdown-item>
+                </template>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-button
-            v-if="folder === 'junk'"
-            size="small"
-            type="warning"
-            plain
-            @click="markOpened({ notJunk: true })"
-          >
-            {{ t('emails.notJunk') }}
-          </el-button>
-          <template v-if="isInboundView && folder !== 'junk'">
-            <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
-              {{ t('emails.markUnread') }}
-            </el-button>
-            <el-button v-if="folder === 'archive'" size="small" plain @click="markOpened({ archived: false })">
-              {{ t('emails.unarchive') }}
-            </el-button>
-            <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
-              {{ t('emails.archive') }}
-            </el-button>
-            <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
-              {{ t('emails.restore') }}
-            </el-button>
-            <el-button v-if="folder === 'trash'" size="small" type="danger" plain @click="purgeOpened">
-              {{ t('emails.purge') }}
-            </el-button>
-            <el-button v-if="folder !== 'trash'" size="small" type="danger" plain @click="markOpened({ deleted: true })">
-              {{ t('emails.toTrash') }}
-            </el-button>
-          </template>
         </div>
         <el-divider />
         <!-- The whole exchange when there is one, the single mail otherwise.
@@ -335,7 +405,7 @@
             </div>
           </details>
           <div
-            v-for="it in threadItems"
+            v-for="it in threadForDisplay"
             :key="it.direction + it.id"
             :data-thread-item="threadItemKey(it)"
             class="thread-item"
@@ -345,24 +415,54 @@
               <el-tag size="small" :type="isOwnMail(it) ? 'info' : 'success'" effect="plain">
                 {{ isOwnMail(it) ? t('emails.threadOut') : t('emails.threadIn') }}
               </el-tag>
-              <span class="strong">{{ it.who || it.counterparty }}</span>
-              <span class="sub ellipsis">{{ it.counterparty }}</span>
+              <!-- 谁写的，然后「发给谁」。原来这里是 who 加一个光秃秃的地址，
+                   而那个地址在「我发出」的行上是收件人、在「收到」的行上是
+                   发件人——同一列两个意思，看的人分不出来。现在两行都读作
+                   「某某 发给 某某」。 -->
+              <span class="strong">{{ turnSenderLabel(it) || it.who }}</span>
+              <span v-if="turnRecipients(it)" class="sub ellipsis">
+                {{ t('emails.threadTo', { to: turnRecipients(it) }) }}
+              </span>
               <span class="grow" />
               <span class="sub" :title="zonedStamp(it.at)">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
+              <!-- 每一封自己的详情，和单封阅读页那个「详情」同一套内容。
+                   放在展开的正文里而不是标题行上：标题行整行就是展开按钮，
+                   按钮里不能再套一个按钮。 -->
+              <div class="turn-meta">
+                <span class="sub">
+                  {{ it.fromName ? it.fromName + ' ' : '' }}&lt;{{ turnSenderEmail(it) }}&gt;
+                </span>
+                <button class="details-toggle" @click="toggleTurnDetails(it)">
+                  {{ isTurnDetailsOpen(it) ? t('emails.hideDetails') : t('emails.showDetails') }}
+                </button>
+              </div>
+              <dl v-if="isTurnDetailsOpen(it)" class="mail-details">
+                <template v-for="row in turnDetailRows(it)" :key="row.k">
+                  <dt>{{ row.k }}</dt>
+                  <dd>{{ row.v }}</dd>
+                </template>
+              </dl>
               <MailBody
                 v-if="it.bodyFormat === 'HTML'"
                 :html="it.body"
                 @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
                 @selection-clear="closeExcelMenu"
               />
-              <pre
+              <!-- 纯文本也走同一个沙箱 frame。以前它是直接插值渲染的，于是
+                   正文里的网址只是一行字——点不动，只能手工选中复制。包成
+                   <pre> 交给 MailBody 之后链接是真链接，而且 frame 文档里那句
+                   <base target="_blank"> 让它在新标签页打开。
+
+                   不在页面里 v-html：收到的信一律只在沙箱里渲染，这条由
+                   scripts/check-mail-sandbox.sh 守着——我第一版就是踩了它。 -->
+              <MailBody
                 v-else
-                class="in-text"
-                :data-mail-id="it.direction === 'IN' ? it.id : ''"
-                @mouseover="onPlainTextHover"
-              >{{ it.body }}</pre>
+                :html="plainTextToHtml(it.body)"
+                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-clear="closeExcelMenu"
+              />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
               <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
                    时的顺序一致。 -->
@@ -387,12 +487,12 @@
             @selection-context="openTextExcelMenu($event, openedInbound.id)"
             @selection-clear="closeExcelMenu"
           />
-          <pre
+          <MailBody
             v-else
-            class="in-text"
-            :data-mail-id="openedInbound.id"
-            @mouseover="onPlainTextHover"
-          >{{ openedInbound.bodyText }}</pre>
+            :html="plainTextToHtml(openedInbound.bodyText)"
+            @selection-context="openTextExcelMenu($event, openedInbound.id)"
+            @selection-clear="closeExcelMenu"
+          />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -441,7 +541,14 @@
         </div>
       </template>
 
-      <template v-else>
+      <!-- 三栏下右边永远在，没选信时给一句话而不是一片空白——空白
+           看着像坏了。 -->
+      <div v-if="!openedInbound && !outboundOpen" class="reader-empty">
+        {{ t('emails.pickAMail') }}
+      </div>
+      </div><!-- /reader-col -->
+
+      <div class="list-col">
       <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
@@ -474,6 +581,36 @@
           <el-button v-if="folder === 'junk'" size="small" @click="bulkMark({ notJunk: true })">
             {{ t('emails.notJunk') }}
           </el-button>
+          <!-- 一键移动（勾选多封）。整条会话一起挪；同一来源文件夹的一次 MOVE 挪完。 -->
+          <el-dropdown
+            v-if="canBulkMove"
+            size="small"
+            trigger="click"
+            :disabled="bulkBusy"
+            @command="bulkMoveTo"
+          >
+            <el-button size="small" :loading="bulkBusy">
+              {{ t('emails.moveTo') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-if="isCustomFolderKey(folder)" :command="0">
+                  {{ t('emails.moveToInbox') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-for="cf in currentCustomFolders"
+                  :key="cf.id"
+                  :command="cf.id"
+                  :disabled="folder === cf.viewKey"
+                >
+                  {{ cf.name }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!currentCustomFolders.length && !isCustomFolderKey(folder)" disabled>
+                  {{ t('emails.noFoldersYet') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button
             v-if="folder === 'inbox' || folder === 'starred' || folder === 'sent'"
             size="small"
@@ -566,17 +703,25 @@
           </el-button>
         </template>
         <template v-else>
-        <h2>{{ t(`emails.folders.${folder}`) }}</h2>
+        <!-- 搜索的时候标题说的是搜索，不是文件夹。列表里此刻是所有信箱、
+             所有文件夹的命中，顶着「收件箱」三个字会让人以为收件箱里就这
+             么几封。 -->
+        <h2 v-if="isSearching">
+          {{ t('emails.searchResults', { q: keyword.trim() }) }}
+        </h2>
+        <h2 v-else>{{ t(`emails.folders.${folder}`) }}</h2>
+        <el-button v-if="isSearching" link @click="clearSearch">
+          {{ t('emails.searchClear') }}
+        </el-button>
         <span class="grow" />
-        <!-- Not every folder is searchable. The scheduled list is short by
-             nature and the query behind it takes no keyword; a box that
-             silently ignores what is typed into it is worse than none. -->
-        <!-- 草稿箱同理，只是一直漏在这条规矩外面：ListDrafts 不收关键词，
-             所以在草稿箱里搜什么、按几次回车，回来的都是整份草稿列表。 -->
-        <template v-if="isSearchable">
+        <!-- 待处理和拒收名单的筛选框留在这儿，没跟着搬到左栏。
+             左栏那个搜的是**邮件**；这两张表一个是 ERP 自己的投递记录、
+             一个是拒收地址名单，都不是邮件，全局搜索到不了它们。同一个框
+             在这两处做另一件事，才是真的会让人误解的那种复用。 -->
+        <template v-if="isListFilterView">
           <el-input
             v-model="keyword"
-            :placeholder="t(`emails.search.${searchKey}`)"
+            :placeholder="t(`emails.search.${folder}`)"
             clearable
             style="width: 260px"
             @keyup.enter="reload"
@@ -584,11 +729,10 @@
           />
           <el-button @click="reload">{{ common('query') }}</el-button>
         </template>
-        <!-- The mailbox is polled every couple of minutes; this is for the
-             person who just told a customer "resend it" and is waiting. -->
-        <el-button v-if="folder === 'inbox'" :loading="syncing" @click="syncNow">
-          {{ t('emails.syncNow') }}
-        </el-button>
+        <!-- 这里从前有一颗「立即收信」。**去掉了**：信箱本来就在自动收——
+             打开这一页时拉一次（syncOnOpen），之后守着 IDLE，服务器一有新信
+             就推过来。一颗按钮摆在那儿反而是在说「不点它就收不到」，而那不
+             是真的；真正没收到的时候点它也没用，那时该看的是上面那条横幅。 -->
         <!-- Clears the unread marks of this view only — the button sits above
              this list, so it does what this list shows.
              Not in junk or the trash: nobody reads their spam folder to the
@@ -599,8 +743,11 @@
         <!-- Junk out in one click — into the trash, not oblivion. The mail
              worth finding in a spam folder is the customer enquiry the filter
              got wrong, and that is noticed the next day. -->
+        <!-- 搜索时不出现：那两个按钮清的是**整个文件夹**，而此刻 total 数
+             的是命中数。顶着「3 封」按下去清掉整个垃圾箱，是这一栏里最不能
+             出的那种错。 -->
         <el-button
-          v-if="folder === 'junk' && total > 0"
+          v-if="folder === 'junk' && total > 0 && !isSearching"
           type="danger"
           plain
           :loading="emptying"
@@ -609,7 +756,7 @@
           {{ t('emails.emptyJunk') }}
         </el-button>
         <el-button
-          v-if="folder === 'trash' && total > 0"
+          v-if="folder === 'trash' && total > 0 && !isSearching"
           type="danger"
           plain
           :loading="emptying"
@@ -624,11 +771,13 @@
       </div>
 
       <!-- ------------------------ inbox / starred / archive / junk / trash -->
-      <template v-if="isInboundView">
+      <!-- 搜索时也走这一块，站在哪个文件夹都一样：命中来自所有文件夹，
+           拿草稿箱那张表去渲染它们没有意义。 -->
+      <template v-if="isSearching || isInboundView">
         <!-- Spam is the host's verdict, shown read-only as a safety net: the
              mis-flagged customer inquiry is the one mail worth finding here. -->
         <el-alert
-          v-if="folder === 'trash'"
+          v-if="folder === 'trash' && !isSearching"
           type="info"
           :closable="false"
           show-icon
@@ -637,7 +786,7 @@
           {{ t('emails.trashRetention') }}
         </el-alert>
         <el-alert
-          v-if="folder === 'junk'"
+          v-if="folder === 'junk' && !isSearching"
           type="info"
           :closable="false"
           show-icon
@@ -648,7 +797,9 @@
         <MailList
           v-model:selected="picked"
           :mails="inbound"
-          :folder="folder"
+          :accounts="mailboxLabels"
+          :current-account="currentAccount"
+          :folder="isSearching ? 'inbox' : folder"
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
@@ -656,8 +807,8 @@
           @sort="changeSort"
           @open="openInbound"
           @star="toggleStar"
-          @mark="markRow"
-          @purge="purgeRow"
+          @dragmails="onDragMails"
+          @dragend="dragging = null"
         />
         <el-empty
           v-if="!loading && inbound.length === 0"
@@ -767,7 +918,8 @@
           @sort="changeSort"
           @open="openSentRow"
           @star="toggleStar"
-          @mark="markRow"
+          @dragmails="onDragMails"
+          @dragend="dragging = null"
         />
         <el-empty v-if="!loading && mailboxSent.length === 0" :description="t('emails.emptyFolder')" />
       </template>
@@ -863,14 +1015,15 @@
           {{ t('emails.nextPage') }}
         </el-button>
       </div>
-      </template>
+      </div><!-- /list-col -->
+      </div><!-- /panes -->
     </section>
 
     <EmailComposer
       ref="composer"
       v-model="composing"
       :mailboxes="composableMailboxes"
-      :current-account="currentAccount"
+      :current-account="composeAccount"
       @sent="onSent"
       @saved="onDraftSaved"
     />
@@ -1159,11 +1312,17 @@ import {
   post,
   quietErrors,
   saveBlob,
+  put,
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { needsConversion } from '../lib/attachmentPreview'
+import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
+import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
+import { attachmentHintKey } from '../lib/attachmentHint'
+import { plainTextToHtml } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
+import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
   DEFAULT_SORT,
   nextSort,
@@ -1197,10 +1356,13 @@ import {
   initialMailbox,
   clearAll,
   forgetMailbox,
+  searchScopeHeader,
   unlockedMailboxes,
   useMailbox,
   type VerifyResponse,
+  settleMailbox,
 } from '../lib/mailUnlock'
+import type { DropTarget } from '../lib/dragMails'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
@@ -1227,6 +1389,8 @@ import {
   Star,
   Warning,
   WarningFilled,
+  ArrowDown,
+  MoreFilled,
 } from '@element-plus/icons-vue'
 // Shared mail-surface tokens. Global rather than scoped: the list is its own
 // component, and the two have to agree on density or it reads as accidental.
@@ -1249,6 +1413,12 @@ interface InboundMail {
   hasRaw?: boolean
   // Set only on search results: which folder the hit was found in.
   matchFolder?: string
+  // 同上，跨信箱那一维：这条命中是哪个箱的。列表行上用来挂信箱标签。
+  matchAccount?: number
+  // 这封信落在哪个信箱。**只在单封读取时有值**，服务端给的。
+  // 写信框的发件人读它（见 composeAccount）：站在 A 箱里点开的可能是 B 箱
+  // 收到的信，回信得从 B 发出去。
+  accountId?: number | string
   // Which mailbox folder this copy sits in. 'SENT' is what tells the reader
   // to show 对方是否已读 — once both are an InboundMail, nothing else does.
   folder?: string
@@ -1404,7 +1574,9 @@ const INBOUND_VIEWS: Record<string, string> = {
   junk: 'JUNK',
   trash: 'TRASH',
 }
-const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
+const isInboundView = computed(() => folder.value in INBOUND_VIEWS || isCustomFolderKey(folder.value))
+/** 发给列表接口的 view：固定文件夹走映射，自建的原样传。规则在 lib/mailFolders。 */
+const currentView = computed(() => viewForFolderKey(folder.value, INBOUND_VIEWS))
 // Every mailbox folder pages by cursor. A page number is meaningless on a
 // list that grows at the top, and 已发送 grows at the top like the rest.
 const isKeysetView = computed(
@@ -1412,36 +1584,84 @@ const isKeysetView = computed(
 )
 // Junk and the trash get a delete-everything button instead: marking a spam
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
+// 搜索时也不出现，和「清空垃圾箱」同一个理由，只是后果更隐蔽：那两个按钮
+// 至少会弹一句确认，这一个按下去就把**整个文件夹**标成已读了——而屏幕上
+// 摆着的是几封跨文件夹、跨信箱的命中。按钮自己的注释写着「它做的是这个列表
+// 显示的事」，搜索一开这句话就不成立了。
 const canMarkAllRead = computed(
-  () => isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash',
+  () => isInboundView.value && !isSearching.value
+    && folder.value !== 'junk' && folder.value !== 'trash',
 )
-// 后端真的会按关键词过滤的文件夹。定时和草稿的查询都不收关键词，给它们一个
-// 搜索框只是让人对着一个不起作用的框反复按回车。
-const isSearchable = computed(
-  () => folder.value !== 'scheduled' && folder.value !== 'drafts',
-)
-const searchKey = computed(() => {
-  if (folder.value === 'sent') return 'sent'
-  if (isInboundView.value) return 'inbox'
-  return folder.value
-})
-
 const keyword = ref('')
 
 // Two characters, matching the server's floor. One character matches most of
 // the mailbox, which is not a result set — it is the mailbox with extra steps.
 // Counted in characters rather than bytes, because one Chinese character is a
 // word's worth of meaning.
+//
+// **几乎不再看站在哪个文件夹。** 从前这里加着 isInboundView，因为搜索框长
+// 在列表头上，一个文件夹一个框；框挪到左栏之后它就是这一页唯一的搜索，站在
+// 草稿箱里打字也该搜——搜的本来就不是"这个文件夹"。
+//
+// 例外是下面那两张不是邮件的表。
 const isSearching = computed(
-  () => isInboundView.value && [...keyword.value.trim()].length >= 2,
+  () => !isListFilterView.value && [...keyword.value.trim()].length >= 2,
 )
+
+// 这两张表不是邮件：待处理是 ERP 自己的投递记录，拒收名单是一串地址。
+// 全局搜索翻的是收到的信，到不了它们，所以它们各自留着自己的筛选框。
+const isListFilterView = computed(
+  () => folder.value === 'attention' || folder.value === 'suppressions',
+)
+
+// 退出搜索：清掉关键词，回到刚才那个文件夹。
+//
+// 单独一个按钮，因为清空输入框那个小叉在左栏里，而人的眼睛此刻在右边的
+// 结果上。
+function clearSearch() {
+  keyword.value = ''
+  reload()
+}
+
+// 信箱号 → 地址。搜索结果横跨信箱，每一行得说自己是哪个箱的。
+const mailboxLabels = computed(() => {
+  const out: Record<number, string> = {}
+  for (const b of mailboxes.value) out[b.id] = b.email
+  return out
+})
+
+// 写信框默认从哪个箱发。
+//
+// **打开着一封信的时候，跟着那封信走**，不跟着左栏的高亮走。搜索横跨信箱，
+// 站在 A 箱里点开的可能是 B 箱收到的信——跟着高亮走就是「读 B 的信、从 A
+// 回过去」，客户看到的发件人和他寄到的地址对不上，而且没有任何提示。
+//
+// 没开着信（点「写邮件」）时才是左栏那个箱：那时没有别的信息可依据，而人
+// 正站在那个箱上。
+//
+// 这封信是从哪个箱来的由服务端说（单封读取带回 accountId），不由前端记——
+// 刷新一下、或者别人把带 ?mail= 的链接发过来，前端手里什么都没有。
+// 要求那个箱**还开着**（composableMailboxes 是发件人下拉的那份名单）：
+// 退出过的箱不在下拉里，指过去的话下拉会是空白一格，而人只会看到「发件人
+// 没填」却不知道为什么。退回左栏那个箱，至少是个能选中的选项。
+const composeAccount = computed(() => {
+  const own = Number(openedInbound.value?.accountId ?? 0)
+  if (own && composableMailboxes.value.some((b) => b.id === own)) return own
+  return currentAccount.value
+})
 // 列表按哪一列排。地址栏说了算（applyRoute 写它），这里只是镜像。
 const sort = ref<MailSort>(DEFAULT_SORT)
 const sortSide = computed(() => (folder.value === 'sent' ? 'sent' : 'inbox'))
 const listSort = computed(() => sortFor(sortSide.value, sort.value))
-// 排序栏给哪几列。收件箱带着关键词时不给：搜索走的是另一条按会话匹配的
-// 查询，服务端拒绝在它上面再排序——一条点了会报错的排序栏比没有更糟。
+// 排序栏给哪几列。**搜索时一列都不给**：搜索走的是另一条查询，那条只按
+// 时间倒序回，请求里根本没有排序参数——排序栏摆在那儿，点了什么都不会变，
+// 而箭头还会翻个面，看着像"排了但排错了"。
+//
+// 已发送从前是个例外（那条查询搜索和排序可以同时用），而搜索框搬到左栏
+// 之后，站在已发送里打字走的也是全局搜索那条路了——例外跟着消失，这里
+// 不再单开一条 return。
 const sortFields = computed<SortField[]>(() => {
+  if (isSearching.value) return []
   if (folder.value === 'sent') return sortFieldsFor('sent')
   if (!isInboundView.value || keyword.value.trim()) return []
   return sortFieldsFor('inbox')
@@ -1471,11 +1691,10 @@ const mailboxSent = ref<SentMail[]>([])
 const unreadCount = ref(0)
 // Where the next inbound page starts; empty means this is the last one.
 const nextCursor = ref('')
-const syncing = ref(false)
 const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
-const syncError = ref('')
+const syncBanner = ref<SyncBanner>({ text: '', offerReauth: false })
 // 当前在看哪个信箱。0 = 全部（还没绑过，或者只有一个）。
 const currentAccount = ref(0)
 // 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
@@ -1509,14 +1728,21 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
   mailboxes.value = boxes
   myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
-  if (currentAccount.value || !boxes.length) return
+  const next = settleMailbox(currentAccount.value, boxes)
+  if (!next || next === currentAccount.value) return
+  const wasUnset = !currentAccount.value
   // 还没选过就落在默认那个上——服务端按「默认排最前」返回，所以取第一个。
+  // 选了一个**不是自己的**箱也落回默认箱：令牌里记的箱号来自服务端，改版前
+  // 的旧令牌现在会被读成 1 号箱，不落回去的话人会卡在一个空视图上。
+  currentAccount.value = next
+  // 从一个不是自己的箱落回来，下面那个 watch（before 有值）会换令牌、重新
+  // 导航、拉列表，这里不用再拉。
+  if (!wasUnset) return
+  // **0 → id 这一跳必须跟着重新拉一次列表。** 信箱清单是异步来的，而列表在
+  // 它之前就已经带着 accountId=0 发出去了——那一次拉的是"全部信箱合并"。
+  // 左侧此刻高亮着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己
+  // 纠正**：下面那个 watch 要求 before 有值才动，这一跳被它跳过了。
   //
-  // **必须跟着重新拉一次列表。** 信箱清单是异步来的，而列表在它之前就已经
-  // 带着 accountId=0 发出去了——那一次拉的是"全部信箱合并"。左侧此刻高亮
-  // 着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己纠正**：下面
-  // 那个 watch 要求 before 有值才动，0 → id 这一跳被它跳过了。
-  currentAccount.value = boxes[0].id
   // 锁着的时候别去拉列表：那些接口全要解锁令牌，拉出来的只有一串 403 弹窗
   // 盖在门上。左栏现在锁着也在（门开在内容区里），所以这条路会在锁着时走到。
   if (locked.value !== false) return
@@ -1555,6 +1781,70 @@ const replyToMismatch = computed(() => {
   if (!m?.replyTo || !m.fromEmail) return false
   return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
 })
+
+// 工具条最右那颗垃圾桶到底做哪件事。
+//
+// 回收站里它是**彻底删除**（那里的「删除」只能是这个意思，再挪一次没地方
+// 可挪），别处是挪进回收站。两件事共用一颗按钮但绝不能共用一个措辞——
+// tooltip 说的就是按下去会发生什么，因为图标本身分不出这两者。
+//
+// 已发送里那封是邮箱服务器上的正本，删得掉；ERP 自己的投递记录（kind=ERP）
+// 没有正本可删，那时不给这颗按钮。
+const deleteAction = computed(() => {
+  const m = openedInbound.value
+  if (!m || !isInboundView.value) return null
+  if (m.kind === 'ERP') return null
+  if (folder.value === 'trash') {
+    return { label: t('emails.purge'), run: purgeOpened }
+  }
+  return { label: t('emails.toTrash'), run: () => markOpened({ deleted: true }) }
+})
+
+// 「移动到」那一组给不给。和从前那颗按钮同一个条件。
+const canMoveOpened = computed(
+  () => isInboundView.value
+    && folder.value !== 'trash'
+    && folder.value !== 'junk'
+    && openedInbound.value?.folder !== 'SENT',
+)
+
+// 「⋯」里到底有没有东西。一个点开是空的菜单比没有这颗按钮更糟。
+//
+// 改成图标条时这条守卫一度掉了：站在已发送里、又没有写信和导出权限的人，
+// 那颗「⋯」点开是一片空白。条件是下面菜单里每一项的条件求或——多一项就
+// 要在这里也添一笔，这是这种守卫的代价，但比一个空菜单便宜。
+const readerMenuAvailable = computed(() => {
+  const m = openedInbound.value
+  if (!m) return false
+  const inbound = isInboundView.value
+  return (
+    canWrite.value // 作为附件转发
+    || (inbound && folder.value !== 'junk' && folder.value !== 'trash') // 标为未读/归档
+    || folder.value === 'junk' // 不是垃圾邮件
+    || folder.value === 'trash' // 还原
+    || canMoveOpened.value // 移动到
+    || (canExport.value && !!m.threadKey) // 导出
+  )
+})
+
+// 「⋯」菜单只有一个出口，省得每一项各写一个 @click——它们本来就是一组
+// 「对这封信做点什么」，一个 command 串把它们摊在一处，加一项也只改一处。
+function onReaderCommand(cmd: string) {
+  if (cmd.startsWith('move:')) {
+    void moveOpenedTo(Number(cmd.slice(5)))
+    return
+  }
+  switch (cmd) {
+    case 'forwardAttachment': return void forwardInboundAsAttachment()
+    case 'unread': return void markOpened({ read: false })
+    case 'notJunk': return void markOpened({ notJunk: true })
+    case 'archive': return void markOpened({ archived: true })
+    case 'unarchive': return void markOpened({ archived: false })
+    case 'restore': return void markOpened({ deleted: false })
+    case 'print': return void printThread()
+    case 'save': return void saveThread()
+  }
+}
 
 const detailRows = computed(() => {
   const m = openedInbound.value
@@ -1630,7 +1920,7 @@ function parseQuery(q: LocationQuery): UrlState {
   const f = one(q.folder)
   const p = Number(one(q.page))
   return {
-    folder: FOLDER_KEYS.has(f) ? f : 'inbox',
+    folder: FOLDER_KEYS.has(f) || isCustomFolderKey(f) ? f : 'inbox',
     page: Number.isInteger(p) && p > 1 ? p : 1,
     q: one(q.q),
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
@@ -1888,7 +2178,8 @@ onMounted(async () => {
       '/mailbox/lock-status',
     )
     locked.value = !d.unlocked
-    // 0 = 旧令牌或一个箱都没绑，那时交给 onMailboxesChanged 落到默认箱。
+    // 0 = 一个箱都没绑，那时交给 onMailboxesChanged 落到默认箱；令牌里记的箱
+  // 不是自己的（改版前的旧令牌现在会被读成 1 号箱）也在那里落回默认箱。
     // 地址栏里的 acct 优先级更高，随后由 applyRoute 覆盖。
     currentAccount.value = initialMailbox({ token: Number(d.accountId ?? 0) })
   } catch {
@@ -2121,6 +2412,100 @@ function switchFolder(key: string) {
 // currentAccount 那个 watch 管，所以这里只是把想去的文件夹交给它。
 // 两条各自 pushState 的话会连着导航两次，中间那一次拉的是「新箱 + 旧文件夹」，
 // 白花一趟请求，还在历史里留下一个谁都没到过的位置。
+// ---------------------------------------------------------------- 自建文件夹
+
+// 每个信箱在服务器上的全部文件夹，带角色。左栏按同一级别画；「移动到」只列
+// 角色为 CUSTOM 的。
+const hostFolders = ref<Record<number, CustomFolder[]>>({})
+const moving = ref(false)
+const currentCustomFolders = computed(() => (hostFolders.value[currentAccount.value] ?? []).filter((f) => f.role === 'CUSTOM'))
+
+/** 拉一个信箱的文件夹清单。失败就当没有：左栏少一截，比弹一句错强。 */
+async function loadCustomFolders(accountId: number) {
+  if (!accountId) return
+  try {
+    const d = await get<{ folders?: CustomFolder[] }>('/mail-folders', { account_id: accountId }, quietErrors)
+    hostFolders.value = { ...hostFolders.value, [accountId]: (d.folders ?? []).map((f) => ({
+      id: Number(f.id), accountId: Number(f.accountId), name: f.name, viewKey: f.viewKey, role: f.role,
+    })) }
+  } catch {
+    // 锁着、或者服务器暂时连不上：留着上一次的
+  }
+}
+
+async function askFolderName(title: string, initial = ''): Promise<string | null> {
+  try {
+    const { value } = await ElMessageBox.prompt(t('mailGate.newFolderAsk'), title, {
+      inputValue: initial,
+      inputValidator: (v: string) => {
+        const p = folderNameProblem(v)
+        return p ? t(`mailGate.folderName.${p}`) : true
+      },
+    })
+    return value.trim()
+  } catch {
+    return null
+  }
+}
+
+async function createFolder(accountId: number) {
+  const name = await askFolderName(t('mailGate.newFolder'))
+  if (!name) return
+  try {
+    await post('/mail-folders', { accountId: String(accountId), name })
+    await loadCustomFolders(accountId)
+  } catch {
+    // 拦截器已经弹了后端的原因（重名、服务器拒绝）
+  }
+}
+
+async function renameFolder(cf: CustomFolder) {
+  const name = await askFolderName(t('mailGate.renameFolder'), cf.name)
+  if (!name || name === cf.name) return
+  try {
+    await put(`/mail-folders/${cf.id}`, { name })
+    await loadCustomFolders(cf.accountId)
+    // 正停在这个文件夹里：它的 key 变了，跟过去
+    if (folder.value === cf.viewKey) switchFolder(`F:${name}`)
+  } catch {
+    // 同上
+  }
+}
+
+async function deleteFolder(cf: CustomFolder) {
+  try {
+    await ElMessageBox.confirm(t('mailGate.deleteFolderAsk', { name: cf.name }), t('mailGate.deleteFolder'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await del(`/mail-folders/${cf.id}`)
+    await loadCustomFolders(cf.accountId)
+    if (folder.value === cf.viewKey) switchFolder('inbox')
+  } catch {
+    // 里面还有信之类的原因，后端说了
+  }
+}
+
+/** 把打开的这封信挪进某个文件夹（0 = 收件箱）。成了就回到列表。 */
+async function moveOpenedTo(folderId: number) {
+  const id = openedInbound.value?.id
+  if (!id || moving.value) return
+  moving.value = true
+  try {
+    await post(`/inbound-mails/${id}/move`, { folderId: String(folderId) })
+    ElMessage.success(t('emails.moved'))
+    pushState({ mail: '' })
+    load()
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    moving.value = false
+  }
+}
+
+watch(currentAccount, (id) => { void loadCustomFolders(id) }, { immediate: true })
+
 let pendingFolder: string | null = null
 function pickFolder(accountId: number, key: string) {
   // accountId = 0 是不跟信箱走的那两个（待处理、拒收名单）。
@@ -2236,15 +2621,24 @@ async function load() {
       // different shape — not the folder list with a parameter. Gmail works
       // the same way, and for the same reason: somebody who remembers a
       // phrase does not remember where they filed it.
+      //
+      // 它也横跨**信箱**，同一个理由再往上一层：不记得落在哪个文件夹的人，
+      // 更不记得落在哪个箱。所以这一条请求要报上手上开着的全部令牌——服务端
+      // 没有「这个人有哪些令牌」的索引，范围只能由持有者报、由服务端逐把核。
       const d = await get<{
-        hits: { mail: InboundMail; folder: string; matchSnippet: string }[]
+        hits: {
+          mail: InboundMail
+          folder: string
+          matchSnippet: string
+          accountId?: number | string
+        }[]
         meta: { total: string }
         nextCursor: string
       }>('/mail-search', {
         page_size: pageSize,
         keyword: keyword.value,
         cursor: applied?.cursor ?? '',
-      })
+      }, { headers: { 'X-Mail-Unlock-All': searchScopeHeader() } })
       inbound.value = (d.hits ?? []).map((h) => ({
         ...h.mail,
         // The text around the hit replaces the opening line: showing the
@@ -2252,6 +2646,7 @@ async function load() {
         // makes the result look like a mistake.
         snippet: h.matchSnippet,
         matchFolder: h.folder,
+        matchAccount: Number(h.accountId ?? 0),
       }))
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -2266,7 +2661,7 @@ async function load() {
       }>('/inbound-mails', {
         page_size: pageSize,
         keyword: keyword.value,
-        view: INBOUND_VIEWS[folder.value],
+        view: currentView.value,
         cursor: applied?.cursor ?? '',
         // 排序只在没有关键词时带：有关键词走的是搜索查询，服务端会拒绝
         // 在它上面排序（排序栏那时也不显示）。
@@ -2339,6 +2734,16 @@ async function load() {
 }
 
 // A row click is a navigation; the route watcher does the fetching.
+// 点开一封信**不动左栏**。
+//
+// 搜索结果横跨信箱，一开始这里会跟着切到那封信所在的箱——左边的高亮跟着
+// 跳。那是错的：搜索是「翻遍所有箱找那封信」，不是「换个箱重新开始翻」。
+// 左栏跳来跳去等于每点一条结果就换一次上下文，而人只是想看看这几封是什么。
+//
+// 那次切箱本来要解决的是「回信从哪个地址发出去」——不解决的话，读的是 B
+// 收到的信而写信框的发件人还跟着左边高亮的 A，「读 B 的信、从 A 回过去」。
+// 现在那件事由**这封信自己**回答：单封读取会带回 accountId，写信框和
+// replyingAddress 都读它。信箱跟着信走，左栏跟着人走，两件事分开。
 function openInbound(row: MailRow) {
   pushState({ mail: row.id })
 }
@@ -2369,11 +2774,12 @@ async function openDetail(id: string) {
 
 // The conversation around it, fetched after the mail itself is already on
 // screen. Only a real exchange (more than this one message) switches the
-// page into thread mode; the opened mail arrives expanded, history
+// page into thread mode; the newest turn arrives expanded, the rest
 // collapsed to one line each.
 async function loadThread(mail: InboundMail) {
   threadItems.value = []
   expandedThread.value = new Set()
+  expandedTurnDetails.value = new Set()
   if (!mail.threadKey) return
   try {
     // id 一起带上：一个人可以绑多个信箱，同一条会话可能同时落在两个箱里
@@ -2385,7 +2791,14 @@ async function loadThread(mail: InboundMail) {
     })
     if ((tr.items ?? []).length > 1) {
       threadItems.value = tr.items
-      expandedThread.value = new Set([`IN:${mail.id}`])
+      // **只展开最新的那一条**，不是"点进来的那一条"。
+      //
+      // 绝大多数时候两者是同一条：列表一行代表一条会话，显示的就是最新那封。
+      // 但从搜索结果、从附件条、从别处跳进来时点的可能是中间某一封，那时
+      // 展开的是它，而人想先看的是最后发生了什么。会话按时间正序，所以是
+      // 最后一条。
+      const newest = tr.items[tr.items.length - 1]
+      expandedThread.value = new Set([`${newest.direction}:${newest.id}`])
     }
   } catch {
     /* the single-mail view already covers the failure */
@@ -2399,9 +2812,15 @@ interface ThreadItem {
   body: string
   quoted?: string
   bodyFormat: string
+  // counterparty 在两个方向上不是同一件事（我发出的那行是收件人，收到的那行
+  // 是发件人），所以界面上不再直接显示它。下面四个两腿含义一致。
   counterparty: string
   who: string
   at: string
+  fromEmail?: string
+  fromName?: string
+  toAll?: string
+  cc?: string
   attachments?: {
     id: string
     fileName: string
@@ -2414,6 +2833,13 @@ interface ThreadItem {
   }[]
 }
 const threadItems = ref<ThreadItem[]>([])
+// 界面上最新的排最前。
+//
+// **只翻显示，不翻数据。** threadItems 保持服务端给的时间正序，因为「最新的
+// 是最后一条」这个约定被好几处依赖着（默认展开哪一条、附件按发生顺序摊平），
+// 而一条会话本身就是按时间发生的——把顺序倒进数据里，后面每一个读它的人都
+// 要先想一遍「这里到底是正序还是倒序」。
+const threadForDisplay = computed(() => [...threadItems.value].reverse())
 
 // 整条会话的附件，按时间顺序摊平。threadItems 本身就是按发生顺序来的，所以
 // 这里不再排序——文件的顺序就是对话的顺序。
@@ -2453,6 +2879,41 @@ function toggleThreadItem(it: ThreadItem) {
     next.add(k)
   }
   expandedThread.value = next
+}
+
+// 每一封自己记着详情开没开。一个 Set 而不是一个布尔：会话里同时摊开两封、
+// 对着看发件人，正是要查这个的时候会做的事。
+const expandedTurnDetails = ref<Set<string>>(new Set())
+
+function isTurnDetailsOpen(it: ThreadItem) {
+  return expandedTurnDetails.value.has(threadItemKey(it))
+}
+
+function toggleTurnDetails(it: ThreadItem) {
+  const k = threadItemKey(it)
+  const next = new Set(expandedTurnDetails.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expandedTurnDetails.value = next
+}
+
+// 一封信的详情，和单封阅读页那份是同一套说法。
+//
+// 这里能给的比单封那页少：会话的两腿来自两张表，我们发出去的那张表上没有
+// 抄送、没有 SPF/DKIM、没有原件大小。少的就不列——列一个空行等于说「这封信
+// 没有抄送」，而实际是「我们没存」，那是在替这封信断言一件不知道的事。
+function turnDetailRows(it: ThreadItem) {
+  const rows: { k: string; v: string }[] = []
+  const add = (k: string, v?: string) => {
+    if (v) rows.push({ k, v })
+  }
+  const from = turnSenderEmail(it)
+  if (from) add(t('emails.detail.from'), `${it.fromName ? it.fromName + ' ' : ''}<${from}>`)
+  add(t('emails.detail.to'), turnRecipients(it))
+  add(t('emails.detail.cc'), it.cc)
+  add(t('emails.detail.subject'), it.subject)
+  if (it.at) add(t('emails.detail.sentAt'), zonedStamp(it.at))
+  return rows
 }
 
 // ------------------------------------------------------------------- export
@@ -2542,6 +3003,10 @@ const picked = ref<string[]>([])
 const bulkBusy = ref(false)
 // 废纸篓里标记已读没有意义，已发送里也没有——见工具条上那两个按钮的注释。
 const canBulkRead = computed(() => folder.value !== 'trash' && folder.value !== 'sent')
+// 能挪的和单封那个「移动到」同一口径：收件箱、星标、归档和自建文件夹里的信。
+const canBulkMove = computed(
+  () => folder.value === 'inbox' || folder.value === 'starred' || folder.value === 'archive' || isCustomFolderKey(folder.value),
+)
 
 // 屏幕上这一批能勾的行。哪个文件夹取哪份数据由 mailSelection 决定，不在这里
 // 各算各的——「已选 N 封」拿 inbound 算、而已发送用的是 mailboxSent，正是原来
@@ -2709,6 +3174,93 @@ async function bulkUnsuppress() {
 // a single IMAP STORE — so a batch endpoint would save round trips to our own
 // gateway and nothing at the mail host. Sent a few at a time so twenty
 // selected mails do not open twenty connections at once.
+// 勾选多封后的「移动到」。一次请求，服务端按来源文件夹分组、一组一次 MOVE，
+// 而不是像 bulkMark 那样逐封打接口：每封信各登录一次邮箱服务器，网易会限流。
+// 整条会话一起挪（wholeThread）——列表一行就是一条会话，只挪最新那封会把
+// 行留在原地、少一封。
+// ---------------------------------------------------- 拖邮件到文件夹
+
+// 手上正拖着的那几封，以及它们属于哪些信箱。左栏据此决定哪些文件夹亮起来。
+//
+// 放在页面这一层而不是靠 dataTransfer 传：dragover 里**读不到**
+// dataTransfer 的内容（浏览器只在 drop 那一刻才交出来），而「这一格能不能
+// 接」正是要在 dragover 里回答的。
+const dragging = ref<{ ids: string[]; accounts: number[] } | null>(null)
+
+function onDragMails(payload: { ids: string[]; accounts: number[] }) {
+  dragging.value = payload
+}
+
+// 放下了。
+//
+// 两种落法，走的都是**已经存在的**那条路——拖拽是同一件事的又一个入口，
+// 不是另一套后端：
+//
+//   挪 —— 和「移动到」下拉、批量工具条同一个 /inbound-mails/move
+//   标 —— 和阅读区的「归档 / 删除」同一个 /inbound-mails/{id}/mark
+//
+// 为什么不能都用「挪」：视图看的是 deleted_at / archived_at 两个时间戳，
+// 不是 folder。见 lib/dragMails 上那段。
+async function onDropMails(_accountId: number, target: DropTarget) {
+  const ids = dragging.value?.ids ?? []
+  dragging.value = null
+  if (!ids.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    if (target.kind === 'move') {
+      const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
+        ids,
+        folderId: String(target.folderId),
+        wholeThread: true,
+      })
+      const moved = Number(d.moved ?? 0)
+      const failed = d.failedIds?.length ?? 0
+      if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
+      else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+    } else {
+      // 一封一条请求，和 bulkMark 同一个做法：标记接口是按单封设计的，
+      // inChunks 控着并发不把网关打满。
+      const failed = await inChunks(ids, (id) =>
+        post(`/inbound-mails/${id}/mark`, { ...target.flags, wholeThread: true }, quietErrors),
+      )
+      reportBulk(ids.length, failed, t('emails.bulkDone', { n: ids.length - failed }))
+    }
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    // 只清掉刚处理的那几封，不清整份勾选：拖的可能是一封没勾的，那时勾选
+    // 里还留着别的信，替人清掉是替人做决定。
+    picked.value = picked.value.filter((id) => !ids.includes(id))
+    bulkBusy.value = false
+    load()
+    refreshUnread()
+  }
+}
+
+async function bulkMoveTo(folderId: number) {
+  const rows = pickedRows.value
+  if (!rows.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
+      ids: rows.map((r) => r.id),
+      folderId: String(folderId),
+      wholeThread: true,
+    })
+    const moved = Number(d.moved ?? 0)
+    const failed = d.failedIds?.length ?? 0
+    if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
+    else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    picked.value = []
+    bulkBusy.value = false
+    load()
+    refreshUnread()
+  }
+}
+
 async function bulkMark(flags: Record<string, boolean>) {
   const rows = pickedRows.value
   if (!rows.length) return
@@ -2778,26 +3330,9 @@ function reportBulk(total: number, failed: number, doneMsg: string) {
   ElMessage.warning(t('emails.bulkPartial', { done: total - failed, failed }))
 }
 
-async function markRow(row: MailRow, flags: Record<string, boolean>) {
-  await post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true })
-  if ('read' in flags) {
-    row.isRead = flags.read
-    refreshUnread()
-    return
-  }
-  load()
-  refreshUnread()
-}
-
-async function purgeRow(row: MailRow) {
-  await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
-    type: 'warning',
-    confirmButtonText: t('emails.purge'),
-  })
-  await del(`/inbound-mails/${row.id}?whole_thread=true`)
-  ElMessage.success(t('emails.purged'))
-  load()
-}
+// markRow / purgeRow 随列表行内按钮一起去掉了：现在列表上没有单封操作，
+// 那些动作在右边阅读区的工具条上（markOpened / purgeOpened），批量的走
+// 勾选框加上面那条工具条（bulkMark / bulkPurge）。
 
 async function toggleStar(row: MailRow) {
   // Optimistic: a star that waits for the network feels broken.
@@ -2860,21 +3395,22 @@ async function replyToInbound() {
   composer.value?.openReply(openedInbound.value)
 }
 
-// 原信除了我还发给了谁——决定「回复全部」这颗按钮出不出现。
-const hasOtherRecipients = computed(() => {
-  const m = openedInbound.value
-  if (!m) return false
-  return replyAllRecipients({ ...m, mine: myAddresses.value }).cc.length > 0
-})
-
 // 回复全部：收件人是发信人（有 Reply-To 用它），原信 To 和 Cc 里其余的人进
 // 抄送，去掉我名下全部信箱的地址。规则和测试在 lib/replyAll。
+// 这次回信会从哪个地址发出去。写信框的发件人读的是同一个来源
+// （composeAccount → EmailComposer 的 fromAccount），所以两边不会各说各的。
+function replyingAddress(): string {
+  const boxes = mailboxes.value
+  const cur = boxes.find((b) => b.id === composeAccount.value)
+  return (cur ?? boxes.find((b) => b.isDefault) ?? boxes[0])?.email ?? ''
+}
+
 async function replyAllToInbound() {
   if (!openedInbound.value) return
   composing.value = true
   await nextTick()
   const m = openedInbound.value
-  composer.value?.openReplyAll(m, replyAllRecipients({ ...m, mine: myAddresses.value }))
+  composer.value?.openReplyAll(m, replyAllRecipients({ ...m, self: replyingAddress() }))
 }
 
 async function forwardInbound() {
@@ -2949,7 +3485,7 @@ async function markAllRead() {
   markingAll.value = true
   try {
     const d = await post<{ marked: number }>(
-      `/inbound-mails/mark-view-read?view=${INBOUND_VIEWS[folder.value]}`,
+      `/inbound-mails/mark-view-read?view=${encodeURIComponent(currentView.value)}`,
     )
     ElMessage.success(t('emails.markedAllRead', { n: d.marked ?? 0 }))
     load()
@@ -2969,12 +3505,12 @@ async function markAllRead() {
 // 答案是随机的，横幅可能在说另一个箱的事。左侧每个箱自己还有一个红点。
 async function checkSyncHealth() {
   try {
-    const d = await get<{ accounts?: { id: number; lastError: string; email: string }[] }>(
+    const d = await get<{ accounts?: { id: number; lastError: string; needsReauth?: boolean; email: string }[] }>(
       '/my-mailboxes',
     )
     const mine = d.accounts ?? []
     const cur = mine.find((a) => Number(a.id) === currentAccount.value) ?? mine[0]
-    syncError.value = cur?.lastError ?? ''
+    syncBanner.value = buildSyncBanner({ lastError: cur?.lastError, needsReauth: cur?.needsReauth })
     myAddresses.value = new Set(
       mine.map((a) => (a.email ?? '').trim().toLowerCase()).filter(Boolean),
     )
@@ -3017,16 +3553,16 @@ onUnmounted(() => window.clearInterval(healthTimer))
 // disappears before it is read.
 async function syncOnOpen() {
   try {
-    const d = await post<{ fetched: number; detail: string }>(
+    const d = await post<{ fetched: number; detail: string; needsReauth?: boolean }>(
       '/mailbox/sync',
       undefined,
       mailHostRequest,
     )
     if (d.detail) {
-      syncError.value = d.detail
+      syncBanner.value = buildSyncBanner({ detail: d.detail, needsReauth: d.needsReauth })
       return
     }
-    syncError.value = ''
+    syncBanner.value = { text: '', offerReauth: false }
     if ((d.fetched ?? 0) > 0 && !openedInbound.value) load()
   } catch {
     /* the poller keeps trying; checkSyncHealth reports what it finds */
@@ -3076,37 +3612,6 @@ async function reauth() {
 //
 // No success toast either: the arriving mail is the news, and a green bar
 // saying "收到 0 封新邮件" is a notification about nothing.
-async function syncNow() {
-  syncing.value = true
-  try {
-    const d = await post<{ fetched: number; detail: string; pending?: boolean }>(
-      '/mailbox/sync',
-      undefined,
-      mailHostRequest,
-    )
-    if (d.detail) {
-      syncError.value = d.detail
-      ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
-      return
-    }
-    syncError.value = ''
-    // 还在收，不是出错。一个从没同步过的邮箱首次要收几分钟，而请求前面的 nginx
-    // 只等 60 秒 —— 服务端到点就先答话，这里要把它说成"进行中"而不是红字报错，
-    // 否则用户会以为坏了，然后反复点，反复排队。
-    if (d.pending) {
-      ElMessage({ type: 'info', message: t('emails.syncPending') })
-    }
-    // The list refreshes in place, under the mail if one is open — and that
-    // mail's own thread with it, so a reply that just arrived joins the
-    // conversation being read rather than waiting for a reopen.
-    load()
-    if (openedInbound.value) loadThread(openedInbound.value)
-    refreshUnread()
-  } finally {
-    syncing.value = false
-  }
-}
-
 // The badge is what tells somebody there is work waiting, so it refreshes
 // independently of whichever folder happens to be open.
 async function refreshAttentionCount() {
@@ -3823,9 +4328,10 @@ function isImage(a: MailFile) {
 // These two were one message once, and it told somebody their 8 MB deck had
 // no copy kept when the file was fine and a stale service was dropping the
 // field. A message that confident about somebody's data has to be earned.
-function fileHint(a: { fileName: string; downloadUrl?: string; stored?: boolean }) {
-  if (a.downloadUrl) return t('emails.downloadFile', { f: a.fileName })
-  return a.stored ? t('emails.fileUnavailable') : t('emails.fileGone')
+// 和 MailAttachments 里那一句同源：判断在 lib/attachmentHint，这里只翻译。
+// 原来这两处各写了一遍，改一处忘另一处就会出现「同一个附件两个地方说法不同」。
+function fileHint(a: { fileName: string; downloadUrl?: string; stored?: boolean; fileSize?: number | string }) {
+  return t(`emails.${attachmentHintKey(a)}`, { f: a.fileName })
 }
 
 function avatarStyle(email: string) {
@@ -3962,14 +4468,34 @@ async function doUnsuppress(row: Suppression) {
   align-self: flex-start;
   position: sticky;
   top: 12px;
+  /* 自己滚。信箱多、文件夹多的时候这一栏会比一屏长，而它 sticky 在顶上，
+     长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。 */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
 }
 .compose {
   width: 100%;
   margin-bottom: 14px;
 }
+/* 搜索框在写信和信箱树之间。间距比 .compose 小一档：写信是这一栏的主按钮，
+   搜索紧跟着它，两者是一组「我要做点什么」，和下面那棵「我的东西在哪儿」
+   的树隔开。 */
+.rail-search {
+  margin-bottom: 12px;
+}
+.rail-search :deep(.el-input__prefix) {
+  /* 放大镜按emoji渲染时基线偏高，压回文字中线。 */
+  font-size: 13px;
+  opacity: 0.65;
+}
+/* 三栏：文件夹 | 列表 | 阅读区。
+   pane 自己竖着排，是为了让同步横幅横跨两列——那条横幅说的是整个信箱的
+   状态，缩进任何一列都读着像只跟那一列有关。 */
 .pane {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   /* One ground for everything on this side — the list, the four folders that
      are tables, the reading page, and the mail's own frame, which is given
      this same colour. The only white left on it is white that means
@@ -3979,17 +4505,13 @@ async function doUnsuppress(row: Suppression) {
      actually use. */
   background: var(--mail-ground);
   padding: 14px 16px;
-  /* The list responds to the width IT has, not the window's: the app shell's
-     nav and this page's rail both take a fixed slice first, so a viewport
-     query would be answering a different question.
+  /* 这里从前建着一个名叫 mailbox 的 CSS 容器，给邮件行的「窄了就收」用。
+     **它已经删了**，连同那几条规则一起——见 MailList.vue 里那段说明。
 
-     On .pane rather than on .mailbox because inline-size containment stops an
-     element contributing its content's width to its ancestors — put it on the
-     page root and the shell's main column, which sizes to content, collapses
-     to its padding. A flex item with min-width:0 already has a definite width
-     from layout, so containing it costs nothing. */
-  container-type: inline-size;
-  container-name: mailbox;
+     留个记号在这儿，因为这是个值得记住的坑：改成三栏之后 .pane 同时装着
+     列表列和阅读区，容器测的是两列之和（一千多），而真正的列表列只有
+     280–400px。规则一条都没触发，行里的东西溢出来叠在一起，看着像渲染
+     出错。**容器建在哪一层，量的就是哪一层**，而布局改动会悄悄换掉那一层。 */
 }
 /* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists, and
    Element Plus paints a table white. Left alone they would put back exactly
@@ -4248,11 +4770,60 @@ async function doUnsuppress(row: Suppression) {
   color: var(--el-text-color-secondary);
   cursor: help;
 }
+/* 阅读区的图标工具条。
+   nowrap：整条加起来不到 160px，任何宽度都放得下——从前那排带文字的按钮
+   会换行，第二排又和第一排左对齐，看着像两组不相干的东西。 */
 .in-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 2px;
   margin-top: 14px;
+}
+.tb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--el-text-color-regular);
+  /* 箭头和垃圾桶是字形，不是图标字体：字号大一档才和一行 14px 的正文
+     视觉上等重。 */
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--mail-fast) var(--mail-ease),
+    color var(--mail-fast) var(--mail-ease);
+}
+.tb:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.tb:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.tb-danger:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--el-border-color-lighter);
+}
+/* 菜单里那条「移动到」是组标题，不是可点的一项：压淡、去掉禁用态那种
+   「本来能点、现在不能」的观感。 */
+.menu-head {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  cursor: default;
 }
 /* 汇总条：默认展开，但可以折起来。一条十六轮的往来可能挂着九个文件，
    而有时使用者只是想读信。 */
@@ -4306,6 +4877,11 @@ async function doUnsuppress(row: Suppression) {
 .sync-error {
   margin-bottom: 14px;
 }
+.sync-retrying {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .sync-error-body {
   display: flex;
   align-items: center;
@@ -4342,6 +4918,20 @@ async function doUnsuppress(row: Suppression) {
 }
 .thread-body {
   padding: 4px 12px 12px;
+}
+/* 展开的那一封，正文之上的一行：完整发件地址 + 详情。和单封阅读页的头部
+   同一个读法，只是窄一档。 */
+.turn-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.turn-meta .sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .star {
   font-size: 15px;
@@ -4558,6 +5148,15 @@ async function doUnsuppress(row: Suppression) {
   font-family: inherit;
   margin: 0;
 }
+/* 纯文本信里的网址。看起来要像链接——不然人还是不会去点它，而这正是
+   这次要修的那件事。见 lib/linkifyText。 */
+.in-text a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.in-text a:hover {
+  text-decoration: underline;
+}
 
 .opened {
   color: var(--el-color-success);
@@ -4606,13 +5205,72 @@ async function doUnsuppress(row: Suppression) {
   margin-top: 4px;
 }
 
-.mailbox { border: 1px solid #e2e8f0; border-radius: 14px; gap: 0; overflow: clip; }
-.rail { padding: 18px 14px; box-sizing: border-box; }
-.pane { border-left: 1px solid #e2e8f0; padding: 24px; }
-@media (max-width: 760px) {
-  .mailbox { flex-direction: column; }
-  .rail { position: static; width: 100%; max-height: 240px; overflow-y: auto; border-bottom: 1px solid #e2e8f0; }
-  .pane { border-left: 0; padding: 16px; }
+/* ---------------------------------------------------------------- 三栏 */
+/* 列表和阅读区并排。**模板里阅读区写在列表前面**（原来是 v-if/v-else 的两
+   个分支，谁在前无所谓），这里用 order 把列表拉到左边——比搬动三百多行
+   模板安全得多，而且以后哪一栏要挪位置也只是改一个数字。 */
+.panes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.list-col {
+  order: 1;
+  flex: 0 0 clamp(280px, 34%, 400px);
+  min-width: 0;
+  /* 三栏各滚各的。原来只有阅读区自己滚，列表跟着整页走——读一封长信时
+     往下滚，左边的列表就被顶出视野，那正是三栏要避免的事。 */
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.reader-col {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+  /* 自己滚，别把整页拉长：左边列表要一直看得见，这正是三栏的意义。 */
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+/* 没选信时右边说一句话。一片空白看着像坏了。 */
+.reader-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
 }
 
+/* 窄屏退回从前那种「打开信就换页」：三栏挤在一起两边都读不了。
+   900px 才退：三栏在 1000px 左右是能用的——Foxmail 就是在这个宽度下
+   跑三栏的，它的列表列只有 200 出头。原来写 1180 是照着「列表固定 420」
+   算的，而 420 本身就太宽了；列表改成按比例伸缩之后，这条线可以退到
+   真正挤不下的地方。 */
+@media (max-width: 900px) {
+  .panes {
+    display: block;
+  }
+  .list-col,
+  .reader-col {
+    flex: none;
+    width: auto;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  /* 开着信就只显示信，没开就只显示列表——也就是改版之前的行为。 */
+  .panes.has-open .list-col,
+  .panes:not(.has-open) .reader-col {
+    display: none;
+  }
+  .reader-empty {
+    display: none;
+  }
+}
 </style>

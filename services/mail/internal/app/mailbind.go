@@ -47,6 +47,27 @@ type hostRejected struct{ err error }
 func (e hostRejected) Error() string { return e.err.Error() }
 func (e hostRejected) Unwrap() error { return e.err }
 
+// CredentialRejected 标记「邮件服务器不认这个凭据」——授权码错、被撤销、
+// OAuth 令牌失效。和 hostRejected 不是一回事：那个说的是"谁拒绝的"，这个
+// 说的是"为什么"。
+//
+// 它存在的理由只有一个：页面上那颗「重新登录邮箱」按钮要知道该不该出现。
+// 网络超时、服务器掐线、打不开文件夹，重登都修不好；只有这一种修得好。
+// 分不清的后果生产上见过——263 几分钟掐一次线，员工就被劝去重输一遍授权码。
+type CredentialRejected struct{ err error }
+
+// NewCredentialRejected 把一个"凭据被拒"的错误标上类型。
+func NewCredentialRejected(err error) error { return CredentialRejected{err} }
+
+func (e CredentialRejected) Error() string { return e.err.Error() }
+func (e CredentialRejected) Unwrap() error { return e.err }
+
+// IsCredentialRejected 说这次失败是不是重新登录能修好的那种。
+func IsCredentialRejected(err error) bool {
+	var t CredentialRejected
+	return errors.As(err, &t)
+}
+
 // FromMailHost reports whether the host is what refused.
 func FromMailHost(err error) bool {
 	var t hostRejected
@@ -286,19 +307,11 @@ func (s *Service) resolveHosts(
 			return MailProvider{}, apierr.Invalid("MAIL_PROVIDER_UNKNOWN",
 				"认不出这个邮件服务商，请重新选择")
 		}
-		if p.NeedsOAuth {
-			return MailProvider{}, apierr.Invalid("MAIL_PROVIDER_NEEDS_OAUTH",
-				"这家服务商已经不允许用密码登录邮箱了，请改用它自己的授权登录")
-		}
 		p.Domain = domainOf(email)
 		return p, nil
 	}
 
 	if p, ok := MailProviderForAddress(email); ok {
-		if p.NeedsOAuth {
-			return MailProvider{}, apierr.Invalid("MAIL_PROVIDER_NEEDS_OAUTH",
-				"这家服务商已经不允许用密码登录邮箱了，请改用它自己的授权登录")
-		}
 		p.Domain = domainOf(email)
 		return p, nil
 	}

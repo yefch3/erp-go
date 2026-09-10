@@ -173,6 +173,25 @@ export function unlockedMailboxes(): number[] {
     .filter((n) => Number.isFinite(n) && n > 0)
 }
 
+/**
+ * 搜索要跨的那些信箱，写成一个请求头的样子（X-Mail-Unlock-All）。
+ *
+ * 搜索问的是「那封信在哪儿」，所以范围是手上开着的**全部**箱，不是当前
+ * 这一个。服务端不保存「这个人有哪些令牌」的索引（键里含令牌本身，反查
+ * 不到），只能由持有者报上来——和「全部退出」同一个道理。
+ *
+ * 报上去的每一把服务端都会回 Redis 核对，所以这不是一句可以随便说的话：
+ * 核不过的直接丢掉。退出过的箱，令牌在服务端已经死了，也就搜不到了。
+ *
+ * 上限和服务端的 maxUnlockTokensPerRequest 对齐。多报的会被那边截掉，
+ * 这里先截是为了不去发一个几 KB 的请求头。
+ */
+const MAX_SEARCH_TOKENS = 32
+
+export function searchScopeHeader(): string {
+  return allTokens().slice(0, MAX_SEARCH_TOKENS).join(',')
+}
+
 /** 手上所有令牌，「全部退出」要把它们一起报给服务端撤掉。 */
 export function allTokens(): string[] {
   const m = readMap()
@@ -187,4 +206,20 @@ export function allTokens(): string[] {
 export function clearAll() {
   localStorage.removeItem(CURRENT)
   localStorage.removeItem(MAP)
+}
+
+/**
+ * 信箱清单到了之后，当前该站在哪个箱上。
+ *
+ * 已选的箱在清单里就不动；没选过、或者选的箱**不是这个人的**，落到默认箱
+ * （服务端按「默认排最前」返回，所以取第一个）。第二种情况是真会发生的：
+ * 令牌里记的箱号来自服务端，8 月 31 日改版前的旧令牌现在会被读成 1 号箱，
+ * 而 1 号箱多半不是他的——不落回去的话，他会卡在一个既不属于自己、也不在
+ * 左栏里的空视图上，只能手动退出重进。
+ *
+ * 清单为空回 0。
+ */
+export function settleMailbox(current: number, boxes: { id: number }[]): number {
+  if (!boxes.length) return 0
+  return boxes.some((b) => b.id === current) ? current : boxes[0].id
 }

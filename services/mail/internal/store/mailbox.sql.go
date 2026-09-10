@@ -122,6 +122,43 @@ func (q *Queries) ClearDefaultMailbox(ctx context.Context, arg ClearDefaultMailb
 	return err
 }
 
+const clearInboundArchived = `-- name: ClearInboundArchived :exec
+UPDATE email_inbound SET archived_at = NULL
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearInboundArchivedParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 挪回收件箱：归档标记去掉，不然它落在归档视图里。
+func (q *Queries) ClearInboundArchived(ctx context.Context, arg ClearInboundArchivedParams) error {
+	_, err := q.db.Exec(ctx, clearInboundArchived, arg.TenantID, arg.ID)
+	return err
+}
+
+const clearInboundNotJunk = `-- name: ClearInboundNotJunk :exec
+UPDATE email_inbound SET not_junk = FALSE
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearInboundNotJunkParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 挪进垃圾邮件：把「不是垃圾」那个平反标记去掉。
+//
+// 和上面那条同一个道理，只是方向相反。视图是这么算的（mail_view_of）：
+// folder='JUNK' 且 not_junk 为真时算**收件箱**，不是垃圾邮件。所以一封平反过
+// 的信再挪回垃圾邮件，不清这个标记的话，folder 是 JUNK 而视图仍然说它在收件
+// 箱——列表上它没动，服务器上却已经进了垃圾箱，两边从此各说各的。
+func (q *Queries) ClearInboundNotJunk(ctx context.Context, arg ClearInboundNotJunkParams) error {
+	_, err := q.db.Exec(ctx, clearInboundNotJunk, arg.TenantID, arg.ID)
+	return err
+}
+
 const countFolder = `-- name: CountFolder :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
@@ -143,6 +180,29 @@ func (q *Queries) CountFolder(ctx context.Context, arg CountFolderParams) (int64
 	return column_1, err
 }
 
+const countInboundInFolder = `-- name: CountInboundInFolder :one
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND deleted_at IS NULL
+`
+
+type CountInboundInFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+}
+
+// 文件夹里还有没有信（没被删除的）。删文件夹之前问一句：有信就不删，
+// 让人先把信挪走——静默把信一起删掉是最坏的结果。
+func (q *Queries) CountInboundInFolder(ctx context.Context, arg CountInboundInFolderParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInboundInFolder, arg.TenantID, arg.AccountID, arg.Folder)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countInboundThreads = `-- name: CountInboundThreads :one
 SELECT count(DISTINCT (account_id, coalesce(nullif(thread_key, ''), 'm:' || id::text)))::bigint
 FROM email_inbound
@@ -150,19 +210,18 @@ WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND ($3::bigint IS NULL
        OR account_id = $3::bigint)
-  AND CASE $4::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE $4::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN $4::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $4::text
       END
   AND ($5::text = ''
        OR subject ILIKE '%' || $5::text || '%'
@@ -218,18 +277,18 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND ($3::bigint IS NULL
-       OR account_id = $3::bigint)
+  AND (cardinality($3::bigint[]) = 0
+       OR account_id = ANY($3::bigint[]))
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
   AND search_text ILIKE '%' || $4::text || '%'
 `
 
 type CountSearchMailParams struct {
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	Keyword   string
+	TenantID   int64
+	OwnerID    int64
+	AccountIds []int64
+	Keyword    string
 }
 
 // Repeats the predicate rather than sharing it: the count and the list have
@@ -239,7 +298,7 @@ func (q *Queries) CountSearchMail(ctx context.Context, arg CountSearchMailParams
 	row := q.db.QueryRow(ctx, countSearchMail,
 		arg.TenantID,
 		arg.OwnerID,
-		arg.AccountID,
+		arg.AccountIds,
 		arg.Keyword,
 	)
 	var column_1 int64
@@ -463,6 +522,54 @@ func (q *Queries) CountUnreadByMailbox(ctx context.Context, arg CountUnreadByMai
 	return items, nil
 }
 
+const createMailFolder = `-- name: CreateMailFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+VALUES ($1::bigint, $2::bigint,
+        $3::text, $4::text, $5::text, $6::bigint)
+RETURNING id, account_id, name, host_name, role, created_by, created_at
+`
+
+type CreateMailFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+}
+
+type CreateMailFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateMailFolder(ctx context.Context, arg CreateMailFolderParams) (CreateMailFolderRow, error) {
+	row := q.db.QueryRow(ctx, createMailFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Name,
+		arg.HostName,
+		arg.Role,
+		arg.CreatedBy,
+	)
+	var i CreateMailFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.Role,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteFlagOp = `-- name: DeleteFlagOp :exec
 DELETE FROM mail_flag_ops WHERE id = $1::bigint
 `
@@ -486,6 +593,21 @@ type DeleteInboundForAccountParams struct {
 // meaningless; attachments go with their messages via the cascade.
 func (q *Queries) DeleteInboundForAccount(ctx context.Context, arg DeleteInboundForAccountParams) error {
 	_, err := q.db.Exec(ctx, deleteInboundForAccount, arg.TenantID, arg.AccountID)
+	return err
+}
+
+const deleteMailFolder = `-- name: DeleteMailFolder :exec
+DELETE FROM mail_folders
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type DeleteMailFolderParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) DeleteMailFolder(ctx context.Context, arg DeleteMailFolderParams) error {
+	_, err := q.db.Exec(ctx, deleteMailFolder, arg.TenantID, arg.ID)
 	return err
 }
 
@@ -547,6 +669,34 @@ func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) er
 	return err
 }
 
+const ensureAttachmentToken = `-- name: EnsureAttachmentToken :one
+UPDATE email_attachments
+SET token = coalesce(token, $1::text)
+WHERE tenant_id = $2::bigint
+  AND id = $3::bigint
+RETURNING coalesce(token, '')::text
+`
+
+type EnsureAttachmentTokenParams struct {
+	Token    string
+	TenantID int64
+	ID       int64
+}
+
+// 给一个附件配公开取件口，已经有的就复用。
+//
+// 复用是要紧的：同一封信重试时不能每次换一个地址，否则先收到的那个人手上
+// 那条链接就废了，而他不会知道为什么。
+//
+// 按 (tenant, id) 限定：id 来自我们自己的附件表，但仍然带上租户——发链接
+// 这件事跨租户一次就够糟了。
+func (q *Queries) EnsureAttachmentToken(ctx context.Context, arg EnsureAttachmentTokenParams) (string, error) {
+	row := q.db.QueryRow(ctx, ensureAttachmentToken, arg.Token, arg.TenantID, arg.ID)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const failFlagOp = `-- name: FailFlagOp :exec
 UPDATE mail_flag_ops
 SET attempts = attempts + 1,
@@ -565,6 +715,58 @@ type FailFlagOpParams struct {
 func (q *Queries) FailFlagOp(ctx context.Context, arg FailFlagOpParams) error {
 	_, err := q.db.Exec(ctx, failFlagOp, arg.LastError, arg.ID)
 	return err
+}
+
+const findInboundMovedElsewhere = `-- name: FindInboundMovedElsewhere :many
+SELECT message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder NOT IN ('INBOX', 'SENT', 'JUNK')
+  AND deleted_at IS NULL
+  AND message_id = ANY($3::text[])
+ORDER BY id DESC
+`
+
+type FindInboundMovedElsewhereParams struct {
+	TenantID   int64
+	AccountID  int64
+	MessageIds []string
+}
+
+type FindInboundMovedElsewhereRow struct {
+	MessageID string
+	Folder    string
+	ImapUid   int64
+}
+
+// 这些信现在是不是躺在**别的**文件夹里。
+//
+// 对账发现收件箱里一封信不见了，要判断它去哪了。挪进自建文件夹这一种，同一趟
+// 同步已经先把它从新文件夹收了进来（syncExtraFolders 排在对账前面），所以查库
+// 就够，不用再问一次服务器。
+//
+// 只看自建和服务器自带的那些：收件箱/已发送/垃圾邮件三个逻辑名排除掉，不然
+// 一封发给自己的信（收件箱和已发送各一份、同一个 Message-ID）会被当成「从
+// 收件箱挪进了已发送」。
+func (q *Queries) FindInboundMovedElsewhere(ctx context.Context, arg FindInboundMovedElsewhereParams) ([]FindInboundMovedElsewhereRow, error) {
+	rows, err := q.db.Query(ctx, findInboundMovedElsewhere, arg.TenantID, arg.AccountID, arg.MessageIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindInboundMovedElsewhereRow
+	for rows.Next() {
+		var i FindInboundMovedElsewhereRow
+		if err := rows.Scan(&i.MessageID, &i.Folder, &i.ImapUid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const findMessageByKey = `-- name: FindMessageByKey :one
@@ -650,6 +852,7 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
+       i.imap_uid, i.archived_at,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -689,6 +892,8 @@ type GetInboundRow struct {
 	AuthSpf        string
 	AuthDkim       string
 	ToAll          string
+	ImapUid        int64
+	ArchivedAt     pgtype.Timestamptz
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -730,6 +935,8 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.AuthSpf,
 		&i.AuthDkim,
 		&i.ToAll,
+		&i.ImapUid,
+		&i.ArchivedAt,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
@@ -738,7 +945,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 }
 
 const getInboundByFolderUID = `-- name: GetInboundByFolderUID :one
-SELECT id, owner_id, raw_key, message_id
+SELECT id, owner_id, raw_key, message_id, host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -754,10 +961,12 @@ type GetInboundByFolderUIDParams struct {
 }
 
 type GetInboundByFolderUIDRow struct {
-	ID        int64
-	OwnerID   int64
-	RawKey    string
-	MessageID string
+	ID         int64
+	OwnerID    int64
+	RawKey     string
+	MessageID  string
+	HostFolder string
+	HostUid    int64
 }
 
 // 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
@@ -775,6 +984,8 @@ func (q *Queries) GetInboundByFolderUID(ctx context.Context, arg GetInboundByFol
 		&i.OwnerID,
 		&i.RawKey,
 		&i.MessageID,
+		&i.HostFolder,
+		&i.HostUid,
 	)
 	return i, err
 }
@@ -865,7 +1076,7 @@ func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurge
 }
 
 const getMailAccountByEmail = `-- name: GetMailAccountByEmail :one
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -887,6 +1098,7 @@ type GetMailAccountByEmailRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
 	UpdatedAt    pgtype.Timestamptz
@@ -925,6 +1137,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 		&i.AuthKind,
 		&i.VerifiedAt,
 		&i.LastError,
+		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
 		&i.UpdatedAt,
@@ -940,7 +1153,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 }
 
 const getMailAccountByID = `-- name: GetMailAccountByID :one
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -962,6 +1175,7 @@ type GetMailAccountByIDRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
 	UnboundAt    pgtype.Timestamptz
@@ -994,6 +1208,7 @@ func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByID
 		&i.AuthKind,
 		&i.VerifiedAt,
 		&i.LastError,
+		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
 		&i.UnboundAt,
@@ -1014,7 +1229,7 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota
+       hourly_quota, daily_quota, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND id = $2::bigint
@@ -1044,6 +1259,7 @@ type GetMailAccountSecretRow struct {
 	ImapSecurity    string
 	HourlyQuota     int32
 	DailyQuota      int32
+	KeepSentCopy    *bool
 }
 
 // The only query that returns ciphertext. Used by the sender and the IMAP
@@ -1079,6 +1295,43 @@ func (q *Queries) GetMailAccountSecret(ctx context.Context, arg GetMailAccountSe
 		&i.ImapSecurity,
 		&i.HourlyQuota,
 		&i.DailyQuota,
+		&i.KeepSentCopy,
+	)
+	return i, err
+}
+
+const getMailFolder = `-- name: GetMailFolder :one
+SELECT id, account_id, name, host_name, role, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type GetMailFolderParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetMailFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetMailFolder(ctx context.Context, arg GetMailFolderParams) (GetMailFolderRow, error) {
+	row := q.db.QueryRow(ctx, getMailFolder, arg.TenantID, arg.ID)
+	var i GetMailFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.Role,
+		&i.CreatedBy,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1533,6 +1786,63 @@ func (q *Queries) ListExpiredTrash(ctx context.Context, arg ListExpiredTrashPara
 	return items, nil
 }
 
+const listFoldersToSync = `-- name: ListFoldersToSync :many
+SELECT f.host_name, f.role
+FROM mail_folders f
+LEFT JOIN mail_sync_state s
+       ON s.tenant_id = f.tenant_id AND s.account_id = f.account_id AND s.folder = f.host_name
+WHERE f.tenant_id = $1::bigint
+  AND f.account_id = $2::bigint
+  AND f.role = ANY($3::text[])
+ORDER BY s.last_synced_at ASC NULLS FIRST, f.host_name
+LIMIT $4::int
+`
+
+type ListFoldersToSyncParams struct {
+	TenantID  int64
+	AccountID int64
+	Roles     []string
+	RowLimit  int32
+}
+
+type ListFoldersToSyncRow struct {
+	HostName string
+	Role     string
+}
+
+// 这一轮同步哪几个文件夹：只挑能装信的（自建、服务器自带的真文件夹），
+// 最久没同步的排前面，一次最多这么多个。
+//
+// **有上限**是因为一个人能建的文件夹没有上限，而每个文件夹至少一次 IMAP
+// 往返。建了几十个文件夹的账号会把自己那一格时间片吃光，挤到同一批里别人的
+// 箱——分档算出来的余量是按「一个箱多零到三个文件夹」估的。
+//
+// 轮着来，所以有上限也不会漏：这一轮没轮到的，下一轮排在最前面。
+func (q *Queries) ListFoldersToSync(ctx context.Context, arg ListFoldersToSyncParams) ([]ListFoldersToSyncRow, error) {
+	rows, err := q.db.Query(ctx, listFoldersToSync,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Roles,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFoldersToSyncRow
+	for rows.Next() {
+		var i ListFoldersToSyncRow
+		if err := rows.Scan(&i.HostName, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInboundAttachments = `-- name: ListInboundAttachments :many
 SELECT id, file_name, content_type, file_size, file_key, content_id
 FROM email_inbound_attachments
@@ -1582,6 +1892,66 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 	return items, nil
 }
 
+const listInboundThreadMembers = `-- name: ListInboundThreadMembers :many
+SELECT id, folder, imap_uid, message_id, archived_at
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND account_id = $3::bigint
+  AND thread_key = $4::text
+  AND deleted_at IS NULL
+ORDER BY id
+`
+
+type ListInboundThreadMembersParams struct {
+	TenantID  int64
+	OwnerID   int64
+	AccountID int64
+	ThreadKey string
+}
+
+type ListInboundThreadMembersRow struct {
+	ID         int64
+	Folder     string
+	ImapUid    int64
+	MessageID  string
+	ArchivedAt pgtype.Timestamptz
+}
+
+// 一条会话在一个信箱里的全部成员（没删的）。批量移动从列表来，列表一行是
+// 一条会话，挪就得整条会话一起挪；只挪最新那封会把行留在原地、少一封。
+// AccountID 不可省：同一条会话可能同时在两个信箱里（客户抄送了两个地址）。
+func (q *Queries) ListInboundThreadMembers(ctx context.Context, arg ListInboundThreadMembersParams) ([]ListInboundThreadMembersRow, error) {
+	rows, err := q.db.Query(ctx, listInboundThreadMembers,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.ThreadKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundThreadMembersRow
+	for rows.Next() {
+		var i ListInboundThreadMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInboundThreads = `-- name: ListInboundThreads :many
 WITH visible AS (
     SELECT id, account_id, from_email, from_name, subject, snippet, thread_key,
@@ -1594,19 +1964,18 @@ WITH visible AS (
       -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
       AND ($6::bigint IS NULL
            OR account_id = $6::bigint)
-      AND CASE $7::text
-            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-            -- The trash holds mail deleted from anywhere, junk included.
-            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-          END
+      -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+      -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+      -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+      -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+      -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
       AND NOT is_bounce
-      AND CASE $7::text
-            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-            WHEN 'JUNK'    THEN deleted_at IS NULL
-            ELSE archived_at IS NULL AND deleted_at IS NULL
+      AND CASE
+            WHEN $7::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $7::text
           END
       AND ($8::text = ''
            OR subject ILIKE '%' || $8::text || '%'
@@ -1731,9 +2100,9 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 }
 
 const listMailAccountsForEmployee = `-- name: ListMailAccountsForEmployee :many
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at, unbound_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND employee_id = $2::bigint
@@ -1752,6 +2121,7 @@ type ListMailAccountsForEmployeeRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	UpdatedAt    pgtype.Timestamptz
 	IsDefault    bool
@@ -1764,6 +2134,7 @@ type ListMailAccountsForEmployeeRow struct {
 	ImapSecurity string
 	LastReadAt   pgtype.Timestamptz
 	UnboundAt    pgtype.Timestamptz
+	KeepSentCopy *bool
 }
 
 // 一个人名下的全部信箱。今天唯一约束保证最多一行，下一期放开之后这里才
@@ -1790,6 +2161,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.AuthKind,
 			&i.VerifiedAt,
 			&i.LastError,
+			&i.AuthFailed,
 			&i.IsActive,
 			&i.UpdatedAt,
 			&i.IsDefault,
@@ -1802,6 +2174,60 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.ImapSecurity,
 			&i.LastReadAt,
 			&i.UnboundAt,
+			&i.KeepSentCopy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMailFolders = `-- name: ListMailFolders :many
+
+SELECT id, account_id, name, host_name, role, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+ORDER BY name
+`
+
+type ListMailFoldersParams struct {
+	TenantID  int64
+	AccountID int64
+}
+
+type ListMailFoldersRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+// ============================================================ 自建文件夹
+func (q *Queries) ListMailFolders(ctx context.Context, arg ListMailFoldersParams) ([]ListMailFoldersRow, error) {
+	rows, err := q.db.Query(ctx, listMailFolders, arg.TenantID, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMailFoldersRow
+	for rows.Next() {
+		var i ListMailFoldersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Name,
+			&i.HostName,
+			&i.Role,
+			&i.CreatedBy,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1886,7 +2312,8 @@ func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailbox
 }
 
 const listRecentForReconcile = `-- name: ListRecentForReconcile :many
-SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at,
+       host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -1912,6 +2339,8 @@ type ListRecentForReconcileRow struct {
 	IsStarred  bool
 	ArchivedAt pgtype.Timestamptz
 	DeletedAt  pgtype.Timestamptz
+	HostFolder string
+	HostUid    int64
 }
 
 // The newest slice of one folder with everything the reconcile pass needs to
@@ -1944,6 +2373,8 @@ func (q *Queries) ListRecentForReconcile(ctx context.Context, arg ListRecentForR
 			&i.IsStarred,
 			&i.ArchivedAt,
 			&i.DeletedAt,
+			&i.HostFolder,
+			&i.HostUid,
 		); err != nil {
 			return nil, err
 		}
@@ -2393,7 +2824,35 @@ func (q *Queries) ListTenantsWithMailboxes(ctx context.Context) ([]int64, error)
 const listThread = `-- name: ListThread :many
 SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        m.to_email AS counterparty, m.sender_name AS who,
-       coalesce(m.sent_at, m.queued_at) AS at
+       coalesce(m.sent_at, m.queued_at) AS at,
+       -- 谁写的、写给谁的，两腿填同一个意思。counterparty 在两腿上说的不是
+       -- 同一件事（这腿是收件人，下面那腿是发件人），界面上却是同一列。
+       m.from_email, m.sender_name AS from_name,
+       -- 收件人和抄送从明细表来，不是从 to_email 来。
+       --
+       -- 合并发送的信**一行代表好几个人**：email_messages.to_email 只存了
+       -- 其中第一个，完整名单在 email_message_recipients 上。照着 to_email
+       -- 显示的后果是，一封抄了同事的信在会话里看着像只发给了一个人——
+       -- 而客户在 Gmail 里看到的是两个，两边对不上。
+       --
+       -- 分别发送的信没有明细行（一行本来就只对一个人），所以 coalesce 退回
+       -- to_email。生产上 78 封分别发送的信明细行为 0，这条退路是必须的。
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'TO'
+       ), m.to_email)::text AS to_all,
+       coalesce((
+           SELECT string_agg(
+                    CASE WHEN r.name <> '' THEN r.name || ' <' || r.email || '>'
+                         ELSE r.email END, ', ' ORDER BY r.id)
+             FROM email_message_recipients r
+            WHERE r.tenant_id = m.tenant_id AND r.message_id = m.id
+              AND r.kind = 'CC'
+       ), '')::text AS cc
 FROM email_messages m
 WHERE m.tenant_id = $1::bigint
   AND m.sender_id = $2::bigint
@@ -2403,7 +2862,11 @@ SELECT 'IN' AS direction, i.id, i.subject,
        CASE WHEN i.body_html <> '' THEN i.body_html ELSE i.body_text END AS body,
        CASE WHEN i.body_html <> '' THEN 'HTML' ELSE 'TEXT' END AS body_format,
        i.from_email AS counterparty, i.from_name AS who,
-       coalesce(i.sent_at, i.received_at) AS at
+       coalesce(i.sent_at, i.received_at) AS at,
+       i.from_email, i.from_name,
+       -- 原头优先：群发给七个人的信要看到七个，只有没存下原头时才退回第一个。
+       CASE WHEN i.to_all <> '' THEN i.to_all ELSE i.to_email END AS to_all,
+       i.cc
 FROM email_inbound i
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
@@ -2412,29 +2875,29 @@ WHERE i.tenant_id = $1::bigint
        OR i.account_id = $4::bigint)
   AND i.thread_key = $3::text
   AND NOT i.is_bounce
-  -- A mail speaks once per conversation. Gmail files a copy of every send
-  -- into the SENT folder, and the host mirror syncs that copy in as one more
-  -- inbound row — the same physical mail under a second id. Unguarded, a
-  -- reply sent from the ERP appears twice (its OUT row and its mirror), and
-  -- a self-addressed mail twice (its INBOX copy and its SENT copy). A SENT
-  -- copy is therefore silenced when the mail it duplicates is already in the
-  -- thread; one without a Message-ID cannot be proven a duplicate and stays.
-  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND (
-    -- the mirror of a mail this service sent: its Message-ID was minted
-    -- from the outbound row's message_key
-    EXISTS (
-      SELECT 1 FROM email_messages sent
-      WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
-        AND sent.message_key::text = split_part(i.message_id, '@', 1)
-    )
-    -- the SENT copy of a mail another folder already shows (a mail sent to
-    -- yourself from any client: the INBOX copy is the one that stays)
-    OR EXISTS (
-      SELECT 1 FROM email_inbound twin
-      WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
-        AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
-        AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
-    )
+  -- A mail speaks once per conversation. 两条规则，各挡一种重复。
+  --
+  -- 一、**这封信就是我们自己发出去的那一封**：它的 Message-ID 是从 OUT 那一行
+  -- 的 message_key 生成的。上面那一腿已经把它作为「我发出」列过一次了，这里
+  -- 再列一次就是同一封信出现两遍。
+  --
+  -- 不限文件夹是有意的。原来只挡 SENT，因为当时想到的只有「Gmail 把每封发出
+  -- 的信也塞进已发送」。可**发给自己名下另一个信箱**时，那封信会落进那个箱的
+  -- 收件箱——照样是同一封信的第二次出现，界面上一条写着收件人、一条写着发件人，
+  -- 看着像是重复发了两遍。测试时几乎必然撞上，因为测试就是发给自己。
+  AND NOT (i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_messages sent
+    WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
+      AND sent.message_key::text = split_part(i.message_id, '@', 1)
+  ))
+  -- 二、别的客户端发的信，在已发送里留了一份，而同一封信在别的文件夹里也有
+  -- （给自己发的信：收件箱那份是留下的那一份）。这一条只对已发送成立——
+  -- 反过来会把收件箱那份也挡掉，两份都没了。
+  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_inbound twin
+    WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
+      AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
+      AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
   ))
 ORDER BY at
 `
@@ -2455,6 +2918,10 @@ type ListThreadRow struct {
 	Counterparty string
 	Who          string
 	At           pgtype.Timestamptz
+	FromEmail    string
+	FromName     string
+	ToAll        string
+	Cc           string
 }
 
 // Both sides of one conversation, in the order they happened. Sent and
@@ -2493,6 +2960,10 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 			&i.Counterparty,
 			&i.Who,
 			&i.At,
+			&i.FromEmail,
+			&i.FromName,
+			&i.ToAll,
+			&i.Cc,
 		); err != nil {
 			return nil, err
 		}
@@ -3054,18 +3525,27 @@ func (q *Queries) MarkInboundRead(ctx context.Context, arg MarkInboundReadParams
 
 const markMailAccountFailed = `-- name: MarkMailAccountFailed :exec
 UPDATE mail_accounts
-SET last_error = $1::text, updated_at = now()
-WHERE tenant_id = $2::bigint AND id = $3::bigint
+SET last_error = $1::text,
+    auth_failed = $2::boolean,
+    updated_at = now()
+WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
 
 type MarkMailAccountFailedParams struct {
-	LastError string
-	TenantID  int64
-	ID        int64
+	LastError  string
+	AuthFailed bool
+	TenantID   int64
+	ID         int64
 }
 
+// auth_failed 和 last_error 一起写：文本给人看，位给程序判。
 func (q *Queries) MarkMailAccountFailed(ctx context.Context, arg MarkMailAccountFailedParams) error {
-	_, err := q.db.Exec(ctx, markMailAccountFailed, arg.LastError, arg.TenantID, arg.ID)
+	_, err := q.db.Exec(ctx, markMailAccountFailed,
+		arg.LastError,
+		arg.AuthFailed,
+		arg.TenantID,
+		arg.ID,
+	)
 	return err
 }
 
@@ -3153,19 +3633,18 @@ SET is_read = TRUE
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND NOT is_read
-  AND CASE $3::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE $3::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN $3::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $3::text
       END
 RETURNING account_id, folder, imap_uid
 `
@@ -3345,10 +3824,65 @@ func (q *Queries) RecordMailBinding(ctx context.Context, arg RecordMailBindingPa
 	return err
 }
 
+const renameInboundFolder = `-- name: RenameInboundFolder :execrows
+UPDATE email_inbound
+SET folder = $1::text
+WHERE tenant_id = $2::bigint
+  AND account_id = $3::bigint
+  AND folder = $4::text
+`
+
+type RenameInboundFolderParams struct {
+	NewFolder string
+	TenantID  int64
+	AccountID int64
+	OldFolder string
+}
+
+// 文件夹在服务器上改了名，行里存的名字跟着改。触发器会重算视图。
+func (q *Queries) RenameInboundFolder(ctx context.Context, arg RenameInboundFolderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameInboundFolder,
+		arg.NewFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.OldFolder,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const renameMailFolder = `-- name: RenameMailFolder :exec
+UPDATE mail_folders
+SET name = $1::text, host_name = $2::text
+WHERE tenant_id = $3::bigint AND id = $4::bigint
+`
+
+type RenameMailFolderParams struct {
+	Name     string
+	HostName string
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) RenameMailFolder(ctx context.Context, arg RenameMailFolderParams) error {
+	_, err := q.db.Exec(ctx, renameMailFolder,
+		arg.Name,
+		arg.HostName,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const repointInbound = `-- name: RepointInbound :exec
 UPDATE email_inbound
 SET folder = $1::text,
     imap_uid = $2::bigint,
+    -- 回到了正位，「挪去了哪里」这条记录作废。
+    host_folder = '',
+    host_uid = 0,
     not_junk = FALSE
 WHERE tenant_id = $3::bigint
   AND account_id = $4::bigint
@@ -3381,17 +3915,49 @@ func (q *Queries) RepointInbound(ctx context.Context, arg RepointInboundParams) 
 	return err
 }
 
+const resolveAttachmentToken = `-- name: ResolveAttachmentToken :one
+SELECT file_name, file_key, file_size, content_type
+FROM email_attachments
+WHERE token = $1::text
+  AND status = 'ACTIVE'
+`
+
+type ResolveAttachmentTokenRow struct {
+	FileName    string
+	FileKey     string
+	FileSize    int64
+	ContentType string
+}
+
+// 公开下载路由用：token → 这个文件是什么、在哪。
+//
+// **不带租户**，因为调用方是收件人的浏览器，没有会话也就没有租户。token 是
+// 随机不可猜的，知道一个也只能换来它自己那个文件。同 ResolveImage。
+//
+// 撤回的查不出来：status 一变，链接立刻失效，而行还留着——客户问「你发我的
+// 链接打不开」时答得上来是被撤回了，而不是一句查无此物。
+func (q *Queries) ResolveAttachmentToken(ctx context.Context, token string) (ResolveAttachmentTokenRow, error) {
+	row := q.db.QueryRow(ctx, resolveAttachmentToken, token)
+	var i ResolveAttachmentTokenRow
+	err := row.Scan(
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+	)
+	return i, err
+}
+
 const searchMail = `-- name: SearchMail :many
 WITH hits AS (
-    SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-           snippet, search_text, is_read, is_starred, has_attachments,
+    SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+           subject, snippet, search_text, is_read, is_starred, has_attachments,
            received_at, sent_at
     FROM email_inbound
     WHERE tenant_id = $2::bigint
       AND owner_id = $3::bigint
-      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
-      AND ($4::bigint IS NULL
-           OR account_id = $4::bigint)
+      AND (cardinality($4::bigint[]) = 0
+           OR account_id = ANY($4::bigint[]))
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -3406,8 +3972,8 @@ WITH hits AS (
     ORDER BY received_at DESC, id DESC
     LIMIT $7::int
 )
-SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
-       is_read, is_starred, has_attachments, received_at, sent_at,
+SELECT id, account_id, folder, thread_key, from_email, from_name, to_email,
+       subject, is_read, is_starred, has_attachments, received_at, sent_at,
        CASE
            WHEN position(lower($1::text) in lower(search_text)) > 0
            THEN substring(search_text
@@ -3425,17 +3991,18 @@ ORDER BY received_at DESC, id DESC
 `
 
 type SearchMailParams struct {
-	Keyword   string
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	CursorAt  pgtype.Timestamptz
-	CursorID  int64
-	RowLimit  int32
+	Keyword    string
+	TenantID   int64
+	OwnerID    int64
+	AccountIds []int64
+	CursorAt   pgtype.Timestamptz
+	CursorID   int64
+	RowLimit   int32
 }
 
 type SearchMailRow struct {
 	ID             int64
+	AccountID      int64
 	Folder         string
 	ThreadKey      string
 	FromEmail      string
@@ -3463,15 +4030,31 @@ type SearchMailRow struct {
 // which. A mail rescued from junk (not_junk) is a decision the other way and
 // is included.
 //
+// 也横跨**信箱**。这一条改过两次，值得记下来为什么落在这里：
+//
+//	一开始不分箱——那时一个人只有一个箱，"分箱"根本不存在。
+//	多绑之后收紧成「只搜当前这个箱」，理由是列表明明只列一个箱的信，搜索
+//	却横跨两个箱，看着像串味。
+//	现在放开成「搜手上开着的全部箱」。收紧那一版把问题看反了：搜索存在的
+//	意义正是**不知道东西在哪儿**。一个人有 263 和 Gmail 两个箱，记得客户
+//	说过"钢卷"，不记得那封信落在哪个箱——收紧之后他得站到每个箱里各搜
+//	一遍，也就是让人代替搜索干活。
+//
+// 搜哪些箱由调用方给，且只能是**令牌验过的那些**（见网关 searchMail）。
+// 空数组 = 不限，留给一个箱都没绑的人。
+//
 // The match window is cut here, after LIMIT, so lowering a whole mail body to
 // find the offset happens for the fifty rows on screen and not for every row
 // the scan touched.
+// account_id 跟着每一行回去：结果横跨信箱之后，「这封信在哪个箱」和「在哪个
+// 文件夹」是同一类信息——不说的话，一列混着两个箱的信而没有任何区分。
+// 界面还要用它：点开一封别的箱的信之前得先换成那个箱的令牌。
 func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]SearchMailRow, error) {
 	rows, err := q.db.Query(ctx, searchMail,
 		arg.Keyword,
 		arg.TenantID,
 		arg.OwnerID,
-		arg.AccountID,
+		arg.AccountIds,
 		arg.CursorAt,
 		arg.CursorID,
 		arg.RowLimit,
@@ -3485,6 +4068,7 @@ func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]Searc
 		var i SearchMailRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.AccountID,
 			&i.Folder,
 			&i.ThreadKey,
 			&i.FromEmail,
@@ -3592,6 +4176,38 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 	return items, nil
 }
 
+const setInboundHostLocation = `-- name: SetInboundHostLocation :exec
+UPDATE email_inbound
+SET host_folder = $1::text,
+    host_uid = $2::bigint
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND folder = $5::text
+  AND imap_uid = $6::bigint
+`
+
+type SetInboundHostLocationParams struct {
+	HostFolder string
+	HostUid    int64
+	TenantID   int64
+	AccountID  int64
+	Folder     string
+	ImapUid    int64
+}
+
+// 信在服务器上被挪去了哪里（从 MOVE/COPY 的 COPYUID 里接到的）。
+func (q *Queries) SetInboundHostLocation(ctx context.Context, arg SetInboundHostLocationParams) error {
+	_, err := q.db.Exec(ctx, setInboundHostLocation,
+		arg.HostFolder,
+		arg.HostUid,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
+}
+
 const setInboundReadByUID = `-- name: SetInboundReadByUID :exec
 
 UPDATE email_inbound
@@ -3626,6 +4242,39 @@ func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByU
 		arg.ImapUid,
 	)
 	return err
+}
+
+const setKeepSentCopy = `-- name: SetKeepSentCopy :execrows
+UPDATE mail_accounts
+SET keep_sent_copy = $1::boolean, updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND employee_id = $3::bigint
+  AND id = $4::bigint
+`
+
+type SetKeepSentCopyParams struct {
+	KeepSentCopy bool
+	TenantID     int64
+	EmployeeID   int64
+	ID           int64
+}
+
+// 「发送后自己往已发送里留一份副本」这个开关。
+//
+// 按 (tenant, employee, id) 三个一起限定，不是只按 id：id 是从浏览器来的，
+// 只按它更新等于谁都能改别人信箱的设置。返回改了几行，调用方据此分辨
+// 「关掉了」和「这个箱不在你名下」——两者都不该静默成功。
+func (q *Queries) SetKeepSentCopy(ctx context.Context, arg SetKeepSentCopyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setKeepSentCopy,
+		arg.KeepSentCopy,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setMailAccountActive = `-- name: SetMailAccountActive :exec
@@ -3763,6 +4412,23 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 		arg.TenantID,
 		arg.ID,
 	)
+	return err
+}
+
+const setMailFolderRole = `-- name: SetMailFolderRole :exec
+UPDATE mail_folders SET role = $1::text
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetMailFolderRoleParams struct {
+	Role     string
+	TenantID int64
+	ID       int64
+}
+
+// 服务器对改名/删除答「默认文件夹」时把它标成系统：服务器的拒绝是最后的裁判。
+func (q *Queries) SetMailFolderRole(ctx context.Context, arg SetMailFolderRoleParams) error {
+	_, err := q.db.Exec(ctx, setMailFolderRole, arg.Role, arg.TenantID, arg.ID)
 	return err
 }
 
@@ -4071,6 +4737,70 @@ func (q *Queries) UpdateMailAccountAddress(ctx context.Context, arg UpdateMailAc
 	return err
 }
 
+const upsertHostFolder = `-- name: UpsertHostFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+VALUES ($1::bigint, $2::bigint,
+        $3::text, $3::text, $4::text, $5::bigint)
+ON CONFLICT (tenant_id, account_id, host_name) DO UPDATE
+SET role = CASE
+             -- 服务器答过「默认文件夹」的已经是 SYSTEM，名单认不出它、按名字
+             -- 算成 CUSTOM 时不能盖掉：服务器的话比名单可信。
+             WHEN mail_folders.role IN ('SYSTEM', 'VIRTUAL') AND EXCLUDED.role = 'CUSTOM'
+               THEN mail_folders.role
+             -- VIRTUAL 也不能降成 SYSTEM。两者的区别只在「同步不同步」，而
+             -- 判错的代价不对称：把 Gmail 的标签当成真文件夹同步，每封信会
+             -- 按标签存好几遍；反过来只是少列一个文件夹。
+             WHEN mail_folders.role = 'VIRTUAL' AND EXCLUDED.role = 'SYSTEM'
+               THEN mail_folders.role
+             ELSE EXCLUDED.role
+           END
+RETURNING id, account_id, name, host_name, role, created_by, created_at
+`
+
+type UpsertHostFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	HostName  string
+	Role      string
+	CreatedBy int64
+}
+
+type UpsertHostFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+// 每次列文件夹，把服务器 LIST 回来的每一个登记进来（或刷新角色）。角色由
+// 调用方按可信度算好传进来；名字对系统文件夹就是服务器名。
+// 服务器对改名/删除答过「默认文件夹」的，已经被标成 SYSTEM（SetMailFolderRole）；
+// 名单认不出它、按名字又算成 CUSTOM 时不能把这个判断盖掉——服务器的话比名单
+// 可信。其余情况角色跟着最新的判断走（比如猜名单补全后从 SYSTEM 变 ARCHIVE）。
+func (q *Queries) UpsertHostFolder(ctx context.Context, arg UpsertHostFolderParams) (UpsertHostFolderRow, error) {
+	row := q.db.QueryRow(ctx, upsertHostFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.HostName,
+		arg.Role,
+		arg.CreatedBy,
+	)
+	var i UpsertHostFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.Role,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const upsertMailAccountShell = `-- name: UpsertMailAccountShell :one
 INSERT INTO mail_accounts (
     tenant_id, employee_id, email, username, secret_enc, key_version, is_default,
@@ -4242,4 +4972,26 @@ func (q *Queries) UpsertSyncState(ctx context.Context, arg UpsertSyncStateParams
 		arg.LowUid,
 	)
 	return err
+}
+
+const withdrawAttachmentLink = `-- name: WithdrawAttachmentLink :execrows
+UPDATE email_attachments
+SET status = 'WITHDRAWN'
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+  AND token IS NOT NULL
+`
+
+type WithdrawAttachmentLinkParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 撤回一个已经发出去的下载链接。行留着，只是不再服务。
+func (q *Queries) WithdrawAttachmentLink(ctx context.Context, arg WithdrawAttachmentLinkParams) (int64, error) {
+	result, err := q.db.Exec(ctx, withdrawAttachmentLink, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

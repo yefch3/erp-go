@@ -20,6 +20,8 @@ type EmailAttachment struct {
 	ContentType string
 	UploadedBy  int64
 	UploadedAt  pgtype.Timestamptz
+	Token       *string
+	Status      string
 }
 
 type EmailCampaign struct {
@@ -132,6 +134,8 @@ type EmailInbound struct {
 	AuthSpf        string
 	AuthDkim       string
 	ToAll          string
+	HostFolder     string
+	HostUid        int64
 }
 
 type EmailInboundAttachment struct {
@@ -273,6 +277,8 @@ type MailAccount struct {
 	LastReadAt      pgtype.Timestamptz
 	StatusCheckedAt pgtype.Timestamptz
 	UnboundAt       pgtype.Timestamptz
+	AuthFailed      bool
+	KeepSentCopy    *bool
 }
 
 type MailBindingLog struct {
@@ -348,6 +354,17 @@ type MailFlagOp struct {
 	CreatedAt  pgtype.Timestamptz
 	Flag       string
 	MessageID  string
+}
+
+type MailFolder struct {
+	ID        int64
+	TenantID  int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+	Role      string
 }
 
 type MailHost struct {

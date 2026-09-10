@@ -32,11 +32,20 @@ import (
 // shape is left whole, and even a recognised one is left whole when the part
 // above it is too thin to stand on its own.
 
-const (
-	// Below this, the fold is not worth its own button. A four-line quote at
-	// the bottom of a two-line reply is context, not clutter.
-	minQuotedChars = 400
-)
+// 折叠曾经有一条下限：引用的可读文字不到 400 个字符就不折，理由是「短引用是
+// 上下文，不是杂物」。这条已经退役，因为它犯的是这个文件下面刚记过的那个错。
+//
+// 400 是按字符数算的。这个产品的用户写中文——三十个汉字是一整段话，四百个
+// 汉字是一篇文章。同一段引用，英文写出来轻松过线，中文写出来永远不到，于是
+// 中文用户看到的引用从来不折。freshEnoughToStandAlone 上面记的是同一件事：
+// 拿字符数当分量的尺子，在一个字顶一个词的语言里量不准。
+//
+// 换掉它的不是一个更好的数，是不要这个数。Gmail 的「•••」也不看长短：认出了
+// 引用就折。这样还多一个好处——什么时候有那个按钮变得可预测了，而原来是
+// 「有时候有，有时候没有」，用户猜不出规律。
+//
+// 剩下的唯一一道闸是 freshEnoughToStandAlone：上面什么都没有的纯转发不折，
+// 否则会折出一个只有按钮、没有内容的页面。
 
 // freshEnoughToStandAlone reports whether there is anything above the fold.
 //
@@ -80,6 +89,11 @@ var quoteOpeners = []*regexp.Regexp{
 	// 中文客户端。QQ 邮箱、Foxmail、263 各写一种，分隔线的横杠数量不固定。
 	regexp.MustCompile(`^-{2,}\s*(原始邮件|原邮件|以下为引用内容)\s*-{2,}`),
 	regexp.MustCompile(`^在\s?\d{4}.{0,80}(写道|寫道)[:：]`),
+	// "CEO <ceo@corp.example> 写道：" —— ERP 自己的写信框加的那一行，Foxmail
+	// 和几家网页版也是这个写法。上面那几条都要求以「在 + 年份」开头，这一条
+	// 不要求：这个格式里没有日期，只有一个人和一个地址。带尖括号的地址是
+	// 它和普通句子的分界，不至于把正文里一句「他写道：」当成引用的开头。
+	regexp.MustCompile(`(?i)^\S.{0,120}<[^<>@\s]+@[^<>@\s]+>\s*(写道|寫道|wrote)\s*[:：]\s*$`),
 	regexp.MustCompile(`^发件人[:：].{0,200}(发送时间|收件人)[:：]`),
 	regexp.MustCompile(`^寄件者[:：]`),
 }
@@ -113,7 +127,7 @@ func SplitQuotedHistory(body string) (fresh, quoted string) {
 	if !ok {
 		return body, ""
 	}
-	if len([]rune(textOf(quotedFrag))) < minQuotedChars || !freshEnoughToStandAlone(freshFrag) {
+	if !freshEnoughToStandAlone(freshFrag) {
 		return body, ""
 	}
 	return style + freshFrag, style + quotedFrag

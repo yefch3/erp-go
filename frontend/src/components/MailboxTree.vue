@@ -55,7 +55,7 @@
           <el-icon class="caret" :class="{ open: isOpen(b.id) }"><CaretRight /></el-icon>
           <span
             class="mbox-dot"
-            :class="{ bad: !!b.lastError, off: isLocked(b.id) }"
+            :class="{ bad: b.needsReauth, warn: !!b.lastError && !b.needsReauth, off: isLocked(b.id) }"
             :title="b.lastError || undefined"
           />
           <span class="mbox-name">{{ b.email }}</span>
@@ -134,23 +134,97 @@
           <span class="ficon">🔒</span>
           <span class="fname">{{ t('mailGate.signInToRead') }}</span>
         </button>
-        <button
-          v-for="f in perMailbox"
-          v-else
-          :key="f.key"
-          type="button"
-          class="folder sub"
-          :class="{ on: modelValue === b.id && folder === f.key }"
-          @click="emit('select', b.id, f.key)"
-        >
-          <el-icon class="ficon"><component :is="f.icon" /></el-icon>
-          <span class="fname">{{ t(`emails.folders.${f.key}`) }}</span>
-          <!-- 数字只给当前这个箱：别的箱的分文件夹计数服务端没给，
-               编一个出来比空着坏得多。 -->
-          <span v-if="modelValue === b.id && countOf(f.key) > 0" class="cnt">
-            {{ countOf(f.key) > 99 ? '99+' : countOf(f.key) }}
-          </span>
-        </button>
+        <!-- 同一级别：固定视图和自建文件夹一个列表，顺序和取舍在 lib/mailFolders
+             的 mailboxRail 里。固定视图用文案，自建的用服务器上的名字；能改名
+             删除的只有自建的。 -->
+        <template v-for="item in railFor(b.id)" v-else :key="item.key">
+          <!-- 哪几格接得住由 dropTargetFor 说了算（收件箱、垃圾邮件、回收站、
+               归档接，已发送/草稿箱/星标不接，各自的理由写在那儿）。这里
+               一律挂上监听，接不接由它回 null 决定——把判断散到模板里，
+               下次加一格就又要在两处改。 -->
+          <button
+            v-if="!item.name"
+            type="button"
+            class="folder sub"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
+            }"
+            :title="item.hostName"
+            @click="emit('select', b.id, item.key)"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
+          >
+            <el-icon class="ficon"><component :is="item.icon" /></el-icon>
+            <span class="fname">{{ t(`emails.folders.${item.key}`) }}</span>
+            <!-- 数字只给当前这个箱：别的箱的分文件夹计数服务端没给，
+                 编一个出来比空着坏得多。 -->
+            <span v-if="modelValue === b.id && countOf(item.key) > 0" class="cnt">
+              {{ countOf(item.key) > 99 ? '99+' : countOf(item.key) }}
+            </span>
+          </button>
+          <!-- 服务器自带、ERP 不认得的（病毒文件夹、其他文件夹）：能点进去看信，
+               但它不是用户建的，没有改名删除。 -->
+          <button
+            v-else-if="!item.custom"
+            type="button"
+            class="folder sub"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
+            }"
+            :title="item.hostName"
+            @click="emit('select', b.id, item.key)"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
+          >
+            <el-icon class="ficon"><Folder /></el-icon>
+            <span class="fname">{{ item.name }}</span>
+          </button>
+          <div
+            v-else
+            class="folder sub custom"
+            :class="{
+              on: modelValue === b.id && folder === item.key,
+              droppable: canDrop(b.id, item),
+              over: over === `${b.id}:${item.key}`,
+            }"
+            @dragover="onDragOver(b.id, item, $event)"
+            @dragleave="onDragLeave(b.id, item)"
+            @drop="onDrop(b.id, item, $event)"
+          >
+            <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
+              <el-icon class="ficon"><Folder /></el-icon>
+              <span class="fname">{{ item.name }}</span>
+            </button>
+            <span class="custom-acts">
+              <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', item.folder!)">✎</button>
+              <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', item.folder!)">✕</button>
+            </span>
+          </div>
+        </template>
+        <template v-if="!isLocked(b.id)">
+          <button type="button" class="folder sub new-folder" @click="emit('createFolder', b.id)">
+            <span class="ficon">＋</span>
+            <span class="fname">{{ t('mailGate.newFolder') }}</span>
+          </button>
+          <!-- 发完信要不要我们自己往这个箱的已发送里留一份。
+               有些服务器自己会存（263 后台那个「保存客户端发信」、Gmail 一直
+               会），两边都存就是客户邮箱里两封一模一样的信。这件事协议里问不
+               出来，只能让用的人说——Outlook / Foxmail / Apple Mail 也都是给
+               一个开关，不是替人猜。 -->
+          <label class="folder sub keep-copy" :title="t('mailGate.keepSentCopyHint')">
+            <el-checkbox
+              :model-value="b.keepSentCopy"
+              @change="setKeepSentCopy(b, $event as boolean)"
+            />
+            <span class="fname">{{ t('mailGate.keepSentCopy') }}</span>
+          </label>
+        </template>
       </div>
     </div>
 
@@ -205,26 +279,35 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
-import { CaretRight, Star, SwitchButton } from '@element-plus/icons-vue'
+import { CaretRight, Star, SwitchButton, Folder } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
+import { canDropInto, dropTargetFor, type DropTarget } from '../lib/dragMails'
 import {
   expandedAfterSwitch,
   parseExpanded,
   splitFolders,
   toggleExpanded,
-  type FolderDef,
-} from '../lib/mailFolders'
+  type FolderDef, mailboxRail } from '../lib/mailFolders'
+import type { CustomFolder, RailItem } from '../lib/mailFolders'
 
 export interface Mailbox {
   id: number
   email: string
   isDefault: boolean
   lastError: string
+  needsReauth: boolean
   /** 这个箱里有多少封没读。切换的理由就是它。 */
   unread: number
   /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
   unboundAt: string
+  /**
+   * 发完信我们要不要自己往这个箱的已发送里留一份。
+   *
+   * 服务端给的是**解析后的结果**：没人表过态时它等于按主机猜出来的那个值，
+   * 所以这个勾显示的永远是「实际会发生什么」，而不是一个空。
+   */
+  keepSentCopy: boolean
 }
 
 const props = defineProps<{
@@ -240,6 +323,16 @@ const props = defineProps<{
   tokensVersion: number
   /** 当前这个箱锁着没有。锁着时不画点不动的文件夹。 */
   locked: boolean
+  /** 每个信箱在服务器上的全部文件夹（带角色）。由页面拉取，这里只画。 */
+  hostFolders: Record<number, CustomFolder[]>
+  /**
+   * 正在被拖的那几封分别属于哪些信箱。空数组 = 现在没在拖。
+   *
+   * 只有**同一个箱**的文件夹接得住：一封 A 箱的信挪不进 B 箱的文件夹，
+   * 服务端会拒（folders.go 里那条 target.accountID != it.accountID）。
+   * 与其让人拖过去再看到一条失败提示，不如那一格干脆不亮。
+   */
+  dragAccounts?: number[]
 }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
@@ -249,14 +342,63 @@ const emit = defineEmits<{
   changed: [Mailbox[]]
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
+  /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
+  createFolder: [accountId: number]
+  renameFolder: [folder: CustomFolder]
+  deleteFolder: [folder: CustomFolder]
+  /** 把拖着的那几封放进这一格。做什么由 DropTarget 说（挪 or 标）。 */
+  dropMails: [accountId: number, target: DropTarget]
 }>()
 
 const { t } = useI18n()
 const boxes = ref<Mailbox[]>([])
 const adding = ref(false)
 
+// -------------------------------------------------------------- 接住拖拽
+
+/** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
+const over = ref('')
+
+/** 这个信箱的这一格，放下之后要做什么。null = 不接。规则见 lib/dragMails。 */
+function targetOf(accountId: number, item: RailItem): DropTarget | null {
+  if (!canDropInto(props.dragAccounts ?? [], accountId)) return null
+  return dropTargetFor(item.key, {
+    folderId: item.folder?.id,
+    // 左栏那个「垃圾邮件」是固定视图，不带 id：从这个箱的文件夹清单里按
+    // 角色找出真正的那个。服务器没有垃圾箱的账号找不到，那一格就不接。
+    junkFolderId: (props.hostFolders[accountId] ?? []).find((f) => f.role === 'JUNK')?.id,
+  })
+}
+
+const canDrop = (accountId: number, item: RailItem) => targetOf(accountId, item) !== null
+
+const dropKey = (accountId: number, key: string) => `${accountId}:${key}`
+
+function onDragOver(accountId: number, item: RailItem, ev: DragEvent) {
+  if (!canDrop(accountId, item)) return
+  // preventDefault 才算「我接」——不调用的话浏览器一律当成不接，光标是禁止符。
+  ev.preventDefault()
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+  over.value = dropKey(accountId, item.key)
+}
+
+function onDragLeave(accountId: number, item: RailItem) {
+  if (over.value === dropKey(accountId, item.key)) over.value = ''
+}
+
+function onDrop(accountId: number, item: RailItem, ev: DragEvent) {
+  over.value = ''
+  const target = targetOf(accountId, item)
+  if (!target) return
+  ev.preventDefault()
+  emit('dropMails', accountId, target)
+}
+
 const split = computed(() => splitFolders(props.folders))
 const perMailbox = computed(() => split.value.perMailbox)
+function railFor(accountId: number) {
+  return mailboxRail(perMailbox.value, props.hostFolders[accountId] ?? [])
+}
 const shared = computed(() => split.value.shared)
 
 function countOf(key: string): number {
@@ -312,10 +454,15 @@ async function load() {
     email: a.email ?? '',
     isDefault: !!a.isDefault,
     lastError: a.lastError ?? '',
+    needsReauth: !!a.needsReauth,
     // protojson 把 int64 打成字符串，普通 JSON 打成数字。两条路都过一遍
     // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
     unread: Number(a.unread ?? 0),
     unboundAt: a.unboundAt ?? '',
+    // 服务端给的是解析后的结果，没表过态时它已经等于按主机猜出来的值。
+    // 缺字段时退回 true：这是「我们自己存一份」，也就是安全的那一侧——
+    // 猜错这边是多一封能删掉的信，猜错另一边是已发送空掉。
+    keepSentCopy: a.keepSentCopy ?? true,
   }))
   emit('changed', boxes.value)
 }
@@ -337,6 +484,16 @@ async function unbind(b: Mailbox) {
 async function setDefault(b: Mailbox) {
   await post('/my-mailboxes/default', { accountId: b.id })
   ElMessage.success(t('mailGate.setDefaultDone', { email: b.email }))
+  await load()
+}
+
+// 关掉 = 「这个箱的服务器自己会存，你别再存一份」。
+//
+// 不做二次确认：两个方向都是正当选择，而且都能立刻改回来。关错了的代价
+// （已发送空掉）由发信后那条空副本检查兜着，不靠一个弹窗拦。
+async function setKeepSentCopy(b: Mailbox, keep: boolean) {
+  await post('/my-mailboxes/keep-sent-copy', { accountId: String(b.id), keep })
+  ElMessage.success(t(keep ? 'mailGate.keepSentCopyOn' : 'mailGate.keepSentCopyOff', { email: b.email }))
   await load()
 }
 
@@ -394,7 +551,8 @@ defineExpose({ reload: load })
   background: transparent;
   font-size: 13px;
   color: var(--el-text-color-primary);
-  cursor: pointer;
+  /* 同 .folder：这一栏是导航，不是一排按钮。 */
+  cursor: default;
   text-align: left;
 }
 .mbox:focus-visible {
@@ -421,9 +579,99 @@ defineExpose({ reload: load })
   background: var(--el-color-success);
 }
 /* 这个箱最近一次收发出过错。红点比一句横幅省地方，鼠标停上去看得到地址，
-   点进去才是完整的错误——多信箱之后横幅说不清是哪个箱在报错。 */
+   点进去才是完整的错误——多信箱之后横幅说不清是哪个箱在报错。
+   红 = 授权码被拒，得重新登录；黄 = 服务器暂时连不上，会自己重试。
+   和横幅的规矩一致（lib/syncBanner）：不能横幅说"不用重登"、旁边却亮着红点。 */
 .mbox-dot.bad {
   background: var(--el-color-danger);
+}
+.mbox-dot.warn {
+  background: var(--el-color-warning);
+}
+/* 自建文件夹那一行：主体是按钮，右边两个小动作只在悬停时露出来。 */
+.folder.custom {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+/* 拖拽时：能接的那几格轻轻标一下，光标停在哪一格上那一格实心。
+   两档而不是一档：只标"停在哪儿"的话，人拖起来要挨个试才知道哪些能放；
+   只标"哪些能放"的话，又看不出手上这一下会落在哪儿。 */
+.folder.droppable {
+  outline: 1px dashed var(--el-color-primary-light-5);
+  outline-offset: -2px;
+}
+.folder.over {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+  background: var(--el-color-primary-light-9);
+}
+/* 里面的按钮和图标不接拖：它们是 .folder 的子元素，光标压到它们身上时
+   dragleave 会在父元素上触发一次，高亮就闪。 */
+.folder.droppable *,
+.folder.over * {
+  pointer-events: none;
+}
+.custom-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px 5px 22px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  /* 同 .folder。 */
+  cursor: default;
+}
+.custom-acts {
+  display: none;
+  gap: 2px;
+  padding-right: 6px;
+}
+.folder.custom:hover .custom-acts,
+.folder.custom.on .custom-acts {
+  display: inline-flex;
+}
+.custom-act {
+  border: 0;
+  background: none;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.custom-act:hover {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color);
+}
+/* 「＋ 新建文件夹」是动作，不是文件夹：小手留着。上面那条把整栏改成箭头，
+   这里单独抬回来。 */
+.new-folder {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+/* 设置，不是文件夹。跟着文件夹的缩进走（它属于这个箱），但不给悬停高亮，
+   免得看着像又一个能点进去的文件夹。 */
+.keep-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.keep-copy:hover {
+  background: transparent;
+}
+.keep-copy .fname {
+  white-space: normal;
 }
 /* 还没登录这个箱：灰点。绿点说的是"在收信"，而没登录的箱确实没在收。 */
 .mbox-dot.off {
@@ -515,7 +763,12 @@ defineExpose({ reload: load })
   border-radius: var(--mail-pill);
   font-size: var(--mail-text);
   color: var(--el-text-color-regular);
-  cursor: pointer;
+  /* 箭头，不是小手。和列表那一栏同一条规矩：一列文件夹是「我的东西在哪儿」
+     的导航，不是一排按钮；每一格都变成小手，整栏看着像在催人点。Foxmail、
+     Outlook、Apple Mail 的左栏都是箭头。
+     下面那几个真正的控件（新建文件夹、改名、删除、留副本的勾选框）仍然是
+     小手——那时它还起到瞄准的作用。 */
+  cursor: default;
   text-align: left;
   transition: background var(--mail-fast) var(--mail-ease);
 }

@@ -460,6 +460,41 @@ func (s *Server) serveMailImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resp.GetContent())
 }
 
+// serveMailFile 是超大附件的公开取件口。
+//
+// **重定向，不代理。** 走这条路的偏偏是大文件；把几百 MB 穿过网关，一个人
+// 点两下就能把内存吃光。所以这里只把浏览器指到存储那条短期地址上去。
+// serveMailImage 那条是读进内存再吐出来的，因为图片有 2 MB 的硬上限。
+func (s *Server) serveMailFile(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.FetchAttachmentLink(r.Context(), &mailv1.FetchAttachmentLinkRequest{
+		Token: chi.URLParam(r, "token"),
+	})
+	if err != nil || resp.GetUrl() == "" {
+		// 一个中性的答案，对应服务层那个统一的错：把「没这个 token」「被
+		// 撤回了」「文件没了」分开说，等于告诉试探的人哪些 token 存在过。
+		http.NotFound(w, r)
+		return
+	}
+	// 不缓存这一跳：它每次都要重新签，而签出来的地址是有期限的。被缓存住的
+	// 302 会在过期之后把人送到一个 403 上去。
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.Redirect(w, r, resp.GetUrl(), http.StatusFound)
+}
+
+func (s *Server) withdrawMailFileLink(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.WithdrawAttachmentLinkRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.WithdrawAttachmentLink(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listMailSenders(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListSenders(r.Context(), &mailv1.ListSendersRequest{})
 	if err != nil {
@@ -628,6 +663,24 @@ func (s *Server) setDefaultMailbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.Emails.SetDefaultMailbox(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// setKeepSentCopy 换这个信箱「发完信我们自己留不留副本」。
+//
+// 归属同 setDefaultMailbox，由 SQL 的 WHERE 判。不要 requireMailUnlock：
+// 这是一条设置，不读任何邮件内容，而要求先解锁才能改，等于让「已发送里
+// 有两封」的人先去输一遍授权码才能把它关掉。
+func (s *Server) setKeepSentCopy(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.SetKeepSentCopyRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.SetKeepSentCopy(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -941,7 +994,17 @@ func (s *Server) searchMail(w http.ResponseWriter, r *http.Request) {
 		Keyword: q.Get("keyword"),
 		Cursor:  q.Get("cursor"),
 		Page:    pageFromQuery(r),
-		// 搜哪个箱由令牌决定，和收件箱、已发送同一条理由。
+		// 搜哪些箱**仍然由令牌决定**，只是不再限于一把。
+		//
+		// 收件箱和已发送列的是一个箱，所以它们用当前这一把；搜索问的是
+		// 「那封信在哪儿」，所以范围是手上开着的全部箱。变的是范围，没变的
+		// 是「范围由验过的令牌划定，不由调用方说了算」——退出了哪个箱，
+		// 那把令牌就核不过，那个箱也就搜不到了。
+		AccountIds: s.unlockedAccountsFor(r),
+		// 单数那个也一起发，只为换版本那几秒：这一批先起来的可能是网关，
+		// 而还没换的旧服务只认 account_id——不发的话它读到 0，那几秒里
+		// 搜索会把这个人**全部**信箱一起搜了，包括刚退出的那个。
+		// 退回「只搜当前箱」是错的方向里安全的那一边。
 		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
@@ -1004,4 +1067,81 @@ func (s *Server) downloadInboundAttachments(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp.GetContent())
+}
+
+// ---------------------------------------------------------- 自建文件夹
+
+func (s *Server) listMailFolders(w http.ResponseWriter, r *http.Request) {
+	accountID, _ := strconv.ParseInt(r.URL.Query().Get("account_id"), 10, 64)
+	resp, err := s.Emails.ListMailFolders(r.Context(), &mailv1.ListMailFoldersRequest{AccountId: accountID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createMailFolder(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.CreateMailFolderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.CreateMailFolder(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) renameMailFolder(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.RenameMailFolderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.RenameMailFolder(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) deleteMailFolder(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.DeleteMailFolder(r.Context(), &mailv1.DeleteMailFolderRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) moveInbound(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.MoveInboundRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.MoveInbound(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// moveInboundBatch 是列表里勾选多封之后的「移动到」。
+func (s *Server) moveInboundBatch(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.MoveInboundBatchRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.MoveInboundBatch(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
 }

@@ -41,6 +41,26 @@ type MailAccount struct {
 	IMAPHost     string
 	IMAPPort     int
 	IMAPSecurity string
+	// 发完信要不要自己往这个箱的 已发送 里 APPEND 一份。
+	//
+	// 每个箱一个答案，不是每家服务商一个：263 把「保存客户端发信」做成了
+	// 信箱各自的后台开关，同一个 smtp.263.net 下 yy@aaaindustryinc.com 会
+	// 自己存、erptest@263.net 不会。协议里问不出来，主机名也猜不出来。
+	//
+	// nil = 还没人表过态，按主机猜。别读它，读 ShouldKeepSentCopy。
+	KeepSentCopy *bool
+}
+
+// ShouldKeepSentCopy 是「这一封发完之后，我们自己要不要存一份」。
+//
+// 没人表过态时退回按主机猜，也就是今天的行为——所以这个开关装上之后，不动
+// 它的信箱一封都不会变。猜错了的那几个（263 企业域名下会自己存的那些）由
+// 用户在邮箱设置里关掉。
+func (a MailAccount) ShouldKeepSentCopy() bool {
+	if a.KeepSentCopy != nil {
+		return *a.KeepSentCopy
+	}
+	return !hostFilesItsOwnSentCopy(a)
 }
 
 // Login is the name to authenticate with. Most hosts want the full address;
@@ -136,7 +156,26 @@ func (s *Service) ForAccount(ctx context.Context, tenantID, accountID int64) (Ma
 		IMAPHost:     row.ImapHost,
 		IMAPPort:     int(row.ImapPort),
 		IMAPSecurity: row.ImapSecurity,
+		KeepSentCopy: row.KeepSentCopy,
 	}, nil
+}
+
+// SetKeepSentCopy 换这个信箱「发完信自己留不留副本」。
+//
+// 会有人关掉它，所以这里不做任何「你确定吗」——关掉是正当选择：服务器自己
+// 会存的那些箱，我们再存一份就是客户邮箱里两封一模一样的信。关错了的代价
+// （已发送空掉）由发信之后那条空副本检查兜着，见 sentcopy.go。
+func (s *Service) SetKeepSentCopy(ctx context.Context, tenantID, employeeID, accountID int64, keep bool) error {
+	n, err := s.q.SetKeepSentCopy(ctx, store.SetKeepSentCopyParams{
+		TenantID: tenantID, EmployeeID: employeeID, ID: accountID, KeepSentCopy: keep,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("MAIL_ACCOUNT_NOT_FOUND", "这个邮箱不在你名下")
+	}
+	return nil
 }
 
 // SetDefaultMailbox 换这个人写信时预选的信箱。
@@ -241,12 +280,15 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 // RecordFailure notes a credential-level problem on the account so the
 // settings page can show it. Best effort: failing to record why a send failed
 // must not turn into a second failure.
-func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, msg string) {
+//
+// authProblem 说这次失败是不是凭据的问题。它决定页面上那颗「重新登录邮箱」
+// 出不出现，所以由知道原因的调用方给，不从 msg 的文字里猜。
+func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, msg string, authProblem bool) {
 	// 按字符截，不按字节：切开一个中文会留下无效的 UTF-8，而 Postgres 的
 	// text 列拒收（22021），于是这句"记一下哪里出错了"自己也失败了。
 	msg = truncateUTF8(msg, 500)
 	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: msg,
+		TenantID: tenantID, ID: accountID, LastError: msg, AuthFailed: authProblem,
 	}); err != nil {
 		s.log.Warn("could not record mailbox failure", "account", accountID, "err", err)
 	}
@@ -259,7 +301,7 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 // conflating them would let a working poll masquerade as a fresh sign-in.
 func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
 	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: "",
+		TenantID: tenantID, ID: accountID, LastError: "", AuthFailed: false,
 	}); err != nil {
 		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
 	}
