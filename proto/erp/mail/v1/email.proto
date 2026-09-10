@@ -1546,6 +1546,12 @@ message Draft {
   // 这封草稿打算从哪个信箱发。存进草稿是因为「我在 Gmail 里写了一半」
   // 这件事，下次打开草稿得还原出来。
   int64 account_id = 18;
+  // 正文头一句，纯文本。**只有列表给**（ListDrafts），打开一封时给的是
+  // body 本身。草稿箱改成三行式的邮件列表之后，第三行显示的就是它——而
+  // 为了一行摘要把两百封草稿的正文整篇搬过来是不合算的。
+  string snippet = 19;
+  // 这封草稿带没带附件。同样只有列表给：列表上要的是那颗回形针，不是清单。
+  bool has_attachments = 20;
 }
 
 message SaveDraftRequest {

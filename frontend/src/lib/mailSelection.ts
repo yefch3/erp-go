@@ -25,10 +25,12 @@ export interface MailPools<T extends PickableMail> {
   inbound: T[]
   /** 已发送。 */
   sent: T[]
+  /** 草稿箱。自己一份，因为它的行是草稿变出来的，不是收到的信。 */
+  drafts: T[]
 }
 
 /** 用邮件列表（而不是表格）展示、并且能批量操作的文件夹。 */
-const LIST_FOLDERS = new Set(['inbox', 'starred', 'archive', 'junk', 'trash', 'sent'])
+const LIST_FOLDERS = new Set(['inbox', 'starred', 'archive', 'junk', 'trash', 'sent', 'drafts'])
 
 export function isListFolder(folder: string): boolean {
   return LIST_FOLDERS.has(folder)
@@ -56,6 +58,7 @@ export function selectableRows<T extends PickableMail>(
   pools: MailPools<T>,
 ): T[] {
   if (folder === 'sent') return pools.sent.filter(isActionable)
+  if (folder === 'drafts') return pools.drafts.filter(isActionable)
   if (isListFolder(folder)) return pools.inbound.filter(isActionable)
   return []
 }

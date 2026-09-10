@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -145,18 +146,88 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 	return id, nil
 }
 
+// DraftSummary 是草稿箱列表里的一行。
+//
+// 比 DraftView 少一大截：列表要的是「写给谁、关于什么、写了个开头是什么、
+// 什么时候存的」，不是整封信。正文只以摘要的形式出现——点开哪一封再去
+// GetDraft 取全文，和收件箱那边一模一样的分工。
+type DraftSummary struct {
+	ID         int64
+	Subject    string
+	BodyFormat string
+	Kind       string
+	// 正文头一句，纯文本。列表第三行显示的就是它。
+	Snippet    string
+	Recipients []Recipient
+	// 有没有附件。列表上只要那颗回形针，不需要附件清单。
+	HasAttachments bool
+	UpdatedAt      string
+	RecipientCount int32
+}
+
 // ListDrafts 出这个人在**这个信箱**里写了一半的信。
 //
 // accountID = 0 是全部，留给旧令牌和一个箱都没绑的人。00047 之前存的草稿
 // （account_id = 0）每个箱都列——见查询里的注释。
-func (s *Service) ListDrafts(ctx context.Context, tenantID, accountID int64, op Operator) ([]store.ListDraftsRow, error) {
+func (s *Service) ListDrafts(ctx context.Context, tenantID, accountID int64, op Operator) ([]DraftSummary, error) {
 	var acct *int64
 	if accountID > 0 {
 		acct = &accountID
 	}
-	return s.q.ListDrafts(ctx, store.ListDraftsParams{
+	rows, err := s.q.ListDrafts(ctx, store.ListDraftsParams{
 		TenantID: tenantID, OwnerID: op.ID, AccountID: acct,
 	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DraftSummary, 0, len(rows))
+	for _, d := range rows {
+		one := DraftSummary{
+			ID: d.ID, Subject: d.Subject, BodyFormat: d.BodyFormat, Kind: d.Kind,
+			Snippet: draftSnippet(d.BodyHead, d.BodyFormat), RecipientCount: d.RecipientCount,
+		}
+		if d.UpdatedAt.Valid {
+			one.UpdatedAt = d.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00")
+		}
+		// 同 GetDraft：手改坏的 JSON 宁可少列几个收件人，也不能让草稿箱打不开。
+		_ = json.Unmarshal(d.Recipients, &one.Recipients)
+		var files []PendingAttachment
+		_ = json.Unmarshal(d.Attachments, &files)
+		one.HasAttachments = len(files) > 0
+		out = append(out, one)
+	}
+	return out, nil
+}
+
+// draftSnippet 是草稿列表第三行那句话。
+//
+// 和收信那边的 snippetOf 是一件事，但源头不同所以不共用：收到的信要猜哪个
+// 部分是正文（有的发件人往 text/plain 里塞标记），草稿的格式是我们自己存的，
+// 直接信 body_format 就行。
+//
+// HTML 走 HTMLToText——它连 <style>/<script> 的**内容**一起去掉，只剥标签的
+// 话摘要开头会是一大段 CSS。
+func draftSnippet(body, format string) string {
+	text := body
+	if normalizeFormat(format) == FormatHTML {
+		text = HTMLToText(dropDanglingTag(body))
+	}
+	// 连续空白压成一个空格：编辑器留下的缩进和换行在一行摘要里只是一片空洞。
+	return truncate(strings.Join(strings.Fields(text), " "), 200)
+}
+
+// dropDanglingTag 去掉结尾那半个标签。
+//
+// 查询取的是 left(body, 8000)，而 8000 这一刀落在哪儿是不管标签边界的——
+// 一半的机会正好切在 `<div style="colo` 中间。剥标签的那套东西认的是成对的
+// 尖括号，认不出这个残缺的开头，于是它会**原样留在文字里**：摘要末尾冒出
+// 半行 HTML。整篇正文时不会有这个问题，只截开头才会，所以修在这里。
+func dropDanglingTag(s string) string {
+	open := strings.LastIndexByte(s, '<')
+	if open >= 0 && open > strings.LastIndexByte(s, '>') {
+		return s[:open]
+	}
+	return s
 }
 
 func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator) (DraftView, error) {

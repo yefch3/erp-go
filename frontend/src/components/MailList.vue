@@ -72,7 +72,7 @@
       <!-- No star on a delivery record: there is no message on the host to
            write the flag to. Same reason it gets no checkbox. -->
       <el-tooltip
-        v-if="folder !== 'junk' && !isRecordOnly(m)"
+        v-if="starrable && !isRecordOnly(m)"
         :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
         placement="top"
         :show-after="0"
@@ -88,7 +88,7 @@
         >{{ m.isStarred ? '★' : '☆' }}</button>
       </el-tooltip>
 
-      <span v-else-if="folder !== 'junk'" class="star-gap" aria-hidden="true" />
+      <span v-else-if="starrable" class="star-gap" aria-hidden="true" />
 
       <!-- The row's own hit area. A button rather than a link because opening
            a mail is a state change in this app, not a document to fetch; the
@@ -109,6 +109,7 @@
         tabindex="0"
         :aria-label="ariaFor(m)"
         @click="emit('open', m)"
+        @dblclick="emit('activate', m)"
         @keydown.enter.prevent="emit('open', m)"
         @keydown.space.prevent="emit('open', m)"
       >
@@ -116,8 +117,9 @@
         <span class="l1">
           <span class="who">
             <!-- A sent mail is about who it went to; a received one about who
-                 it came from. Same column, different question. -->
-            {{ folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail) }}
+                 it came from. Same column, different question. 草稿和已发送
+                 问的是同一个问题——写了一半的信，要紧的是它写给谁。 -->
+            {{ aboutRecipient ? sentWho(m) : (m.fromName || m.fromEmail) }}
           </span>
           <!-- One row per conversation; this is how many messages it holds. -->
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
@@ -261,6 +263,12 @@ const props = defineProps<{
 // 那些动作都在右边阅读区的工具条上。
 const emit = defineEmits<{
   open: [MailRow]
+  // 双击。open 是「让我看看这封」，activate 是「我要动它」——草稿箱用它
+  // 打开写信框接着写。收件箱不接这个事件，双击就只是点了两下。
+  //
+  // 桌面邮件客户端全是这个分工（Foxmail、Outlook、Apple Mail 都是双击草稿
+  // 才进编辑），而单击已经把内容摆在右边了，所以少一次点击换不来什么。
+  activate: [MailRow]
   star: [MailRow]
   sort: [SortField]
   'update:selected': [string[]]
@@ -273,6 +281,16 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const showSize = computed(() => props.sort?.by === 'size')
+
+// 这一列写的是「写给谁」还是「谁写的」。已发送和草稿箱是前者。
+const aboutRecipient = computed(() => props.folder === 'sent' || props.folder === 'drafts')
+
+// 这份列表画不画星标。
+//
+// 垃圾邮件不画：那是服务器的判断，标了也没地方去。草稿不画的理由不一样但
+// 一样硬——星标要写到邮件服务器上那封信的标志位里，而草稿只在我们自己的库
+// 里，服务器上根本没有这封信。给一颗按下去必然失败的星，比不给更坏。
+const starrable = computed(() => props.folder !== 'junk' && props.folder !== 'drafts')
 
 // 读屏器听到的是「大小，降序」，而不是一个箭头。
 function sortAria(f: SortField): string {
@@ -424,7 +442,7 @@ function onDragEnd() {
 //
 // 取不到就回一个圆点而不是空白：一个空的彩色圆圈看着像没加载完。
 function initial(m: MailRow): string {
-  const src = (props.folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
+  const src = (aboutRecipient.value ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
   const ch = [...src.trim()].find((c) => /[\p{L}\p{N}]/u.test(c))
   return ch ? ch.toUpperCase() : '·'
 }
@@ -436,7 +454,7 @@ function initial(m: MailRow): string {
 // 一排头像会有几个亮得刺眼、几个暗得发糊。oklch 的亮度是感知亮度，固定
 // 62% 就是每一个都一样深，白字压在上面都读得清。
 function avatarColor(m: MailRow): string {
-  const key = (props.folder === 'sent' ? (m.toEmail || '') : (m.fromEmail || '')).toLowerCase()
+  const key = (aboutRecipient.value ? (m.toEmail || m.toAll || '') : (m.fromEmail || '')).toLowerCase()
   let h = 0
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360
   return `oklch(62% 0.13 ${h})`
@@ -446,7 +464,8 @@ function avatarColor(m: MailRow): string {
 // still wants attention. Without it the row announces as an unlabelled button.
 function ariaFor(m: MailRow) {
   const state = m.isRead ? '' : t('emails.unreadOne') + ', '
-  return `${state}${m.fromName || m.fromEmail}: ${m.subject || t('emails.noSubject')}`
+  const who = aboutRecipient.value ? sentWho(m) : m.fromName || m.fromEmail
+  return `${state}${who}: ${m.subject || t('emails.noSubject')}`
 }
 </script>
 
