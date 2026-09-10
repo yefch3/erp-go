@@ -2785,6 +2785,12 @@ const (
 	PurchaseOrderService_CreateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
 	PurchaseOrderService_UpdateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
 	PurchaseOrderService_SubmitOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_SaveOrderContract_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/SaveOrderContract"
+	PurchaseOrderService_PresignOrderContractUpload_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignOrderContractUpload"
+	PurchaseOrderService_VerifyOrderContract_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VerifyOrderContract"
+	PurchaseOrderService_RequestOrderPayment_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/RequestOrderPayment"
+	PurchaseOrderService_CreateExternalPayable_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateExternalPayable"
+	PurchaseOrderService_GetExternalPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
 	PurchaseOrderService_CancelOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                     = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
 	PurchaseOrderService_GetOrderDocuments_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
@@ -2877,6 +2883,12 @@ type PurchaseOrderServiceClient interface {
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
+	SaveOrderContract(ctx context.Context, in *SaveOrderContractRequest, opts ...grpc.CallOption) (*SaveOrderContractResponse, error)
+	PresignOrderContractUpload(ctx context.Context, in *PresignOrderContractUploadRequest, opts ...grpc.CallOption) (*PresignOrderContractUploadResponse, error)
+	VerifyOrderContract(ctx context.Context, in *VerifyOrderContractRequest, opts ...grpc.CallOption) (*VerifyOrderContractResponse, error)
+	RequestOrderPayment(ctx context.Context, in *RequestOrderPaymentRequest, opts ...grpc.CallOption) (*RequestOrderPaymentResponse, error)
+	CreateExternalPayable(ctx context.Context, in *CreateExternalPayableRequest, opts ...grpc.CallOption) (*CreateExternalPayableResponse, error)
+	GetExternalPayable(ctx context.Context, in *GetExternalPayableRequest, opts ...grpc.CallOption) (*GetExternalPayableResponse, error)
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
@@ -3093,6 +3105,66 @@ func (c *purchaseOrderServiceClient) SubmitOrder(ctx context.Context, in *Submit
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_SubmitOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) SaveOrderContract(ctx context.Context, in *SaveOrderContractRequest, opts ...grpc.CallOption) (*SaveOrderContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveOrderContractResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SaveOrderContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) PresignOrderContractUpload(ctx context.Context, in *PresignOrderContractUploadRequest, opts ...grpc.CallOption) (*PresignOrderContractUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignOrderContractUploadResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignOrderContractUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) VerifyOrderContract(ctx context.Context, in *VerifyOrderContractRequest, opts ...grpc.CallOption) (*VerifyOrderContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyOrderContractResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_VerifyOrderContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RequestOrderPayment(ctx context.Context, in *RequestOrderPaymentRequest, opts ...grpc.CallOption) (*RequestOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RequestOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CreateExternalPayable(ctx context.Context, in *CreateExternalPayableRequest, opts ...grpc.CallOption) (*CreateExternalPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateExternalPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateExternalPayable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetExternalPayable(ctx context.Context, in *GetExternalPayableRequest, opts ...grpc.CallOption) (*GetExternalPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExternalPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetExternalPayable_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -3702,6 +3774,12 @@ type PurchaseOrderServiceServer interface {
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
+	SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error)
+	PresignOrderContractUpload(context.Context, *PresignOrderContractUploadRequest) (*PresignOrderContractUploadResponse, error)
+	VerifyOrderContract(context.Context, *VerifyOrderContractRequest) (*VerifyOrderContractResponse, error)
+	RequestOrderPayment(context.Context, *RequestOrderPaymentRequest) (*RequestOrderPaymentResponse, error)
+	CreateExternalPayable(context.Context, *CreateExternalPayableRequest) (*CreateExternalPayableResponse, error)
+	GetExternalPayable(context.Context, *GetExternalPayableRequest) (*GetExternalPayableResponse, error)
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
@@ -3853,6 +3931,24 @@ func (UnimplementedPurchaseOrderServiceServer) UpdateOrder(context.Context, *Upd
 }
 func (UnimplementedPurchaseOrderServiceServer) SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveOrderContract not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignOrderContractUpload(context.Context, *PresignOrderContractUploadRequest) (*PresignOrderContractUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignOrderContractUpload not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) VerifyOrderContract(context.Context, *VerifyOrderContractRequest) (*VerifyOrderContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyOrderContract not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RequestOrderPayment(context.Context, *RequestOrderPaymentRequest) (*RequestOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateExternalPayable(context.Context, *CreateExternalPayableRequest) (*CreateExternalPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateExternalPayable not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetExternalPayable(context.Context, *GetExternalPayableRequest) (*GetExternalPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetExternalPayable not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
@@ -4222,6 +4318,114 @@ func _PurchaseOrderService_SubmitOrder_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).SubmitOrder(ctx, req.(*SubmitOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_SaveOrderContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveOrderContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SaveOrderContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SaveOrderContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SaveOrderContract(ctx, req.(*SaveOrderContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_PresignOrderContractUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignOrderContractUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignOrderContractUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignOrderContractUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignOrderContractUpload(ctx, req.(*PresignOrderContractUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_VerifyOrderContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyOrderContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).VerifyOrderContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_VerifyOrderContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).VerifyOrderContract(ctx, req.(*VerifyOrderContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RequestOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RequestOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RequestOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RequestOrderPayment(ctx, req.(*RequestOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CreateExternalPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateExternalPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateExternalPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateExternalPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateExternalPayable(ctx, req.(*CreateExternalPayableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetExternalPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExternalPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetExternalPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetExternalPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetExternalPayable(ctx, req.(*GetExternalPayableRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5298,6 +5502,30 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitOrder",
 			Handler:    _PurchaseOrderService_SubmitOrder_Handler,
+		},
+		{
+			MethodName: "SaveOrderContract",
+			Handler:    _PurchaseOrderService_SaveOrderContract_Handler,
+		},
+		{
+			MethodName: "PresignOrderContractUpload",
+			Handler:    _PurchaseOrderService_PresignOrderContractUpload_Handler,
+		},
+		{
+			MethodName: "VerifyOrderContract",
+			Handler:    _PurchaseOrderService_VerifyOrderContract_Handler,
+		},
+		{
+			MethodName: "RequestOrderPayment",
+			Handler:    _PurchaseOrderService_RequestOrderPayment_Handler,
+		},
+		{
+			MethodName: "CreateExternalPayable",
+			Handler:    _PurchaseOrderService_CreateExternalPayable_Handler,
+		},
+		{
+			MethodName: "GetExternalPayable",
+			Handler:    _PurchaseOrderService_GetExternalPayable_Handler,
 		},
 		{
 			MethodName: "CancelOrder",

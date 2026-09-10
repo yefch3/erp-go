@@ -92,6 +92,7 @@ export default {
   supplierRecon: {
     eyebrow: 'OUTGOING PAYMENTS', title: 'Money out',
     subtitle: 'View and record money paid to suppliers', pendingHint: 'Orders nobody has confirmed as settled', doneHint: 'Somebody confirmed the money side is done', unpaidHint: 'To-reconcile orders with no payment recorded (first 200 sampled)',
+    businessType:'Business type',businessTypes:{ALL:'All business',PROCUREMENT:'Procurement',LOGISTICS:'Logistics',MANUAL:'Manual'},exportContract:'Export contract',
     addManual: 'Add payment', manualSupplier: 'Supplier', manualOrder: 'Contract / PO number', manualTotal: 'Contract / PO total', manualPickOrEnter: 'Select existing or type', manualCurrencyHint: 'Select or type', manualPaid: 'Already paid', manualDate: 'Payment date', manualDueDate: 'Payment due date', manualRequired: 'Enter supplier, number and total', manualSaved: 'Payment added',
     moreActions: 'More actions', viewDetails: 'Details / reverse', detailTitle: 'Payment details', detailHistory: 'Payment history', detailStatus: 'Current status', editManual: 'Edit details', editManualHint: 'Only basic details of manually added records can be edited. Reverse and re-enter an incorrect amount.', editManualSaved: 'Payment details updated',
     overdueCount: 'Overdue', overdueHint: 'Past the agreed payment date and still unpaid',
@@ -486,6 +487,7 @@ export default {
     title: 'Shipping schedules',
     executionInquiryTitle: 'Contract enquiries', executionInquiryHint: 'Created after Finance confirms execution conditions. Pre-sales freight is reference-only; current prices still need to be requested.',
     executionInquiryEmpty: 'No contract freight enquiries', executionInquirySearch: 'Search contract, customer, port or pre-sales reference',
+    d4Subtitle:'Re-quote and confirm the final forwarder and carrier. Payment enters Finance Outgoing after the approved contract is verified.',d4Active:'Contract tasks',d4WaitingApproval:'Manager review',d4PaymentRequested:'Payment requested',d4FinalParties:'Final forwarder / carrier',d4NotConfirmed:'Not confirmed',d4Amount:'Freight amount',d4PresalesReference:'Pre-sales quote reference',d4ReferenceOnly:'Reference for re-quotation only',d4Forwarder:'Contracted forwarder',d4Carrier:'Actual carrier',d4Plan:'Transport plan',d4Dates:'Reference ETD / ETA',d4Requote:'Confirm final logistics plan',d4Etd:'Final ETD',d4Eta:'Final ETA',d4PaymentTerms:'Payment terms',d4ContractNo:'Forwarder contract no.',d4Returned:'Plan returned for changes',d4SubmitApproval:'Submit for manager review',d4ApprovalHint:'The complete logistics plan is awaiting manager review.',d4SignedContract:'Signed forwarder contract',d4ChooseContract:'Choose contract file',d4SaveContract:'Upload and save contract',d4AfterApproval:'Upload the contract after the manager approves the plan.',d4FinanceVerify:'Finance manager / owner verification',d4VerifyHint:'A user with finance verification permission confirms the uploaded contract.',d4ConfirmVerified:'Confirm contract',d4VerifiedBy:'Verified by {name} at {at}',d4Payment:'Payment request and progress',d4Requested:'Requested',d4Paid:'Paid',d4Open:'Outstanding',d4PaymentReady:'The contract is verified and ready for a payment request.',d4PaymentPending:'Finance records payments in Outgoing; Logistics can see progress here.',d4RequestPayment:'Request payment',d4Start:'Start re-quote',d4Upload:'Upload contract',d4View:'View progress',d4Required:'Complete the final forwarder, carrier, plan, amount, dates, payment terms and contract number',d4Submitted:'Logistics plan submitted for manager review',d4UploadFailed:'Contract upload failed',d4ContractSaved:'Contract saved and awaiting Finance verification',d4Verified:'Contract verified',d4PaymentSubmitted:'Payment request sent to Finance Outgoing',
     create: 'New schedule', edit: 'Edit schedule', scheduleNo: 'Schedule no.', contractNo: 'Contract no.',
     customer: 'Customer', carrier: 'Carrier / forwarder', vessel: 'Vessel', voyage: 'Voyage', vesselVoyage: 'Vessel / voyage',
     loadingPort: 'Port of loading', dischargePort: 'Port of discharge', responsible: 'Responsible', remark: 'Remark',
@@ -506,7 +508,7 @@ export default {
     portRequired:'Select an active port', routeNodeAdded:'Port call added',
     contractHandoffs:'Contract execution queue', contractHandoffsHint:'Created after Finance confirms the execution condition; re-quote and select the final forwarder first. D3 cannot create a schedule.',
     freightBatch:'Freight batch', presalesReference:'Pre-sales reference', route:'Route', estimatedSailing:'Estimated departure / arrival', customerManaged:'Customer managed shipping', createFromHandoff:'Create formal schedule',
-    handoffStatuses:{WAITING_REQUOTE:'Awaiting re-quotation',PENDING:'Awaiting schedule',SCHEDULED:'Schedule created',CUSTOMER_MANAGED:'Customer managed',SUPERSEDED:'Superseded'},
+    handoffStatuses:{WAITING_REQUOTE:'Awaiting re-quotation',RETURNED:'Returned',PENDING_APPROVAL:'Manager review',APPROVED:'Plan approved',CONTRACT_UPLOADED:'Contract verification',CONTRACT_VERIFIED:'Contract verified',PAYMENT_REQUESTED:'Payment requested',PENDING:'Awaiting schedule',SCHEDULED:'Schedule created',CUSTOMER_MANAGED:'Customer managed',SUPERSEDED:'Superseded'},
   },
   common: {
     deactivationImpact: 'Deactivate {name}? {total} active business record(s) may be affected.', historyRetained: 'Existing orders, schedules and history will be retained; this record will only be blocked from new business.', lifecycleReasonPlaceholder: 'Enter the reason for this change', lifecycleReasonRequired: 'A reason is required', confirmDeactivate: 'Confirm deactivation', confirmActivate: 'Confirm reactivation', activationReason: 'Reactivate {name}? Enter the reason for restoring it.',
@@ -1408,7 +1410,7 @@ export default {
     removeBandConfirm: 'Amounts in this band will fall back to the next lower flow. Remove it?',
     bandRemoved: 'Band removed',
     createdBy: 'Changed by',
-    biz: { PURCHASE_ORDER: 'Purchase order', PURCHASE_ORDER_CHANGE: 'PO supplier variance', CONTRACT: 'Export contracts' },
+    biz: { PURCHASE_ORDER: 'Purchase order', PURCHASE_ORDER_CHANGE: 'PO supplier variance', SHIPPING_REQUOTE: 'Logistics plan', CONTRACT: 'Export contracts' },
     activeVersion: 'active v{v}',
     none: 'not configured',
     running: '({n} instances running)',
@@ -1543,7 +1545,7 @@ export default {
     biz: {
       CONTRACT: 'Export contract',
       PURCHASE_ORDER: 'Purchase order',
-      PURCHASE_ORDER_CHANGE: 'PO supplier variance',
+      PURCHASE_ORDER_CHANGE: 'PO supplier variance', SHIPPING_REQUOTE: 'Logistics plan',
       PAYMENT: 'Payment',
       LC_AMENDMENT: 'LC amendment',
       STOCK_ADJUST: 'Stock adjustment',

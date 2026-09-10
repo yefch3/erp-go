@@ -1,0 +1,12 @@
+{
+  "baseUrl": "http://127.0.0.1:25374",
+  "gateway": "http://127.0.0.1:28281",
+  "password": "D4-Acceptance-2026!",
+  "accounts": {
+    "buyer": "p1@d4.example.test",
+    "finance": "f1@d4.example.test",
+    "sales": "s1@d4.example.test",
+    "boss": "b1@d4.example.test",
+    "logistics": "l1@d4.example.test"
+  }
+}

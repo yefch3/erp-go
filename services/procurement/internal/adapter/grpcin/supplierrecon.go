@@ -15,12 +15,13 @@ import (
 func (h *OrderHandler) ListSupplierRecon(ctx context.Context, req *prv1.ListSupplierReconRequest) (*prv1.ListSupplierReconResponse, error) {
 	items, total, err := h.svc.ListSupplierRecon(ctx, grpcx.TenantID(ctx),
 		app.SupplierReconFilter{
-			Keyword:     req.GetKeyword(),
-			ClosedOnly:  req.GetClosedOnly(),
-			OverdueOnly: req.GetOverdueOnly(),
-			UnsetOnly:   req.GetUnsetOnly(),
-			Page:        req.GetPage(),
-			PageSize:    req.GetPageSize(),
+			Keyword:      req.GetKeyword(),
+			ClosedOnly:   req.GetClosedOnly(),
+			OverdueOnly:  req.GetOverdueOnly(),
+			UnsetOnly:    req.GetUnsetOnly(),
+			Page:         req.GetPage(),
+			PageSize:     req.GetPageSize(),
+			BusinessType: req.GetBusinessType(),
 		}, reconOperator(ctx))
 	if err != nil {
 		return nil, err
@@ -145,6 +146,10 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
 		ManuallyEntered: v.ManuallyEntered,
+		BusinessType:    v.BusinessType, SourceBusinessId: v.SourceBusinessID,
+		ExportContractNo: v.ExportContractNo, BusinessDocumentNo: v.BusinessDocumentNo,
+		PaymentTerms: v.PaymentTerms, SignedContractName: v.SignedContractName,
+		RequestedByName: v.RequestedByName, RequestedAt: v.RequestedAt,
 	}
 }
 

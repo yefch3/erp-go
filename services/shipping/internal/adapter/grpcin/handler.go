@@ -195,23 +195,61 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 }
 
 func (h *Handler) ListContractShippingHandoffs(ctx context.Context, req *shippingv1.ListContractShippingHandoffsRequest) (*shippingv1.ListContractShippingHandoffsResponse, error) {
-	rows, err := h.svc.ListContractShippingHandoffs(ctx, grpcx.TenantID(ctx), req.GetStatus())
+	rows, err := h.svc.ListD4ContractHandoffs(ctx, grpcx.TenantID(ctx), req.GetStatus())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*shippingv1.ContractShippingHandoff, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &shippingv1.ContractShippingHandoff{
-			Id: row.ID, ContractId: row.ContractID, ContractNo: row.ContractNo, ContractVersionId: row.ContractVersionID,
-			VersionNo: row.VersionNo, CustomerId: row.CustomerID, CustomerName: row.CustomerName, BatchNo: row.BatchNo,
-			ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
-			CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis,
-			PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture,
-			EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark, Status: row.Status,
-			ScheduleId: row.ScheduleID, CreatedAt: timeValue(row.CreatedAt),
-		})
+		out = append(out, handoffToProto(row))
 	}
 	return &shippingv1.ListContractShippingHandoffsResponse{Handoffs: out}, nil
+}
+
+func handoffToProto(row app.ContractHandoff) *shippingv1.ContractShippingHandoff {
+	return &shippingv1.ContractShippingHandoff{Id: row.ID, ContractId: row.ContractID, ContractNo: row.ContractNo, ContractVersionId: row.ContractVersionID, VersionNo: row.VersionNo, CustomerId: row.CustomerID, CustomerName: row.CustomerName, BatchNo: row.BatchNo, ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName, CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis, PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture, EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark, Status: row.Status, ScheduleId: row.ScheduleID, CreatedAt: row.CreatedAt, FinalForwarderId: row.FinalForwarderID, FinalForwarderName: row.FinalForwarderName, ActualCarrierId: row.ActualCarrierID, ActualCarrierName: row.ActualCarrierName, FinalServiceOption: row.FinalServiceOption, FinalCurrency: row.FinalCurrency, FinalFreightAmount: row.FinalFreightAmount, FinalEtd: row.FinalETD, FinalEta: row.FinalETA, PaymentTerms: row.PaymentTerms, ForwarderContractNo: row.ForwarderContractNo, ApprovalInstanceId: row.ApprovalInstanceID, ReturnReason: row.ReturnReason, OperatorName: row.OperatorName, SignedContractName: row.SignedContractName, SignedContractUrl: row.SignedContractURL, SignedContractUploadedAt: row.SignedContractUploadedAt, ContractVerifiedAt: row.ContractVerifiedAt, ContractVerifiedByName: row.ContractVerifiedByName, PaymentRequestedAt: row.PaymentRequestedAt, UpdatedAt: row.UpdatedAt, SignedContractKey: row.SignedContractKey}
+}
+func (h *Handler) GetContractShippingHandoff(ctx context.Context, req *shippingv1.GetContractShippingHandoffRequest) (*shippingv1.GetContractShippingHandoffResponse, error) {
+	v, err := h.svc.GetContractHandoff(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetContractShippingHandoffResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) SubmitContractShippingRequote(ctx context.Context, req *shippingv1.SubmitContractShippingRequoteRequest) (*shippingv1.SubmitContractShippingRequoteResponse, error) {
+	v, err := h.svc.SubmitFinalRequote(ctx, grpcx.TenantID(ctx), req.GetId(), app.FinalRequoteInput{FinalForwarderID: req.GetFinalForwarderId(), FinalForwarderName: req.GetFinalForwarderName(), ActualCarrierID: req.GetActualCarrierId(), ActualCarrierName: req.GetActualCarrierName(), FinalServiceOption: req.GetFinalServiceOption(), FinalCurrency: req.GetFinalCurrency(), FinalFreightAmount: req.GetFinalFreightAmount(), FinalETD: req.GetFinalEtd(), FinalETA: req.GetFinalEta(), PaymentTerms: req.GetPaymentTerms(), ForwarderContractNo: req.GetForwarderContractNo()}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SubmitContractShippingRequoteResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) PresignContractShippingContractUpload(ctx context.Context, req *shippingv1.PresignContractShippingContractUploadRequest) (*shippingv1.PresignContractShippingContractUploadResponse, error) {
+	v, err := h.svc.PresignShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.PresignContractShippingContractUploadResponse{FileKey: v.Key, UploadUrl: v.URL, ExpiresSeconds: v.Expires}, nil
+}
+func (h *Handler) SaveContractShippingContract(ctx context.Context, req *shippingv1.SaveContractShippingContractRequest) (*shippingv1.SaveContractShippingContractResponse, error) {
+	v, err := h.svc.SaveShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileKey(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SaveContractShippingContractResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) VerifyContractShippingContract(ctx context.Context, req *shippingv1.VerifyContractShippingContractRequest) (*shippingv1.VerifyContractShippingContractResponse, error) {
+	v, err := h.svc.VerifyShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.VerifyContractShippingContractResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) MarkContractShippingPaymentRequested(ctx context.Context, req *shippingv1.MarkContractShippingPaymentRequestedRequest) (*shippingv1.MarkContractShippingPaymentRequestedResponse, error) {
+	v, err := h.svc.MarkShippingPaymentRequested(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkContractShippingPaymentRequestedResponse{Handoff: handoffToProto(v)}, nil
 }
 
 func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {

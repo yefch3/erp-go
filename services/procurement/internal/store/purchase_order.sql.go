@@ -38,7 +38,7 @@ UPDATE purchase_requirements SET
     updated_at = now()
 WHERE tenant_id = $2::bigint
   AND id = $3::bigint
-  AND status IN ('PENDING', 'PARTIALLY_ORDERED')
+  AND status IN ('WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED')
   AND ordered_qty + $1::text::numeric <= required_qty
 RETURNING ordered_qty::text AS ordered_qty, status
 `

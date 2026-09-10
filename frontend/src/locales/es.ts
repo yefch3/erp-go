@@ -92,6 +92,7 @@ export default {
   supplierRecon: {
     eyebrow: 'SALIDAS DE DINERO', title: 'Salidas',
     subtitle: 'Ver y registrar pagos a proveedores', pendingHint: 'Órdenes que nadie ha confirmado como saldadas', doneHint: 'Alguien confirmó que la parte del dinero está cerrada', unpaidHint: 'Órdenes por conciliar sin ningún pago registrado (muestra de 200)',
+    businessType:'Tipo de negocio',businessTypes:{ALL:'Todos',PROCUREMENT:'Compras',LOGISTICS:'Logística',MANUAL:'Manual'},exportContract:'Contrato de exportación',
     addManual: 'Agregar pago', manualSupplier: 'Proveedor', manualOrder: 'N.º de contrato / orden', manualTotal: 'Total del contrato / orden', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualPaid: 'Ya pagado', manualDate: 'Fecha de pago', manualDueDate: 'Fecha de vencimiento', manualRequired: 'Ingrese proveedor, número y total', manualSaved: 'Pago agregado',
     moreActions: 'Más acciones', viewDetails: 'Detalles / revertir', detailTitle: 'Detalle de pagos', detailHistory: 'Historial de pagos', detailStatus: 'Estado actual', editManual: 'Editar datos', editManualHint: 'Solo se editan los datos básicos de registros manuales. Revierta y vuelva a registrar un importe incorrecto.', editManualSaved: 'Datos del pago actualizados',
     overdueCount: 'Vencido', overdueHint: 'Pasada la fecha de pago acordada y aún sin pagar',
@@ -495,6 +496,7 @@ export default {
     title: 'Calendario marítimo',
     executionInquiryTitle: 'Consultas de contrato', executionInquiryHint: 'Se crean cuando Finanzas confirma las condiciones de ejecución. El flete de preventa es solo una referencia; aún deben solicitarse precios actuales.',
     executionInquiryEmpty: 'No hay consultas logísticas de contrato', executionInquirySearch: 'Buscar contrato, cliente, puerto o referencia de preventa',
+    d4Subtitle:'Solicite nuevas cotizaciones y confirme transitario y transportista. Tras verificar el contrato aprobado, el pago pasa a Salidas de Finanzas.',d4Active:'Tareas de contrato',d4WaitingApproval:'Revisión del gerente',d4PaymentRequested:'Pago solicitado',d4FinalParties:'Transitario / transportista final',d4NotConfirmed:'Sin confirmar',d4Amount:'Importe del flete',d4PresalesReference:'Referencia de preventa',d4ReferenceOnly:'Solo referencia para recotizar',d4Forwarder:'Transitario contratado',d4Carrier:'Transportista real',d4Plan:'Plan de transporte',d4Dates:'ETD / ETA de referencia',d4Requote:'Confirmar plan logístico final',d4Etd:'ETD final',d4Eta:'ETA final',d4PaymentTerms:'Condiciones de pago',d4ContractNo:'N.º de contrato del transitario',d4Returned:'Plan devuelto para cambios',d4SubmitApproval:'Enviar a revisión',d4ApprovalHint:'El plan logístico completo espera revisión del gerente.',d4SignedContract:'Contrato firmado del transitario',d4ChooseContract:'Elegir contrato',d4SaveContract:'Subir y guardar contrato',d4AfterApproval:'Suba el contrato cuando se apruebe el plan.',d4FinanceVerify:'Verificación de Finanzas / dirección',d4VerifyHint:'Un usuario con permiso financiero verifica el contrato.',d4ConfirmVerified:'Confirmar contrato',d4VerifiedBy:'Verificado por {name} el {at}',d4Payment:'Solicitud y progreso de pago',d4Requested:'Solicitado',d4Paid:'Pagado',d4Open:'Pendiente',d4PaymentReady:'El contrato está verificado y listo para solicitar el pago.',d4PaymentPending:'Finanzas registra los pagos en Salidas; Logística ve el progreso aquí.',d4RequestPayment:'Solicitar pago',d4Start:'Iniciar recotización',d4Upload:'Subir contrato',d4View:'Ver progreso',d4Required:'Complete transitario, transportista, plan, importe, fechas, condiciones y número de contrato',d4Submitted:'Plan enviado a revisión del gerente',d4UploadFailed:'Error al subir el contrato',d4ContractSaved:'Contrato guardado; espera verificación financiera',d4Verified:'Contrato verificado',d4PaymentSubmitted:'Solicitud enviada a Salidas de Finanzas',
     create: 'Nuevo itinerario', edit: 'Editar itinerario', scheduleNo: 'N.º de itinerario', contractNo: 'N.º de contrato',
     customer: 'Cliente', carrier: 'Naviera / agente', vessel: 'Buque', voyage: 'Viaje', vesselVoyage: 'Buque / viaje',
     loadingPort: 'Puerto de carga', dischargePort: 'Puerto de destino', responsible: 'Responsable', remark: 'Notas',
@@ -515,7 +517,7 @@ export default {
     portRequired:'Seleccione un puerto activo', routeNodeAdded:'Escala añadida',
     contractHandoffs:'Cola de ejecución del contrato', contractHandoffsHint:'Se crea cuando Finanzas confirma la condición de ejecución; primero recotice y seleccione el transitario final. D3 no permite crear itinerarios.',
     freightBatch:'Lote de transporte', presalesReference:'Referencia de preventa', route:'Ruta', estimatedSailing:'Salida / llegada estimadas', customerManaged:'Transporte del cliente', createFromHandoff:'Crear itinerario formal',
-    handoffStatuses:{WAITING_REQUOTE:'Pendiente de nueva cotización',PENDING:'Pendiente de itinerario',SCHEDULED:'Itinerario creado',CUSTOMER_MANAGED:'Gestionado por cliente',SUPERSEDED:'Sustituido'},
+    handoffStatuses:{WAITING_REQUOTE:'Pendiente de nueva cotización',RETURNED:'Devuelto',PENDING_APPROVAL:'Revisión del gerente',APPROVED:'Plan aprobado',CONTRACT_UPLOADED:'Verificar contrato',CONTRACT_VERIFIED:'Contrato verificado',PAYMENT_REQUESTED:'Pago solicitado',PENDING:'Pendiente de itinerario',SCHEDULED:'Itinerario creado',CUSTOMER_MANAGED:'Gestionado por cliente',SUPERSEDED:'Sustituido'},
   },
   common: {
     deactivationImpact: '¿Desactivar {name}? {total} registro(s) activo(s) pueden verse afectados.', historyRetained: 'Los pedidos, itinerarios y el historial existentes se conservarán; solo se bloqueará para nuevos negocios.', lifecycleReasonPlaceholder: 'Introduce el motivo del cambio', lifecycleReasonRequired: 'El motivo es obligatorio', confirmDeactivate: 'Confirmar desactivación', confirmActivate: 'Confirmar reactivación', activationReason: '¿Reactivar {name}? Introduce el motivo.',
@@ -1417,7 +1419,7 @@ export default {
     removeBandConfirm: 'Los importes de este tramo pasarán al flujo inferior siguiente. ¿Eliminar?',
     bandRemoved: 'Tramo eliminado',
     createdBy: 'Modificado por',
-    biz: { PURCHASE_ORDER: 'Orden de compra', PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', CONTRACT: 'Contratos de exportación' },
+    biz: { PURCHASE_ORDER: 'Orden de compra', PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', SHIPPING_REQUOTE: 'Plan logístico', CONTRACT: 'Contratos de exportación' },
     activeVersion: 'vigente v{v}',
     none: 'sin configurar',
     running: '({n} instancias en curso)',
@@ -1552,7 +1554,7 @@ export default {
     biz: {
       CONTRACT: 'Contrato de exportación',
       PURCHASE_ORDER: 'Orden de compra',
-      PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor',
+      PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', SHIPPING_REQUOTE: 'Plan logístico',
       PAYMENT: 'Pago',
       LC_AMENDMENT: 'Enmienda de LC',
       STOCK_ADJUST: 'Ajuste de inventario',

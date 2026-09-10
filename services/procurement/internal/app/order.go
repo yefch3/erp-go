@@ -225,6 +225,9 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	}
 
 	total := decimal.Zero
+	allExecutionRequote := true
+	executionContractNo := ""
+	var executionContractID int64
 	var quoteID, scenarioID, inheritedSupplierID, factoryID int64
 	var quoteNo, factoryCode, factoryName string
 	for _, r := range reqs {
@@ -251,7 +254,15 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				WithMeta("open", available.String())
 		}
 		total = total.Add(p.qty.Mul(p.price))
-		if r.Source == "CUSTOMER_QUOTATION" {
+		if r.Status != "WAITING_REQUOTE" {
+			allExecutionRequote = false
+		} else if executionContractNo == "" {
+			executionContractNo = r.ContractNo
+			executionContractID = r.ContractID
+		} else if executionContractNo != r.ContractNo {
+			return head, apierr.Invalid("PO_EXECUTION_CONTRACT_MIXED", "实单重新询价一次只能处理一份外销合同")
+		}
+		if r.Source == "CUSTOMER_QUOTATION" && r.Status != "WAITING_REQUOTE" {
 			if quoteID == 0 {
 				quoteID, quoteNo, scenarioID = r.QuotationID, r.QuotationNo, r.CostScenarioID
 				inheritedSupplierID = r.InheritedSupplierID
@@ -315,9 +326,13 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	// would burn one on each refusal, and refusals are routine here, so
 	// the order series would jump and look like lost paperwork.
 	for attempt := 0; attempt < 2; attempt++ {
-		no, err := s.numbering.Next(ctx, "PURCHASE_ORDER")
-		if err != nil {
-			return head, err
+		no := executionContractNo
+		var err error
+		if !allExecutionRequote || no == "" {
+			no, err = s.numbering.Next(ctx, "PURCHASE_ORDER")
+			if err != nil {
+				return head, err
+			}
 		}
 		// PostgreSQL marks a transaction failed after a unique violation. A
 		// savepoint lets us roll back only the collided insert and safely draw
@@ -330,7 +345,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			TenantID: tenantID, PoNo: no, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			PayableDueDate: in.PayableDueDate,
-			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
+			Currency:       in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, SourceQuotationID: quoteID, SourceQuotationNo: quoteNo,
 			SourceCostScenarioID: scenarioID, FactoryID: factoryID, FactoryCode: factoryCode, FactoryName: factoryName,
@@ -354,6 +369,12 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
 		}
 		return head, err
+	}
+	if allExecutionRequote {
+		_, err := tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark))
+		if err != nil {
+			return head, err
+		}
 	}
 	for _, r := range reqs {
 		p := want[r.ID]
@@ -433,7 +454,7 @@ func (s *Service) UpdateOrder(
 		total := decimal.Zero
 		for _, requirement := range reqs {
 			line := want[requirement.ID]
-			if requirement.Status != "PENDING" && requirement.Status != "PARTIALLY_ORDERED" {
+			if requirement.Status != "PENDING" && requirement.Status != "PARTIALLY_ORDERED" && requirement.Status != "WAITING_REQUOTE" {
 				return apierr.Invalid("PO_REQUIREMENT_CLOSED", "「"+requirement.ProductName+"」的采购需求已关闭，不能下单").
 					WithMeta("status", requirement.Status)
 			}
@@ -445,7 +466,7 @@ func (s *Service) UpdateOrder(
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
-			if requirement.Source == "CUSTOMER_QUOTATION" {
+			if requirement.Source == "CUSTOMER_QUOTATION" && requirement.Status != "WAITING_REQUOTE" {
 				// 换成另一份报价始终不行——那已经是另一笔生意了。换供应商
 				// 则与新建单一个规矩：写明原因就放行。
 				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID {
@@ -471,7 +492,7 @@ func (s *Service) UpdateOrder(
 			TenantID: tenantID, ID: id, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			PayableDueDate: in.PayableDueDate,
-			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
+			Currency:       in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
 			DeliveryLocationType: in.DeliveryLocationType,
@@ -732,7 +753,7 @@ func approvalRequirementConflict(
 	}
 	for _, it := range items {
 		r, ok := byID[it.RequirementID]
-		if !ok || (r.Status != "PENDING" && r.Status != "PARTIALLY_ORDERED") {
+		if !ok || (r.Status != "PENDING" && r.Status != "PARTIALLY_ORDERED" && r.Status != "WAITING_REQUOTE") {
 			return "采购需求「" + it.ProductName + "」已经关闭或被其他采购单占用，请重新建立采购单"
 		}
 		open, err := decimal.NewFromString(r.OpenQty)

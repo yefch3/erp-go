@@ -119,7 +119,7 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 	}
 	out := make([]*prv1.PurchaseOrder, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, &prv1.PurchaseOrder{
+		item := &prv1.PurchaseOrder{
 			Id: r.ID, PoNo: r.PoNo, SupplierId: r.SupplierID, SupplierName: r.SupplierName,
 			Currency: r.Currency, TotalAmount: r.TotalAmount, ExpectedDate: r.ExpectedDate,
 			PayableDueDate: r.PayableDueDate,
@@ -138,7 +138,11 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			SourceQuotationId: r.SourceQuotationID, SourceQuotationNo: r.SourceQuotationNo,
 			SourceCostScenarioId: r.SourceCostScenarioID, FactoryId: r.FactoryID,
 			FactoryCode: r.FactoryCode, FactoryName: r.FactoryName,
-		})
+		}
+		if meta, metaErr := h.svc.OrderContractState(ctx, grpcx.TenantID(ctx), r.ID); metaErr == nil {
+			applyOrderContractState(item, meta)
+		}
+		out = append(out, item)
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
@@ -179,31 +183,110 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			TotalQty: r.TotalQty, ReceivedAt: ts(r.ReceivedAt),
 		})
 	}
-	return &prv1.GetOrderResponse{
-		Order: &prv1.PurchaseOrder{
-			Id: head.ID, PoNo: head.PoNo, SupplierId: head.SupplierID,
-			SupplierCode: head.SupplierCode, SupplierName: head.SupplierName,
-			Currency: head.Currency, TotalAmount: head.TotalAmount,
-			ExpectedDate: head.ExpectedDate, PayableDueDate: head.PayableDueDate,
-			Status:    head.Status,
-			BuyerName: head.BuyerName, Remark: head.Remark,
-			RejectReason: head.RejectReason, CancelReason: head.CancelReason,
-			ApprovalInstanceId: head.ApprovalInstanceID, CreatedAt: ts(head.CreatedAt),
-			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
-			SentBy: head.SentByName, SendError: head.SendError,
-			ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
-			CloseNote: head.CloseNote, ShortfallAction: head.ShortfallAction,
-			ConfirmStatus:   head.ConfirmStatus,
-			FulfillmentMode: head.FulfillmentMode, DeliveryLocationType: head.DeliveryLocationType,
-			DeliveryPortId: head.DeliveryPortID, DeliveryPortCode: head.DeliveryPortCode,
-			DeliveryPortName: head.DeliveryPortName, WarehouseId: head.WarehouseID,
-			WarehouseName: head.WarehouseName, DeliveryAddress: head.DeliveryAddress,
-			SourceQuotationId: head.SourceQuotationID, SourceQuotationNo: head.SourceQuotationNo,
-			SourceCostScenarioId: head.SourceCostScenarioID, FactoryId: head.FactoryID,
-			FactoryCode: head.FactoryCode, FactoryName: head.FactoryName,
-		},
-		Items: outItems, Receipts: outReceipts,
-	}, nil
+	outOrder := &prv1.PurchaseOrder{
+		Id: head.ID, PoNo: head.PoNo, SupplierId: head.SupplierID,
+		SupplierCode: head.SupplierCode, SupplierName: head.SupplierName,
+		Currency: head.Currency, TotalAmount: head.TotalAmount,
+		ExpectedDate: head.ExpectedDate, PayableDueDate: head.PayableDueDate,
+		Status:    head.Status,
+		BuyerName: head.BuyerName, Remark: head.Remark,
+		RejectReason: head.RejectReason, CancelReason: head.CancelReason,
+		ApprovalInstanceId: head.ApprovalInstanceID, CreatedAt: ts(head.CreatedAt),
+		SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
+		SentBy: head.SentByName, SendError: head.SendError,
+		ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
+		CloseNote: head.CloseNote, ShortfallAction: head.ShortfallAction,
+		ConfirmStatus:   head.ConfirmStatus,
+		FulfillmentMode: head.FulfillmentMode, DeliveryLocationType: head.DeliveryLocationType,
+		DeliveryPortId: head.DeliveryPortID, DeliveryPortCode: head.DeliveryPortCode,
+		DeliveryPortName: head.DeliveryPortName, WarehouseId: head.WarehouseID,
+		WarehouseName: head.WarehouseName, DeliveryAddress: head.DeliveryAddress,
+		SourceQuotationId: head.SourceQuotationID, SourceQuotationNo: head.SourceQuotationNo,
+		SourceCostScenarioId: head.SourceCostScenarioID, FactoryId: head.FactoryID,
+		FactoryCode: head.FactoryCode, FactoryName: head.FactoryName,
+	}
+	if meta, metaErr := h.svc.OrderContractState(ctx, tenantID, head.ID); metaErr == nil {
+		applyOrderContractState(outOrder, meta)
+	}
+	return &prv1.GetOrderResponse{Order: outOrder, Items: outItems, Receipts: outReceipts}, nil
+}
+
+func applyOrderContractState(out *prv1.PurchaseOrder, v app.OrderContractState) {
+	out.BusinessType = v.BusinessType
+	out.SourceBusinessId = v.SourceBusinessID
+	out.ExportContractNo = v.ExportContractNo
+	out.BusinessDocumentNo = v.BusinessDocumentNo
+	out.PaymentTerms = v.PaymentTerms
+	out.SignedContractName = v.SignedContractName
+	out.SignedContractUrl = v.SignedContractURL
+	out.SignedContractUploadedAt = v.SignedContractUploadedAt
+	out.ContractVerifiedAt = v.ContractVerifiedAt
+	out.ContractVerifiedByName = v.ContractVerifiedByName
+	out.PaymentRequestedAt = v.PaymentRequestedAt
+	out.PaymentRequestedByName = v.PaymentRequestedByName
+}
+
+func (h *OrderHandler) PresignOrderContractUpload(ctx context.Context, req *prv1.PresignOrderContractUploadRequest) (*prv1.PresignOrderContractUploadResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	v, err := h.svc.PresignOrderContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.PresignOrderContractUploadResponse{FileKey: v.Key, UploadUrl: v.URL, ExpiresSeconds: v.Expires}, nil
+}
+func (h *OrderHandler) SaveOrderContract(ctx context.Context, req *prv1.SaveOrderContractRequest) (*prv1.SaveOrderContractResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.SaveOrderContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetContractNo(), req.GetPaymentTerms(), req.GetFileKey(), req.GetFileName(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.PurchaseOrder{Id: req.GetId()}
+	applyOrderContractState(out, v)
+	return &prv1.SaveOrderContractResponse{Order: out}, nil
+}
+func (h *OrderHandler) VerifyOrderContract(ctx context.Context, req *prv1.VerifyOrderContractRequest) (*prv1.VerifyOrderContractResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.VerifyOrderContract(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.PurchaseOrder{Id: req.GetId()}
+	applyOrderContractState(out, v)
+	return &prv1.VerifyOrderContractResponse{Order: out}, nil
+}
+func (h *OrderHandler) RequestOrderPayment(ctx context.Context, req *prv1.RequestOrderPaymentRequest) (*prv1.RequestOrderPaymentResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.RequestOrderPayment(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.PurchaseOrder{Id: req.GetId()}
+	applyOrderContractState(out, v)
+	return &prv1.RequestOrderPaymentResponse{Order: out}, nil
+}
+
+func (h *OrderHandler) CreateExternalPayable(ctx context.Context, req *prv1.CreateExternalPayableRequest) (*prv1.CreateExternalPayableResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.CreateExternalPayable(ctx, grpcx.TenantID(ctx), app.ExternalPayableInput{BusinessType: req.GetBusinessType(), SourceBusinessID: req.GetSourceBusinessId(), PayeeID: req.GetPayeeId(), ExportContractNo: req.GetExportContractNo(), BusinessDocumentNo: req.GetBusinessDocumentNo(), PayeeName: req.GetPayeeName(), Currency: req.GetCurrency(), Amount: req.GetAmount(), DueDate: req.GetDueDate(), PaymentTerms: req.GetPaymentTerms(), SignedContractKey: req.GetSignedContractKey(), SignedContractName: req.GetSignedContractName()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateExternalPayableResponse{Row: reconRowProto(v)}, nil
+}
+func (h *OrderHandler) GetExternalPayable(ctx context.Context, req *prv1.GetExternalPayableRequest) (*prv1.GetExternalPayableResponse, error) {
+	v, err := h.svc.GetExternalPayable(ctx, grpcx.TenantID(ctx), req.GetBusinessType(), req.GetSourceBusinessId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetExternalPayableResponse{Row: reconRowProto(v)}, nil
 }
 
 func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderRequest) (*prv1.CreateOrderResponse, error) {

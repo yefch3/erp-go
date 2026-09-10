@@ -2,6 +2,35 @@
   <div class="purchase-orders-page">
     <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
 
+    <el-card v-if="waitingRequotes.length" shadow="never" class="requote-card">
+      <div class="requote-head"><div><strong>待确认工厂报价</strong><p>财务已放行。售前工厂和报价仅供参考，请重新询价后确定最终工厂、单价、交期和付款条件。</p></div><div class="requote-actions"><el-tag type="warning" effect="plain">{{ waitingRequotes.length }} 项</el-tag><el-button v-if="canWrite" type="primary" @click="openBatchRequote">统一确认并自动拆单</el-button></div></div>
+      <el-table :data="waitingRequotes" size="small">
+        <el-table-column prop="contractNo" label="外销合同号" width="170" />
+        <el-table-column label="产品 / 规格" min-width="220"><template #default="{row}"><div>{{row.productName}}</div><div class="sub">{{row.spec||'—'}}</div></template></el-table-column>
+        <el-table-column label="数量" width="120"><template #default="{row}">{{trim(row.requiredQty)}} {{row.uomCode}}</template></el-table-column>
+        <el-table-column label="售前参考" min-width="220"><template #default="{row}"><div>{{row.supplierName||'—'}}</div><div class="sub">{{row.sourceCurrency}} {{row.sourceUnitPrice}} · {{row.sourcePaymentTerms||'—'}}</div></template></el-table-column>
+        <el-table-column label="操作" width="160"><template #default="{row}"><el-button v-if="canWrite" type="primary" plain @click="openCreate([row.id])">确认最终工厂报价</el-button></template></el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-dialog v-model="batchOpen" title="整份合同确认最终工厂报价" width="min(1120px, 96vw)" destroy-on-close>
+      <el-alert type="info" :closable="false" show-icon title="每个产品选择最终工厂并填写最终单价。保存后，系统会把同一工厂的产品自动放进同一张采购订单；不同工厂分别生成采购订单。" />
+      <div class="batch-common">
+        <el-form-item label="预计交货日期" required><el-date-picker v-model="batchForm.expectedDate" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item label="付款方式" required><el-input v-model="batchForm.paymentTerms" placeholder="例如：30% 预付款，70% 发货前付清" /></el-form-item>
+        <el-form-item label="报价有效期"><el-date-picker v-model="batchForm.validUntil" value-format="YYYY-MM-DD" clearable /></el-form-item>
+      </div>
+      <el-table :data="waitingRequotes" max-height="470" class="batch-table">
+        <el-table-column prop="productName" label="产品" min-width="155" /><el-table-column prop="spec" label="规格" min-width="145" />
+        <el-table-column label="数量 / 单位" width="120"><template #default="{row}">{{trim(row.requiredQty)}} {{row.uomCode}}</template></el-table-column>
+        <el-table-column label="最终工厂" min-width="220"><template #default="{row}"><el-select v-model="batchFactory[row.id]" filterable><el-option v-for="s in suppliers" :key="s.id" :label="`${s.code} · ${s.name}`" :value="Number(s.id)" /></el-select></template></el-table-column>
+        <el-table-column label="币种" width="100"><template #default="{row}"><el-select v-model="batchCurrency[row.id]"><el-option v-for="c in ['CNY','USD','EUR','GBP']" :key="c" :value="c" /></el-select></template></el-table-column>
+        <el-table-column label="最终工厂单价" width="150"><template #default="{row}"><el-input v-model="batchPrice[row.id]" /></template></el-table-column>
+        <el-table-column label="售前参考" min-width="170"><template #default="{row}"><div>{{row.supplierName||'—'}}</div><div class="sub">{{row.sourceCurrency}} {{row.sourceUnitPrice}}</div></template></el-table-column>
+      </el-table>
+      <template #footer><el-button @click="batchOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveBatchRequote">保存并自动拆分采购订单</el-button></template>
+    </el-dialog>
+
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
@@ -517,6 +546,17 @@
         <el-button type="primary" :loading="saving" @click="submitDisposition">{{ common('save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="contractOpen" title="采购合同与付款" width="560px">
+      <el-alert type="info" :closable="false" class="alert">采购方案批准后上传双方签署合同；财务核验通过后，采购才能申请付款。</el-alert>
+      <el-form label-position="top">
+        <el-form-item label="采购合同号" required><el-input v-model="contractForm.contractNo" /></el-form-item>
+        <el-form-item label="付款条件" required><el-input v-model="contractForm.paymentTerms" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="双方签署合同" required><el-upload :auto-upload="false" :limit="1" :on-change="selectContractFile" :file-list="contractFiles"><el-button>选择文件</el-button></el-upload></el-form-item>
+      </el-form>
+      <div v-if="contractOrder?.signedContractName" class="contract-state">当前文件：<a v-if="contractOrder.signedContractUrl" :href="contractOrder.signedContractUrl" target="_blank">{{contractOrder.signedContractName}}</a><span v-else>{{contractOrder.signedContractName}}</span></div>
+      <template #footer><el-button @click="contractOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveContract">保存签署合同</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -568,6 +608,18 @@ interface Order {
   factoryId: string
   factoryCode: string
   factoryName: string
+  businessType: string
+  sourceBusinessId: string
+  exportContractNo: string
+  businessDocumentNo: string
+  paymentTerms: string
+  signedContractName: string
+  signedContractUrl: string
+  signedContractUploadedAt: string
+  contractVerifiedAt: string
+  contractVerifiedByName: string
+  paymentRequestedAt: string
+  paymentRequestedByName: string
 }
 interface ApprovalTodo {
   task: { id: string; status: string }
@@ -602,6 +654,8 @@ interface Requirement {
   contractNo: string
   customerName: string
   productName: string
+  spec: string
+	status: string
   uomCode: string
   requiredQty: string
   orderedQty: string
@@ -645,8 +699,15 @@ const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
+const canFinanceVerify = auth.can('procurement:recon:write')
 
 const rows = ref<Order[]>([])
+const waitingRequotes = ref<Requirement[]>([])
+const batchOpen = ref(false)
+const batchFactory = reactive<Record<string, number>>({})
+const batchCurrency = reactive<Record<string, string>>({})
+const batchPrice = reactive<Record<string, string>>({})
+const batchForm = reactive({ expectedDate: '', paymentTerms: '', validUntil: '' })
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
@@ -711,6 +772,11 @@ const closeForm = reactive({ shortfallAction: 'REORDER', note: '' })
 const dispositionOpen = ref(false)
 const dispositionTarget = ref<PurchaseInspection | null>(null)
 const dispositionForm = reactive({ disposition: 'DEDUCTION', note: '' })
+const contractOpen = ref(false)
+const contractOrder = ref<Order | null>(null)
+const contractFile = ref<File | null>(null)
+const contractFiles = ref<any[]>([])
+const contractForm = reactive({ contractNo: '', paymentTerms: '' })
 
 function lineConfirmationProgress(item: OrderItem): number {
   const ordered = Number(item.qty)
@@ -783,6 +849,12 @@ function primaryAction(row: Order): RowAction | null {
     return { key: 'submit', label: t('orders.submit'), tone: 'primary', run: () => void submit(row) }
   if (row.status === 'REJECTED' && canWrite)
     return { key: 'edit', label: t('orders.editAndResubmit'), tone: 'warning', run: () => void openEdit(row) }
+	if (Number(row.sourceBusinessId) > 0 && row.status === 'ORDERED') {
+		if (!row.signedContractUploadedAt && canWrite) return { key:'contract', label:'上传签署合同', tone:'primary', run:()=>openContract(row) }
+		if (!row.contractVerifiedAt && canFinanceVerify) return { key:'verifyContract', label:'核验签署合同', tone:'success', run:()=>void verifyContract(row) }
+		if (row.contractVerifiedAt && !row.paymentRequestedAt && canWrite) return { key:'requestPayment', label:'申请付款', tone:'primary', run:()=>void requestPayment(row) }
+		return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
+	}
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
     return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
   // 收满、还没结案——当前该做的就是宣布这单到此为止（A3）。
@@ -868,6 +940,12 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
   add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
+	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
+		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
+		add('verifyContract','核验签署合同',canFinanceVerify&&!!row.signedContractUploadedAt&&!row.contractVerifiedAt)
+		add('requestPayment','申请付款',canWrite&&!!row.contractVerifiedAt&&!row.paymentRequestedAt)
+		return out
+	}
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
@@ -929,18 +1007,22 @@ function runOrderAction(row: Order, key: string) {
     case 'downloadPdf': void downloadOrder(row, 'pdf'); break
     case 'close': void closeOrder(row); break
     case 'cancel': openCancel(row); break
+	case 'contract': openContract(row); break
+	case 'verifyContract': void verifyContract(row); break
+	case 'requestPayment': void requestPayment(row); break
   }
 }
 
 async function load() {
   loading.value = true
   try {
-    const d = await get<{ orders: Order[]; meta: { total: number } }>('/purchase-orders', {
+	const [d, waiting] = await Promise.all([get<{ orders: Order[]; meta: { total: number } }>('/purchase-orders', {
       page: page.value, page_size: pageSize,
       status: status.value,
       keyword: keyword.value,
-    })
+	}), get<{requirements:Requirement[]}>('/requirements',{status:'WAITING_REQUOTE',page_size:200})])
     rows.value = d.orders ?? []
+	waitingRequotes.value = waiting.requirements ?? []
     total.value = Number(d.meta?.total ?? 0)
     approvalTasks.value = {}
     if (canApprove && status.value === 'PENDING_APPROVAL') {
@@ -981,6 +1063,7 @@ function openOf(r: Requirement): string {
 
 async function openCreate(preselect?: string[]) {
 	editing.value = null
+	approvalEntry.value = Boolean(preselect?.length)
   form.supplierId = 0
   form.currency = 'CNY'
   form.expectedDate = ''
@@ -998,8 +1081,9 @@ async function openCreate(preselect?: string[]) {
   switchSupplier.value = false
   Object.keys(qtyOf).forEach((k) => delete qtyOf[k])
   Object.keys(priceOf).forEach((k) => delete priceOf[k])
-  const [reqs, sups, ports, whs] = await Promise.all([
+  const [reqs, waiting, sups, ports, whs] = await Promise.all([
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
+	get<{ requirements: Requirement[] }>('/requirements', { status: 'WAITING_REQUOTE', page_size: 200 }),
     get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
     canReadPorts
       ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
@@ -1012,7 +1096,7 @@ async function openCreate(preselect?: string[]) {
   const partial = await get<{ requirements: Requirement[] }>('/requirements', {
     status: 'PARTIALLY_ORDERED', page_size: 200,
   })
-  pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
+  pending.value = [...(waiting.requirements ?? []), ...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
     .filter((r) => Number(r.availableQty ?? 0) > 0)
   suppliers.value = sups.suppliers ?? []
   deliveryPorts.value = ports.ports ?? []
@@ -1027,7 +1111,7 @@ async function openCreate(preselect?: string[]) {
     pending.value.forEach((r) => {
       qtyOf[r.id] = openOf(r)
       if (r.source === 'CUSTOMER_QUOTATION') {
-        form.supplierId = Number(r.supplierId)
+		if (r.status !== 'WAITING_REQUOTE') form.supplierId = Number(r.supplierId)
         form.currency = r.sourceCurrency || 'USD'
         priceOf[r.id] = r.sourceUnitPrice || '0'
       }
@@ -1041,6 +1125,63 @@ async function openCreate(preselect?: string[]) {
   }
   createOpen.value = true
 }
+
+async function openBatchRequote() {
+  if (!suppliers.value.length) {
+    suppliers.value = (await get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200, status: 'ACTIVE' })).suppliers ?? []
+  }
+  Object.keys(batchFactory).forEach((key) => delete batchFactory[key])
+  Object.keys(batchCurrency).forEach((key) => delete batchCurrency[key])
+  Object.keys(batchPrice).forEach((key) => delete batchPrice[key])
+  for (const row of waitingRequotes.value) {
+    batchFactory[row.id] = Number(row.supplierId || 0)
+    batchCurrency[row.id] = row.sourceCurrency || 'CNY'
+    batchPrice[row.id] = row.sourceUnitPrice || ''
+  }
+  Object.assign(batchForm, { expectedDate: '', paymentTerms: '', validUntil: '' })
+  batchOpen.value = true
+}
+
+async function saveBatchRequote() {
+  if (!batchForm.expectedDate || !batchForm.paymentTerms.trim()) {
+    ElMessage.warning('请填写预计交货日期和付款方式')
+    return
+  }
+  const incomplete = waitingRequotes.value.find((row) => !batchFactory[row.id] || !(Number(batchPrice[row.id]) > 0))
+  if (incomplete) {
+    ElMessage.warning(`请完成「${incomplete.productName}」的最终工厂和单价`)
+    return
+  }
+  const groups = new Map<string, Requirement[]>()
+  for (const row of waitingRequotes.value) {
+    const key = `${row.contractNo}|${batchFactory[row.id]}|${batchCurrency[row.id]}`
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
+  saving.value = true
+  try {
+    for (const group of groups.values()) {
+      const first = group[0]!
+      const supplier = suppliers.value.find((item) => Number(item.id) === batchFactory[first.id])!
+      await post('/purchase-orders', {
+        supplier_id: Number(supplier.id), currency: batchCurrency[first.id], expected_date: batchForm.expectedDate,
+        payable_due_date: '', remark: [batchForm.paymentTerms, batchForm.validUntil ? `报价有效期：${batchForm.validUntil}` : ''].filter(Boolean).join('；'),
+        fulfillment_mode: 'DIRECT_SHIP', delivery_location_type: 'CUSTOM', delivery_address: '按外销合同约定',
+        source_change_reason: '实单重新询价确认',
+        lines: group.map((row) => ({ requirement_id: Number(row.id), qty: row.requiredQty, unit_price: batchPrice[row.id] })),
+      })
+    }
+    ElMessage.success(`已按最终工厂自动生成 ${groups.size} 张采购订单草稿`)
+    batchOpen.value = false
+    status.value = 'DRAFT'
+    await reload()
+  } finally { saving.value = false }
+}
+
+function selectContractFile(file:any){contractFile.value=file.raw as File;contractFiles.value=[file]}
+function openContract(row:Order){contractOrder.value=row;contractForm.contractNo=row.businessDocumentNo||row.poNo;contractForm.paymentTerms=row.paymentTerms||row.remark||'';contractFile.value=null;contractFiles.value=[];contractOpen.value=true}
+async function saveContract(){const row=contractOrder.value,file=contractFile.value;if(!row||!file){ElMessage.warning('请选择双方签署合同文件');return}if(!contractForm.contractNo.trim()||!contractForm.paymentTerms.trim()){ElMessage.warning('请填写采购合同号和付款条件');return}saving.value=true;try{const signed=await post<{fileKey:string;uploadUrl:string}>(`/purchase-orders/${row.id}/contract/presign`,{file_name:file.name});const putResult=await fetch(signed.uploadUrl,{method:'PUT',body:file});if(!putResult.ok)throw new Error('合同文件上传失败');await post(`/purchase-orders/${row.id}/contract`,{contract_no:contractForm.contractNo,payment_terms:contractForm.paymentTerms,file_key:signed.fileKey,file_name:file.name});ElMessage.success('签署合同已保存，等待财务核验');contractOpen.value=false;await reload()}finally{saving.value=false}}
+async function verifyContract(row:Order){await ElMessageBox.confirm(`确认“${row.signedContractName}”是当前工厂双方签署的采购合同？`,'核验采购合同',{type:'warning'});await post(`/purchase-orders/${row.id}/contract/verify`,{});ElMessage.success('采购合同已核验');await reload()}
+async function requestPayment(row:Order){await ElMessageBox.confirm(`确认将 ${row.currency} ${row.totalAmount} 的付款申请提交到财务出账？`,'申请付款',{type:'warning'});await post(`/purchase-orders/${row.id}/payment-request`,{});ElMessage.success('付款申请已进入财务出账');await reload()}
 
 async function openEdit(row: Order) {
   const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([
@@ -1572,6 +1713,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.requote-card{margin-bottom:16px;border-color:#cfeaf5}.requote-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.requote-head strong{color:#173a4d;font-size:17px}.requote-head p{margin:5px 0 0;color:#647789;font-size:13px}.requote-actions{display:flex;align-items:center;gap:10px}.batch-common{display:grid;grid-template-columns:220px minmax(280px,1fr) 220px;gap:14px;margin:16px 0 4px}.batch-table :deep(.el-select){width:100%}.contract-state{padding:10px 12px;border-radius:8px;background:#f2f8fb;color:#52697a}
 .head-note,
 .sub {
   font-size: 12px;

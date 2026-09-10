@@ -37,5 +37,8 @@ export function approvalSourceLink(ref: ApprovalBusinessRef): ApprovalSourceLink
   if (ref.bizType === 'PURCHASE_ORDER' || ref.bizType === 'PURCHASE_ORDER_CHANGE') {
     return { path: '/purchase-orders', query: { order: ref.bizId } }
   }
+  if (ref.bizType === 'SHIPPING_REQUOTE') {
+    return { path: '/shipping/requirements', query: { handoff: ref.bizId } }
+  }
   return null
 }

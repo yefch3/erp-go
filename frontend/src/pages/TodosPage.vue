@@ -299,7 +299,7 @@ const visibleShippingTasks = computed(() => { const query=keyword.value.trim().t
 const visibleExecutionProcurementTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionProcurementTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.productNames].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 const visibleExecutionShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionShippingTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.portOfLoading,row.portOfDischarge].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 
-const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
+const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'SHIPPING_REQUOTE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
 const hasReminderSource = computed(() => activeTab.value === 'reminders')
 const hasDataSource = computed(() => hasApprovalSource.value || hasReminderSource.value)

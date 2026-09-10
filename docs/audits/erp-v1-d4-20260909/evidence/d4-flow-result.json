@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-09-10T00:55:29.9877395-04:00",
+  "contractId": "9",
+  "contractNo": "CT-202609-0009",
+  "productCount": 3,
+  "purchaseOrderCount": 2,
+  "purchaseOrderIds": [
+    "15",
+    "16"
+  ],
+  "purchaseDisplayNumbers": [
+    "CT-202609-0009",
+    "CT-202609-0009"
+  ],
+  "procurementPayments": 2,
+  "shippingHandoffId": "5",
+  "finalForwarder": "D4 验收货代",
+  "actualCarrier": "D4 验收船公司",
+  "shippingPaymentOpen": "1280.00",
+  "d5Created": false
+}

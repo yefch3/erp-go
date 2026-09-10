@@ -62,6 +62,12 @@
           <el-radio-button value="overdue">{{ t('supplierRecon.viewOverdue') }}</el-radio-button>
           <el-radio-button value="unset">{{ t('supplierRecon.viewUnset') }}</el-radio-button>
         </el-radio-group>
+        <el-select v-model="businessType" :placeholder="t('supplierRecon.businessType')" style="width: 170px" @change="reload">
+          <el-option :label="t('supplierRecon.businessTypes.ALL')" value="" />
+          <el-option :label="t('supplierRecon.businessTypes.PROCUREMENT')" value="PROCUREMENT" />
+          <el-option :label="t('supplierRecon.businessTypes.LOGISTICS')" value="LOGISTICS" />
+          <el-option :label="t('supplierRecon.businessTypes.MANUAL')" value="MANUAL" />
+        </el-select>
         <el-input
           v-model="keyword"
           clearable
@@ -138,6 +144,9 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column :label="t('supplierRecon.businessType')" width="105">
+          <template #default="{ row }"><el-tag size="small" effect="plain" :type="row.businessType === 'LOGISTICS' ? 'success' : row.businessType === 'MANUAL' ? 'info' : undefined">{{ t(`supplierRecon.businessTypes.${row.businessType || 'PROCUREMENT'}`) }}</el-tag></template>
+        </el-table-column>
         <el-table-column :label="t('supplierRecon.order')" min-width="190">
           <template #default="{ row }">
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
@@ -146,6 +155,7 @@
             <router-link v-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
+            <div v-if="row.exportContractNo" class="sub">{{ t('supplierRecon.exportContract') }} {{ row.exportContractNo }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="t('supplierRecon.openAmount')" width="170" align="right">
@@ -432,6 +442,14 @@ interface Row {
   closedByName: string
   closedAt: string
   manuallyEntered: boolean
+  businessType: string
+  sourceBusinessId: string
+  exportContractNo: string
+  businessDocumentNo: string
+  paymentTerms: string
+  signedContractName: string
+  requestedByName: string
+  requestedAt: string
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -502,6 +520,7 @@ const unsetCount = ref(0)
 
 const dueSoonDays = 30
 const view = ref('')
+const businessType = ref('')
 
 // 已完成页上的到期日是历史，不是待办：一张 2023 年就结清的单不该顶着
 // 「逾期 700 天」的红底。催的是没结的账，结了的只剩记录。
@@ -546,6 +565,7 @@ async function load() {
       overdue: !isDone.value && view.value === 'overdue' ? '1' : '',
       unset: !isDone.value && view.value === 'unset' ? '1' : '',
       keyword: keyword.value,
+      business_type: businessType.value,
     })
     rows.value = d.items ?? []
     total.value = Number(d.total ?? 0)

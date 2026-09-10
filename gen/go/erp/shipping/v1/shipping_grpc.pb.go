@@ -19,32 +19,38 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ShippingService_GetModuleStatus_FullMethodName                = "/erp.shipping.v1.ShippingService/GetModuleStatus"
-	ShippingService_ListSchedules_FullMethodName                  = "/erp.shipping.v1.ShippingService/ListSchedules"
-	ShippingService_GetSchedule_FullMethodName                    = "/erp.shipping.v1.ShippingService/GetSchedule"
-	ShippingService_CreateSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/CreateSchedule"
-	ShippingService_UpdateSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/UpdateSchedule"
-	ShippingService_UpdateScheduleStatus_FullMethodName           = "/erp.shipping.v1.ShippingService/UpdateScheduleStatus"
-	ShippingService_CancelSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/CancelSchedule"
-	ShippingService_GetShippingStatistics_FullMethodName          = "/erp.shipping.v1.ShippingService/GetShippingStatistics"
-	ShippingService_AddRouteNode_FullMethodName                   = "/erp.shipping.v1.ShippingService/AddRouteNode"
-	ShippingService_RemoveRouteNode_FullMethodName                = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
-	ShippingService_ReorderRoute_FullMethodName                   = "/erp.shipping.v1.ShippingService/ReorderRoute"
-	ShippingService_UpdateProgress_FullMethodName                 = "/erp.shipping.v1.ShippingService/UpdateProgress"
-	ShippingService_PresignDocumentUpload_FullMethodName          = "/erp.shipping.v1.ShippingService/PresignDocumentUpload"
-	ShippingService_RegisterDocument_FullMethodName               = "/erp.shipping.v1.ShippingService/RegisterDocument"
-	ShippingService_ListDocuments_FullMethodName                  = "/erp.shipping.v1.ShippingService/ListDocuments"
-	ShippingService_GetDocumentAccess_FullMethodName              = "/erp.shipping.v1.ShippingService/GetDocumentAccess"
-	ShippingService_InvalidateDocument_FullMethodName             = "/erp.shipping.v1.ShippingService/InvalidateDocument"
-	ShippingService_ListArrivalNotifications_FullMethodName       = "/erp.shipping.v1.ShippingService/ListArrivalNotifications"
-	ShippingService_MarkArrivalReminderRead_FullMethodName        = "/erp.shipping.v1.ShippingService/MarkArrivalReminderRead"
-	ShippingService_ListBlReminders_FullMethodName                = "/erp.shipping.v1.ShippingService/ListBlReminders"
-	ShippingService_MarkBlRemindersRead_FullMethodName            = "/erp.shipping.v1.ShippingService/MarkBlRemindersRead"
-	ShippingService_CleanupExpiredArrivalReminders_FullMethodName = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
-	ShippingService_GetArrivalReminderRules_FullMethodName        = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
-	ShippingService_UpdateArrivalReminderRules_FullMethodName     = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
-	ShippingService_ContractShippingSnapshot_FullMethodName       = "/erp.shipping.v1.ShippingService/ContractShippingSnapshot"
-	ShippingService_ListContractShippingHandoffs_FullMethodName   = "/erp.shipping.v1.ShippingService/ListContractShippingHandoffs"
+	ShippingService_GetModuleStatus_FullMethodName                       = "/erp.shipping.v1.ShippingService/GetModuleStatus"
+	ShippingService_ListSchedules_FullMethodName                         = "/erp.shipping.v1.ShippingService/ListSchedules"
+	ShippingService_GetSchedule_FullMethodName                           = "/erp.shipping.v1.ShippingService/GetSchedule"
+	ShippingService_CreateSchedule_FullMethodName                        = "/erp.shipping.v1.ShippingService/CreateSchedule"
+	ShippingService_UpdateSchedule_FullMethodName                        = "/erp.shipping.v1.ShippingService/UpdateSchedule"
+	ShippingService_UpdateScheduleStatus_FullMethodName                  = "/erp.shipping.v1.ShippingService/UpdateScheduleStatus"
+	ShippingService_CancelSchedule_FullMethodName                        = "/erp.shipping.v1.ShippingService/CancelSchedule"
+	ShippingService_GetShippingStatistics_FullMethodName                 = "/erp.shipping.v1.ShippingService/GetShippingStatistics"
+	ShippingService_AddRouteNode_FullMethodName                          = "/erp.shipping.v1.ShippingService/AddRouteNode"
+	ShippingService_RemoveRouteNode_FullMethodName                       = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
+	ShippingService_ReorderRoute_FullMethodName                          = "/erp.shipping.v1.ShippingService/ReorderRoute"
+	ShippingService_UpdateProgress_FullMethodName                        = "/erp.shipping.v1.ShippingService/UpdateProgress"
+	ShippingService_PresignDocumentUpload_FullMethodName                 = "/erp.shipping.v1.ShippingService/PresignDocumentUpload"
+	ShippingService_RegisterDocument_FullMethodName                      = "/erp.shipping.v1.ShippingService/RegisterDocument"
+	ShippingService_ListDocuments_FullMethodName                         = "/erp.shipping.v1.ShippingService/ListDocuments"
+	ShippingService_GetDocumentAccess_FullMethodName                     = "/erp.shipping.v1.ShippingService/GetDocumentAccess"
+	ShippingService_InvalidateDocument_FullMethodName                    = "/erp.shipping.v1.ShippingService/InvalidateDocument"
+	ShippingService_ListArrivalNotifications_FullMethodName              = "/erp.shipping.v1.ShippingService/ListArrivalNotifications"
+	ShippingService_MarkArrivalReminderRead_FullMethodName               = "/erp.shipping.v1.ShippingService/MarkArrivalReminderRead"
+	ShippingService_ListBlReminders_FullMethodName                       = "/erp.shipping.v1.ShippingService/ListBlReminders"
+	ShippingService_MarkBlRemindersRead_FullMethodName                   = "/erp.shipping.v1.ShippingService/MarkBlRemindersRead"
+	ShippingService_CleanupExpiredArrivalReminders_FullMethodName        = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
+	ShippingService_GetArrivalReminderRules_FullMethodName               = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
+	ShippingService_UpdateArrivalReminderRules_FullMethodName            = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
+	ShippingService_ContractShippingSnapshot_FullMethodName              = "/erp.shipping.v1.ShippingService/ContractShippingSnapshot"
+	ShippingService_ListContractShippingHandoffs_FullMethodName          = "/erp.shipping.v1.ShippingService/ListContractShippingHandoffs"
+	ShippingService_GetContractShippingHandoff_FullMethodName            = "/erp.shipping.v1.ShippingService/GetContractShippingHandoff"
+	ShippingService_SubmitContractShippingRequote_FullMethodName         = "/erp.shipping.v1.ShippingService/SubmitContractShippingRequote"
+	ShippingService_SaveContractShippingContract_FullMethodName          = "/erp.shipping.v1.ShippingService/SaveContractShippingContract"
+	ShippingService_PresignContractShippingContractUpload_FullMethodName = "/erp.shipping.v1.ShippingService/PresignContractShippingContractUpload"
+	ShippingService_VerifyContractShippingContract_FullMethodName        = "/erp.shipping.v1.ShippingService/VerifyContractShippingContract"
+	ShippingService_MarkContractShippingPaymentRequested_FullMethodName  = "/erp.shipping.v1.ShippingService/MarkContractShippingPaymentRequested"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -82,6 +88,12 @@ type ShippingServiceClient interface {
 	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
 	ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(ctx context.Context, in *ListContractShippingHandoffsRequest, opts ...grpc.CallOption) (*ListContractShippingHandoffsResponse, error)
+	GetContractShippingHandoff(ctx context.Context, in *GetContractShippingHandoffRequest, opts ...grpc.CallOption) (*GetContractShippingHandoffResponse, error)
+	SubmitContractShippingRequote(ctx context.Context, in *SubmitContractShippingRequoteRequest, opts ...grpc.CallOption) (*SubmitContractShippingRequoteResponse, error)
+	SaveContractShippingContract(ctx context.Context, in *SaveContractShippingContractRequest, opts ...grpc.CallOption) (*SaveContractShippingContractResponse, error)
+	PresignContractShippingContractUpload(ctx context.Context, in *PresignContractShippingContractUploadRequest, opts ...grpc.CallOption) (*PresignContractShippingContractUploadResponse, error)
+	VerifyContractShippingContract(ctx context.Context, in *VerifyContractShippingContractRequest, opts ...grpc.CallOption) (*VerifyContractShippingContractResponse, error)
+	MarkContractShippingPaymentRequested(ctx context.Context, in *MarkContractShippingPaymentRequestedRequest, opts ...grpc.CallOption) (*MarkContractShippingPaymentRequestedResponse, error)
 }
 
 type shippingServiceClient struct {
@@ -352,6 +364,66 @@ func (c *shippingServiceClient) ListContractShippingHandoffs(ctx context.Context
 	return out, nil
 }
 
+func (c *shippingServiceClient) GetContractShippingHandoff(ctx context.Context, in *GetContractShippingHandoffRequest, opts ...grpc.CallOption) (*GetContractShippingHandoffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetContractShippingHandoffResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetContractShippingHandoff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) SubmitContractShippingRequote(ctx context.Context, in *SubmitContractShippingRequoteRequest, opts ...grpc.CallOption) (*SubmitContractShippingRequoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitContractShippingRequoteResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SubmitContractShippingRequote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) SaveContractShippingContract(ctx context.Context, in *SaveContractShippingContractRequest, opts ...grpc.CallOption) (*SaveContractShippingContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveContractShippingContractResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SaveContractShippingContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) PresignContractShippingContractUpload(ctx context.Context, in *PresignContractShippingContractUploadRequest, opts ...grpc.CallOption) (*PresignContractShippingContractUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignContractShippingContractUploadResponse)
+	err := c.cc.Invoke(ctx, ShippingService_PresignContractShippingContractUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) VerifyContractShippingContract(ctx context.Context, in *VerifyContractShippingContractRequest, opts ...grpc.CallOption) (*VerifyContractShippingContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyContractShippingContractResponse)
+	err := c.cc.Invoke(ctx, ShippingService_VerifyContractShippingContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) MarkContractShippingPaymentRequested(ctx context.Context, in *MarkContractShippingPaymentRequestedRequest, opts ...grpc.CallOption) (*MarkContractShippingPaymentRequestedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkContractShippingPaymentRequestedResponse)
+	err := c.cc.Invoke(ctx, ShippingService_MarkContractShippingPaymentRequested_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShippingServiceServer is the server API for ShippingService service.
 // All implementations must embed UnimplementedShippingServiceServer
 // for forward compatibility.
@@ -387,6 +459,12 @@ type ShippingServiceServer interface {
 	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
 	ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(context.Context, *ListContractShippingHandoffsRequest) (*ListContractShippingHandoffsResponse, error)
+	GetContractShippingHandoff(context.Context, *GetContractShippingHandoffRequest) (*GetContractShippingHandoffResponse, error)
+	SubmitContractShippingRequote(context.Context, *SubmitContractShippingRequoteRequest) (*SubmitContractShippingRequoteResponse, error)
+	SaveContractShippingContract(context.Context, *SaveContractShippingContractRequest) (*SaveContractShippingContractResponse, error)
+	PresignContractShippingContractUpload(context.Context, *PresignContractShippingContractUploadRequest) (*PresignContractShippingContractUploadResponse, error)
+	VerifyContractShippingContract(context.Context, *VerifyContractShippingContractRequest) (*VerifyContractShippingContractResponse, error)
+	MarkContractShippingPaymentRequested(context.Context, *MarkContractShippingPaymentRequestedRequest) (*MarkContractShippingPaymentRequestedResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
 }
 
@@ -474,6 +552,24 @@ func (UnimplementedShippingServiceServer) ContractShippingSnapshot(context.Conte
 }
 func (UnimplementedShippingServiceServer) ListContractShippingHandoffs(context.Context, *ListContractShippingHandoffsRequest) (*ListContractShippingHandoffsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListContractShippingHandoffs not implemented")
+}
+func (UnimplementedShippingServiceServer) GetContractShippingHandoff(context.Context, *GetContractShippingHandoffRequest) (*GetContractShippingHandoffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetContractShippingHandoff not implemented")
+}
+func (UnimplementedShippingServiceServer) SubmitContractShippingRequote(context.Context, *SubmitContractShippingRequoteRequest) (*SubmitContractShippingRequoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitContractShippingRequote not implemented")
+}
+func (UnimplementedShippingServiceServer) SaveContractShippingContract(context.Context, *SaveContractShippingContractRequest) (*SaveContractShippingContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveContractShippingContract not implemented")
+}
+func (UnimplementedShippingServiceServer) PresignContractShippingContractUpload(context.Context, *PresignContractShippingContractUploadRequest) (*PresignContractShippingContractUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignContractShippingContractUpload not implemented")
+}
+func (UnimplementedShippingServiceServer) VerifyContractShippingContract(context.Context, *VerifyContractShippingContractRequest) (*VerifyContractShippingContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyContractShippingContract not implemented")
+}
+func (UnimplementedShippingServiceServer) MarkContractShippingPaymentRequested(context.Context, *MarkContractShippingPaymentRequestedRequest) (*MarkContractShippingPaymentRequestedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkContractShippingPaymentRequested not implemented")
 }
 func (UnimplementedShippingServiceServer) mustEmbedUnimplementedShippingServiceServer() {}
 func (UnimplementedShippingServiceServer) testEmbeddedByValue()                         {}
@@ -964,6 +1060,114 @@ func _ShippingService_ListContractShippingHandoffs_Handler(srv interface{}, ctx 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_GetContractShippingHandoff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetContractShippingHandoffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetContractShippingHandoff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetContractShippingHandoff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetContractShippingHandoff(ctx, req.(*GetContractShippingHandoffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_SubmitContractShippingRequote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitContractShippingRequoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SubmitContractShippingRequote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SubmitContractShippingRequote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SubmitContractShippingRequote(ctx, req.(*SubmitContractShippingRequoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_SaveContractShippingContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveContractShippingContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SaveContractShippingContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SaveContractShippingContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SaveContractShippingContract(ctx, req.(*SaveContractShippingContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_PresignContractShippingContractUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignContractShippingContractUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).PresignContractShippingContractUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_PresignContractShippingContractUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).PresignContractShippingContractUpload(ctx, req.(*PresignContractShippingContractUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_VerifyContractShippingContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyContractShippingContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).VerifyContractShippingContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_VerifyContractShippingContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).VerifyContractShippingContract(ctx, req.(*VerifyContractShippingContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_MarkContractShippingPaymentRequested_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkContractShippingPaymentRequestedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).MarkContractShippingPaymentRequested(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_MarkContractShippingPaymentRequested_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).MarkContractShippingPaymentRequested(ctx, req.(*MarkContractShippingPaymentRequestedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShippingService_ServiceDesc is the grpc.ServiceDesc for ShippingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1074,6 +1278,30 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListContractShippingHandoffs",
 			Handler:    _ShippingService_ListContractShippingHandoffs_Handler,
+		},
+		{
+			MethodName: "GetContractShippingHandoff",
+			Handler:    _ShippingService_GetContractShippingHandoff_Handler,
+		},
+		{
+			MethodName: "SubmitContractShippingRequote",
+			Handler:    _ShippingService_SubmitContractShippingRequote_Handler,
+		},
+		{
+			MethodName: "SaveContractShippingContract",
+			Handler:    _ShippingService_SaveContractShippingContract_Handler,
+		},
+		{
+			MethodName: "PresignContractShippingContractUpload",
+			Handler:    _ShippingService_PresignContractShippingContractUpload_Handler,
+		},
+		{
+			MethodName: "VerifyContractShippingContract",
+			Handler:    _ShippingService_VerifyContractShippingContract_Handler,
+		},
+		{
+			MethodName: "MarkContractShippingPaymentRequested",
+			Handler:    _ShippingService_MarkContractShippingPaymentRequested_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -17,6 +17,12 @@ describe('approvalSourceLink', () => {
     })
   })
 
+  it('将物流方案确认定位到实单询价详情', () => {
+    expect(approvalSourceLink({ bizType: 'SHIPPING_REQUOTE', bizId: '31' })).toEqual({
+      path: '/shipping/requirements', query: { handoff: '31' },
+    })
+  })
+
   it('未知业务类型不生成猜测链接', () => {
     expect(approvalSourceLink({ bizType: 'UNKNOWN', bizId: '99' })).toBeNull()
   })

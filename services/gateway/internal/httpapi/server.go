@@ -395,6 +395,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}", s.getContractShippingHandoff)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/requote", s.submitContractShippingRequote)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/contract/presign", s.presignContractShippingContract)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/contract", s.saveContractShippingContract)
+		r.With(s.perm("procurement:recon:write")).Post("/api/shipping/contract-handoffs/{id}/contract/verify", s.verifyContractShippingContract)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/payment-request", s.requestContractShippingPayment)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/payment-status", s.getContractShippingPaymentStatus)
 		// 售前任务列表属于船运操作台，而不是采购/销售的只读案件视图。
 		// 后两者通过各自的 sourcing case collaboration 接口查看结果，
 		// 不能凭普通船期只读权限进入船运人员的工作队列。
@@ -614,6 +621,10 @@ func (s *Server) Router() http.Handler {
 		).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract/presign", s.presignOrderContract)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract", s.saveOrderContract)
+		r.With(s.perm("procurement:recon:write")).Post("/api/purchase-orders/{id}/contract/verify", s.verifyOrderContract)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/payment-request", s.requestOrderPayment)
 		r.With(s.perm("procurement:order:cancel")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/documents", s.getOrderDocuments)
 		r.With(s.perm("procurement:order:send")).Post("/api/purchase-orders/{id}/send", s.sendPurchaseOrder)

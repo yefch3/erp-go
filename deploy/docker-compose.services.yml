@@ -257,6 +257,9 @@ services:
       args: { SERVICE: shipping }
     image: erp-go/shipping:dev
     environment:
+      APPROVAL_ADDR: approval:9005
+      APPROVAL_TOPIC: erp.approval.task.v1
+      APPROVAL_CONSUMER_GROUP: shipping.approval.v1
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
       KAFKA_BROKERS: kafka:9092

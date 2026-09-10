@@ -1,98 +1,92 @@
 <template>
   <div class="shipping-requirements-page">
-    <WorkflowPageHeader :title="t('shipping.executionInquiryTitle')" :description="t('shipping.executionInquiryHint')" />
-
-    <el-card shadow="never">
+    <WorkflowPageHeader :title="t('shipping.executionInquiryTitle')" :description="t('shipping.d4Subtitle')" />
+    <section class="summary-strip">
+      <div><strong>{{ activeCount }}</strong><span>{{ t('shipping.d4Active') }}</span></div>
+      <div><strong>{{ waitingCount }}</strong><span>{{ t('shipping.d4WaitingApproval') }}</span></div>
+      <div><strong>{{ paymentCount }}</strong><span>{{ t('shipping.d4PaymentRequested') }}</span></div>
+    </section>
+    <el-card shadow="never" class="workbench">
       <div class="filters">
-        <el-input v-model="keyword" :placeholder="t('shipping.executionInquirySearch')" clearable @clear="page = 1" @keyup.enter="page = 1" />
+        <el-input v-model="keyword" :placeholder="t('shipping.executionInquirySearch')" clearable @keyup.enter="page = 1" />
+        <el-select v-model="status" :placeholder="t('common.status')" clearable @change="load"><el-option v-for="item in statuses" :key="item" :label="statusLabel(item)" :value="item" /></el-select>
         <el-button @click="load">{{ t('common.refresh') }}</el-button>
       </div>
-
-      <el-table :data="pagedRows" v-loading="loading">
-        <el-table-column :label="t('shipping.contractNo')" width="180">
-          <template #default="{ row }"><span class="contract-no">{{ row.contractNo }}</span></template>
-        </el-table-column>
-        <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="150" />
-        <el-table-column :label="t('shipping.freightBatch')" width="120">
-          <template #default="{ row }">#{{ row.batchNo }}</template>
-        </el-table-column>
-        <el-table-column :label="t('shipping.route')" min-width="210">
-          <template #default="{ row }">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</template>
-        </el-table-column>
-        <el-table-column :label="t('shipping.presalesReference')" min-width="210">
-          <template #default="{ row }">
-            <div>{{ row.carrierForwarder || '—' }}</div>
-            <div class="sub">{{ row.serviceOptionName || '—' }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" width="140" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'WAITING_REQUOTE' ? 'warning' : row.status === 'SCHEDULED' ? 'success' : 'info'">
-              {{ t(`shipping.handoffStatuses.${row.status}`) }}
-            </el-tag>
-          </template>
-        </el-table-column>
+      <el-table :data="pagedRows" v-loading="loading" @row-click="openDetail">
+        <el-table-column :label="t('shipping.contractNo')" width="175"><template #default="{ row }"><span class="contract-no">{{ row.contractNo }}</span></template></el-table-column>
+        <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="145" />
+        <el-table-column :label="t('shipping.route')" min-width="190"><template #default="{ row }">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</template></el-table-column>
+        <el-table-column :label="t('shipping.d4FinalParties')" min-width="210"><template #default="{ row }"><div>{{ row.finalForwarderName || t('shipping.d4NotConfirmed') }}</div><div class="sub">{{ row.actualCarrierName || row.carrierForwarder || '—' }}</div></template></el-table-column>
+        <el-table-column :label="t('shipping.d4Amount')" width="145" align="right"><template #default="{ row }"><span class="money">{{ row.finalCurrency || row.currency }} {{ row.finalFreightAmount || row.freightAmount }}</span></template></el-table-column>
+        <el-table-column :label="t('common.status')" width="150" align="center"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="125" fixed="right" align="center"><template #default="{ row }"><el-button type="primary" plain @click.stop="openDetail(row)">{{ nextLabel(row) }}</el-button></template></el-table-column>
         <template #empty>{{ t('shipping.executionInquiryEmpty') }}</template>
       </el-table>
-
-      <el-pagination
-        class="pager"
-        layout="total, sizes, prev, pager, next"
-        :total="filteredRows.length"
-        :page-size="pageSize"
-        :current-page="page"
-        :page-sizes="[20, 50, 100]"
-        @current-change="page = $event"
-        @size-change="pageSize = $event; page = 1"
-      />
+      <el-pagination class="pager" layout="total, sizes, prev, pager, next" :total="filteredRows.length" :page-size="pageSize" :current-page="page" :page-sizes="[20, 50, 100]" @current-change="page = $event" @size-change="pageSize = $event; page = 1" />
     </el-card>
+
+    <el-drawer v-model="detailOpen" :title="detail?.contractNo" size="min(680px, 96vw)" destroy-on-close>
+      <template v-if="detail">
+        <div class="detail-hero"><div><span>{{ detail.customerName }}</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
+        <section class="reference-card">
+          <div class="section-title">{{ t('shipping.d4PresalesReference') }}<span>{{ t('shipping.d4ReferenceOnly') }}</span></div>
+          <el-descriptions :column="2" size="small">
+            <el-descriptions-item :label="t('shipping.d4Forwarder')">{{ detail.carrierForwarder || '—' }}</el-descriptions-item><el-descriptions-item :label="t('shipping.d4Plan')">{{ detail.serviceOptionName || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('shipping.d4Amount')">{{ detail.currency }} {{ detail.freightAmount }}</el-descriptions-item><el-descriptions-item :label="t('shipping.d4Dates')">{{ detail.estimatedDeparture || '—' }} / {{ detail.estimatedArrival || '—' }}</el-descriptions-item>
+          </el-descriptions>
+        </section>
+        <section class="stage-card is-current">
+          <div class="section-title"><b>1</b>{{ t('shipping.d4Requote') }}</div>
+          <el-form label-position="top" :disabled="!canEdit"><div class="form-grid">
+            <el-form-item :label="t('shipping.d4Forwarder')" required><el-select v-model="form.finalForwarderId" filterable @change="selectForwarder"><el-option v-for="item in forwarders" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
+            <el-form-item :label="t('shipping.d4Carrier')" required><el-select v-model="form.actualCarrierId" filterable @change="selectCarrier"><el-option v-for="item in carriers" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
+            <el-form-item :label="t('shipping.d4Plan')" required><el-input v-model="form.finalServiceOption" /></el-form-item>
+            <el-form-item :label="t('shipping.d4Amount')" required><el-input v-model="form.finalFreightAmount"><template #prepend><el-select v-model="form.finalCurrency" style="width:88px"><el-option v-for="c in currencies" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
+            <el-form-item :label="t('shipping.d4Etd')" required><el-date-picker v-model="form.finalEtd" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item><el-form-item :label="t('shipping.d4Eta')" required><el-date-picker v-model="form.finalEta" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+            <el-form-item :label="t('shipping.d4PaymentTerms')" required><el-input v-model="form.paymentTerms" /></el-form-item><el-form-item :label="t('shipping.d4ContractNo')" required><el-input v-model="form.forwarderContractNo" /></el-form-item>
+          </div></el-form>
+          <el-alert v-if="detail.status === 'RETURNED'" type="warning" :closable="false" :title="detail.returnReason || t('shipping.d4Returned')" />
+          <div v-if="canEdit" class="stage-actions"><el-button type="primary" :loading="saving" @click="submitRequote">{{ t('shipping.d4SubmitApproval') }}</el-button></div><p v-else-if="detail.status === 'PENDING_APPROVAL'" class="stage-note">{{ t('shipping.d4ApprovalHint') }}</p>
+        </section>
+        <section class="stage-card" :class="{ 'is-current': ['APPROVED','CONTRACT_UPLOADED'].includes(detail.status) }">
+          <div class="section-title"><b>2</b>{{ t('shipping.d4SignedContract') }}</div>
+          <div v-if="detail.signedContractName" class="file-row"><a v-if="detail.signedContractUrl" :href="detail.signedContractUrl" target="_blank">{{ detail.signedContractName }}</a><span v-else>{{ detail.signedContractName }}</span><span>{{ detail.signedContractUploadedAt }}</span></div>
+          <template v-if="['APPROVED','CONTRACT_UPLOADED'].includes(detail.status)"><el-upload :auto-upload="false" :limit="1" :on-change="pickContract" :on-remove="() => contractFile = null"><el-button>{{ t('shipping.d4ChooseContract') }}</el-button></el-upload><div class="stage-actions"><el-button type="primary" :loading="saving" @click="uploadContract">{{ t('shipping.d4SaveContract') }}</el-button></div></template><p v-else-if="!detail.signedContractName" class="stage-note">{{ t('shipping.d4AfterApproval') }}</p>
+        </section>
+        <section class="stage-card" :class="{ 'is-current': ['CONTRACT_UPLOADED','CONTRACT_VERIFIED'].includes(detail.status) }">
+          <div class="section-title"><b>3</b>{{ t('shipping.d4FinanceVerify') }}</div><p v-if="detail.contractVerifiedAt" class="success-line">{{ t('shipping.d4VerifiedBy', { name: detail.contractVerifiedByName, at: detail.contractVerifiedAt }) }}</p><p v-else class="stage-note">{{ t('shipping.d4VerifyHint') }}</p><div v-if="detail.status === 'CONTRACT_UPLOADED' && canFinanceVerify" class="stage-actions"><el-button type="success" :loading="saving" @click="verifyContract">{{ t('shipping.d4ConfirmVerified') }}</el-button></div>
+        </section>
+        <section class="stage-card" :class="{ 'is-current': ['CONTRACT_VERIFIED','PAYMENT_REQUESTED'].includes(detail.status) }">
+          <div class="section-title"><b>4</b>{{ t('shipping.d4Payment') }}</div><div v-if="payment" class="payment-grid"><span>{{ t('shipping.d4Requested') }}<strong>{{ payment.currency }} {{ payment.orderedAmount }}</strong></span><span>{{ t('shipping.d4Paid') }}<strong>{{ payment.currency }} {{ payment.paidAmount }}</strong></span><span>{{ t('shipping.d4Open') }}<strong>{{ payment.currency }} {{ payment.openAmount }}</strong></span></div><p v-else class="stage-note">{{ detail.status === 'CONTRACT_VERIFIED' ? t('shipping.d4PaymentReady') : t('shipping.d4PaymentPending') }}</p><div v-if="detail.status === 'CONTRACT_VERIFIED'" class="stage-actions"><el-button type="primary" :loading="saving" @click="requestPayment">{{ t('shipping.d4RequestPayment') }}</el-button></div>
+        </section>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { get } from '../api'
+import { useRoute } from 'vue-router'
+import { ElMessage, type UploadFile } from 'element-plus'
+import { get, post } from '../api'
+import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import type { ContractShippingHandoff } from '../components/ShippingScheduleDialog.vue'
-
-const { t } = useI18n()
-const loading = ref(false)
-const rows = ref<ContractShippingHandoff[]>([])
-const keyword = ref('')
-const page = ref(1)
-const pageSize = ref(20)
-
-const filteredRows = computed(() => {
-  const value = keyword.value.trim().toLowerCase()
-  if (!value) return rows.value
-  return rows.value.filter((row) => [row.contractNo, row.customerName, row.portOfLoading, row.portOfDischarge, row.carrierForwarder, row.serviceOptionName]
-    .some((field) => String(field || '').toLowerCase().includes(value)))
-})
-const pagedRows = computed(() => filteredRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
-
-async function load() {
-  loading.value = true
-  try {
-    const data = await get<{ handoffs: ContractShippingHandoff[] }>('/shipping/contract-handoffs')
-    rows.value = data.handoffs ?? []
-    page.value = 1
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
+interface Handoff { id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;status:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string }
+interface Party { id:string;name:string } interface Payable { currency:string;orderedAmount:string;paidAmount:string;openAmount:string }
+const { t }=useI18n(), auth=useAuthStore(), route=useRoute(); const loading=ref(false),saving=ref(false),detailOpen=ref(false); const rows=ref<Handoff[]>([]),detail=ref<Handoff|null>(null),forwarders=ref<Party[]>([]),carriers=ref<Party[]>([]); const keyword=ref(''),status=ref(''),page=ref(1),pageSize=ref(20),contractFile=ref<File|null>(null),payment=ref<Payable|null>(null)
+const canFinanceVerify=computed(()=>auth.can('procurement:recon:write')), statuses=['WAITING_REQUOTE','RETURNED','PENDING_APPROVAL','APPROVED','CONTRACT_UPLOADED','CONTRACT_VERIFIED','PAYMENT_REQUESTED'], currencies=['USD','CNY','EUR','GBP','CAD','AUD','HKD']
+const form=reactive({finalForwarderId:0,finalForwarderName:'',actualCarrierId:0,actualCarrierName:'',finalServiceOption:'',finalCurrency:'USD',finalFreightAmount:'',finalEtd:'',finalEta:'',paymentTerms:'',forwarderContractNo:''})
+const canEdit=computed(()=>detail.value?.status==='WAITING_REQUOTE'||detail.value?.status==='RETURNED'), filteredRows=computed(()=>{const k=keyword.value.trim().toLowerCase();return k?rows.value.filter(r=>[r.contractNo,r.customerName,r.finalForwarderName,r.actualCarrierName,r.portOfLoading,r.portOfDischarge].some(v=>String(v||'').toLowerCase().includes(k))):rows.value}), pagedRows=computed(()=>filteredRows.value.slice((page.value-1)*pageSize.value,page.value*pageSize.value)), activeCount=computed(()=>rows.value.length),waitingCount=computed(()=>rows.value.filter(r=>r.status==='PENDING_APPROVAL').length),paymentCount=computed(()=>rows.value.filter(r=>r.status==='PAYMENT_REQUESTED').length)
+function statusLabel(v:string){return t(`shipping.handoffStatuses.${v}`)} function statusType(v:string){if(v==='RETURNED')return 'danger';if(v==='WAITING_REQUOTE'||v==='PENDING_APPROVAL')return 'warning';if(v==='PAYMENT_REQUESTED'||v==='CONTRACT_VERIFIED')return 'success';return 'info'} function nextLabel(r:Handoff){if(['WAITING_REQUOTE','RETURNED'].includes(r.status))return t('shipping.d4Start');if(r.status==='APPROVED')return t('shipping.d4Upload');return t('shipping.d4View')}
+function fillForm(r:Handoff){Object.assign(form,{finalForwarderId:Number(r.finalForwarderId||0),finalForwarderName:r.finalForwarderName||'',actualCarrierId:Number(r.actualCarrierId||0),actualCarrierName:r.actualCarrierName||'',finalServiceOption:r.finalServiceOption||'',finalCurrency:r.finalCurrency||r.currency||'USD',finalFreightAmount:r.finalFreightAmount||'',finalEtd:r.finalEtd||r.estimatedDeparture||'',finalEta:r.finalEta||r.estimatedArrival||'',paymentTerms:r.paymentTerms||'',forwarderContractNo:r.forwarderContractNo||''})}
+async function load(){loading.value=true;try{const d=await get<{handoffs:Handoff[]}>('/shipping/contract-handoffs',{status:status.value});rows.value=d.handoffs??[];page.value=1}finally{loading.value=false}} async function loadParties(){const [f,c]=await Promise.all([get<{suppliers:Party[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'FORWARDER'}),get<{suppliers:Party[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'CARRIER'})]);forwarders.value=f.suppliers??[];carriers.value=c.suppliers??[]}
+async function openDetail(r:Handoff){detailOpen.value=true;payment.value=null;contractFile.value=null;const d=await get<{handoff:Handoff}>(`/shipping/contract-handoffs/${r.id}`);detail.value=d.handoff;fillForm(d.handoff);if(d.handoff.status==='PAYMENT_REQUESTED'){try{const p=await get<{row:Payable}>(`/shipping/contract-handoffs/${r.id}/payment-status`);payment.value=p.row}catch{/* 状态同步后可刷新。 */}}} function selectForwarder(id:number){form.finalForwarderName=forwarders.value.find(x=>Number(x.id)===Number(id))?.name||''} function selectCarrier(id:number){form.actualCarrierName=carriers.value.find(x=>Number(x.id)===Number(id))?.name||''} async function refreshDetail(){if(!detail.value)return;await openDetail(detail.value);await load()}
+async function submitRequote(){if(!form.finalForwarderId||!form.actualCarrierName||!form.finalServiceOption.trim()||!form.finalFreightAmount||!form.finalEtd||!form.finalEta||!form.paymentTerms.trim()||!form.forwarderContractNo.trim()){ElMessage.warning(t('shipping.d4Required'));return}saving.value=true;try{await post(`/shipping/contract-handoffs/${detail.value?.id}/requote`,{final_forwarder_id:form.finalForwarderId,final_forwarder_name:form.finalForwarderName,actual_carrier_id:form.actualCarrierId,actual_carrier_name:form.actualCarrierName,final_service_option:form.finalServiceOption,final_currency:form.finalCurrency,final_freight_amount:form.finalFreightAmount,final_etd:form.finalEtd,final_eta:form.finalEta,payment_terms:form.paymentTerms,forwarder_contract_no:form.forwarderContractNo});ElMessage.success(t('shipping.d4Submitted'));await refreshDetail()}finally{saving.value=false}} function pickContract(file:UploadFile){contractFile.value=file.raw??null}
+async function uploadContract(){if(!contractFile.value){ElMessage.warning(t('shipping.d4ChooseContract'));return}saving.value=true;try{const f=contractFile.value,s=await post<{fileKey:string;uploadUrl:string}>(`/shipping/contract-handoffs/${detail.value?.id}/contract/presign`,{file_name:f.name}),r=await fetch(s.uploadUrl,{method:'PUT',body:f});if(!r.ok)throw new Error(t('shipping.d4UploadFailed'));await post(`/shipping/contract-handoffs/${detail.value?.id}/contract`,{file_key:s.fileKey,file_name:f.name});ElMessage.success(t('shipping.d4ContractSaved'));await refreshDetail()}finally{saving.value=false}} async function verifyContract(){saving.value=true;try{await post(`/shipping/contract-handoffs/${detail.value?.id}/contract/verify`,{});ElMessage.success(t('shipping.d4Verified'));await refreshDetail()}finally{saving.value=false}} async function requestPayment(){saving.value=true;try{await post(`/shipping/contract-handoffs/${detail.value?.id}/payment-request`,{});ElMessage.success(t('shipping.d4PaymentSubmitted'));await refreshDetail()}finally{saving.value=false}}
+onMounted(async()=>{await Promise.all([load(),loadParties()]);const id=String(route.query.handoff??'');const row=rows.value.find(item=>item.id===id);if(row)await openDetail(row)})
 </script>
 
 <style scoped>
-.shipping-requirements-page { color:#141817; }
-.filters { display:flex; gap:10px; margin-bottom:14px; }
-.filters :deep(.el-input) { width:320px; max-width:100%; }
-.shipping-requirements-page :deep(.el-table) { --el-table-header-bg-color:#eef9fe; --el-table-header-text-color:#24323a; --el-table-row-hover-bg-color:#f0fbf6; }
-.shipping-requirements-page :deep(.el-table th.el-table__cell) { border-bottom-color:#d9edf5; font-weight:650; }
-.contract-no { color:#159fdc; font-weight:600; }
-.sub { margin-top:3px; color:#66727d; font-size:12px; }
-.pager { justify-content:flex-end; margin-top:14px; }
-@media (max-width:640px) { .filters { align-items:stretch; flex-direction:column; } .filters :deep(.el-input) { width:100%; } .pager { justify-content:flex-start; overflow-x:auto; } }
+.shipping-requirements-page{color:#141817}.summary-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.summary-strip>div{display:flex;align-items:baseline;gap:10px;padding:14px 18px;border:1px solid #d7e9ef;border-radius:12px;background:#fff}.summary-strip strong{font-size:24px;color:#0b84bd}.summary-strip span{color:#627482}.workbench{border-color:#d7e9ef}.filters{display:flex;gap:10px;margin-bottom:14px}.filters :deep(.el-input){width:320px}.filters :deep(.el-select){width:190px}.shipping-requirements-page :deep(.el-table){--el-table-header-bg-color:#eef9fe;--el-table-header-text-color:#24323a;--el-table-row-hover-bg-color:#f0fbf6}.shipping-requirements-page :deep(.el-table th.el-table__cell){border-bottom-color:#d9edf5;font-weight:650}.contract-no{color:#159fdc;font-weight:650}.sub,.stage-note{margin-top:3px;color:#697a87;font-size:12px}.money{font-variant-numeric:tabular-nums}.pager{justify-content:flex-end;margin-top:14px}.detail-hero{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;margin-bottom:14px;border-radius:12px;background:linear-gradient(100deg,#edf9ff,#f0fcf6)}.detail-hero div{display:flex;flex-direction:column;gap:5px}.detail-hero strong{font-size:18px;color:#173a4d}.reference-card,.stage-card{padding:16px;margin-bottom:14px;border:1px solid #dfe9ed;border-radius:12px;background:#fff}.reference-card{background:#f8fbfc}.stage-card.is-current{border-left:4px solid #43bdf4;box-shadow:0 7px 20px rgba(42,107,133,.07)}.section-title{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:16px;font-weight:650;color:#193d50}.section-title b{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e7f7ff;color:#0589c5}.section-title span{font-size:12px;font-weight:400;color:#788995}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.form-grid :deep(.el-select){width:100%}.stage-actions{display:flex;justify-content:flex-end;margin-top:10px}.file-row{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:8px;background:#f3f8fa}.file-row span{color:#788995;font-size:12px}.success-line{color:#1a9b63}.payment-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.payment-grid span{display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:8px;background:#f3f8fa;color:#6b7b87;font-size:12px}.payment-grid strong{font-size:16px;color:#173a4d}@media(max-width:700px){.summary-strip,.form-grid,.payment-grid{grid-template-columns:1fr}.filters{flex-direction:column}.filters :deep(.el-input),.filters :deep(.el-select){width:100%}.pager{justify-content:flex-start;overflow-x:auto}}
 </style>

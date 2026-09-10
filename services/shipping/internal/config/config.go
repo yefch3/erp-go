@@ -25,6 +25,9 @@ type Config struct {
 	KafkaBrokers          []string
 	ContractTopic         string
 	ContractConsumerGroup string
+	ApprovalAddr string
+	ApprovalTopic string
+	ApprovalConsumerGroup string
 }
 
 func Load() Config {
@@ -45,6 +48,9 @@ func Load() Config {
 		KafkaBrokers:          strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
 		ContractTopic:         env("CONTRACT_TOPIC", "erp.export.contract.v1"),
 		ContractConsumerGroup: env("CONTRACT_CONSUMER_GROUP", "shipping.contract.v1"),
+		ApprovalAddr: env("APPROVAL_ADDR", "localhost:9005"),
+		ApprovalTopic: env("APPROVAL_TOPIC", "erp.approval.task.v1"),
+		ApprovalConsumerGroup: env("APPROVAL_CONSUMER_GROUP", "shipping.approval.v1"),
 	}
 }
 

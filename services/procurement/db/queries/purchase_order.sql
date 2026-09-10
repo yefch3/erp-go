@@ -66,7 +66,7 @@ UPDATE purchase_requirements SET
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
-  AND status IN ('PENDING', 'PARTIALLY_ORDERED')
+  AND status IN ('WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED')
   AND ordered_qty + sqlc.arg(qty)::text::numeric <= required_qty
 RETURNING ordered_qty::text AS ordered_qty, status;
 

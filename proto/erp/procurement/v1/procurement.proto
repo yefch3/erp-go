@@ -621,6 +621,12 @@ service PurchaseOrderService {
   // Spending money needs a signature. The approval engine routes on the
   // order total, so a large order can require more of them.
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
+  rpc SaveOrderContract(SaveOrderContractRequest) returns (SaveOrderContractResponse);
+  rpc PresignOrderContractUpload(PresignOrderContractUploadRequest) returns (PresignOrderContractUploadResponse);
+  rpc VerifyOrderContract(VerifyOrderContractRequest) returns (VerifyOrderContractResponse);
+  rpc RequestOrderPayment(RequestOrderPaymentRequest) returns (RequestOrderPaymentResponse);
+  rpc CreateExternalPayable(CreateExternalPayableRequest) returns (CreateExternalPayableResponse);
+  rpc GetExternalPayable(GetExternalPayableRequest) returns (GetExternalPayableResponse);
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
@@ -906,6 +912,18 @@ message PurchaseOrder {
   int64 factory_id = 38;
   string factory_code = 39;
   string factory_name = 40;
+  string business_type = 44;
+  int64 source_business_id = 45;
+  string export_contract_no = 46;
+  string business_document_no = 47;
+  string payment_terms = 48;
+  string signed_contract_name = 49;
+  string signed_contract_url = 50;
+  string signed_contract_uploaded_at = 51;
+  string contract_verified_at = 52;
+  string contract_verified_by_name = 53;
+  string payment_requested_at = 54;
+  string payment_requested_by_name = 55;
 }
 
 message PurchaseOrderItem {
@@ -2354,6 +2372,14 @@ message SupplierReconRow {
   string invoice_paid_amount = 17;
   // True only for an opening record entered directly by Finance.
   bool manually_entered = 21;
+  string business_type = 22;
+  int64 source_business_id = 23;
+  string export_contract_no = 24;
+  string business_document_no = 25;
+  string payment_terms = 26;
+  string signed_contract_name = 27;
+  string requested_by_name = 28;
+  string requested_at = 29;
 }
 
 // PurchaseOrderPaymentEntry is one movement of money on one order.
@@ -2388,6 +2414,7 @@ message ListSupplierReconRequest {
   bool closed_only = 2;
   int32 page = 3;
   int32 page_size = 4;
+  string business_type = 7;
 }
 message ListSupplierReconResponse {
   repeated SupplierReconRow items = 1;
@@ -2677,3 +2704,22 @@ message UpdateManualPayableResponse { SupplierReconRow row = 1; }
 
 message InquiryWorkspaceRequest { string command_json = 1; }
 message InquiryWorkspaceResponse { string result_json = 1; }
+
+// D4 messages are appended to preserve generated message indexes.
+message SaveOrderContractRequest { int64 id = 1; string contract_no = 2; string payment_terms = 3; string file_key = 4; string file_name = 5; }
+message PresignOrderContractUploadRequest { int64 id = 1; string file_name = 2; }
+message PresignOrderContractUploadResponse { string file_key = 1; string upload_url = 2; int32 expires_seconds = 3; }
+message SaveOrderContractResponse { PurchaseOrder order = 1; }
+message VerifyOrderContractRequest { int64 id = 1; }
+message VerifyOrderContractResponse { PurchaseOrder order = 1; }
+message RequestOrderPaymentRequest { int64 id = 1; }
+message RequestOrderPaymentResponse { PurchaseOrder order = 1; }
+message CreateExternalPayableRequest {
+  string business_type = 1; int64 source_business_id = 2; string export_contract_no = 3;
+  string business_document_no = 4; int64 payee_id = 5; string payee_name = 6;
+  string currency = 7; string amount = 8; string due_date = 9; string payment_terms = 10;
+  string signed_contract_key = 11; string signed_contract_name = 12;
+}
+message CreateExternalPayableResponse { SupplierReconRow row = 1; }
+message GetExternalPayableRequest { string business_type = 1; int64 source_business_id = 2; }
+message GetExternalPayableResponse { SupplierReconRow row = 1; }
