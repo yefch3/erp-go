@@ -639,6 +639,10 @@ function fillQuoteBox() {
   if (form.format === 'TEXT') {
     el.textContent = quoted.value
   } else {
+    // mail-sandbox-ok: quoted 是 quotedBlock 拼的，原信的 HTML 在那儿已经被
+    // stripStylesheets 摘掉了样式表——这个框不是沙箱 iframe（人要能手工删减
+    // 引用，iframe 里做不到），所以摘除是它进得来的前提。行内的 position
+    // 由 .quote-box 上的 contain 关住。见 scripts/check-mail-sandbox.sh。
     el.innerHTML = quoted.value
   }
 }
@@ -1714,6 +1718,13 @@ async function onBeforeClose(done: () => void) {
   font-size: 13px;
   line-height: 1.6;
   outline: none;
+  /* 把原信关在这个框里。
+     发件人的样式表在 lib/quotedMail 里就摘掉了，但**行内**的 style 属性还在
+     （那正是一封信大部分的样子所在，摘了就不像它自己了），而行内也写得出
+     `position: fixed`——那种元素不认 overflow，会直接飘到写信框外面盖住工具
+     条，是个钓鱼面。contain 让这个框成为定位的容器并且把绘制裁掉，于是飘也
+     只能在框内飘。 */
+  contain: layout paint;
 }
 .quote-box :deep(blockquote) {
   margin: 0 0 0 8px;
