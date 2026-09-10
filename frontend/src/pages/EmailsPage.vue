@@ -2951,10 +2951,17 @@ const threadItems = ref<ThreadItem[]>([])
 // 要先想一遍「这里到底是正序还是倒序」。
 const threadForDisplay = computed(() => [...threadItems.value].reverse())
 
-// 整条会话的附件，按时间顺序摊平。threadItems 本身就是按发生顺序来的，所以
-// 这里不再排序——文件的顺序就是对话的顺序。
+// 整条会话的附件，摊平成一条。**跟着屏幕上的顺序走，不跟着数据的顺序走**
+// ——所以摊的是 threadForDisplay 而不是 threadItems，最新那封的附件排最前。
+//
+// 从前这里摊的是 threadItems（时间正序），注释还写着「文件的顺序就是对话的
+// 顺序」。那句话在会话改成倒序显示（#400）之后就不成立了：同一屏里，上面这
+// 条附件条最早的在前，底下的邮件最新的在前，两个方向。点一个文件是要跳到它
+// 所在的那一封去的，而人得先在两个相反的排法之间对一次位置。
+//
+// 一封信内部的几个附件不动：它们之间没有时间先后，原样就是发件人放的顺序。
 const threadFiles = computed(() =>
-  threadItems.value.flatMap((item) =>
+  threadForDisplay.value.flatMap((item) =>
     (item.attachments ?? []).map((file) => ({ item, file })),
   ),
 )
