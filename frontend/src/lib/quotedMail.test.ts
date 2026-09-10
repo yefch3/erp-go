@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { attributionLine, escapeText, quotedBlock } from './quotedMail'
+import { attributionLine, escapeText, quotedBlock, stripStylesheets } from './quotedMail'
 
 // 假的 t：把 key 和参数原样拼出来，这样断言看的是「拼进去的是什么」，
 // 而不是某个语言此刻的措辞——文案改了不该让这些测试变红。
@@ -90,5 +90,70 @@ describe('escapeText', () => {
 
   test('引号也转义——将来这段文字如果落进属性里就不会破框', () => {
     expect(escapeText(`"'`)).toBe('&quot;&#39;')
+  })
+})
+
+// 发件人的样式表不能进我们的页面。
+//
+// 真炸过（2026-09-10）：回复一封 Cloudflare 的营销邮件，写信框里发件人那栏
+// 空了、正文打字也看不见。原因是那封信的样式表里有一句
+// `p,div,h1,h2{color:#fff!important}`，落进我们自己的文档之后，整页每个 div
+// 里的字都被刷成白的——字一直在，只是白纸上的白字。
+//
+// 服务端展示收到的邮件时是**故意**留着 `<style>` 的（readerPolicy），因为一封
+// 营销邮件的样子几乎全在那张表里；它敢留是因为那份 HTML 只在沙箱 iframe 里
+// 渲染。而引用框不是 iframe（人要能手工删减引用），所以摘除得在这一步做。
+describe('stripStylesheets', () => {
+  test('整块 <style> 连同里面的 CSS 一起去掉', () => {
+    const out = stripStylesheets('<p>hi</p><style>p{color:#fff!important}</style><p>bye</p>')
+    expect(out).toBe('<p>hi</p><p>bye</p>')
+    expect(out).not.toContain('color')
+  })
+
+  test('那句真的把页面刷白的规则活不下来', () => {
+    const real =
+      '<style type="text/css">@media (prefers-color-scheme:dark){' +
+      'p,div,h1,h2{color:#fff!important}}</style><div>正文</div>'
+    expect(stripStylesheets(real)).toBe('<div>正文</div>')
+  })
+
+  test('好几块都去掉——一封营销邮件带十块是常事', () => {
+    const out = stripStylesheets('<style>a{}</style><p>x</p><style>b{}</style><p>y</p>')
+    expect(out).toBe('<p>x</p><p>y</p>')
+  })
+
+  test('带属性的、大写的一样认得出', () => {
+    expect(stripStylesheets('<STYLE TYPE="text/css">a{}</STYLE>x')).toBe('x')
+  })
+
+  test('行内 style 属性留着——那才是一封信大部分的样子', () => {
+    const html = '<td style="padding:20px;background:#f77720"><b>报价</b></td>'
+    expect(stripStylesheets(html)).toBe(html)
+  })
+
+  test('没有样式表就一个字都不动', () => {
+    const html = '<p>普通的一封信</p><blockquote><p>更早的一封</p></blockquote>'
+    expect(stripStylesheets(html)).toBe(html)
+  })
+
+  test('被截断的 <style> 一路删到底，不把 CSS 当正文留下', () => {
+    expect(stripStylesheets('<p>hi</p><style>p{color:#f')).toBe('<p>hi</p>')
+  })
+
+  test('style 这三个字母开头的别的东西不受牵连', () => {
+    const html = '<p>styled text</p>'
+    expect(stripStylesheets(html)).toBe(html)
+  })
+})
+
+describe('quotedBlock 不把发件人的样式表带进来', () => {
+  test('原信里的 <style> 不出现在引用块里', () => {
+    const html = quotedBlock(
+      { ...base, bodyHtml: '<style>div{color:#fff!important}</style><p>报价确认</p>' },
+      t,
+    )
+    expect(html).not.toContain('<style')
+    expect(html).not.toContain('!important')
+    expect(html).toContain('<p>报价确认</p>')
   })
 })

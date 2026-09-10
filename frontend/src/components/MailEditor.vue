@@ -219,6 +219,10 @@ watch(
 
 function setHTML(v: string) {
   if (!area.value) return
+  // mail-sandbox-ok: 这里进来的永远是我们自己写的正文——写信框里敲的字，或者
+  // 一封草稿的 body，而草稿存进库时过的是发信那份白名单（mailPolicy），它连
+  // <style> 带里面的 CSS 一起丢掉。收到的信的 HTML 到不了这一行；它要么进
+  // MailBody 的沙箱，要么先过 stripStylesheets。见 scripts/check-mail-sandbox.sh。
   area.value.innerHTML = v || ''
   hasImages.value = !!area.value.querySelector('img')
 }

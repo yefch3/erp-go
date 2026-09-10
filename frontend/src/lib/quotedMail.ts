@@ -65,15 +65,51 @@ export function attributionLine(mail: QuotedSource, t: Translate): string {
   return t('emails.quotedAt', { when: zonedStamp(when), who, addr: mail.fromEmail })
 }
 
+/** 一整块 `<style>…</style>`。 */
+const STYLE_BLOCK = /<style\b[^>]*>[\s\S]*?<\/style\s*>/gi
+/** 被截断的、没有收尾的 `<style`。浏览器会把它后面全当成 CSS，这里也一样。 */
+const DANGLING_STYLE = /<style\b[\s\S]*$/i
+
+/**
+ * 去掉发件人的样式表。
+ *
+ * **这是把原信放进我们自己的页面之前必须做的一步。** 服务端展示收到的邮件用
+ * 的那份白名单（readerPolicy）是**留着 `<style>` 的**，而且留得有道理——一封
+ * 营销邮件的样子几乎全在那张样式表里。它敢留，是因为那份 HTML 只在沙箱
+ * iframe 里渲染，CSS 出不了那个文档。htmlmail.go 上那段注释把话说死了：
+ * 「the body is injected into our own page, so a sender's stylesheet is a
+ * stranger writing CSS for our application… A selector can name .el-button and
+ * restyle a framework component.」
+ *
+ * 而引用框不是 iframe——它是个 contenteditable 的 div，因为人要能手工删减引用，
+ * iframe 里做不到。所以样式表在这一步就得摘掉。真炸过：回复一封 Cloudflare 的
+ * 营销邮件，它那张表里有一句
+ * `body,table,td,p,a{font-family:Arial!important}`，进了页面就重画整个 ERP。
+ *
+ * **发出去的信不受影响。** 我们自己发信用的是另一份白名单（mailPolicy），
+ * 它本来就不允许 `<style>`，所以这段 CSS 从来就没到过收件人那里；摘掉它只是
+ * 让它也别祸害我们这一页。顺带还堵住另一头：`<style>` 被剥掉标签而 CSS 文字
+ * 留下时，收件人会在正文里看到一坨源码。
+ *
+ * 用正则而不是 DOMParser，两个理由：这不是安全边界（脚本、事件处理器、iframe
+ * 早在服务端就没了），而前端测试跑在纯 node 里没有 DOMParser——一段测不了的
+ * 净化代码比这段正则危险得多。服务端摘同一样东西用的也是同一个形状的正则。
+ */
+export function stripStylesheets(html: string): string {
+  return html.replace(STYLE_BLOCK, '').replace(DANGLING_STYLE, '')
+}
+
 /**
  * 原信引用块：一行署名，底下一个 blockquote 装正文。所有邮件客户端都是这个
  * 形状，收件人的客户端也按这个形状去折叠嵌套的引用。
  *
  * 署名整行转义（地址上那对尖括号是文字，不是标签）；正文分两条路——HTML 那份
- * 是服务端净化过的，原样带走，因为它就是这封信本来的样子；纯文本那份在这里
- * 转义，它此前从来不是标记。
+ * 是服务端净化过的，摘掉样式表之后原样带走（见 stripStylesheets：它是要进我们
+ * 自己的文档的，不是进 iframe）；纯文本那份在这里转义，它此前从来不是标记。
  */
 export function quotedBlock(mail: QuotedSource, t: Translate): string {
-  const inner = mail.bodyHtml || `<p>${escapeText(mail.bodyText || '')}</p>`
+  const inner = mail.bodyHtml
+    ? stripStylesheets(mail.bodyHtml)
+    : `<p>${escapeText(mail.bodyText || '')}</p>`
   return `<p>${escapeText(attributionLine(mail, t))}</p><blockquote>${inner}</blockquote>`
 }
