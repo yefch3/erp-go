@@ -377,6 +377,26 @@ func (s *Server) presignMailImage(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// cleanPastedTable 把剪贴板里那份 HTML 送去净化，回一段可以直接插进正文的
+// 表格。认不出表格时回空串，前端据此退回纯文本那条路。
+//
+// 请求体可能很大（Word 复制一段正文常有几百 KB），所以这条单独放宽上限；
+// 服务端那边还有一道 maxPastedHTMLBytes（2 MB）兜着，超过就直接不认。
+const pastedHTMLLimit = 4 << 20
+
+func (s *Server) cleanPastedTable(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.CleanPastedTableRequest{}
+	if !s.decodeBodyLimit(w, r, req, pastedHTMLLimit) {
+		return
+	}
+	resp, err := s.Emails.CleanPastedTable(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) registerMailImage(w http.ResponseWriter, r *http.Request) {
 	req := &mailv1.RegisterImageRequest{}
 	if !s.decodeBody(w, r, req) {

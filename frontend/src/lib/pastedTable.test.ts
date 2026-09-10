@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { imageWidth, MAIL_BODY_WIDTH, tableFromClipboard } from './pastedTable'
+import { imageWidth, looksLikeTable, MAIL_BODY_WIDTH, tableFromClipboard } from './pastedTable'
 
 // Excel 复制一块 2×3 区域时剪贴板里的样子（简化）。
 const EXCEL_HTML = '<html><body><table border=0><tr><td>x</td></tr></table></body></html>'
@@ -96,5 +96,16 @@ describe('imageWidth', () => {
     expect(imageWidth(0)).toBe(0)
     expect(imageWidth(NaN)).toBe(0)
     expect(imageWidth(-5)).toBe(0)
+  })
+})
+
+describe('looksLikeTable', () => {
+  it('和 tableFromClipboard 同一套判断——只是不产出，只回是不是', () => {
+    // 分开两个函数是为了「不成立就一次网络都不发」：粘贴是高频动作，
+    // 不该每次都往返一趟服务端。判断口径必须和重建那条完全一致，否则会
+    // 出现「说是表格、结果重建不出来」的空档。
+    expect(looksLikeTable(EXCEL_HTML, '品名\t数量\n钢卷\t100')).toBe(true)
+    expect(looksLikeTable('<p>一段话</p>', 'a\tb\nc\td')).toBe(false)
+    expect(looksLikeTable(EXCEL_HTML, 'a\tb\nc\td\te')).toBe(false)
   })
 })

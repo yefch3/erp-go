@@ -72,6 +72,21 @@ function esc(s: string): string {
  * 第二条是防误判的关键。一段带制表符的代码、一份对齐过的清单都可能有制表符，
  * 但它们的每行列数不齐；把它们变成表格比不变更糟。
  */
+/**
+ * 剪贴板里这一份**看起来**是不是一块表格。
+ *
+ * 只做这一个判断，不解析：判断成立才值得为它多跑一趟服务端（净化在那边，
+ * 见 services/mail/internal/app/pastedtable.go）。判断不成立就当普通文字，
+ * 一次网络都不用发——粘贴是个高频动作，不该每次都往返一趟。
+ *
+ * 两个条件都要满足，和 tableFromClipboard 用的是同一套，理由也一样：
+ * `<table` 说明对方认为自己在复制表格，矩形说明那真是一块表格数据。
+ * 一段带制表符的代码、一份对齐过的清单过不了第二条。
+ */
+export function looksLikeTable(html: string, text: string): boolean {
+  return tableFromClipboard(html, text) !== null
+}
+
 export function tableFromClipboard(html: string, text: string): string | null {
   if (!html.toLowerCase().includes('<table')) return null
 

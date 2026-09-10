@@ -151,8 +151,8 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
-import { imageWidth, tableFromClipboard } from '../lib/pastedTable'
+import { get, post, quietErrors } from '../api'
+import { imageWidth, looksLikeTable, tableFromClipboard } from '../lib/pastedTable'
 
 interface MailImage {
   id: string
@@ -282,11 +282,12 @@ function onPaste(e: ClipboardEvent) {
   // 到邮件后显示过小」的由来，它其实根本没被当成表格。
   //
   // 重建用的是纯文本那一份，外来 HTML 一个字节都不进文档，见 lib/pastedTable。
-  const table = tableFromClipboard(dt?.getData('text/html') ?? '', dt?.getData('text/plain') ?? '')
-  if (table) {
+  const clipHTML = dt?.getData('text/html') ?? ''
+  const clipText = dt?.getData('text/plain') ?? ''
+  if (looksLikeTable(clipHTML, clipText)) {
     e.preventDefault()
-    document.execCommand('insertHTML', false, table)
-    emitChange()
+    rememberCaret()
+    void pasteTable(clipHTML, clipText)
     return
   }
   // A pasted picture goes through the upload path, not into the text.
@@ -306,6 +307,37 @@ function onPaste(e: ClipboardEvent) {
   e.preventDefault()
   const text = dt?.getData('text/plain') ?? ''
   document.execCommand('insertText', false, text)
+  emitChange()
+}
+
+// 粘一个表格：把剪贴板那份 HTML 送去服务端净化，回来直接插。
+//
+// **净化在服务端**，理由见 services/mail/internal/app/pastedtable.go：那段
+// HTML 是不可信输入，而净化器是最不能靠"看着对"的一类代码，这边跑在纯 node
+// 的测试里连 DOMParser 都没有，写在这儿测不了。
+//
+// 网络出问题、或者服务端认不出表格（回空串），就退回纯文本重建那条老路——
+// 那条路丢格式但一定能用，比"粘了没反应"强得多。
+async function pasteTable(clipHTML: string, clipText: string) {
+  let html = ''
+  try {
+    const d = await post<{ table?: string }>(
+      '/email-html/clean-table',
+      { html: clipHTML },
+      quietErrors,
+    )
+    html = d.table ?? ''
+  } catch {
+    // 退回下面那条
+  }
+  if (!html) html = tableFromClipboard(clipHTML, clipText) ?? ''
+  restoreCaret()
+  if (html) {
+    document.execCommand('insertHTML', false, html)
+  } else {
+    // 连表格都重建不出来：当普通文字粘。
+    document.execCommand('insertText', false, clipText)
+  }
   emitChange()
 }
 

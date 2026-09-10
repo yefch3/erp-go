@@ -774,6 +774,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write")).Post("/api/email-attachments/presign", s.presignMailAttachment)
 		r.With(s.perm("mail:email:write")).Post("/api/email-attachments", s.registerMailAttachment)
 		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
+		// 粘贴表格时净化剪贴板里那份 HTML。要写权限：它服务的是写信。
+		r.With(s.perm("mail:email:write")).Post("/api/email-html/clean-table", s.cleanPastedTable)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/presign", s.presignMailImage)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images", s.registerMailImage)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)

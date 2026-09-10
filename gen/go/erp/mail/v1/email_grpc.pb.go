@@ -69,6 +69,7 @@ const (
 	EmailService_GetInbound_FullMethodName                   = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
+	EmailService_CleanPastedTable_FullMethodName             = "/erp.mail.v1.EmailService/CleanPastedTable"
 	EmailService_PreviewInboundAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PreviewInboundAttachment"
 	EmailService_DownloadInboundAttachments_FullMethodName   = "/erp.mail.v1.EmailService/DownloadInboundAttachments"
 	EmailService_ListMailFolders_FullMethodName              = "/erp.mail.v1.EmailService/ListMailFolders"
@@ -223,6 +224,15 @@ type EmailServiceClient interface {
 	GetInboundExcelConversionJob(ctx context.Context, in *GetInboundExcelConversionJobRequest, opts ...grpc.CallOption) (*GetInboundExcelConversionJobResponse, error)
 	// 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
 	// 缓存，不再转换。
+	// 把从别处复制来的一段 HTML 净化成可以放进正文的表格。
+	//
+	// 剪贴板里的 HTML 是不可信输入，落进浏览器那个 contenteditable 就和登录态
+	// 同一个 origin。净化放在服务端而不是前端：净化器是最不能靠"看着对"的一类
+	// 代码，而前端测试跑在纯 node 里没有 DOMParser，写在那边测不了。
+	//
+	// 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
+	// 前端据此退回纯文本那条路。
+	CleanPastedTable(ctx context.Context, in *CleanPastedTableRequest, opts ...grpc.CallOption) (*CleanPastedTableResponse, error)
 	PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error)
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
@@ -805,6 +815,16 @@ func (c *emailServiceClient) GetInboundExcelConversionJob(ctx context.Context, i
 	return out, nil
 }
 
+func (c *emailServiceClient) CleanPastedTable(ctx context.Context, in *CleanPastedTableRequest, opts ...grpc.CallOption) (*CleanPastedTableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CleanPastedTableResponse)
+	err := c.cc.Invoke(ctx, EmailService_CleanPastedTable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PreviewInboundAttachmentResponse)
@@ -1200,6 +1220,15 @@ type EmailServiceServer interface {
 	GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error)
 	// 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
 	// 缓存，不再转换。
+	// 把从别处复制来的一段 HTML 净化成可以放进正文的表格。
+	//
+	// 剪贴板里的 HTML 是不可信输入，落进浏览器那个 contenteditable 就和登录态
+	// 同一个 origin。净化放在服务端而不是前端：净化器是最不能靠"看着对"的一类
+	// 代码，而前端测试跑在纯 node 里没有 DOMParser，写在那边测不了。
+	//
+	// 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
+	// 前端据此退回纯文本那条路。
+	CleanPastedTable(context.Context, *CleanPastedTableRequest) (*CleanPastedTableResponse, error)
 	PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error)
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
@@ -1431,6 +1460,9 @@ func (UnimplementedEmailServiceServer) StartInboundExcelConversion(context.Conte
 }
 func (UnimplementedEmailServiceServer) GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInboundExcelConversionJob not implemented")
+}
+func (UnimplementedEmailServiceServer) CleanPastedTable(context.Context, *CleanPastedTableRequest) (*CleanPastedTableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CleanPastedTable not implemented")
 }
 func (UnimplementedEmailServiceServer) PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreviewInboundAttachment not implemented")
@@ -2434,6 +2466,24 @@ func _EmailService_GetInboundExcelConversionJob_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_CleanPastedTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CleanPastedTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CleanPastedTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CleanPastedTable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CleanPastedTable(ctx, req.(*CleanPastedTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_PreviewInboundAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PreviewInboundAttachmentRequest)
 	if err := dec(in); err != nil {
@@ -3126,6 +3176,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInboundExcelConversionJob",
 			Handler:    _EmailService_GetInboundExcelConversionJob_Handler,
+		},
+		{
+			MethodName: "CleanPastedTable",
+			Handler:    _EmailService_CleanPastedTable_Handler,
 		},
 		{
 			MethodName: "PreviewInboundAttachment",
