@@ -569,6 +569,15 @@ function insertImage(img: MailImage) {
 .canvas :deep(img) {
   max-width: 100%;
 }
+/* 第一段不要上边距，否则光标看着像从第二行开始。
+   回复时正文预填的是一个空段落 <p><br></p>，而浏览器给 <p> 的默认上边距是
+   1em——14px 字号就是 14px，行高才 22px，于是那一段被顶下去大半行，光标落在
+   编辑区里悬空的位置上。量过：不改是离顶端 27px，改完 13px（就是内边距）。
+   段与段之间的间距留着，那是正文本来的样子，收件人那边也是这么排的；顶上
+   那一下是多的，因为上面没有段落可隔。 */
+.canvas :deep(> :first-child) {
+  margin-top: 0;
+}
 .note {
   padding: 6px 12px;
   font-size: 12px;
