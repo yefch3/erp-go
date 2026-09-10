@@ -4475,6 +4475,22 @@ async function doUnsuppress(row: Suppression) {
      长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。 */
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 滚动条的位置**一直留着**，不等它出现才腾。
+
+     Windows 的 Chrome/Edge 用经典滚动条，占 15px 布局宽度；macOS 默认是
+     覆盖式的，占 0。所以同一段代码在两个平台上表现不同，而这正是这条
+     规则要修的事：
+
+     广告信的图片常常只声明 width、不声明 height，加载完之前占 0 高度。
+     信一打开是「只有文字」的高度，装得下、没有滚动条；图片一张张落地、
+     内容长过一屏，滚动条**突然出现**，整列内容在一帧之内横向缩 15px。
+     那就是 Windows 上「点开广告邮件抖一下」的真正原因——是横向的，不是
+     纵向变高。实测：500px → 485px。
+
+     stable 让这 15px 从一开始就留出来，出现与否都不影响布局。Mac 上覆盖式
+     滚动条本来就占 0，所以留出来的也是 0，一点代价都没有（实测同样是
+     500 → 500）。 */
+  scrollbar-gutter: stable;
 }
 .compose {
   width: 100%;
@@ -5229,6 +5245,8 @@ async function doUnsuppress(row: Suppression) {
   top: 12px;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
+  scrollbar-gutter: stable;
 }
 .reader-col {
   order: 2;
@@ -5239,6 +5257,8 @@ async function doUnsuppress(row: Suppression) {
   top: 12px;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
+  scrollbar-gutter: stable;
 }
 /* 没选信时右边说一句话。一片空白看着像坏了。 */
 .reader-empty {
