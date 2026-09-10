@@ -279,6 +279,10 @@ type MailAccount struct {
 	UnboundAt       pgtype.Timestamptz
 	AuthFailed      bool
 	KeepSentCopy    *bool
+	// 收信方式：IDLE=服务器推送，POLL=两分钟一轮的轮询，空=还没学到
+	PushMode string
+	// 上一次判断出 push_mode 的时刻。过了冷静期会重新试 IDLE。
+	PushCheckedAt pgtype.Timestamptz
 }
 
 type MailBindingLog struct {
