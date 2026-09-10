@@ -1333,6 +1333,37 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 	backoff := time.Minute
 	// 这台服务器的 IDLE 撑不撑得住。掐得太勤就停掉推送、交给轮询，见 idledrop.go。
 	var health idleHealth
+	// 接着上次学到的结论开局：不接的话，每次部署都要先被掐三圈（约三分钟、
+	// 三次重新登录）才想起来这台服务器的 IDLE 没用。
+	//
+	// 读不出来就当没学过，照常从头试——这一条错在「白连几次」，而为它整个
+	// 放弃守护会让一个本来能推送的箱变成两分钟延迟。
+	if row, err := s.q.GetMailboxPushMode(ctx, store.GetMailboxPushModeParams{
+		TenantID: cfg.TenantID, ID: accountID,
+	}); err == nil {
+		var at time.Time
+		if row.PushCheckedAt.Valid {
+			at = row.PushCheckedAt.Time
+		}
+		health.seed(row.PushMode, at, time.Now())
+	}
+	// 结论变了就记一笔。放在这一层而不是每个分支里各写一次：分支有五条，
+	// 漏掉任何一条都是「库里说推送、实际在轮询」，而那种错没人看得出来。
+	notePushMode := func() {
+		mode, differs := health.changed(time.Now())
+		if !differs {
+			return
+		}
+		if err := s.q.SetMailboxPushMode(ctx, store.SetMailboxPushModeParams{
+			TenantID: cfg.TenantID, ID: accountID, PushMode: mode,
+		}); err != nil {
+			s.log.Warn("could not record how this mailbox receives", "account", accountID, "err", err)
+			return
+		}
+		health.stored = mode
+		s.log.Info("mailbox receive mode", "account", accountID, "mode", mode)
+	}
+	defer notePushMode()
 	for ctx.Err() == nil {
 		// 没人在看了就收摊。每一圈开头查一次——IDLE 一圈最长 25 分钟，所以
 		// 一个箱从「没人看」到连接真正释放最多隔一圈。管理器每分钟扫一次，
@@ -1374,6 +1405,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 				s.log.Info("host has no IMAP push; leaving this mailbox to the poller",
 					"account", accountID, "retry_in", idleRetryAfter)
 				health.quietUntil = time.Now().Add(idleRetryAfter)
+				notePushMode()
 				continue
 			}
 			if BenignIdleDrop(err) {
@@ -1381,6 +1413,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 					// 连着几圈都撑不到一分半。再重连下去只是每分钟登录一次。
 					s.log.Info("host keeps cutting idle connections; falling back to polling",
 						"account", accountID, "quiet_for", idleRetryAfter)
+					notePushMode()
 					continue
 				}
 				// 对方挂了电话。263 几分钟就来一次，不是故障：记一条 Info 留
@@ -1412,6 +1445,8 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		}
 		backoff = time.Minute
 		health.noteIdleRun(time.Now(), time.Since(startedAt), false)
+		// 一圈正常结束：如果之前记的是轮询，这里把它改回推送。
+		notePushMode()
 		if news {
 			if n, err := s.SyncMailbox(ctx, cfg, accountID); err != nil {
 				s.log.Warn("push-triggered sync failed", "account", accountID, "err", err)

@@ -151,7 +151,8 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
+import { get, post, quietErrors } from '../api'
+import { imageWidth, looksLikeTable, tableFromClipboard } from '../lib/pastedTable'
 
 interface MailImage {
   id: string
@@ -273,6 +274,22 @@ function cmd(name: string) {
 // the sender restyle it is the honest option; the server would strip most of
 // it anyway, which would look like the editor losing their work.
 function onPaste(e: ClipboardEvent) {
+  const dt = e.clipboardData
+  // 表格排在图片**之前**判断，这个顺序是 issue #363 的一半。
+  //
+  // 从 Excel 复制一块区域时，剪贴板里同时有图片和文字。图片先判断的话，
+  // 一个表格会被当成截图上传，然后按缩略图宽度插进来——那就是「复制表格
+  // 到邮件后显示过小」的由来，它其实根本没被当成表格。
+  //
+  // 重建用的是纯文本那一份，外来 HTML 一个字节都不进文档，见 lib/pastedTable。
+  const clipHTML = dt?.getData('text/html') ?? ''
+  const clipText = dt?.getData('text/plain') ?? ''
+  if (looksLikeTable(clipHTML, clipText)) {
+    e.preventDefault()
+    rememberCaret()
+    void pasteTable(clipHTML, clipText)
+    return
+  }
   // A pasted picture goes through the upload path, not into the text.
   //
   // Checked before the plain-text branch, because a screenshot on the
@@ -280,7 +297,7 @@ function onPaste(e: ClipboardEvent) {
   // nothing) — taking that first silently swallowed the image and pasted an
   // empty string. This is the thing people expect from Gmail and the reason
   // "why can't I just paste it" kept coming up.
-  const file = imageOnClipboard(e.clipboardData)
+  const file = imageOnClipboard(dt)
   if (file) {
     e.preventDefault()
     rememberCaret()
@@ -288,8 +305,39 @@ function onPaste(e: ClipboardEvent) {
     return
   }
   e.preventDefault()
-  const text = e.clipboardData?.getData('text/plain') ?? ''
+  const text = dt?.getData('text/plain') ?? ''
   document.execCommand('insertText', false, text)
+  emitChange()
+}
+
+// 粘一个表格：把剪贴板那份 HTML 送去服务端净化，回来直接插。
+//
+// **净化在服务端**，理由见 services/mail/internal/app/pastedtable.go：那段
+// HTML 是不可信输入，而净化器是最不能靠"看着对"的一类代码，这边跑在纯 node
+// 的测试里连 DOMParser 都没有，写在这儿测不了。
+//
+// 网络出问题、或者服务端认不出表格（回空串），就退回纯文本重建那条老路——
+// 那条路丢格式但一定能用，比"粘了没反应"强得多。
+async function pasteTable(clipHTML: string, clipText: string) {
+  let html = ''
+  try {
+    const d = await post<{ table?: string }>(
+      '/email-html/clean-table',
+      { html: clipHTML },
+      quietErrors,
+    )
+    html = d.table ?? ''
+  } catch {
+    // 退回下面那条
+  }
+  if (!html) html = tableFromClipboard(clipHTML, clipText) ?? ''
+  restoreCaret()
+  if (html) {
+    document.execCommand('insertHTML', false, html)
+  } else {
+    // 连表格都重建不出来：当普通文字粘。
+    document.execCommand('insertText', false, clipText)
+  }
   emitChange()
 }
 
@@ -435,25 +483,43 @@ function insertImage(img: MailImage) {
   // alt is not optional — with images blocked, it is what most recipients
   // see the first time they open the mail.
   const alt = img.fileName.replace(/\.[^.]+$/, '').replace(/"/g, '')
-  nextTick(() => {
-    restoreCaret()
-    document.execCommand(
-      'insertHTML',
-      false,
-      `<img src="${src}" alt="${alt}" width="160" style="max-width:100%">`,
-    )
-    emitChange()
-  })
-  // Measured from the served image rather than trusted from metadata: the
-  // stored row never recorded dimensions, and the file itself is the one
-  // thing that cannot be wrong about them.
+
+  // 宽度按图片自己的尺寸来，只在超过正文宽度时才收（见 lib/pastedTable 的
+  // imageWidth）。
+  //
+  // **从前这里写死 width="160"。** 一张图不管多大都被插成 160px 的缩略图，
+  // 而这个属性会跟着发出去——所以预览和收件人看到的都一样小。issue #363
+  // 说的「复制表格过来显示过小」，一半是表格没被当成表格，另一半就是这里。
+  //
+  // 尺寸要先量到才能写，所以插入挪到 onload 里。量不到（图挂了）就不写
+  // width，让浏览器用真实尺寸、max-width 兜上限——写一个猜的数更糟。
+  //
+  // 量的是**服务出来的那张图**，不是元数据：库里那行从来没记过尺寸，而文件
+  // 本身是唯一不会说错的。
   const probe = new Image()
-  probe.onload = () =>
+  const insert = (w: number) => {
+    nextTick(() => {
+      restoreCaret()
+      const width = w > 0 ? ` width="${w}"` : ''
+      document.execCommand(
+        'insertHTML',
+        false,
+        `<img src="${src}" alt="${alt}"${width} style="max-width:100%;height:auto">`,
+      )
+      emitChange()
+    })
+  }
+  probe.onload = () => {
+    insert(imageWidth(probe.naturalWidth))
     emit('image-inserted', {
       width: probe.naturalWidth,
       height: probe.naturalHeight,
       bytes: Number(img.fileSize) || 0,
     })
+  }
+  // 图取不到也要把它插进去：地址是对的，可能只是这一刻网络不好，而使用者
+  // 刚做的动作不该无声无息地什么都没发生。
+  probe.onerror = () => insert(0)
   probe.src = src
 }
 </script>
