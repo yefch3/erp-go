@@ -155,11 +155,13 @@
             :rows="9"
             :placeholder="t('emails.bodyPlaceholder')"
           />
-          <!-- The quoted original, folded behind Gmail's ··· trimmer. It
-               lives in its own region rather than inside the editor, which
-               is what makes the fold reversible: the boundary between what
-               you wrote and what you are quoting never has to be guessed.
-               Part of the outgoing mail either way, open or shut. -->
+          <!-- The quoted original, with a ··· trimmer over it. It lives in
+               its own region rather than inside the editor, which is what
+               makes the fold reversible: the boundary between what you wrote
+               and what you are quoting never has to be guessed. Part of the
+               outgoing mail either way, open or shut.
+               展开着进来（照 Foxmail，见 quoteOpen）——底下这一块就是 #366
+               要的「不关掉写信框也看得见对方原信」。 -->
           <template v-if="quoted">
             <button
               type="button"
@@ -427,6 +429,7 @@ import {
   wallClockIn,
   zonedToInstant,
 } from '../lib/zonedtime'
+import { escapeText, quotedBlock, type QuotedSource } from '../lib/quotedMail'
 
 interface Signature {
   id: string
@@ -580,7 +583,16 @@ let baseline = ''
 // where your text ends and the quote begins. Always part of what is sent;
 // see fullBody.
 const quoted = ref('')
-const quoteOpen = ref(false)
+// 默认**展开**，照 Foxmail（issue #366 上 sgao19：「参考 foxmail 做别按
+// gmail 了」）。原本是折叠的，那是 Gmail 的做法，连同上面那颗 ··· 一起抄的。
+//
+// 两家的差别不是喜好：Gmail 把引用块放在编辑区**里面**，展开就把光标推到
+// 屏幕外，所以它必须折叠；这里引用块在编辑区**下面**，展开不占上面任何位置，
+// 折叠换不来什么，只让人为了核对原文多点一下。而 #366 要的正是「回复的时候
+// 不用关掉写信框就能看见对方原信」。
+//
+// 折叠仍在，只是变成了主动收起。
+const quoteOpen = ref(true)
 const quoteBox = ref<HTMLElement>()
 
 // What actually goes out: the typed text plus the quote, open or shut. Every
@@ -595,6 +607,30 @@ function fullBody() {
 watch([quoteOpen, () => form.format], ([open]) => {
   if (!open) return
   nextTick(() => fillQuoteBox())
+})
+
+// 设置引用原文，并负责把它写进那个框。
+//
+// 从前不需要这个函数：引用块默认折叠，所以「填框」总是跟在一次展开后面，
+// 上面那个 watch 接得住。改成默认展开之后 quoteOpen 从头到尾都是 true，
+// **没有变化可听**，框子会一直空着——回复里看不到原文，而它其实照样跟着信
+// 发出去（fullBody 读的是 quoted，不是框）。看不见的引用比折叠起来的更坏。
+//
+// 那为什么不干脆 watch quoted？因为每敲一个字 onQuoteInput 都会写它一次，
+// 回填会把光标扔回开头。所以由设置的人负责填，改动的人不填。
+function setQuoted(html: string) {
+  quoted.value = html
+  nextTick(() => fillQuoteBox())
+}
+
+// 框子一出现就填。
+//
+// 和 setQuoted 各管一头，缺一不可：写信框是个对话框，第一次打开时 el-dialog
+// 才把里面的东西渲染出来，那时 setQuoted 那一个 nextTick 早过去了，框还不
+// 存在；反过来，对话框已经开着时再回复一封，reset 把 quoted 清空又立刻填上，
+// 同一拍里 v-if 没真的翻过，元素被复用，这个 watch 不会响。
+watch(quoteBox, (el) => {
+  if (el) fillQuoteBox()
 })
 
 function fillQuoteBox() {
@@ -757,34 +793,11 @@ async function openDraft(id: string) {
   // Everything on screen is already stored, so closing now loses nothing.
   markClean()
 }
-// What reply and forward need from the mail being answered.
-interface QuotedMail {
+// What reply and forward need from the mail being answered. 引用块本身怎么拼
+// 在 lib/quotedMail（那段东西会跟着信发到客户手上，值得单独测）。
+interface QuotedMail extends QuotedSource {
   id: string
-  fromEmail: string
-  fromName?: string
   subject?: string
-  bodyHtml?: string
-  bodyText?: string
-}
-
-function escapeText(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>')
-}
-
-// The original message, quoted the way every client quotes: attribution line,
-// then the body in a blockquote. The HTML came sanitised from the server; the
-// text fallback is escaped here before it becomes markup.
-function quotedBlock(mail: QuotedMail) {
-  const inner = mail.bodyHtml || `<p>${escapeText(mail.bodyText || '')}</p>`
-  const who = escapeText(mail.fromName || mail.fromEmail)
-  return (
-    `<p>${who} &lt;${escapeText(mail.fromEmail)}&gt; ${escapeText(t('emails.wrote'))}</p>` +
-    `<blockquote>${inner}</blockquote>`
-  )
 }
 
 function prefixSubject(subject: string, tag: string) {
@@ -793,7 +806,7 @@ function prefixSubject(subject: string, tag: string) {
 }
 
 // Prefills a reply: the sender becomes the recipient, the subject gains Re:,
-// the original is quoted (collapsed, Gmail-style), and the server threads it
+// the original is quoted below the editor, and the server threads it
 // via replyToInboundId. markClean afterwards — the prefill is machine work,
 // losing it costs nothing.
 function openReply(mail: QuotedMail) {
@@ -805,7 +818,7 @@ function openReply(mail: QuotedMail) {
   form.subject = prefixSubject(mail.subject || '', 'Re:')
   form.format = 'HTML'
   form.body = '<p><br></p>'
-  quoted.value = quotedBlock(mail)
+  setQuoted(quotedBlock(mail, t))
   markClean()
 }
 
@@ -824,19 +837,19 @@ function openReplyAll(mail: QuotedMail, who: { to: { name?: string; email: strin
   form.subject = prefixSubject(mail.subject || '', 'Re:')
   form.format = 'HTML'
   form.body = '<p><br></p>'
-  quoted.value = quotedBlock(mail)
+  setQuoted(quotedBlock(mail, t))
   markClean()
 }
 
 // Prefills a forward: no recipient yet, subject gains Fwd:, the original is
-// quoted (collapsed) and its attachments travel along server-side.
+// quoted below the editor and its attachments travel along server-side.
 function openForward(mail: QuotedMail) {
   reset()
   replyCtx.forwardInboundId = mail.id
   form.subject = prefixSubject(mail.subject || '', 'Fwd:')
   form.format = 'HTML'
   form.body = '<p><br></p>'
-  quoted.value = quotedBlock(mail)
+  setQuoted(quotedBlock(mail, t))
   markClean()
 }
 
@@ -990,7 +1003,7 @@ function reset() {
   form.subject = ''
   form.body = ''
   quoted.value = ''
-  quoteOpen.value = false
+  quoteOpen.value = true
   form.format = 'HTML'
   form.signatureId = '0'
   form.sendMode = 'SEPARATE'

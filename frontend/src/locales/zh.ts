@@ -1818,6 +1818,9 @@ export default {
     close: '关闭',
     allRecipients: '全部收件人',
     wrote: '写道：',
+    // 引用原信那一行。带偏移量的时间是有意的：这句话会跟着信发到客户手上，
+    // 而客户多半不在这个时区。
+    quotedAt: '在 {when}，{who} <{addr}> 写道：',
     showQuoted: '展开引用内容',
     hideQuoted: '收起引用内容',
     backToList: '返回',

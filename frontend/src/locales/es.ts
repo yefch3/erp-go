@@ -1828,6 +1828,7 @@ export default {
     close: 'Cerrar',
     allRecipients: 'todos los destinatarios',
     wrote: 'escribió:',
+    quotedAt: 'El {when}, {who} <{addr}> escribió:',
     showQuoted: 'Mostrar texto citado',
     hideQuoted: 'Ocultar texto citado',
     backToList: 'Volver',
