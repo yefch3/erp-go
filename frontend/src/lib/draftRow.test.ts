@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { draftToRow, draftWho } from './draftRow'
+import { draftPreviewContext, draftToRow, draftWho } from './draftRow'
 
 const labels = {
   noRecipient: '(无收件人)',
@@ -81,5 +81,37 @@ describe('draftToRow', () => {
   test('带附件的标出来', () => {
     expect(draftToRow(d, labels).hasAttachments).toBe(true)
     expect(draftToRow({ id: '9' }, labels).hasAttachments).toBe(false)
+  })
+})
+
+// 右边那封草稿什么时候该收起来。
+//
+// 这几条钉的是三件**已经漏过**的事：换文件夹、换信箱、开始搜索。第一版只
+// 盯着文件夹，于是后两条各留下一个「左边是这个、右边是那个」的画面。
+describe('draftPreviewContext', () => {
+  const ctx = draftPreviewContext
+
+  test('换文件夹要变', () => {
+    expect(ctx(7, 'drafts', false)).not.toBe(ctx(7, 'inbox', false))
+  })
+
+  test('换信箱要变——哪怕落在同一个文件夹上', () => {
+    // 点另一个箱底下的「草稿箱」时 folder 被赋成同一个字符串，只盯 folder
+    // 的话什么都不会发生，而列表已经是另一个箱的草稿了。
+    expect(ctx(7, 'drafts', false)).not.toBe(ctx(9, 'drafts', false))
+  })
+
+  test('开始搜索要变——搜索不换文件夹', () => {
+    // 搜索框是整页唯一的那个，成不成立只看关键词。在草稿箱里一搜，左边整列
+    // 换成跨信箱的命中，而 folder 还是 drafts。
+    expect(ctx(7, 'drafts', false)).not.toBe(ctx(7, 'drafts', true))
+  })
+
+  test('搜索期间换关键词不变——那一刻早就该收起来了，不必每敲一个字再清一次', () => {
+    expect(ctx(7, 'drafts', true)).toBe(ctx(7, 'inbox', true))
+  })
+
+  test('什么都没变就不变，不然每次重算都会把右边清掉', () => {
+    expect(ctx(7, 'drafts', false)).toBe(ctx(7, 'drafts', false))
   })
 })

@@ -62,6 +62,31 @@ export function draftWho(d: DraftSummary, labels: DraftLabels): string {
  *   · receivedAt 用的是 updatedAt。列表那一列问的是「什么时候」，对一封收到
  *     的信是收到的时刻，对一封写了一半的信是**存下来的时刻**，同一个问题。
  */
+/**
+ * 右边那封草稿此刻挂在什么上下文里。**这个值变了，预览就得收起来。**
+ *
+ * 写成一个算出来的值，而不是在页面上列几条「什么时候清空」——列触发条件正是
+ * 这段代码第一版犯的错，而漏掉的两条都不是想得到的：
+ *
+ *   一、**搜索不换文件夹。** 搜索框是整页唯一的那个（在左栏），成不成立只看
+ *       关键词，不看站在哪个文件夹。于是在草稿箱里一搜：左边整列换成跨信箱
+ *       的命中，folder 还是 'drafts'，右边那封草稿一动不动。
+ *   二、**换信箱可能落在同一个 key 上。** 点另一个箱底下的「草稿箱」时，
+ *       folder 被重新赋成同一个字符串，watch 不响——而列表已经是另一个箱的
+ *       草稿了。取单封草稿的接口只按 tenant+owner+id 查、不按信箱查（只有
+ *       列表按信箱），所以右边那封别的箱的草稿照样取得到，一句报错都没有。
+ *
+ * 搜索状态压成一个词而不是关键词本身：改关键词只是换一批命中，右边那封草稿
+ * 早在开始搜的那一刻就该收起来了，没必要每敲一个字再清一次。
+ */
+export function draftPreviewContext(
+  accountId: number,
+  folder: string,
+  searching: boolean,
+): string {
+  return `${accountId}/${searching ? '搜索' : folder}`
+}
+
 export function draftToRow(d: DraftSummary, labels: DraftLabels): MailRow {
   const who = draftWho(d, labels)
   return {

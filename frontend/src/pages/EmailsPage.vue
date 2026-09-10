@@ -1409,7 +1409,7 @@ import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
 import DraftReader, { type DraftDetail } from '../components/DraftReader.vue'
-import { draftToRow } from '../lib/draftRow'
+import { draftPreviewContext, draftToRow } from '../lib/draftRow'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -3149,10 +3149,13 @@ watch([folder, () => inbound.value, () => mailboxSent.value, () => drafts.value]
   if (picked.value.length) picked.value = []
 })
 
-// 换文件夹就把右边那封草稿收起来。它不在 URL 里（见模板上的注释），所以
-// 没有别的东西会替它清场——不清的话，从草稿箱切到收件箱、再切回来，右边
-// 还挂着切走之前那一封。
-watch(folder, () => {
+// 左边不再是「这个箱的草稿箱」了，右边那封草稿就收起来。它不在 URL 里
+// （见模板上的注释），所以没有别的东西会替它清场。什么算「不再是」以及
+// 为什么不能在这儿列触发条件，见 lib/draftRow 里那段注释。
+const draftContext = computed(() =>
+  draftPreviewContext(currentAccount.value, folder.value, isSearching.value),
+)
+watch(draftContext, () => {
   if (openedDraft.value) openedDraft.value = null
 })
 
