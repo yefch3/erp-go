@@ -1822,6 +1822,7 @@ export default {
     close: 'Close',
     allRecipients: 'all recipients',
     wrote: 'wrote:',
+    quotedAt: 'On {when}, {who} <{addr}> wrote:',
     showQuoted: 'Show quoted text',
     hideQuoted: 'Hide quoted text',
     backToList: 'Back',
