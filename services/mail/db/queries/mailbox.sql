@@ -1679,6 +1679,26 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text;
 
+-- name: GetMailboxPushMode :one
+-- 上一次学到这个信箱是走推送还是走轮询，以及什么时候学到的。
+--
+-- 进程启动时读一次，好接着上次的结论走，不用重新被掐三圈才想起来。
+-- 见 00063 那条迁移里为什么要落库。
+SELECT push_mode, push_checked_at
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: SetMailboxPushMode :exec
+-- 记下这个信箱现在走哪条路。
+--
+-- **只在结论变了的时候写**（调用方判断）：IDLE 正常的时候每二十几分钟就是
+-- 一圈，圈圈都写一次等于把一次读变成一次写，而结论几乎从不变。
+UPDATE mail_accounts
+SET push_mode = sqlc.arg(push_mode)::text,
+    push_checked_at = now(),
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
 -- name: MailboxIsBeingRead :one
 -- 这个信箱此刻算不算「有人在看」。
 --

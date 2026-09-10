@@ -106,8 +106,19 @@ func TransportFailure(err error) bool {
 // 交给两分钟一轮的轮询。**代价是新信最多晚两分钟到**，换掉每分钟一次的重新
 // 登录——而那两分钟本来就是没人在看的箱的待遇。
 //
-// 判断按账号存在内存里：重启就忘，重新学一遍，最多白连几次。不落库是有意的
-// ——这是一台服务器此刻的脾气，不是一条需要长期记住的事实。
+// 判断按账号存在内存里，**同时落一份到库里**（mail_accounts.push_mode）。
+//
+// 这里原本写着「不落库是有意的——这是一台服务器此刻的脾气，不是一条需要长期
+// 记住的事实」。那句话没说错，但它漏了两件事，所以 2026-09-09 反转了：
+//
+//   一、没法查。「这个箱现在走推送还是轮询」只存在内存里，问一次就得翻日志，
+//       而那几行日志只在有人正开着邮件页时才产生——没人看的时候这个循环
+//       根本不跑，一条都没有。业务问起来只能靠推断。
+//   二、每次重启忘光。每部署一次就重新学一遍：先被掐三圈（约三分钟、三次
+//       重新登录）才退回轮询。
+//
+// 「此刻的脾气」那句仍然成立，所以落的不是永久结论：连判断时间一起存，过了
+// 冷静期照样重新试 IDLE。存的是「上次学到的」，不是「从此就是这样」。
 const (
 	// idleTooShort 是「这一圈根本没撑住」的界线。263 实测 66 秒，留一点余量。
 	idleTooShort = 90 * time.Second
@@ -126,11 +137,53 @@ const (
 // 一断就要重新握手加登录。收到这个就把这个箱交给两分钟一轮的轮询。
 var ErrPushUnsupported = errors.New("mail: host does not support IMAP push")
 
+// 落库的三态。空串是「还没学到」——新绑的箱、以及这一列刚加上时的存量。
+const (
+	PushModeIdle = "IDLE"
+	PushModePoll = "POLL"
+)
+
 // idleHealth 记着每个账号的 IDLE 撑得住撑不住。
 type idleHealth struct {
 	shortRuns int
 	// 放弃推送到什么时候为止；零值表示没放弃。
 	quietUntil time.Time
+	// 库里那一列此刻是什么。只在结论**变了**的时候才写库：IDLE 正常时每
+	// 二十几分钟就是一圈，圈圈都写等于把一次读变成一次写，而结论几乎不变。
+	stored string
+}
+
+// seed 用库里存的结论开局，省掉「重启之后重新被掐三圈才想起来」那三分钟。
+//
+// checkedAt 是上次学到的时刻。冷静期从那时算起，不是从进程启动算起——否则
+// 每重启一次就把冷静期重新拉满，一台已经判定没用的服务器会被无限期地不再
+// 尝试，而它可能早就改好了。
+func (h *idleHealth) seed(mode string, checkedAt time.Time, now time.Time) {
+	h.stored = mode
+	if mode != PushModePoll || checkedAt.IsZero() {
+		return
+	}
+	if until := checkedAt.Add(idleRetryAfter); now.Before(until) {
+		h.quietUntil = until
+	}
+}
+
+// modeNow 是此刻该记进库里的结论。
+//
+// 按「正在冷静期」判断，不按「上一圈成没成」：一圈 IDLE 因为收到新信而正常
+// 结束也叫成功，但那不代表这台服务器的 IDLE 可用——它可能三圈里有两圈是被
+// 掐断的。冷静期才是「我们已经放弃推送」的那个信号。
+func (h *idleHealth) modeNow(now time.Time) string {
+	if h.idleWorthTrying(now) {
+		return PushModeIdle
+	}
+	return PushModePoll
+}
+
+// changed 说此刻的结论和库里存的是不是不一样；一样就别写。
+func (h *idleHealth) changed(now time.Time) (mode string, differs bool) {
+	m := h.modeNow(now)
+	return m, m != h.stored
 }
 
 // noteIdleRun 记一圈 IDLE 的结果，并回答「下一圈还用不用 IDLE」。

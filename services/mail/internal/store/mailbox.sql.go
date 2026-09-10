@@ -1373,6 +1373,33 @@ func (q *Queries) GetMailHost(ctx context.Context, tenantID int64) (GetMailHostR
 	return i, err
 }
 
+const getMailboxPushMode = `-- name: GetMailboxPushMode :one
+SELECT push_mode, push_checked_at
+FROM mail_accounts
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type GetMailboxPushModeParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetMailboxPushModeRow struct {
+	PushMode      string
+	PushCheckedAt pgtype.Timestamptz
+}
+
+// 上一次学到这个信箱是走推送还是走轮询，以及什么时候学到的。
+//
+// 进程启动时读一次，好接着上次的结论走，不用重新被掐三圈才想起来。
+// 见 00063 那条迁移里为什么要落库。
+func (q *Queries) GetMailboxPushMode(ctx context.Context, arg GetMailboxPushModeParams) (GetMailboxPushModeRow, error) {
+	row := q.db.QueryRow(ctx, getMailboxPushMode, arg.TenantID, arg.ID)
+	var i GetMailboxPushModeRow
+	err := row.Scan(&i.PushMode, &i.PushCheckedAt)
+	return i, err
+}
+
 const getSyncState = `-- name: GetSyncState :one
 SELECT uid_validity, last_uid, low_uid, last_synced_at, last_error
 FROM mail_sync_state
@@ -4429,6 +4456,29 @@ type SetMailFolderRoleParams struct {
 // 服务器对改名/删除答「默认文件夹」时把它标成系统：服务器的拒绝是最后的裁判。
 func (q *Queries) SetMailFolderRole(ctx context.Context, arg SetMailFolderRoleParams) error {
 	_, err := q.db.Exec(ctx, setMailFolderRole, arg.Role, arg.TenantID, arg.ID)
+	return err
+}
+
+const setMailboxPushMode = `-- name: SetMailboxPushMode :exec
+UPDATE mail_accounts
+SET push_mode = $1::text,
+    push_checked_at = now(),
+    updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetMailboxPushModeParams struct {
+	PushMode string
+	TenantID int64
+	ID       int64
+}
+
+// 记下这个信箱现在走哪条路。
+//
+// **只在结论变了的时候写**（调用方判断）：IDLE 正常的时候每二十几分钟就是
+// 一圈，圈圈都写一次等于把一次读变成一次写，而结论几乎从不变。
+func (q *Queries) SetMailboxPushMode(ctx context.Context, arg SetMailboxPushModeParams) error {
+	_, err := q.db.Exec(ctx, setMailboxPushMode, arg.PushMode, arg.TenantID, arg.ID)
 	return err
 }
 
