@@ -103,8 +103,9 @@ migrate: ## Run goose migrations for every service that has them
 # ---------------------------------------------------------------- quality
 
 .PHONY: test
-test: ## Run all Go tests
-	@for mod in pkg gen $(wildcard services/*); do \
+test: ## Run Go tests (MODULES= 收窄范围，见「CI 的范围」)
+	@[ -n "$(SCOPE_MODULES)" ] || echo "==> go test: skipped, no Go module in scope"
+	@for mod in $(SCOPE_MODULES); do \
 		[ -f "$$mod/go.mod" ] || continue; \
 		echo "==> go test ./$$mod/..."; \
 		(cd "$$mod" && go test ./...) || exit 1; \
@@ -123,8 +124,9 @@ test-cross-service: ## 出口↔采购在网线上对不对得上（需要先 `m
 		go test ./internal/adapter/grpcout/ -run CrossService -count=1 -v
 
 .PHONY: lint
-lint: ## golangci-lint over every module
-	@for mod in pkg $(wildcard services/*); do \
+lint: ## golangci-lint over every module (MODULES= 收窄范围，见「CI 的范围」)
+	@[ -n "$(SCOPE_MODULES)" ] || echo "==> lint: skipped, no Go module in scope"
+	@for mod in $(filter-out gen,$(SCOPE_MODULES)); do \
 		[ -f "$$mod/go.mod" ] || continue; \
 		echo "==> lint $$mod"; \
 		(cd "$$mod" && go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT) run ./...) || exit 1; \
@@ -174,8 +176,9 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 # calling an undefined function and a handler taking an argument that was
 # silently dropped. Both had shipped.
 .PHONY: frontend-ci
-frontend-ci: ## Type-check and build the frontend, and run its unit tests
-	cd frontend && npm ci && npm run typecheck && npm run build && npm test
+frontend-ci: ## Type-check and build the frontend, and run its unit tests (FRONTEND=0 跳过)
+	@if [ "$(FRONTEND)" = "0" ]; then echo "==> frontend-ci: skipped, frontend/ untouched"; \
+	else cd frontend && npm ci && npm run typecheck && npm run build && npm test; fi
 
 # The single definition of what CI checks. The workflow provides the
 # environment (Postgres, Redis, created databases, migrations) and then calls
@@ -187,8 +190,38 @@ frontend-ci: ## Type-check and build the frontend, and run its unit tests
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes check-compose-env frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes check-compose-env check-ci-scope frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
+
+# ------------------------------------------------------------ CI 的范围
+# 一次 `make ci` 五分多钟，大头是 13 个 Go 模块的测试和 lint 加前端那一套，
+# 而绝大多数 PR 只碰其中一两块。这两个变量把范围收窄：
+#
+#   MODULES   只测试和 lint 这些 Go 模块（空格分隔的目录，如 "gen services/mail"）。
+#             不给 = 全部；"all" = 全部；"none" = 一个都不跑。
+#   FRONTEND  0 = 跳过 frontend-ci。
+#
+# 范围由 scripts/ci-scope.sh 按改动路径算，规则和测试都在那儿。**只有 PR 上
+# 的 CI 用它，push 到 main 一律全跑**——PR 上跳过的，合进去之后在 main 上
+# 补齐。本地 `make ci` 不带参数 = 全部，和从前一样。
+#
+# 守卫脚本（check-*）和 proto/sqlc 的漂移检查不在范围里，永远跑：它们只
+# 扫文本，加起来十几秒，而它们各自挡的都是出过事的东西。
+MODULES  ?=
+FRONTEND ?= 1
+ALL_MODULES   := pkg gen $(wildcard services/*)
+SCOPE_MODULES := $(if $(filter all,$(MODULES)),$(ALL_MODULES),$(if $(filter none,$(MODULES)),,$(if $(MODULES),$(MODULES),$(ALL_MODULES))))
+
+.PHONY: ci-pr
+ci-pr: ## 和 PR 上的 CI 一样：只跑相对 origin/main 的改动涉及的部分
+	@scope=$$(sh scripts/ci-scope.sh origin/main HEAD); \
+	mods=$$(printf '%s\n' "$$scope" | sed -n 's/^modules=//p'); \
+	fe=$$(printf '%s\n' "$$scope" | sed -n 's/^frontend=//p'); \
+	$(MAKE) ci MODULES="$$mods" FRONTEND="$$fe"
+
+.PHONY: check-ci-scope
+check-ci-scope: ## 算范围的那套规则自己的测试——它错了不会有测试变红，只会有测试悄悄不跑
+	sh scripts/ci-scope_test.sh
 
 .PHONY: sqlc
 sqlc: ## Regenerate sqlc stores for every service that has one
