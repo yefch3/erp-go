@@ -1410,6 +1410,7 @@ import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
 import DraftReader, { type DraftDetail } from '../components/DraftReader.vue'
 import { draftPreviewContext, draftToRow } from '../lib/draftRow'
+import { shouldReloadList } from '../lib/liveInbox'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -2335,6 +2336,14 @@ function init() {
 // IMAP sync stores it, publishes a hint, and every open tab of the owner's
 // hears it here. The re-fetch goes through the normal API, so this is only
 // ever "go and look", never data.
+//
+// 角标永远刷；列表要不要重拉，规则在 lib/liveInbox。这里从前写着「开着一封
+// 信就不重拉」——那是两栏布局的规矩（读信会盖住列表），三栏之后列表就在打开
+// 的信旁边，而一封信几乎总是开着的，于是列表**永远**不更新：角标在涨、列表
+// 纹丝不动、非得手动刷新。两边各自的道理见那个文件。
+//
+// 重拉是安静的（不转圈）：这不是人点出来的动作，一转圈就像是页面自己出了
+// 什么事。新的一行出现在顶上就是全部的反馈。
 onUnmounted(
   onLive((e) => {
     if (e.type === 'mail.excel_job.changed') {
@@ -2342,13 +2351,17 @@ onUnmounted(
       return
     }
     if (e.type !== 'mail.inbound') return
-    // Not while reading a mail: yanking the list from under the detail page
-    // would be invisible, and the unread badge covers the news.
-    if (folder.value === 'inbox' && !openedInbound.value) {
-      load()
-    } else {
-      refreshUnread()
-    }
+    refreshUnread()
+    const reload = shouldReloadList(e.subject, {
+      folder: folder.value,
+      searching: isSearching.value,
+      onFirstPage: !applied?.cursor,
+      picked: picked.value.length,
+      dragging: !!dragging.value,
+      bulkBusy: bulkBusy.value,
+      currentAccount: currentAccount.value,
+    })
+    if (reload) void load({ quiet: true })
   }),
 )
 
@@ -2726,8 +2739,9 @@ function backToList() {
   pushState({ mail: '' })
 }
 
-async function load() {
-  loading.value = true
+// quiet：不转圈。给后台自己发起的重拉用（新信到了），人点出来的都要转。
+async function load(opts: { quiet?: boolean } = {}) {
+  if (!opts.quiet) loading.value = true
   try {
     if (isSearching.value) {
       // A search crosses folders, so it is a different request with a
@@ -2842,7 +2856,7 @@ async function load() {
       suppressions.value = d.suppressions ?? []
     }
   } finally {
-    loading.value = false
+    if (!opts.quiet) loading.value = false
   }
 }
 
