@@ -376,7 +376,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			if updateErr != nil {
 				return head, updateErr
 			}
-			head = store.CreatePurchaseOrderRow{ID: updated.ID, PoNo: updated.PoNo, Status: updated.Status, CreatedAt: updated.CreatedAt}
+			head = store.CreatePurchaseOrderRow(updated)
 			if _, updateErr = tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark)); updateErr != nil {
 				return head, updateErr
 			}
