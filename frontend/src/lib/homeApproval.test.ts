@@ -8,18 +8,30 @@ describe('approvalSourceLink', () => {
     })
   })
 
-  it('将采购审批和供应商差异确认定位到采购单详情', () => {
-    expect(approvalSourceLink({ bizType: 'PURCHASE_ORDER', bizId: '21' })).toEqual({
-      path: '/purchase-orders', query: { order: '21' },
+  it('将待处理采购审批定位到审批中并打开采购单详情', () => {
+    expect(approvalSourceLink({ bizType: 'PURCHASE_ORDER', bizId: '21', status: 'RUNNING' })).toEqual({
+      path: '/purchase-orders', query: { status: 'PENDING_APPROVAL', order: '21' },
     })
+  })
+
+  it('按采购审批结果定位对应标签', () => {
+    expect(approvalSourceLink({ bizType: 'PURCHASE_ORDER', bizId: '21', status: 'APPROVED' })).toEqual({
+      path: '/purchase-orders', query: { status: 'PENDING_CONTRACT', order: '21' },
+    })
+    expect(approvalSourceLink({ bizType: 'PURCHASE_ORDER', bizId: '21', status: 'REJECTED' })).toEqual({
+      path: '/purchase-orders', query: { status: 'HISTORY', order: '21' },
+    })
+  })
+
+  it('将供应商差异确认定位到已下单采购单详情', () => {
     expect(approvalSourceLink({ bizType: 'PURCHASE_ORDER_CHANGE', bizId: '22' })).toEqual({
-      path: '/purchase-orders', query: { order: '22' },
+      path: '/purchase-orders', query: { status: 'ORDERED', order: '22' },
     })
   })
 
   it('将物流方案确认定位到实单询价详情', () => {
     expect(approvalSourceLink({ bizType: 'SHIPPING_REQUOTE', bizId: '31' })).toEqual({
-      path: '/shipping/requirements', query: { handoff: '31' },
+      path: '/shipping/orders', query: { handoff: '31' },
     })
   })
 

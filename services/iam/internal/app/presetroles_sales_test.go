@@ -27,6 +27,7 @@ func TestSalesPresetRolesDoNotGrantProcurementOperations(t *testing.T) {
 
 func TestSalesAndProcurementPresetRoleBoundary(t *testing.T) {
 	required := map[string][]string{
+		"BOSS":                {"approval:task:act", "procurement:order:read"},
 		"SALES":               {"sales:inquiry:write", "export:quotation:write", "masterdata:port:read", "masterdata:customer:write"},
 		"SALES_MANAGER":       {"sales:inquiry:write", "export:quotation:write", "export:contract:approve", "masterdata:port:read", "masterdata:customer:write"},
 		"BUYER":               {"procurement:sourcing:write", "procurement:sourcing:price", "masterdata:factory:read"},

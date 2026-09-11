@@ -2379,14 +2379,17 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	RequirementService_ListRequirements_FullMethodName            = "/erp.procurement.v1.RequirementService/ListRequirements"
-	RequirementService_ExportPurchaseTemplate_FullMethodName      = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
-	RequirementService_CreateRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CreateRequirement"
-	RequirementService_GetRequirement_FullMethodName              = "/erp.procurement.v1.RequirementService/GetRequirement"
-	RequirementService_CancelRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CancelRequirement"
-	RequirementService_ReopenRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/ReopenRequirement"
-	RequirementService_ListRequirementOrders_FullMethodName       = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
-	RequirementService_ContractProcurementProgress_FullMethodName = "/erp.procurement.v1.RequirementService/ContractProcurementProgress"
+	RequirementService_ListRequirements_FullMethodName             = "/erp.procurement.v1.RequirementService/ListRequirements"
+	RequirementService_ListExecutionSupplierQuotes_FullMethodName  = "/erp.procurement.v1.RequirementService/ListExecutionSupplierQuotes"
+	RequirementService_SaveExecutionSupplierQuote_FullMethodName   = "/erp.procurement.v1.RequirementService/SaveExecutionSupplierQuote"
+	RequirementService_DeleteExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/DeleteExecutionSupplierQuote"
+	RequirementService_ExportPurchaseTemplate_FullMethodName       = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
+	RequirementService_CreateRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CreateRequirement"
+	RequirementService_GetRequirement_FullMethodName               = "/erp.procurement.v1.RequirementService/GetRequirement"
+	RequirementService_CancelRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CancelRequirement"
+	RequirementService_ReopenRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/ReopenRequirement"
+	RequirementService_ListRequirementOrders_FullMethodName        = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
+	RequirementService_ContractProcurementProgress_FullMethodName  = "/erp.procurement.v1.RequirementService/ContractProcurementProgress"
 )
 
 // RequirementServiceClient is the client API for RequirementService service.
@@ -2400,6 +2403,9 @@ const (
 // balance is netted first.
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
+	ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error)
+	SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error)
+	DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2429,6 +2435,36 @@ func (c *requirementServiceClient) ListRequirements(ctx context.Context, in *Lis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRequirementsResponse)
 	err := c.cc.Invoke(ctx, RequirementService_ListRequirements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExecutionSupplierQuotesResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ListExecutionSupplierQuotes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_SaveExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_DeleteExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2516,6 +2552,9 @@ func (c *requirementServiceClient) ContractProcurementProgress(ctx context.Conte
 // balance is netted first.
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
+	ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error)
+	SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error)
+	DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2543,6 +2582,15 @@ type UnimplementedRequirementServiceServer struct{}
 
 func (UnimplementedRequirementServiceServer) ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRequirements not implemented")
+}
+func (UnimplementedRequirementServiceServer) ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListExecutionSupplierQuotes not implemented")
+}
+func (UnimplementedRequirementServiceServer) SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveExecutionSupplierQuote not implemented")
+}
+func (UnimplementedRequirementServiceServer) DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteExecutionSupplierQuote not implemented")
 }
 func (UnimplementedRequirementServiceServer) ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExportPurchaseTemplate not implemented")
@@ -2600,6 +2648,60 @@ func _RequirementService_ListRequirements_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).ListRequirements(ctx, req.(*ListRequirementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_ListExecutionSupplierQuotes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecutionSupplierQuotesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ListExecutionSupplierQuotes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ListExecutionSupplierQuotes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ListExecutionSupplierQuotes(ctx, req.(*ListExecutionSupplierQuotesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_SaveExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).SaveExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_SaveExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).SaveExecutionSupplierQuote(ctx, req.(*SaveExecutionSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_DeleteExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).DeleteExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_DeleteExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).DeleteExecutionSupplierQuote(ctx, req.(*DeleteExecutionSupplierQuoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2742,6 +2844,18 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RequirementService_ListRequirements_Handler,
 		},
 		{
+			MethodName: "ListExecutionSupplierQuotes",
+			Handler:    _RequirementService_ListExecutionSupplierQuotes_Handler,
+		},
+		{
+			MethodName: "SaveExecutionSupplierQuote",
+			Handler:    _RequirementService_SaveExecutionSupplierQuote_Handler,
+		},
+		{
+			MethodName: "DeleteExecutionSupplierQuote",
+			Handler:    _RequirementService_DeleteExecutionSupplierQuote_Handler,
+		},
+		{
 			MethodName: "ExportPurchaseTemplate",
 			Handler:    _RequirementService_ExportPurchaseTemplate_Handler,
 		},
@@ -2876,9 +2990,8 @@ type PurchaseOrderServiceClient interface {
 	// order are committed together.
 	ConfirmOrderImport(ctx context.Context, in *ConfirmOrderImportRequest, opts ...grpc.CallOption) (*ConfirmOrderImportResponse, error)
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
-	// Only a draft or a rejected order can be changed. Saving a rejected order
-	// turns it back into a draft so its corrected snapshot is explicit before
-	// it enters a new approval instance.
+	// Drafts can be corrected before submission. A rejected execution draft
+	// returns to real-order sourcing and is retained only as approval history.
 	UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
@@ -3767,9 +3880,8 @@ type PurchaseOrderServiceServer interface {
 	// order are committed together.
 	ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
-	// Only a draft or a rejected order can be changed. Saving a rejected order
-	// turns it back into a draft so its corrected snapshot is explicit before
-	// it enters a new approval instance.
+	// Drafts can be corrected before submission. A rejected execution draft
+	// returns to real-order sourcing and is retained only as approval history.
 	UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.

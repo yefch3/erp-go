@@ -27,3 +27,22 @@ func TestD4BusinessDatesUseISOCalendarDates(t *testing.T) {
 		t.Fatal("D4 date validation accepted an ambiguous date")
 	}
 }
+
+func TestD4RequoteLeavesActualCarrierForVesselNomination(t *testing.T) {
+	_, err := validateFinalRequote(FinalRequoteInput{
+		FinalForwarderID:    9,
+		FinalForwarderName:  "Test Forwarder",
+		FinalServiceOption:  "Shanghai to Hamburg",
+		FinalCurrency:       "USD",
+		FinalFreightAmount:  "1280",
+		FinalETD:            "2026-10-25",
+		FinalETA:            "2026-11-25",
+		PaymentTerms:        "50% after booking",
+		ActualCarrierID:     0,
+		ActualCarrierName:   "",
+		ForwarderContractNo: "",
+	})
+	if err != nil {
+		t.Fatalf("actual carrier and contract number should be optional before vessel nomination/contract upload: %v", err)
+	}
+}

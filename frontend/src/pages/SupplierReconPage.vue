@@ -156,6 +156,9 @@
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
             <div v-if="row.exportContractNo" class="sub">{{ t('supplierRecon.exportContract') }} {{ row.exportContractNo }}</div>
+            <div v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt" class="sub finance-review">
+              {{ t('supplierRecon.awaitingFinanceApproval') }} · {{ row.signedContractName }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('supplierRecon.openAmount')" width="170" align="right">
@@ -179,8 +182,14 @@
         </el-table-column>
         <el-table-column :label="t('supplierRecon.orderStatus')" width="130">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="row.orderStatus === 'CANCELLED' ? 'info' : undefined">
-              {{ t(`supplierRecon.orderStatuses.${row.orderStatus}`) }}
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt ? 'warning' : row.orderStatus === 'CANCELLED' ? 'info' : undefined"
+            >
+              {{ ['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt
+                ? t('supplierRecon.awaitingFinanceApproval')
+                : t(`supplierRecon.orderStatuses.${row.orderStatus}`) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -205,7 +214,7 @@
         <!-- 已完成视图多一列：为什么算完了、谁说的。 -->
         <el-table-column v-if="isDone" :label="t('supplierRecon.closedWhy')" min-width="180">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ t(`supplierRecon.closureCategories.${row.closedCategory}`) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ t(`supplierRecon.closureCategories.${row.closedCategory || 'OTHER'}`) }}</el-tag>
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
@@ -219,7 +228,12 @@
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
                 <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
-                <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
+                <el-dropdown-item
+                  v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt"
+                  divided
+                  command="approveFinance"
+                >{{ t('supplierRecon.approveFinance') }}</el-dropdown-item>
+                <el-dropdown-item v-else divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
                 <el-dropdown-item command="upload">{{ t('supplierRecon.fileUpload') }}</el-dropdown-item>
                 <el-dropdown-item command="close">{{ t('supplierRecon.close') }}</el-dropdown-item>
                 <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
@@ -675,12 +689,25 @@ async function openDetails(row: Row) {
 
 function handleRowCommand(row: Row, command: string) {
   if (command === 'detail') void openDetails(row)
+  else if (command === 'approveFinance') void approveFinance(row)
   else if (command === 'payment') openEntry(row)
   else if (command === 'close') openClose(row)
   else if (command === 'reopen') void reopenRow(row)
   else if (command === 'due') openDue(row)
   else if (command === 'upload') pickFile(row)
   else if (command === 'edit') openEdit(row)
+}
+
+async function approveFinance(row: Row) {
+  await ElMessageBox.confirm(
+    t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
+    t('supplierRecon.approveFinance'),
+    { type: 'warning' },
+  )
+  if (row.businessType === 'LOGISTICS') await post(`/shipping/contract-handoffs/${row.sourceBusinessId}/contract/verify`, {})
+  else await post(`/purchase-orders/${row.poId}/contract/verify`, {})
+  ElMessage.success(t('supplierRecon.financeApproved'))
+  await reload()
 }
 
 const editOpen = ref(false)

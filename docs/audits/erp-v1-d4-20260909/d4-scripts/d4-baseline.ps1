@@ -1,4 +1,4 @@
-﻿param([switch]$SeedOnly)
+param([switch]$SeedOnly)
 $ErrorActionPreference='Stop'
 $root=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))).TrimEnd([char[]]'\/')
 & (Join-Path $root 'scripts/d4-environment.ps1') -Action CheckRuntime
@@ -35,7 +35,7 @@ function WaitRelease($session,$id){
 $admin=Login 'admin@d4.example.test' 'admin123'
 $roles=(Api $admin GET '/roles' $null).roles
 $people=@{}
-foreach($pair in @(@('S1','SALES'),@('B1','BOSS'),@('F1','FINANCE'),@('P1','BUYER'),@('L1','LOGISTICS'))){
+foreach($pair in @(@('S1','SALES'),@('B1','BOSS'),@('F1','FINANCE'),@('P1','BUYER'),@('L1','LOGISTICS'),@('LM1','SHIPPING_MANAGER'))){
   $name=$pair[0];$email="$($name.ToLower())@d4.example.test"
   $employee=(Api $admin GET "/employees?keyword=$name&size=100" $null).employees|Where-Object {$_.code -eq "D4-$name"}|Select-Object -First 1
   if(!$employee){$employee=(Api $admin POST '/employees' @{code="D4-$name";name=$name;email=$email;departmentId='1';initialPassword=$password;username=$email}).employee}
@@ -49,12 +49,14 @@ foreach($pair in @(@('S1','SALES'),@('B1','BOSS'),@('F1','FINANCE'),@('P1','BUYE
 # scoped to the disposable D4 tenant rather than a product migration default.
 docker exec erp-d4-20260909-postgres-1 psql -U erp_iam -d erp_iam -c "UPDATE role_data_scopes s SET scope_type='ALL' FROM roles r WHERE s.tenant_id=1 AND s.role_id=r.id AND r.code='BUYER' AND s.module='procurement_requirement'"|Out-Null
 # The disposable acceptance org has one explicit manager so procurement and
-# logistics manager approvals are assigned to B1 instead of the superadmin
+# procurement approvals are assigned to B1; logistics uses LM1 instead of the superadmin
 # fallback used when a department has no leader.
 $bossID=$people.B1.id
 docker exec erp-d4-20260909-postgres-1 psql -U erp_iam -d erp_iam -c "UPDATE departments SET leader_employee_id=$bossID WHERE tenant_id=1 AND id=1"|Out-Null
-docker exec erp-d4-20260909-postgres-1 psql -U erp_iam -d erp_iam -c "UPDATE employees SET manager_id=$bossID WHERE tenant_id=1 AND code IN ('D4-P1','D4-L1')"|Out-Null
+docker exec erp-d4-20260909-postgres-1 psql -U erp_iam -d erp_iam -c "UPDATE employees SET manager_id=$bossID WHERE tenant_id=1 AND code IN ('D4-P1')"|Out-Null
 
+$logisticsManagerID=$people.LM1.id
+docker exec erp-d4-20260909-postgres-1 psql -U erp_iam -d erp_iam -c "UPDATE employees SET manager_id=$logisticsManagerID WHERE tenant_id=1 AND code='D4-L1'"|Out-Null
 $customer=(Api $admin GET '/customers?keyword=D4%20验收客户&status=ALL&page_size=100' $null).customers|Where-Object {$_.code -eq 'D4-CUSTOMER'}|Select-Object -First 1
 if(!$customer){
   $customer=(Api $admin POST '/customers' @{code='D4-CUSTOMER';name='D4 验收客户';country='China';countryCode='CN';currency='USD';paymentTerm='TT';address='D4 isolated data';contacts=@(@{name='验收联系人';email='customer@d4.example.test';phone='+86 13800000000';isPrimary=$true})}).customer
@@ -63,7 +65,7 @@ $contact=@($customer.contacts)|Where-Object {$_.isPrimary}|Select-Object -First 
 if(!$contact){$contact=@((Api $admin GET "/customers/$($customer.id)/contacts?status=ALL" $null).contacts)|Select-Object -First 1}
 if(!$contact){throw 'D4 acceptance customer has no contact'}
 
-$accountEvidence=[ordered]@{baseUrl='http://127.0.0.1:25374';gateway='http://127.0.0.1:28281';password=$password;accounts=@{sales=$people.S1.email;boss=$people.B1.email;finance=$people.F1.email;buyer=$people.P1.email;logistics=$people.L1.email}}
+$accountEvidence=[ordered]@{baseUrl='http://127.0.0.1:25374';gateway='http://127.0.0.1:28281';password=$password;accounts=@{sales=$people.S1.email;boss=$people.B1.email;finance=$people.F1.email;buyer=$people.P1.email;logistics=$people.L1.email;logisticsManager=$people.LM1.email}}
 $evidenceDir=Join-Path $PSScriptRoot '../evidence';New-Item -ItemType Directory -Force $evidenceDir|Out-Null
 $accountEvidence|ConvertTo-Json -Depth 5|Set-Content (Join-Path $evidenceDir 'accounts.json') -Encoding utf8
 if($SeedOnly){Write-Output 'D4 accounts and customer ready';return}

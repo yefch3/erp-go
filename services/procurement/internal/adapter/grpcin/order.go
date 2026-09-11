@@ -294,7 +294,7 @@ func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderReq
 	lines := make([]app.OrderLine, 0, len(req.GetLines()))
 	for _, l := range req.GetLines() {
 		lines = append(lines, app.OrderLine{
-			RequirementID: l.GetRequirementId(), Qty: l.GetQty(), UnitPrice: l.GetUnitPrice(),
+			RequirementID: l.GetRequirementId(), Qty: l.GetQty(), UnitPrice: l.GetUnitPrice(), ExecutionQuoteID: l.GetExecutionQuoteId(),
 		})
 	}
 	row, err := h.svc.CreateOrder(ctx, grpcx.TenantID(ctx), app.CreateOrderInput{
@@ -321,7 +321,7 @@ func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderReq
 	lines := make([]app.OrderLine, 0, len(req.GetLines()))
 	for _, line := range req.GetLines() {
 		lines = append(lines, app.OrderLine{
-			RequirementID: line.GetRequirementId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(),
+			RequirementID: line.GetRequirementId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), ExecutionQuoteID: line.GetExecutionQuoteId(),
 		})
 	}
 	row, err := h.svc.UpdateOrder(ctx, grpcx.TenantID(ctx), req.GetId(), app.CreateOrderInput{

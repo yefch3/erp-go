@@ -46,6 +46,10 @@ const (
 	ShippingService_ContractShippingSnapshot_FullMethodName              = "/erp.shipping.v1.ShippingService/ContractShippingSnapshot"
 	ShippingService_ListContractShippingHandoffs_FullMethodName          = "/erp.shipping.v1.ShippingService/ListContractShippingHandoffs"
 	ShippingService_GetContractShippingHandoff_FullMethodName            = "/erp.shipping.v1.ShippingService/GetContractShippingHandoff"
+	ShippingService_ListContractShippingRequoteOptions_FullMethodName    = "/erp.shipping.v1.ShippingService/ListContractShippingRequoteOptions"
+	ShippingService_SaveContractShippingRequoteDraft_FullMethodName      = "/erp.shipping.v1.ShippingService/SaveContractShippingRequoteDraft"
+	ShippingService_DeleteContractShippingRequoteOption_FullMethodName   = "/erp.shipping.v1.ShippingService/DeleteContractShippingRequoteOption"
+	ShippingService_SelectContractShippingRequoteDraft_FullMethodName    = "/erp.shipping.v1.ShippingService/SelectContractShippingRequoteDraft"
 	ShippingService_SubmitContractShippingRequote_FullMethodName         = "/erp.shipping.v1.ShippingService/SubmitContractShippingRequote"
 	ShippingService_SaveContractShippingContract_FullMethodName          = "/erp.shipping.v1.ShippingService/SaveContractShippingContract"
 	ShippingService_PresignContractShippingContractUpload_FullMethodName = "/erp.shipping.v1.ShippingService/PresignContractShippingContractUpload"
@@ -89,6 +93,10 @@ type ShippingServiceClient interface {
 	ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(ctx context.Context, in *ListContractShippingHandoffsRequest, opts ...grpc.CallOption) (*ListContractShippingHandoffsResponse, error)
 	GetContractShippingHandoff(ctx context.Context, in *GetContractShippingHandoffRequest, opts ...grpc.CallOption) (*GetContractShippingHandoffResponse, error)
+	ListContractShippingRequoteOptions(ctx context.Context, in *ListContractShippingRequoteOptionsRequest, opts ...grpc.CallOption) (*ListContractShippingRequoteOptionsResponse, error)
+	SaveContractShippingRequoteDraft(ctx context.Context, in *SaveContractShippingRequoteDraftRequest, opts ...grpc.CallOption) (*SaveContractShippingRequoteDraftResponse, error)
+	DeleteContractShippingRequoteOption(ctx context.Context, in *DeleteContractShippingRequoteOptionRequest, opts ...grpc.CallOption) (*DeleteContractShippingRequoteOptionResponse, error)
+	SelectContractShippingRequoteDraft(ctx context.Context, in *SelectContractShippingRequoteDraftRequest, opts ...grpc.CallOption) (*SelectContractShippingRequoteDraftResponse, error)
 	SubmitContractShippingRequote(ctx context.Context, in *SubmitContractShippingRequoteRequest, opts ...grpc.CallOption) (*SubmitContractShippingRequoteResponse, error)
 	SaveContractShippingContract(ctx context.Context, in *SaveContractShippingContractRequest, opts ...grpc.CallOption) (*SaveContractShippingContractResponse, error)
 	PresignContractShippingContractUpload(ctx context.Context, in *PresignContractShippingContractUploadRequest, opts ...grpc.CallOption) (*PresignContractShippingContractUploadResponse, error)
@@ -374,6 +382,46 @@ func (c *shippingServiceClient) GetContractShippingHandoff(ctx context.Context, 
 	return out, nil
 }
 
+func (c *shippingServiceClient) ListContractShippingRequoteOptions(ctx context.Context, in *ListContractShippingRequoteOptionsRequest, opts ...grpc.CallOption) (*ListContractShippingRequoteOptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListContractShippingRequoteOptionsResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ListContractShippingRequoteOptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) SaveContractShippingRequoteDraft(ctx context.Context, in *SaveContractShippingRequoteDraftRequest, opts ...grpc.CallOption) (*SaveContractShippingRequoteDraftResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveContractShippingRequoteDraftResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SaveContractShippingRequoteDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) DeleteContractShippingRequoteOption(ctx context.Context, in *DeleteContractShippingRequoteOptionRequest, opts ...grpc.CallOption) (*DeleteContractShippingRequoteOptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteContractShippingRequoteOptionResponse)
+	err := c.cc.Invoke(ctx, ShippingService_DeleteContractShippingRequoteOption_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) SelectContractShippingRequoteDraft(ctx context.Context, in *SelectContractShippingRequoteDraftRequest, opts ...grpc.CallOption) (*SelectContractShippingRequoteDraftResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SelectContractShippingRequoteDraftResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SelectContractShippingRequoteDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *shippingServiceClient) SubmitContractShippingRequote(ctx context.Context, in *SubmitContractShippingRequoteRequest, opts ...grpc.CallOption) (*SubmitContractShippingRequoteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitContractShippingRequoteResponse)
@@ -460,6 +508,10 @@ type ShippingServiceServer interface {
 	ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(context.Context, *ListContractShippingHandoffsRequest) (*ListContractShippingHandoffsResponse, error)
 	GetContractShippingHandoff(context.Context, *GetContractShippingHandoffRequest) (*GetContractShippingHandoffResponse, error)
+	ListContractShippingRequoteOptions(context.Context, *ListContractShippingRequoteOptionsRequest) (*ListContractShippingRequoteOptionsResponse, error)
+	SaveContractShippingRequoteDraft(context.Context, *SaveContractShippingRequoteDraftRequest) (*SaveContractShippingRequoteDraftResponse, error)
+	DeleteContractShippingRequoteOption(context.Context, *DeleteContractShippingRequoteOptionRequest) (*DeleteContractShippingRequoteOptionResponse, error)
+	SelectContractShippingRequoteDraft(context.Context, *SelectContractShippingRequoteDraftRequest) (*SelectContractShippingRequoteDraftResponse, error)
 	SubmitContractShippingRequote(context.Context, *SubmitContractShippingRequoteRequest) (*SubmitContractShippingRequoteResponse, error)
 	SaveContractShippingContract(context.Context, *SaveContractShippingContractRequest) (*SaveContractShippingContractResponse, error)
 	PresignContractShippingContractUpload(context.Context, *PresignContractShippingContractUploadRequest) (*PresignContractShippingContractUploadResponse, error)
@@ -555,6 +607,18 @@ func (UnimplementedShippingServiceServer) ListContractShippingHandoffs(context.C
 }
 func (UnimplementedShippingServiceServer) GetContractShippingHandoff(context.Context, *GetContractShippingHandoffRequest) (*GetContractShippingHandoffResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetContractShippingHandoff not implemented")
+}
+func (UnimplementedShippingServiceServer) ListContractShippingRequoteOptions(context.Context, *ListContractShippingRequoteOptionsRequest) (*ListContractShippingRequoteOptionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListContractShippingRequoteOptions not implemented")
+}
+func (UnimplementedShippingServiceServer) SaveContractShippingRequoteDraft(context.Context, *SaveContractShippingRequoteDraftRequest) (*SaveContractShippingRequoteDraftResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveContractShippingRequoteDraft not implemented")
+}
+func (UnimplementedShippingServiceServer) DeleteContractShippingRequoteOption(context.Context, *DeleteContractShippingRequoteOptionRequest) (*DeleteContractShippingRequoteOptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteContractShippingRequoteOption not implemented")
+}
+func (UnimplementedShippingServiceServer) SelectContractShippingRequoteDraft(context.Context, *SelectContractShippingRequoteDraftRequest) (*SelectContractShippingRequoteDraftResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SelectContractShippingRequoteDraft not implemented")
 }
 func (UnimplementedShippingServiceServer) SubmitContractShippingRequote(context.Context, *SubmitContractShippingRequoteRequest) (*SubmitContractShippingRequoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitContractShippingRequote not implemented")
@@ -1078,6 +1142,78 @@ func _ShippingService_GetContractShippingHandoff_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_ListContractShippingRequoteOptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListContractShippingRequoteOptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ListContractShippingRequoteOptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ListContractShippingRequoteOptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ListContractShippingRequoteOptions(ctx, req.(*ListContractShippingRequoteOptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_SaveContractShippingRequoteDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveContractShippingRequoteDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SaveContractShippingRequoteDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SaveContractShippingRequoteDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SaveContractShippingRequoteDraft(ctx, req.(*SaveContractShippingRequoteDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_DeleteContractShippingRequoteOption_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteContractShippingRequoteOptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).DeleteContractShippingRequoteOption(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_DeleteContractShippingRequoteOption_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).DeleteContractShippingRequoteOption(ctx, req.(*DeleteContractShippingRequoteOptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_SelectContractShippingRequoteDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelectContractShippingRequoteDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SelectContractShippingRequoteDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SelectContractShippingRequoteDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SelectContractShippingRequoteDraft(ctx, req.(*SelectContractShippingRequoteDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ShippingService_SubmitContractShippingRequote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitContractShippingRequoteRequest)
 	if err := dec(in); err != nil {
@@ -1282,6 +1418,22 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetContractShippingHandoff",
 			Handler:    _ShippingService_GetContractShippingHandoff_Handler,
+		},
+		{
+			MethodName: "ListContractShippingRequoteOptions",
+			Handler:    _ShippingService_ListContractShippingRequoteOptions_Handler,
+		},
+		{
+			MethodName: "SaveContractShippingRequoteDraft",
+			Handler:    _ShippingService_SaveContractShippingRequoteDraft_Handler,
+		},
+		{
+			MethodName: "DeleteContractShippingRequoteOption",
+			Handler:    _ShippingService_DeleteContractShippingRequoteOption_Handler,
+		},
+		{
+			MethodName: "SelectContractShippingRequoteDraft",
+			Handler:    _ShippingService_SelectContractShippingRequoteDraft_Handler,
 		},
 		{
 			MethodName: "SubmitContractShippingRequote",

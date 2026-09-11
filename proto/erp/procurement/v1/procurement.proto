@@ -409,6 +409,9 @@ message LinkCustomerQuotationResponse { int64 quotation_id = 1; string quote_no 
 // balance is netted first.
 service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
+  rpc ListExecutionSupplierQuotes(ListExecutionSupplierQuotesRequest) returns (ListExecutionSupplierQuotesResponse);
+  rpc SaveExecutionSupplierQuote(SaveExecutionSupplierQuoteRequest) returns (SaveExecutionSupplierQuoteResponse);
+  rpc DeleteExecutionSupplierQuote(DeleteExecutionSupplierQuoteRequest) returns (DeleteExecutionSupplierQuoteResponse);
   // Export a versioned, identity-bearing workbook for selected open requirements.
   rpc ExportPurchaseTemplate(ExportPurchaseTemplateRequest) returns (ExportPurchaseTemplateResponse);
   // Raise an exceptional requirement by hand, independent of a contract.
@@ -614,9 +617,8 @@ service PurchaseOrderService {
   // order are committed together.
   rpc ConfirmOrderImport(ConfirmOrderImportRequest) returns (ConfirmOrderImportResponse);
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
-  // Only a draft or a rejected order can be changed. Saving a rejected order
-  // turns it back into a draft so its corrected snapshot is explicit before
-  // it enters a new approval instance.
+  // Drafts can be corrected before submission. A rejected execution draft
+  // returns to real-order sourcing and is retained only as approval history.
   rpc UpdateOrder(UpdateOrderRequest) returns (UpdateOrderResponse);
   // Spending money needs a signature. The approval engine routes on the
   // order total, so a large order can require more of them.
@@ -985,6 +987,7 @@ message CreateOrderLine {
   int64 requirement_id = 1;
   string qty = 2;
   string unit_price = 3;
+  int64 execution_quote_id = 4;
 }
 
 message CreateOrderRequest {
@@ -2723,3 +2726,39 @@ message CreateExternalPayableRequest {
 message CreateExternalPayableResponse { SupplierReconRow row = 1; }
 message GetExternalPayableRequest { string business_type = 1; int64 source_business_id = 2; }
 message GetExternalPayableResponse { SupplierReconRow row = 1; }
+
+// D4 real-order supplier quote history is appended to keep every established
+// protobuf message index stable for rolling deployments.
+message ExecutionSupplierQuote {
+  int64 id = 1;
+  int64 requirement_id = 2;
+  int64 supplier_id = 3;
+  string supplier_code = 4;
+  string supplier_name = 5;
+  string currency = 6;
+  string unit_price = 7;
+  string expected_date = 8;
+  string payment_terms = 9;
+  string valid_until = 10;
+  string remark = 11;
+  int64 created_by_id = 12;
+  string created_by_name = 13;
+  string created_at = 14;
+  string updated_at = 15;
+}
+message ListExecutionSupplierQuotesRequest { int64 requirement_id = 1; }
+message ListExecutionSupplierQuotesResponse { repeated ExecutionSupplierQuote quotes = 1; }
+message SaveExecutionSupplierQuoteRequest {
+  int64 id = 1;
+  int64 requirement_id = 2;
+  int64 supplier_id = 3;
+  string currency = 4;
+  string unit_price = 5;
+  string expected_date = 6;
+  string payment_terms = 7;
+  string valid_until = 8;
+  string remark = 9;
+}
+message SaveExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
+message DeleteExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
+message DeleteExecutionSupplierQuoteResponse {}

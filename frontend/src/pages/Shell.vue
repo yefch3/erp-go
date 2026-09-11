@@ -471,6 +471,7 @@ const logisticsItems = computed(() => [
   ...(auth.can('shipping:schedule:read')
     ? [
         { path: '/shipping/requirements', label: t('shipping.executionInquiryTitle') },
+        { path: '/shipping/orders', label: t('shipping.ordersTitle') },
         { path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') },
       ]
     : []),

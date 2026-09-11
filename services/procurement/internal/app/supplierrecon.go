@@ -363,7 +363,8 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	rows, err := s.pool.Query(ctx, reconSelect+`,
 	       count(*) OVER () AS total`+reconFrom+`
 	 WHERE po.tenant_id = $1`+reconOrderScope+`
-	   AND (po.payment_requested_at IS NOT NULL OR po.business_type='MANUAL' OR po.source_business_id=0)
+	   AND (po.payment_requested_at IS NOT NULL OR po.business_type='MANUAL' OR po.source_business_id=0
+	        OR (po.business_type IN ('PROCUREMENT','LOGISTICS') AND po.signed_contract_uploaded_at IS NOT NULL))
 	   -- 两页：待核销 = 没有活着的确认；已完成 = 有。
 	   -- **这里故意不看「还欠多少」。** 需求明说「不一定数字对不上就不能
 	   -- 核销完成，也不一定数字一样就可以核销完成」——所以分界线只有
@@ -466,13 +467,17 @@ func (s *Service) RecordPOPayment(ctx context.Context, tenantID int64,
 		// 否则各自都以为额度够。
 		var currency, totalText string
 		var sourceBusinessID int64
+		var paymentRequestedAt *time.Time
 		if err := tx.QueryRow(ctx, `
-			SELECT currency,total_amount::text,source_business_id FROM purchase_orders
+			SELECT currency,total_amount::text,source_business_id,payment_requested_at FROM purchase_orders
 			 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
-			tenantID, in.POID).Scan(&currency, &totalText, &sourceBusinessID); err == pgx.ErrNoRows {
+			tenantID, in.POID).Scan(&currency, &totalText, &sourceBusinessID, &paymentRequestedAt); err == pgx.ErrNoRows {
 			return apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 		} else if err != nil {
 			return err
+		}
+		if sourceBusinessID != 0 && paymentRequestedAt == nil {
+			return apierr.Conflict("PR_POPAY_FINANCE_APPROVAL_REQUIRED", "请先审核采购合同并批准付款")
 		}
 		var paidText string
 		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(amount),0)::text FROM payment_allocations WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.POID).Scan(&paidText); err != nil {

@@ -24,7 +24,7 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
-	{Code: "BOSS", Name: "老板", Description: "查看本公司客户询盘和已提交源报价", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"export", "ALL"}}},
+	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -79,6 +79,7 @@ var presetRoles = []presetRole{
 		Description: "管理售前船运询价、主责人员、统一方案与正式船期",
 		Permissions: []string{
 			"shipping:sourcing:read", "shipping:sourcing:write", "shipping:sourcing:approve",
+			"approval:task:act",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"masterdata:supplier:read", "masterdata:port:read", "product:product:read",
 		},

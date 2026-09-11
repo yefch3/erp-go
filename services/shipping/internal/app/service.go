@@ -18,7 +18,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 13
+const SchemaVersion int32 = 17
 
 type Approvals interface {
 	Submit(context.Context, ApprovalSubmission) (int64, error)

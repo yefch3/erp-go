@@ -124,6 +124,14 @@ func (s *Server) getContractShippingHandoff(w http.ResponseWriter, r *http.Reque
 	}
 	s.writeProto(w, resp)
 }
+func (s *Server) listContractShippingRequoteOptions(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListContractShippingRequoteOptions(r.Context(), &shippingv1.ListContractShippingRequoteOptionsRequest{HandoffId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
 func (s *Server) submitContractShippingRequote(w http.ResponseWriter, r *http.Request) {
 	req := &shippingv1.SubmitContractShippingRequoteRequest{}
 	if !s.decodeBody(w, r, req) {
@@ -131,6 +139,41 @@ func (s *Server) submitContractShippingRequote(w http.ResponseWriter, r *http.Re
 	}
 	req.Id = idFromPath(r)
 	resp, err := s.Shipping.SubmitContractShippingRequote(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SaveContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SaveContractShippingRequoteDraft(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) deleteContractShippingRequoteOption(w http.ResponseWriter, r *http.Request) {
+	optionID, _ := strconv.ParseInt(chi.URLParam(r, "optionID"), 10, 64)
+	resp, err := s.Shipping.DeleteContractShippingRequoteOption(r.Context(), &shippingv1.DeleteContractShippingRequoteOptionRequest{HandoffId: idFromPath(r), OptionId: optionID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) selectContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SelectContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.HandoffId = idFromPath(r)
+	resp, err := s.Shipping.SelectContractShippingRequoteDraft(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -161,10 +204,25 @@ func (s *Server) saveContractShippingContract(w http.ResponseWriter, r *http.Req
 		s.writeGRPCError(w, err)
 		return
 	}
+	h := resp.GetHandoff()
+	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	s.writeProto(w, resp)
 }
 func (s *Server) verifyContractShippingContract(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Shipping.VerifyContractShippingContract(r.Context(), &shippingv1.VerifyContractShippingContractRequest{Id: idFromPath(r)})
+	id := idFromPath(r)
+	payable, err := s.Orders.GetExternalPayable(r.Context(), &prv1.GetExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err = s.Orders.VerifyOrderContract(r.Context(), &prv1.VerifyOrderContractRequest{Id: payable.GetRow().GetPoId()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Shipping.VerifyContractShippingContract(r.Context(), &shippingv1.VerifyContractShippingContractRequest{Id: id})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

@@ -1,21 +1,23 @@
 {
-  "checkedAt": "2026-09-10T00:55:29.9877395-04:00",
-  "contractId": "9",
-  "contractNo": "CT-202609-0009",
+  "checkedAt": "2026-09-10T21:21:02.0873557-04:00",
+  "contractId": "11",
+  "contractNo": "CT-202609-0011",
   "productCount": 3,
   "purchaseOrderCount": 2,
   "purchaseOrderIds": [
-    "15",
-    "16"
+    "27",
+    "28"
   ],
   "purchaseDisplayNumbers": [
-    "CT-202609-0009",
-    "CT-202609-0009"
+    "CT-202609-0011",
+    "CT-202609-0011"
   ],
   "procurementPayments": 2,
-  "shippingHandoffId": "5",
+  "shippingHandoffId": "12",
+  "shippingCandidateCount": 2,
+  "selectedShippingOptionId": "6",
   "finalForwarder": "D4 验收货代",
-  "actualCarrier": "D4 验收船公司",
+  "actualCarrier": "",
   "shippingPaymentOpen": "1280.00",
   "d5Created": false
 }
