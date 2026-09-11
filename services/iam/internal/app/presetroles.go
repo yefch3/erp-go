@@ -117,10 +117,11 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:price", "procurement:sourcing:read",
 			"procurement:sourcing:send", "procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
 	},
 	{
@@ -139,11 +140,17 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
+	},
+	{
+		Code: "QUALITY_INSPECTOR", Name: "质检专员", Description: "处理工厂出货前质检并保存每轮资料",
+		Permissions: []string{"quality:task:read", "quality:task:write", "quality:file:upload"},
+		Scopes:      []presetScope{{"quality", "ALL"}},
 	},
 }
 

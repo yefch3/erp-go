@@ -1,0 +1,13 @@
+{
+  "testedAt": "2026-09-11T16:25:00.9241137-04:00",
+  "purchaseOrder": "PO-D5-SMOKE-001",
+  "taskId": "19",
+  "finalStatus": "COMPLETED",
+  "qualifiedQty": "6.0000",
+  "rounds": 2,
+  "files": 1,
+  "quantityOverflow": "HTTP 409",
+  "nonQualityRead": "P1/L1/S1/B1 HTTP 403",
+  "logisticsMutation": "HTTP 403",
+  "qualityRead": "HTTP 200"
+}

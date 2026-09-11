@@ -731,6 +731,92 @@ type PurchaseSupplierConfirmationLine struct {
 	ConfirmedUnitPrice pgtype.Numeric
 }
 
+type QualityInspectionFile struct {
+	ID             int64
+	TenantID       int64
+	TaskID         int64
+	RoundID        *int64
+	TaskLineID     *int64
+	Category       string
+	ObjectKey      string
+	FileName       string
+	ContentType    string
+	SizeBytes      int64
+	Supplemental   bool
+	UploadedBy     int64
+	UploadedByName string
+	UploadedAt     pgtype.Timestamptz
+}
+
+type QualityInspectionRound struct {
+	ID                 int64
+	TenantID           int64
+	TaskID             int64
+	RoundNo            int32
+	InspectedAt        pgtype.Timestamptz
+	InspectionLocation string
+	InspectorID        int64
+	InspectorName      string
+	Remark             string
+	CreatedAt          pgtype.Timestamptz
+}
+
+type QualityInspectionRoundLine struct {
+	ID                 int64
+	TenantID           int64
+	RoundID            int64
+	TaskLineID         int64
+	Result             string
+	InspectedQty       pgtype.Numeric
+	QualifiedQty       pgtype.Numeric
+	UnqualifiedQty     pgtype.Numeric
+	IssueDescription   string
+	HandlingSuggestion string
+}
+
+type QualityInspectionTask struct {
+	ID                 int64
+	TenantID           int64
+	PoID               int64
+	TaskNo             string
+	BatchNo            int32
+	Status             string
+	ExpectedDate       pgtype.Date
+	InspectionLocation string
+	ContactName        string
+	ContactPhone       string
+	Remark             string
+	RequestedBy        int64
+	RequestedByName    string
+	RequestedAt        pgtype.Timestamptz
+	InspectorID        int64
+	InspectorName      string
+	StartedAt          pgtype.Timestamptz
+	CompletedAt        pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type QualityInspectionTaskLine struct {
+	ID                   int64
+	TenantID             int64
+	TaskID               int64
+	PoItemID             int64
+	ProductName          string
+	Spec                 string
+	UomCode              string
+	OrderedQty           pgtype.Numeric
+	RequestedQty         pgtype.Numeric
+	QualifiedQty         pgtype.Numeric
+	UnresolvedQty        pgtype.Numeric
+	FinalResult          string
+	IssueDescription     string
+	HandlingSuggestion   string
+	ApprovedReleaseQty   pgtype.Numeric
+	ReleaseDecidedBy     int64
+	ReleaseDecidedByName string
+	ReleaseDecidedAt     pgtype.Timestamptz
+}
+
 type SourcingCase struct {
 	ID                     int64
 	TenantID               int64

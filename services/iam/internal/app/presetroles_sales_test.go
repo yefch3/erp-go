@@ -59,3 +59,29 @@ func TestSalesAndProcurementPresetRoleBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestQualityModuleIsRestrictedToQualityDepartment(t *testing.T) {
+	roles := make(map[string]map[string]bool, len(presetRoles))
+	for _, role := range presetRoles {
+		roles[role.Code] = make(map[string]bool, len(role.Permissions))
+		for _, permission := range role.Permissions {
+			roles[role.Code][permission] = true
+		}
+	}
+
+	for _, code := range []string{"BOSS", "SALES", "SALES_MANAGER", "LOGISTICS", "SHIPPING_MANAGER", "BUYER", "PROCUREMENT_MANAGER"} {
+		if roles[code]["quality:task:read"] {
+			t.Errorf("%s must not receive access to the quality module", code)
+		}
+	}
+	for _, permission := range []string{"quality:task:read", "quality:task:write", "quality:file:upload"} {
+		if !roles["QUALITY_INSPECTOR"][permission] {
+			t.Errorf("QUALITY_INSPECTOR missing %s", permission)
+		}
+	}
+	for _, code := range []string{"BUYER", "PROCUREMENT_MANAGER"} {
+		if !roles[code]["quality:task:request"] {
+			t.Errorf("%s must retain the purchase-order inspection request action", code)
+		}
+	}
+}

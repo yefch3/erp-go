@@ -13,17 +13,11 @@
              surface every employee owns. Somebody with no approval role sees
              an empty list (and, with no roles at all, a hint to ask the
              administrator) — hiding the page would leave them nowhere. -->
-        <el-menu-item index="/todos">
+        <el-menu-item index="/todos" :style="moduleStyle('todos')" draggable="true" @dragstart="startModuleDrag('todos', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('todos')" @dragend="finishNavigationDrag">
           {{ t('menu.todos') }}
         </el-menu-item>
-        <!-- 我的信息紧跟待办，理由一样：这两个是每个员工都拥有的页面，
-             和角色无关。基础数据那个菜单要 iam:employee:read 才显示，
-             把自己的资料只挂在那底下，等于藏起来给最需要它的人看不见。 -->
-        <el-menu-item index="/basic/employees/me">
-          {{ t('menu.myProfile') }}
-        </el-menu-item>
         <!-- 邮箱是每位在职 ERP 用户的个人工作入口，访问范围仍由服务端固定为本人。 -->
-        <el-menu-item index="/emails">
+        <el-menu-item index="/emails" :style="moduleStyle('emails')" draggable="true" @dragstart="startModuleDrag('emails', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('emails')" @dragend="finishNavigationDrag">
           {{ t('menu.emails') }}
         </el-menu-item>
         <!-- 一张订单的走向：签合同 → 采购 → 出货 → 收钱。四个分组按这个
@@ -43,6 +37,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': salesActive }"
+              :style="moduleStyle('sales')"
+              draggable="true"
+              @dragstart="startModuleDrag('sales', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('sales')"
+              @dragend="finishNavigationDrag"
               @click="salesOpen = !salesOpen"
             >
               <span>{{ t('menu.sales') }}</span>
@@ -57,6 +57,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': isSalesItemActive(item.path) }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('sales', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('sales', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goSales(item.path)"
             >
               {{ item.label }}
@@ -78,6 +83,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': procurementActive }"
+              :style="moduleStyle('procurement')"
+              draggable="true"
+              @dragstart="startModuleDrag('procurement', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('procurement')"
+              @dragend="finishNavigationDrag"
               @click="procurementOpen = !procurementOpen"
             >
               <span>{{ t('menu.procurement') }}</span>
@@ -92,12 +103,20 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': isProcurementItemActive(item.path) }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('procurement', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('procurement', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goProcurement(item.path)"
             >
               {{ item.label }}
             </button>
           </nav>
         </el-popover>
+        <el-menu-item v-if="auth.can('quality:task:read')" index="/quality/tasks" :style="moduleStyle('quality')" draggable="true" @dragstart="startModuleDrag('quality', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('quality')" @dragend="finishNavigationDrag">
+          {{ t('menu.quality') }}
+        </el-menu-item>
         <el-popover
           v-if="hasWarehouse"
           v-model:visible="warehouseOpen"
@@ -113,6 +132,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': warehouseActive }"
+              :style="moduleStyle('warehouse')"
+              draggable="true"
+              @dragstart="startModuleDrag('warehouse', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('warehouse')"
+              @dragend="finishNavigationDrag"
               @click="warehouseOpen = !warehouseOpen"
             >
               <span>{{ t('menu.stockAndGoods') }}</span>
@@ -127,6 +152,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('warehouse', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('warehouse', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goWarehouse(item.path)"
             >
               {{ item.label }}
@@ -149,6 +179,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': logisticsActive }"
+              :style="moduleStyle('logistics')"
+              draggable="true"
+              @dragstart="startModuleDrag('logistics', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('logistics')"
+              @dragend="finishNavigationDrag"
               @click="logisticsOpen = !logisticsOpen"
             >
               <span>{{ t('menu.logistics') }}</span>
@@ -163,6 +199,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('logistics', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('logistics', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goLogistics(item.path)"
             >
               {{ item.label }}
@@ -184,6 +225,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': financeActive }"
+              :style="moduleStyle('finance')"
+              draggable="true"
+              @dragstart="startModuleDrag('finance', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('finance')"
+              @dragend="finishNavigationDrag"
               @click="financeOpen = !financeOpen"
             >
               <span>{{ t('menu.finance') }}</span>
@@ -198,6 +245,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('finance', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('finance', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goFinance(item.path)"
             >
               {{ item.label }}
@@ -205,7 +257,7 @@
           </nav>
         </el-popover>
         <el-popover
-          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:port:read') || auth.can('masterdata:supplier:read')"
+          v-if="hasBasicData"
           v-model:visible="basicDataOpen"
           placement="right-start"
           :width="200"
@@ -219,6 +271,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': route.path.startsWith('/basic/') }"
+              :style="moduleStyle('basic')"
+              draggable="true"
+              @dragstart="startModuleDrag('basic', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('basic')"
+              @dragend="finishNavigationDrag"
               @click="basicDataOpen = !basicDataOpen"
             >
               <span>{{ t('menu.basicData') }}</span>
@@ -233,6 +291,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path.startsWith(item.activePrefix) }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('basic', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('basic', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goBasicData(item.path)"
             >
               <span>{{ item.label }}</span>
@@ -258,6 +321,12 @@
               type="button"
               class="module-menu-trigger"
               :class="{ 'is-active': systemActive }"
+              :style="moduleStyle('system')"
+              draggable="true"
+              @dragstart="startModuleDrag('system', $event)"
+              @dragover.prevent
+              @drop.prevent="dropModuleDirect('system')"
+              @dragend="finishNavigationDrag"
               @click="systemOpen = !systemOpen"
             >
               <span>{{ t('menu.system') }}</span>
@@ -272,6 +341,11 @@
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
+              draggable="true"
+              @dragstart.stop="startChildDrag('system', item.key, $event)"
+              @dragover.prevent
+              @drop.prevent.stop="dropChildDirect('system', item.key)"
+              @dragend="finishNavigationDrag"
               @click="goSystem(item.path)"
             >
               {{ item.label }}
@@ -279,9 +353,40 @@
           </nav>
         </el-popover>
       </el-menu>
+      <div class="side-footer">
+        <LangSwitcher light sidebar />
+        <el-popover
+          v-model:visible="accountOpen"
+          placement="right-end"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="click"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+          <button type="button" class="account-card" :class="{ 'is-active': accountActive || accountOpen }">
+            <el-avatar :size="44" :src="myAvatar" class="account-card-avatar">
+              {{ (auth.employeeName || '—').slice(0, 1) }}
+            </el-avatar>
+            <span class="account-card-copy">
+              <strong>{{ auth.employeeName || '—' }}</strong>
+              <small>{{ auth.employeeEmail || '—' }}</small>
+            </span>
+            <span class="account-card-more" aria-hidden="true">•••</span>
+          </button>
+          </template>
+          <nav class="module-flyout account-flyout" :aria-label="t('profile.accountTitle')">
+            <div class="module-flyout-title">{{ t('profile.accountTitle') }}</div>
+            <button type="button" class="module-flyout-item" :class="{ 'is-active': accountActive }" @click="onCommand('profile')">{{ t('profile.title') }}</button>
+            <button type="button" class="module-flyout-item" @click="onCommand('password')">{{ t('password.title') }}</button>
+            <button type="button" class="module-flyout-item" @click="onCommand('logout')">{{ t('common.logout') }}</button>
+          </nav>
+        </el-popover>
+      </div>
     </el-aside>
     <el-container class="pane-col">
-      <el-header class="topbar">
+      <el-header class="topbar" :class="{ 'topbar--empty': !hasTopbarTools }">
         <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" aria-label="展开或收起导航" @click="navigationOpen = !navigationOpen">☰ 导航</button>
         <div class="topbar-right">
           <ShippingArrivalNotifications
@@ -292,25 +397,6 @@
           <ReceivableReminders v-if="auth.can('export:receipt:read')" />
           <!-- 提单签发提醒（E2）：船开了正本还没签，整个船务部门都收得到。 -->
           <BLReminders v-if="auth.can('shipping:schedule:read')" />
-          <LangSwitcher />
-          <el-dropdown @command="onCommand">
-            <!-- 头像加名字。头像放在这里而不是只放在资料页里，是因为它顺带
-                 回答了「我现在是以谁的身份登着」——同一台电脑上换过账号的人
-                 一眼就能发现自己还挂在别人名下。 -->
-            <span class="user">
-              <el-avatar :size="24" :src="myAvatar" class="user-avatar">
-                {{ (auth.employeeName || '—').slice(0, 1) }}
-              </el-avatar>
-              {{ auth.employeeName || '—' }}
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="profile">{{ t('profile.title') }}</el-dropdown-item>
-                <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
-                <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
         </div>
       </el-header>
       <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
@@ -371,14 +457,28 @@ import ShippingArrivalNotifications from '../components/ShippingArrivalNotificat
 import ReceivableReminders from '../components/ReceivableReminders.vue'
 import BLReminders from '../components/BLReminders.vue'
 import { onLive, startLive, stopLive } from '../live'
+import { mergeVisibleOrder, moveItem, readNavigationPreferences, sortByOrder, writeNavigationPreferences } from '../lib/navigationOrder'
 
 const passwordOpen = ref(false)
+const accountOpen = ref(false)
 const saving = ref(false)
 const pw = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
+const moduleDefaults = ['todos','emails','sales','procurement','quality','warehouse','logistics','finance','basic','system']
+const childDefaults: Record<string,string[]> = {
+  sales: ['/sales/inquiries','/sales/quotations','/sales/settings/inquiry-templates','/contracts'],
+  procurement: ['/procurement/sourcing','/requirements','/purchase-orders'],
+  warehouse: ['/products','/warehouses','/warehouses/profiles','/warehouses/arrivals','/warehouses/receipts','/stocks','/outbounds','/warehouses/imports'],
+  logistics: ['/shipping/sourcing','/shipping/requirements','/shipping/orders','/shipping/schedules'],
+  finance: ['/customer-recon','/supplier-recon','/fx'],
+  basic: ['/basic/employees','/basic/customers','/basic/ports','/basic/suppliers','/basic/excel-usage','/platform/tenants'],
+  system: ['/settings/approvals','/mail/export-log'],
+}
+const navigationStorageKey = `erp.navigation-order.${auth.employeeId || auth.employeeEmail || 'anonymous'}`
+const navigationPreferences = ref(readNavigationPreferences(navigationStorageKey,moduleDefaults,childDefaults))
 const navigationOpen = ref(false)
 watch(() => route.path, () => { navigationOpen.value = false })
 const router = useRouter()
@@ -403,34 +503,35 @@ const hasProcurement = computed(() => [
 ].some(auth.can))
 const procurementActive = computed(() => procurementItems.value.some((item) => isProcurementItemActive(item.path)))
 const menuActive = computed(() => route.path)
+const accountActive = computed(() => route.path === '/basic/employees/me' || route.path === '/me')
 // 仓储：产品是「货是什么」，仓库/库存/出库是「货在哪、走了没」——同一件事的
 // 两面，原来产品和出库各自散在顶层。
-const warehouseItems = computed(() => [
+const warehouseItems = computed(() => sortByOrder([
   ...(auth.can('product:product:read')
-    ? [{ path: '/products', label: t('menu.products') }]
+    ? [{ key: '/products', path: '/products', label: t('menu.products') }]
     : []),
   ...(auth.can('inventory:stock:read')
     ? [
-        { path: '/warehouses', label: t('warehouseNav.workbench') },
-        { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
+        { key: '/warehouses', path: '/warehouses', label: t('warehouseNav.workbench') },
+        { key: '/warehouses/profiles', path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
       ]
     : []),
   ...(auth.can('inventory:stock:read') && auth.can('procurement:order:read')
     ? [
-        { path: '/warehouses/arrivals', label: t('warehouseNav.arrivals') },
-        { path: '/warehouses/receipts', label: t('warehouseNav.receipts') },
+        { key: '/warehouses/arrivals', path: '/warehouses/arrivals', label: t('warehouseNav.arrivals') },
+        { key: '/warehouses/receipts', path: '/warehouses/receipts', label: t('warehouseNav.receipts') },
       ]
     : []),
   ...(auth.can('inventory:stock:read')
     ? [
-        { path: '/stocks', label: t('warehouseNav.stock') },
-        { path: '/outbounds', label: t('menu.outbounds') },
+        { key: '/stocks', path: '/stocks', label: t('warehouseNav.stock') },
+        { key: '/outbounds', path: '/outbounds', label: t('menu.outbounds') },
       ]
     : []),
   ...(auth.can('inventory:stock:import')
-    ? [{ path: '/warehouses/imports', label: t('warehouseNav.imports') }]
+    ? [{ key: '/warehouses/imports', path: '/warehouses/imports', label: t('warehouseNav.imports') }]
     : []),
-])
+], navigationPreferences.value.children.warehouse))
 const hasWarehouse = computed(() => warehouseItems.value.length > 0)
 const warehouseActive = computed(() =>
   warehouseItems.value.some((item) => route.path === item.path) ||
@@ -439,20 +540,20 @@ const warehouseActive = computed(() =>
 )
 
 // 销售询盘与采购寻源分别按自己的权限显示，避免销售为了看进度而获得采购底价权限。
-const salesItems = computed(() => [
+const salesItems = computed(() => sortByOrder([
   ...(auth.can('sales:inquiry:read')
     ? [
-         { path: '/sales/inquiries', label: t('salesNav.inquiries') },
-         { path: '/sales/quotations', label: t('salesNav.quotations') },
-         { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
+         { key: '/sales/inquiries', path: '/sales/inquiries', label: t('salesNav.inquiries') },
+         { key: '/sales/quotations', path: '/sales/quotations', label: t('salesNav.quotations') },
+         { key: '/sales/settings/inquiry-templates', path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
        ]
     : []),
   ...(auth.can('export:contract:read')
     ? [
-        { path: '/contracts', label: t('menu.contracts') },
+        { key: '/contracts', path: '/contracts', label: t('menu.contracts') },
       ]
     : []),
-])
+], navigationPreferences.value.children.sales))
 // 合同只读权限也会授予财务，供入账页下钻核对合同；它不代表财务需要整组
 // 销售导航。只有真正参与客户询盘的岗位才显示“销售”入口。
 const hasSales = computed(() => auth.can('sales:inquiry:read') && salesItems.value.length > 0)
@@ -464,18 +565,18 @@ const salesActive = computed(() =>
 )
 
 // 物流分成售前询价、合同执行后的实单询价和正式船期管理。
-const logisticsItems = computed(() => [
+const logisticsItems = computed(() => sortByOrder([
   ...(auth.can('shipping:sourcing:read')
-    ? [{ path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
+    ? [{ key: '/shipping/sourcing', path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
     : []),
   ...(auth.can('shipping:schedule:read')
     ? [
-        { path: '/shipping/requirements', label: t('shipping.executionInquiryTitle') },
-        { path: '/shipping/orders', label: t('shipping.ordersTitle') },
-        { path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') },
+        { key: '/shipping/requirements', path: '/shipping/requirements', label: t('shipping.executionInquiryTitle') },
+        { key: '/shipping/orders', path: '/shipping/orders', label: t('shipping.ordersTitle') },
+        { key: '/shipping/schedules', path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') },
       ]
     : []),
-])
+], navigationPreferences.value.children.logistics))
 const hasLogistics = computed(() => logisticsItems.value.length > 0)
 const logisticsActive = computed(() =>
   route.path.startsWith('/shipments') || route.path.startsWith('/shipping'),
@@ -485,56 +586,56 @@ const logisticsActive = computed(() =>
 //
 // 员工邮件（/team-mail）暂时不在这里——业务还用不到。路由留着没删，想放出来
 // 把它加回这个数组即可。
-const systemItems = computed(() => [
+const systemItems = computed(() => sortByOrder([
   ...(auth.can('approval:flow:read')
-    ? [{ path: '/settings/approvals', label: t('menu.approvalFlows') }]
+    ? [{ key: '/settings/approvals', path: '/settings/approvals', label: t('menu.approvalFlows') }]
     : []),
   ...(auth.can('mail:export:audit')
-    ? [{ path: '/mail/export-log', label: t('menu.exportLog') }]
+    ? [{ key: '/mail/export-log', path: '/mail/export-log', label: t('menu.exportLog') }]
     : []),
-])
+], navigationPreferences.value.children.system))
 const hasSystem = computed(() => systemItems.value.length > 0)
 const systemActive = computed(() => systemItems.value.some((item) => route.path === item.path))
 
 // 基础数据的子模块集中在右侧浮层中，避免展开后挤压左侧主导航。
-const basicDataItems = computed(() => [
+const basicDataItems = computed(() => sortByOrder([
   ...(auth.can('iam:employee:read') || auth.can('iam:department:read')
-    ? [{ path: '/basic/employees', activePrefix: '/basic/employees', label: t('menu.employees'), todo: false }]
+    ? [{ key: '/basic/employees', path: '/basic/employees', activePrefix: '/basic/employees', label: t('menu.employees'), todo: false }]
     : []),
   ...(auth.can('masterdata:customer:read')
-    ? [{ path: '/basic/customers', activePrefix: '/basic/customers', label: t('menu.customers'), todo: false }]
+    ? [{ key: '/basic/customers', path: '/basic/customers', activePrefix: '/basic/customers', label: t('menu.customers'), todo: false }]
     : []),
   ...(auth.can('masterdata:port:read')
-    ? [{ path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: false }]
+    ? [{ key: '/basic/ports', path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: false }]
     : []),
   ...(auth.can('masterdata:supplier:read')
-    ? [{ path: '/basic/suppliers', activePrefix: '/basic/suppliers', label: t('menu.suppliers'), todo: false }]
+    ? [{ key: '/basic/suppliers', path: '/basic/suppliers', activePrefix: '/basic/suppliers', label: t('menu.suppliers'), todo: false }]
     : []),
   // 智能转换用量：这是账不是业务数据，跟员工管理同一道权限——它跨全公司
   // 的人，不该谁能用这个功能谁就能看全公司花了多少。
   ...(auth.can('iam:employee:read')
-    ? [{ path: '/basic/excel-usage', activePrefix: '/basic/excel-usage', label: t('menu.excelUsage'), todo: false }]
+    ? [{ key: '/basic/excel-usage', path: '/basic/excel-usage', activePrefix: '/basic/excel-usage', label: t('menu.excelUsage'), todo: false }]
     : []),
   // 平台开户：不看权限看名单（platform_operators）。权限每家公司的超管都有，
   // 拿它当开关等于把这一项亮给所有客户管理员。名单在服务端，前端登录后探测
   // 一次 /api/platform/me——探测失败按「不是操作员」处理，页面本身还有服务端
   // 的 403 兜底，这里只决定菜单亮不亮。
   ...(isPlatformOperator.value
-    ? [{ path: '/platform/tenants', activePrefix: '/platform', label: t('menu.platformTenants'), todo: false }]
+    ? [{ key: '/platform/tenants', path: '/platform/tenants', activePrefix: '/platform', label: t('menu.platformTenants'), todo: false }]
     : []),
-])
+], navigationPreferences.value.children.basic))
 
 // 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。
-const procurementItems = computed(() => [
-  { path: '/procurement/sourcing', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
-  { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
-  { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
-].filter((item) => item.allowed))
+const procurementItems = computed(() => sortByOrder([
+  { key: '/procurement/sourcing', path: '/procurement/sourcing', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
+  { key: '/requirements', path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
+  { key: '/purchase-orders', path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
+].filter((item) => item.allowed), navigationPreferences.value.children.procurement))
 
 // Element Plus teleports dialogs and drawers under <body>, outside .content.
 // Core business workspaces share one palette, including those overlays.
 const operationsThemeClass = 'operations-theme'
-const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value)
+const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value || route.path.startsWith('/quality/'))
 watch(operationsThemeActive, (active) => {
   document.body.classList.toggle(operationsThemeClass, active)
 }, { immediate: true })
@@ -552,13 +653,99 @@ function isProcurementItemActive(path: string) {
 }
 
 // 银行流水不再作为独立业务页面；收付款记录分别归入入账和出账。
-const financeItems = computed(() => [
-  { path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
-  { path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
-  { path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },
-].filter((item) => item.allowed))
+const financeItems = computed(() => sortByOrder([
+  { key: '/customer-recon', path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
+  { key: '/supplier-recon', path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
+  { key: '/fx', path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },
+].filter((item) => item.allowed), navigationPreferences.value.children.finance))
 const hasFinance = computed(() => financeItems.value.length > 0)
 const financeActive = computed(() => financeItems.value.some((item) => route.path === item.path))
+const hasBasicData = computed(() => basicDataItems.value.length > 0)
+const hasTopbarTools = computed(() => auth.can('shipping:schedule:read') || auth.can('export:receipt:read'))
+
+const visibleModules = computed(() => sortByOrder([
+  { key: 'todos', visible: true },
+  { key: 'emails', visible: true },
+  { key: 'sales', visible: hasSales.value },
+  { key: 'procurement', visible: hasProcurement.value },
+  { key: 'quality', visible: auth.can('quality:task:read') },
+  { key: 'warehouse', visible: hasWarehouse.value },
+  { key: 'logistics', visible: hasLogistics.value },
+  { key: 'finance', visible: hasFinance.value },
+  { key: 'basic', visible: hasBasicData.value },
+  { key: 'system', visible: hasSystem.value },
+].filter((item) => item.visible), navigationPreferences.value.modules).map((item) => item.key))
+
+const draggedModuleKey = ref('')
+const draggedChildModule = ref('')
+const draggedChildKey = ref('')
+
+function moduleStyle(key: string) {
+  return { order: navigationPreferences.value.modules.indexOf(key) }
+}
+function childItems(module: string): {key:string;label:string}[] {
+  if(module==='sales')return salesItems.value
+  if(module==='procurement')return procurementItems.value
+  if(module==='warehouse')return warehouseItems.value
+  if(module==='logistics')return logisticsItems.value
+  if(module==='finance')return financeItems.value
+  if(module==='basic')return basicDataItems.value
+  if(module==='system')return systemItems.value
+  return []
+}
+function persistNavigationOrder() {
+  writeNavigationPreferences(navigationStorageKey,navigationPreferences.value)
+}
+function prepareDrag(event: DragEvent, value: string) {
+  if (!event.dataTransfer) return
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', value)
+}
+function startModuleDrag(key: string, event: DragEvent) {
+  draggedModuleKey.value = key
+  prepareDrag(event, key)
+}
+function dropModuleDirect(targetKey: string) {
+  const sourceKey = draggedModuleKey.value
+  const visible = visibleModules.value
+  const from = visible.indexOf(sourceKey)
+  const to = visible.indexOf(targetKey)
+  if (from < 0 || to < 0 || from === to) return finishNavigationDrag()
+  const reordered = moveItem(visible, from, to)
+  navigationPreferences.value = {
+    ...navigationPreferences.value,
+    modules: mergeVisibleOrder(navigationPreferences.value.modules, reordered),
+  }
+  persistNavigationOrder()
+  finishNavigationDrag()
+}
+function startChildDrag(module: string, key: string, event: DragEvent) {
+  draggedChildModule.value = module
+  draggedChildKey.value = key
+  prepareDrag(event, `${module}:${key}`)
+}
+function dropChildDirect(module: string, targetKey: string) {
+  if (draggedChildModule.value !== module) return finishNavigationDrag()
+  const visible = childItems(module).map((item) => item.key)
+  const from = visible.indexOf(draggedChildKey.value)
+  const to = visible.indexOf(targetKey)
+  if (from < 0 || to < 0 || from === to) return finishNavigationDrag()
+  const reordered = moveItem(visible, from, to)
+  navigationPreferences.value = {
+    ...navigationPreferences.value,
+    children: {
+      ...navigationPreferences.value.children,
+      [module]: mergeVisibleOrder(navigationPreferences.value.children[module] ?? childDefaults[module] ?? [], reordered),
+    },
+  }
+  persistNavigationOrder()
+  finishNavigationDrag()
+}
+function finishNavigationDrag() {
+  draggedModuleKey.value = ''
+  draggedChildModule.value = ''
+  draggedChildKey.value = ''
+}
 
 function goBasicData(path: string) {
   basicDataOpen.value = false
@@ -647,8 +834,9 @@ onUnmounted(
 )
 
 function onCommand(cmd: string) {
+  accountOpen.value = false
   if (cmd === 'profile') {
-    router.push('/me')
+    router.push('/basic/employees/me')
   }
   if (cmd === 'logout') {
     stopLive()
@@ -709,7 +897,9 @@ async function changePassword() {
   /* A long menu on a short screen scrolls here rather than pushing the
      window taller. overflow-y auto, not scroll: no phantom scrollbar. */
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .pane-col {
   /* min-height:0 is what lets a flex child shrink below its content and
@@ -755,12 +945,60 @@ async function changePassword() {
   font-size: 14px;
 }
 .side-menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: transparent;
   border-right: none;
   --el-menu-text-color: #94a3b8;
   --el-menu-hover-bg-color: #1e293b;
   --el-menu-active-color: #38bdf8;
 }
+.side-menu [draggable="true"] { cursor: grab; user-select: none; }
+.side-menu [draggable="true"]:active { cursor: grabbing; }
+.side-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #243147;
+  background: #10192b;
+}
+.side-footer :deep(.el-popover__reference-wrapper) { width: 100%; }
+.account-card {
+  width: 100%;
+  min-height: 64px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+  color: #e2e8f0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: color .18s, background .18s;
+}
+.account-card:hover,
+.account-card:focus-visible {
+  outline: none;
+  background: #26334a;
+}
+.account-card.is-active { background: #24344d; }
+.account-card-avatar { background: #34445c; color: #dff5ff; font-weight: 700; }
+.account-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.account-card-copy strong,
+.account-card-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-card-copy strong { color: #f1f5f9; font-size: 13px; font-weight: 650; }
+.account-card-copy small { color: #7f8da3; font-size: 10px; }
+.account-card-more { color: #718198; font-size: 13px; letter-spacing: 1px; }
+.account-flyout .module-flyout-item { cursor: pointer; }
+.account-flyout .module-flyout-item:active { cursor: pointer; }
 .module-menu-trigger {
   width: 100%;
   height: 56px;
@@ -830,11 +1068,12 @@ async function changePassword() {
   color: #cbd5e1;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+.module-flyout-item:active { cursor: grabbing; }
 .module-flyout-item:hover,
 .module-flyout-item:focus-visible {
   outline: none;
@@ -862,15 +1101,10 @@ async function changePassword() {
   align-items: center;
   gap: 18px;
 }
-.user {
-  cursor: pointer;
-  color: #334155;
-  font-size: 14px;
-}
-
 .side { flex-shrink: 0; }
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
 .topbar { justify-content: flex-end; }
+.topbar--empty { display: none; }
 .content { background: #f3f6fa; }
 .content--procurement,
 .content--logistics {
@@ -936,8 +1170,9 @@ async function changePassword() {
 @media (max-width: 1000px) {
   .shell { position: relative; }
   .side { display: none; }
-  .side.side-open { display: block; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
+  .side.side-open { display: flex; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
   .navigation-toggle { display: block; margin-right: auto; }
+  .topbar--empty { display: flex; }
   .content { padding: 16px; }
   .topbar { padding: 0 16px; gap: 12px; }
 }

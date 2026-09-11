@@ -526,6 +526,24 @@
       <div v-if="contractOrder?.signedContractName" class="contract-state">当前文件：<a v-if="contractOrder.signedContractUrl" :href="contractOrder.signedContractUrl" target="_blank">{{contractOrder.signedContractName}}</a><span v-else>{{contractOrder.signedContractName}}</span></div>
       <template #footer><el-button @click="contractOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveContract">保存签署合同</el-button></template>
     </el-dialog>
+    <el-dialog v-model="qualityOpen" :title="t('quality.applyTitle')" width="920px">
+      <el-alert type="info" :closable="false" show-icon class="alert">{{t('quality.applyHint')}}</el-alert>
+      <el-form label-position="top">
+        <div class="quality-apply-head">
+          <el-form-item :label="t('quality.expectedDate')"><el-date-picker v-model="qualityForm.expectedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+          <el-form-item :label="t('quality.location')"><el-input v-model="qualityForm.location" /></el-form-item>
+          <el-form-item :label="t('quality.contactName')"><el-input v-model="qualityForm.contactName" /></el-form-item>
+          <el-form-item :label="t('quality.contactPhone')"><el-input v-model="qualityForm.contactPhone" /></el-form-item>
+        </div>
+        <el-table :data="qualityItems" border>
+          <el-table-column prop="productName" :label="t('quality.product')" min-width="240"><template #default="{row}"><b>{{row.productName}}</b><div class="sub">{{row.spec||'—'}}</div></template></el-table-column>
+          <el-table-column :label="t('quality.orderedQty')" width="160"><template #default="{row}">{{trim(row.qty)}} {{row.uomCode}}</template></el-table-column>
+          <el-table-column :label="t('quality.applyQty')" width="250"><template #default="{row}"><el-input v-model="qualityQty[row.id]"><template #append>{{row.uomCode}}</template></el-input></template></el-table-column>
+        </el-table>
+        <el-form-item :label="t('quality.remark')" style="margin-top:14px"><el-input v-model="qualityForm.remark" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="qualityOpen=false">{{common('cancel')}}</el-button><el-button type="primary" :loading="saving" @click="submitQualityApplication">{{t('quality.submitApplication')}}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -601,6 +619,7 @@ interface OrderItem {
   id: string
   requirementId: string
   productName: string
+	spec: string
   uomCode: string
   qty: string
   unitPrice: string
@@ -669,6 +688,7 @@ const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
 const canFinanceVerify = auth.can('procurement:recon:write')
+const canRequestQuality = auth.can('quality:task:request')
 
 const rows = ref<Order[]>([])
 const total = ref(0)
@@ -740,6 +760,11 @@ const contractOrder = ref<Order | null>(null)
 const contractFile = ref<File | null>(null)
 const contractFiles = ref<any[]>([])
 const contractForm = reactive({ contractNo: '', paymentTerms: '' })
+const qualityOpen = ref(false)
+const qualityOrder = ref<Order | null>(null)
+const qualityItems = ref<OrderItem[]>([])
+const qualityQty = reactive<Record<string,string>>({})
+const qualityForm = reactive({ expectedDate:'', location:'', contactName:'', contactPhone:'', remark:'' })
 
 function lineConfirmationProgress(item: OrderItem): number {
   const ordered = Number(item.qty)
@@ -905,10 +930,12 @@ function moreActions(row: Order): { key: string; label: string }[] {
 	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
 		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
 		add('verifyContract','核验签署合同',canFinanceVerify&&!!row.signedContractUploadedAt&&!row.contractVerifiedAt)
+		add('quality', t('quality.apply'), canRequestQuality)
 		return out
 	}
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
@@ -984,7 +1011,24 @@ function runOrderAction(row: Order, key: string) {
     case 'cancel': openCancel(row); break
 	case 'contract': openContract(row); break
 	case 'verifyContract': void verifyContract(row); break
+	case 'quality': void openQualityApplication(row); break
 	}
+}
+
+async function openQualityApplication(row: Order) {
+	const d=await get<{items:OrderItem[]}>(`/purchase-orders/${row.id}`)
+	qualityOrder.value=row;qualityItems.value=d.items||[]
+	for(const item of qualityItems.value) qualityQty[item.id]=''
+	qualityForm.expectedDate='';qualityForm.location=row.factoryName||row.supplierName;qualityForm.contactName='';qualityForm.contactPhone='';qualityForm.remark=''
+	qualityOpen.value=true
+}
+async function submitQualityApplication(){
+	if(!qualityOrder.value)return
+	const lines=qualityItems.value.filter(i=>Number(qualityQty[i.id])>0).map(i=>({po_item_id:Number(i.id),qty:qualityQty[i.id]}))
+	if(!lines.length){ElMessage.warning(t('quality.pickQty'));return}
+	saving.value=true
+	try{await post(`/purchase-orders/${qualityOrder.value.id}/quality-inspections`,{expected_date:qualityForm.expectedDate,inspection_location:qualityForm.location,contact_name:qualityForm.contactName,contact_phone:qualityForm.contactPhone,remark:qualityForm.remark,lines});ElMessage.success(t('quality.applied'));qualityOpen.value=false}
+	finally{saving.value=false}
 }
 
 async function load() {
@@ -1638,7 +1682,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.requote-card{margin-bottom:16px;border-color:#cfeaf5}.requote-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.requote-head strong{color:#173a4d;font-size:17px}.requote-head p{margin:5px 0 0;color:#647789;font-size:13px}.requote-actions{display:flex;align-items:center;gap:10px}.batch-common{display:grid;grid-template-columns:220px minmax(280px,1fr) 220px;gap:14px;margin:16px 0 4px}.batch-table :deep(.el-select){width:100%}.contract-state{padding:10px 12px;border-radius:8px;background:#f2f8fb;color:#52697a}
+.requote-card{margin-bottom:16px;border-color:#cfeaf5}.requote-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.requote-head strong{color:#173a4d;font-size:17px}.requote-head p{margin:5px 0 0;color:#647789;font-size:13px}.requote-actions{display:flex;align-items:center;gap:10px}.batch-common{display:grid;grid-template-columns:220px minmax(280px,1fr) 220px;gap:14px;margin:16px 0 4px}.batch-table :deep(.el-select){width:100%}.contract-state{padding:10px 12px;border-radius:8px;background:#f2f8fb;color:#52697a}.quality-apply-head{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}.quality-apply-head :deep(.el-input),.quality-apply-head :deep(.el-date-editor){width:100%}
 .head-note,
 .sub {
   font-size: 12px;
