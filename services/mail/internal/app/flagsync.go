@@ -33,6 +33,9 @@ const (
 	// change to one must never displace a pending change to the other.
 	flagSeen    = "SEEN"
 	flagFlagged = "FLAGGED"
+	// 这封信答过了。只有加没有减：见 SetInboundAnsweredByUID 上那段——
+	// 「服务器上没有这个标志」有两种读法，而擦掉一个「答过」的代价大得多。
+	flagAnswered = "ANSWERED"
 
 	opAdd    = "ADD"
 	opRemove = "REMOVE"
@@ -143,7 +146,7 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	for _, o := range ops {
 		switch {
 		// A flag change is the same command whoever it is for, so those batch.
-		case o.Flag == flagSeen || o.Flag == flagFlagged:
+		case o.Flag == flagSeen || o.Flag == flagFlagged || o.Flag == flagAnswered:
 			k := batchKey{
 				accountID: o.AccountID,
 				folder:    o.Folder, flag: o.Flag, op: o.Op,
@@ -174,8 +177,11 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 			uids = append(uids, uint32(r.ImapUid))
 		}
 		imapFlag := `\Seen`
-		if k.flag == flagFlagged {
+		switch k.flag {
+		case flagFlagged:
 			imapFlag = `\Flagged`
+		case flagAnswered:
+			imapFlag = `\Answered`
 		}
 		if err := s.mailbox.SetFlags(ctx, acct, actual, uids, imapFlag, k.op == opAdd); err != nil {
 			s.log.Warn("flag write-back failed",
@@ -495,6 +501,17 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 				continue
 			}
 			changed++
+		}
+		// 在别处回过的信（263 网页版、Foxmail、手机）——这是「已回复」标识
+		// 唯一能知道这件事的路。不比较相等，只往 true 走：那条语句本身就带
+		// 着 NOT is_answered，已经是 true 的行一行都不会写。
+		if fl.Answered {
+			if err := s.q.SetInboundAnsweredByUID(ctx, store.SetInboundAnsweredByUIDParams{
+				TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
+				ImapUid: r.ImapUid,
+			}); err != nil {
+				s.log.Warn("could not apply the host's answered flag", "uid", r.ImapUid, "err", err)
+			}
 		}
 		// Stars are not compared here. reconcileStars has already settled them
 		// for the whole folder; repeating the check against the values read
@@ -1160,4 +1177,37 @@ func (s *Service) stillOnHost(ctx context.Context, acct MailAccount, folder, hos
 	}
 	_, there, err := s.mailbox.FindUIDByMessageID(ctx, acct, folder, messageID)
 	return there, err
+}
+
+// markAnswered 把一封回信答的那封原信标成「已回复」，并把这件事推回服务器。
+//
+// 两步缺一不可（issue #364）：
+//
+//   一、写自己的库——列表上那个标识读的就是这一列。
+//   二、往原信上补一个 \Answered 排队推给服务器——这样在 263 网页版、Foxmail、
+//       手机上看，那封信也是答过的。少了这一步，ERP 和邮箱服务器就是各记各的
+//       账：这边亮着、那边没有，而业务员两边都在看。
+//
+// 全程 best effort，和 countSend 同一条理由：信已经发出去了，这里失败只是列表
+// 上少一个标识，不该回滚任何东西，更不该让队列卡住。
+func (s *Service) markAnswered(ctx context.Context, tenantID int64, m store.ClaimMessagesRow) {
+	if strings.TrimSpace(m.InReplyTo) == "" {
+		return // 不是回信，是一封新写的信
+	}
+	rows, err := s.q.MarkInboundAnsweredByMessageID(ctx, store.MarkInboundAnsweredByMessageIDParams{
+		TenantID: tenantID, OwnerID: m.SenderID, AccountID: m.AccountID,
+		InReplyTo: m.InReplyTo,
+	})
+	if err != nil {
+		s.log.Warn("could not mark the answered mail", "in_reply_to", m.InReplyTo, "err", err)
+		return
+	}
+	for _, r := range rows {
+		// 没有 UID 的行推不上去：那是我们自己归档的投递记录，服务器上没有
+		// 对应的信。库里那一列已经标上了，列表照样显示。
+		if r.ImapUid <= 0 {
+			continue
+		}
+		s.queueFlagWrite(ctx, tenantID, m.AccountID, m.SenderID, r.Folder, r.ImapUid, flagAnswered, true)
+	}
 }

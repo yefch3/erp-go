@@ -721,6 +721,8 @@ func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder stri
 				fl.Seen = true
 			case imap.FlaggedFlag:
 				fl.Flagged = true
+			case imap.AnsweredFlag:
+				fl.Answered = true
 			}
 		}
 		out[m.Uid] = fl

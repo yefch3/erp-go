@@ -117,3 +117,86 @@ func TestDraftsBelongToTheMailboxTheyWereWrittenFrom(t *testing.T) {
 		t.Errorf("不指定信箱时应该三封都在：%v", all)
 	}
 }
+
+// 草稿箱列表要够画出三行式的那一行：写给谁、关于什么、写了个什么开头。
+//
+// 单独一条，因为这三样是**分三处**凑出来的（recipients 从 jsonb 解出来、
+// snippet 由 body 剥成文字、hasAttachments 数附件），任何一处漏掉都不会报错，
+// 只会让列表少一行字——而少了收件人那一行，草稿箱里每一封长得一模一样。
+func TestDraftListCarriesWhatTheRowNeeds(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 980001
+	op := Operator{ID: employeeID}
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_drafts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	if _, err := svc.SaveDraft(ctx, tenantID, DraftInput{
+		Subject: "报价确认", Body: "<p>您好，</p><p>附上<b>最新</b>报价。</p>", Format: "HTML",
+		Recipients: []Recipient{
+			{Name: "林采购", Email: "lin@buyer.com"},
+			{Email: "wu@buyer.com"},
+		},
+		Attachments: []PendingAttachment{{FileName: "quote.xlsx", FileKey: "k/quote.xlsx"}},
+	}, op); err != nil {
+		t.Fatal(err)
+	}
+	// 三样全空的一封。列表要照样列得出来——空草稿是很正常的东西。
+	if _, err := svc.SaveDraft(ctx, tenantID, DraftInput{Format: "HTML"}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := svc.ListDrafts(ctx, tenantID, 0, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("应该两封草稿，实际 %d", len(rows))
+	}
+	var full, empty DraftSummary
+	for _, r := range rows {
+		if r.Subject == "报价确认" {
+			full = r
+		} else {
+			empty = r
+		}
+	}
+
+	if len(full.Recipients) != 2 {
+		t.Errorf("收件人没带出来：%+v", full.Recipients)
+	} else if full.Recipients[0].Name != "林采购" || full.Recipients[1].Email != "wu@buyer.com" {
+		t.Errorf("收件人对不上：%+v", full.Recipients)
+	}
+	if full.Snippet != "您好， 附上最新报价。" {
+		t.Errorf("摘要不对：%q", full.Snippet)
+	}
+	if !full.HasAttachments {
+		t.Error("带了附件却说没有")
+	}
+	if full.UpdatedAt == "" {
+		t.Error("保存时间是空的——列表那一列会是一片空白")
+	}
+
+	if empty.Snippet != "" || empty.HasAttachments || len(empty.Recipients) != 0 {
+		t.Errorf("空草稿不该凭空长出东西：%+v", empty)
+	}
+	if empty.UpdatedAt == "" {
+		t.Error("空草稿也有保存时间")
+	}
+}
