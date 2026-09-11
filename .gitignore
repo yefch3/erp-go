@@ -45,3 +45,7 @@ coverage.out
 
 # D4 local isolated runtime
 .d4-environment/
+
+# D5 local isolated runtime and transient test caches
+.d5-environment/
+**/.cache/

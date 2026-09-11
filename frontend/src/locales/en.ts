@@ -75,6 +75,7 @@ export default {
     warehouse: 'Warehouses',
     outbounds: 'Outbound',
     procurement: 'Procurement',
+	quality: 'Quality Inspection',
     requirements: 'Purchase needs',
     sourcingCases: 'Pre-sales RFQ',
     purchaseOrders: 'Purchase orders',
@@ -85,6 +86,11 @@ export default {
     teamMail: 'Team mail',
     exportLog: 'Export log',
     todo: ' (coming soon)',
+  },
+  quality: {
+	taskLevel:'General task file',
+	apply:'Request inspection', applyTitle:'Request pre-shipment inspection', applyHint:'After confirming the goods are ready, Procurement sends the selected products and quantities to Quality. Split batches are allowed; duplicate and excess quantities are blocked.', orderedQty:'Ordered quantity', applyQty:'This batch', contactName:'Site contact', contactPhone:'Contact phone', submitApplication:'Submit inspection task', pickQty:'Enter a quantity for at least one product', applied:'Inspection task submitted',
+    title:'Quality Inspection', subtitle:'Procurement requests a factory inspection when goods are ready; Quality records every inspection and reinspection in one task.', pending:'Pending', completed:'Completed', search:'Search task, purchase order or factory', taskNo:'Inspection task', poNo:'Purchase order', factory:'Factory / supplier', batch:'Batch', expectedDate:'Planned date', process:'Process', empty:'No inspection tasks', location:'Inspection location', readOnlyHint:'Procurement, Logistics, related Sales and supervisors may view results and files. Only Quality may change conclusions.', products:'Products and quantities', product:'Product / specification', requestedQty:'Requested', qualifiedQty:'Qualified', unresolvedQty:'Reinspection due', result:'Result', releaseQty:'Approved to ship', saveRelease:'Save partial release decision', startTitle:'Accept task', startHint:'The current Quality inspector will record this round and its evidence.', start:'Start inspection', reinspect:'Record reinspection', recordRound:'Record inspection round', inspectedAt:'Inspection time', remark:'Remarks', remaining:'remaining', inspectedQty:'Inspected this round', unqualifiedQty:'Unqualified', issue:'Issue details', suggestion:'Handling suggestion', saveRound:'Save round', attachments:'Inspection files', upload:'Upload files', fileName:'File', category:'Category', uploader:'Uploaded by', uploadedAt:'Uploaded at', history:'Inspection history', roundNo:'Round {n}', started:'Inspection started', roundSaved:'Inspection round saved', releaseSaved:'Release decision saved', uploaded:'Files saved', uploadFailed:'File upload failed', statuses:{WAITING:'Pending',IN_PROGRESS:'In progress',REINSPECTION:'Reinspection',COMPLETED:'Completed'}, results:{PENDING:'Pending',PASS:'Qualified',PARTIAL:'Partially qualified',FAIL:'Unqualified'}, categories:{PHOTO:'Site photos',VIDEO:'Site videos',REPORT:'Inspection report',THIRD_PARTY:'Third-party report',OTHER:'Other'}
   },
   warehouseNav: {
     workbench: 'Warehouse workspace', profiles: 'Warehouse profiles', arrivals: 'Pending arrivals', receipts: 'Receipt history', stock: 'Stock inquiry', imports: 'Import center', settings: 'Warehouse settings',

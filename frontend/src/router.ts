@@ -99,6 +99,7 @@ export const router = createRouter({
         { path: 'sourcing-cases', redirect: (to) => ({ path: '/procurement/sourcing', query: to.query }) },
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
+		{ path: 'quality/tasks', component: () => import('./pages/QualityTasksPage.vue'), meta: { permission: 'quality:task:read' } },
         // 供应商这边只剩这一页。待核销 / 已完成是它下面的两个子页，靠
         // ?view=done 分——一个服务一个菜单项，query 不影响 route.path，
         // 所以菜单高亮照常。

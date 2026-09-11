@@ -3,4 +3,8 @@ bin/
 docs/
 .github/
 .vscode/
+.cache/
+.d5-environment/
+frontend/node_modules/
+frontend/dist/
 **/*_test.go

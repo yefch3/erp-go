@@ -98,6 +98,9 @@
             </button>
           </nav>
         </el-popover>
+        <el-menu-item v-if="auth.can('quality:task:read')" index="/quality/tasks">
+          {{ t('menu.quality') }}
+        </el-menu-item>
         <el-popover
           v-if="hasWarehouse"
           v-model:visible="warehouseOpen"
@@ -534,7 +537,7 @@ const procurementItems = computed(() => [
 // Element Plus teleports dialogs and drawers under <body>, outside .content.
 // Core business workspaces share one palette, including those overlays.
 const operationsThemeClass = 'operations-theme'
-const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value)
+const operationsThemeActive = computed(() => salesActive.value || procurementActive.value || logisticsActive.value || route.path.startsWith('/quality/'))
 watch(operationsThemeActive, (active) => {
   document.body.classList.toggle(operationsThemeClass, active)
 }, { immediate: true })

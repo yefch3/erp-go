@@ -24,7 +24,7 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
-	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
+	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read", "quality:task:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}, {"quality", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -35,9 +35,10 @@ var presetRoles = []presetRole{
 			"masterdata:customer:read", "masterdata:customer:write", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
+			"quality:task:read",
 		},
 		Scopes: []presetScope{
-			{"export", "SELF"}, {"procurement_sourcing", "SELF"},
+			{"export", "SELF"}, {"procurement_sourcing", "SELF"}, {"quality", "SELF"},
 		},
 	},
 	{
@@ -50,9 +51,10 @@ var presetRoles = []presetRole{
 			"masterdata:customer:read", "masterdata:customer:write", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
+			"quality:task:read",
 		},
 		Scopes: []presetScope{
-			{"export", "DEPT_AND_SUB"}, {"procurement_sourcing", "DEPT_AND_SUB"},
+			{"export", "DEPT_AND_SUB"}, {"procurement_sourcing", "DEPT_AND_SUB"}, {"quality", "DEPT_AND_SUB"},
 		},
 	},
 	{
@@ -67,11 +69,12 @@ var presetRoles = []presetRole{
 			"shipping:progress:write", "shipping:route:write",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"shipping:sourcing:read", "shipping:sourcing:write",
+			"quality:task:read",
 		},
 		Scopes: []presetScope{
 			{"export", "ALL"}, {"mail", "SELF"},
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"},
+			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"}, {"quality", "ALL"},
 		},
 	},
 	{
@@ -82,8 +85,9 @@ var presetRoles = []presetRole{
 			"approval:task:act",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"masterdata:supplier:read", "masterdata:port:read", "product:product:read",
+			"quality:task:read",
 		},
-		Scopes: []presetScope{{"shipping", "ALL"}, {"procurement_sourcing", "ALL"}},
+		Scopes: []presetScope{{"shipping", "ALL"}, {"procurement_sourcing", "ALL"}, {"quality", "ALL"}},
 	},
 	{
 		Code: "FINANCE", Name: "财务",
@@ -117,10 +121,11 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:price", "procurement:sourcing:read",
 			"procurement:sourcing:send", "procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:read", "quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
 	},
 	{
@@ -139,11 +144,17 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:read", "quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
+	},
+	{
+		Code: "QUALITY_INSPECTOR", Name: "质检专员", Description: "处理工厂出货前质检并保存每轮资料",
+		Permissions: []string{"quality:task:read", "quality:task:write", "quality:file:upload"},
+		Scopes: []presetScope{{"quality", "ALL"}},
 	},
 }
 

@@ -1,0 +1,17 @@
+{
+  "testedAt": "2026-09-11T00:40:53.7590526-04:00",
+  "purchaseOrder": "PO-D5-SMOKE-001",
+  "taskId": "7",
+  "finalStatus": "COMPLETED",
+  "qualifiedQty": "6.0000",
+  "rounds": 2,
+  "files": 1,
+  "buyerReleaseBeforeCompletion": "3.0000",
+  "quantityOverflow": "HTTP 409",
+  "logisticsMutation": "HTTP 403",
+  "readers": {
+    "sales": "QI-PO-D5-SMOKE-001-01",
+    "boss": "QI-PO-D5-SMOKE-001-01",
+    "logistics": "QI-PO-D5-SMOKE-001-01"
+  }
+}

@@ -75,6 +75,7 @@ export default {
     warehouse: '仓库管理',
     outbounds: '出库管理',
     procurement: '采购管理',
+	quality: '质检',
     requirements: '采购需求',
     sourcingCases: '售前询价',
     purchaseOrders: '采购单',
@@ -85,6 +86,11 @@ export default {
     teamMail: '员工邮件',
     exportLog: '导出记录',
     todo: '（待开发）',
+  },
+  quality: {
+	taskLevel:'任务通用资料',
+	apply:'申请质检', applyTitle:'申请出货前质检', applyHint:'采购确认货物备好后按本批产品和数量交接给质检部门；支持分批申请，系统会阻止重复或超量送检。', orderedQty:'采购数量', applyQty:'本批送检数量', contactName:'现场联系人', contactPhone:'联系电话', submitApplication:'提交质检任务', pickQty:'请填写至少一个产品的送检数量', applied:'质检任务已提交',
+    title:'质检', subtitle:'采购确认货物备好后申请；质检部门在同一任务内记录现场检查与复检全过程。', pending:'待质检', completed:'已完成', search:'搜索质检任务、采购单或工厂', taskNo:'质检任务', poNo:'采购单号', factory:'工厂 / 供应商', batch:'批次', expectedDate:'计划质检日期', process:'处理', empty:'暂无质检任务', location:'质检地点', readOnlyHint:'采购、物流、相关销售及上级可查看结果和资料；只有质检部门可以填写结论。', products:'送检产品与数量', product:'产品 / 规格', requestedQty:'送检数量', qualifiedQty:'合格数量', unresolvedQty:'待复检数量', result:'结论', releaseQty:'允许先发', saveRelease:'保存部分合格放行决定', startTitle:'接收质检任务', startHint:'开始后由当前质检人员记录本轮现场结果和资料。', start:'开始质检', reinspect:'记录复检', recordRound:'记录本轮质检', inspectedAt:'质检时间', remark:'备注', remaining:'待检', inspectedQty:'本轮检查数量', unqualifiedQty:'不合格数量', issue:'异常说明', suggestion:'处理建议', saveRound:'保存本轮结果', attachments:'现场资料', upload:'上传资料', fileName:'文件名', category:'资料类型', uploader:'上传人', uploadedAt:'上传时间', history:'质检与复检历史', roundNo:'第 {n} 轮', started:'质检任务已接收', roundSaved:'本轮质检结果已保存', releaseSaved:'放行决定已保存', uploaded:'资料已保存', uploadFailed:'资料上传失败', statuses:{WAITING:'待质检',IN_PROGRESS:'质检中',REINSPECTION:'待复检',COMPLETED:'已完成'}, results:{PENDING:'待质检',PASS:'合格',PARTIAL:'部分合格',FAIL:'不合格'}, categories:{PHOTO:'现场照片',VIDEO:'现场视频',REPORT:'质检报告',THIRD_PARTY:'第三方报告',OTHER:'其他附件'}
   },
   warehouseNav: {
     workbench: '仓库工作台', profiles: '仓库档案', arrivals: '待到货', receipts: '收货记录', stock: '库存管理', imports: '导入中心', settings: '仓库设置',

@@ -75,6 +75,7 @@ export default {
     warehouse: 'Almacenes',
     outbounds: 'Salidas',
     procurement: 'Compras',
+	quality: 'Inspección de calidad',
     requirements: 'Necesidades de compra',
     sourcingCases: 'Cotización de preventa',
     purchaseOrders: 'Órdenes de compra',
@@ -85,6 +86,11 @@ export default {
     teamMail: 'Correo del equipo',
     exportLog: 'Registro de exportaciones',
     todo: ' (próximamente)',
+  },
+  quality: {
+	taskLevel:'Archivo general de la tarea',
+	apply:'Solicitar inspección', applyTitle:'Solicitar inspección previa al envío', applyHint:'Cuando la mercancía está lista, Compras envía los productos y cantidades seleccionados a Calidad. Se permiten lotes parciales y se bloquean duplicados y excesos.', orderedQty:'Cantidad comprada', applyQty:'Cantidad del lote', contactName:'Contacto en sitio', contactPhone:'Teléfono', submitApplication:'Enviar tarea', pickQty:'Indique cantidad para al menos un producto', applied:'Tarea enviada',
+    title:'Inspección de calidad', subtitle:'Compras solicita la inspección en fábrica cuando la mercancía está lista; Calidad conserva todas las rondas en una tarea.', pending:'Pendiente', completed:'Completado', search:'Buscar tarea, pedido o fábrica', taskNo:'Tarea de inspección', poNo:'Pedido de compra', factory:'Fábrica / proveedor', batch:'Lote', expectedDate:'Fecha prevista', process:'Procesar', empty:'No hay tareas', location:'Lugar de inspección', readOnlyHint:'Compras, Logística, Ventas relacionadas y supervisores pueden consultar. Solo Calidad puede modificar conclusiones.', products:'Productos y cantidades', product:'Producto / especificación', requestedQty:'Cantidad solicitada', qualifiedQty:'Cantidad conforme', unresolvedQty:'Pendiente de reinspección', result:'Resultado', releaseQty:'Autorizado para envío', saveRelease:'Guardar decisión de envío parcial', startTitle:'Aceptar tarea', startHint:'El inspector actual registrará esta ronda y sus documentos.', start:'Iniciar inspección', reinspect:'Registrar reinspección', recordRound:'Registrar ronda', inspectedAt:'Hora de inspección', remark:'Observaciones', remaining:'pendiente', inspectedQty:'Inspeccionado', unqualifiedQty:'No conforme', issue:'Descripción del problema', suggestion:'Medida propuesta', saveRound:'Guardar ronda', attachments:'Documentos de inspección', upload:'Subir archivos', fileName:'Archivo', category:'Categoría', uploader:'Subido por', uploadedAt:'Fecha de carga', history:'Historial de inspección', roundNo:'Ronda {n}', started:'Inspección iniciada', roundSaved:'Ronda guardada', releaseSaved:'Decisión guardada', uploaded:'Archivos guardados', uploadFailed:'Error al subir', statuses:{WAITING:'Pendiente',IN_PROGRESS:'En curso',REINSPECTION:'Reinspección',COMPLETED:'Completado'}, results:{PENDING:'Pendiente',PASS:'Conforme',PARTIAL:'Parcialmente conforme',FAIL:'No conforme'}, categories:{PHOTO:'Fotos',VIDEO:'Videos',REPORT:'Informe de inspección',THIRD_PARTY:'Informe de tercero',OTHER:'Otros'}
   },
   warehouseNav: {
     workbench: 'Panel de almacenes', profiles: 'Fichas de almacén', arrivals: 'Llegadas pendientes', receipts: 'Historial de recepciones', stock: 'Consulta de existencias', imports: 'Centro de importación', settings: 'Configuración',

@@ -646,6 +646,17 @@ service PurchaseOrderService {
   // 结案：全部收满、无未解决异常、无未解决质检才放行。
   rpc CloseOrder(CloseOrderRequest) returns (CloseOrderResponse);
 
+  // D5 factory pre-shipment quality handoff. This is deliberately separate
+  // from RecordInspection, which records checks after warehouse receipt.
+  rpc ApplyQualityInspection(ApplyQualityInspectionRequest) returns (ApplyQualityInspectionResponse);
+  rpc ListQualityInspectionTasks(ListQualityInspectionTasksRequest) returns (ListQualityInspectionTasksResponse);
+  rpc GetQualityInspectionTask(GetQualityInspectionTaskRequest) returns (GetQualityInspectionTaskResponse);
+  rpc StartQualityInspection(StartQualityInspectionRequest) returns (StartQualityInspectionResponse);
+  rpc SubmitQualityInspectionRound(SubmitQualityInspectionRoundRequest) returns (SubmitQualityInspectionRoundResponse);
+  rpc DecideQualityRelease(DecideQualityReleaseRequest) returns (DecideQualityReleaseResponse);
+  rpc PresignQualityInspectionFile(PresignQualityInspectionFileRequest) returns (PresignQualityInspectionFileResponse);
+  rpc RegisterQualityInspectionFile(RegisterQualityInspectionFileRequest) returns (RegisterQualityInspectionFileResponse);
+
   // Supplier invoices: the third leg of the three-way match. Lives on the
   // order service because an invoice is meaningless except against orders.
   rpc CreateSupplierInvoice(CreateSupplierInvoiceRequest) returns (CreateSupplierInvoiceResponse);
@@ -749,6 +760,140 @@ service PurchaseOrderService {
   // Correct identifying information on a finance-only opening record.
   rpc UpdateManualPayable(UpdateManualPayableRequest) returns (UpdateManualPayableResponse);
 }
+
+message QualityInspectionTaskLine {
+  int64 id = 1;
+  int64 po_item_id = 2;
+  string product_name = 3;
+  string spec = 4;
+  string uom_code = 5;
+  string ordered_qty = 6;
+  string requested_qty = 7;
+  string qualified_qty = 8;
+  string unresolved_qty = 9;
+  string final_result = 10;
+  string issue_description = 11;
+  string handling_suggestion = 12;
+  string approved_release_qty = 13;
+  string release_decided_by_name = 14;
+  string release_decided_at = 15;
+}
+
+message QualityInspectionRoundLine {
+  int64 task_line_id = 1;
+  string result = 2;
+  string inspected_qty = 3;
+  string qualified_qty = 4;
+  string unqualified_qty = 5;
+  string issue_description = 6;
+  string handling_suggestion = 7;
+}
+
+message QualityInspectionRound {
+  int64 id = 1;
+  int32 round_no = 2;
+  string inspected_at = 3;
+  string inspection_location = 4;
+  string inspector_name = 5;
+  string remark = 6;
+  repeated QualityInspectionRoundLine lines = 7;
+}
+
+message QualityInspectionFile {
+  int64 id = 1;
+  int64 round_id = 2;
+  int64 task_line_id = 3;
+  string category = 4;
+  string file_name = 5;
+  string content_type = 6;
+  int64 size_bytes = 7;
+  bool supplemental = 8;
+  string uploaded_by_name = 9;
+  string uploaded_at = 10;
+  string download_url = 11;
+}
+
+message QualityInspectionTask {
+  int64 id = 1;
+  string task_no = 2;
+  int64 po_id = 3;
+  string po_no = 4;
+  string supplier_name = 5;
+  int32 batch_no = 6;
+  string status = 7;
+  string expected_date = 8;
+  string inspection_location = 9;
+  string contact_name = 10;
+  string contact_phone = 11;
+  string remark = 12;
+  string requested_by_name = 13;
+  string requested_at = 14;
+  string inspector_name = 15;
+  string started_at = 16;
+  string completed_at = 17;
+  repeated QualityInspectionTaskLine lines = 18;
+  repeated QualityInspectionRound rounds = 19;
+  repeated QualityInspectionFile files = 20;
+}
+
+message ApplyQualityInspectionLine { int64 po_item_id = 1; string qty = 2; }
+message ApplyQualityInspectionRequest {
+  int64 po_id = 1;
+  string expected_date = 2;
+  string inspection_location = 3;
+  string contact_name = 4;
+  string contact_phone = 5;
+  string remark = 6;
+  repeated ApplyQualityInspectionLine lines = 7;
+}
+message ApplyQualityInspectionResponse { QualityInspectionTask task = 1; }
+message ListQualityInspectionTasksRequest {
+  erp.common.v1.PageRequest page = 1;
+  string tab = 2;
+  string keyword = 3;
+}
+message ListQualityInspectionTasksResponse {
+  repeated QualityInspectionTask tasks = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+message GetQualityInspectionTaskRequest { int64 id = 1; }
+message GetQualityInspectionTaskResponse { QualityInspectionTask task = 1; }
+message StartQualityInspectionRequest { int64 id = 1; }
+message StartQualityInspectionResponse { QualityInspectionTask task = 1; }
+message SubmitQualityInspectionRoundLine {
+  int64 task_line_id = 1;
+  string result = 2;
+  string inspected_qty = 3;
+  string qualified_qty = 4;
+  string unqualified_qty = 5;
+  string issue_description = 6;
+  string handling_suggestion = 7;
+}
+message SubmitQualityInspectionRoundRequest {
+  int64 id = 1;
+  string inspected_at = 2;
+  string inspection_location = 3;
+  string remark = 4;
+  repeated SubmitQualityInspectionRoundLine lines = 5;
+}
+message SubmitQualityInspectionRoundResponse { QualityInspectionTask task = 1; }
+message DecideQualityReleaseLine { int64 task_line_id = 1; string qty = 2; }
+message DecideQualityReleaseRequest { int64 id = 1; repeated DecideQualityReleaseLine lines = 2; }
+message DecideQualityReleaseResponse { QualityInspectionTask task = 1; }
+message PresignQualityInspectionFileRequest { int64 id = 1; string file_name = 2; }
+message PresignQualityInspectionFileResponse { string file_key = 1; string upload_url = 2; int32 expires_seconds = 3; }
+message RegisterQualityInspectionFileRequest {
+  int64 id = 1;
+  int64 round_id = 2;
+  int64 task_line_id = 3;
+  string category = 4;
+  string file_key = 5;
+  string file_name = 6;
+  string content_type = 7;
+  int64 size_bytes = 8;
+  bool supplemental = 9;
+}
+message RegisterQualityInspectionFileResponse { QualityInspectionTask task = 1; }
 
 message OrderImportRow {
   int32 row_no = 1;
