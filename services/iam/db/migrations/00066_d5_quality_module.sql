@@ -9,7 +9,13 @@ ON CONFLICT(code) DO NOTHING;
 
 INSERT INTO roles(tenant_id,code,name,description,status)
 SELECT t.id,'QUALITY_INSPECTOR','质检专员','处理工厂出货前质检并保存每轮资料','ACTIVE'
-FROM tenants t ON CONFLICT(tenant_id,code) DO NOTHING;
+FROM (
+  SELECT id FROM tenants
+  UNION
+  -- 历史预置角色迁移直接为 tenant 1 建立对表基准；全新的一次性迁移库
+  -- 尚无 tenants 行，也必须保留同一套基准，供启动播种与迁移做一致性校验。
+  SELECT 1
+) t ON CONFLICT(tenant_id,code) DO NOTHING;
 
 INSERT INTO role_permissions(tenant_id,role_id,permission_id)
 SELECT r.tenant_id,r.id,p.id FROM roles r CROSS JOIN permissions p
