@@ -318,3 +318,82 @@ func TestOurOwnComposersReplyFoldsEvenWhenTheQuoteIsShort(t *testing.T) {
 		t.Errorf("引用的正文没进折叠：\n%s", quoted)
 	}
 }
+
+// ------------------------------------------------- Gmail 套了一层包装的回复
+
+// Gmail 的回复有两种形状，同一个人先后两封就能各碰上一种：一种是新写的几行、
+// <br>、引用块直接摆在 body 底下；另一种把这三样整个套在一层 <div dir="ltr">
+// 里。从前只认第一种，第二种在会话里把整条历史又摊了一遍——生产上那条三封
+// 的往来，13:04 那封折了、13:06 那封没折，就是这么来的。
+func TestAGmailReplyWrappedInOneDivStillFolds(t *testing.T) {
+	// 17565 号那封信的形状，一字不差地剪下来。
+	body := `<div dir="ltr"><div dir="ltr">And what is the content of this interview?</div><br>` +
+		`<div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">` +
+		`On Thu, Sep 3, 2026 at 1:04 PM Fangchen Ye &lt;<a href="mailto:f@gmail.com">f@gmail.com</a>&gt; wrote:<br></div>` +
+		`<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">` +
+		`<div dir="ltr">Hi Kim,<br><br>Thank you for the update!</div>` + longQuote(``) +
+		`</blockquote></div></div>`
+	fresh, quoted := mustSplit(t, body)
+	if !strings.Contains(fresh, "content of this interview") {
+		t.Fatalf("the sentence somebody wrote was folded away:\n%s", fresh)
+	}
+	if strings.Contains(fresh, "Thank you for the update") {
+		t.Fatalf("the history stayed above the fold:\n%s", fresh)
+	}
+	if !strings.Contains(quoted, "Thank you for the update") || !strings.Contains(quoted, "wrote:") {
+		t.Fatalf("the fold lost part of the history:\n%s", quoted)
+	}
+	// 剥掉的包装套回了两半，而且两半都是完整的文档。
+	for name, half := range map[string]string{"fresh": fresh, "quoted": quoted} {
+		if !strings.HasPrefix(half, `<div dir="ltr">`) {
+			t.Errorf("%s half lost its wrapper:\n%s", name, half)
+		}
+		if strings.Count(half, "<div") != strings.Count(half, "</div>") {
+			t.Errorf("%s half has unbalanced divs:\n%s", name, half)
+		}
+	}
+}
+
+// 往里看一层不能把营销邮件切开：它那层包装底下是一张表，表不是包装。
+// 和 TestADeeplyNestedQuoteIsNotSplitOut 是同一条线，这里多套一层再试一次。
+func TestAWrappedMarketingLayoutIsStillLeftWhole(t *testing.T) {
+	body := `<div dir="ltr"><div class="wrapper"><table><tr><td><div>Hello</div>` +
+		longQuote(`<blockquote>`) + `</blockquote></td></tr></table></div></div>`
+	if _, quoted := SplitQuotedHistory(body); quoted != "" {
+		t.Fatal("a quote inside a wrapped table layout was cut out of its container")
+	}
+}
+
+// 纯转发套了一层包装，仍然不折：外层先认出引用块本身就是唯一的孩子，上面
+// 什么都没有。要是先钻进去，会在引用块里面找到更深的 blockquote，把「某某
+// 写道：」那一行当成新写的正文折出来——一个只有署名行的页面。
+func TestAWrappedForwardWithNothingAboveIsLeftWhole(t *testing.T) {
+	body := `<div dir="ltr"><div class="gmail_quote"><div class="gmail_attr">` +
+		`On Mon, 3 Mar 2026 at 10:30, Ana Costa &lt;ana@buyer.com&gt; wrote:</div>` +
+		`<blockquote class="gmail_quote">` + longQuote(``) + `</blockquote></div></div>`
+	fresh, quoted := SplitQuotedHistory(body)
+	if quoted != "" {
+		t.Fatalf("a wrapped forward with nothing written above it was folded; fresh half:\n%s", fresh)
+	}
+}
+
+// 包装上的 style 要跟到两半——不然折起来的那一半打开是另一种字体。
+func TestTheWrappersStyleIsGivenToBothHalves(t *testing.T) {
+	body := `<div style="font-family:Georgia"><p>Confirmed, please ship Monday.</p>` +
+		longQuote(`<blockquote>`) + `</blockquote></div>`
+	fresh, quoted := mustSplit(t, body)
+	for name, half := range map[string]string{"fresh": fresh, "quoted": quoted} {
+		if !strings.Contains(half, `font-family:Georgia`) {
+			t.Errorf("%s half lost the wrapper's style:\n%s", name, half)
+		}
+	}
+}
+
+// 一封故意套了很多层的信不会让折叠在里面打转，也不会被折。
+func TestAbsurdlyDeepWrappingIsGivenUpOn(t *testing.T) {
+	body := strings.Repeat(`<div>`, 20) + `<p>Hello</p>` + longQuote(`<blockquote>`) +
+		`</blockquote>` + strings.Repeat(`</div>`, 20)
+	if _, quoted := SplitQuotedHistory(body); quoted != "" {
+		t.Fatal("folded through twenty layers of wrapping")
+	}
+}

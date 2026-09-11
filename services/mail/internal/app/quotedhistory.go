@@ -159,19 +159,27 @@ func splitFragment(fragment string) (fresh, quoted string, ok bool) {
 	if body == nil {
 		return "", "", false
 	}
-	// The boundary is looked for among the body's own children rather than
-	// anywhere in the tree. A <blockquote> nested three divs deep inside a
+	// The boundary is looked for among one container's own children rather
+	// than anywhere in the tree. A <blockquote> nested three divs deep inside a
 	// marketing layout is part of that layout; splitting there would cut the
-	// layout in half. This costs the occasional missed fold on a deeply
-	// wrapped reply, which is the cheaper mistake.
-	start := quoteBoundary(body)
+	// layout in half.
+	//
+	// 从前那个容器只能是 <body>。这漏掉的不是「偶尔一封包得很深的回复」，而是
+	// **Gmail 自己的一种常规写法**：回复有时整个套在一层 <div dir="ltr"> 里——
+	// 新写的几行、<br>、引用块三样是它的子节点，而不是 body 的。于是 body 只有
+	// 一个孩子，那个孩子既不是 blockquote 也没有引用类名，折叠放弃。会话里
+	// 同一个人先后两封 Gmail 回复，一封折了、一封把整条历史又摊了一遍。
+	//
+	// 所以只有一个纯包装层时往里看一层（见 boundaryWithin）。营销邮件仍然不会
+	// 被切：它那层包装底下是一张表，表不是包装，到那儿就停。
+	container, start := boundaryWithin(body)
 	if start == nil {
 		return "", "", false
 	}
 
 	var freshSB, quotedSB strings.Builder
 	inQuote := false
-	for c := body.FirstChild; c != nil; c = c.NextSibling {
+	for c := container.FirstChild; c != nil; c = c.NextSibling {
 		if c == start {
 			inQuote = true
 		}
@@ -183,7 +191,96 @@ func splitFragment(fragment string) (fresh, quoted string, ok bool) {
 			return "", "", false
 		}
 	}
-	return freshSB.String(), quotedSB.String(), true
+	// 剥掉的那几层包装原样套回两半。dir="ltr" 这种属性丢了看不出来，但包装上
+	// 若带着 style（字体、颜色），丢了两半就不像同一封信了——和上面把 <style>
+	// 复制到两半是同一个道理。
+	open, close := wrappersBetween(body, container)
+	return open + freshSB.String() + close, open + quotedSB.String() + close, true
+}
+
+// maxWrapperDepth 是往里剥几层包装。Gmail 是一层；没见过真信超过两层。
+// 有上限是为了不在一封故意套了一百层 div 的信上打转。
+const maxWrapperDepth = 3
+
+// boundaryWithin 找出引用从哪个容器的哪个孩子开始。
+//
+// 先看当前这一层；这一层找不到、而它恰好只有一个纯包装的孩子，就进去再看。
+// **顺序是要紧的**：一封纯转发（上面什么都没写）的引用块本身可能就是那个
+// 唯一的孩子，先在外层认出它，freshEnoughToStandAlone 才拦得住；先钻进去的话
+// 会在引用块**里面**找到更深一层的 blockquote，把「某某写道：」那一行当成新写
+// 的正文折出来。
+func boundaryWithin(node *html.Node) (container, start *html.Node) {
+	for depth := 0; depth <= maxWrapperDepth; depth++ {
+		if start := quoteBoundary(node); start != nil {
+			return node, start
+		}
+		inner := soleWrapperChild(node)
+		if inner == nil {
+			return nil, nil
+		}
+		node = inner
+	}
+	return nil, nil
+}
+
+// soleWrapperChild 是这个节点唯一的元素孩子，且那孩子是个纯包装（div 之类）；
+// 其余情况回 nil。「唯一」把空白文本和注释不算在内——Gmail 在标签之间留换行。
+//
+// 只认这几个标签：它们不带布局含义，包在外面只是客户端的习惯。表格、列表、
+// 段落都不是——一张表底下的东西是表的一部分，不该被切开。
+func soleWrapperChild(n *html.Node) *html.Node {
+	var only *html.Node
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		switch c.Type {
+		case html.TextNode:
+			if strings.TrimSpace(c.Data) != "" {
+				return nil
+			}
+		case html.CommentNode:
+		case html.ElementNode:
+			if only != nil {
+				return nil
+			}
+			only = c
+		default:
+			return nil
+		}
+	}
+	if only == nil {
+		return nil
+	}
+	switch only.DataAtom {
+	case atom.Div, atom.Span, atom.Section, atom.Article, atom.Font, atom.Center:
+		return only
+	}
+	return nil
+}
+
+// wrappersBetween 把 outer（不含）到 inner（含）之间的每一层包装渲染成一对
+// 开合标签，外层在前。两半各自套上这一串，就和剥之前长得一样。
+func wrappersBetween(outer, inner *html.Node) (open, close string) {
+	for n := inner; n != nil && n != outer; n = n.Parent {
+		o, c := tagPair(n)
+		open = o + open
+		close = close + c
+	}
+	return open, close
+}
+
+// tagPair 渲染一个元素的开标签和闭标签，不带孩子。借 html.Render 的手，好让
+// 属性的转义和它渲染正文时完全一致。
+func tagPair(n *html.Node) (open, close string) {
+	shell := &html.Node{Type: html.ElementNode, DataAtom: n.DataAtom, Data: n.Data, Attr: n.Attr}
+	var sb strings.Builder
+	if err := html.Render(&sb, shell); err != nil {
+		return "", ""
+	}
+	s := sb.String()
+	// 空元素渲染出来是 <div a="b"></div>，最后一个 < 之前是开标签。
+	if i := strings.LastIndex(s, "</"); i > 0 {
+		return s[:i], s[i:]
+	}
+	return s, ""
 }
 
 // quoteBoundary is the first child of the body from which everything is
