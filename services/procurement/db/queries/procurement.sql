@@ -153,7 +153,7 @@ LEFT JOIN LATERAL (
     JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
     WHERE i.tenant_id = purchase_requirements.tenant_id
       AND i.requirement_id = purchase_requirements.id
-      AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+      AND o.status IN ('DRAFT', 'PENDING_APPROVAL')
 ) draft ON true
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   -- 数据范围（A1）：属主是合同负责人（手工需求是创建人）。owner_id=0 的

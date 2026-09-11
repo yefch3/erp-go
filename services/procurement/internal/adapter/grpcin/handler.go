@@ -70,6 +70,47 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 	}, nil
 }
 
+func executionQuoteProto(q app.ExecutionSupplierQuote) *prv1.ExecutionSupplierQuote {
+	return &prv1.ExecutionSupplierQuote{Id: q.ID, RequirementId: q.RequirementID, SupplierId: q.SupplierID, SupplierCode: q.SupplierCode, SupplierName: q.SupplierName, Currency: q.Currency, UnitPrice: q.UnitPrice, ExpectedDate: q.ExpectedDate, PaymentTerms: q.PaymentTerms, ValidUntil: q.ValidUntil, Remark: q.Remark, CreatedById: q.CreatedByID, CreatedByName: q.CreatedByName, CreatedAt: q.CreatedAt, UpdatedAt: q.UpdatedAt}
+}
+
+func (h *Handler) ListExecutionSupplierQuotes(ctx context.Context, req *prv1.ListExecutionSupplierQuotesRequest) (*prv1.ListExecutionSupplierQuotesResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	rows, err := h.svc.ListExecutionSupplierQuotes(ctx, grpcx.TenantID(ctx), req.GetRequirementId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.ExecutionSupplierQuote, 0, len(rows))
+	for _, q := range rows {
+		out = append(out, executionQuoteProto(q))
+	}
+	return &prv1.ListExecutionSupplierQuotesResponse{Quotes: out}, nil
+}
+
+func (h *Handler) SaveExecutionSupplierQuote(ctx context.Context, req *prv1.SaveExecutionSupplierQuoteRequest) (*prv1.SaveExecutionSupplierQuoteResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	q, err := h.svc.SaveExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), app.SaveExecutionSupplierQuoteInput{ID: req.GetId(), RequirementID: req.GetRequirementId(), SupplierID: req.GetSupplierId(), Currency: req.GetCurrency(), UnitPrice: req.GetUnitPrice(), ExpectedDate: req.GetExpectedDate(), PaymentTerms: req.GetPaymentTerms(), ValidUntil: req.GetValidUntil(), Remark: req.GetRemark()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SaveExecutionSupplierQuoteResponse{Quote: executionQuoteProto(q)}, nil
+}
+
+func (h *Handler) DeleteExecutionSupplierQuote(ctx context.Context, req *prv1.DeleteExecutionSupplierQuoteRequest) (*prv1.DeleteExecutionSupplierQuoteResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	if err := h.svc.DeleteExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId()); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteExecutionSupplierQuoteResponse{}, nil
+}
+
 func (h *Handler) ExportPurchaseTemplate(ctx context.Context, req *prv1.ExportPurchaseTemplateRequest) (*prv1.ExportPurchaseTemplateResponse, error) {
 	// Bulk read by id is still a read by id: every requirement in the
 	// selection must be inside the caller's range.

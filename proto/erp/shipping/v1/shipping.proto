@@ -37,6 +37,16 @@ service ShippingService {
   // 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
   rpc ContractShippingSnapshot(ContractShippingSnapshotRequest) returns (ContractShippingSnapshotResponse);
   rpc ListContractShippingHandoffs(ListContractShippingHandoffsRequest) returns (ListContractShippingHandoffsResponse);
+  rpc GetContractShippingHandoff(GetContractShippingHandoffRequest) returns (GetContractShippingHandoffResponse);
+  rpc ListContractShippingRequoteOptions(ListContractShippingRequoteOptionsRequest) returns (ListContractShippingRequoteOptionsResponse);
+  rpc SaveContractShippingRequoteDraft(SaveContractShippingRequoteDraftRequest) returns (SaveContractShippingRequoteDraftResponse);
+  rpc DeleteContractShippingRequoteOption(DeleteContractShippingRequoteOptionRequest) returns (DeleteContractShippingRequoteOptionResponse);
+  rpc SelectContractShippingRequoteDraft(SelectContractShippingRequoteDraftRequest) returns (SelectContractShippingRequoteDraftResponse);
+  rpc SubmitContractShippingRequote(SubmitContractShippingRequoteRequest) returns (SubmitContractShippingRequoteResponse);
+  rpc SaveContractShippingContract(SaveContractShippingContractRequest) returns (SaveContractShippingContractResponse);
+  rpc PresignContractShippingContractUpload(PresignContractShippingContractUploadRequest) returns (PresignContractShippingContractUploadResponse);
+  rpc VerifyContractShippingContract(VerifyContractShippingContractRequest) returns (VerifyContractShippingContractResponse);
+  rpc MarkContractShippingPaymentRequested(MarkContractShippingPaymentRequestedRequest) returns (MarkContractShippingPaymentRequestedResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -195,10 +205,37 @@ message ContractShippingHandoff {
   string status = 22;
   int64 schedule_id = 23;
   string created_at = 24;
+  int64 final_forwarder_id = 25;
+  string final_forwarder_name = 26;
+  int64 actual_carrier_id = 27;
+  string actual_carrier_name = 28;
+  string final_service_option = 29;
+  string final_currency = 30;
+  string final_freight_amount = 31;
+  string final_etd = 32;
+  string final_eta = 33;
+  string payment_terms = 34;
+  string forwarder_contract_no = 35;
+  int64 approval_instance_id = 36;
+  string return_reason = 37;
+  string operator_name = 38;
+  string signed_contract_name = 39;
+  string signed_contract_url = 40;
+  string signed_contract_uploaded_at = 41;
+  string contract_verified_at = 42;
+  string contract_verified_by_name = 43;
+  string payment_requested_at = 44;
+  string updated_at = 45;
+  string signed_contract_key = 46;
+  repeated ContractShippingCargoItem cargo_items = 47;
+}
+message ContractShippingCargoItem {
+  int64 id = 1; int64 contract_item_id = 2; int32 line_no = 3;
+  string product_code = 4; string product_name = 5; string specification = 6;
+  string quantity = 7; string uom_code = 8; string remark = 9;
 }
 message ListContractShippingHandoffsRequest { string status = 1; }
 message ListContractShippingHandoffsResponse { repeated ContractShippingHandoff handoffs = 1; }
-
 message ScheduleChange {
   int64 id = 1;
   string change_type = 2;
@@ -446,3 +483,46 @@ message ContractShippingSnapshotItem {
 message ContractShippingSnapshotResponse {
   repeated ContractShippingSnapshotItem items = 1;
 }
+
+// D4 messages are appended to preserve generated message indexes.
+message GetContractShippingHandoffRequest { int64 id = 1; }
+message GetContractShippingHandoffResponse { ContractShippingHandoff handoff = 1; }
+message SaveContractShippingRequoteDraftRequest {
+  int64 id = 1; int64 final_forwarder_id = 2; string final_forwarder_name = 3;
+  int64 actual_carrier_id = 4; string actual_carrier_name = 5; string final_service_option = 6;
+  string final_currency = 7; string final_freight_amount = 8; string final_etd = 9;
+  string final_eta = 10; string payment_terms = 11; string forwarder_contract_no = 12;
+  string remark = 13;
+  int64 option_id = 14;
+}
+message SaveContractShippingRequoteDraftResponse { ContractShippingHandoff handoff = 1; ShippingRequoteOption option = 2; }
+message SubmitContractShippingRequoteRequest {
+  int64 id = 1; int64 final_forwarder_id = 2; string final_forwarder_name = 3;
+  int64 actual_carrier_id = 4; string actual_carrier_name = 5; string final_service_option = 6;
+  string final_currency = 7; string final_freight_amount = 8; string final_etd = 9;
+  string final_eta = 10; string payment_terms = 11; string forwarder_contract_no = 12;
+  string remark = 13;
+  int64 option_id = 14;
+}
+message SubmitContractShippingRequoteResponse { ContractShippingHandoff handoff = 1; }
+message ShippingRequoteOption {
+  int64 id = 1; int64 handoff_id = 2; int64 forwarder_id = 3; string forwarder_name = 4;
+  int64 actual_carrier_id = 5; string actual_carrier_name = 6; string service_option = 7;
+  string currency = 8; string freight_amount = 9; string etd = 10; string eta = 11;
+  string payment_terms = 12; string remark = 13; int64 created_by = 14;
+  string created_by_name = 15; string created_at = 16; string updated_at = 17;
+}
+message ListContractShippingRequoteOptionsRequest { int64 handoff_id = 1; }
+message ListContractShippingRequoteOptionsResponse { repeated ShippingRequoteOption options = 1; }
+message DeleteContractShippingRequoteOptionRequest { int64 handoff_id = 1; int64 option_id = 2; }
+message DeleteContractShippingRequoteOptionResponse {}
+message SelectContractShippingRequoteDraftRequest { int64 handoff_id = 1; int64 option_id = 2; }
+message SelectContractShippingRequoteDraftResponse { ContractShippingHandoff handoff = 1; }
+message SaveContractShippingContractRequest { int64 id = 1; string file_key = 2; string file_name = 3; string contract_no = 4; }
+message PresignContractShippingContractUploadRequest { int64 id = 1; string file_name = 2; }
+message PresignContractShippingContractUploadResponse { string file_key = 1; string upload_url = 2; int32 expires_seconds = 3; }
+message SaveContractShippingContractResponse { ContractShippingHandoff handoff = 1; }
+message VerifyContractShippingContractRequest { int64 id = 1; }
+message VerifyContractShippingContractResponse { ContractShippingHandoff handoff = 1; }
+message MarkContractShippingPaymentRequestedRequest { int64 id = 1; }
+message MarkContractShippingPaymentRequestedResponse { ContractShippingHandoff handoff = 1; }

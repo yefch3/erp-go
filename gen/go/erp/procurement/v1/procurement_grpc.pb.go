@@ -2379,14 +2379,17 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	RequirementService_ListRequirements_FullMethodName            = "/erp.procurement.v1.RequirementService/ListRequirements"
-	RequirementService_ExportPurchaseTemplate_FullMethodName      = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
-	RequirementService_CreateRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CreateRequirement"
-	RequirementService_GetRequirement_FullMethodName              = "/erp.procurement.v1.RequirementService/GetRequirement"
-	RequirementService_CancelRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CancelRequirement"
-	RequirementService_ReopenRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/ReopenRequirement"
-	RequirementService_ListRequirementOrders_FullMethodName       = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
-	RequirementService_ContractProcurementProgress_FullMethodName = "/erp.procurement.v1.RequirementService/ContractProcurementProgress"
+	RequirementService_ListRequirements_FullMethodName             = "/erp.procurement.v1.RequirementService/ListRequirements"
+	RequirementService_ListExecutionSupplierQuotes_FullMethodName  = "/erp.procurement.v1.RequirementService/ListExecutionSupplierQuotes"
+	RequirementService_SaveExecutionSupplierQuote_FullMethodName   = "/erp.procurement.v1.RequirementService/SaveExecutionSupplierQuote"
+	RequirementService_DeleteExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/DeleteExecutionSupplierQuote"
+	RequirementService_ExportPurchaseTemplate_FullMethodName       = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
+	RequirementService_CreateRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CreateRequirement"
+	RequirementService_GetRequirement_FullMethodName               = "/erp.procurement.v1.RequirementService/GetRequirement"
+	RequirementService_CancelRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CancelRequirement"
+	RequirementService_ReopenRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/ReopenRequirement"
+	RequirementService_ListRequirementOrders_FullMethodName        = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
+	RequirementService_ContractProcurementProgress_FullMethodName  = "/erp.procurement.v1.RequirementService/ContractProcurementProgress"
 )
 
 // RequirementServiceClient is the client API for RequirementService service.
@@ -2400,6 +2403,9 @@ const (
 // balance is netted first.
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
+	ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error)
+	SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error)
+	DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2429,6 +2435,36 @@ func (c *requirementServiceClient) ListRequirements(ctx context.Context, in *Lis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRequirementsResponse)
 	err := c.cc.Invoke(ctx, RequirementService_ListRequirements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExecutionSupplierQuotesResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ListExecutionSupplierQuotes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_SaveExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_DeleteExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2516,6 +2552,9 @@ func (c *requirementServiceClient) ContractProcurementProgress(ctx context.Conte
 // balance is netted first.
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
+	ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error)
+	SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error)
+	DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2543,6 +2582,15 @@ type UnimplementedRequirementServiceServer struct{}
 
 func (UnimplementedRequirementServiceServer) ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRequirements not implemented")
+}
+func (UnimplementedRequirementServiceServer) ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListExecutionSupplierQuotes not implemented")
+}
+func (UnimplementedRequirementServiceServer) SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveExecutionSupplierQuote not implemented")
+}
+func (UnimplementedRequirementServiceServer) DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteExecutionSupplierQuote not implemented")
 }
 func (UnimplementedRequirementServiceServer) ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExportPurchaseTemplate not implemented")
@@ -2600,6 +2648,60 @@ func _RequirementService_ListRequirements_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).ListRequirements(ctx, req.(*ListRequirementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_ListExecutionSupplierQuotes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecutionSupplierQuotesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ListExecutionSupplierQuotes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ListExecutionSupplierQuotes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ListExecutionSupplierQuotes(ctx, req.(*ListExecutionSupplierQuotesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_SaveExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).SaveExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_SaveExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).SaveExecutionSupplierQuote(ctx, req.(*SaveExecutionSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_DeleteExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).DeleteExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_DeleteExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).DeleteExecutionSupplierQuote(ctx, req.(*DeleteExecutionSupplierQuoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2742,6 +2844,18 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RequirementService_ListRequirements_Handler,
 		},
 		{
+			MethodName: "ListExecutionSupplierQuotes",
+			Handler:    _RequirementService_ListExecutionSupplierQuotes_Handler,
+		},
+		{
+			MethodName: "SaveExecutionSupplierQuote",
+			Handler:    _RequirementService_SaveExecutionSupplierQuote_Handler,
+		},
+		{
+			MethodName: "DeleteExecutionSupplierQuote",
+			Handler:    _RequirementService_DeleteExecutionSupplierQuote_Handler,
+		},
+		{
 			MethodName: "ExportPurchaseTemplate",
 			Handler:    _RequirementService_ExportPurchaseTemplate_Handler,
 		},
@@ -2785,6 +2899,12 @@ const (
 	PurchaseOrderService_CreateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
 	PurchaseOrderService_UpdateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
 	PurchaseOrderService_SubmitOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_SaveOrderContract_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/SaveOrderContract"
+	PurchaseOrderService_PresignOrderContractUpload_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignOrderContractUpload"
+	PurchaseOrderService_VerifyOrderContract_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VerifyOrderContract"
+	PurchaseOrderService_RequestOrderPayment_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/RequestOrderPayment"
+	PurchaseOrderService_CreateExternalPayable_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateExternalPayable"
+	PurchaseOrderService_GetExternalPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
 	PurchaseOrderService_CancelOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                     = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
 	PurchaseOrderService_GetOrderDocuments_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
@@ -2870,13 +2990,18 @@ type PurchaseOrderServiceClient interface {
 	// order are committed together.
 	ConfirmOrderImport(ctx context.Context, in *ConfirmOrderImportRequest, opts ...grpc.CallOption) (*ConfirmOrderImportResponse, error)
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
-	// Only a draft or a rejected order can be changed. Saving a rejected order
-	// turns it back into a draft so its corrected snapshot is explicit before
-	// it enters a new approval instance.
+	// Drafts can be corrected before submission. A rejected execution draft
+	// returns to real-order sourcing and is retained only as approval history.
 	UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
+	SaveOrderContract(ctx context.Context, in *SaveOrderContractRequest, opts ...grpc.CallOption) (*SaveOrderContractResponse, error)
+	PresignOrderContractUpload(ctx context.Context, in *PresignOrderContractUploadRequest, opts ...grpc.CallOption) (*PresignOrderContractUploadResponse, error)
+	VerifyOrderContract(ctx context.Context, in *VerifyOrderContractRequest, opts ...grpc.CallOption) (*VerifyOrderContractResponse, error)
+	RequestOrderPayment(ctx context.Context, in *RequestOrderPaymentRequest, opts ...grpc.CallOption) (*RequestOrderPaymentResponse, error)
+	CreateExternalPayable(ctx context.Context, in *CreateExternalPayableRequest, opts ...grpc.CallOption) (*CreateExternalPayableResponse, error)
+	GetExternalPayable(ctx context.Context, in *GetExternalPayableRequest, opts ...grpc.CallOption) (*GetExternalPayableResponse, error)
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
@@ -3093,6 +3218,66 @@ func (c *purchaseOrderServiceClient) SubmitOrder(ctx context.Context, in *Submit
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_SubmitOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) SaveOrderContract(ctx context.Context, in *SaveOrderContractRequest, opts ...grpc.CallOption) (*SaveOrderContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveOrderContractResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SaveOrderContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) PresignOrderContractUpload(ctx context.Context, in *PresignOrderContractUploadRequest, opts ...grpc.CallOption) (*PresignOrderContractUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignOrderContractUploadResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignOrderContractUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) VerifyOrderContract(ctx context.Context, in *VerifyOrderContractRequest, opts ...grpc.CallOption) (*VerifyOrderContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyOrderContractResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_VerifyOrderContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RequestOrderPayment(ctx context.Context, in *RequestOrderPaymentRequest, opts ...grpc.CallOption) (*RequestOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RequestOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CreateExternalPayable(ctx context.Context, in *CreateExternalPayableRequest, opts ...grpc.CallOption) (*CreateExternalPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateExternalPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateExternalPayable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetExternalPayable(ctx context.Context, in *GetExternalPayableRequest, opts ...grpc.CallOption) (*GetExternalPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExternalPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetExternalPayable_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -3695,13 +3880,18 @@ type PurchaseOrderServiceServer interface {
 	// order are committed together.
 	ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
-	// Only a draft or a rejected order can be changed. Saving a rejected order
-	// turns it back into a draft so its corrected snapshot is explicit before
-	// it enters a new approval instance.
+	// Drafts can be corrected before submission. A rejected execution draft
+	// returns to real-order sourcing and is retained only as approval history.
 	UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
+	SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error)
+	PresignOrderContractUpload(context.Context, *PresignOrderContractUploadRequest) (*PresignOrderContractUploadResponse, error)
+	VerifyOrderContract(context.Context, *VerifyOrderContractRequest) (*VerifyOrderContractResponse, error)
+	RequestOrderPayment(context.Context, *RequestOrderPaymentRequest) (*RequestOrderPaymentResponse, error)
+	CreateExternalPayable(context.Context, *CreateExternalPayableRequest) (*CreateExternalPayableResponse, error)
+	GetExternalPayable(context.Context, *GetExternalPayableRequest) (*GetExternalPayableResponse, error)
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
@@ -3853,6 +4043,24 @@ func (UnimplementedPurchaseOrderServiceServer) UpdateOrder(context.Context, *Upd
 }
 func (UnimplementedPurchaseOrderServiceServer) SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveOrderContract not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignOrderContractUpload(context.Context, *PresignOrderContractUploadRequest) (*PresignOrderContractUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignOrderContractUpload not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) VerifyOrderContract(context.Context, *VerifyOrderContractRequest) (*VerifyOrderContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyOrderContract not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RequestOrderPayment(context.Context, *RequestOrderPaymentRequest) (*RequestOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateExternalPayable(context.Context, *CreateExternalPayableRequest) (*CreateExternalPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateExternalPayable not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetExternalPayable(context.Context, *GetExternalPayableRequest) (*GetExternalPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetExternalPayable not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
@@ -4222,6 +4430,114 @@ func _PurchaseOrderService_SubmitOrder_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).SubmitOrder(ctx, req.(*SubmitOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_SaveOrderContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveOrderContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SaveOrderContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SaveOrderContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SaveOrderContract(ctx, req.(*SaveOrderContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_PresignOrderContractUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignOrderContractUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignOrderContractUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignOrderContractUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignOrderContractUpload(ctx, req.(*PresignOrderContractUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_VerifyOrderContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyOrderContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).VerifyOrderContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_VerifyOrderContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).VerifyOrderContract(ctx, req.(*VerifyOrderContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RequestOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RequestOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RequestOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RequestOrderPayment(ctx, req.(*RequestOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CreateExternalPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateExternalPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateExternalPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateExternalPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateExternalPayable(ctx, req.(*CreateExternalPayableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetExternalPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExternalPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetExternalPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetExternalPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetExternalPayable(ctx, req.(*GetExternalPayableRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5298,6 +5614,30 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitOrder",
 			Handler:    _PurchaseOrderService_SubmitOrder_Handler,
+		},
+		{
+			MethodName: "SaveOrderContract",
+			Handler:    _PurchaseOrderService_SaveOrderContract_Handler,
+		},
+		{
+			MethodName: "PresignOrderContractUpload",
+			Handler:    _PurchaseOrderService_PresignOrderContractUpload_Handler,
+		},
+		{
+			MethodName: "VerifyOrderContract",
+			Handler:    _PurchaseOrderService_VerifyOrderContract_Handler,
+		},
+		{
+			MethodName: "RequestOrderPayment",
+			Handler:    _PurchaseOrderService_RequestOrderPayment_Handler,
+		},
+		{
+			MethodName: "CreateExternalPayable",
+			Handler:    _PurchaseOrderService_CreateExternalPayable_Handler,
+		},
+		{
+			MethodName: "GetExternalPayable",
+			Handler:    _PurchaseOrderService_GetExternalPayable_Handler,
 		},
 		{
 			MethodName: "CancelOrder",

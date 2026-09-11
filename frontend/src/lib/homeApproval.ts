@@ -1,6 +1,7 @@
 export interface ApprovalBusinessRef {
   bizType: string
   bizId: string
+  status?: string
 }
 
 export interface ApprovalSourceLink {
@@ -34,8 +35,19 @@ export function approvalSourceLink(ref: ApprovalBusinessRef): ApprovalSourceLink
   if (ref.bizType === 'CONTRACT') {
     return { path: '/contracts', query: { id: ref.bizId } }
   }
-  if (ref.bizType === 'PURCHASE_ORDER' || ref.bizType === 'PURCHASE_ORDER_CHANGE') {
-    return { path: '/purchase-orders', query: { order: ref.bizId } }
+  if (ref.bizType === 'PURCHASE_ORDER') {
+    const status = ref.status === 'APPROVED'
+      ? 'PENDING_CONTRACT'
+      : ref.status === 'REJECTED'
+        ? 'HISTORY'
+        : 'PENDING_APPROVAL'
+    return { path: '/purchase-orders', query: { status, order: ref.bizId } }
+  }
+  if (ref.bizType === 'PURCHASE_ORDER_CHANGE') {
+    return { path: '/purchase-orders', query: { status: 'ORDERED', order: ref.bizId } }
+  }
+  if (ref.bizType === 'SHIPPING_REQUOTE') {
+    return { path: '/shipping/orders', query: { handoff: ref.bizId } }
   }
   return null
 }

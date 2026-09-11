@@ -63,7 +63,8 @@ export const router = createRouter({
         // 走各自案件详情里的只读“船运协作”，不直接进入这里。
         { path: 'shipping', redirect: '/shipping/sourcing' },
         { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
-        { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), meta: { permission: 'shipping:schedule:read' } },
+        { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'inquiry' }, meta: { permission: 'shipping:schedule:read' } },
+        { path: 'shipping/orders', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'orders' }, meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。

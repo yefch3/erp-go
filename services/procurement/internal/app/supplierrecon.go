@@ -57,11 +57,15 @@ type SupplierReconRow struct {
 	// 当成漏记而重填一遍，同一笔钱在账上出现两次。
 	InvoicePaidAmount string
 	// 完成确认（只在已完成视图里非空）：为什么算完了、谁说的、什么时候。
-	ClosedCategory  string
-	ClosedNote      string
-	ClosedByName    string
-	ClosedAt        string
-	ManuallyEntered bool
+	ClosedCategory                                     string
+	ClosedNote                                         string
+	ClosedByName                                       string
+	ClosedAt                                           string
+	ManuallyEntered                                    bool
+	BusinessType                                       string
+	SourceBusinessID                                   int64
+	ExportContractNo, BusinessDocumentNo, PaymentTerms string
+	SignedContractName, RequestedByName, RequestedAt   string
 }
 
 type ManualPayableInput struct {
@@ -196,7 +200,8 @@ func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
 
 // SupplierReconFilter 收窄清单。
 type SupplierReconFilter struct {
-	Keyword string
+	Keyword      string
+	BusinessType string
 	// 两个互斥的筛子，都不给就是全部。只看逾期的；或者只看还没配账期的
 	// （后者是催配置，不是催钱）。和客户侧同款。
 	OverdueOnly bool
@@ -271,7 +276,10 @@ const reconSelect = `
 	       coalesce(cl.category, '')                        AS closed_category,
 	       coalesce(cl.note, '')                            AS closed_note,
 	       coalesce(cl.closed_by_name, '')                  AS closed_by_name,
-	       coalesce(cl.created_at::text, '')                AS closed_at`
+	       coalesce(cl.created_at::text, '')                AS closed_at,
+	       po.business_type,po.source_business_id,po.export_contract_no,
+	       po.business_document_no,po.payment_terms,po.signed_contract_name,
+	       po.payment_requested_by_name,coalesce(po.payment_requested_at::text,'')`
 
 // reconFrom：已付是**算出来的**，不是存的状态——冲销是负行，求和天然反映
 // 当下的真相。只求 amount 不含 fee_amount，和供应商往来汇总的预付列同口径。
@@ -355,6 +363,8 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	rows, err := s.pool.Query(ctx, reconSelect+`,
 	       count(*) OVER () AS total`+reconFrom+`
 	 WHERE po.tenant_id = $1`+reconOrderScope+`
+	   AND (po.payment_requested_at IS NOT NULL OR po.business_type='MANUAL' OR po.source_business_id=0
+	        OR (po.business_type IN ('PROCUREMENT','LOGISTICS') AND po.signed_contract_uploaded_at IS NOT NULL))
 	   -- 两页：待核销 = 没有活着的确认；已完成 = 有。
 	   -- **这里故意不看「还欠多少」。** 需求明说「不一定数字对不上就不能
 	   -- 核销完成，也不一定数字一样就可以核销完成」——所以分界线只有
@@ -370,11 +380,12 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	   AND ($4::bool = false
 	        OR (po.payable_due_date IS NOT NULL AND po.payable_due_date < current_date))
 	   AND ($5::bool = false OR po.payable_due_date IS NULL)
+	   AND ($8::text='' OR po.business_type=$8::text)
 	 -- 该付的排在前面，没配账期的垫底：它们缺的是配置，不是钱。
 	 ORDER BY po.payable_due_date ASC NULLS LAST, po.id DESC
 	 LIMIT $6::int OFFSET $7::int`,
 		tenantID, f.ClosedOnly, strings.TrimSpace(f.Keyword),
-		f.OverdueOnly, f.UnsetOnly, size, (page-1)*size)
+		f.OverdueOnly, f.UnsetOnly, size, (page-1)*size, strings.ToUpper(strings.TrimSpace(f.BusinessType)))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -388,6 +399,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.RequestedByName, &r.RequestedAt,
 			&total); err != nil {
 			return nil, 0, err
 		}
@@ -407,7 +419,8 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 			&r.Currency, &r.OrderStatus, &r.BuyerName, &r.OrderedDate, &r.ExpectedDate,
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
-			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt)
+			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.RequestedByName, &r.RequestedAt)
 	if err == pgx.ErrNoRows {
 		return SupplierReconRow{}, apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 	}
@@ -417,8 +430,8 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 
 // RecordPOPayment 在一张采购单上手记一笔付款（或退款）。
 //
-// 有意**不设**「不能超过采购单金额」的上限：多付、汇路尾差、并笔付款都是
-// 真事，而这次改造的原则就是数字由人负责、系统不替人判断对错。
+// D4 由采购/物流付款申请生成的正式出账禁止超付。历史与手工账继续保留
+// 既有规则，避免改变已经验收的财务边界。
 func (s *Service) RecordPOPayment(ctx context.Context, tenantID int64,
 	in POPaymentInput, op Operator) (SupplierReconRow, error) {
 	if err := s.requireFullScope(ctx, op); err != nil {
@@ -452,32 +465,37 @@ func (s *Service) RecordPOPayment(ctx context.Context, tenantID int64,
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		// FOR UPDATE：退款的天花板在行锁下读，两笔并发退款必须串行，
 		// 否则各自都以为额度够。
-		var currency string
+		var currency, totalText string
+		var sourceBusinessID int64
+		var paymentRequestedAt *time.Time
 		if err := tx.QueryRow(ctx, `
-			SELECT currency FROM purchase_orders
+			SELECT currency,total_amount::text,source_business_id,payment_requested_at FROM purchase_orders
 			 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
-			tenantID, in.POID).Scan(&currency); err == pgx.ErrNoRows {
+			tenantID, in.POID).Scan(&currency, &totalText, &sourceBusinessID, &paymentRequestedAt); err == pgx.ErrNoRows {
 			return apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 		} else if err != nil {
 			return err
 		}
+		if sourceBusinessID != 0 && paymentRequestedAt == nil {
+			return apierr.Conflict("PR_POPAY_FINANCE_APPROVAL_REQUIRED", "请先审核采购合同并批准付款")
+		}
+		var paidText string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(amount),0)::text FROM payment_allocations WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.POID).Scan(&paidText); err != nil {
+			return err
+		}
+		paid := decimal.RequireFromString(paidText)
 		stored := amount
 		if in.IsRefund {
 			// 唯一的一道闸。求和包含老的预付核销行——「这张采购单上实际付
 			// 出去过多少」不区分钱是从付款单分配的还是员工手填记进来的。
-			var paidText string
-			if err := tx.QueryRow(ctx, `
-				SELECT coalesce(sum(amount),0)::text FROM payment_allocations
-				 WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.POID).Scan(&paidText); err != nil {
-				return err
-			}
-			paid := decimal.RequireFromString(paidText)
 			if amount.GreaterThan(paid) {
 				return apierr.Invalid("PR_POPAY_REFUND_EXCEEDS_PAID",
 					"退款 "+amount.String()+" 超过这张采购单的已付净额 "+paid.String()+
 						"——退不出从来没付出去过的钱")
 			}
 			stored = amount.Neg()
+		} else if sourceBusinessID != 0 && paid.Add(amount).GreaterThan(decimal.RequireFromString(totalText)) {
+			return apierr.Invalid("PR_POPAY_EXCEEDS_OPEN", "本次付款超过未付金额，请核对后重新填写")
 		}
 		// 币种跟采购单走，不让人填——问一个只有一个正确答案的问题只会制造
 		// 错答案。payment_id 留空就是「手填的」。

@@ -419,6 +419,7 @@ type effectiveEventItem struct {
 	UnitPrice         string `json:"unit_price"`
 	Amount            string `json:"amount"`
 	HsCode            string `json:"hs_code,omitempty"`
+	Remark            string `json:"remark,omitempty"`
 	PurchaseUnitPrice string `json:"purchase_unit_price,omitempty"`
 	OpeningArrivedQty string `json:"opening_arrived_qty,omitempty"`
 }
@@ -435,7 +436,7 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 			ProductCode: i.ProductCode, ProductName: i.ProductName, Spec: i.Spec,
 			Qty: i.Qty, RequiredQty: remainingProcurementQty(i.Qty, i.OpeningProcuredQty),
 			UomID: i.UomID, UomCode: i.UomCode,
-			UnitPrice: i.UnitPrice, Amount: i.Amount, HsCode: i.HsCode,
+			UnitPrice: i.UnitPrice, Amount: i.Amount, HsCode: i.HsCode, Remark: i.Remark,
 		})
 	}
 	return contractEffectiveEvent{

@@ -241,6 +241,21 @@ func TestPaidUpOrderStaysInTheQueueUntilSomebodyConfirms(t *testing.T) {
 	}
 }
 
+func TestD4RequestedPayableCannotBeOverpaid(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "CT-D4-PAY", "1000", "ORDERED")
+	if _, err := svc.pool.Exec(ctx, `UPDATE purchase_orders SET business_type='PROCUREMENT',source_business_id=901,payment_requested_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, poID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{POID: poID, Amount: "1000", PaidAt: "2026-09-09"}, op); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{POID: poID, Amount: "0.01", PaidAt: "2026-09-09"}, op)
+	wantAllocErr(t, err, "PR_POPAY_EXCEEDS_OPEN")
+}
+
 // 退款不能超过这张采购单的已付净额。这是新路径上**唯一**一道闸——它不是
 // 「数字对不上」，是退一笔从来没付出去过的钱，物理上不成立。
 func TestRefundCannotExceedWhatWasActuallyPaid(t *testing.T) {
@@ -791,5 +806,37 @@ func TestApprovingAnOrderDoesNotWipeTheDueDateSomebodyTyped(t *testing.T) {
 	}
 	if after != typed {
 		t.Fatalf("审批通过把员工填的到期日改掉了：填的是 %q，下单之后变成 %q", typed, after)
+	}
+}
+
+func TestSignedContractEntersFinanceAndApprovalUnlocksPayment(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-D4-CONTRACT", "1400", "ORDERED")
+	if _, err := svc.pool.Exec(ctx, `UPDATE purchase_orders
+		SET business_type='PROCUREMENT', source_business_id=9001,
+		    signed_contract_key='contracts/d4.pdf', signed_contract_name='d4.pdf',
+		    signed_contract_uploaded_at=now()
+		WHERE tenant_id=$1 AND id=$2`, tenantID, poID); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := reconRows(ctx, t, svc, tenantID, false, op)
+	if got, ok := rows["PO-D4-CONTRACT"]; !ok || got.RequestedAt != "" || got.SignedContractName != "d4.pdf" {
+		t.Fatalf("uploaded contract must enter finance review before payment approval: %+v", got)
+	}
+	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{POID: poID, Amount: "100", PaidAt: "2026-09-10"}, op); err == nil {
+		t.Fatal("payment must remain blocked until finance approves the signed contract")
+	}
+	state, err := svc.VerifyOrderContract(ctx, tenantID, poID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ContractVerifiedAt == "" || state.PaymentRequestedAt == "" {
+		t.Fatalf("finance approval must verify contract and approve payment together: %+v", state)
+	}
+	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{POID: poID, Amount: "100", PaidAt: "2026-09-10"}, op); err != nil {
+		t.Fatalf("finance-approved order should accept payment: %v", err)
 	}
 }

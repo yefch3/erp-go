@@ -244,7 +244,7 @@ const HomeEmpty = defineComponent({
   setup(props) { return () => h(ElEmpty, { description: props.description, imageSize: 88 }) },
 })
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -299,7 +299,7 @@ const visibleShippingTasks = computed(() => { const query=keyword.value.trim().t
 const visibleExecutionProcurementTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionProcurementTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.productNames].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 const visibleExecutionShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionShippingTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.portOfLoading,row.portOfDischarge].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 
-const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
+const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'SHIPPING_REQUOTE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
 const hasReminderSource = computed(() => activeTab.value === 'reminders')
 const hasDataSource = computed(() => hasApprovalSource.value || hasReminderSource.value)
@@ -558,11 +558,52 @@ async function openReminder(item: HomeReminder) {
   if (item.detailUrl) await router.push(item.detailUrl)
 }
 
-function parseSummary(raw: string): Record<string, string> {
+type SummaryValue = string | number | boolean | null | SummaryValue[] | { [key: string]: SummaryValue }
+
+function parseSummary(raw: string): Record<string, SummaryValue> {
   if (!raw) return {}
   try { const parsed = JSON.parse(raw); return typeof parsed === 'object' && parsed !== null ? parsed : {} } catch { return {} }
 }
-function summaryText(raw: string): string { return Object.entries(parseSummary(raw)).filter(([key])=>key!=='approval_request_key').map(([key, value]) => `${summaryLabel(key)}：${value}`).join(' · ') }
+
+function compactSummaryNumber(value: SummaryValue): string {
+  const text = String(value ?? '')
+  if (!/^-?\d+(?:\.\d+)?$/.test(text)) return text
+  return text.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1')
+}
+
+function summaryValueText(key: string, value: SummaryValue): string {
+  if (value === null) return ''
+  if (key === 'lines' && Array.isArray(value)) {
+    return value.map((line) => {
+      if (!line || Array.isArray(line) || typeof line !== 'object') return String(line ?? '')
+      const product = String(line.product ?? line.name ?? '')
+      const qty = compactSummaryNumber(line.qty ?? '')
+      if (product && qty) return `${product} × ${qty}`
+      return product || qty
+    }).filter(Boolean).join('、')
+  }
+  if (Array.isArray(value)) return value.map((item) => summaryValueText('', item)).filter(Boolean).join('、')
+  if (typeof value === 'object') {
+    return Object.values(value).map((item) => summaryValueText('', item)).filter(Boolean).join(' / ')
+  }
+  return compactSummaryNumber(value)
+}
+
+function summaryText(raw: string): string {
+  const summary = parseSummary(raw)
+  const preferred = ['customer', 'supplier', 'forwarder', 'amount', 'etd', 'eta', 'carrier', 'payment_terms', 'expected_date', 'delivery_date', 'lines']
+  const keys = [...preferred.filter((key) => key in summary), ...Object.keys(summary).filter((key) => !preferred.includes(key))]
+  return keys
+    .filter((key) => key !== 'approval_request_key' && !(key === 'currency' && 'amount' in summary))
+    .map((key) => {
+      const value = key === 'amount' && summary.currency
+        ? `${summaryValueText('currency', summary.currency)} ${summaryValueText(key, summary[key])}`
+        : summaryValueText(key, summary[key])
+      return value ? `${summaryLabel(key)}：${value}` : ''
+    })
+    .filter(Boolean)
+    .join(' · ')
+}
 function summaryLabel(key: string): string { return labelOr(`todos.summaryKeys.${key}`, key) }
 function taskStatusLabel(code: string): string { return code ? labelOr(`todos.task.${code}`, code) : '—' }
 function priorityLabel(code: string): string { return labelOr(`todos.priorityLevels.${code}`, code) }
@@ -576,7 +617,7 @@ function reminderTimingLabel(code?: string): string {
   if (!code) return '—'
   return labelOr(`todos.timing.${code}`, code)
 }
-function labelOr(key: string, fallback: string): string { const label = t(key); return label === key ? fallback : label }
+function labelOr(key: string, fallback: string): string { return te(key) ? t(key) : fallback }
 function taskTagType(code: string): 'success' | 'danger' | 'warning' | 'info' { return ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' }[code] as 'success' | 'danger' | 'warning' | undefined) ?? 'info' }
 function instanceTagType(code: string): 'success' | 'danger' | 'warning' | 'info' { return ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning', RUNNING: 'warning' }[code] as 'success' | 'danger' | 'warning' | undefined) ?? 'info' }
 function priorityTagType(code: string): 'danger' | 'warning' | 'info' { return approvalPriorityTagType(code) }

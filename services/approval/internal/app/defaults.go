@@ -52,6 +52,13 @@ var defaultFlows = map[string][]defaultFlow{
 			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
 		},
 	}},
+	"SHIPPING_REQUOTE": {{
+		Name:      "正式物流方案确认",
+		MinAmount: "0",
+		Nodes: []defaultNode{
+			{Seq: 1, Name: "直属上级确认", Type: "MANAGER", Ref: 1},
+		},
+	}},
 }
 
 type defaultFlow struct {

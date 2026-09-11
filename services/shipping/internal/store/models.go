@@ -9,31 +9,68 @@ import (
 )
 
 type ContractShippingHandoff struct {
-	ID                 int64
-	TenantID           int64
-	ContractID         int64
-	ContractNo         string
-	ContractVersionID  int64
-	VersionNo          int32
-	CustomerID         int64
-	CustomerName       string
-	BatchNo            int32
-	ShipmentGroupKey   string
-	CarrierForwarder   string
-	ServiceOptionName  string
-	CustomerManaged    bool
-	Currency           string
-	FreightAmount      pgtype.Numeric
-	ChargeBasis        string
-	PortOfLoading      string
-	PortOfDischarge    string
-	EstimatedDeparture pgtype.Date
-	EstimatedArrival   pgtype.Date
-	ValidUntil         pgtype.Date
-	Remark             string
-	Status             string
-	ScheduleID         *int64
-	CreatedAt          pgtype.Timestamptz
+	ID                       int64
+	TenantID                 int64
+	ContractID               int64
+	ContractNo               string
+	ContractVersionID        int64
+	VersionNo                int32
+	CustomerID               int64
+	CustomerName             string
+	BatchNo                  int32
+	ShipmentGroupKey         string
+	CarrierForwarder         string
+	ServiceOptionName        string
+	CustomerManaged          bool
+	Currency                 string
+	FreightAmount            pgtype.Numeric
+	ChargeBasis              string
+	PortOfLoading            string
+	PortOfDischarge          string
+	EstimatedDeparture       pgtype.Date
+	EstimatedArrival         pgtype.Date
+	ValidUntil               pgtype.Date
+	Remark                   string
+	Status                   string
+	ScheduleID               *int64
+	CreatedAt                pgtype.Timestamptz
+	FinalForwarderID         int64
+	FinalForwarderName       string
+	ActualCarrierID          int64
+	ActualCarrierName        string
+	FinalServiceOption       string
+	FinalCurrency            string
+	FinalFreightAmount       pgtype.Numeric
+	FinalEtd                 pgtype.Date
+	FinalEta                 pgtype.Date
+	PaymentTerms             string
+	ForwarderContractNo      string
+	ApprovalInstanceID       *int64
+	ReturnReason             string
+	OperatorID               int64
+	OperatorName             string
+	SignedContractKey        string
+	SignedContractName       string
+	SignedContractUploadedAt pgtype.Timestamptz
+	ContractVerifiedAt       pgtype.Timestamptz
+	ContractVerifiedBy       int64
+	ContractVerifiedByName   string
+	PaymentRequestedAt       pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+}
+
+type ContractShippingHandoffCargo struct {
+	ID             int64
+	TenantID       int64
+	HandoffID      int64
+	ContractItemID int64
+	LineNo         int32
+	ProductCode    string
+	ProductName    string
+	Specification  string
+	Quantity       pgtype.Numeric
+	UomCode        string
+	Remark         string
 }
 
 type OutboxEvent struct {
@@ -150,6 +187,27 @@ type ShippingDocument struct {
 	VoidedByName     *string
 	VoidedAt         pgtype.Timestamptz
 	VoidReason       *string
+}
+
+type ShippingExecutionRequoteOption struct {
+	ID                int64
+	TenantID          int64
+	HandoffID         int64
+	ForwarderID       int64
+	ForwarderName     string
+	ActualCarrierID   int64
+	ActualCarrierName string
+	ServiceOption     string
+	Currency          string
+	FreightAmount     pgtype.Numeric
+	Etd               pgtype.Date
+	Eta               pgtype.Date
+	PaymentTerms      string
+	Remark            string
+	CreatedBy         int64
+	CreatedByName     string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type ShippingRouteNode struct {
