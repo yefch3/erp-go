@@ -58,6 +58,19 @@ type Employee struct {
 	AvatarKey       string
 }
 
+type EmployeeEmailChange struct {
+	ID          int64
+	TenantID    int64
+	EmployeeID  int64
+	NewEmail    string
+	OldEmail    string
+	TokenHash   []byte
+	ExpiresAt   pgtype.Timestamptz
+	UsedAt      pgtype.Timestamptz
+	RequestedBy int64
+	CreatedAt   pgtype.Timestamptz
+}
+
 type EmployeeInvitation struct {
 	ID         int64
 	TenantID   int64

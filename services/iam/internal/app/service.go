@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -438,7 +439,7 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 			ManagerID: in.ManagerID,
 		})
 		if err != nil {
-			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")
+			return translateEmployeeUnique(err)
 		}
 		id = emp.ID
 		if in.EnglishName != "" || in.HireDate != "" || in.Remark != "" {
@@ -568,6 +569,30 @@ func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateE
 		if current.Version != in.ExpectedVersion {
 			return apierr.Conflict("IAM_EMP_VERSION_CONFLICT", "员工资料已被其他人修改，请刷新后重试")
 		}
+		// 邮箱这一列在这里是**只读**的，一旦这个人激活过。
+		//
+		// 登录同时看 employees.email 和 employees.email_verified_at，而这条语句
+		// 只写前者——直接改地址等于让新地址凭空继承旧地址挣来的「已验证」，
+		// 之后没有任何一处会去问「这个信箱收得到信吗」。打错一个字母，
+		// 他的登录地址就变成一个不存在的邮箱，连重置密码的信也发不到。
+		// 改邮箱走 RequestEmailChange：发信到新地址，点开了才落库。
+		//
+		// **没激活过的人不受这条限制。** 他的地址从来没被证明过，没有什么可继承；
+		// 而在发出邀请之前改掉一个打错的地址，正是管理员这时候要做的事。
+		// 那封已经飞出去的旧邀请会自己失效（invitationFault 比对地址），
+		// 但死记录会让列表上一直挂着「邀请待确认」，所以顺手删掉。
+		emailMoved := !strings.EqualFold(in.Email, current.Email)
+		if emailMoved && current.EmailVerifiedAt.Valid {
+			return apierr.Conflict("IAM_EMP_EMAIL_LOCKED",
+				"登录邮箱不能直接改，请用「变更邮箱」——新地址收到确认信并点开后才生效")
+		}
+		if emailMoved {
+			if _, err := q.DeleteLiveInvitations(ctx, store.DeleteLiveInvitationsParams{
+				TenantID: tenantID, EmployeeID: in.ID,
+			}); err != nil {
+				return err
+			}
+		}
 		dept, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.DepartmentID})
 		if err != nil || dept.Status != "ACTIVE" {
 			return apierr.Invalid("IAM_DEPT_INVALID", "员工必须属于启用中的部门")
@@ -601,7 +626,7 @@ func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateE
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apierr.Conflict("IAM_EMP_VERSION_CONFLICT", "员工资料已被其他人修改，请刷新后重试")
 			}
-			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")
+			return translateEmployeeUnique(err)
 		}
 		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
 			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: in.ID, Action: "UPDATE",
@@ -894,6 +919,22 @@ func translateUnique(err error, code, msg string) error {
 	var pgErr interface{ SQLState() string }
 	if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
 		return apierr.Conflict(code, msg)
+	}
+	return err
+}
+
+// translateEmployeeUnique 分辨员工那一行到底撞了哪个唯一索引。
+//
+// employees 上有两个：工号和邮箱地址（employees_email_key，00023 起全系统唯一）。
+// 一句笼统的 translateUnique 会把邮箱撞车说成「工号已存在」，而管理员会盯着
+// 一个没有任何问题的工号找半天——他改的是邮箱。
+func translateEmployeeUnique(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if strings.Contains(pgErr.ConstraintName, "email") {
+			return apierr.Conflict("IAM_EMP_EMAIL_TAKEN", "这个邮箱已经被其他账号使用")
+		}
+		return apierr.Conflict("IAM_EMP_CODE_TAKEN", "工号已存在")
 	}
 	return err
 }

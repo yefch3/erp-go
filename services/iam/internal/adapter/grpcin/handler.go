@@ -126,7 +126,21 @@ func (h *Handler) GetEmployee(ctx context.Context, req *iamv1.GetEmployeeRequest
 	if err != nil {
 		return nil, err
 	}
-	return &iamv1.GetEmployeeResponse{Employee: employeeRowToProto(emp, roleIDs)}, nil
+	out := employeeRowToProto(emp, roleIDs)
+	// 待确认的改邮箱。详情页是「这个人的邮箱是什么」的主要去处，所以
+	// 「另一个地址正在路上」也得在这儿说——只在列表里说，从详情页点进来的人
+	// 看不到，而他正是要决定改不改的那个。
+	//
+	// 整租户扫一遍再取一个：这张表活着的行本来就极少（每人至多一行，
+	// 而同时在改邮箱的人是个位数），单开一条按 id 查的语句不值得。
+	moving, err := h.svc.PendingEmailChanges(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := moving[emp.ID]; ok {
+		out.PendingEmail, out.EmailChangeExpiresAt = m.NewEmail, m.ExpiresAt.Unix()
+	}
+	return &iamv1.GetEmployeeResponse{Employee: out}, nil
 }
 
 func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesRequest) (*iamv1.ListEmployeesResponse, error) {
@@ -148,13 +162,18 @@ func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesReq
 	if err != nil {
 		return nil, err
 	}
+	// 待确认的改邮箱，同样整页一次读取。
+	moving, err := h.svc.PendingEmailChanges(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*iamv1.Employee, len(rows))
 	for i, r := range rows {
 		var inviteExpires int64
 		if due, waiting := pending[r.ID]; waiting {
 			inviteExpires = due.Unix()
 		}
-		out[i] = employeeListRowToProto(r, accounts[r.ID], inviteExpires)
+		out[i] = employeeListRowToProto(r, accounts[r.ID], inviteExpires, moving[r.ID])
 	}
 	if page < 1 {
 		page = 1
@@ -413,7 +432,14 @@ func employeeRowToProto(e store.GetEmployeeRow, roleIDs []int64) *iamv1.Employee
 	}
 }
 
-func employeeListRowToProto(e store.ListEmployeesFilteredRow, username string, inviteExpires int64) *iamv1.Employee {
+func employeeListRowToProto(
+	e store.ListEmployeesFilteredRow, username string, inviteExpires int64,
+	moving app.PendingEmailChange,
+) *iamv1.Employee {
+	var movingUntil int64
+	if moving.NewEmail != "" {
+		movingUntil = moving.ExpiresAt.Unix()
+	}
 	return &iamv1.Employee{
 		Id: e.ID, Code: e.Code, Name: e.Name, EnglishName: e.EnglishName,
 		DepartmentId: e.DepartmentID, DepartmentName: e.DepartmentName,
@@ -421,7 +447,8 @@ func employeeListRowToProto(e store.ListEmployeesFilteredRow, username string, i
 		Username: username, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 		EmailVerified: e.EmailVerifiedAt.Valid, InviteExpiresAt: inviteExpires,
 		HireDate: dateText(e.HireDate), LeaveDate: dateText(e.LeaveDate), Remark: e.Remark, Version: e.Version,
-		AvatarKey: e.AvatarKey,
+		AvatarKey:    e.AvatarKey,
+		PendingEmail: moving.NewEmail, EmailChangeExpiresAt: movingUntil,
 	}
 }
 
@@ -462,6 +489,50 @@ func (h *Handler) InviteEmployee(ctx context.Context, req *iamv1.InviteEmployeeR
 	return &iamv1.InviteEmployeeResponse{
 		Token: inv.Token, Email: inv.Email, Name: inv.Name,
 		ExpiresAt: inv.ExpiresAt.Unix(),
+	}, nil
+}
+
+// 改登录邮箱。发起和取消要操作人身份（记在审计里），确认那两个不要——
+// 点开链接的人多半没登录，而且改完他的会话本来就要被踢掉。
+
+func (h *Handler) RequestEmailChange(ctx context.Context, req *iamv1.RequestEmailChangeRequest) (*iamv1.RequestEmailChangeResponse, error) {
+	op, ok := grpcx.OperatorFromContext(ctx)
+	if !ok || op.EmployeeID == 0 {
+		return nil, apierr.Unauthorized("IAM_ACTOR_REQUIRED", "缺少操作人身份")
+	}
+	c, err := h.svc.RequestEmailChange(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID, req.GetNewEmail())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.RequestEmailChangeResponse{
+		Token: c.Token, NewEmail: c.NewEmail, OldEmail: c.OldEmail, Name: c.Name,
+		ExpiresAt: c.ExpiresAt.Unix(),
+	}, nil
+}
+
+func (h *Handler) CancelEmailChange(ctx context.Context, req *iamv1.CancelEmailChangeRequest) (*iamv1.CancelEmailChangeResponse, error) {
+	if err := h.svc.CancelEmailChange(ctx, grpcx.TenantID(ctx), req.GetEmployeeId()); err != nil {
+		return nil, err
+	}
+	return &iamv1.CancelEmailChangeResponse{}, nil
+}
+
+func (h *Handler) PeekEmailChange(ctx context.Context, req *iamv1.PeekEmailChangeRequest) (*iamv1.PeekEmailChangeResponse, error) {
+	t, err := h.svc.PeekEmailChange(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.PeekEmailChangeResponse{Name: t.Name, OldEmail: t.OldEmail, NewEmail: t.NewEmail}, nil
+}
+
+func (h *Handler) ConfirmEmailChange(ctx context.Context, req *iamv1.ConfirmEmailChangeRequest) (*iamv1.ConfirmEmailChangeResponse, error) {
+	c, err := h.svc.ConfirmEmailChange(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.ConfirmEmailChangeResponse{
+		NewEmail: c.NewEmail, OldEmail: c.OldEmail, Name: c.Name,
+		EmployeeId: c.EmployeeID, TenantId: c.TenantID,
 	}, nil
 }
 

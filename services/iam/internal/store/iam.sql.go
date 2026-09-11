@@ -79,6 +79,22 @@ func (q *Queries) AddTenantDomain(ctx context.Context, arg AddTenantDomainParams
 	return err
 }
 
+const consumeEmailChange = `-- name: ConsumeEmailChange :execrows
+UPDATE employee_email_changes
+SET used_at = now()
+WHERE id = $1::bigint AND used_at IS NULL
+`
+
+// WHERE 子句就是并发控制：同一个链接被点两下时，两个请求在这里相遇，
+// 只有一个能更新到行。在 Go 里先查「用过没有」再更新，两个都会放过去。
+func (q *Queries) ConsumeEmailChange(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeEmailChange, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const consumeInvitation = `-- name: ConsumeInvitation :execrows
 UPDATE employee_invitations
 SET used_at = now()
@@ -255,6 +271,51 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 		&i.LeaderEmployeeID,
 		&i.Version,
 	)
+	return i, err
+}
+
+const createEmailChange = `-- name: CreateEmailChange :one
+INSERT INTO employee_email_changes (
+    tenant_id, employee_id, new_email, old_email, token_hash, expires_at, requested_by
+) VALUES (
+    $1::bigint,
+    $2::bigint,
+    lower($3::text),
+    lower($4::text),
+    $5,
+    $6,
+    $7::bigint
+)
+RETURNING id, expires_at
+`
+
+type CreateEmailChangeParams struct {
+	TenantID    int64
+	EmployeeID  int64
+	NewEmail    string
+	OldEmail    string
+	TokenHash   []byte
+	ExpiresAt   pgtype.Timestamptz
+	RequestedBy int64
+}
+
+type CreateEmailChangeRow struct {
+	ID        int64
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateEmailChange(ctx context.Context, arg CreateEmailChangeParams) (CreateEmailChangeRow, error) {
+	row := q.db.QueryRow(ctx, createEmailChange,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.NewEmail,
+		arg.OldEmail,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.RequestedBy,
+	)
+	var i CreateEmailChangeRow
+	err := row.Scan(&i.ID, &i.ExpiresAt)
 	return i, err
 }
 
@@ -446,6 +507,31 @@ func (q *Queries) DeactivateEmployee(ctx context.Context, arg DeactivateEmployee
 	return result.RowsAffected(), nil
 }
 
+const deleteLiveEmailChanges = `-- name: DeleteLiveEmailChanges :execrows
+
+DELETE FROM employee_email_changes
+WHERE tenant_id = $1::bigint
+  AND employee_id = $2::bigint
+  AND used_at IS NULL
+`
+
+type DeleteLiveEmailChangesParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+// 改登录邮箱：验证后生效。见 00049 的表注释。
+// 五条查询和上面邀请那五条一一对应，故意长得一样——两件事的形状确实相同：
+// 发一把一次性钥匙到某个信箱，谁读到了谁就证明了那个信箱归他。
+// 重发即替换，绝不累积。理由同 DeleteLiveInvitations。
+func (q *Queries) DeleteLiveEmailChanges(ctx context.Context, arg DeleteLiveEmailChangesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLiveEmailChanges, arg.TenantID, arg.EmployeeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteLiveInvitations = `-- name: DeleteLiveInvitations :execrows
 DELETE FROM employee_invitations
 WHERE tenant_id = $1::bigint
@@ -478,6 +564,30 @@ func (q *Queries) DomainClaimed(ctx context.Context, dollar_1 string) (bool, err
 	var claimed bool
 	err := row.Scan(&claimed)
 	return claimed, err
+}
+
+const emailBelongsToSomeoneElse = `-- name: EmailBelongsToSomeoneElse :one
+SELECT EXISTS (
+    SELECT 1 FROM employees
+    WHERE email <> ''
+      AND lower(email) = lower($1::text)
+      AND id <> $2::bigint
+) AS taken
+`
+
+type EmailBelongsToSomeoneElseParams struct {
+	Email      string
+	EmployeeID int64
+}
+
+// 这个地址是不是已经被别的账号占了。**跨公司查**，因为 employees_email_key
+// 是全系统唯一的——只在本公司里查，等于把冲突留到兑换那一刻才炸，
+// 而那时信已经发出去、人已经点过了。
+func (q *Queries) EmailBelongsToSomeoneElse(ctx context.Context, arg EmailBelongsToSomeoneElseParams) (bool, error) {
+	row := q.db.QueryRow(ctx, emailBelongsToSomeoneElse, arg.Email, arg.EmployeeID)
+	var taken bool
+	err := row.Scan(&taken)
+	return taken, err
 }
 
 const employeeHasPermission = `-- name: EmployeeHasPermission :one
@@ -658,6 +768,54 @@ func (q *Queries) GetDepartment(ctx context.Context, arg GetDepartmentParams) (D
 		&i.UpdatedAt,
 		&i.LeaderEmployeeID,
 		&i.Version,
+	)
+	return i, err
+}
+
+const getEmailChangeByToken = `-- name: GetEmailChangeByToken :one
+SELECT c.id, c.tenant_id, c.employee_id, c.new_email, c.old_email, c.expires_at, c.used_at,
+       e.name AS employee_name, e.status AS employee_status,
+       e.email AS current_email, e.email_verified_at,
+       t.status AS tenant_status
+FROM employee_email_changes c
+JOIN employees e ON e.id = c.employee_id AND e.tenant_id = c.tenant_id
+JOIN tenants t ON t.id = c.tenant_id
+WHERE c.token_hash = $1
+`
+
+type GetEmailChangeByTokenRow struct {
+	ID              int64
+	TenantID        int64
+	EmployeeID      int64
+	NewEmail        string
+	OldEmail        string
+	ExpiresAt       pgtype.Timestamptz
+	UsedAt          pgtype.Timestamptz
+	EmployeeName    string
+	EmployeeStatus  string
+	CurrentEmail    string
+	EmailVerifiedAt pgtype.Timestamptz
+	TenantStatus    string
+}
+
+// 兑换需要的一切，一次往返。和 GetInvitationByToken 一样**故意把过期的、用过的
+// 也查出来**：页面得能说清「过期了」和「已经用过了」，这是两句不同的话。
+func (q *Queries) GetEmailChangeByToken(ctx context.Context, tokenHash []byte) (GetEmailChangeByTokenRow, error) {
+	row := q.db.QueryRow(ctx, getEmailChangeByToken, tokenHash)
+	var i GetEmailChangeByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EmployeeID,
+		&i.NewEmail,
+		&i.OldEmail,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.EmployeeName,
+		&i.EmployeeStatus,
+		&i.CurrentEmail,
+		&i.EmailVerifiedAt,
+		&i.TenantStatus,
 	)
 	return i, err
 }
@@ -1561,6 +1719,40 @@ func (q *Queries) ListEmployeesFiltered(ctx context.Context, arg ListEmployeesFi
 			&i.ManagerName,
 			&i.Total,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveEmailChanges = `-- name: ListLiveEmailChanges :many
+SELECT employee_id, new_email, expires_at
+FROM employee_email_changes
+WHERE tenant_id = $1::bigint AND used_at IS NULL
+`
+
+type ListLiveEmailChangesRow struct {
+	EmployeeID int64
+	NewEmail   string
+	ExpiresAt  pgtype.Timestamptz
+}
+
+// 员工列表那一列：谁的邮箱正在改、改成什么、什么时候作废。
+// 整页一条查询，不是每行一条，理由同 ListLiveInvitations。
+func (q *Queries) ListLiveEmailChanges(ctx context.Context, tenantID int64) ([]ListLiveEmailChangesRow, error) {
+	rows, err := q.db.Query(ctx, listLiveEmailChanges, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveEmailChangesRow
+	for rows.Next() {
+		var i ListLiveEmailChangesRow
+		if err := rows.Scan(&i.EmployeeID, &i.NewEmail, &i.ExpiresAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -645,6 +645,68 @@ SELECT employee_id, expires_at
 FROM employee_invitations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;
 
+-- 改登录邮箱：验证后生效。见 00049 的表注释。
+-- 五条查询和上面邀请那五条一一对应，故意长得一样——两件事的形状确实相同：
+-- 发一把一次性钥匙到某个信箱，谁读到了谁就证明了那个信箱归他。
+
+-- name: DeleteLiveEmailChanges :execrows
+-- 重发即替换，绝不累积。理由同 DeleteLiveInvitations。
+DELETE FROM employee_email_changes
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND used_at IS NULL;
+
+-- name: CreateEmailChange :one
+INSERT INTO employee_email_changes (
+    tenant_id, employee_id, new_email, old_email, token_hash, expires_at, requested_by
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(employee_id)::bigint,
+    lower(sqlc.arg(new_email)::text),
+    lower(sqlc.arg(old_email)::text),
+    sqlc.arg(token_hash),
+    sqlc.arg(expires_at),
+    sqlc.arg(requested_by)::bigint
+)
+RETURNING id, expires_at;
+
+-- name: GetEmailChangeByToken :one
+-- 兑换需要的一切，一次往返。和 GetInvitationByToken 一样**故意把过期的、用过的
+-- 也查出来**：页面得能说清「过期了」和「已经用过了」，这是两句不同的话。
+SELECT c.id, c.tenant_id, c.employee_id, c.new_email, c.old_email, c.expires_at, c.used_at,
+       e.name AS employee_name, e.status AS employee_status,
+       e.email AS current_email, e.email_verified_at,
+       t.status AS tenant_status
+FROM employee_email_changes c
+JOIN employees e ON e.id = c.employee_id AND e.tenant_id = c.tenant_id
+JOIN tenants t ON t.id = c.tenant_id
+WHERE c.token_hash = sqlc.arg(token_hash);
+
+-- name: ConsumeEmailChange :execrows
+-- WHERE 子句就是并发控制：同一个链接被点两下时，两个请求在这里相遇，
+-- 只有一个能更新到行。在 Go 里先查「用过没有」再更新，两个都会放过去。
+UPDATE employee_email_changes
+SET used_at = now()
+WHERE id = sqlc.arg(id)::bigint AND used_at IS NULL;
+
+-- name: ListLiveEmailChanges :many
+-- 员工列表那一列：谁的邮箱正在改、改成什么、什么时候作废。
+-- 整页一条查询，不是每行一条，理由同 ListLiveInvitations。
+SELECT employee_id, new_email, expires_at
+FROM employee_email_changes
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;
+
+-- name: EmailBelongsToSomeoneElse :one
+-- 这个地址是不是已经被别的账号占了。**跨公司查**，因为 employees_email_key
+-- 是全系统唯一的——只在本公司里查，等于把冲突留到兑换那一刻才炸，
+-- 而那时信已经发出去、人已经点过了。
+SELECT EXISTS (
+    SELECT 1 FROM employees
+    WHERE email <> ''
+      AND lower(email) = lower(sqlc.arg(email)::text)
+      AND id <> sqlc.arg(employee_id)::bigint
+) AS taken;
+
 -- name: ListEmployeeIdentity :many
 -- Every code and address already taken in this company, for the import to
 -- check a whole pasted block against in one round trip rather than a query

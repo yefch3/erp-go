@@ -25,6 +25,8 @@ const (
 	AuthService_RequestPasswordReset_FullMethodName = "/erp.iam.v1.AuthService/RequestPasswordReset"
 	AuthService_PeekPasswordReset_FullMethodName    = "/erp.iam.v1.AuthService/PeekPasswordReset"
 	AuthService_RedeemPasswordReset_FullMethodName  = "/erp.iam.v1.AuthService/RedeemPasswordReset"
+	AuthService_PeekEmailChange_FullMethodName      = "/erp.iam.v1.AuthService/PeekEmailChange"
+	AuthService_ConfirmEmailChange_FullMethodName   = "/erp.iam.v1.AuthService/ConfirmEmailChange"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -57,6 +59,15 @@ type AuthServiceClient interface {
 	// "I lost the password" and "somebody else may have it" are the same event
 	// until proven otherwise.
 	RedeemPasswordReset(ctx context.Context, in *RedeemPasswordResetRequest, opts ...grpc.CallOption) (*RedeemPasswordResetResponse, error)
+	// 确认新的登录邮箱。和 PeekInvitation / ActivateAccount 同一族：无需会话，
+	// 因为收到信的人此刻多半没登录，而他要确认的恰恰是登录方式本身。
+	// 先问「这个链接还有效吗」，页面才能在问「确认吗」之前就说链接已过期。
+	PeekEmailChange(ctx context.Context, in *PeekEmailChangeRequest, opts ...grpc.CallOption) (*PeekEmailChangeResponse, error)
+	// ConfirmEmailChange 兑换链接：地址和「已验证」一起落库。不设密码、
+	// 不发会话——点开这封信证明的是「这个信箱是我的」，不是「我是这个账号的
+	// 主人」，后者靠密码而他本来就有。调用者接下来要把这个账号的会话踢掉：
+	// 登录身份变了而旧 token 还能用，等于换了锁没换钥匙。
+	ConfirmEmailChange(ctx context.Context, in *ConfirmEmailChangeRequest, opts ...grpc.CallOption) (*ConfirmEmailChangeResponse, error)
 }
 
 type authServiceClient struct {
@@ -127,6 +138,26 @@ func (c *authServiceClient) RedeemPasswordReset(ctx context.Context, in *RedeemP
 	return out, nil
 }
 
+func (c *authServiceClient) PeekEmailChange(ctx context.Context, in *PeekEmailChangeRequest, opts ...grpc.CallOption) (*PeekEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeekEmailChangeResponse)
+	err := c.cc.Invoke(ctx, AuthService_PeekEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) ConfirmEmailChange(ctx context.Context, in *ConfirmEmailChangeRequest, opts ...grpc.CallOption) (*ConfirmEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmEmailChangeResponse)
+	err := c.cc.Invoke(ctx, AuthService_ConfirmEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -157,6 +188,15 @@ type AuthServiceServer interface {
 	// "I lost the password" and "somebody else may have it" are the same event
 	// until proven otherwise.
 	RedeemPasswordReset(context.Context, *RedeemPasswordResetRequest) (*RedeemPasswordResetResponse, error)
+	// 确认新的登录邮箱。和 PeekInvitation / ActivateAccount 同一族：无需会话，
+	// 因为收到信的人此刻多半没登录，而他要确认的恰恰是登录方式本身。
+	// 先问「这个链接还有效吗」，页面才能在问「确认吗」之前就说链接已过期。
+	PeekEmailChange(context.Context, *PeekEmailChangeRequest) (*PeekEmailChangeResponse, error)
+	// ConfirmEmailChange 兑换链接：地址和「已验证」一起落库。不设密码、
+	// 不发会话——点开这封信证明的是「这个信箱是我的」，不是「我是这个账号的
+	// 主人」，后者靠密码而他本来就有。调用者接下来要把这个账号的会话踢掉：
+	// 登录身份变了而旧 token 还能用，等于换了锁没换钥匙。
+	ConfirmEmailChange(context.Context, *ConfirmEmailChangeRequest) (*ConfirmEmailChangeResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -184,6 +224,12 @@ func (UnimplementedAuthServiceServer) PeekPasswordReset(context.Context, *PeekPa
 }
 func (UnimplementedAuthServiceServer) RedeemPasswordReset(context.Context, *RedeemPasswordResetRequest) (*RedeemPasswordResetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RedeemPasswordReset not implemented")
+}
+func (UnimplementedAuthServiceServer) PeekEmailChange(context.Context, *PeekEmailChangeRequest) (*PeekEmailChangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PeekEmailChange not implemented")
+}
+func (UnimplementedAuthServiceServer) ConfirmEmailChange(context.Context, *ConfirmEmailChangeRequest) (*ConfirmEmailChangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmEmailChange not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -314,6 +360,42 @@ func _AuthService_RedeemPasswordReset_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_PeekEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeekEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).PeekEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_PeekEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).PeekEmailChange(ctx, req.(*PeekEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_ConfirmEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ConfirmEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ConfirmEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ConfirmEmailChange(ctx, req.(*ConfirmEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -345,6 +427,14 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "RedeemPasswordReset",
 			Handler:    _AuthService_RedeemPasswordReset_Handler,
 		},
+		{
+			MethodName: "PeekEmailChange",
+			Handler:    _AuthService_PeekEmailChange_Handler,
+		},
+		{
+			MethodName: "ConfirmEmailChange",
+			Handler:    _AuthService_ConfirmEmailChange_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "erp/iam/v1/iam.proto",
@@ -366,6 +456,8 @@ const (
 	DirectoryService_ListManagers_FullMethodName         = "/erp.iam.v1.DirectoryService/ListManagers"
 	DirectoryService_SetManager_FullMethodName           = "/erp.iam.v1.DirectoryService/SetManager"
 	DirectoryService_InviteEmployee_FullMethodName       = "/erp.iam.v1.DirectoryService/InviteEmployee"
+	DirectoryService_RequestEmailChange_FullMethodName   = "/erp.iam.v1.DirectoryService/RequestEmailChange"
+	DirectoryService_CancelEmailChange_FullMethodName    = "/erp.iam.v1.DirectoryService/CancelEmailChange"
 	DirectoryService_CreatePasswordReset_FullMethodName  = "/erp.iam.v1.DirectoryService/CreatePasswordReset"
 	DirectoryService_RecordAccountEvent_FullMethodName   = "/erp.iam.v1.DirectoryService/RecordAccountEvent"
 	DirectoryService_ImportEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ImportEmployees"
@@ -417,6 +509,13 @@ type DirectoryServiceClient interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(ctx context.Context, in *InviteEmployeeRequest, opts ...grpc.CallOption) (*InviteEmployeeResponse, error)
+	// 改登录邮箱：发信到新地址，点开了才生效。
+	//
+	// 和 InviteEmployee 同样的分工——mint 在这里，发信在网关。RequestEmailChange
+	// **不改 employees.email**：在有人点开链接之前，那个人照常用旧地址登录。
+	// 直接改那一列会让新地址凭空继承旧地址的「已验证」，而登录同时看这两样。
+	RequestEmailChange(ctx context.Context, in *RequestEmailChangeRequest, opts ...grpc.CallOption) (*RequestEmailChangeResponse, error)
+	CancelEmailChange(ctx context.Context, in *CancelEmailChangeRequest, opts ...grpc.CallOption) (*CancelEmailChangeResponse, error)
 	// CreatePasswordReset is the administrator's version of the login page's
 	// 忘记密码: same link, but minted on somebody's behalf and recorded as such.
 	CreatePasswordReset(ctx context.Context, in *CreatePasswordResetRequest, opts ...grpc.CallOption) (*CreatePasswordResetResponse, error)
@@ -603,6 +702,26 @@ func (c *directoryServiceClient) InviteEmployee(ctx context.Context, in *InviteE
 	return out, nil
 }
 
+func (c *directoryServiceClient) RequestEmailChange(ctx context.Context, in *RequestEmailChangeRequest, opts ...grpc.CallOption) (*RequestEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestEmailChangeResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_RequestEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) CancelEmailChange(ctx context.Context, in *CancelEmailChangeRequest, opts ...grpc.CallOption) (*CancelEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelEmailChangeResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_CancelEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *directoryServiceClient) CreatePasswordReset(ctx context.Context, in *CreatePasswordResetRequest, opts ...grpc.CallOption) (*CreatePasswordResetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreatePasswordResetResponse)
@@ -742,6 +861,13 @@ type DirectoryServiceServer interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error)
+	// 改登录邮箱：发信到新地址，点开了才生效。
+	//
+	// 和 InviteEmployee 同样的分工——mint 在这里，发信在网关。RequestEmailChange
+	// **不改 employees.email**：在有人点开链接之前，那个人照常用旧地址登录。
+	// 直接改那一列会让新地址凭空继承旧地址的「已验证」，而登录同时看这两样。
+	RequestEmailChange(context.Context, *RequestEmailChangeRequest) (*RequestEmailChangeResponse, error)
+	CancelEmailChange(context.Context, *CancelEmailChangeRequest) (*CancelEmailChangeResponse, error)
 	// CreatePasswordReset is the administrator's version of the login page's
 	// 忘记密码: same link, but minted on somebody's behalf and recorded as such.
 	CreatePasswordReset(context.Context, *CreatePasswordResetRequest) (*CreatePasswordResetResponse, error)
@@ -822,6 +948,12 @@ func (UnimplementedDirectoryServiceServer) SetManager(context.Context, *SetManag
 }
 func (UnimplementedDirectoryServiceServer) InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InviteEmployee not implemented")
+}
+func (UnimplementedDirectoryServiceServer) RequestEmailChange(context.Context, *RequestEmailChangeRequest) (*RequestEmailChangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestEmailChange not implemented")
+}
+func (UnimplementedDirectoryServiceServer) CancelEmailChange(context.Context, *CancelEmailChangeRequest) (*CancelEmailChangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelEmailChange not implemented")
 }
 func (UnimplementedDirectoryServiceServer) CreatePasswordReset(context.Context, *CreatePasswordResetRequest) (*CreatePasswordResetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePasswordReset not implemented")
@@ -1144,6 +1276,42 @@ func _DirectoryService_InviteEmployee_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_RequestEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).RequestEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_RequestEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).RequestEmailChange(ctx, req.(*RequestEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_CancelEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).CancelEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_CancelEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).CancelEmailChange(ctx, req.(*CancelEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DirectoryService_CreatePasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePasswordResetRequest)
 	if err := dec(in); err != nil {
@@ -1390,6 +1558,14 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InviteEmployee",
 			Handler:    _DirectoryService_InviteEmployee_Handler,
+		},
+		{
+			MethodName: "RequestEmailChange",
+			Handler:    _DirectoryService_RequestEmailChange_Handler,
+		},
+		{
+			MethodName: "CancelEmailChange",
+			Handler:    _DirectoryService_CancelEmailChange_Handler,
 		},
 		{
 			MethodName: "CreatePasswordReset",

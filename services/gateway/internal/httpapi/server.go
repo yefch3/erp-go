@@ -127,6 +127,13 @@ func (s *Server) Router() http.Handler {
 	// of their claim — see activateAccount for why that is enough.
 	r.Get("/api/auth/invitation", s.peekInvitation)
 	r.Post("/api/auth/activate", s.activateAccount)
+	// 确认新的登录邮箱。同样无需登录：收到信的人此刻多半没登录，而且他要
+	// 确认的恰恰是登录方式本身。限流和重置密码那两条同一个理由——
+	// 这是开放路由，虽然它守的是 256 位我们自己的随机数、没什么可猜的。
+	r.Get("/api/auth/email-change",
+		s.limitPublic("emailchange", publicResetBudget, s.peekEmailChange))
+	r.Post("/api/auth/email-change",
+		s.limitPublic("emailchange", publicResetBudget, s.confirmEmailChange))
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
 	r.Get("/api/public/mail-images/{token}",
@@ -270,6 +277,13 @@ func (s *Server) Router() http.Handler {
 		// Sending the invitation is employee administration, so it carries the
 		// same permission as creating the row it invites.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
+		// 改登录邮箱。和改其他资料同一个权限——它就是员工资料的一部分——
+		// 但走一条自己的路，因为「保存」对这一列是错的：直接写会让新地址
+		// 凭空继承旧地址的「已验证」。见 emailchange_handlers.go。
+		r.With(s.perm("iam:employee:write")).
+			Post("/api/employees/{id}/email-change", s.requestEmailChange)
+		r.With(s.perm("iam:employee:write")).
+			Delete("/api/employees/{id}/email-change", s.cancelEmailChange)
 		// The administrator's 忘记密码-on-your-behalf. Same permission as the
 		// direct reset it replaces for everyone who has a verified mailbox.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/reset-link", s.sendResetLinkToEmployee)
