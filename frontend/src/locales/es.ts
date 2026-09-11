@@ -1969,6 +1969,7 @@ export default {
     dropDraftsHint: '¿Eliminar los {n} borradores seleccionados? No se podrán recuperar.',
     noDrafts: 'Sin borradores',
     noSubject: '(sin asunto)',
+    answered: 'Respondido',
     draftRecipients: '{n} destinatario(s)',
     draftTo: 'Para',
     draftNoRecipient: '(aún sin destinatario)',

@@ -849,6 +849,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
+		IsAnswered: v.IsAnswered,
 		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
 		BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,

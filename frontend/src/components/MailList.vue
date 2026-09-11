@@ -143,6 +143,15 @@
         <!-- 第二行：主题，以及它属于哪儿。标签跟着主题走而不是跟着发件人，
              照 Gmail：标签回答的是「这封信被归到哪里」，和主题是一句话。 -->
         <span class="l2">
+          <!-- 已回复。**摆在主题前面，不是行尾的一个小角标**：issue #364 要的
+               是「弄得显眼一些」，而一列邮件是从左往右扫的，扫的就是这一列的
+               开头。带字不只带箭头——一个孤零零的 ↩ 要学过才认得，而这一行本来
+               就有位置放三个字。
+               不出现在已发送和草稿箱：那两处每一行都是自己写的，"答过没有"
+               没有意义。 -->
+          <span v-if="m.isAnswered && answerable" class="answered">
+            <span aria-hidden="true">↩</span>{{ t('emails.answered') }}
+          </span>
           <!-- title 带完整地址：窄列里这个标签会被压成「fangch…」，认得出是
                另一个箱但认不出是哪个，鼠标停一下就知道了。 -->
           <span v-if="otherMailbox(m)" class="in-mailbox" :title="otherMailbox(m)">{{ otherMailbox(m) }}</span>
@@ -213,6 +222,11 @@ export interface MailRow {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // 这封信答过没有（issue #364）。两个来源合在一起：ERP 里发出并送达的回信，
+  // 以及邮件服务器上的 \Answered 标志——业务员也在 263 网页版、Foxmail、手机
+  // 上回信。只认前一半的话，一封在手机上答过的信在这里仍然显示没答，而那恰恰
+  // 是最容易被答第二遍的那一封。
+  isAnswered?: boolean
   threadCount?: number | string
   // Sent folder only: 'HOST' is a real message, 'ERP' a delivery record whose
   // copy the host never kept.
@@ -291,6 +305,10 @@ const aboutRecipient = computed(() => props.folder === 'sent' || props.folder ==
 // 一样硬——星标要写到邮件服务器上那封信的标志位里，而草稿只在我们自己的库
 // 里，服务器上根本没有这封信。给一颗按下去必然失败的星，比不给更坏。
 const starrable = computed(() => props.folder !== 'junk' && props.folder !== 'drafts')
+
+// 「已回复」在哪些列表里有意义。已发送和草稿箱里每一行都是自己写的东西，
+// 问它答过没有是问错了对象。
+const answerable = computed(() => !aboutRecipient.value)
 
 // 读屏器听到的是「大小，降序」，而不是一个箭头。
 function sortAria(f: SortField): string {
@@ -819,6 +837,25 @@ function ariaFor(m: MailRow) {
   max-width: 8em;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
+}
+
+/* 已回复。绿色实心，和「可能已打开」那一档同一个颜色家族——两者说的是同一
+   类事（这封信的往来走到哪一步了），只是一个问对方、一个问自己。
+   flex: none：它短且长度固定，不该跟着主题一起被压缩；真挤不下时宁可主题先
+   省略号——没答过的信才是要找的，而这个标识正是用来把它们排除掉的。 */
+.answered {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 9px;
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  white-space: nowrap;
 }
 
 /* 已读三态：绿的一眼能扫到（这一列存在的目的），灰的居次，没追踪的压到

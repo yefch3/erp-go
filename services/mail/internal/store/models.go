@@ -136,6 +136,8 @@ type EmailInbound struct {
 	ToAll          string
 	HostFolder     string
 	HostUid        int64
+	// 这封信答过没有：我们自己发出的回信，或服务器上的 \Answered 标志
+	IsAnswered bool
 }
 
 type EmailInboundAttachment struct {
