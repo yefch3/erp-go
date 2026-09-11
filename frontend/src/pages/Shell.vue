@@ -359,9 +359,31 @@
           </nav>
         </el-popover>
       </el-menu>
+      <div class="side-footer">
+        <LangSwitcher light sidebar />
+        <el-dropdown placement="top-start" trigger="click" @command="onCommand">
+          <button type="button" class="account-card">
+            <el-avatar :size="44" :src="myAvatar" class="account-card-avatar">
+              {{ (auth.employeeName || '—').slice(0, 1) }}
+            </el-avatar>
+            <span class="account-card-copy">
+              <strong>{{ auth.employeeName || '—' }}</strong>
+              <small>{{ auth.employeeEmail || '—' }}</small>
+            </span>
+            <span class="account-card-more" aria-hidden="true">•••</span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="profile">{{ t('profile.title') }}</el-dropdown-item>
+              <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
+              <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </el-aside>
     <el-container class="pane-col">
-      <el-header class="topbar">
+      <el-header class="topbar" :class="{ 'topbar--empty': !hasTopbarTools }">
         <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" aria-label="展开或收起导航" @click="navigationOpen = !navigationOpen">☰ 导航</button>
         <div class="topbar-right">
           <ShippingArrivalNotifications
@@ -372,25 +394,6 @@
           <ReceivableReminders v-if="auth.can('export:receipt:read')" />
           <!-- 提单签发提醒（E2）：船开了正本还没签，整个船务部门都收得到。 -->
           <BLReminders v-if="auth.can('shipping:schedule:read')" />
-          <LangSwitcher />
-          <el-dropdown @command="onCommand">
-            <!-- 头像加名字。头像放在这里而不是只放在资料页里，是因为它顺带
-                 回答了「我现在是以谁的身份登着」——同一台电脑上换过账号的人
-                 一眼就能发现自己还挂在别人名下。 -->
-            <span class="user">
-              <el-avatar :size="24" :src="myAvatar" class="user-avatar">
-                {{ (auth.employeeName || '—').slice(0, 1) }}
-              </el-avatar>
-              {{ auth.employeeName || '—' }}
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="profile">{{ t('profile.title') }}</el-dropdown-item>
-                <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
-                <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
         </div>
       </el-header>
       <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
@@ -653,6 +656,7 @@ const financeItems = computed(() => sortByOrder([
 const hasFinance = computed(() => financeItems.value.length > 0)
 const financeActive = computed(() => financeItems.value.some((item) => route.path === item.path))
 const hasBasicData = computed(() => basicDataItems.value.length > 0)
+const hasTopbarTools = computed(() => auth.can('shipping:schedule:read') || auth.can('export:receipt:read'))
 
 const visibleModules = computed(() => sortByOrder([
   { key: 'todos', visible: true },
@@ -949,6 +953,45 @@ async function changePassword() {
 }
 .side-menu [draggable="true"] { cursor: grab; user-select: none; }
 .side-menu [draggable="true"]:active { cursor: grabbing; }
+.side-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #243147;
+  background: #10192b;
+}
+.side-footer :deep(.el-dropdown) { width: 100%; }
+.account-card {
+  width: 100%;
+  min-height: 64px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+  color: #e2e8f0;
+  background: #182235;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+.account-card:hover,
+.account-card:focus-visible {
+  outline: none;
+  border-color: #3d536d;
+  background: #1d2a40;
+}
+.account-card-avatar { background: #34445c; color: #dff5ff; font-weight: 700; }
+.account-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.account-card-copy strong,
+.account-card-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-card-copy strong { color: #f1f5f9; font-size: 13px; font-weight: 650; }
+.account-card-copy small { color: #7f8da3; font-size: 10px; }
+.account-card-more { color: #718198; font-size: 13px; letter-spacing: 1px; }
 .module-menu-trigger {
   width: 100%;
   height: 56px;
@@ -1051,15 +1094,10 @@ async function changePassword() {
   align-items: center;
   gap: 18px;
 }
-.user {
-  cursor: pointer;
-  color: #334155;
-  font-size: 14px;
-}
-
 .side { flex-shrink: 0; }
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
 .topbar { justify-content: flex-end; }
+.topbar--empty { display: none; }
 .content { background: #f3f6fa; }
 .content--procurement,
 .content--logistics {
@@ -1125,8 +1163,9 @@ async function changePassword() {
 @media (max-width: 1000px) {
   .shell { position: relative; }
   .side { display: none; }
-  .side.side-open { display: block; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
+  .side.side-open { display: flex; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
   .navigation-toggle { display: block; margin-right: auto; }
+  .topbar--empty { display: flex; }
   .content { padding: 16px; }
   .topbar { padding: 0 16px; gap: 12px; }
 }
