@@ -1963,6 +1963,7 @@ export default {
     dropDraftsHint: 'Delete the {n} selected drafts? They cannot be recovered.',
     noDrafts: 'No drafts',
     noSubject: '(no subject)',
+    answered: 'Replied',
     draftRecipients: '{n} recipient(s)',
     draftTo: 'To',
     draftNoRecipient: '(no recipient yet)',

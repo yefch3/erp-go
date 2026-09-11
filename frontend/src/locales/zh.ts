@@ -1961,6 +1961,8 @@ export default {
     dropDraftsHint: '确认删除选中的 {n} 封草稿？删掉就没有了。',
     noDrafts: '草稿箱是空的',
     noSubject: '（无主题）',
+    // 列表上那个「已回复」标识（issue #364）。
+    answered: '已回复',
     draftRecipients: '{n} 位收件人',
     // 草稿箱的三行式列表和右边的预览。
     draftTo: '写给',

@@ -138,6 +138,10 @@ type Mailbox interface {
 type MessageFlags struct {
 	Seen    bool
 	Flagged bool
+	// 这封信在服务器上被标成答过了。业务员也在 263 网页版、Foxmail、手机上
+	// 回信，那些客户端回完都会打上 \Answered——不读它，「已回复」就只认得
+	// 走 ERP 发出去的那一半。
+	Answered bool
 }
 
 // UseMailbox installs the inbound adapter. Same two-step wiring as the

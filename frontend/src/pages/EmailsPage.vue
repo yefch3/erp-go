@@ -1451,6 +1451,9 @@ interface InboundMail {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // 这封信答过没有（#364）。只有列表给，单封读取不给——那一页上「回复」
+  // 按钮就在手边，不需要再说一遍。
+  isAnswered?: boolean
   // Whether the original MIME is still archived. Only set on the detail read;
   // absent in list rows, which is why 作为附件转发 lives on the open mail.
   hasRaw?: boolean
