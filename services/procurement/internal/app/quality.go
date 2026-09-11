@@ -127,7 +127,7 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	if err != nil {
 		return QualityTask{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var poNo, supplier, status, businessType string
 	err = tx.QueryRow(ctx, `SELECT po_no,supplier_name,status,business_type FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, in.POID).Scan(&poNo, &supplier, &status, &businessType)
 	if err == pgx.ErrNoRows {
@@ -311,7 +311,7 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 	if err != nil {
 		return QualityTask{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
 	if err = tx.QueryRow(ctx, `SELECT status FROM quality_inspection_tasks WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, id).Scan(&status); err == pgx.ErrNoRows {
 		return QualityTask{}, apierr.NotFound("QUALITY_TASK_NOT_FOUND", "质检任务不存在")
@@ -319,7 +319,10 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 	if err != nil {
 		return QualityTask{}, err
 	}
-	if status != "IN_PROGRESS" && status != "REINSPECTION" {
+	// A procurement request is already the handoff to Quality.  The inspector
+	// can record the first round directly; requiring a separate "start" click
+	// added no business decision and left a waiting task artificially blocked.
+	if status != "WAITING" && status != "IN_PROGRESS" && status != "REINSPECTION" {
 		return QualityTask{}, apierr.Conflict("QUALITY_ROUND_INVALID", "任务当前不能录入质检结果")
 	}
 	var roundNo int32
@@ -401,7 +404,7 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 			return QualityTask{}, err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location))
+	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location))
 	if err != nil {
 		return QualityTask{}, err
 	}
@@ -420,7 +423,7 @@ func (s *Service) DecideQualityRelease(ctx context.Context, tenantID, id int64, 
 	if err != nil {
 		return QualityTask{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	for _, l := range lines {
 		qty, e := decimal.NewFromString(strings.TrimSpace(l.Qty))
 		if e != nil || qty.IsNegative() {

@@ -27,23 +27,26 @@ $ids=(docker exec erp-d5-20260910-postgres-1 psql -U erp_procurement -d erp_proc
 $poId=$ids[0];$itemId=$ids[1]
 
 $buyer=Login 'p1@d5.example.test';$quality=Login 'q1@d5.example.test';$logistics=Login 'l1@d5.example.test';$sales=Login 's1@d5.example.test';$boss=Login 'b1@d5.example.test'
-$existing=@((Request $buyer GET '/quality/tasks?tab=PENDING&keyword=PO-D5-SMOKE-001' $null).tasks)
-if($existing.Count -eq 0){$task=(Request $buyer POST "/purchase-orders/$poId/quality-inspections" @{expectedDate='2026-09-15T00:00:00Z';inspectionLocation='D5 冒烟工厂';contactName='QC contact';contactPhone='10086';remark='自动冒烟';lines=@(@{poItemId=$itemId;qty='6'})}).task}else{$task=$existing[0]}
+# 冒烟环境可重复执行：只按外键依赖顺序清理专用采购单的旧质检任务，
+# 不碰人工验收数据。
+$cleanup="BEGIN; DELETE FROM quality_inspection_files WHERE tenant_id=1 AND task_id IN (SELECT id FROM quality_inspection_tasks WHERE tenant_id=1 AND po_id=$poId); DELETE FROM quality_inspection_round_lines WHERE tenant_id=1 AND round_id IN (SELECT r.id FROM quality_inspection_rounds r JOIN quality_inspection_tasks t ON t.id=r.task_id AND t.tenant_id=r.tenant_id WHERE t.tenant_id=1 AND t.po_id=$poId); DELETE FROM quality_inspection_rounds WHERE tenant_id=1 AND task_id IN (SELECT id FROM quality_inspection_tasks WHERE tenant_id=1 AND po_id=$poId); DELETE FROM quality_inspection_task_lines WHERE tenant_id=1 AND task_id IN (SELECT id FROM quality_inspection_tasks WHERE tenant_id=1 AND po_id=$poId); DELETE FROM quality_inspection_tasks WHERE tenant_id=1 AND po_id=$poId; COMMIT;"
+docker exec erp-d5-20260910-postgres-1 psql -v ON_ERROR_STOP=1 -U erp_procurement -d erp_procurement -c $cleanup | Out-Null
+if($LASTEXITCODE){throw 'Failed to reset dedicated D5 smoke data'}
+$task=(Request $buyer POST "/purchase-orders/$poId/quality-inspections" @{expectedDate='2026-09-15T00:00:00Z';inspectionLocation='D5 冒烟工厂';contactName='QC contact';contactPhone='10086';remark='自动冒烟';lines=@(@{poItemId=$itemId;qty='6'})}).task
 $taskId=$task.id
-if($task.status -eq 'WAITING'){$task=(Request $quality POST "/quality/tasks/$taskId/start" $null).task}
 $task=(Request $quality GET "/quality/tasks/$taskId" $null).task
 $lineId=$task.lines[0].id
-if($task.rounds.Count -eq 0){$task=(Request $quality POST "/quality/tasks/$taskId/rounds" @{inspectedAt='2026-09-11T00:00:00Z';inspectionLocation='D5 冒烟工厂';remark='第一轮';lines=@(@{taskLineId=$lineId;result='PARTIAL';inspectedQty='6';qualifiedQty='4';unqualifiedQty='2';issueDescription='表面划痕';handlingSuggestion='返修后复检'})}).task}
-$task=(Request $buyer POST "/quality/tasks/$taskId/release" @{lines=@(@{taskLineId=$lineId;qty='3'})}).task
+$task=(Request $quality POST "/quality/tasks/$taskId/rounds" @{inspectedAt='2026-09-11T00:00:00Z';inspectionLocation='D5 冒烟工厂';remark='第一轮';lines=@(@{taskLineId=$lineId;result='PARTIAL';inspectedQty='6';qualifiedQty='4';unqualifiedQty='2';issueDescription='表面划痕';handlingSuggestion='返修后复检'})}).task
 
 $presign=Request $quality POST "/quality/tasks/$taskId/files/presign" @{fileName='d5-smoke-report.txt'}
 $bytes=[Text.Encoding]::UTF8.GetBytes('D5 quality attachment persistence smoke')
 Invoke-WebRequest $presign.uploadUrl -Method Put -Body $bytes -ContentType 'text/plain' | Out-Null
 $task=(Request $quality POST "/quality/tasks/$taskId/files" @{roundId=$task.rounds[0].id;taskLineId=$lineId;category='REPORT';fileKey=$presign.fileKey;fileName='d5-smoke-report.txt';contentType='text/plain';sizeBytes=$bytes.Length}).task
 
-$logisticsView=(Request $logistics GET "/quality/tasks/$taskId" $null).task
-$salesView=(Request $sales GET "/quality/tasks/$taskId" $null).task
-$bossView=(Request $boss GET "/quality/tasks/$taskId" $null).task
+ExpectHttpError $buyer GET "/quality/tasks/$taskId" $null 403
+ExpectHttpError $logistics GET "/quality/tasks/$taskId" $null 403
+ExpectHttpError $sales GET "/quality/tasks/$taskId" $null 403
+ExpectHttpError $boss GET "/quality/tasks/$taskId" $null 403
 ExpectHttpError $logistics POST "/quality/tasks/$taskId/rounds" @{lines=@()} 403
 ExpectHttpError $buyer POST "/purchase-orders/$poId/quality-inspections" @{lines=@(@{poItemId=$itemId;qty='5'})} 409
 
@@ -51,6 +54,6 @@ if($task.status -ne 'REINSPECTION' -or $task.lines[0].qualifiedQty -ne '4.0000' 
 $task=(Request $quality POST "/quality/tasks/$taskId/rounds" @{inspectedAt='2026-09-11T00:00:00Z';inspectionLocation='D5 冒烟工厂';remark='复检';lines=@(@{taskLineId=$lineId;result='PASS';inspectedQty='2';qualifiedQty='2';unqualifiedQty='0'})}).task
 if($task.status -ne 'COMPLETED' -or $task.rounds.Count -ne 2 -or $task.lines[0].qualifiedQty -ne '6.0000'){throw 'Reinspection did not complete'}
 
-$evidence=[ordered]@{testedAt=(Get-Date).ToString('o');purchaseOrder='PO-D5-SMOKE-001';taskId=$taskId;finalStatus=$task.status;qualifiedQty=$task.lines[0].qualifiedQty;rounds=$task.rounds.Count;files=$task.files.Count;buyerReleaseBeforeCompletion='3.0000';quantityOverflow='HTTP 409';logisticsMutation='HTTP 403';readers=@{logistics=$logisticsView.taskNo;sales=$salesView.taskNo;boss=$bossView.taskNo}}
+$evidence=[ordered]@{testedAt=(Get-Date).ToString('o');purchaseOrder='PO-D5-SMOKE-001';taskId=$taskId;finalStatus=$task.status;qualifiedQty=$task.lines[0].qualifiedQty;rounds=$task.rounds.Count;files=$task.files.Count;quantityOverflow='HTTP 409';nonQualityRead='P1/L1/S1/B1 HTTP 403';logisticsMutation='HTTP 403';qualityRead='HTTP 200'}
 $evidence|ConvertTo-Json -Depth 6|Set-Content (Join-Path $PSScriptRoot 'api-smoke-evidence.json') -Encoding utf8
 Write-Output ($evidence|ConvertTo-Json -Depth 6 -Compress)

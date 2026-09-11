@@ -61,9 +61,8 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	if _, err = svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Lines: []ApplyQualityLine{{POItemID: item, Qty: "5"}}}, buyer); code(err) != "QUALITY_QTY_EXCEEDED" {
 		t.Fatalf("expected quantity guard, got %v", err)
 	}
-	if task, err = svc.StartQualityTask(ctx, tenant, task.ID, qc); err != nil || task.Status != "IN_PROGRESS" {
-		t.Fatalf("start=%#v err=%v", task, err)
-	}
+	// The purchase request is the handoff. Quality records the first round
+	// directly without a redundant accept/start transition.
 	task, err = svc.SubmitQualityRound(ctx, tenant, task.ID, SubmitQualityInput{Lines: []SubmitQualityLine{{TaskLineID: task.Lines[0].ID, Result: "PARTIAL", InspectedQty: "6", QualifiedQty: "4", UnqualifiedQty: "2", IssueDescription: "surface"}}}, qc)
 	if err != nil {
 		t.Fatal(err)

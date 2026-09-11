@@ -88,9 +88,9 @@ export default {
     todo: '（待开发）',
   },
   quality: {
-	taskLevel:'任务通用资料',
+	taskLevel:'质检资料',
 	apply:'申请质检', applyTitle:'申请出货前质检', applyHint:'采购确认货物备好后按本批产品和数量交接给质检部门；支持分批申请，系统会阻止重复或超量送检。', orderedQty:'采购数量', applyQty:'本批送检数量', contactName:'现场联系人', contactPhone:'联系电话', submitApplication:'提交质检任务', pickQty:'请填写至少一个产品的送检数量', applied:'质检任务已提交',
-    title:'质检', subtitle:'采购确认货物备好后申请；质检部门在同一任务内记录现场检查与复检全过程。', pending:'待质检', completed:'已完成', search:'搜索质检任务、采购单或工厂', taskNo:'质检任务', poNo:'采购单号', factory:'工厂 / 供应商', batch:'批次', expectedDate:'计划质检日期', process:'处理', empty:'暂无质检任务', location:'质检地点', readOnlyHint:'采购、物流、相关销售及上级可查看结果和资料；只有质检部门可以填写结论。', products:'送检产品与数量', product:'产品 / 规格', requestedQty:'送检数量', qualifiedQty:'合格数量', unresolvedQty:'待复检数量', result:'结论', releaseQty:'允许先发', saveRelease:'保存部分合格放行决定', startTitle:'接收质检任务', startHint:'开始后由当前质检人员记录本轮现场结果和资料。', start:'开始质检', reinspect:'记录复检', recordRound:'记录本轮质检', inspectedAt:'质检时间', remark:'备注', remaining:'待检', inspectedQty:'本轮检查数量', unqualifiedQty:'不合格数量', issue:'异常说明', suggestion:'处理建议', saveRound:'保存本轮结果', attachments:'现场资料', upload:'上传资料', fileName:'文件名', category:'资料类型', uploader:'上传人', uploadedAt:'上传时间', history:'质检与复检历史', roundNo:'第 {n} 轮', started:'质检任务已接收', roundSaved:'本轮质检结果已保存', releaseSaved:'放行决定已保存', uploaded:'资料已保存', uploadFailed:'资料上传失败', statuses:{WAITING:'待质检',IN_PROGRESS:'质检中',REINSPECTION:'待复检',COMPLETED:'已完成'}, results:{PENDING:'待质检',PASS:'合格',PARTIAL:'部分合格',FAIL:'不合格'}, categories:{PHOTO:'现场照片',VIDEO:'现场视频',REPORT:'质检报告',THIRD_PARTY:'第三方报告',OTHER:'其他附件'}
+    title:'质检', subtitle:'采购确认货物备好后申请；质检部门在同一任务内记录现场检查与复检全过程。', pending:'待质检', completed:'已完成', search:'搜索质检任务、采购单或工厂', taskNo:'质检任务', poNo:'采购单号', factory:'工厂 / 供应商', batch:'批次', expectedDate:'计划质检日期', process:'处理', empty:'暂无质检任务', location:'质检地点', requestedBy:'申请人', readOnlyHint:'质检任务、现场资料和历史仅对质检部门开放。', products:'送检产品与数量', productsHint:'汇总本批送检、累计合格和仍需复检的数量。', product:'产品 / 规格', requestedQty:'本批送检数量', qualifiedQty:'合格数量', unresolvedQty:'待复检数量', result:'质检结论', releaseQty:'允许先发', saveRelease:'保存部分合格放行决定', startTitle:'接收质检任务', startHint:'开始后由当前质检人员记录本轮现场结果和资料。', start:'开始质检', reinspect:'记录复检结果', recordRound:'记录本轮质检结果', recordHint:'逐项填写结论和数量；不合格数量会根据本轮检查数量与合格数量自动计算。', inspectedAt:'质检时间', remark:'备注', roundRemark:'本轮备注', roundRemarkHint:'填写本轮现场情况或补充说明', thisBatchQty:'当前待检', remaining:'待检', inspectedQty:'本轮检查数量', unqualifiedQty:'不合格数量（自动）', issue:'异常说明', issueHint:'说明缺陷、数量或现场异常', suggestion:'处理建议', suggestionHint:'例如返工、换货或安排复检', saveRound:'保存本轮结果', attachments:'现场资料', attachmentsHint:'保存现场照片、视频、质检报告、第三方报告及其他附件。', chooseFiles:'选择文件', selectedFiles:'已选择 {n} 个文件', noFileSelected:'尚未选择文件', upload:'上传资料', fileName:'文件名', category:'资料类型', uploader:'上传人', uploadedAt:'上传时间', noAttachments:'暂无现场资料', history:'质检与复检历史', historyHint:'每次保存都会形成独立记录，后续复检不会覆盖上一轮。', noHistory:'尚未记录质检结果', roundNo:'第 {n} 轮', started:'质检任务已接收', roundSaved:'本轮质检结果已保存', releaseSaved:'放行决定已保存', uploaded:'资料已保存', uploadFailed:'资料上传失败', todoTitle:'待质检任务', todoHint:'采购已提交送检产品与数量，等待质检部门记录现场结果。', todoAction:'前往质检', statuses:{WAITING:'待质检',IN_PROGRESS:'待质检',REINSPECTION:'待质检',COMPLETED:'已完成'}, results:{PENDING:'待质检',PASS:'合格',PARTIAL:'部分合格',FAIL:'不合格'}, categories:{PHOTO:'现场照片',VIDEO:'现场视频',REPORT:'质检报告',THIRD_PARTY:'第三方报告',OTHER:'其他附件'}
   },
   warehouseNav: {
     workbench: '仓库工作台', profiles: '仓库档案', arrivals: '待到货', receipts: '收货记录', stock: '库存管理', imports: '导入中心', settings: '仓库设置',
@@ -1454,7 +1454,7 @@ export default {
     departmentUnset: '未设置部门',
     updatedAt: '更新于 {time}',
     summaryPending: '待我处理',
-    summaryPendingHint: '当前审批和采购补充任务',
+    summaryPendingHint: '当前需要你处理的业务任务',
     summaryUpcoming: '即将到期',
     summaryUpcomingHint: '默认提醒未来 3 天内到期事项',
     summaryOverdue: '已逾期',

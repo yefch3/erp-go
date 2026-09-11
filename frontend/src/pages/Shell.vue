@@ -16,12 +16,6 @@
         <el-menu-item index="/todos" :style="moduleStyle('todos')" draggable="true" @dragstart="startModuleDrag('todos', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('todos')" @dragend="finishNavigationDrag">
           {{ t('menu.todos') }}
         </el-menu-item>
-        <!-- 我的信息紧跟待办，理由一样：这两个是每个员工都拥有的页面，
-             和角色无关。基础数据那个菜单要 iam:employee:read 才显示，
-             把自己的资料只挂在那底下，等于藏起来给最需要它的人看不见。 -->
-        <el-menu-item index="/basic/employees/me" :style="moduleStyle('profile')" draggable="true" @dragstart="startModuleDrag('profile', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('profile')" @dragend="finishNavigationDrag">
-          {{ t('menu.myProfile') }}
-        </el-menu-item>
         <!-- 邮箱是每位在职 ERP 用户的个人工作入口，访问范围仍由服务端固定为本人。 -->
         <el-menu-item index="/emails" :style="moduleStyle('emails')" draggable="true" @dragstart="startModuleDrag('emails', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('emails')" @dragend="finishNavigationDrag">
           {{ t('menu.emails') }}
@@ -361,8 +355,17 @@
       </el-menu>
       <div class="side-footer">
         <LangSwitcher light sidebar />
-        <el-dropdown placement="top-start" trigger="click" @command="onCommand">
-          <button type="button" class="account-card">
+        <el-popover
+          v-model:visible="accountOpen"
+          placement="right-end"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="click"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+          <button type="button" class="account-card" :class="{ 'is-active': accountActive || accountOpen }">
             <el-avatar :size="44" :src="myAvatar" class="account-card-avatar">
               {{ (auth.employeeName || '—').slice(0, 1) }}
             </el-avatar>
@@ -372,14 +375,14 @@
             </span>
             <span class="account-card-more" aria-hidden="true">•••</span>
           </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="profile">{{ t('profile.title') }}</el-dropdown-item>
-              <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
-              <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
-            </el-dropdown-menu>
           </template>
-        </el-dropdown>
+          <nav class="module-flyout account-flyout" :aria-label="t('profile.accountTitle')">
+            <div class="module-flyout-title">{{ t('profile.accountTitle') }}</div>
+            <button type="button" class="module-flyout-item" :class="{ 'is-active': accountActive }" @click="onCommand('profile')">{{ t('profile.title') }}</button>
+            <button type="button" class="module-flyout-item" @click="onCommand('password')">{{ t('password.title') }}</button>
+            <button type="button" class="module-flyout-item" @click="onCommand('logout')">{{ t('common.logout') }}</button>
+          </nav>
+        </el-popover>
       </div>
     </el-aside>
     <el-container class="pane-col">
@@ -457,13 +460,14 @@ import { onLive, startLive, stopLive } from '../live'
 import { mergeVisibleOrder, moveItem, readNavigationPreferences, sortByOrder, writeNavigationPreferences } from '../lib/navigationOrder'
 
 const passwordOpen = ref(false)
+const accountOpen = ref(false)
 const saving = ref(false)
 const pw = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
-const moduleDefaults = ['todos','profile','emails','sales','procurement','quality','warehouse','logistics','finance','basic','system']
+const moduleDefaults = ['todos','emails','sales','procurement','quality','warehouse','logistics','finance','basic','system']
 const childDefaults: Record<string,string[]> = {
   sales: ['/sales/inquiries','/sales/quotations','/sales/settings/inquiry-templates','/contracts'],
   procurement: ['/procurement/sourcing','/requirements','/purchase-orders'],
@@ -499,6 +503,7 @@ const hasProcurement = computed(() => [
 ].some(auth.can))
 const procurementActive = computed(() => procurementItems.value.some((item) => isProcurementItemActive(item.path)))
 const menuActive = computed(() => route.path)
+const accountActive = computed(() => route.path === '/basic/employees/me' || route.path === '/me')
 // 仓储：产品是「货是什么」，仓库/库存/出库是「货在哪、走了没」——同一件事的
 // 两面，原来产品和出库各自散在顶层。
 const warehouseItems = computed(() => sortByOrder([
@@ -660,7 +665,6 @@ const hasTopbarTools = computed(() => auth.can('shipping:schedule:read') || auth
 
 const visibleModules = computed(() => sortByOrder([
   { key: 'todos', visible: true },
-  { key: 'profile', visible: true },
   { key: 'emails', visible: true },
   { key: 'sales', visible: hasSales.value },
   { key: 'procurement', visible: hasProcurement.value },
@@ -830,8 +834,9 @@ onUnmounted(
 )
 
 function onCommand(cmd: string) {
+  accountOpen.value = false
   if (cmd === 'profile') {
-    router.push('/me')
+    router.push('/basic/employees/me')
   }
   if (cmd === 'logout') {
     stopLive()
@@ -962,29 +967,29 @@ async function changePassword() {
   border-top: 1px solid #243147;
   background: #10192b;
 }
-.side-footer :deep(.el-dropdown) { width: 100%; }
+.side-footer :deep(.el-popover__reference-wrapper) { width: 100%; }
 .account-card {
   width: 100%;
   min-height: 64px;
   padding: 9px 10px;
-  border: 1px solid transparent;
-  border-radius: 11px;
+  border: 0;
+  border-radius: 7px;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 10px;
   color: #e2e8f0;
-  background: #182235;
+  background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: border-color .18s, background .18s;
+  transition: color .18s, background .18s;
 }
 .account-card:hover,
 .account-card:focus-visible {
   outline: none;
-  border-color: #3d536d;
-  background: #1d2a40;
+  background: #26334a;
 }
+.account-card.is-active { background: #24344d; }
 .account-card-avatar { background: #34445c; color: #dff5ff; font-weight: 700; }
 .account-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .account-card-copy strong,
@@ -992,6 +997,8 @@ async function changePassword() {
 .account-card-copy strong { color: #f1f5f9; font-size: 13px; font-weight: 650; }
 .account-card-copy small { color: #7f8da3; font-size: 10px; }
 .account-card-more { color: #718198; font-size: 13px; letter-spacing: 1px; }
+.account-flyout .module-flyout-item { cursor: pointer; }
+.account-flyout .module-flyout-item:active { cursor: pointer; }
 .module-menu-trigger {
   width: 100%;
   height: 56px;
