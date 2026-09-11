@@ -72,7 +72,7 @@
       <!-- No star on a delivery record: there is no message on the host to
            write the flag to. Same reason it gets no checkbox. -->
       <el-tooltip
-        v-if="folder !== 'junk' && !isRecordOnly(m)"
+        v-if="starrable && !isRecordOnly(m)"
         :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
         placement="top"
         :show-after="0"
@@ -88,7 +88,7 @@
         >{{ m.isStarred ? '★' : '☆' }}</button>
       </el-tooltip>
 
-      <span v-else-if="folder !== 'junk'" class="star-gap" aria-hidden="true" />
+      <span v-else-if="starrable" class="star-gap" aria-hidden="true" />
 
       <!-- The row's own hit area. A button rather than a link because opening
            a mail is a state change in this app, not a document to fetch; the
@@ -109,6 +109,7 @@
         tabindex="0"
         :aria-label="ariaFor(m)"
         @click="emit('open', m)"
+        @dblclick="emit('activate', m)"
         @keydown.enter.prevent="emit('open', m)"
         @keydown.space.prevent="emit('open', m)"
       >
@@ -116,8 +117,9 @@
         <span class="l1">
           <span class="who">
             <!-- A sent mail is about who it went to; a received one about who
-                 it came from. Same column, different question. -->
-            {{ folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail) }}
+                 it came from. Same column, different question. 草稿和已发送
+                 问的是同一个问题——写了一半的信，要紧的是它写给谁。 -->
+            {{ aboutRecipient ? sentWho(m) : (m.fromName || m.fromEmail) }}
           </span>
           <!-- One row per conversation; this is how many messages it holds. -->
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
@@ -141,6 +143,15 @@
         <!-- 第二行：主题，以及它属于哪儿。标签跟着主题走而不是跟着发件人，
              照 Gmail：标签回答的是「这封信被归到哪里」，和主题是一句话。 -->
         <span class="l2">
+          <!-- 已回复。**摆在主题前面，不是行尾的一个小角标**：issue #364 要的
+               是「弄得显眼一些」，而一列邮件是从左往右扫的，扫的就是这一列的
+               开头。带字不只带箭头——一个孤零零的 ↩ 要学过才认得，而这一行本来
+               就有位置放三个字。
+               不出现在已发送和草稿箱：那两处每一行都是自己写的，"答过没有"
+               没有意义。 -->
+          <span v-if="m.isAnswered && answerable" class="answered">
+            <span aria-hidden="true">↩</span>{{ t('emails.answered') }}
+          </span>
           <!-- title 带完整地址：窄列里这个标签会被压成「fangch…」，认得出是
                另一个箱但认不出是哪个，鼠标停一下就知道了。 -->
           <span v-if="otherMailbox(m)" class="in-mailbox" :title="otherMailbox(m)">{{ otherMailbox(m) }}</span>
@@ -211,6 +222,11 @@ export interface MailRow {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // 这封信答过没有（issue #364）。两个来源合在一起：ERP 里发出并送达的回信，
+  // 以及邮件服务器上的 \Answered 标志——业务员也在 263 网页版、Foxmail、手机
+  // 上回信。只认前一半的话，一封在手机上答过的信在这里仍然显示没答，而那恰恰
+  // 是最容易被答第二遍的那一封。
+  isAnswered?: boolean
   threadCount?: number | string
   // Sent folder only: 'HOST' is a real message, 'ERP' a delivery record whose
   // copy the host never kept.
@@ -261,6 +277,12 @@ const props = defineProps<{
 // 那些动作都在右边阅读区的工具条上。
 const emit = defineEmits<{
   open: [MailRow]
+  // 双击。open 是「让我看看这封」，activate 是「我要动它」——草稿箱用它
+  // 打开写信框接着写。收件箱不接这个事件，双击就只是点了两下。
+  //
+  // 桌面邮件客户端全是这个分工（Foxmail、Outlook、Apple Mail 都是双击草稿
+  // 才进编辑），而单击已经把内容摆在右边了，所以少一次点击换不来什么。
+  activate: [MailRow]
   star: [MailRow]
   sort: [SortField]
   'update:selected': [string[]]
@@ -273,6 +295,20 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const showSize = computed(() => props.sort?.by === 'size')
+
+// 这一列写的是「写给谁」还是「谁写的」。已发送和草稿箱是前者。
+const aboutRecipient = computed(() => props.folder === 'sent' || props.folder === 'drafts')
+
+// 这份列表画不画星标。
+//
+// 垃圾邮件不画：那是服务器的判断，标了也没地方去。草稿不画的理由不一样但
+// 一样硬——星标要写到邮件服务器上那封信的标志位里，而草稿只在我们自己的库
+// 里，服务器上根本没有这封信。给一颗按下去必然失败的星，比不给更坏。
+const starrable = computed(() => props.folder !== 'junk' && props.folder !== 'drafts')
+
+// 「已回复」在哪些列表里有意义。已发送和草稿箱里每一行都是自己写的东西，
+// 问它答过没有是问错了对象。
+const answerable = computed(() => !aboutRecipient.value)
 
 // 读屏器听到的是「大小，降序」，而不是一个箭头。
 function sortAria(f: SortField): string {
@@ -424,7 +460,7 @@ function onDragEnd() {
 //
 // 取不到就回一个圆点而不是空白：一个空的彩色圆圈看着像没加载完。
 function initial(m: MailRow): string {
-  const src = (props.folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
+  const src = (aboutRecipient.value ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
   const ch = [...src.trim()].find((c) => /[\p{L}\p{N}]/u.test(c))
   return ch ? ch.toUpperCase() : '·'
 }
@@ -436,7 +472,7 @@ function initial(m: MailRow): string {
 // 一排头像会有几个亮得刺眼、几个暗得发糊。oklch 的亮度是感知亮度，固定
 // 62% 就是每一个都一样深，白字压在上面都读得清。
 function avatarColor(m: MailRow): string {
-  const key = (props.folder === 'sent' ? (m.toEmail || '') : (m.fromEmail || '')).toLowerCase()
+  const key = (aboutRecipient.value ? (m.toEmail || m.toAll || '') : (m.fromEmail || '')).toLowerCase()
   let h = 0
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360
   return `oklch(62% 0.13 ${h})`
@@ -446,7 +482,8 @@ function avatarColor(m: MailRow): string {
 // still wants attention. Without it the row announces as an unlabelled button.
 function ariaFor(m: MailRow) {
   const state = m.isRead ? '' : t('emails.unreadOne') + ', '
-  return `${state}${m.fromName || m.fromEmail}: ${m.subject || t('emails.noSubject')}`
+  const who = aboutRecipient.value ? sentWho(m) : m.fromName || m.fromEmail
+  return `${state}${who}: ${m.subject || t('emails.noSubject')}`
 }
 </script>
 
@@ -800,6 +837,25 @@ function ariaFor(m: MailRow) {
   max-width: 8em;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
+}
+
+/* 已回复。绿色实心，和「可能已打开」那一档同一个颜色家族——两者说的是同一
+   类事（这封信的往来走到哪一步了），只是一个问对方、一个问自己。
+   flex: none：它短且长度固定，不该跟着主题一起被压缩；真挤不下时宁可主题先
+   省略号——没答过的信才是要找的，而这个标识正是用来把它们排除掉的。 */
+.answered {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 9px;
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  white-space: nowrap;
 }
 
 /* 已读三态：绿的一眼能扫到（这一列存在的目的），灰的居次，没追踪的压到

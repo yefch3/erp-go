@@ -595,7 +595,13 @@ func (h *Handler) ListDrafts(ctx context.Context, req *mailv1.ListDraftsRequest)
 	for _, d := range rows {
 		out = append(out, &mailv1.Draft{
 			Id: d.ID, Subject: d.Subject, BodyFormat: d.BodyFormat, Kind: d.Kind,
-			RecipientCount: d.RecipientCount, UpdatedAt: ts(d.UpdatedAt),
+			RecipientCount: d.RecipientCount, UpdatedAt: d.UpdatedAt,
+			// 草稿箱是三行式的邮件列表了：写给谁（recipients）、关于什么
+			// （subject）、写了个什么开头（snippet）。正文本身不在这儿——
+			// 点开哪一封再 GetDraft 取全文。
+			Recipients:     recipientsToProto(d.Recipients),
+			Snippet:        d.Snippet,
+			HasAttachments: d.HasAttachments,
 		})
 	}
 	return &mailv1.ListDraftsResponse{Drafts: out}, nil
@@ -843,6 +849,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
+		IsAnswered: v.IsAnswered,
 		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
 		BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,

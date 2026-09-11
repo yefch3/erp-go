@@ -162,7 +162,7 @@
       <!-- A page, not a drawer: the mail's id lives in the URL, so a refresh
            reopens the same mail and the browser's back button returns to the
            list, at the page it was on. -->
-      <div class="panes" :class="{ 'has-open': openedInbound || outboundOpen }">
+      <div class="panes" :class="{ 'has-open': readerOpen }">
       <div class="reader-col">
       <template v-if="openedInbound">
         <div class="detail-top">
@@ -541,10 +541,64 @@
         </div>
       </template>
 
+      <!-- ---------------------------------------- 看一封写了一半的信 -->
+      <!-- 草稿箱从前只有一张表，点一行直接弹出写信框——右边这一栏在草稿箱里
+           是空的，左栏点来点去只有它两副样子。现在它和别的文件夹一样：单击
+           在右边看，双击（或按「接着写」）才打开写信框。所有桌面邮件客户端
+           都是这个分工。
+
+           **不进 URL**，和收信那边不一样。那边把 mail id 写进地址是为了刷新
+           回到同一封、也为了把链接发给同事；草稿是私人的（owner_id 一个人），
+           发给同事的链接对方打不开，剩下的只有刷新那半条理由，不值得为它多
+           一条要维护的路由状态。 -->
+      <template v-else-if="openedDraft">
+        <div class="detail-top">
+          <el-button link class="back-btn" @click="closeDraft">
+            ← {{ t('emails.backToList') }}
+          </el-button>
+        </div>
+        <!-- 图标条，和读信那边同一套（.tb）。草稿只有两件事可做：接着写，
+             或者不要了。所以没有「⋯」——一个只装得下零个动作的菜单。 -->
+        <div class="in-actions">
+          <el-tooltip
+            v-if="canWrite"
+            :content="t('emails.editDraft')"
+            placement="bottom"
+            :show-after="0"
+            :hide-after="0"
+          >
+            <button
+              type="button"
+              class="tb"
+              :aria-label="t('emails.editDraft')"
+              @click="editOpenedDraft"
+            ><el-icon><EditPen /></el-icon></button>
+          </el-tooltip>
+          <span class="tb-sep" aria-hidden="true" />
+          <el-tooltip
+            :content="common('delete')"
+            placement="bottom"
+            :show-after="0"
+            :hide-after="0"
+          >
+            <button
+              type="button"
+              class="tb tb-danger"
+              :aria-label="common('delete')"
+              @click="dropOpenedDraft"
+            ><el-icon><Delete /></el-icon></button>
+          </el-tooltip>
+          <span class="grow" />
+        </div>
+        <div v-loading="draftLoading" class="reader-slot">
+          <DraftReader :draft="openedDraft" />
+        </div>
+      </template>
+
       <!-- 三栏下右边永远在，没选信时给一句话而不是一片空白——空白
            看着像坏了。 -->
-      <div v-if="!openedInbound && !outboundOpen" class="reader-empty">
-        {{ t('emails.pickAMail') }}
+      <div v-if="!readerOpen" class="reader-empty">
+        {{ folder === 'drafts' ? t('emails.pickADraft') : t('emails.pickAMail') }}
       </div>
       </div><!-- /reader-col -->
 
@@ -634,6 +688,19 @@
           >
             {{ t('emails.purge') }}
           </el-button>
+          <!-- 草稿删了就是删了，不进废纸篓：废纸篓是邮件服务器上的一个
+               文件夹，而草稿从来没到过服务器。所以这颗按钮说的是「删除」，
+               不是「移到废纸篓」——按钮上的字得是它真做的事。 -->
+          <el-button
+            v-else-if="folder === 'drafts'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkDropDrafts"
+          >
+            {{ common('delete') }}
+          </el-button>
           <el-button
             v-else
             size="small"
@@ -658,16 +725,6 @@
               : t('emails.pickedN', { n: tablePicked.length }) }}
           </span>
           <span class="grow" />
-          <el-button
-            v-if="folder === 'drafts'"
-            size="small"
-            type="danger"
-            plain
-            :loading="bulkBusy"
-            @click="bulkDropDrafts"
-          >
-            {{ common('delete') }}
-          </el-button>
           <el-button
             v-if="folder === 'scheduled'"
             size="small"
@@ -821,35 +878,19 @@
       </template>
 
       <!-- --------------------------------------------------------- drafts -->
+      <!-- 和收件箱同一个列表组件，不再是一张表。
+           草稿箱从前是「主题 / 保存时间 / 删除」三列，而左栏其余每一格点进去
+           都是三行式的邮件列表——同一个左栏底下两副样子，切换时整片区域重排。
+           草稿的三行答的是同样三个问题：写给谁、关于什么、写了个什么开头。 -->
       <template v-else-if="folder === 'drafts'">
-      <el-table
-        ref="tableRef"
-        :data="drafts"
-        v-loading="loading"
-        class="clickable"
-        @row-click="openDraftRow"
-        @selection-change="onTableSelect"
-      >
-        <el-table-column type="selection" width="44" />
-        <el-table-column :label="t('emails.subject')" min-width="300">
-          <template #default="{ row }">
-            <div class="strong ellipsis">{{ row.subject || t('emails.noSubject') }}</div>
-            <div class="sub">{{ t('emails.draftRecipients', { n: row.recipientCount }) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('emails.savedAt')" width="160">
-          <template #default="{ row }">
-            <span class="sub" :title="zonedStamp(row.updatedAt)">{{ shortTime(row.updatedAt) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="common('actions')" width="90">
-          <template #default="{ row }">
-            <el-button link type="danger" @click.stop="dropDraft(row)">
-              {{ common('delete') }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <MailList
+        v-model:selected="picked"
+        :mails="draftRows"
+        folder="drafts"
+        :loading="loading"
+        @open="openDraftPreview"
+        @activate="editDraftRow"
+      />
       <el-empty v-if="!loading && drafts.length === 0" :description="t('emails.noDrafts')" />
       </template>
 
@@ -1367,6 +1408,8 @@ import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
+import DraftReader, { type DraftDetail } from '../components/DraftReader.vue'
+import { draftPreviewContext, draftToRow } from '../lib/draftRow'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -1408,6 +1451,9 @@ interface InboundMail {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // 这封信答过没有（#364）。只有列表给，单封读取不给——那一页上「回复」
+  // 按钮就在手边，不需要再说一遍。
+  isAnswered?: boolean
   // Whether the original MIME is still archived. Only set on the detail read;
   // absent in list rows, which is why 作为附件转发 lives on the open mail.
   hasRaw?: boolean
@@ -1511,6 +1557,11 @@ interface Draft {
   attachments?: { id: string; fileName: string; contentType: string; fileSize: string }[]
   updatedAt: string
   recipientCount: number
+  // 只有列表接口给这两样：正文头一句，和带没带附件。草稿箱是三行式的邮件
+  // 列表了，第三行显示的就是 snippet——而为了一行摘要把每封草稿的正文整篇
+  // 搬过来是不合算的，所以服务端先剥成文字再截短。打开一封时给的是 body。
+  snippet?: string
+  hasAttachments?: boolean
   sendMode: string
   replyToInboundId: string
   forwardInboundId: string
@@ -2102,6 +2153,12 @@ const readerLoading = ref(false)
 // Something outbound is on screen, so the list and its toolbar step aside.
 const outboundOpen = computed(() => !!openMail.value)
 
+// 右边那一栏此刻有没有内容。三种来源（收到的信、发出的信、写了一半的信）
+// 都摊在这一个判断上，因为「有东西看」和「给一句空状态」必须是同一个问题的
+// 正反面——分开写就会有第三种情况：两边都以为对方在管，于是空状态压在
+// 一封信上面。
+const readerOpen = computed(() => !!openedInbound.value || outboundOpen.value || !!openedDraft.value)
+
 const requeueOpen = ref(false)
 const requeueRow = ref<AttentionMessage | null>(null)
 const newEmail = ref('')
@@ -2328,7 +2385,7 @@ async function loadDraftCount() {
   }
 }
 
-async function openDraft(row: Draft) {
+async function openDraft(row: { id: string }) {
   composing.value = true
   // Wait for the dialog to mount before handing it the draft, or the watch
   // that resets a fresh compose would wipe what we just loaded.
@@ -2339,9 +2396,12 @@ async function openDraft(row: Draft) {
 function onDraftSaved() {
   loadDraftCount()
   if (folder.value === 'drafts') load()
+  // 右边正看着的那一封可能就是刚存的这封，重新取一遍，否则预览停在存之前
+  // 的样子——而人刚刚改的正是它。
+  if (openedDraft.value) showDraft(openedDraft.value.id)
 }
 
-async function dropDraft(row: Draft) {
+async function dropDraft(row: { id: string; subject?: string }) {
   await ElMessageBox.confirm(
     t('emails.dropDraftHint', { s: row.subject || t('emails.noSubject') }),
     common('delete'),
@@ -2349,8 +2409,61 @@ async function dropDraft(row: Draft) {
   )
   await del(`/email-drafts/${row.id}`)
   ElMessage.success(t('emails.draftDropped'))
+  if (openedDraft.value?.id === row.id) closeDraft()
   load()
   loadDraftCount()
+}
+
+// ------------------------------------------------- 草稿箱的列表和预览 ---
+// 草稿箱现在也是「左边一列、右边一封」。转换成列表行的规则在 lib/draftRow：
+// 全是「这一样没有时说什么」的判断，而草稿可以三样都没有。
+const draftRows = computed(() =>
+  drafts.value.map((d) =>
+    draftToRow(d, {
+      noRecipient: t('emails.draftNoRecipient'),
+      andMore: (first: string, n: number) => t('emails.draftAndMore', { first, n }),
+    }),
+  ),
+)
+
+// 右边正在看的那一封。列表接口只给摘要，正文和抄送要单独取一趟——和收件箱
+// 一样的分工，理由也一样：为了一行摘要把两百封的正文整篇搬过来不合算。
+const openedDraft = ref<DraftDetail | null>(null)
+const draftLoading = ref(false)
+
+async function showDraft(id: string) {
+  draftLoading.value = true
+  try {
+    const d = await get<{ draft: DraftDetail }>(`/email-drafts/${id}`)
+    openedDraft.value = d.draft ?? null
+  } catch {
+    // 取不着就退回列表，而不是让右边停在上一封上——右边显示着 A 而列表选中
+    // 的是 B，比右边空着更容易让人对错了内容。
+    openedDraft.value = null
+  } finally {
+    draftLoading.value = false
+  }
+}
+
+function openDraftPreview(row: { id: string }) {
+  showDraft(row.id)
+}
+
+function closeDraft() {
+  openedDraft.value = null
+}
+
+// 双击列表里的一行 = 接着写。
+function editDraftRow(row: { id: string }) {
+  if (canWrite.value) openDraft(row)
+}
+
+function editOpenedDraft() {
+  if (openedDraft.value) openDraft(openedDraft.value)
+}
+
+async function dropOpenedDraft() {
+  if (openedDraft.value) await dropDraft(openedDraft.value)
 }
 
 // A scheduled send is still the sender's to change. Both actions race the
@@ -2841,10 +2954,17 @@ const threadItems = ref<ThreadItem[]>([])
 // 要先想一遍「这里到底是正序还是倒序」。
 const threadForDisplay = computed(() => [...threadItems.value].reverse())
 
-// 整条会话的附件，按时间顺序摊平。threadItems 本身就是按发生顺序来的，所以
-// 这里不再排序——文件的顺序就是对话的顺序。
+// 整条会话的附件，摊平成一条。**跟着屏幕上的顺序走，不跟着数据的顺序走**
+// ——所以摊的是 threadForDisplay 而不是 threadItems，最新那封的附件排最前。
+//
+// 从前这里摊的是 threadItems（时间正序），注释还写着「文件的顺序就是对话的
+// 顺序」。那句话在会话改成倒序显示（#400）之后就不成立了：同一屏里，上面这
+// 条附件条最早的在前，底下的邮件最新的在前，两个方向。点一个文件是要跳到它
+// 所在的那一封去的，而人得先在两个相反的排法之间对一次位置。
+//
+// 一封信内部的几个附件不动：它们之间没有时间先后，原样就是发件人放的顺序。
 const threadFiles = computed(() =>
-  threadItems.value.flatMap((item) =>
+  threadForDisplay.value.flatMap((item) =>
     (item.attachments ?? []).map((file) => ({ item, file })),
   ),
 )
@@ -3002,7 +3122,10 @@ function printDocument(html: string) {
 const picked = ref<string[]>([])
 const bulkBusy = ref(false)
 // 废纸篓里标记已读没有意义，已发送里也没有——见工具条上那两个按钮的注释。
-const canBulkRead = computed(() => folder.value !== 'trash' && folder.value !== 'sent')
+// 草稿箱同理，而且更彻底：草稿根本没有已读未读这个属性，它是自己写的。
+const canBulkRead = computed(
+  () => folder.value !== 'trash' && folder.value !== 'sent' && folder.value !== 'drafts',
+)
 // 能挪的和单封那个「移动到」同一口径：收件箱、星标、归档和自建文件夹里的信。
 const canBulkMove = computed(
   () => folder.value === 'inbox' || folder.value === 'starred' || folder.value === 'archive' || isCustomFolderKey(folder.value),
@@ -3012,7 +3135,11 @@ const canBulkMove = computed(
 // 各算各的——「已选 N 封」拿 inbound 算、而已发送用的是 mailboxSent，正是原来
 // 在已发送里勾了没反应的原因。
 const selectable = computed(() =>
-  selectableRows(folder.value, { inbound: inbound.value, sent: mailboxSent.value }),
+  selectableRows(folder.value, {
+    inbound: inbound.value,
+    sent: mailboxSent.value,
+    drafts: draftRows.value,
+  }),
 )
 // Only rows still on screen count. A selection that survived a folder change
 // or a page turn would act on mail the person can no longer see.
@@ -3028,18 +3155,30 @@ function toggleAllPicked() {
 }
 
 // A new list means a new set of things to choose from.
-watch([folder, () => inbound.value, () => mailboxSent.value], () => {
+watch([folder, () => inbound.value, () => mailboxSent.value, () => drafts.value], () => {
   if (picked.value.length) picked.value = []
 })
 
+// 左边不再是「这个箱的草稿箱」了，右边那封草稿就收起来。它不在 URL 里
+// （见模板上的注释），所以没有别的东西会替它清场。什么算「不再是」以及
+// 为什么不能在这儿列触发条件，见 lib/draftRow 里那段注释。
+const draftContext = computed(() =>
+  draftPreviewContext(currentAccount.value, folder.value, isSearching.value),
+)
+watch(draftContext, () => {
+  if (openedDraft.value) openedDraft.value = null
+})
+
 // ------------------------------------------------- 表格类文件夹的勾选 ---
-// 草稿 / 定时 / 异常 / 免打扰名单四个用的是 el-table，不是邮件列表。它们的全选
+// 定时 / 异常 / 免打扰名单三个用的是 el-table，不是邮件列表。它们的全选
 // 交给 el-table 自己的选择列——这几个列表**有表头**，表头上的框是所有人都认得
 // 的位置。邮件列表没有表头，所以它的全选框只能待在工具条上（见上面的注释）：
 // 位置不同不是不一致，是各自跟着自己的形状走。
 //
+// 草稿箱从前也在这一组里，现在走上面那套（picked）：它已经是邮件列表了。
+//
 // 一次只渲染一个文件夹，所以一个 ref 装得下。
-type TableRow = Draft | Scheduled | AttentionMessage | Suppression
+type TableRow = Scheduled | AttentionMessage | Suppression
 const tablePicked = ref<TableRow[]>([])
 const tableRef = ref()
 
@@ -3047,14 +3186,10 @@ function onTableSelect(rows: TableRow[]) {
   tablePicked.value = rows
 }
 
-// el-table 把勾选框那一格的点击也算成点了这一行。不挡住的话，在草稿箱里勾一封
-// 就会顺手把它打开——勾选是为了先挑出几封再一起处理，打开是相反的方向。
+// el-table 把勾选框那一格的点击也算成点了这一行。不挡住的话，勾一行就会顺手
+// 把它打开——勾选是为了先挑出几行再一起处理，打开是相反的方向。
 function notSelectionCell(col?: { type?: string }) {
   return col?.type !== 'selection'
-}
-
-function openDraftRow(row: Draft, col?: { type?: string }) {
-  if (notSelectionCell(col)) openDraft(row)
 }
 
 function openMessageRow(row: AttentionMessage, col?: { type?: string }) {
@@ -3070,14 +3205,14 @@ function clearTablePick() {
 // 刷新后拿到的是一批新对象，它那边已经清空了，这边不清就成了一份操作不了的
 // 幽灵勾选。
 watch(
-  [folder, () => drafts.value, () => scheduled.value, () => messages.value, () => suppressions.value],
+  [folder, () => scheduled.value, () => messages.value, () => suppressions.value],
   () => {
     if (tablePicked.value.length) tablePicked.value = []
   },
 )
 
 async function bulkDropDrafts() {
-  const rows = tablePicked.value as Draft[]
+  const rows = pickedRows.value
   if (!rows.length) return
   await ElMessageBox.confirm(t('emails.dropDraftsHint', { n: rows.length }), common('delete'), {
     type: 'warning',
@@ -3087,7 +3222,10 @@ async function bulkDropDrafts() {
     const failed = await inChunks(rows, (r) => del(`/email-drafts/${r.id}`, undefined, quietErrors))
     reportBulk(rows.length, failed, t('emails.draftsDropped', { n: rows.length - failed }))
   } finally {
-    clearTablePick()
+    picked.value = []
+    // 右边正看着的那封可能刚被删掉。留着的话删完还挂在那儿，点「接着写」
+    // 才发现它已经不在了。
+    if (openedDraft.value && rows.some((r) => r.id === openedDraft.value?.id)) closeDraft()
     bulkBusy.value = false
     load()
     loadDraftCount()
@@ -4472,6 +4610,22 @@ async function doUnsuppress(row: Suppression) {
      长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。 */
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 滚动条的位置**一直留着**，不等它出现才腾。
+
+     Windows 的 Chrome/Edge 用经典滚动条，占 15px 布局宽度；macOS 默认是
+     覆盖式的，占 0。所以同一段代码在两个平台上表现不同，而这正是这条
+     规则要修的事：
+
+     广告信的图片常常只声明 width、不声明 height，加载完之前占 0 高度。
+     信一打开是「只有文字」的高度，装得下、没有滚动条；图片一张张落地、
+     内容长过一屏，滚动条**突然出现**，整列内容在一帧之内横向缩 15px。
+     那就是 Windows 上「点开广告邮件抖一下」的真正原因——是横向的，不是
+     纵向变高。实测：500px → 485px。
+
+     stable 让这 15px 从一开始就留出来，出现与否都不影响布局。Mac 上覆盖式
+     滚动条本来就占 0，所以留出来的也是 0，一点代价都没有（实测同样是
+     500 → 500）。 */
+  scrollbar-gutter: stable;
 }
 .compose {
   width: 100%;
@@ -5226,6 +5380,8 @@ async function doUnsuppress(row: Suppression) {
   top: 12px;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
+  scrollbar-gutter: stable;
 }
 .reader-col {
   order: 2;
@@ -5236,6 +5392,8 @@ async function doUnsuppress(row: Suppression) {
   top: 12px;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
+  scrollbar-gutter: stable;
 }
 /* 没选信时右边说一句话。一片空白看着像坏了。 */
 .reader-empty {

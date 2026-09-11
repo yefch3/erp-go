@@ -29,6 +29,10 @@ type InboundView struct {
 	IsRead         bool
 	IsStarred      bool
 	HasAttachments bool
+	// 这封信答过没有（#364）：我们自己发出并送达的回信，或者服务器上的
+	// \Answered 标志。只在列表上有值——单封读取不需要它，那一页上「回复」
+	// 按钮本来就在手边。
+	IsAnswered bool
 	ReceivedAt     time.Time
 	SentAt         time.Time
 	BodyHTML       string
@@ -111,6 +115,8 @@ type threadRow struct {
 	// 是下一页游标的位置。其余两条查询留零值。
 	RawSize int64
 	SortKey string
+	// 这封信答过没有（#364）。搜索那条路暂时给不出来，见 threadRowsFromSearch。
+	IsAnswered bool
 }
 
 func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
@@ -120,6 +126,7 @@ func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			IsAnswered: r.IsAnswered,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
 		})
 	}
@@ -133,6 +140,7 @@ func threadRowsFromSorted(rows []store.ListThreadsByViewSortedRow) []threadRow {
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			IsAnswered: r.IsAnswered,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
 			RawSize: r.RawSize, SortKey: r.SortKey,
 		})
@@ -294,6 +302,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			IsAnswered:  r.IsAnswered,
 			ThreadCount: r.ThreadCount, RawSize: r.RawSize,
 		}
 		if r.ReceivedAt.Valid {

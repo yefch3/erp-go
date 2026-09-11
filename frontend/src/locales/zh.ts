@@ -1857,6 +1857,9 @@ export default {
     close: '关闭',
     allRecipients: '全部收件人',
     wrote: '写道：',
+    // 引用原信那一行。带偏移量的时间是有意的：这句话会跟着信发到客户手上，
+    // 而客户多半不在这个时区。
+    quotedAt: '在 {when}，{who} <{addr}> 写道：',
     showQuoted: '展开引用内容',
     hideQuoted: '收起引用内容',
     backToList: '返回',
@@ -1997,7 +2000,16 @@ export default {
     dropDraftsHint: '确认删除选中的 {n} 封草稿？删掉就没有了。',
     noDrafts: '草稿箱是空的',
     noSubject: '（无主题）',
+    // 列表上那个「已回复」标识（issue #364）。
+    answered: '已回复',
     draftRecipients: '{n} 位收件人',
+    // 草稿箱的三行式列表和右边的预览。
+    draftTo: '写给',
+    draftNoRecipient: '（还没写收件人）',
+    draftNoBody: '（正文是空的）',
+    draftAndMore: '{first} 等 {n} 人',
+    editDraft: '接着写',
+    pickADraft: '选一封草稿，右边看内容；双击接着写。',
     savedAt: '保存时间',
     discardTitle: '放弃这封邮件？',
     discardHint: '还没保存的内容会丢失。也可以先存成草稿。',

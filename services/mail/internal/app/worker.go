@@ -317,6 +317,12 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		}
 		s.recordRecipientResults(ctx, cfg, m.ID, recips, res.Rejected)
 		s.countSend(ctx, cfg.TenantID, m.SenderID, m.AccountID)
+		// 这是一封回信的话，把它答的那封原信标成「已回复」（issue #364）。
+		//
+		// **在这里，不在入队的时候。** 发失败的信会躺在「待处理」里，那封原信
+		// 一封回信都没收到；入队就标的话，列表上写着已回复而对方什么都没收到，
+		// 正是这个标识最不能出的错——业务员会照着它决定不用再写了。
+		s.markAnswered(ctx, cfg.TenantID, m)
 		// Last, and never fatal: the ERP's own books are closed above, and a
 		// mail host that will not take the copy must not undo any of it.
 		s.saveSentCopy(ctx, cfg.TenantID, m.SenderID, m.AccountID, res.Raw)

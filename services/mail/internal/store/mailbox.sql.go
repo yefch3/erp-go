@@ -3165,6 +3165,11 @@ SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
        (NOT t.any_unread)::boolean     AS is_read,
        t.any_starred::boolean          AS is_starred,
        t.any_attachment::boolean       AS has_attachments,
+       -- 答过没有，读的是代表这条会话的那一封（t.last_id，也就是最新收到的
+       -- 那一封）。不做成 mail_thread_view 上的聚合列，两个理由：这一行本来
+       -- 就 JOIN 回 email_inbound 了，取它不要钱；而语义上要的也正是它——
+       -- 「这条会话答过没有」问的是最后那句话有没有被回，不是历史上答过几次。
+       m.is_answered::boolean          AS is_answered,
        m.received_at, m.sent_at,
        t.msg_count::int                AS thread_count
 FROM mail_thread_view t
@@ -3206,6 +3211,7 @@ type ListThreadsByViewRow struct {
 	IsRead         bool
 	IsStarred      bool
 	HasAttachments bool
+	IsAnswered     bool
 	ReceivedAt     pgtype.Timestamptz
 	SentAt         pgtype.Timestamptz
 	ThreadCount    int32
@@ -3254,6 +3260,7 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 			&i.IsRead,
 			&i.IsStarred,
 			&i.HasAttachments,
+			&i.IsAnswered,
 			&i.ReceivedAt,
 			&i.SentAt,
 			&i.ThreadCount,
@@ -3270,13 +3277,16 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 
 const listThreadsByViewSorted = `-- name: ListThreadsByViewSorted :many
 SELECT x.id, x.from_email, x.from_name, x.subject, x.snippet, x.thread_key,
-       x.is_read, x.is_starred, x.has_attachments, x.received_at, x.sent_at,
+       x.is_read, x.is_starred, x.has_attachments, x.is_answered,
+       x.received_at, x.sent_at,
        x.thread_count, x.raw_size, x.sort_key
 FROM (
     SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
            (NOT t.any_unread)::boolean     AS is_read,
            t.any_starred::boolean          AS is_starred,
            t.any_attachment::boolean       AS has_attachments,
+           -- 同 ListThreadsByView：读的是代表这条会话的那一封。
+           m.is_answered::boolean          AS is_answered,
            m.received_at, m.sent_at,
            t.msg_count::int                AS thread_count,
            m.raw_size,
@@ -3327,6 +3337,7 @@ type ListThreadsByViewSortedRow struct {
 	IsRead         bool
 	IsStarred      bool
 	HasAttachments bool
+	IsAnswered     bool
 	ReceivedAt     pgtype.Timestamptz
 	SentAt         pgtype.Timestamptz
 	ThreadCount    int32
@@ -3383,6 +3394,7 @@ func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsBy
 			&i.IsRead,
 			&i.IsStarred,
 			&i.HasAttachments,
+			&i.IsAnswered,
 			&i.ReceivedAt,
 			&i.SentAt,
 			&i.ThreadCount,
@@ -3507,6 +3519,70 @@ func (q *Queries) MarkDefaultMailbox(ctx context.Context, arg MarkDefaultMailbox
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const markInboundAnsweredByMessageID = `-- name: MarkInboundAnsweredByMessageID :many
+UPDATE email_inbound
+SET is_answered = TRUE
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND account_id = $3::bigint
+  AND message_id = trim(both '<>' from $4::text)
+  AND message_id <> ''
+  AND NOT is_answered
+RETURNING id, folder, imap_uid
+`
+
+type MarkInboundAnsweredByMessageIDParams struct {
+	TenantID  int64
+	OwnerID   int64
+	AccountID int64
+	InReplyTo string
+}
+
+type MarkInboundAnsweredByMessageIDRow struct {
+	ID      int64
+	Folder  string
+	ImapUid int64
+}
+
+// 我们自己发出去的一封回信，找出它答的是哪一封收到的信，标上。
+//
+// 用 Message-ID 认人，不是用一个外键：入队的那一行上本来就带着 in_reply_to
+// （RFC 头里那个值，发信时必须带），而收到的信存着自己的 message_id。多加
+// 一个外键等于把同一件事记两遍，而那两遍迟早会对不上。
+//
+// 头里那个值带尖括号，存下来的不带（见 composeContext 里的 asMsgID），所以
+// 比之前要把尖括号剥掉。
+//
+// 按 owner + account 卡死：Message-ID 是发件人那边生成的，理论上全球唯一，
+// 但「理论上」不足以决定要不要改另一个人信箱里的一行。
+//
+// 回传 folder 和 imap_uid：调用方还要把这个标志推回邮件服务器，那两样是
+// 在服务器上找到这封信的地址。
+func (q *Queries) MarkInboundAnsweredByMessageID(ctx context.Context, arg MarkInboundAnsweredByMessageIDParams) ([]MarkInboundAnsweredByMessageIDRow, error) {
+	rows, err := q.db.Query(ctx, markInboundAnsweredByMessageID,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.InReplyTo,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MarkInboundAnsweredByMessageIDRow
+	for rows.Next() {
+		var i MarkInboundAnsweredByMessageIDRow
+		if err := rows.Scan(&i.ID, &i.Folder, &i.ImapUid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markInboundRead = `-- name: MarkInboundRead :many
@@ -4117,6 +4193,43 @@ func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]Searc
 		return nil, err
 	}
 	return items, nil
+}
+
+const setInboundAnsweredByUID = `-- name: SetInboundAnsweredByUID :exec
+UPDATE email_inbound
+SET is_answered = TRUE
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND imap_uid = $4::bigint
+  AND NOT is_answered
+`
+
+type SetInboundAnsweredByUIDParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+// 服务器说这封答过了（\Answered），照做。和 SetInboundReadByUID 同一条路、
+// 同一个前提：只有写回队列空了才轮到它说话。
+//
+// **只往 true 走，不往回走。** 服务器上没有这个标志的原因有两种：真没答过，
+// 或者这台服务器根本不保存它（有的服务商对自建文件夹就不保存）。两种在
+// 协议上长得一模一样，而把「答过」擦掉的代价比多留一个标识大得多——业务员
+// 会照着它决定要不要再写一封。所以这里只加不减：
+//
+//	· 在别处回了信 → 服务器打上标志 → 我们跟着亮起来。
+//	· 服务器没有标志 → 保持我们自己知道的那一份（我们发过的回信）。
+func (q *Queries) SetInboundAnsweredByUID(ctx context.Context, arg SetInboundAnsweredByUIDParams) error {
+	_, err := q.db.Exec(ctx, setInboundAnsweredByUID,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
 }
 
 const setInboundFlags = `-- name: SetInboundFlags :many

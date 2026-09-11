@@ -591,7 +591,13 @@ RETURNING id;
 -- account_id = 0 的行**每个箱都列**：那是 00047 之前存的草稿，它真的不知道
 -- 自己属于哪个箱。塞进任何一个箱都是猜的，而藏起来就是让人写了一半的东西
 -- 凭空消失——两害相权，宁可多列一行。
-SELECT id, subject, body_format, kind, recipients, attachments, updated_at,
+--
+-- **只取正文的开头**（left 8000）。草稿箱现在是三行式的邮件列表，第三行是
+-- 正文摘要，所以列表要看得见正文——但不能整篇搬：一封转发了长广告信的草稿
+-- 正文可以有好几 MB，乘上一屏两百封就是几百 MB 白读一遍，而摘要只要一百多
+-- 个字。开头一定够用：写信框拼正文时人自己写的那段在最前面，引用的原信在后。
+SELECT id, subject, left(body, 8000) AS body_head, body_format, kind,
+       recipients, attachments, updated_at,
        jsonb_array_length(recipients)::int AS recipient_count
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
