@@ -418,13 +418,17 @@ WHERE tenant_id = $1::bigint
   AND ($3::bigint IS NULL
        OR account_id = $3::bigint)
   AND view = $4::text
+  -- 开着「只看未读」时数的也得是未读的那些：分页器数的和列表显示的必须
+  -- 是同一批，否则底下写着「共 300 封」而列表只有 3 行。
+  AND (NOT $5::boolean OR any_unread)
 `
 
 type CountThreadsByViewParams struct {
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
 }
 
 // Conversations, not messages: the pager has to count what the list shows.
@@ -434,6 +438,7 @@ func (q *Queries) CountThreadsByView(ctx context.Context, arg CountThreadsByView
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 	)
 	var column_1 int64
 	err := row.Scan(&column_1)
@@ -3182,23 +3187,32 @@ WHERE t.tenant_id = $1::bigint
   AND ($3::bigint IS NULL
        OR t.account_id = $3::bigint)
   AND t.view = $4::text
+  -- 只看未读。any_unread 是「这条会话里还有没有没读的信」——按会话问，
+  -- 和列表的行是一回事：一行代表一条会话，里面还有没读的就该留在「只看
+  -- 未读」里。
+  --
+  -- 没给它建索引。列表是按 last_at 走索引顺序读前二十五行的，加一个布尔
+  -- 条件只是在这条路上多筛一下；而为一个开关建索引，代价是此后每收一封信
+  -- 都要多维护一棵树。真慢下来了再说。
+  AND (NOT $5::boolean OR t.any_unread)
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
-  AND ($5::timestamptz IS NULL
-       OR (t.last_at, t.last_id) < ($5::timestamptz,
-                                    $6::bigint))
+  AND ($6::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < ($6::timestamptz,
+                                    $7::bigint))
 ORDER BY t.last_at DESC, t.last_id DESC
-LIMIT $7::int
+LIMIT $8::int
 `
 
 type ListThreadsByViewParams struct {
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
-	CursorAt  pgtype.Timestamptz
-	CursorID  int64
-	RowLimit  int32
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	CursorAt   pgtype.Timestamptz
+	CursorID   int64
+	RowLimit   int32
 }
 
 type ListThreadsByViewRow struct {
@@ -3239,6 +3253,7 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 		arg.CursorAt,
 		arg.CursorID,
 		arg.RowLimit,
@@ -3303,28 +3318,31 @@ FROM (
       AND ($4::bigint IS NULL
            OR t.account_id = $4::bigint)
       AND t.view = $5::text
+      -- 同上，见 ListThreadsByView。
+      AND (NOT $6::boolean OR t.any_unread)
 ) x
-WHERE ($6::text IS NULL
-       OR CASE WHEN $7::text = 'asc'
-               THEN (x.sort_key, x.id) > ($6::text, $8::bigint)
-               ELSE (x.sort_key, x.id) < ($6::text, $8::bigint)
+WHERE ($7::text IS NULL
+       OR CASE WHEN $8::text = 'asc'
+               THEN (x.sort_key, x.id) > ($7::text, $9::bigint)
+               ELSE (x.sort_key, x.id) < ($7::text, $9::bigint)
           END)
-ORDER BY CASE WHEN $7::text = 'asc' THEN x.sort_key END ASC,
-         CASE WHEN $7::text = 'asc' THEN x.id END ASC,
+ORDER BY CASE WHEN $8::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN $8::text = 'asc' THEN x.id END ASC,
          x.sort_key DESC, x.id DESC
-LIMIT $9::int
+LIMIT $10::int
 `
 
 type ListThreadsByViewSortedParams struct {
-	SortBy    string
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
-	CursorKey *string
-	SortDir   string
-	CursorID  int64
-	RowLimit  int32
+	SortBy     string
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	CursorKey  *string
+	SortDir    string
+	CursorID   int64
+	RowLimit   int32
 }
 
 type ListThreadsByViewSortedRow struct {
@@ -3372,6 +3390,7 @@ func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsBy
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 		arg.CursorKey,
 		arg.SortDir,
 		arg.CursorID,

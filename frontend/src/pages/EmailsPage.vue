@@ -794,6 +794,15 @@
              this list, so it does what this list shows.
              Not in junk or the trash: nobody reads their spam folder to the
              end, and what those two need is a way to be rid of it. -->
+        <!-- 只看未读。开着时按钮自己是实心的——筛选是一种「列表现在不完整」
+             的状态，而这件事必须从屏幕上看得出来，不能只存在地址栏里。 -->
+        <el-button
+          v-if="canFilterUnread"
+          :type="unreadOnly ? 'primary' : ''"
+          @click="toggleUnreadOnly"
+        >
+          {{ t('emails.unreadOnly') }}
+        </el-button>
         <el-button v-if="canMarkAllRead" :loading="markingAll" @click="markAllRead">
           {{ t('emails.markAllRead') }}
         </el-button>
@@ -867,14 +876,23 @@
           @dragmails="onDragMails"
           @dragend="dragging = null"
         />
+        <!-- 空的时候要说清是**哪一种**空。筛着「只看未读」而一封未读都没有，
+             和这个文件夹本来就是空的，在屏幕上长得一模一样——不说清楚，人会
+             以为信不见了。所以这一档单独一句话，还带一个出口。 -->
         <el-empty
           v-if="!loading && inbound.length === 0"
           :description="
             isSearching
               ? t('emails.searchEmpty', { q: keyword })
-              : t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')
+              : unreadOnly
+                ? t('emails.noUnread')
+                : t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')
           "
-        />
+        >
+          <el-button v-if="unreadOnly && !isSearching" @click="toggleUnreadOnly">
+            {{ t('emails.showAll') }}
+          </el-button>
+        </el-empty>
       </template>
 
       <!-- --------------------------------------------------------- drafts -->
@@ -1721,6 +1739,23 @@ const sortFields = computed<SortField[]>(() => {
 function changeSort(by: SortField) {
   pushState({ sort: sortParam(nextSort(listSort.value, by)) })
 }
+
+// 只看未读（issue #368 那条「支持查看未读邮件」）。
+//
+// 做成筛选，不做成「未读排前面」。排序那条路在这里是坏的：列表按未读优先排
+// 的话，点开一封信、它一变成已读就立刻往下跳——光标底下的行不见了，而
+// 「标已读不重排」是这个列表刻意守着的一条规矩（见 markRow 那一带的注释）。
+// 筛选没有这个问题：标已读仍然只改那一行的样子，它要到下一次重新拉列表时
+// 才消失，而那时人已经看完了。
+//
+// 开关的状态进地址栏（unread=1），刷新和后退都保得住。
+const unreadOnly = ref(false)
+// 搜索时不给这个开关：搜索走的是另一条查询，服务端在那条路上不接这个筛选，
+// 排序栏消失也是同一条理由。
+const canFilterUnread = computed(() => isInboundView.value && !isSearching.value)
+function toggleUnreadOnly() {
+  pushState({ unread: !unreadOnly.value })
+}
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -1950,6 +1985,9 @@ interface UrlState {
   // 放进地址栏是为了刷新和后退都保得住——排到一半刷新一下回到按日期排，
   // 人会以为自己看错了。
   sort: string
+  // 只看未读。同样进地址栏，同样的理由：筛着一半刷新一下变回全部，人会
+  // 以为收件箱多出来一批信。
+  unread: boolean
   // 在看哪个信箱。空 = 还没选（第一次进来，切换器还没加载完）。
   //
   // 放进 URL 而不是只留在内存里：刷新会回到默认箱而人以为自己还在另一个箱
@@ -1981,6 +2019,7 @@ function parseQuery(q: LocationQuery): UrlState {
     cursor: one(q.c),
     acct: /^\d+$/.test(one(q.acct)) ? one(q.acct) : '',
     sort: sortParam(parseSort(one(q.sort))),
+    unread: one(q.unread) === '1',
   }
 }
 
@@ -1996,6 +2035,7 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.cursor) query.c = s.cursor
   if (s.acct) query.acct = s.acct
   if (s.sort) query.sort = s.sort
+  if (s.unread) query.unread = '1'
   return query
 }
 
@@ -2059,7 +2099,9 @@ function pushState(over: Partial<UrlState>, stack?: string[]) {
   // one has to clear the other or a stale cursor would survive a search.
   // 换排序也一样：游标记的是「按上一种顺序翻到哪」，换了顺序它就指向
   // 一个不存在的位置，服务端会直接拒收。
-  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined || over.sort !== undefined)) {
+  // 换筛选同理：游标记的是「在上一份名单里翻到哪」，名单变了它就指向一个
+  // 不存在的位置。
+  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined || over.sort !== undefined || over.unread !== undefined)) {
     next.cursor = ''
   }
   // "Back to the list" is one intent however it is spelled, and inbound and
@@ -2102,6 +2144,7 @@ function applyRoute() {
   page.value = s.page
   keyword.value = s.q
   sort.value = parseSort(s.sort)
+  unreadOnly.value = s.unread
   // 地址栏说了在看哪个箱就照做。这是后退/前进/刷新走的那条路：
   // 不同步的话，URL 里写着 A 箱而列表按 B 箱拉。
   if (s.acct) currentAccount.value = Number(s.acct)
@@ -2795,6 +2838,8 @@ async function load(opts: { quiet?: boolean } = {}) {
         // 和 sortFields 用同一个判断（trim 过的）：只有空格的搜索框不算有
         // 关键词，否则排序栏显示着、参数却没带，点了「没反应」。
         ...(keyword.value.trim() ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
+        // 只看未读。和排序一样，有关键词时不带：那条路上服务端不接。
+        ...(unreadOnly.value && !keyword.value.trim() ? { unread: '1' } : {}),
         // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
         // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
         // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
