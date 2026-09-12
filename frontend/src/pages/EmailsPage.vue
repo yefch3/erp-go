@@ -4547,10 +4547,7 @@ async function createSourcingCaseFromExcel() {
     ElMessage.warning(t('emails.sourcingCustomerRequired'))
     return
   }
-  if (!sourcingForm.contactId) {
-    ElMessage.warning(t('emails.sourcingContactRequired'))
-    return
-  }
+
   const fieldByColumn: Record<string, string> = {
     '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
     '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
@@ -4594,7 +4591,7 @@ async function createSourcingCaseFromExcel() {
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
     sourcingOpen.value = false
     excelOpen.value = false
-    router.push(`/sales/intakes?intake=${response.sourcingCase.id}`)
+    router.push(`/sales/inquiries?id=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
   }

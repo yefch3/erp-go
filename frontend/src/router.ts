@@ -43,24 +43,28 @@ export const router = createRouter({
         { path: 'basic/suppliers/factories/:id', component: () => import('./pages/FactoryDetailPage.vue') },
         { path: 'basic/suppliers/:id', component: () => import('./pages/SupplierDetailPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
-        // SP1 只调整模块入口与页面视角：底层仍复用同一套询盘、寻源和报价数据。
-        { path: 'sales/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
-        { path: 'sales/inquiries', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'sales/inquiries/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
-        // 报价属于询盘上下文；旧书签回到询盘列表，报价数据仍由案件页和合同引用。
-        { path: 'sales/quotations', redirect: '/sales/inquiries' },
+        // 客户询盘、报价接收与部门报价使用独立页面视角。
+        { path: 'sales/intakes', redirect: (to) => ({ path: '/sales/inquiries', query: to.query }) },
+        { path: 'sales/inquiries', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'SALES' } },
+        { path: 'sales/inquiries/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'SALES' } },
+        // 客户报价直接接收已提交源报价。
+        { path: 'sales/quotations', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'QUOTATIONS' } },
         { path: 'sales/settings/inquiry-templates', component: () => import('./pages/InquiryTemplatesPage.vue') },
         // 旧书签保留一个兼容版本，并把查询条件一并带到新入口。
-        { path: 'quotations', redirect: '/sales/inquiries' },
+        { path: 'quotations', redirect: '/sales/quotations' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
-        { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
-        { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
+        // 合同开始执行后直接进入财务与下游任务，旧“执行一览”书签统一回到外销合同。
+        { path: 'contract-execution', redirect: (to) => ({ path: '/contracts', query: to.query }) },
+        // 旧“出运单”入口已并入船期管理，保留重定向兼容历史书签。
+        { path: 'shipments', redirect: '/shipping/schedules' },
         // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
         // 走各自案件详情里的只读“船运协作”，不直接进入这里。
         { path: 'shipping', redirect: '/shipping/sourcing' },
-        { path: 'shipping/sourcing', component: () => import('./pages/ShippingSourcingPage.vue'), meta: { permission: 'shipping:sourcing:read' } },
+        { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
+        { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'inquiry' }, meta: { permission: 'shipping:schedule:read' } },
+        { path: 'shipping/orders', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'orders' }, meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
@@ -84,16 +88,18 @@ export const router = createRouter({
         { path: 'warehouses/receipts', component: () => import('./pages/WarehouseReceiptsPage.vue') },
         { path: 'warehouses/imports', component: () => import('./pages/WarehouseImportsPage.vue') },
         { path: 'warehouses/settings', component: () => import('./pages/WarehouseSettingsPage.vue') },
-        { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },
+        // 兼容旧书签；采购现在直接进入售前询价，不再展示虚构的工作台。
+        { path: 'procurement', redirect: '/procurement/sourcing' },
         { path: 'procurement/intakes', redirect: (to) => ({ path: '/sales/intakes', query: to.query }) },
         { path: 'procurement/settings/inquiry-templates', redirect: (to) => ({ path: '/sales/settings/inquiry-templates', query: to.query }) },
-        { path: 'procurement/sourcing/pending', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'procurement/sourcing', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'procurement/sourcing/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
+        { path: 'procurement/sourcing/pending', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'procurement/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'procurement/sourcing/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'sourcing-cases', redirect: (to) => ({ path: '/procurement/sourcing', query: to.query }) },
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
+		{ path: 'quality/tasks', component: () => import('./pages/QualityTasksPage.vue'), meta: { permission: 'quality:task:read' } },
         // 供应商这边只剩这一页。待核销 / 已完成是它下面的两个子页，靠
         // ?view=done 分——一个服务一个菜单项，query 不影响 route.path，
         // 所以菜单高亮照常。
@@ -105,7 +111,9 @@ export const router = createRouter({
         { path: 'supplier-invoices', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-payments', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'supplier-statements', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
-        { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
+        // 银行流水已并进入账/出账，不再保留独立业务页面。旧书签落到入账，
+        // 避免历史链接进入一个已经退役的界面。
+        { path: 'bank-transactions', redirect: (to) => ({ path: '/customer-recon', query: to.query }) },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },

@@ -24,11 +24,10 @@ import (
 // 线」，而审批路线决定谁为一笔钱负责。
 var defaultFlows = map[string][]defaultFlow{
 	"CONTRACT": {{
-		Name:      "出口合同审批",
+		Name:      "外销合同上级确认",
 		MinAmount: "0",
 		Nodes: []defaultNode{
 			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
-			{Seq: 2, Name: "上级的上级审批", Type: "MANAGER", Ref: 2},
 		},
 	}},
 	// 采购单按金额分档：五百块的补货和五十万的承诺不该要同一套签字。
@@ -51,6 +50,13 @@ var defaultFlows = map[string][]defaultFlow{
 		MinAmount: "0",
 		Nodes: []defaultNode{
 			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
+		},
+	}},
+	"SHIPPING_REQUOTE": {{
+		Name:      "正式物流方案确认",
+		MinAmount: "0",
+		Nodes: []defaultNode{
+			{Seq: 1, Name: "直属上级确认", Type: "MANAGER", Ref: 1},
 		},
 	}},
 }

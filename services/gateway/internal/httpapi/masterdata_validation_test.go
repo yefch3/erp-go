@@ -97,9 +97,12 @@ func TestResolveActiveCustomerContact(t *testing.T) {
 		}
 	})
 
-	t.Run("未选择联系人被拒", func(t *testing.T) {
-		if _, _, err := s.resolveActiveCustomerContact(context.Background(), 7, 0); err == nil {
-			t.Fatal("missing contact should be rejected")
+	t.Run("联系人可空", func(t *testing.T) {
+		sourcing := &captureSourcingClientStub{}
+		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
+		rec := postSourcingCase(t, s, `{"customerId":"7"}`)
+		if rec.Code != http.StatusOK || sourcing.got.GetContactId() != 0 {
+			t.Fatalf("未选择联系人不应产生门槛: %s", rec.Body.String())
 		}
 	})
 }
@@ -122,23 +125,17 @@ func postSourcingCase(t *testing.T, s *Server, body string) *httptest.ResponseRe
 	return rec
 }
 
-// 询盘必须落在一个真客户和该客户名下的有效联系人身上。
+// D1 允许先记录客户快照和可选联系人；选择主数据 ID 时仍验证归属。
 //
-// 浏览器只能提交主数据 ID；客户名、联系人姓名和邮箱都由网关重新读取，
+// 已选择主数据 ID 时，客户名、联系人姓名和邮箱由网关重新读取，
 // 防止旧值或跨客户联系人进入询盘快照。
-func TestCreateSourcingCaseRequiresRealCustomerContact(t *testing.T) {
-	t.Run("没有客户被拒", func(t *testing.T) {
+func TestCreateSourcingCaseOptionalContactAndMasterdataSnapshots(t *testing.T) {
+	t.Run("客户文本可先保存", func(t *testing.T) {
 		sourcing := &captureSourcingClientStub{}
-		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
-		rec := postSourcingCase(t, s, `{"title":"客户询价单","customerName":"邮件里的发件人"}`)
-		if rec.Code == http.StatusOK {
-			t.Fatal("只有一个名字不该建得成询盘")
-		}
-		if !strings.Contains(rec.Body.String(), "MASTERDATA_CUSTOMER_REQUIRED") {
-			t.Fatalf("该报缺客户，实际 %s", rec.Body.String())
-		}
-		if sourcing.got != nil {
-			t.Fatal("挡下来的请求不该到达采购服务")
+		s := &Server{Sourcing: sourcing}
+		rec := postSourcingCase(t, s, `{"customerName":"邮件里的客户"}`)
+		if rec.Code != http.StatusOK || sourcing.got.GetCustomerName() != "邮件里的客户" {
+			t.Fatalf("客户快照应保留: %s", rec.Body.String())
 		}
 	})
 
@@ -163,15 +160,12 @@ func TestCreateSourcingCaseRequiresRealCustomerContact(t *testing.T) {
 		}
 	})
 
-	t.Run("未选择联系人被拒", func(t *testing.T) {
+	t.Run("联系人可空", func(t *testing.T) {
 		sourcing := &captureSourcingClientStub{}
 		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
-		rec := postSourcingCase(t, s, `{"title":"客户询价单","customerId":"7"}`)
-		if rec.Code == http.StatusOK || !strings.Contains(rec.Body.String(), "MASTERDATA_CUSTOMER_CONTACT_REQUIRED") {
-			t.Fatalf("缺少联系人应被拒，实际 %d %s", rec.Code, rec.Body.String())
-		}
-		if sourcing.got != nil {
-			t.Fatal("挡下来的请求不该到达采购服务")
+		rec := postSourcingCase(t, s, `{"customerId":"7"}`)
+		if rec.Code != http.StatusOK || sourcing.got.GetContactId() != 0 {
+			t.Fatalf("未选择联系人不应产生门槛: %s", rec.Body.String())
 		}
 	})
 

@@ -107,6 +107,20 @@ func (s *Server) createManualReceivable(w http.ResponseWriter, r *http.Request) 
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateManualReceivable(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.UpdateManualReceivableRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ContractId = idFromPath(r)
+	resp, err := s.Receipts.UpdateManualReceivable(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // reverseContractReceipt 冲销一笔记错的收款。写反向记录，不删原记录。
 func (s *Server) reverseContractReceipt(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -153,6 +167,24 @@ func (s *Server) setReceivableDueDate(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.Receipts.SetReceivableDueDate(r.Context(), &exv1.SetReceivableDueDateRequest{
 		ContractId: idFromPath(r), DueDate: body.DueDate, Reason: body.Reason,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) confirmContractExecutionCondition(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ConditionType string `json:"conditionType"`
+		Note          string `json:"note"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.ConfirmContractExecutionCondition(r.Context(), &exv1.ConfirmContractExecutionConditionRequest{
+		ContractId: idFromPath(r), ConditionType: body.ConditionType, Note: body.Note,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

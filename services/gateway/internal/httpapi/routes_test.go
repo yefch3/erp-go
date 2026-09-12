@@ -104,6 +104,7 @@ func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/receivable-due/{id}/close",      // 「确认核销完成」（转到已完成页）
 		"POST /api/receivable-due/{id}/reopen",     // 「撤销完成」（回到待核销页）
 		"POST /api/receivable-due/{id}/due-date",   // 「改到期日」（合同的常规编辑口只对草稿开放）
+		"POST /api/receivable-due/{id}/execution-condition", // 财务确认合同可以进入执行队列
 		"GET /api/contracts/{id}/receipts",         // 展开行看这张合同的收款明细
 		"GET /api/bank-accounts",                   // 「收款账户」（现在在银行流水页上）
 		"POST /api/bank-accounts",

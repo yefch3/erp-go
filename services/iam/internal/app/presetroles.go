@@ -24,14 +24,15 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
+	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
-		Description: "维护本人客户询盘、客户报价和出口合同",
+		Description: "维护本人客户询盘、客户报价和外销合同",
 		Permissions: []string{
 			"export:contract:read", "export:contract:write",
 			"iam:employee:read", "masterdata:supplier:read",
 			"export:quotation:read", "export:quotation:write",
-			"masterdata:customer:read", "masterdata:port:read", "product:product:read",
+			"masterdata:customer:read", "masterdata:customer:write", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
 		},
@@ -43,10 +44,10 @@ var presetRoles = []presetRole{
 		Code: "SALES_MANAGER", Name: "销售经理",
 		Description: "管理团队客户询盘、客户报价、合同审批和负责人转移",
 		Permissions: []string{
-			"export:contract:approve", "export:contract:read", "export:contract:write",
+			"approval:task:act", "export:contract:approve", "export:contract:read", "export:contract:write",
 			"iam:employee:read", "masterdata:supplier:read",
 			"export:ownership:transfer", "export:quotation:read", "export:quotation:write",
-			"masterdata:customer:read", "masterdata:port:read", "product:product:read",
+			"masterdata:customer:read", "masterdata:customer:write", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
 		},
@@ -78,6 +79,7 @@ var presetRoles = []presetRole{
 		Description: "管理售前船运询价、主责人员、统一方案与正式船期",
 		Permissions: []string{
 			"shipping:sourcing:read", "shipping:sourcing:write", "shipping:sourcing:approve",
+			"approval:task:act",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"masterdata:supplier:read", "masterdata:port:read", "product:product:read",
 		},
@@ -89,7 +91,7 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read",
-			"fx:rate:read",
+			"fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",
@@ -115,10 +117,11 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:price", "procurement:sourcing:read",
 			"procurement:sourcing:send", "procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
 	},
 	{
@@ -137,11 +140,17 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",
+			"quality:task:request", "quality:release:decide",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "ALL"},
+			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
+	},
+	{
+		Code: "QUALITY_INSPECTOR", Name: "质检专员", Description: "处理工厂出货前质检并保存每轮资料",
+		Permissions: []string{"quality:task:read", "quality:task:write", "quality:file:upload"},
+		Scopes:      []presetScope{{"quality", "ALL"}},
 	},
 }
 

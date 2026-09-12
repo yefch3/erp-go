@@ -10,6 +10,8 @@ import (
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // portSnapshotName 生成船期使用的港口名称快照；中文名缺失时回退到英文名。
@@ -107,6 +109,151 @@ func (s *Server) listShippingSchedules(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listContractShippingHandoffs(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Shipping.ListContractShippingHandoffs(r.Context(), &shippingv1.ListContractShippingHandoffsRequest{Status: r.URL.Query().Get("status")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getContractShippingHandoff(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetContractShippingHandoff(r.Context(), &shippingv1.GetContractShippingHandoffRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) listContractShippingRequoteOptions(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListContractShippingRequoteOptions(r.Context(), &shippingv1.ListContractShippingRequoteOptionsRequest{HandoffId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) submitContractShippingRequote(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SubmitContractShippingRequoteRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SubmitContractShippingRequote(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SaveContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SaveContractShippingRequoteDraft(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) deleteContractShippingRequoteOption(w http.ResponseWriter, r *http.Request) {
+	optionID, _ := strconv.ParseInt(chi.URLParam(r, "optionID"), 10, 64)
+	resp, err := s.Shipping.DeleteContractShippingRequoteOption(r.Context(), &shippingv1.DeleteContractShippingRequoteOptionRequest{HandoffId: idFromPath(r), OptionId: optionID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) selectContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SelectContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.HandoffId = idFromPath(r)
+	resp, err := s.Shipping.SelectContractShippingRequoteDraft(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) presignContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.PresignContractShippingContractUploadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.PresignContractShippingContractUpload(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SaveContractShippingContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SaveContractShippingContract(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	h := resp.GetHandoff()
+	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) verifyContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	id := idFromPath(r)
+	payable, err := s.Orders.GetExternalPayable(r.Context(), &prv1.GetExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err = s.Orders.VerifyOrderContract(r.Context(), &prv1.VerifyOrderContractRequest{Id: payable.GetRow().GetPoId()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Shipping.VerifyContractShippingContract(r.Context(), &shippingv1.VerifyContractShippingContractRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) requestContractShippingPayment(w http.ResponseWriter, r *http.Request) {
+	id := idFromPath(r)
+	detail, err := s.Shipping.GetContractShippingHandoff(r.Context(), &shippingv1.GetContractShippingHandoffRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	h := detail.GetHandoff()
+	if h.GetStatus() != "CONTRACT_VERIFIED" {
+		s.writeGRPCError(w, status.Error(codes.FailedPrecondition, "货代合同经财务上级或老板核验后才能申请付款"))
+		return
+	}
+	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err = s.Shipping.MarkContractShippingPaymentRequested(r.Context(), &shippingv1.MarkContractShippingPaymentRequestedRequest{Id: id}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, payable)
+}
+func (s *Server) getContractShippingPaymentStatus(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.GetExternalPayable(r.Context(), &prv1.GetExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

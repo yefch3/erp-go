@@ -241,6 +241,12 @@ SELECT
     coalesce(cl.note, '')::text            AS closed_note,
     coalesce(cl.closed_by_name, '')::text  AS closed_by_name,
     coalesce(cl.created_at::text, '')::text AS closed_at,
+    CASE WHEN c.status <> 'EXECUTING' OR c.customer_id = 0 THEN 'NOT_APPLICABLE'
+         WHEN c.condition_confirmed_at IS NULL THEN 'WAITING' ELSE 'READY' END::text AS execution_condition_status,
+    c.execution_condition_type,
+    coalesce(c.condition_confirmed_at::text, '')::text AS execution_condition_confirmed_at,
+    c.condition_confirmed_by_name AS execution_condition_confirmed_by_name,
+    c.condition_confirmation_note AS execution_condition_note,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id

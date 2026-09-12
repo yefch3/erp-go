@@ -11,14 +11,15 @@ INSERT INTO contract_shipping_handoffs (
  sqlc.arg(freight_amount)::text::numeric,sqlc.arg(charge_basis),sqlc.arg(port_of_loading),sqlc.arg(port_of_discharge),
  nullif(sqlc.arg(estimated_departure)::text,'')::date,nullif(sqlc.arg(estimated_arrival)::text,'')::date,
  nullif(sqlc.arg(valid_until)::text,'')::date,sqlc.arg(remark),
- CASE WHEN sqlc.arg(customer_managed)::bool THEN 'CUSTOMER_MANAGED' ELSE 'PENDING' END
+ CASE WHEN sqlc.arg(customer_managed)::bool THEN 'CUSTOMER_MANAGED'
+      ELSE coalesce(nullif(sqlc.arg(initial_status)::text,''),'PENDING') END
 )
 ON CONFLICT (tenant_id,contract_version_id,batch_no) DO NOTHING;
 
 -- name: SupersedeOldContractShippingHandoffs :exec
 UPDATE contract_shipping_handoffs SET status='SUPERSEDED'
 WHERE tenant_id=sqlc.arg(tenant_id) AND contract_id=sqlc.arg(contract_id)
-  AND contract_version_id<>sqlc.arg(contract_version_id) AND status='PENDING';
+  AND contract_version_id<>sqlc.arg(contract_version_id) AND status IN ('WAITING_REQUOTE','PENDING');
 
 -- name: ListContractShippingHandoffs :many
 SELECT id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,
@@ -30,7 +31,7 @@ SELECT id,contract_id,contract_no,contract_version_id,version_no,customer_id,cus
 FROM contract_shipping_handoffs
 WHERE tenant_id=sqlc.arg(tenant_id)
  AND (sqlc.arg(status)::text='' OR status=sqlc.arg(status)::text)
-ORDER BY CASE status WHEN 'PENDING' THEN 0 ELSE 1 END,created_at DESC,id DESC;
+ORDER BY CASE status WHEN 'WAITING_REQUOTE' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,created_at DESC,id DESC;
 
 -- name: GetContractShippingHandoffForUpdate :one
 SELECT * FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE;

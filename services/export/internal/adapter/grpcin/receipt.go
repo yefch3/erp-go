@@ -195,9 +195,24 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
 			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
 			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
+			ManuallyEntered:                   r.ManuallyEntered,
+			ExecutionConditionStatus:          r.ExecutionConditionStatus,
+			ExecutionConditionType:            r.ExecutionConditionType,
+			ExecutionConditionConfirmedAt:     r.ExecutionConditionConfirmedAt,
+			ExecutionConditionConfirmedByName: r.ExecutionConditionConfirmedByName,
+			ExecutionConditionNote:            r.ExecutionConditionNote,
 		})
 	}
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+func (h *ReceiptHandler) UpdateManualReceivable(ctx context.Context, req *exv1.UpdateManualReceivableRequest) (*exv1.UpdateManualReceivableResponse, error) {
+	p, err := h.svc.UpdateManualReceivable(ctx, grpcx.TenantID(ctx), req.GetContractId(),
+		req.GetCustomerName(), req.GetContractNo(), req.GetDueDate(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.UpdateManualReceivableResponse{Progress: progressPB(p)}, nil
 }
 
 // progressPB 是「这张合同收了多少」的那一小块，三个地方共用。
@@ -260,6 +275,17 @@ func (h *ReceiptHandler) SetReceivableDueDate(ctx context.Context, req *exv1.Set
 	return &exv1.SetReceivableDueDateResponse{DueDate: due}, nil
 }
 
+func (h *ReceiptHandler) ConfirmContractExecutionCondition(ctx context.Context, req *exv1.ConfirmContractExecutionConditionRequest) (*exv1.ConfirmContractExecutionConditionResponse, error) {
+	result, err := h.svc.ConfirmContractExecutionCondition(ctx, grpcx.TenantID(ctx), req.GetContractId(), req.GetConditionType(), req.GetNote(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ConfirmContractExecutionConditionResponse{
+		Status: result.Status, ConditionType: result.ConditionType, ConfirmedAt: result.ConfirmedAt,
+		ConfirmedByName: result.ConfirmedByName, Note: result.Note,
+	}, nil
+}
+
 func (h *ReceiptHandler) ReopenReceivable(ctx context.Context, req *exv1.ReopenReceivableRequest) (*exv1.ReopenReceivableResponse, error) {
 	if err := h.svc.ReopenReceivable(ctx, grpcx.TenantID(ctx),
 		req.GetContractId(), req.GetReason(), operator(ctx)); err != nil {
@@ -299,6 +325,9 @@ func (h *ReceiptHandler) MarkReceivableRemindersRead(ctx context.Context, req *e
 }
 
 func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetContractReceiptsRequest) (*exv1.GetContractReceiptsResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:receipt:read"); err != nil {
+		return nil, err
+	}
 	progress, rows, err := h.svc.ContractReceipts(ctx, grpcx.TenantID(ctx), req.GetContractId())
 	if err != nil {
 		return nil, err

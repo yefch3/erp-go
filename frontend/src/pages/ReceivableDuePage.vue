@@ -1,13 +1,8 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('receivableDue.eyebrow') }}</div>
-        <h1>{{ t('receivableDue.title') }}</h1>
-        <p>{{ t('receivableDue.subtitle') }}</p>
-      </div>
-      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('receivableDue.addManual') }}</el-button>
-    </header>
+    <WorkflowPageHeader :title="t('receivableDue.title')" :description="t('receivableDue.subtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openManual">{{ t('receivableDue.addManual') }}</el-button></template>
+    </WorkflowPageHeader>
 
     <el-dialog v-model="manualOpen" :title="t('receivableDue.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -106,14 +101,6 @@
                 <el-table-column :label="t('receivableDue.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedByName }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="90">
-                  <template #default="{ row: e }">
-                    <el-button
-                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
-                      link type="danger" @click="reverseEntry(row, e)"
-                    >{{ t('receivableDue.entryReverse') }}</el-button>
-                  </template>
-                </el-table-column>
               </el-table>
               <p v-else class="sub">{{ t('receivableDue.entriesEmpty') }}</p>
             </div>
@@ -152,6 +139,19 @@
         <el-table-column :label="t('receivableDue.effectiveDate')" width="120">
           <template #default="{ row }">{{ row.effectiveDate || '—' }}</template>
         </el-table-column>
+        <el-table-column :label="t('receivableDue.executionCondition')" min-width="180">
+          <template #default="{ row }">
+            <span v-if="row.executionConditionStatus === 'NOT_APPLICABLE'">—</span>
+            <div v-else-if="row.executionConditionStatus === 'READY'" class="condition-ready">
+              <el-tag type="success" effect="light">{{ t('receivableDue.executionReady') }}</el-tag>
+              <div class="sub">{{ conditionLabel(row.executionConditionType) }}</div>
+            </div>
+            <el-button v-else-if="canWrite && !row.manuallyEntered" type="primary" @click="openCondition(row)">
+              {{ t('receivableDue.confirmExecution') }}
+            </el-button>
+            <el-tag v-else type="warning" effect="plain">{{ t('receivableDue.executionWaiting') }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('receivableDue.owner')" min-width="110">
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
@@ -164,15 +164,17 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+            <el-button v-if="isDone || !canWrite" type="primary" plain @click="handleRowCommand(row, 'detail')">
+              {{ t('receivableDue.viewDetails') }}
+            </el-button>
+            <el-dropdown v-else trigger="click" @command="(command: string) => handleRowCommand(row, command)">
               <el-button type="primary" plain>{{ t('receivableDue.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('receivableDue.viewDetails') }}</el-dropdown-item>
-                <template v-if="canWrite">
-                  <el-dropdown-item divided command="receipt">{{ t('receivableDue.addReceipt') }}</el-dropdown-item>
-                  <el-dropdown-item :command="isDone ? 'reopen' : 'close'">{{ isDone ? t('receivableDue.reopen') : t('receivableDue.close') }}</el-dropdown-item>
-                  <el-dropdown-item command="due">{{ t('receivableDue.dueEdit') }}</el-dropdown-item>
-                </template>
+                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('receivableDue.editManual') }}</el-dropdown-item>
+                <el-dropdown-item divided command="receipt">{{ t('receivableDue.addReceipt') }}</el-dropdown-item>
+                <el-dropdown-item command="close">{{ t('receivableDue.close') }}</el-dropdown-item>
+                <el-dropdown-item command="due">{{ t('receivableDue.dueEdit') }}</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
           </template>
@@ -189,6 +191,31 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <el-dialog v-model="conditionOpen" :title="t('receivableDue.confirmExecutionTitle')" width="min(560px, 94vw)" destroy-on-close>
+      <template v-if="conditionRow">
+        <p class="close-target">{{ conditionRow.contractNo }} · {{ conditionRow.customerName }}</p>
+        <el-alert type="info" :closable="false" :title="t('receivableDue.confirmExecutionHint')" />
+        <el-form label-position="top" class="condition-form">
+          <el-form-item :label="t('receivableDue.executionCondition')" required>
+            <el-radio-group v-model="conditionForm.conditionType" class="condition-options">
+              <el-radio v-for="type in EXECUTION_CONDITIONS" :key="type" :value="type" border>
+                {{ conditionLabel(type) }}
+              </el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item :label="t('receivableDue.conditionNote')">
+            <el-input v-model="conditionForm.note" type="textarea" :rows="2" :placeholder="t('receivableDue.conditionNoteHint')" />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="conditionOpen=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="conditionBusy" :disabled="!conditionForm.conditionType" @click="submitCondition">
+          {{ t('receivableDue.confirmAndRelease') }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="detailOpen" :title="t('receivableDue.detailTitle')" width="min(820px, 96vw)">
       <template v-if="detailRow">
@@ -207,9 +234,22 @@
           <el-table-column :label="t('receivableDue.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
           <el-table-column :label="t('receivableDue.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('receivableDue.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
           <el-table-column :label="t('receivableDue.entryBy')" min-width="170"><template #default="{ row: e }">{{ e.allocatedByName || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <el-table-column v-if="canWrite && !isDone" :label="t('common.actions')" width="90">
+            <template #default="{ row: e }"><el-button v-if="!Number(e.reversalOf) && !reversedIds(detailRow).has(String(e.allocationId))" link type="danger" @click="reverseEntry(detailRow, e)">{{ t('receivableDue.entryReverse') }}</el-button></template>
+          </el-table-column>
           <template #empty>{{ t('receivableDue.entriesEmpty') }}</template>
         </el-table>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="editOpen" :title="t('receivableDue.editManual')" width="min(520px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('receivableDue.manualCustomer')" required><el-input v-model="editForm.customerName" /></el-form-item>
+        <el-form-item :label="t('receivableDue.manualContract')" required><el-input v-model="editForm.contractNo" /></el-form-item>
+        <el-form-item :label="t('receivableDue.manualDueDate')"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
+        <el-alert :closable="false" type="info" :title="t('receivableDue.editManualHint')" />
+      </el-form>
+      <template #footer><el-button @click="editOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="editBusy" @click="saveEdit">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
     <!-- 收款结清：这张合同的钱「不用再催了」。三个数并排亮着，员工看着差额
@@ -322,8 +362,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { get, post } from '../api'
+import { get, patch, post } from '../api'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -367,6 +408,37 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+  manuallyEntered: boolean
+  executionConditionStatus: string
+  executionConditionType: string
+  executionConditionConfirmedAt: string
+  executionConditionConfirmedByName: string
+  executionConditionNote: string
+}
+
+const EXECUTION_CONDITIONS = ['PREPAYMENT_RECEIVED', 'LETTER_OF_CREDIT_RECEIVED', 'NO_PREPAYMENT_REQUIRED', 'SPECIAL_APPROVAL'] as const
+const conditionOpen = ref(false)
+const conditionBusy = ref(false)
+const conditionRow = ref<Row | null>(null)
+const conditionForm = reactive({ conditionType: '', note: '' })
+
+function conditionLabel(type: string) {
+  return type ? t(`receivableDue.executionConditions.${type}`) : '—'
+}
+function openCondition(row: Row) {
+  conditionRow.value = row
+  Object.assign(conditionForm, { conditionType: '', note: '' })
+  conditionOpen.value = true
+}
+async function submitCondition() {
+  if (!conditionRow.value || !conditionForm.conditionType) return
+  conditionBusy.value = true
+  try {
+    await post(`/receivable-due/${conditionRow.value.contractId}/execution-condition`, conditionForm)
+    conditionOpen.value = false
+    ElMessage.success(t('receivableDue.executionReleased'))
+    await load()
+  } finally { conditionBusy.value = false }
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -539,6 +611,27 @@ function handleRowCommand(row: Row, command: string) {
   else if (command === 'close') openClose(row)
   else if (command === 'reopen') void reopenRow(row)
   else if (command === 'due') openDue(row)
+  else if (command === 'edit') openEdit(row)
+}
+
+const editOpen = ref(false)
+const editBusy = ref(false)
+const editRow = ref<Row | null>(null)
+const editForm = reactive({ customerName: '', contractNo: '', dueDate: '' })
+function openEdit(row: Row) {
+  editRow.value = row
+  Object.assign(editForm, { customerName: row.customerName, contractNo: row.contractNo, dueDate: row.dueDate || '' })
+  editOpen.value = true
+}
+async function saveEdit() {
+  if (!editRow.value || !editForm.customerName.trim() || !editForm.contractNo.trim()) return
+  editBusy.value = true
+  try {
+    await patch(`/receivable-due/${editRow.value.contractId}/manual`, editForm)
+    editOpen.value = false
+    ElMessage.success(t('receivableDue.editManualSaved'))
+    reload()
+  } finally { editBusy.value = false }
 }
 
 function onExpand(row: Row, expanded: Row[]) {
@@ -698,64 +791,85 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  width: 100%;
+  max-width: 1680px;
+  min-width: 0;
+  margin: 0 auto;
 }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
-.page-head .eyebrow {
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  color: var(--el-text-color-secondary);
-}
-.page-head h1 {
-  margin: 4px 0 6px;
-  font-size: 26px;
-}
-.page-head p {
-  margin: 0;
-  color: var(--el-text-color-regular);
-}
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #dce8ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(25, 72, 91, .035);
 }
 .metric {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 86px;
-  padding: 12px 16px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: 62px;
+  overflow: hidden;
+  padding: 10px 16px 10px 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.metric + .metric { border-left: 1px solid #e5edf1; }
+.metric::before {
+  position: absolute;
+  top: 17px;
+  left: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ac1ff;
+  content: '';
 }
 .metric.is-alarm {
-  border-color: var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
+  background: #fffafb;
 }
+.metric.is-alarm::before { background: #ff6b72; }
 .metric.is-warn {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
+  background: #fffdf9;
 }
+.metric.is-warn::before { background: #e5a33b; }
 .metric-label {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .metric-value {
-  font-size: 26px;
+  color: #141817;
+  font-size: 22px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .metric-hint {
+  grid-column: 1 / -1;
+  overflow: hidden;
   font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-placeholder);
 }
 .panel {
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  border-color: #dceaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(25, 72, 91, .05);
 }
+.page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
+.page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
 .filters {
   display: flex;
   align-items: center;
@@ -802,6 +916,10 @@ onMounted(() => {
   margin: 0 0 10px;
   font-weight: 600;
 }
+.condition-form { margin-top: 16px; }
+.condition-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.condition-options :deep(.el-radio) { margin: 0; min-height: 42px; }
+.condition-ready { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .close-figures {
   display: flex;
   gap: 24px;
@@ -814,5 +932,14 @@ onMounted(() => {
 }
 .close-figures .warn {
   color: var(--el-color-warning);
+}
+@media (max-width: 768px) {
+  .metrics { grid-template-columns: 1fr; }
+  .metric + .metric { border-top: 1px solid #e5edf1; border-left: 0; }
+  .panel { padding: 12px; }
+  .filters { align-items: stretch; }
+  .filters :deep(.el-input) { width: 100%; max-width: none !important; }
+  .pager { justify-content: flex-start; overflow-x: auto; }
+  .condition-options { grid-template-columns: 1fr; }
 }
 </style>

@@ -1,17 +1,12 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('orders.title') }}</h2>
-      <span class="head-note">{{ t('orders.subtitle') }}</span>
-      <span class="grow" />
-      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
-    </div>
+  <div class="purchase-orders-page">
+    <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
         <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
-        <el-radio-button value="REJECTED">{{ t('orders.statuses.REJECTED') }}</el-radio-button>
+        <el-radio-button value="PENDING_CONTRACT">{{ t('orders.statuses.PENDING_CONTRACT') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
         <el-radio-button value="RECEIVED_OPEN">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
@@ -30,35 +25,34 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table :data="rows" v-loading="loading">
-        <el-table-column :label="t('orders.poNo')" width="160">
+      <el-table :data="rows" v-loading="loading" class="orders-table">
+        <el-table-column :label="t('orders.poNo')" min-width="180">
           <template #default="{ row }">
             <div class="prod">{{ row.poNo }}</div>
             <div class="sub">{{ formatTime(row.createdAt) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('orders.supplier')" min-width="170">
+        <el-table-column :label="t('orders.supplier')" min-width="180">
           <template #default="{ row }">
             <div>{{ row.supplierName }}</div>
             <div class="sub">{{ t('orders.buyer') }} {{ row.buyerName || '—' }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('orders.purchaseBatch')" min-width="170">
+        <el-table-column :label="t('orders.purchaseBatch')" min-width="180">
           <template #default="{ row }">
             <div>{{ row.sourceQuotationNo || '—' }}</div>
             <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('orders.amount')" width="150" align="right">
+        <el-table-column :label="t('orders.amount')" min-width="180" align="right" header-align="right">
           <template #default="{ row }">
             <span class="num money">{{ row.currency }} {{ row.totalAmount }}</span>
-            <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('orders.requiredArrivalDate')" width="125">
+        <el-table-column :label="t('orders.requiredArrivalDate')" min-width="180" align="center" header-align="center">
           <template #default="{ row }">{{ row.expectedDate || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="190">
+        <el-table-column :label="t('common.status')" min-width="180" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
               {{ orderStatusLabel(row) }}
@@ -74,18 +68,17 @@
             </div>
           </template>
         </el-table-column>
-        <!-- 审批人最关心的是直接决策；审批中的本人待办把通过/驳回放在列表上，
-             其他低频动作仍收进菜单，避免误把“有读取权限”当成“可以审批”。 -->
-        <el-table-column :label="t('common.actions')" width="190" align="center" fixed="right">
+        <!-- 每种状态的行操作都统一收进有明确文字的按钮。 -->
+        <el-table-column :label="t('common.actions')" min-width="180" align="center" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <template v-if="canActOnOrderApproval(row)">
-                <el-button link type="success" @click.stop="actOnOrderApproval(row, 'APPROVE')">{{ t('todos.approve') }}</el-button>
-                <el-button link type="danger" @click.stop="actOnOrderApproval(row, 'REJECT')">{{ t('todos.reject') }}</el-button>
-              </template>
-              <el-dropdown trigger="click" @command="(key: string) => runOrderAction(row, key)">
-                <el-button class="action-trigger" size="small" text circle :aria-label="t('common.actions')">
-                  <span aria-hidden="true">•••</span>
+              <el-dropdown
+                v-if="rowMenuActions(row).length"
+                trigger="click"
+                @command="(key: string) => runOrderAction(row, key)"
+              >
+                <el-button class="more-actions-trigger" size="small" type="primary" plain @click.stop>
+                  {{ t('orders.moreActions') }}<span class="drop-arrow">⌄</span>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -522,6 +515,35 @@
         <el-button type="primary" :loading="saving" @click="submitDisposition">{{ common('save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="contractOpen" title="采购合同" width="560px">
+      <el-alert type="info" :closable="false" class="alert">采购方案批准后上传双方签署合同；上传后仍在本页显示“待财务审核”，财务通过后转为“已下单”。</el-alert>
+      <el-form label-position="top">
+        <el-form-item label="采购合同号" required><el-input v-model="contractForm.contractNo" /></el-form-item>
+        <el-form-item label="付款条件" required><el-input v-model="contractForm.paymentTerms" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="双方签署合同" required><el-upload :auto-upload="false" :limit="1" :on-change="selectContractFile" :file-list="contractFiles"><el-button>选择文件</el-button></el-upload></el-form-item>
+      </el-form>
+      <div v-if="contractOrder?.signedContractName" class="contract-state">当前文件：<a v-if="contractOrder.signedContractUrl" :href="contractOrder.signedContractUrl" target="_blank">{{contractOrder.signedContractName}}</a><span v-else>{{contractOrder.signedContractName}}</span></div>
+      <template #footer><el-button @click="contractOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveContract">保存签署合同</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="qualityOpen" :title="t('quality.applyTitle')" width="920px">
+      <el-alert type="info" :closable="false" show-icon class="alert">{{t('quality.applyHint')}}</el-alert>
+      <el-form label-position="top">
+        <div class="quality-apply-head">
+          <el-form-item :label="t('quality.expectedDate')"><el-date-picker v-model="qualityForm.expectedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+          <el-form-item :label="t('quality.location')"><el-input v-model="qualityForm.location" /></el-form-item>
+          <el-form-item :label="t('quality.contactName')"><el-input v-model="qualityForm.contactName" /></el-form-item>
+          <el-form-item :label="t('quality.contactPhone')"><el-input v-model="qualityForm.contactPhone" /></el-form-item>
+        </div>
+        <el-table :data="qualityItems" border>
+          <el-table-column prop="productName" :label="t('quality.product')" min-width="240"><template #default="{row}"><b>{{row.productName}}</b><div class="sub">{{row.spec||'—'}}</div></template></el-table-column>
+          <el-table-column :label="t('quality.orderedQty')" width="160"><template #default="{row}">{{trim(row.qty)}} {{row.uomCode}}</template></el-table-column>
+          <el-table-column :label="t('quality.applyQty')" width="250"><template #default="{row}"><el-input v-model="qualityQty[row.id]"><template #append>{{row.uomCode}}</template></el-input></template></el-table-column>
+        </el-table>
+        <el-form-item :label="t('quality.remark')" style="margin-top:14px"><el-input v-model="qualityForm.remark" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="qualityOpen=false">{{common('cancel')}}</el-button><el-button type="primary" :loading="saving" @click="submitQualityApplication">{{t('quality.submitApplication')}}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -535,6 +557,7 @@ import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Order {
   id: string
@@ -572,6 +595,18 @@ interface Order {
   factoryId: string
   factoryCode: string
   factoryName: string
+  businessType: string
+  sourceBusinessId: string
+  exportContractNo: string
+  businessDocumentNo: string
+  paymentTerms: string
+  signedContractName: string
+  signedContractUrl: string
+  signedContractUploadedAt: string
+  contractVerifiedAt: string
+  contractVerifiedByName: string
+  paymentRequestedAt: string
+  paymentRequestedByName: string
 }
 interface ApprovalTodo {
   task: { id: string; status: string }
@@ -584,6 +619,7 @@ interface OrderItem {
   id: string
   requirementId: string
   productName: string
+	spec: string
   uomCode: string
   qty: string
   unitPrice: string
@@ -606,6 +642,8 @@ interface Requirement {
   contractNo: string
   customerName: string
   productName: string
+  spec: string
+	status: string
   uomCode: string
   requiredQty: string
   orderedQty: string
@@ -649,6 +687,8 @@ const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
+const canFinanceVerify = auth.can('procurement:recon:write')
+const canRequestQuality = auth.can('quality:task:request')
 
 const rows = ref<Order[]>([])
 const total = ref(0)
@@ -656,7 +696,7 @@ const page = ref(1)
 const pageSize = 20
 // 采购单页面同时承接制单、审批状态查看和审批后的履约跟踪。
 // 真正的批准/驳回仍由个人审批任务执行，避免只凭采购单读取权限越权审批。
-const status = ref('ORDERED')
+const status = ref(String(route.query.status || 'ORDERED'))
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -715,6 +755,16 @@ const closeForm = reactive({ shortfallAction: 'REORDER', note: '' })
 const dispositionOpen = ref(false)
 const dispositionTarget = ref<PurchaseInspection | null>(null)
 const dispositionForm = reactive({ disposition: 'DEDUCTION', note: '' })
+const contractOpen = ref(false)
+const contractOrder = ref<Order | null>(null)
+const contractFile = ref<File | null>(null)
+const contractFiles = ref<any[]>([])
+const contractForm = reactive({ contractNo: '', paymentTerms: '' })
+const qualityOpen = ref(false)
+const qualityOrder = ref<Order | null>(null)
+const qualityItems = ref<OrderItem[]>([])
+const qualityQty = reactive<Record<string,string>>({})
+const qualityForm = reactive({ expectedDate:'', location:'', contactName:'', contactPhone:'', remark:'' })
 
 function lineConfirmationProgress(item: OrderItem): number {
   const ordered = Number(item.qty)
@@ -787,6 +837,11 @@ function primaryAction(row: Order): RowAction | null {
     return { key: 'submit', label: t('orders.submit'), tone: 'primary', run: () => void submit(row) }
   if (row.status === 'REJECTED' && canWrite)
     return { key: 'edit', label: t('orders.editAndResubmit'), tone: 'warning', run: () => void openEdit(row) }
+	if (Number(row.sourceBusinessId) > 0 && row.status === 'ORDERED') {
+		if (!row.signedContractUploadedAt && canWrite) return { key:'contract', label:'上传签署合同', tone:'primary', run:()=>openContract(row) }
+		if (!row.contractVerifiedAt && canFinanceVerify) return { key:'verifyContract', label:'核验签署合同', tone:'success', run:()=>void verifyContract(row) }
+		return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
+	}
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
     return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
   // 收满、还没结案——当前该做的就是宣布这单到此为止（A3）。
@@ -861,7 +916,7 @@ async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
   await post(`/approvals/tasks/${taskID}/act`, { action, comment })
   ElMessage.success(t('todos.acted'))
   detailOpen.value = false
-  const nextStatus = action === 'APPROVE' ? 'ORDERED' : 'REJECTED'
+  const nextStatus = action === 'APPROVE' ? 'PENDING_CONTRACT' : 'REJECTED'
   status.value = nextStatus
   await router.replace({ path: '/purchase-orders', query: { status: nextStatus, order: row.id } })
   await reload()
@@ -872,8 +927,15 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
   add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
+	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
+		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
+		add('verifyContract','核验签署合同',canFinanceVerify&&!!row.signedContractUploadedAt&&!row.contractVerifiedAt)
+		add('quality', t('quality.apply'), canRequestQuality)
+		return out
+	}
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
@@ -891,7 +953,19 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
 }
 
 function rowMenuActions(row: Order): { key: string; label: string; divided?: boolean }[] {
-  return allActions(row).filter((action) => !(canActOnOrderApproval(row) && action.key === 'approve'))
+  if (canActOnOrderApproval(row)) {
+    return [
+      { key: 'detail', label: t('common.detail') },
+      { key: 'approveDecision', label: t('todos.approve'), divided: true },
+      { key: 'rejectDecision', label: t('todos.reject') },
+    ]
+  }
+  const actions = allActions(row)
+  if (['DRAFT', 'REJECTED'].includes(row.status)) {
+    const order = ['detail', 'edit', 'submit', 'cancel']
+    return actions.sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key))
+  }
+  return actions
 }
 // 工厂回签状态的列表子标签（B5 尾巴）。只有实际录入过回签时才显示，
 // 不再用邮件发送状态制造第二个“是否下单”的业务门槛。
@@ -925,6 +999,8 @@ function runOrderAction(row: Order, key: string) {
     return
   }
   switch (key) {
+    case 'approveDecision': void actOnOrderApproval(row, 'APPROVE'); break
+    case 'rejectDecision': void actOnOrderApproval(row, 'REJECT'); break
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
     case 'receive': openReceive(row); break
@@ -933,7 +1009,26 @@ function runOrderAction(row: Order, key: string) {
     case 'downloadPdf': void downloadOrder(row, 'pdf'); break
     case 'close': void closeOrder(row); break
     case 'cancel': openCancel(row); break
-  }
+	case 'contract': openContract(row); break
+	case 'verifyContract': void verifyContract(row); break
+	case 'quality': void openQualityApplication(row); break
+	}
+}
+
+async function openQualityApplication(row: Order) {
+	const d=await get<{items:OrderItem[]}>(`/purchase-orders/${row.id}`)
+	qualityOrder.value=row;qualityItems.value=d.items||[]
+	for(const item of qualityItems.value) qualityQty[item.id]=''
+	qualityForm.expectedDate='';qualityForm.location=row.factoryName||row.supplierName;qualityForm.contactName='';qualityForm.contactPhone='';qualityForm.remark=''
+	qualityOpen.value=true
+}
+async function submitQualityApplication(){
+	if(!qualityOrder.value)return
+	const lines=qualityItems.value.filter(i=>Number(qualityQty[i.id])>0).map(i=>({po_item_id:Number(i.id),qty:qualityQty[i.id]}))
+	if(!lines.length){ElMessage.warning(t('quality.pickQty'));return}
+	saving.value=true
+	try{await post(`/purchase-orders/${qualityOrder.value.id}/quality-inspections`,{expected_date:qualityForm.expectedDate,inspection_location:qualityForm.location,contact_name:qualityForm.contactName,contact_phone:qualityForm.contactPhone,remark:qualityForm.remark,lines});ElMessage.success(t('quality.applied'));qualityOpen.value=false}
+	finally{saving.value=false}
 }
 
 async function load() {
@@ -943,7 +1038,7 @@ async function load() {
       page: page.value, page_size: pageSize,
       status: status.value,
       keyword: keyword.value,
-    })
+	})
     rows.value = d.orders ?? []
     total.value = Number(d.meta?.total ?? 0)
     approvalTasks.value = {}
@@ -985,6 +1080,7 @@ function openOf(r: Requirement): string {
 
 async function openCreate(preselect?: string[]) {
 	editing.value = null
+	approvalEntry.value = Boolean(preselect?.length)
   form.supplierId = 0
   form.currency = 'CNY'
   form.expectedDate = ''
@@ -1031,7 +1127,7 @@ async function openCreate(preselect?: string[]) {
     pending.value.forEach((r) => {
       qtyOf[r.id] = openOf(r)
       if (r.source === 'CUSTOMER_QUOTATION') {
-        form.supplierId = Number(r.supplierId)
+		if (r.status !== 'WAITING_REQUOTE') form.supplierId = Number(r.supplierId)
         form.currency = r.sourceCurrency || 'USD'
         priceOf[r.id] = r.sourceUnitPrice || '0'
       }
@@ -1045,6 +1141,11 @@ async function openCreate(preselect?: string[]) {
   }
   createOpen.value = true
 }
+
+function selectContractFile(file:any){contractFile.value=file.raw as File;contractFiles.value=[file]}
+function openContract(row:Order){contractOrder.value=row;contractForm.contractNo=row.businessDocumentNo||row.poNo;contractForm.paymentTerms=row.paymentTerms||row.remark||'';contractFile.value=null;contractFiles.value=[];contractOpen.value=true}
+async function saveContract(){const row=contractOrder.value,file=contractFile.value;if(!row||!file){ElMessage.warning('请选择双方签署合同文件');return}if(!contractForm.contractNo.trim()||!contractForm.paymentTerms.trim()){ElMessage.warning('请填写采购合同号和付款条件');return}saving.value=true;try{const signed=await post<{fileKey:string;uploadUrl:string}>(`/purchase-orders/${row.id}/contract/presign`,{file_name:file.name});const putResult=await fetch(signed.uploadUrl,{method:'PUT',body:file});if(!putResult.ok)throw new Error('合同文件上传失败');await post(`/purchase-orders/${row.id}/contract`,{contract_no:contractForm.contractNo,payment_terms:contractForm.paymentTerms,file_key:signed.fileKey,file_name:file.name});ElMessage.success('签署合同已保存，等待财务审核');contractOpen.value=false;status.value='PENDING_CONTRACT';await router.replace({path:'/purchase-orders',query:{status:'PENDING_CONTRACT',order:row.id}});await reload()}finally{saving.value=false}}
+async function verifyContract(row:Order){await ElMessageBox.confirm(`确认“${row.signedContractName}”是当前工厂双方签署的采购合同？`,'核验采购合同',{type:'warning'});await post(`/purchase-orders/${row.id}/contract/verify`,{});ElMessage.success('采购合同已核验');await reload()}
 
 async function openEdit(row: Order) {
   const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([
@@ -1508,9 +1609,12 @@ function handleOrderAction(row: Order, command: string) {
   if (command === 'cancel') openCancel(row)
 }
 
-// 人工审批通过并生成采购单后，业务状态统一显示为“已下单”。
-// 供应商邮件仅是辅助沟通记录，不再构成第二次“下单”动作或业务状态门槛。
+// 数据库沿用 ORDERED，页面根据合同资料是否上传、财务是否核验展示真实业务阶段。
 function orderStatusLabel(row: Order): string {
+  if (row.status === 'ORDERED' && Number(row.sourceBusinessId) > 0 && !row.signedContractUploadedAt)
+    return t('orders.statuses.PENDING_CONTRACT')
+  if (row.status === 'ORDERED' && Number(row.sourceBusinessId) > 0 && !row.contractVerifiedAt)
+    return t('orders.statuses.PENDING_FINANCE')
   if (row.status === 'ORDERED') return t('orders.businessStatuses.ORDERED')
   return t(`orders.statuses.${row.status}`)
 }
@@ -1566,9 +1670,11 @@ onMounted(async () => {
   const qsStatus = String(route.query.status ?? '')
   const qsUnsent = String(route.query.unsent ?? '')
   if (qsUnsent === '1') {
-    status.value = 'UNSENT'
-    reload()
-  } else if (qsStatus) {
+    if (status.value !== 'UNSENT') {
+      status.value = 'UNSENT'
+      reload()
+    }
+  } else if (qsStatus && status.value !== qsStatus) {
     status.value = qsStatus
     reload()
   }
@@ -1576,19 +1682,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  margin: 0;
-  font-size: 20px;
-}
-.grow {
-  flex: 1;
-}
+.requote-card{margin-bottom:16px;border-color:#cfeaf5}.requote-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.requote-head strong{color:#173a4d;font-size:17px}.requote-head p{margin:5px 0 0;color:#647789;font-size:13px}.requote-actions{display:flex;align-items:center;gap:10px}.batch-common{display:grid;grid-template-columns:220px minmax(280px,1fr) 220px;gap:14px;margin:16px 0 4px}.batch-table :deep(.el-select){width:100%}.contract-state{padding:10px 12px;border-radius:8px;background:#f2f8fb;color:#52697a}.quality-apply-head{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}.quality-apply-head :deep(.el-input),.quality-apply-head :deep(.el-date-editor){width:100%}
 .head-note,
 .sub {
   font-size: 12px;
@@ -1646,23 +1740,31 @@ onMounted(async () => {
   gap: 10px;
   margin-bottom: 14px;
 }
+.orders-table :deep(.el-table__header .el-table__cell) {
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+.orders-table :deep(.el-table__body .el-table__cell) {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
 .row-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  gap: 2px 12px;
 }
 .row-actions :deep(.el-button) {
   margin-left: 0;
 }
-.action-trigger {
-  width: 30px;
-  color: var(--el-text-color-secondary);
-  letter-spacing: 1px;
+.more-actions-trigger {
+  font-weight: 500;
+  min-width: 92px;
 }
-.action-trigger:hover {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+.drop-arrow {
+  margin-left: 4px;
+  font-size: 12px;
 }
 .prod {
   font-weight: 500;

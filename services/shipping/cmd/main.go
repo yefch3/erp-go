@@ -64,6 +64,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer masterdataConn.Close()
+	approvalConn, err := dial(cfg.ApprovalAddr)
+	if err != nil {
+		return err
+	}
+	defer approvalConn.Close()
 
 	files, err := blobstore.New(ctx, blobstore.Config{
 		Endpoint: cfg.MinioEndpoint, PublicEndpoint: cfg.MinioPublicEndpoint,
@@ -79,6 +84,7 @@ func run(log *slog.Logger) error {
 	svc := app.New(pool, grpcout.NewFiles(files))
 	svc.UseAccessControl(grpcout.NewScopes(iamConn), grpcout.NewCustomerAccess(masterdataConn))
 	svc.UseDirectory(grpcout.NewDirectory(iamConn))
+	svc.UseApprovals(grpcout.NewApprovals(approvalConn))
 	svc.UseLogger(log)
 	if cfg.RedisAddr != "" {
 		publisher := livefeed.NewPublisher(cfg.RedisAddr, log)
@@ -99,6 +105,15 @@ func run(log *slog.Logger) error {
 	go func() {
 		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("contract consumer stopped", "err", err)
+		}
+	}()
+	approvalHandler := kafkain.ApprovalDecisions(svc, log)
+	dlApproval := deadletter.New(pool, cfg.ApprovalConsumerGroup)
+	approvalEvents := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ApprovalConsumerGroup, cfg.ApprovalTopic,
+		idempotency.New(pool, cfg.ApprovalConsumerGroup), dlApproval, approvalHandler, log)
+	go func() {
+		if err := approvalEvents.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("approval consumer stopped", "err", err)
 		}
 	}()
 

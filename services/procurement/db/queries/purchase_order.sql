@@ -34,7 +34,7 @@ FROM purchase_order_items i
 JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.requirement_id = ANY(sqlc.arg(ids)::bigint[])
-  AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+  AND o.status IN ('DRAFT', 'PENDING_APPROVAL')
 GROUP BY i.requirement_id;
 
 -- name: LiveOrdersForQuotationSupplier :many
@@ -66,7 +66,7 @@ UPDATE purchase_requirements SET
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
-  AND status IN ('PENDING', 'PARTIALLY_ORDERED')
+  AND status IN ('WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED')
   AND ordered_qty + sqlc.arg(qty)::text::numeric <= required_qty
 RETURNING ordered_qty::text AS ordered_qty, status;
 
@@ -144,7 +144,8 @@ UPDATE purchase_orders SET
     remark = sqlc.arg(remark)::text,
     fulfillment_mode = sqlc.arg(fulfillment_mode)::text,
     delivery_location_type = sqlc.arg(delivery_location_type)::text,
-    delivery_port_id = nullif(sqlc.arg(delivery_port_id)::bigint, 0),
+    -- The schema uses 0 for a delivery that is not tied to a saved port.
+    delivery_port_id = sqlc.arg(delivery_port_id)::bigint,
     delivery_port_code = sqlc.arg(delivery_port_code)::text,
     delivery_port_name = sqlc.arg(delivery_port_name)::text,
     -- 采购单表为兼容直接发往港口的模式，以 0 表示“不经过仓库”。
@@ -397,6 +398,9 @@ SELECT
     count(*) OVER () AS total
 FROM purchase_orders o
 WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
+  -- 审批未通过的草稿已退回实单询价重新处理，只作为审计记录保留，
+  -- 不再作为采购订单的一个业务栏目展示。
+  AND o.status <> 'REJECTED'
   -- Data scope: an order is visible when the caller's range covers its
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND (sqlc.arg(scope_all)::bool OR o.buyer_id = ANY(sqlc.arg(buyer_ids)::bigint[]))
@@ -408,13 +412,21 @@ WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
            AND o.status = 'RECEIVED' AND o.closed_at IS NULL)
        OR (sqlc.arg(status)::text = 'HISTORY'
            AND (o.status = 'CANCELLED' OR o.closed_at IS NOT NULL))
-       OR (sqlc.arg(status)::text NOT IN ('RECEIVED_OPEN', 'HISTORY')
+       OR (sqlc.arg(status)::text = 'PENDING_CONTRACT'
+           AND o.status = 'ORDERED' AND o.source_business_id <> 0
+           AND o.contract_verified_at IS NULL AND o.closed_at IS NULL)
+       OR (sqlc.arg(status)::text = 'ORDERED'
+           AND o.status = 'ORDERED'
+           AND (o.source_business_id = 0 OR o.contract_verified_at IS NOT NULL)
+           AND o.closed_at IS NULL)
+       OR (sqlc.arg(status)::text NOT IN ('RECEIVED_OPEN', 'HISTORY', 'PENDING_CONTRACT', 'ORDERED')
            AND o.status = sqlc.arg(status)::text AND o.closed_at IS NULL)
   )
   -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），
   -- 用列表自己的围栏，不另起一套统计。
   AND (sqlc.arg(unsent)::bool = false
-       OR (o.status = 'ORDERED' AND o.send_status <> 'SENT'))
+       OR (o.status = 'ORDERED' AND o.send_status <> 'SENT'
+           AND (o.source_business_id = 0 OR o.contract_verified_at IS NOT NULL)))
   AND (sqlc.arg(keyword)::text = ''
        OR o.po_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR o.supplier_name ILIKE '%' || sqlc.arg(keyword)::text || '%')

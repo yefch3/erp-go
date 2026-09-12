@@ -9,6 +9,7 @@ import (
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/export/internal/app"
 	"github.com/sgao19/erp-go/services/export/internal/store"
@@ -22,6 +23,9 @@ type Handler struct {
 func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRequest) (*exv1.ListQuotationsResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read"); err != nil {
+		return nil, err
+	}
 	rows, total, err := h.svc.ListQuotations(ctx, grpcx.TenantID(ctx), app.QuotationFilter{
 		Keyword: req.GetKeyword(), CustomerID: req.GetCustomerId(), Status: req.GetStatus(),
 		WithoutContract: req.GetWithoutContract(), SourceSourcingCaseID: req.GetSourceSourcingCaseId(),
@@ -48,6 +52,9 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 }
 
 func (h *Handler) GetQuotation(ctx context.Context, req *exv1.GetQuotationRequest) (*exv1.GetQuotationResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read"); err != nil {
+		return nil, err
+	}
 	q, items, err := h.svc.GetQuotationFor(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -60,41 +67,7 @@ func (h *Handler) GetQuotation(ctx context.Context, req *exv1.GetQuotationReques
 }
 
 func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotationRequest) (*exv1.CreateQuotationResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	q, items, err := h.svc.CreateQuotation(ctx, grpcx.TenantID(ctx), app.QuotationInput{
-		CustomerID: req.GetCustomerId(), ContactID: req.GetContactId(),
-		Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
-		PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
-		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
-		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()), Shipments: shipmentsFromProto(req.GetShipments()),
-		OperatorID: op.EmployeeID, OperatorName: op.Name,
-		SourceCostScenarioID: req.GetSourceCostScenarioId(), SourceCostScenarioNo: req.GetSourceCostScenarioNo(),
-		SourceCustomerSelectionID: req.GetSourceCustomerSelectionId(), SourceCustomerSelectionNo: req.GetSourceCustomerSelectionNo(),
-		SourceCustomerSelectionVersion: req.GetSourceCustomerSelectionVersion(),
-		SourceSourcingCaseID:           req.GetSourceSourcingCaseId(),
-	})
-	if err != nil {
-		return nil, err
-	}
-	shipments, err := h.svc.ListQuotationShipments(ctx, grpcx.TenantID(ctx), q.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.CreateQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items), Shipments: shipmentsToProto(shipments)}, nil
-}
-
-func shipmentsFromProto(rows []*exv1.QuotationShipmentInput) []app.QuotationShipmentInput {
-	out := make([]app.QuotationShipmentInput, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, app.QuotationShipmentInput{
-			SourceCustomerSelectionShipmentID: row.GetSourceCustomerSelectionShipmentId(), ShipmentGroupKey: row.GetShipmentGroupKey(),
-			CarrierForwarder: row.GetCarrierForwarder(), ServiceOptionName: row.GetServiceOptionName(), CustomerManaged: row.GetCustomerManaged(),
-			Currency: row.GetCurrency(), FreightAmount: row.GetFreightAmount(), ChargeBasis: row.GetChargeBasis(),
-			PortOfLoading: row.GetPortOfLoading(), PortOfDischarge: row.GetPortOfDischarge(),
-			EstimatedDeparture: row.GetEstimatedDeparture(), EstimatedArrival: row.GetEstimatedArrival(), ValidUntil: row.GetValidUntil(), Remark: row.GetRemark(),
-		})
-	}
-	return out
+	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
 func shipmentsToProto(rows []store.ListQuotationShipmentsRow) []*exv1.QuotationShipment {
@@ -112,49 +85,25 @@ func shipmentsToProto(rows []store.ListQuotationShipmentsRow) []*exv1.QuotationS
 }
 
 func (h *Handler) UpdateQuotation(ctx context.Context, req *exv1.UpdateQuotationRequest) (*exv1.UpdateQuotationResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	q, items, err := h.svc.UpdateQuotation(ctx, grpcx.TenantID(ctx), req.GetId(), app.QuotationInput{
-		CustomerID: req.GetCustomerId(), ContactID: req.GetContactId(),
-		Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
-		PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
-		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
-		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()),
-		OperatorID: op.EmployeeID, OperatorName: op.Name,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.UpdateQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items)}, nil
+	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
 func (h *Handler) SendQuotation(ctx context.Context, req *exv1.SendQuotationRequest) (*exv1.SendQuotationResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	status, err := h.svc.Send(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID)
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.SendQuotationResponse{Status: status}, nil
+	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
 func (h *Handler) RespondQuotation(ctx context.Context, req *exv1.RespondQuotationRequest) (*exv1.RespondQuotationResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	status, err := h.svc.Respond(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID, req.GetStatus(), req.GetNote())
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.RespondQuotationResponse{Status: status}, nil
+	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
 func (h *Handler) CancelQuotation(ctx context.Context, req *exv1.CancelQuotationRequest) (*exv1.CancelQuotationResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	status, err := h.svc.Cancel(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID)
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.CancelQuotationResponse{Status: status}, nil
+	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
 func (h *Handler) GetQuotationWorkbook(ctx context.Context, req *exv1.GetQuotationWorkbookRequest) (*exv1.GetQuotationWorkbookResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read"); err != nil {
+		return nil, err
+	}
 	name, data, err := h.svc.GetQuotationWorkbook(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -163,6 +112,9 @@ func (h *Handler) GetQuotationWorkbook(ctx context.Context, req *exv1.GetQuotati
 }
 
 func (h *Handler) GetQuotationPdf(ctx context.Context, req *exv1.GetQuotationPdfRequest) (*exv1.GetQuotationPdfResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read"); err != nil {
+		return nil, err
+	}
 	name, data, err := h.svc.GetQuotationPDF(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err

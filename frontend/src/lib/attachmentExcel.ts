@@ -34,14 +34,14 @@ export function isDirectTableFile(name: string, contentType = ''): boolean {
   )
 }
 
-export async function parseTableFile(name: string, data: ArrayBuffer): Promise<DirectWorkbook> {
+export async function parseTableFile(name: string, data: ArrayBuffer, rowLimit = maxPreviewRows): Promise<DirectWorkbook> {
   const dot = name.lastIndexOf('.')
   const ext = dot >= 0 ? name.slice(dot).toLowerCase() : ''
   if (ext === '.csv' || ext === '.tsv') {
     const text = new TextDecoder('utf-8').decode(data)
-    return delimitedWorkbook(sheetNameFromFile(name), text, ext === '.tsv' ? '\t' : ',')
+    return delimitedWorkbook(sheetNameFromFile(name), text, ext === '.tsv' ? '\t' : ',', rowLimit)
   }
-  return xlsxWorkbook(new Uint8Array(data))
+  return xlsxWorkbook(new Uint8Array(data), rowLimit)
 }
 
 function sheetNameFromFile(name: string): string {
@@ -52,10 +52,10 @@ function sheetNameFromFile(name: string): string {
 
 // ---------------------------------------------------------------- delimited
 
-function delimitedWorkbook(sheetName: string, text: string, delimiter: string): DirectWorkbook {
+function delimitedWorkbook(sheetName: string, text: string, delimiter: string, rowLimit: number): DirectWorkbook {
   const rows = parseDelimited(text.replace(/^﻿/, ''), delimiter).filter((row) => row.some((cell) => cell.trim() !== ''))
   if (rows.length === 0) throw new Error('empty table file')
-  return { sheets: [sheetFromRows(sheetName, rows)] }
+  return { sheets: [sheetFromRows(sheetName, rows, rowLimit)] }
 }
 
 function parseDelimited(text: string, delimiter: string): string[][] {
@@ -111,13 +111,13 @@ function parseDelimited(text: string, delimiter: string): string[][] {
   return rows
 }
 
-function sheetFromRows(name: string, rows: string[][]): DirectSheet {
+function sheetFromRows(name: string, rows: string[][], rowLimit: number): DirectSheet {
   const columns = rows[0].slice(0, maxColumns)
   const data = rows.slice(1)
   return {
     name,
     columns,
-    rows: data.slice(0, maxPreviewRows).map((row) => {
+    rows: data.slice(0, rowLimit).map((row) => {
       const cells = row.slice(0, columns.length)
       while (cells.length < columns.length) cells.push('')
       return cells
@@ -143,14 +143,14 @@ interface ZipMember {
 // 类型加了「背后是哪种 buffer」的参数，而 Blob 只收普通 ArrayBuffer 撑着
 // 的那一种。这里的字节一路来自 File.arrayBuffer()，本来就是普通的；把它
 // 写出来，比在下面某一行加断言诚实。
-async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkbook> {
+async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, rowLimit: number): Promise<DirectWorkbook> {
   const members = zipMembers(bytes)
   const workbookXml = await memberText(bytes, members, 'xl/workbook.xml')
   if (workbookXml === undefined) throw new Error('not an xlsx: no workbook part')
 
   const rels = new Map<string, string>()
   const relsXml = (await memberText(bytes, members, 'xl/_rels/workbook.xml.rels')) ?? ''
-  for (const match of relsXml.matchAll(/<Relationship\b[^>]*>/g)) {
+  for (const match of relsXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?Relationship\b[^>]*>/g)) {
     const id = xmlAttr(match[0], 'Id')
     const target = xmlAttr(match[0], 'Target')
     if (id && target) rels.set(id, target.startsWith('/') ? target.slice(1) : `xl/${target}`)
@@ -159,13 +159,13 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkb
   const shared: string[] = []
   const sharedXml = await memberText(bytes, members, 'xl/sharedStrings.xml')
   if (sharedXml !== undefined) {
-    for (const si of sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+    for (const si of sharedXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?si>/g)) {
       shared.push(collectText(si[1]))
     }
   }
 
   const sheets: DirectSheet[] = []
-  for (const match of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
+  for (const match of workbookXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sheet\b[^>]*>/g)) {
     if (sheets.length >= maxSheets) break
     const name = xmlAttr(match[0], 'name') || `Sheet${sheets.length + 1}`
     const rid = xmlAttr(match[0], 'r:id')
@@ -174,7 +174,7 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkb
     const xml = await memberText(bytes, members, part)
     if (xml === undefined) continue
     const rows = worksheetRows(xml, shared)
-    if (rows.length > 0) sheets.push(sheetFromRows(name, rows))
+    if (rows.length > 0) sheets.push(sheetFromRows(name, rows, rowLimit))
   }
   if (sheets.length === 0) throw new Error('not an xlsx: no readable sheet')
   return { sheets }
@@ -182,9 +182,9 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkb
 
 function worksheetRows(xml: string, shared: string[]): string[][] {
   const rows: string[][] = []
-  for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+  for (const rowMatch of xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?row\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?row>/g)) {
     const cells: string[] = []
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const cellMatch of rowMatch[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g)) {
       const attrs = cellMatch[1]
       const body = cellMatch[2] ?? ''
       const ref = xmlAttr(attrs, 'r')
@@ -216,7 +216,8 @@ function columnIndex(ref: string): number {
 }
 
 function firstTagText(xml: string, tag: string): string {
-  const match = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`))
+  const qualified = `(?:[A-Za-z_][\\w.-]*:)?${tag}`
+  const match = xml.match(new RegExp(`<${qualified}(?:\\s[^>]*)?>([\\s\\S]*?)</${qualified}>`))
   return match ? xmlUnescape(match[1]) : ''
 }
 
@@ -224,7 +225,7 @@ function firstTagText(xml: string, tag: string): string {
 // the text is the concatenation either way.
 function collectText(xml: string): string {
   let out = ''
-  for (const t of xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) {
+  for (const t of xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)) {
     out += t[1]
   }
   return xmlUnescape(out)

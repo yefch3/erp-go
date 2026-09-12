@@ -91,7 +91,7 @@ const canUpload = computed(() => auth.can('shipping:document:upload'))
 const canInvalidate = computed(() => auth.can('shipping:document:invalidate'))
 
 const categories = [
-  ['EXPORT_CONTRACT', '出口合同'], ['BOOKING_CONFIRMATION', '订舱确认书'],
+  ['EXPORT_CONTRACT', '外销合同'], ['BOOKING_CONFIRMATION', '订舱确认书'],
   ['COMMERCIAL_INVOICE', '商业发票'], ['PACKING_LIST', '装箱单'],
   ['CUSTOMS_DOCUMENT', '报关资料'], ['BILL_OF_LADING_DRAFT', '提单草稿'],
   ['BILL_OF_LADING_FINAL', '正式提单'], ['ARRIVAL_NOTICE', '到港通知'], ['OTHER', '其他附件'],

@@ -3,11 +3,14 @@ package grpcin
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
@@ -68,6 +71,9 @@ func (h *SourcingHandler) authorizePlan(ctx context.Context, planID int64) error
 }
 
 func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRequest) (*prv1.CreateCaseResponse, error) {
+	if err := h.svc.AuthorizeInquiryCreate(ctx, sourcingOperator(ctx)); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.SourcingLineInput, 0, len(req.GetLines()))
 	for _, line := range req.GetLines() {
@@ -88,18 +94,7 @@ func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRe
 }
 
 func (h *SourcingHandler) ListCases(ctx context.Context, req *prv1.ListCasesRequest) (*prv1.ListCasesResponse, error) {
-	op := sourcingOperator(ctx)
-	rows, total, err := h.svc.ListSourcingCases(ctx, grpcx.TenantID(ctx), app.SourcingFilter{
-		Status: req.GetStatus(), Keyword: req.GetKeyword(),
-	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), op)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*prv1.SourcingCase, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, sourcingCaseList(row))
-	}
-	return &prv1.ListCasesResponse{SourcingCases: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+	return nil, apierr.Conflict("INQUIRY_LIST_REPLACED", "请使用当前客户询盘或部门询价列表")
 }
 
 func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest) (*prv1.GetCaseResponse, error) {
@@ -114,36 +109,15 @@ func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest)
 }
 
 func (h *SourcingHandler) AddLine(ctx context.Context, req *prv1.AddLineRequest) (*prv1.AddLineResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.AddSourcingLine(ctx, grpcx.TenantID(ctx), req.GetCaseId(), lineInput(req.GetExtracted()), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.AddLineResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLinesRequest) (*prv1.ConfirmLinesResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.ConfirmLinesResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) AcceptCase(ctx context.Context, req *prv1.AcceptCaseRequest) (*prv1.AcceptCaseResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.AcceptSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.AcceptCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListCaseParticipants(ctx context.Context, req *prv1.ListCaseParticipantsRequest) (*prv1.ListCaseParticipantsResponse, error) {
@@ -158,103 +132,35 @@ func (h *SourcingHandler) ListCaseParticipants(ctx context.Context, req *prv1.Li
 }
 
 func (h *SourcingHandler) JoinCase(ctx context.Context, req *prv1.JoinCaseRequest) (*prv1.JoinCaseResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	items, err := h.svc.JoinSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.JoinCaseResponse{Participants: sourcingParticipants(items)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) RequestPrimaryBuyer(ctx context.Context, req *prv1.RequestPrimaryBuyerRequest) (*prv1.RequestPrimaryBuyerResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	items, view, err := h.svc.RequestPrimarySourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.RequestPrimaryBuyerResponse{Participants: sourcingParticipants(items), SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) AssignPrimaryBuyer(ctx context.Context, req *prv1.AssignPrimaryBuyerRequest) (*prv1.AssignPrimaryBuyerResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	items, view, err := h.svc.AssignPrimarySourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetEmployeeId(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.AssignPrimaryBuyerResponse{Participants: sourcingParticipants(items), SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ReturnCase(ctx context.Context, req *prv1.ReturnCaseRequest) (*prv1.ReturnCaseResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.ReturnSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetMissingFields(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.ReturnCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) WithdrawCase(ctx context.Context, req *prv1.WithdrawCaseRequest) (*prv1.WithdrawCaseResponse, error) {
-	view, err := h.svc.WithdrawSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.WithdrawCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRequest) (*prv1.ReviewLineResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	view, err := h.svc.ReviewSourcingLine(ctx, grpcx.TenantID(ctx), app.SourcingLineReview{
-		CaseID: req.GetCaseId(), LineID: req.GetLineId(), ProductID: req.GetProductId(), SkuID: req.GetSkuId(),
-		UomID: req.GetUomId(), Decision: req.GetDecision(), Reason: req.GetReason(), Extracted: lineInput(req.GetExtracted()),
-	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.ReviewLineResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.CreateFactoryRfqRequest) (*prv1.CreateFactoryRfqResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	row, err := h.svc.CreateFactoryRFQ(ctx, grpcx.TenantID(ctx), app.NewFactoryRFQ{CaseID: req.GetCaseId(), SupplierID: req.GetSupplierId(),
-		FactoryID: req.GetFactoryId(), FactoryCode: req.GetFactoryCode(), FactoryName: req.GetFactoryName(),
-		ContactEmail: req.GetContactEmail(), Currency: req.GetCurrency(), ResponseDueAt: req.GetResponseDueAt(), SourcingLineIDs: req.GetSourcingLineIds(),
-		InquiryChannel: req.GetInquiryChannel(), ContactName: req.GetContactName(), ContactValue: req.GetContactValue(),
-		ContactedAt: req.GetContactedAt(), InquiryNote: req.GetInquiryNote(), RoundNo: req.GetRoundNo()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateFactoryRfqResponse{FactoryRfq: factoryRFQ(row)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListCaseChanges(ctx context.Context, req *prv1.ListCaseChangesRequest) (*prv1.ListCaseChangesResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	rows, err := h.svc.ListSourcingChanges(ctx, grpcx.TenantID(ctx), req.GetCaseId())
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*prv1.SourcingCaseChange, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, &prv1.SourcingCaseChange{Id: row.ID, Section: row.Section, Action: row.Action,
-			EntityId: row.EntityID, Summary: row.Summary, BeforeJson: string(row.BeforeJson), AfterJson: string(row.AfterJson),
-			Reason: row.Reason, OperatorId: row.OperatorID, OperatorName: row.OperatorName, CreatedAt: ts(row.CreatedAt)})
-	}
-	return &prv1.ListCaseChangesResponse{Changes: out}, nil
+	return &prv1.ListCaseChangesResponse{}, nil
 }
 
 func (h *SourcingHandler) ListOverdueFactoryRfqs(ctx context.Context, req *prv1.ListOverdueFactoryRfqsRequest) (*prv1.ListOverdueFactoryRfqsResponse, error) {
@@ -276,14 +182,7 @@ func (h *SourcingHandler) ListOverdueFactoryRfqs(ctx context.Context, req *prv1.
 }
 
 func (h *SourcingHandler) UpdateFactoryRfq(ctx context.Context, req *prv1.UpdateFactoryRfqRequest) (*prv1.UpdateFactoryRfqResponse, error) {
-	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
-		return nil, err
-	}
-	row, err := h.svc.UpdateFactoryRFQ(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetInquiryChannel(), req.GetContactName(), req.GetContactEmail(), req.GetContactValue(), req.GetContactedAt(), req.GetInquiryNote(), req.GetResponseDueAt(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.UpdateFactoryRfqResponse{FactoryRfq: factoryRFQ(row)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListFactoryRfqs(ctx context.Context, req *prv1.ListFactoryRfqsRequest) (*prv1.ListFactoryRfqsResponse, error) {
@@ -302,19 +201,7 @@ func (h *SourcingHandler) ListFactoryRfqs(ctx context.Context, req *prv1.ListFac
 }
 
 func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.CreateSupplierQuoteRequest) (*prv1.CreateSupplierQuoteResponse, error) {
-	if err := h.authorizeRFQ(ctx, req.GetFactoryRfqId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	lines := make([]app.SupplierQuoteLineInput, 0, len(req.GetLines()))
-	for _, line := range req.GetLines() {
-		lines = append(lines, app.SupplierQuoteLineInput{SourcingLineID: line.GetSourcingLineId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), MOQ: line.GetMoq(), LeadTime: line.GetLeadTime(), Remark: line.GetRemark()})
-	}
-	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Incoterm: req.GetIncoterm(), Remark: req.GetRemark(), Source: req.GetSource(), ConfirmationStatus: req.GetConfirmationStatus(), EvidenceNote: req.GetEvidenceNote(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateSupplierQuoteResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo, VersionNo: row.VersionNo}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.GetFactoryRfqWorkbookRequest) (*prv1.GetFactoryRfqWorkbookResponse, error) {
@@ -330,28 +217,11 @@ func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.G
 }
 
 func (h *SourcingHandler) ImportSupplierQuoteWorkbook(ctx context.Context, req *prv1.ImportSupplierQuoteWorkbookRequest) (*prv1.ImportSupplierQuoteWorkbookResponse, error) {
-	if err := h.authorizeRFQ(ctx, req.GetFactoryRfqId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	row, err := h.svc.ImportSupplierQuoteWorkbook(ctx, grpcx.TenantID(ctx), req.GetFileData(), app.NewSupplierQuote{
-		FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(),
-		PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Incoterm: req.GetIncoterm(), Remark: req.GetRemark(),
-	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.ImportSupplierQuoteWorkbookResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) MarkFactoryRfqSent(ctx context.Context, req *prv1.MarkFactoryRfqSentRequest) (*prv1.MarkFactoryRfqSentResponse, error) {
-	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
-		return nil, err
-	}
-	if err := h.svc.MarkFactoryRFQSent(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx)); err != nil {
-		return nil, err
-	}
-	return &prv1.MarkFactoryRfqSentResponse{Status: "SENT"}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *prv1.ListSupplierQuoteComparisonRequest) (*prv1.ListSupplierQuoteComparisonResponse, error) {
@@ -382,22 +252,7 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 }
 
 func (h *SourcingHandler) CreateProcurementPlan(ctx context.Context, req *prv1.CreateProcurementPlanRequest) (*prv1.CreateProcurementPlanResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	in := app.NewProcurementPlan{CaseID: req.GetCaseId(), ManagerNote: req.GetManagerNote()}
-	for _, selection := range req.GetSelections() {
-		in.Selections = append(in.Selections, app.ProcurementPlanSelectionInput{
-			SourcingLineID: selection.GetSourcingLineId(), SupplierQuoteLineID: selection.GetSupplierQuoteLineId(),
-			SelectionType: selection.GetSelectionType(), Priority: selection.GetPriority(),
-			Reason: selection.GetReason(), Risk: selection.GetRisk(),
-		})
-	}
-	view, err := h.svc.CreateProcurementPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateProcurementPlanResponse{ProcurementPlan: procurementPlanView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListProcurementPlans(ctx context.Context, req *prv1.ListProcurementPlansRequest) (*prv1.ListProcurementPlansResponse, error) {
@@ -427,28 +282,11 @@ func (h *SourcingHandler) GetProcurementPlan(ctx context.Context, req *prv1.GetP
 }
 
 func (h *SourcingHandler) SubmitProcurementPlanToSales(ctx context.Context, req *prv1.SubmitProcurementPlanToSalesRequest) (*prv1.SubmitProcurementPlanToSalesResponse, error) {
-	if err := h.authorizePlan(ctx, req.GetId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.SubmitProcurementPlanToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.SubmitProcurementPlanToSalesResponse{ProcurementPlan: procurementPlanView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) CreateProcurementRework(ctx context.Context, req *prv1.CreateProcurementReworkRequest) (*prv1.CreateProcurementReworkResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	row, err := h.svc.CreateProcurementRework(ctx, grpcx.TenantID(ctx), app.NewProcurementRework{
-		CaseID: req.GetCaseId(), PlanID: req.GetPlanId(), SourcingLineID: req.GetSourcingLineId(),
-		SupplierQuoteLineID: req.GetSupplierQuoteLineId(), RequestType: req.GetRequestType(), Reason: req.GetReason(),
-	}, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateProcurementReworkResponse{ReworkRequest: procurementRework(row)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListProcurementReworks(ctx context.Context, req *prv1.ListProcurementReworksRequest) (*prv1.ListProcurementReworksResponse, error) {
@@ -467,11 +305,7 @@ func (h *SourcingHandler) ListProcurementReworks(ctx context.Context, req *prv1.
 }
 
 func (h *SourcingHandler) ResolveProcurementRework(ctx context.Context, req *prv1.ResolveProcurementReworkRequest) (*prv1.ResolveProcurementReworkResponse, error) {
-	in := app.ProcurementReworkResolution{Note: req.GetResolutionNote(), Currency: req.GetFinalCurrency(), UnitPrice: req.GetFinalUnitPrice(), AvailableQty: req.GetFinalAvailableQty(), LeadTime: req.GetFinalLeadTime(), DeliveryDate: req.GetFinalDeliveryDate(), PaymentTerms: req.GetFinalPaymentTerms(), Incoterm: req.GetFinalIncoterm(), ValidUntil: req.GetFinalValidUntil()}
-	if err := h.svc.ResolveProcurementRework(ctx, grpcx.TenantID(ctx), req.GetId(), in, sourcingOperator(ctx)); err != nil {
-		return nil, err
-	}
-	return &prv1.ResolveProcurementReworkResponse{}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func sourcingShippingRequest(row store.SourcingShippingRequest) *prv1.SourcingShippingRequest {
@@ -562,51 +396,19 @@ func (h *SourcingHandler) GetSourcingShippingCollaboration(ctx context.Context, 
 }
 
 func (h *SourcingHandler) JoinSourcingShippingTask(ctx context.Context, req *prv1.JoinSourcingShippingTaskRequest) (*prv1.JoinSourcingShippingTaskResponse, error) {
-	rows, err := h.svc.JoinSourcingShippingTask(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, sourcingShippingParticipant(row))
-	}
-	return &prv1.JoinSourcingShippingTaskResponse{Participants: out}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) RequestPrimaryShipping(ctx context.Context, req *prv1.RequestPrimaryShippingRequest) (*prv1.RequestPrimaryShippingResponse, error) {
-	rows, err := h.svc.RequestPrimaryShipping(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, sourcingShippingParticipant(row))
-	}
-	return &prv1.RequestPrimaryShippingResponse{Participants: out}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) AssignPrimaryShipping(ctx context.Context, req *prv1.AssignPrimaryShippingRequest) (*prv1.AssignPrimaryShippingResponse, error) {
-	rows, err := h.svc.AssignPrimaryShipping(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetEmployeeId(), req.GetReason(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, sourcingShippingParticipant(row))
-	}
-	return &prv1.AssignPrimaryShippingResponse{Participants: out}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) CreateSourcingShippingPlan(ctx context.Context, req *prv1.CreateSourcingShippingPlanRequest) (*prv1.CreateSourcingShippingPlanResponse, error) {
-	in := app.NewShippingPlan{CaseID: req.GetCaseId(), ManagerNote: req.GetManagerNote()}
-	for _, row := range req.GetSelections() {
-		in.Selections = append(in.Selections, app.ShippingPlanSelectionInput{SourcingLineID: row.GetSourcingLineId(), ShippingOptionLineID: row.GetShippingOptionLineId(), SelectionType: row.GetSelectionType(), Priority: row.GetPriority(), Reason: row.GetReason(), Risk: row.GetRisk()})
-	}
-	view, err := h.svc.CreateSourcingShippingPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateSourcingShippingPlanResponse{Plan: sourcingShippingPlan(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListSourcingShippingPlans(ctx context.Context, req *prv1.ListSourcingShippingPlansRequest) (*prv1.ListSourcingShippingPlansResponse, error) {
@@ -622,11 +424,7 @@ func (h *SourcingHandler) ListSourcingShippingPlans(ctx context.Context, req *pr
 }
 
 func (h *SourcingHandler) SubmitSourcingShippingPlanToSales(ctx context.Context, req *prv1.SubmitSourcingShippingPlanToSalesRequest) (*prv1.SubmitSourcingShippingPlanToSalesResponse, error) {
-	view, err := h.svc.SubmitSourcingShippingPlanToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.SubmitSourcingShippingPlanToSalesResponse{Plan: sourcingShippingPlan(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListSourcingShippingTasks(ctx context.Context, req *prv1.ListSourcingShippingTasksRequest) (*prv1.ListSourcingShippingTasksResponse, error) {
@@ -646,58 +444,15 @@ func (h *SourcingHandler) ListSourcingShippingTasks(ctx context.Context, req *pr
 }
 
 func (h *SourcingHandler) StartSourcingShippingTask(ctx context.Context, req *prv1.StartSourcingShippingTaskRequest) (*prv1.StartSourcingShippingTaskResponse, error) {
-	view, err := h.svc.StartSourcingShippingTask(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	request, options, _ := shippingCollaboration(view)
-	return &prv1.StartSourcingShippingTaskResponse{ShippingRequest: request, Options: options}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) AddSourcingShippingOption(ctx context.Context, req *prv1.AddSourcingShippingOptionRequest) (*prv1.AddSourcingShippingOptionResponse, error) {
-	lines := make([]app.NewSourcingShippingOptionLine, 0, len(req.GetLines()))
-	for _, line := range req.GetLines() {
-		lines = append(lines, app.NewSourcingShippingOptionLine{SourcingLineID: line.GetSourcingLineId(), Currency: line.GetCurrency(), ChargeBasis: line.GetChargeBasis(), UnitRate: line.GetUnitRate(), TotalFreight: line.GetTotalFreight(), Note: line.GetNote()})
-	}
-	view, err := h.svc.AddSourcingShippingOption(ctx, grpcx.TenantID(ctx), app.NewSourcingShippingOption{
-		CaseID: req.GetCaseId(), CarrierForwarder: req.GetCarrierForwarder(), ServiceOptionName: req.GetServiceOptionName(), PortOfLoading: req.GetPortOfLoading(),
-		PortOfDischarge: req.GetPortOfDischarge(), QuotedAt: req.GetQuotedAt(), EstimatedDeparture: req.GetEstimatedDeparture(),
-		EstimatedArrival: req.GetEstimatedArrival(), ValidUntil: req.GetValidUntil(), Note: req.GetNote(), Lines: lines,
-	}, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	request, options, _ := shippingCollaboration(view)
-	return &prv1.AddSourcingShippingOptionResponse{ShippingRequest: request, Options: options}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.CreateCostScenarioRequest) (*prv1.CreateCostScenarioResponse, error) {
-	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	in := app.NewCostScenario{
-		CaseID: req.GetCaseId(), Currency: req.GetCurrency(), AllocationBasis: req.GetAllocationBasis(),
-		MarginType: req.GetMarginType(), MarginValue: req.GetMarginValue(),
-	}
-	for _, selection := range req.GetSelections() {
-		in.Selections = append(in.Selections, app.CostSelectionInput{
-			SourcingLineID: selection.GetSourcingLineId(), SupplierQuoteLineID: selection.GetSupplierQuoteLineId(),
-		})
-	}
-	for _, charge := range req.GetCharges() {
-		in.Charges = append(in.Charges, app.CostChargeInput{
-			ChargeType: charge.GetChargeType(), Basis: charge.GetBasis(), Description: charge.GetDescription(),
-			OriginPort: charge.GetOriginPort(), DestinationPort: charge.GetDestinationPort(), ContainerType: charge.GetContainerType(),
-			Amount: charge.GetAmount(), Currency: charge.GetCurrency(), EffectiveAt: charge.GetEffectiveAt(),
-			ValidUntil: charge.GetValidUntil(), Source: charge.GetSource(), Remark: charge.GetRemark(),
-		})
-	}
-	view, err := h.svc.CreateCostScenario(ctx, grpcx.TenantID(ctx), in, app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) ListCostScenarios(ctx context.Context, req *prv1.ListCostScenariosRequest) (*prv1.ListCostScenariosResponse, error) {
@@ -727,26 +482,11 @@ func (h *SourcingHandler) GetCostScenario(ctx context.Context, req *prv1.GetCost
 }
 
 func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.ConfirmCostScenarioRequest) (*prv1.ConfirmCostScenarioResponse, error) {
-	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
-		return nil, err
-	}
-	op, _ := grpcx.OperatorFromContext(ctx)
-	view, err := h.svc.ConfirmCostScenario(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetReason(), app.Operator{ID: op.EmployeeID, Name: op.Name})
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.ConfirmCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) SubmitCostToSales(ctx context.Context, req *prv1.SubmitCostToSalesRequest) (*prv1.SubmitCostToSalesResponse, error) {
-	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
-		return nil, err
-	}
-	view, err := h.svc.SubmitCostToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.SubmitCostToSalesResponse{CostScenario: costScenarioView(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价操作已退出，请进入客户询盘、采购询价或物流询价处理")
 }
 
 func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv1.PrepareCustomerQuotationRequest) (*prv1.PrepareCustomerQuotationResponse, error) {
@@ -904,7 +644,9 @@ func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {
 
 func sourcingCaseView(view app.SourcingCaseView) *prv1.SourcingCase {
 	out := sourcingCaseHead(view.Head)
-	out.SourceFileUrl = view.SourceFileURL
+	if view.Head.SourceFileKey != "" {
+		out.SourceFileUrl = "/api/inquiry-files?" + url.Values{"view": {"AUTO"}, "id": {strconv.FormatInt(view.Head.ID, 10)}, "key": {view.Head.SourceFileKey}}.Encode()
+	}
 	out.Lines = make([]*prv1.SourcingLine, 0, len(view.Lines))
 	for _, line := range view.Lines {
 		out.Lines = append(out.Lines, sourcingLine(line))
@@ -952,29 +694,6 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
 		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
 		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
-	}
-}
-
-func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
-	acceptedBy, returnedBy := int64(0), int64(0)
-	if row.AcceptedBy != nil {
-		acceptedBy = *row.AcceptedBy
-	}
-	if row.ReturnedBy != nil {
-		returnedBy = *row.ReturnedBy
-	}
-	return &prv1.SourcingCase{
-		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
-		CustomerName: row.CustomerName, ContactId: row.ContactID, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
-		SourceMailId: row.SourceMailID, SourceAttachmentId: row.SourceAttachmentID,
-		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
-		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
-		SourceFileName: row.SourceFileName,
-		HandoffStatus:  row.HandoffStatus, RequirementVersionNo: row.RequirementVersionNo,
-		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
-		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
-		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
-		OpenReworkCount: row.OpenReworkCount, MyOpenReworkCount: row.MyOpenReworkCount,
 	}
 }
 

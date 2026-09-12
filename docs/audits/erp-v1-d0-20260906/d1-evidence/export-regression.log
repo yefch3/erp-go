@@ -1,0 +1,24 @@
+=== RUN   TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct
+--- PASS: TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct (0.25s)
+=== RUN   TestCarryOpeningSnapshotPreservesHistory
+--- PASS: TestCarryOpeningSnapshotPreservesHistory (0.00s)
+=== RUN   TestCarryOpeningSnapshotRejectsRewritingHistory
+--- PASS: TestCarryOpeningSnapshotRejectsRewritingHistory (0.01s)
+=== RUN   TestCarryOpeningSnapshotDistinguishesManualProducts
+--- PASS: TestCarryOpeningSnapshotDistinguishesManualProducts (0.00s)
+=== RUN   TestContractExecutionBoard
+--- PASS: TestContractExecutionBoard (0.51s)
+=== RUN   TestD1WithdrawalFence
+    inquiry_availability_integration_test.go:90: tenant=1788748581498308014: unconfirmed removal, stale creation fence, resubmission, accepted/contract protection and concurrent confirmation passed
+--- PASS: TestD1WithdrawalFence (0.32s)
+=== RUN   TestSourcedQuotationFieldsFitProcurementSnapshots
+--- PASS: TestSourcedQuotationFieldsFitProcurementSnapshots (0.06s)
+=== RUN   TestBuildQuotationWorkbookKeepsServerAmounts
+--- PASS: TestBuildQuotationWorkbookKeepsServerAmounts (0.01s)
+=== RUN   TestBuildQuotationPDF
+--- PASS: TestBuildQuotationPDF (0.33s)
+=== RUN   TestReceivableDueList
+--- PASS: TestReceivableDueList (0.28s)
+=== RUN   TestShipmentProgressSeparatesUncataloguedProductsByNameAndUOM
+--- PASS: TestShipmentProgressSeparatesUncataloguedProductsByNameAndUOM (0.21s)
+PASS

@@ -1,13 +1,8 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('supplierRecon.eyebrow') }}</div>
-        <h1>{{ t('supplierRecon.title') }}</h1>
-        <p>{{ t('supplierRecon.subtitle') }}</p>
-      </div>
-      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button>
-    </header>
+    <WorkflowPageHeader :title="t('supplierRecon.title')" :description="t('supplierRecon.subtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
+    </WorkflowPageHeader>
 
     <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -67,6 +62,12 @@
           <el-radio-button value="overdue">{{ t('supplierRecon.viewOverdue') }}</el-radio-button>
           <el-radio-button value="unset">{{ t('supplierRecon.viewUnset') }}</el-radio-button>
         </el-radio-group>
+        <el-select v-model="businessType" :placeholder="t('supplierRecon.businessType')" style="width: 170px" @change="reload">
+          <el-option :label="t('supplierRecon.businessTypes.ALL')" value="" />
+          <el-option :label="t('supplierRecon.businessTypes.PROCUREMENT')" value="PROCUREMENT" />
+          <el-option :label="t('supplierRecon.businessTypes.LOGISTICS')" value="LOGISTICS" />
+          <el-option :label="t('supplierRecon.businessTypes.MANUAL')" value="MANUAL" />
+        </el-select>
         <el-input
           v-model="keyword"
           clearable
@@ -116,16 +117,6 @@
                 <el-table-column :label="t('supplierRecon.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedBy }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="90">
-                  <template #default="{ row: e }">
-                    <!-- 挂付款单的老行也从这里冲。供应商付款页下线之后这是
-                         唯一入口，服务层会把它转交给带余额回填的老路。 -->
-                    <el-button
-                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
-                      link type="danger" @click="reverseEntry(row, e)"
-                    >{{ t('supplierRecon.entryReverse') }}</el-button>
-                  </template>
-                </el-table-column>
               </el-table>
               <p v-else class="sub">{{ t('supplierRecon.entriesEmpty') }}</p>
 
@@ -136,11 +127,6 @@
                 <div class="files-head">
                   <span class="files-title">{{ t('supplierRecon.files') }}</span>
                   <span class="sub">{{ t('supplierRecon.filesHint') }}</span>
-                  <el-button
-                    v-if="canWrite" size="small" type="primary" plain
-                    :loading="uploadingPO === String(row.poId)"
-                    @click="pickFile(row)"
-                  >{{ t('supplierRecon.fileUpload') }}</el-button>
                 </div>
                 <ul v-if="filesOf(row).length" class="file-list">
                   <li v-for="f in filesOf(row)" :key="f.id">
@@ -158,6 +144,9 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column :label="t('supplierRecon.businessType')" width="105">
+          <template #default="{ row }"><el-tag size="small" effect="plain" :type="row.businessType === 'LOGISTICS' ? 'success' : row.businessType === 'MANUAL' ? 'info' : undefined">{{ t(`supplierRecon.businessTypes.${row.businessType || 'PROCUREMENT'}`) }}</el-tag></template>
+        </el-table-column>
         <el-table-column :label="t('supplierRecon.order')" min-width="190">
           <template #default="{ row }">
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
@@ -166,6 +155,10 @@
             <router-link v-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
+            <div v-if="row.exportContractNo" class="sub">{{ t('supplierRecon.exportContract') }} {{ row.exportContractNo }}</div>
+            <div v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt" class="sub finance-review">
+              {{ t('supplierRecon.awaitingFinanceApproval') }} · {{ row.signedContractName }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('supplierRecon.openAmount')" width="170" align="right">
@@ -189,8 +182,14 @@
         </el-table-column>
         <el-table-column :label="t('supplierRecon.orderStatus')" width="130">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="row.orderStatus === 'CANCELLED' ? 'info' : undefined">
-              {{ t(`supplierRecon.orderStatuses.${row.orderStatus}`) }}
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt ? 'warning' : row.orderStatus === 'CANCELLED' ? 'info' : undefined"
+            >
+              {{ ['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt
+                ? t('supplierRecon.awaitingFinanceApproval')
+                : t(`supplierRecon.orderStatuses.${row.orderStatus}`) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -215,21 +214,29 @@
         <!-- 已完成视图多一列：为什么算完了、谁说的。 -->
         <el-table-column v-if="isDone" :label="t('supplierRecon.closedWhy')" min-width="180">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ t(`supplierRecon.closureCategories.${row.closedCategory}`) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ t(`supplierRecon.closureCategories.${row.closedCategory || 'OTHER'}`) }}</el-tag>
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+            <el-button v-if="isDone || !canWrite" type="primary" plain @click="handleRowCommand(row, 'detail')">
+              {{ t('supplierRecon.viewDetails') }}
+            </el-button>
+            <el-dropdown v-else trigger="click" @command="(command: string) => handleRowCommand(row, command)">
               <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
-                <template v-if="canWrite">
-                  <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
-                  <el-dropdown-item :command="isDone ? 'reopen' : 'close'">{{ isDone ? t('supplierRecon.reopen') : t('supplierRecon.close') }}</el-dropdown-item>
-                  <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
-                </template>
+                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
+                <el-dropdown-item
+                  v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt"
+                  divided
+                  command="approveFinance"
+                >{{ t('supplierRecon.approveFinance') }}</el-dropdown-item>
+                <el-dropdown-item v-else divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
+                <el-dropdown-item command="upload">{{ t('supplierRecon.fileUpload') }}</el-dropdown-item>
+                <el-dropdown-item command="close">{{ t('supplierRecon.close') }}</el-dropdown-item>
+                <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
           </template>
@@ -266,9 +273,22 @@
           <el-table-column :label="t('supplierRecon.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
           <el-table-column :label="t('supplierRecon.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('supplierRecon.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
           <el-table-column :label="t('supplierRecon.entryBy')" min-width="180"><template #default="{ row: e }">{{ e.allocatedBy || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <el-table-column v-if="canWrite && !isDone" :label="t('common.actions')" width="90">
+            <template #default="{ row: e }"><el-button v-if="!Number(e.reversalOf) && !reversedIds(detailRow).has(String(e.allocationId))" link type="danger" @click="reverseEntry(detailRow, e)">{{ t('supplierRecon.entryReverse') }}</el-button></template>
+          </el-table-column>
           <template #empty>{{ t('supplierRecon.entriesEmpty') }}</template>
         </el-table>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="editOpen" :title="t('supplierRecon.editManual')" width="min(520px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('supplierRecon.manualSupplier')" required><el-input v-model="editForm.supplierName" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.manualOrder')" required><el-input v-model="editForm.orderNo" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.manualDueDate')"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
+        <el-alert :closable="false" type="info" :title="t('supplierRecon.editManualHint')" />
+      </el-form>
+      <template #footer><el-button @click="editOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="editBusy" @click="saveEdit">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
     <!-- 改应付到期日。这个日子决定这张单算不算逾期，所以理由必填，
@@ -379,9 +399,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { backfillRequest, get, post } from '../api'
+import { backfillRequest, get, patch, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
+import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -434,6 +455,15 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+  manuallyEntered: boolean
+  businessType: string
+  sourceBusinessId: string
+  exportContractNo: string
+  businessDocumentNo: string
+  paymentTerms: string
+  signedContractName: string
+  requestedByName: string
+  requestedAt: string
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -504,6 +534,7 @@ const unsetCount = ref(0)
 
 const dueSoonDays = 30
 const view = ref('')
+const businessType = ref('')
 
 // 已完成页上的到期日是历史，不是待办：一张 2023 年就结清的单不该顶着
 // 「逾期 700 天」的红底。催的是没结的账，结了的只剩记录。
@@ -548,6 +579,7 @@ async function load() {
       overdue: !isDone.value && view.value === 'overdue' ? '1' : '',
       unset: !isDone.value && view.value === 'unset' ? '1' : '',
       keyword: keyword.value,
+      business_type: businessType.value,
     })
     rows.value = d.items ?? []
     total.value = Number(d.total ?? 0)
@@ -657,10 +689,45 @@ async function openDetails(row: Row) {
 
 function handleRowCommand(row: Row, command: string) {
   if (command === 'detail') void openDetails(row)
+  else if (command === 'approveFinance') void approveFinance(row)
   else if (command === 'payment') openEntry(row)
   else if (command === 'close') openClose(row)
   else if (command === 'reopen') void reopenRow(row)
   else if (command === 'due') openDue(row)
+  else if (command === 'upload') pickFile(row)
+  else if (command === 'edit') openEdit(row)
+}
+
+async function approveFinance(row: Row) {
+  await ElMessageBox.confirm(
+    t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
+    t('supplierRecon.approveFinance'),
+    { type: 'warning' },
+  )
+  if (row.businessType === 'LOGISTICS') await post(`/shipping/contract-handoffs/${row.sourceBusinessId}/contract/verify`, {})
+  else await post(`/purchase-orders/${row.poId}/contract/verify`, {})
+  ElMessage.success(t('supplierRecon.financeApproved'))
+  await reload()
+}
+
+const editOpen = ref(false)
+const editBusy = ref(false)
+const editRow = ref<Row | null>(null)
+const editForm = reactive({ supplierName: '', orderNo: '', dueDate: '' })
+function openEdit(row: Row) {
+  editRow.value = row
+  Object.assign(editForm, { supplierName: row.supplierName, orderNo: row.poNo, dueDate: row.dueDate || '' })
+  editOpen.value = true
+}
+async function saveEdit() {
+  if (!editRow.value || !editForm.supplierName.trim() || !editForm.orderNo.trim()) return
+  editBusy.value = true
+  try {
+    await patch(`/supplier-recon/${editRow.value.poId}/manual`, editForm)
+    editOpen.value = false
+    ElMessage.success(t('supplierRecon.editManualSaved'))
+    reload()
+  } finally { editBusy.value = false }
 }
 
 function onExpand(row: Row, expanded: Row[]) {
@@ -869,52 +936,68 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  width: 100%;
+  max-width: 1680px;
+  min-width: 0;
+  margin: 0 auto;
 }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
-.page-head .eyebrow {
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  color: var(--el-text-color-secondary);
-}
-.page-head h1 {
-  margin: 4px 0 6px;
-  font-size: 26px;
-}
-.page-head p {
-  margin: 0;
-  color: var(--el-text-color-regular);
-}
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #dce8ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(25, 72, 91, .035);
 }
 .metric {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 86px;
-  padding: 12px 16px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: 62px;
+  overflow: hidden;
+  padding: 10px 16px 10px 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.metric + .metric { border-left: 1px solid #e5edf1; }
+.metric::before {
+  position: absolute;
+  top: 17px;
+  left: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ac1ff;
+  content: '';
 }
 .metric.is-warn {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
+  background: #fffdf9;
 }
+.metric.is-warn::before { background: #e5a33b; }
 .metric-label {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .metric-value {
-  font-size: 26px;
+  color: #141817;
+  font-size: 22px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .metric-hint {
+  grid-column: 1 / -1;
+  overflow: hidden;
   font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-placeholder);
 }
 /* 卡片是 flex column，link 按钮默认撑满一行会让文字居中——按内容宽度
@@ -925,11 +1008,16 @@ onMounted(() => {
   font-size: 12px;
 }
 .panel {
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: var(--el-bg-color);
+  border-color: #dceaf0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(25, 72, 91, .05);
 }
+.page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
+.page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
 .filters {
   display: flex;
   align-items: center;
@@ -992,9 +1080,9 @@ onMounted(() => {
 .detail-summary { margin-bottom: 18px; }
 .detail-heading { margin: 0 0 10px; font-size: 15px; }
 .metric.is-alarm {
-  border-color: var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
+  background: #fffafb;
 }
+.metric.is-alarm::before { background: #ff6b72; }
 .po-no {
   font-variant-numeric: tabular-nums;
 }
@@ -1025,5 +1113,13 @@ onMounted(() => {
 }
 .close-figures .warn {
   color: var(--el-color-warning);
+}
+@media (max-width: 768px) {
+  .metrics { grid-template-columns: 1fr; }
+  .metric + .metric { border-top: 1px solid #e5edf1; border-left: 0; }
+  .panel { padding: 12px; }
+  .filters { align-items: stretch; }
+  .filters :deep(.el-input) { width: 100%; max-width: none !important; }
+  .pager { justify-content: flex-start; overflow-x: auto; }
 }
 </style>

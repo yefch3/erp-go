@@ -1,17 +1,12 @@
 package httpapi
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -51,48 +46,6 @@ func (s *Server) importSupplierQuoteWorkbook(w http.ResponseWriter, r *http.Requ
 	req.FactoryRfqId = idFromPath(r)
 	resp, err := s.Sourcing.ImportSupplierQuoteWorkbook(r.Context(), req)
 	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
-func (s *Server) sendFactoryRFQ(w http.ResponseWriter, r *http.Request) {
-	senderID, ok := s.procurementSenderFor(w, r)
-	if !ok {
-		return
-	}
-	var input struct {
-		RecipientEmail string `json:"recipient_email"`
-		Subject        string `json:"subject"`
-		Body           string `json:"body"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&input); err != nil {
-		s.writeError(w, http.StatusBadRequest, "BAD_JSON", "请求内容无效")
-		return
-	}
-	book, err := s.Sourcing.GetFactoryRfqWorkbook(r.Context(), &prv1.GetFactoryRfqWorkbookRequest{Id: idFromPath(r)})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	if input.RecipientEmail == "" {
-		input.RecipientEmail = book.GetContactEmail()
-	}
-	if input.Subject == "" {
-		input.Subject = fmt.Sprintf("Request for quotation %s", book.GetRfqNo())
-	}
-	if input.Body == "" {
-		input.Body = fmt.Sprintf("Dear %s,\n\nPlease complete the attached quotation workbook for %s and return it without changing RFQ No, Line ID, Quantity or Unit.\n\nThank you.", book.GetSupplierName(), book.GetRfqNo())
-	}
-	resp, err := s.Emails.SendProcurementRfq(r.Context(), &mailv1.SendProcurementRfqRequest{SenderEmployeeId: senderID,
-		RecipientName: book.GetSupplierName(), RecipientEmail: input.RecipientEmail, Subject: input.Subject, Body: input.Body,
-		FileName: book.GetFileName(), FileData: book.GetFileData()})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	if _, err := s.Sourcing.MarkFactoryRfqSent(r.Context(), &prv1.MarkFactoryRfqSentRequest{Id: idFromPath(r)}); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -229,16 +182,56 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	customer, contact, err := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
+	if req.GetSourceMailId() > 0 {
+		authorized := false
+		s.requireMailUnlock(http.HandlerFunc(func(_ http.ResponseWriter, unlocked *http.Request) { r = unlocked; authorized = true })).ServeHTTP(w, r)
+		if !authorized {
+			return
+		}
+		source, e := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: req.GetSourceMailId()})
+		if e != nil {
+			s.writeGRPCError(w, e)
+			return
+		}
+		if req.GetSourceAttachmentId() > 0 {
+			found := false
+			for _, a := range source.GetMail().GetAttachments() {
+				found = found || a.GetId() == req.GetSourceAttachmentId()
+			}
+			if !found {
+				s.writeError(w, 404, "INQUIRY_MAIL_ATTACHMENT", "来源附件不存在")
+				return
+			}
+		}
+		req.ContactName = source.GetMail().GetFromName()
+		if len(source.GetMail().GetAttachments()) > 0 {
+			attachments, e := s.Emails.DownloadInboundAttachments(r.Context(), &mailv1.DownloadInboundAttachmentsRequest{InboundId: req.GetSourceMailId()})
+			if e != nil {
+				s.writeGRPCError(w, e)
+				return
+			}
+			req.SourceFileData = attachments.GetContent()
+			req.SourceFileName = attachments.GetFileName()
+			req.SourceContentType = "application/zip"
+		}
 	}
-	// 客户和联系人快照都以主数据为准，不信任浏览器传来的姓名和邮箱。
-	// 这样既不会把甲客户的联系人挂到乙客户，也不会保存已经过期的邮箱。
-	req.CustomerName = customer.GetName()
-	req.ContactName = contact.GetName()
-	req.ContactEmail = contact.GetEmail()
+	if req.GetCustomerId() > 0 {
+		customer, e := s.resolveActiveCustomer(r.Context(), req.GetCustomerId())
+		if e != nil {
+			s.writeGRPCError(w, e)
+			return
+		}
+		req.CustomerName = customer.GetName()
+		if req.GetContactId() > 0 {
+			_, contact, e := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
+			if e != nil {
+				s.writeGRPCError(w, e)
+				return
+			}
+			req.ContactName = contact.GetName()
+			req.ContactEmail = contact.GetEmail()
+		}
+	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -707,57 +700,4 @@ func (s *Server) submitCostToSales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
-}
-
-func (s *Server) createCustomerQuotationFromCost(w http.ResponseWriter, r *http.Request) {
-	scenarioID := idFromPath(r)
-	var input struct {
-		CustomerID int64 `json:"customer_id"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
-		s.writeError(w, http.StatusBadRequest, "BAD_JSON", "请求内容无效")
-		return
-	}
-	draft, err := s.Sourcing.PrepareCustomerQuotation(r.Context(), &prv1.PrepareCustomerQuotationRequest{Id: scenarioID})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	if draft.GetExistingQuotationId() != 0 {
-		s.writeProto(w, &prv1.LinkCustomerQuotationResponse{QuotationId: draft.GetExistingQuotationId(), QuoteNo: draft.GetExistingQuoteNo()})
-		return
-	}
-	items := make([]*exv1.ItemInput, 0, len(draft.GetLines()))
-	for _, line := range draft.GetLines() {
-		items = append(items, &exv1.ItemInput{
-			ProductId: line.GetProductId(), SkuId: line.GetSkuId(), Spec: line.GetSpec(),
-			Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), Remark: line.GetRemark(),
-			SourceCostScenarioLineId: line.GetCostScenarioLineId(), ProductName: line.GetProductName(),
-			UomCode: line.GetUomCode(),
-		})
-	}
-	customerID := draft.GetCustomerId()
-	if input.CustomerID != 0 {
-		customerID = input.CustomerID
-	}
-	created, err := s.Quotations.CreateQuotation(r.Context(), &exv1.CreateQuotationRequest{
-		CustomerId: customerID, Currency: draft.GetCurrency(), Incoterm: draft.GetIncoterm(),
-		PortOfLoading: draft.GetPortOfLoading(), PortOfDischarge: draft.GetPortOfDischarge(),
-		PaymentMethod: draft.GetPaymentMethod(), Remark: "Generated from " + draft.GetCostScenarioNo(), Items: items,
-		SourceCostScenarioId: draft.GetCostScenarioId(), SourceCostScenarioNo: draft.GetCostScenarioNo(),
-		SourceSourcingCaseId: draft.GetSourcingCaseId(),
-	})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	quotation := created.GetQuotation()
-	linked, err := s.Sourcing.LinkCustomerQuotation(r.Context(), &prv1.LinkCustomerQuotationRequest{
-		Id: scenarioID, QuotationId: quotation.GetId(), QuoteNo: quotation.GetQuoteNo(),
-	})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, linked)
 }

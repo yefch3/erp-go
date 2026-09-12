@@ -13,6 +13,7 @@ BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 # thing in both places. ?= yields to values set in the environment.
 PG_PORT    ?= 5433
 REDIS_PORT ?= 6380
+PROTO_BASE_REF ?= origin/main
 
 # Switches for the DB-backed integration tests. Deliberately NOT part of
 # plain `make test`: once a DSN is set the tests connect for real, and a
@@ -59,11 +60,8 @@ proto-check: proto ## Regenerate protos and fail if anything drifted
 		|| (echo "gen/ is stale: run 'make proto' and commit" && exit 1)
 
 .PHONY: proto-breaking
-proto-breaking: ## Check protos against main for breaking changes
-	# origin/main, not main: on a pull_request the runner checks out the merge
-	# ref and has no local main branch, so this step failed on every PR it was
-	# meant to guard.
-	$(BUF) breaking --against '.git#ref=origin/main'
+proto-breaking: ## Check protos against the target branch for breaking changes
+	$(BUF) breaking --against '.git#ref=$(PROTO_BASE_REF)'
 
 # ---------------------------------------------------------------- infra
 

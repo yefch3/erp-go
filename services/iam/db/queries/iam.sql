@@ -439,15 +439,29 @@ SELECT role_id FROM employee_roles WHERE tenant_id = $1 AND employee_id = $2 ORD
 -- name: ListEmployeePermissionCodes :many
 -- 同 EmployeeHasPermission：停用的角色不再给人任何权限。这条是登录时算
 -- 菜单用的，两处必须同口径——否则菜单亮着、点进去 403。
-SELECT DISTINCT p.code
-FROM employee_roles er
-JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
-JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
-JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2
-  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
-ORDER BY p.code;
+-- 个人邮箱是所有在职 ERP 用户的基础能力，不能因为角色漏配而从导航消失。
+-- 其他权限仍完全由启用角色授予；邮箱数据范围由 mail 模块固定为本人。
+SELECT DISTINCT granted.code
+FROM (
+    SELECT p.code
+    FROM employee_roles er
+    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+    JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
+    JOIN permissions p ON p.id = rp.permission_id
+    WHERE er.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND er.employee_id = sqlc.arg(employee_id)::bigint
+      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+    UNION ALL
+    SELECT p.code
+    FROM employees e
+    CROSS JOIN permissions p
+    WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND e.id = sqlc.arg(employee_id)::bigint
+      AND e.status = 'ACTIVE'
+      AND p.code IN ('mail:email:read', 'mail:email:write')
+) AS granted
+ORDER BY granted.code;
 
 -- name: EmployeeHasPermission :one
 -- The employee join is not decoration: without it a token issued before
@@ -461,13 +475,22 @@ ORDER BY p.code;
 -- was revoked and stops looking.
 SELECT EXISTS (
     SELECT 1
-    FROM employee_roles er
-    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
-    JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
-      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+    FROM employees e
+    WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND e.id = sqlc.arg(employee_id)::bigint
+      AND e.status = 'ACTIVE'
+      AND (
+        sqlc.arg(code)::text IN ('mail:email:read', 'mail:email:write')
+        OR EXISTS (
+          SELECT 1
+          FROM employee_roles er
+          JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+          JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
+          JOIN permissions p ON p.id = rp.permission_id
+          WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
+            AND p.code = sqlc.arg(code)::text AND r.status = 'ACTIVE'
+        )
+      )
 ) AS allowed;
 
 -- name: HasAnyUser :one

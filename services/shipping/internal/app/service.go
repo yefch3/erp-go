@@ -18,7 +18,18 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 11
+const SchemaVersion int32 = 17
+
+type Approvals interface {
+	Submit(context.Context, ApprovalSubmission) (int64, error)
+}
+type ApprovalSubmission struct {
+	BizType               string
+	BizID                 int64
+	BizNo, Summary        string
+	SubmitterID           int64
+	SubmitterName, Amount string
+}
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -34,7 +45,10 @@ type Service struct {
 	reminderWake     chan struct{}
 	scopes           Scopes
 	customerAccess   CustomerAccess
+	approvals        Approvals
 }
+
+func (s *Service) UseApprovals(a Approvals) { s.approvals = a }
 
 // New accepts the small pinger interface so the readiness check remains easy
 // to unit test. Schedule commands require the production pgx pool.

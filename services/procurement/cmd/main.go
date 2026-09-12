@@ -83,6 +83,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer iamConn.Close()
+	exportConn, err := dial(cfg.ExportAddr)
+	if err != nil {
+		return err
+	}
+	defer exportConn.Close()
 
 	files, err := blobstore.New(ctx, blobstore.Config{
 		Endpoint:       cfg.MinioEndpoint,
@@ -99,15 +104,16 @@ func run(log *slog.Logger) error {
 	}
 
 	svc := app.New(pool, app.Deps{
-		Log:        log,
-		Numbering:  grpcout.NewNumbering(mdConn),
-		Approvals:  grpcout.NewApprovals(apConn),
-		Suppliers:  grpcout.NewSuppliers(mdConn),
-		Warehouses: grpcout.NewWarehouses(invConn),
-		Rates:      grpcout.NewRates(fxConn),
-		Scopes:     grpcout.NewScopes(iamConn),
-		Files:      grpcout.NewFiles(files),
-		Live:       live,
+		InquiryDocuments: grpcout.NewInquiryDocuments(exportConn),
+		Log:              log,
+		Numbering:        grpcout.NewNumbering(mdConn),
+		Approvals:        grpcout.NewApprovals(apConn),
+		Suppliers:        grpcout.NewSuppliers(mdConn),
+		Warehouses:       grpcout.NewWarehouses(invConn),
+		Rates:            grpcout.NewRates(fxConn),
+		Scopes:           grpcout.NewScopes(iamConn),
+		Files:            grpcout.NewFiles(files),
+		Live:             live,
 	})
 	// Three-way-match tolerance. Zero unless set: a pilot should first see
 	// how often reality differs before deciding how much to stop looking at.
@@ -154,7 +160,7 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
-	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
+	srv := grpc.NewServer(grpcx.ServerInterceptors(log), grpc.MaxRecvMsgSize(16*1024*1024))
 	prv1.RegisterRequirementServiceServer(srv, grpcin.New(svc))
 	console := deadletter.NewConsole()
 	console.Add(cfg.ApprovalConsumerGroup, dlDecision, kafkax.ReplayHandler(decisionHandler, idempotency.New(pool, cfg.ApprovalConsumerGroup)))

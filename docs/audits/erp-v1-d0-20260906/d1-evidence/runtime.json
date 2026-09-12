@@ -1,0 +1,189 @@
+[
+  {
+    "imageId": "sha256:9800d72b24ee419ca3e980e83899aa4f17e154e1951fd8126d56c783a7f58dfc",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/iam:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-iam-1"
+  },
+  {
+    "imageId": "sha256:2f0ec136a7116c47cfbf03c15c7ef416d997b108e6643ca8e2794adbf3f05045",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/procurement:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-procurement-1"
+  },
+  {
+    "imageId": "sha256:377f8af7c40266dc879db209ba1e90a05f0ab8d2218dc97f23e9f36918789c1b",
+    "networks": [
+      "erp-d1-20260906_ingress",
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/gateway:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-gateway-1"
+  },
+  {
+    "imageId": "sha256:21dd96a82a89f237bd7702add1154aa601c3336e5e8c7585643ec8de0c1e99b8",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/export:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-export-1"
+  },
+  {
+    "imageId": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+    "networks": [
+      "erp-d1-20260906_ingress",
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "minio/minio:latest",
+    "status": "running",
+    "mounts": [
+      {
+        "name": "erp-d1-20260906_miniodata",
+        "source": "/var/lib/docker/volumes/erp-d1-20260906_miniodata/_data",
+        "destination": "/data"
+      }
+    ],
+    "name": "/erp-d1-20260906-minio-1"
+  },
+  {
+    "imageId": "sha256:259ce62e38ec729a00f4bbfbf4df1ec2bce2422eeb4d92cd5834dd1bfd4654de",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/inventory:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-inventory-1"
+  },
+  {
+    "imageId": "sha256:e1de8f0de2f8a3bbc972b57ad8fcbc69a7172211bf099543878228212931dd05",
+    "networks": [
+      "erp-d1-20260906_convert",
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/mail:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-mail-1"
+  },
+  {
+    "imageId": "sha256:4881df5f76fb74e0454c86b6fdba3de8a25ea075fd79ec363ec7fc5ce95664b4",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/shipping:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-shipping-1"
+  },
+  {
+    "imageId": "sha256:0e9e049e523ee399022e498f46ba739933ef1570857b7e3cfc330ec25671aefc",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/product:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-product-1"
+  },
+  {
+    "imageId": "sha256:ede5503024db0f01410f59e0798e5a13632cf40700e0746b7ce3d241d9b9a9bf",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/fx:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-fx-1"
+  },
+  {
+    "imageId": "sha256:cda50ab3bbde6e570c5ddb9e1e6dc8c389bd3305c45f06e0e655d5c95ce6e9e7",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/approval:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-approval-1"
+  },
+  {
+    "imageId": "sha256:2ea276d0e35c21afc09b46edcdef1e509e7d7f2f5a14286ed2f785a28f5482ad",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "erp-d1-20260906/masterdata:worktree",
+    "status": "running",
+    "mounts": [],
+    "name": "/erp-d1-20260906-masterdata-1"
+  },
+  {
+    "imageId": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "postgres:16-alpine",
+    "status": "running",
+    "mounts": [
+      {
+        "name": "erp-d1-20260906_pgdata",
+        "source": "/var/lib/docker/volumes/erp-d1-20260906_pgdata/_data",
+        "destination": "/var/lib/postgresql/data"
+      },
+      {
+        "name": null,
+        "source": "/run/desktop/mnt/host/c/Users/16789/Documents/erp-go/.worktrees/erp-v1-d0-20260906/.d1-environment/init-databases.sh",
+        "destination": "/docker-entrypoint-initdb.d/10-init-databases.sh"
+      }
+    ],
+    "name": "/erp-d1-20260906-postgres-1"
+  },
+  {
+    "imageId": "sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "redis:7-alpine",
+    "status": "running",
+    "mounts": [
+      {
+        "name": "erp-d1-20260906_redisdata",
+        "source": "/var/lib/docker/volumes/erp-d1-20260906_redisdata/_data",
+        "destination": "/data"
+      }
+    ],
+    "name": "/erp-d1-20260906-redis-1"
+  },
+  {
+    "imageId": "sha256:24cdd3a7fa89d2bed150560ebea81ff1943badfa61e51d66bb541a6b0d7fb047",
+    "networks": [
+      "erp-d1-20260906_isolated"
+    ],
+    "image": "confluentinc/cp-kafka:7.6.0",
+    "status": "running",
+    "mounts": [
+      {
+        "name": "erp-d1-20260906_kafkadata",
+        "source": "/var/lib/docker/volumes/erp-d1-20260906_kafkadata/_data",
+        "destination": "/var/lib/kafka/data"
+      },
+      {
+        "name": "b5713a73d24e0f950e431da4705a4fc17972c83ddfc91818d60c05b97f4eb8b6",
+        "source": "/var/lib/docker/volumes/b5713a73d24e0f950e431da4705a4fc17972c83ddfc91818d60c05b97f4eb8b6/_data",
+        "destination": "/etc/kafka/secrets"
+      }
+    ],
+    "name": "/erp-d1-20260906-kafka-1"
+  }
+]

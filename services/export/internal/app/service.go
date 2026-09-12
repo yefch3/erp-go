@@ -155,13 +155,14 @@ type Employee struct {
 // positional call of ten of them is one transposition away from silently
 // wiring products into the rates port.
 type Deps struct {
-	Customers Customers
-	Products  Products
-	Rates     Rates
-	Numbering Numbering
-	Approvals Approvals
-	Files     Files
-	Scopes    Scopes
+	OfferSource OfferSource
+	Customers   Customers
+	Products    Products
+	Rates       Rates
+	Numbering   Numbering
+	Approvals   Approvals
+	Files       Files
+	Scopes      Scopes
 	// Optional: without it the pages still work, they just need a refresh.
 	Live        *livefeed.Publisher
 	Involvement Involvement
@@ -175,26 +176,27 @@ type Deps struct {
 }
 
 type Service struct {
-	pool      *pgxpool.Pool
-	q         *store.Queries
-	customers Customers
-	products  Products
-	rates     Rates
-	number    Numbering
-	approvals Approvals
-	files     Files
-	scopes    Scopes
-	live      *livefeed.Publisher
-	involved  Involvement
-	directory Directory
-	seller    Seller
-	bank      BankLedger
-	log       *slog.Logger
+	offerSource OfferSource
+	pool        *pgxpool.Pool
+	q           *store.Queries
+	customers   Customers
+	products    Products
+	rates       Rates
+	number      Numbering
+	approvals   Approvals
+	files       Files
+	scopes      Scopes
+	live        *livefeed.Publisher
+	involved    Involvement
+	directory   Directory
+	seller      Seller
+	bank        BankLedger
+	log         *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
-		pool: pool, q: store.New(pool),
+		pool: pool, q: store.New(pool), offerSource: d.OfferSource,
 		customers: d.Customers, products: d.Products, rates: d.Rates,
 		number: d.Numbering, approvals: d.Approvals, files: d.Files,
 		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory, live: d.Live,

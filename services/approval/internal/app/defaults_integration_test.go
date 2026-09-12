@@ -326,23 +326,12 @@ func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 	}
 }
 
-// 合同没有上级可批时，记录在案地自动通过——和第一家公司的行为一致。
-func TestContractApprovesWhenTheReportingLineRunsOut(t *testing.T) {
-	dir := stubDirectory{}
-	svc, cleanup := newSeedTestService(t, dir)
-	ctx := context.Background()
-
-	tenantID := time.Now().UnixNano()
-	t.Cleanup(func() { cleanup(tenantID) })
-
-	inst, tasks, err := svc.Submit(ctx, tenantID, SubmitInput{
-		BizType: "CONTRACT", BizID: 1, BizNo: "CT-0001",
-		SubmitterID: 500, SubmitterName: "老板", Amount: "1000",
-	})
-	if err != nil {
-		t.Fatalf("一个人的公司也该能提交合同，实际：%v", err)
-	}
-	if inst.Status != statusApproved || len(tasks) != 0 {
-		t.Fatalf("提交人之上没人可问时该记录在案地通过，实际 %s / %d 条待办", inst.Status, len(tasks))
+// Formal D2 contracts require a separate superior; missing hierarchy is never approval.
+func TestContractRequiresSuperiorWhenReportingLineRunsOut(t *testing.T) {
+	svc, cleanup := newSeedTestService(t, stubDirectory{})
+	tenant := time.Now().UnixNano()
+	defer cleanup(tenant)
+	if _, _, err := svc.Submit(context.Background(), tenant, SubmitInput{BizType: "CONTRACT", BizID: 1, BizNo: "CT-0001", SubmitterID: 500, SubmitterName: "owner", Amount: "1000"}); err == nil {
+		t.Fatal("contract automatically approved without a superior")
 	}
 }

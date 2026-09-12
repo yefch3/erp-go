@@ -22,10 +22,11 @@ func (s *Server) listSupplierRecon(w http.ResponseWriter, r *http.Request) {
 		Keyword:    q.Get("keyword"),
 		ClosedOnly: q.Get("view") == "done",
 		// 两个互斥的筛子，和客户对账页同一套参数名。
-		OverdueOnly: q.Get("overdue") == "1",
-		UnsetOnly:   q.Get("unset") == "1",
-		Page:        int32(page),
-		PageSize:    int32(size),
+		OverdueOnly:  q.Get("overdue") == "1",
+		UnsetOnly:    q.Get("unset") == "1",
+		Page:         int32(page),
+		PageSize:     int32(size),
+		BusinessType: q.Get("business_type"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -64,6 +65,20 @@ func (s *Server) createManualPayable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.Orders.CreateManualPayable(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateManualPayable(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateManualPayableRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.PoId = idFromPath(r)
+	resp, err := s.Orders.UpdateManualPayable(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

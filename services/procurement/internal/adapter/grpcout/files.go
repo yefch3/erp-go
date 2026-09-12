@@ -3,6 +3,7 @@ package grpcout
 import (
 	"bytes"
 	"context"
+	"io"
 	"time"
 
 	"github.com/sgao19/erp-go/pkg/blobstore"
@@ -44,4 +45,13 @@ func (f *Files) PresignGet(ctx context.Context, key string) (string, error) {
 
 func (f *Files) Remove(ctx context.Context, key string) error {
 	return f.store.Remove(ctx, key)
+}
+
+func (f *Files) Read(ctx context.Context, key string) ([]byte, error) {
+	r, err := f.store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }

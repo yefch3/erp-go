@@ -18,7 +18,7 @@ INSERT INTO purchase_requirements (
     owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
     sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
     factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
-    source_payment_terms, source_incoterm, source_valid_until
+    source_payment_terms, source_incoterm, source_valid_until, status
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -46,7 +46,8 @@ INSERT INTO purchase_requirements (
     sqlc.arg(source_currency)::text, sqlc.arg(source_unit_price)::text::numeric,
     nullif(sqlc.arg(moq)::text,'')::numeric, sqlc.arg(lead_time)::text,
     sqlc.arg(source_payment_terms)::text, sqlc.arg(source_incoterm)::text,
-    nullif(sqlc.arg(source_valid_until)::text,'')::date
+    nullif(sqlc.arg(source_valid_until)::text,'')::date,
+    coalesce(nullif(sqlc.arg(initial_status)::text,''),'PENDING')
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -72,6 +73,11 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     source_payment_terms = excluded.source_payment_terms,
     source_incoterm     = excluded.source_incoterm,
     source_valid_until  = excluded.source_valid_until,
+    status = CASE
+                 WHEN purchase_requirements.ordered_qty = 0
+                      AND purchase_requirements.status IN ('WAITING_REQUOTE','PENDING','SUPERSEDED','CANCELLED')
+                 THEN excluded.status ELSE purchase_requirements.status
+             END,
     -- 合同重发或换版时刷新属主：负责人转手后，新版本生效即改归属。
     -- 事件不带属主（0）则保留原值，别把已知的抹成未知。
     owner_id   = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_id
@@ -84,11 +90,6 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     -- buying anything. Only automatic closures are revived: once a buyer has
     -- ordered against it the row belongs to that order, and PENDING would
     -- invite a second purchase of the same goods.
-    status = CASE
-                 WHEN purchase_requirements.status IN ('SUPERSEDED', 'CANCELLED')
-                      AND purchase_requirements.ordered_qty = 0
-                 THEN 'PENDING' ELSE purchase_requirements.status
-             END,
     closed_reason = CASE
                         WHEN purchase_requirements.status IN ('SUPERSEDED', 'CANCELLED')
                              AND purchase_requirements.ordered_qty = 0
@@ -111,7 +112,7 @@ UPDATE purchase_requirements SET
 WHERE tenant_id = $1
   AND contract_id = sqlc.arg(contract_id)
   AND contract_version_id <> sqlc.arg(keep_version_id)
-  AND status = 'PENDING'
+  AND status IN ('WAITING_REQUOTE','PENDING')
 RETURNING id, contract_item_id, product_name;
 
 -- name: CountOrderedOnOldVersions :one
@@ -152,7 +153,7 @@ LEFT JOIN LATERAL (
     JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
     WHERE i.tenant_id = purchase_requirements.tenant_id
       AND i.requirement_id = purchase_requirements.id
-      AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+      AND o.status IN ('DRAFT', 'PENDING_APPROVAL')
 ) draft ON true
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   -- 数据范围（A1）：属主是合同负责人（手工需求是创建人）。owner_id=0 的
@@ -167,7 +168,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 ORDER BY
     -- Outstanding work first, then by when it is needed. A requirement with
     -- no date sorts last rather than first, which is what NULLS LAST buys.
-    CASE WHEN status = 'PENDING' THEN 0 WHEN status = 'PARTIALLY_ORDERED' THEN 1 ELSE 2 END,
+    CASE WHEN status = 'WAITING_REQUOTE' THEN 0 WHEN status = 'PENDING' THEN 1 WHEN status = 'PARTIALLY_ORDERED' THEN 2 ELSE 3 END,
     required_date NULLS LAST,
     id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;

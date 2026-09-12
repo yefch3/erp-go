@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # buf breaking needs main
+          fetch-depth: 0 # buf breaking needs the pull request target branch
 
       - uses: actions/setup-go@v5
         with:
@@ -88,11 +88,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # The only PR-specific check: it compares against origin/main, which
-      # exists on a pull_request checkout but is meaningless on a push to
-      # main comparing against itself.
+      # Compare with the actual PR target, including staged rebuild branches.
+      # Pass the ref through the environment rather than interpolating shell code.
       - name: Breaking change check
         if: github.event_name == 'pull_request'
+        env:
+          PROTO_BASE_REF: origin/${{ github.base_ref }}
         run: make proto-breaking
 
       # One database and one owner per service, exactly as deploy does it, so

@@ -15,12 +15,13 @@ import (
 func (h *OrderHandler) ListSupplierRecon(ctx context.Context, req *prv1.ListSupplierReconRequest) (*prv1.ListSupplierReconResponse, error) {
 	items, total, err := h.svc.ListSupplierRecon(ctx, grpcx.TenantID(ctx),
 		app.SupplierReconFilter{
-			Keyword:     req.GetKeyword(),
-			ClosedOnly:  req.GetClosedOnly(),
-			OverdueOnly: req.GetOverdueOnly(),
-			UnsetOnly:   req.GetUnsetOnly(),
-			Page:        req.GetPage(),
-			PageSize:    req.GetPageSize(),
+			Keyword:      req.GetKeyword(),
+			ClosedOnly:   req.GetClosedOnly(),
+			OverdueOnly:  req.GetOverdueOnly(),
+			UnsetOnly:    req.GetUnsetOnly(),
+			Page:         req.GetPage(),
+			PageSize:     req.GetPageSize(),
+			BusinessType: req.GetBusinessType(),
 		}, reconOperator(ctx))
 	if err != nil {
 		return nil, err
@@ -70,6 +71,15 @@ func (h *OrderHandler) CreateManualPayable(ctx context.Context, req *prv1.Create
 		return nil, err
 	}
 	return &prv1.CreateManualPayableResponse{Row: reconRowProto(row)}, nil
+}
+
+func (h *OrderHandler) UpdateManualPayable(ctx context.Context, req *prv1.UpdateManualPayableRequest) (*prv1.UpdateManualPayableResponse, error) {
+	row, err := h.svc.UpdateManualPayable(ctx, grpcx.TenantID(ctx), req.GetPoId(),
+		req.GetSupplierName(), req.GetOrderNo(), req.GetDueDate(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.UpdateManualPayableResponse{Row: reconRowProto(row)}, nil
 }
 
 func (h *OrderHandler) ReversePurchaseOrderPayment(ctx context.Context, req *prv1.ReversePurchaseOrderPaymentRequest) (*prv1.ReversePurchaseOrderPaymentResponse, error) {
@@ -135,6 +145,11 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		InvoicePaidAmount: v.InvoicePaidAmount,
 		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
+		ManuallyEntered: v.ManuallyEntered,
+		BusinessType:    v.BusinessType, SourceBusinessId: v.SourceBusinessID,
+		ExportContractNo: v.ExportContractNo, BusinessDocumentNo: v.BusinessDocumentNo,
+		PaymentTerms: v.PaymentTerms, SignedContractName: v.SignedContractName,
+		RequestedByName: v.RequestedByName, RequestedAt: v.RequestedAt,
 	}
 }
 

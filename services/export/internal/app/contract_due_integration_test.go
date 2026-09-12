@@ -88,7 +88,7 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, tbl := range []string{"contract_corrections", "contract_items", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"contract_corrections", "contract_corrections", "contract_attachments", "contract_items", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -132,6 +132,24 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 			view.Contract.ReceivableDueDate, due)
 	}
 
+	// A normal draft has no opening execution quantities. Replacing its lines
+	// must write numeric zero, not empty strings (SQLSTATE 22P02).
+	updated, err := svc.UpdateContract(ctx, tenantID, view.Contract.ID,
+		Terms{DeliveryDate: due, ReceivableDueDate: due},
+		[]ItemInput{{ProductName: "手工钢卷", UomCode: "MT", Spec: "1.2 x 1450", Qty: "3", UnitPrice: "12.5"}},
+		ContractEditMeta{}, op)
+	if err != nil {
+		t.Fatalf("保存手工产品合同草稿：%v", err)
+	}
+	if len(updated.Items) != 1 || updated.Items[0].ProductName != "手工钢卷" || updated.Items[0].Amount != "37.50" {
+		t.Fatalf("updated draft items: %+v", updated.Items)
+	}
+	for _, value := range []string{updated.Items[0].OpeningProcuredQty, updated.Items[0].OpeningArrivedQty, updated.Items[0].OpeningShippedQty} {
+		if n, err := decimal.NewFromString(value); err != nil || !n.IsZero() {
+			t.Fatalf("opening quantity = %q", value)
+		}
+	}
+
 	// 生效**不许动**这个日子。上一版这里会去客户主数据取账期重算一遍；
 	// 那条口径已经推翻，留着的话人填的日子会在生效那一刻被覆盖。
 	if _, err := pool.Exec(ctx, `
@@ -173,19 +191,20 @@ func TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct(t *test
 	tenantID := time.Now().UnixNano()
 	defer func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM outbox_events WHERE tenant_id=$1`, tenantID)
-		for _, tbl := range []string{"contract_items", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"contract_corrections", "contract_attachments", "contract_items", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
 
 	svc := New(pool, Deps{
-		Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: dueRateStub{}, Numbering: &dueNumberingStub{},
-		Directory: dueDirectoryStub{},
+		Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: d2OfferRates{}, Numbering: &dueNumberingStub{},
+		Directory: dueDirectoryStub{}, Files: d2Files{},
 	})
 	today := dbToday(ctx, t, pool).Format("2006-01-02")
 	view, err := svc.ImportExistingContract(ctx, tenantID, ExistingContractInput{
-		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today, FilePending: true,
-		ProcurementEmployeeID: 23, SupplierID: 11,
+		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today,
+		SignedFileKey: "contract-imports/" + strconv.FormatInt(tenantID, 10) + "/signed.pdf", SignedFileName: "signed.pdf",
+		// A historical contract must not require a supplier or procurement owner.
 		Terms: Terms{PortOfLoading: "宁波", PortOfDischarge: "客户指定内河港", DeliveryDate: today},
 		Items: []ItemInput{{ProductName: "线下定制合金板", UomCode: "KG", Qty: "10", UnitPrice: "2", PurchaseUnitPrice: "1.2"}},
 		// OpeningReceivedAmount intentionally blank: this is the normal

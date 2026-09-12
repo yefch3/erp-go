@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -21,24 +22,36 @@ import (
 // some or none of its work happened elsewhere. It is not a shortcut for an
 // unsigned draft: the paper contract is already authoritative.
 type ExistingContractInput struct {
-	CustomerID            int64
-	Currency              string
-	Terms                 Terms
-	Items                 []ItemInput
-	ExternalContractNo    string
-	SalesEmployeeID       int64
-	SignedDate            string
-	EffectiveDate         string
-	OpeningReceivedAmount string
-	FilePending           bool
-	ProcurementEmployeeID int64
-	SupplierID            int64
+	SignedFileKey, SignedFileName string
+	CustomerID                    int64
+	Currency                      string
+	Terms                         Terms
+	Items                         []ItemInput
+	ExternalContractNo            string
+	SalesEmployeeID               int64
+	SignedDate                    string
+	EffectiveDate                 string
+	OpeningReceivedAmount         string
+	FilePending                   bool
+	ProcurementEmployeeID         int64
+	SupplierID                    int64
 }
 
-// ImportExistingContract records one immutable opening snapshot and emits an
-// effective-contract event marked for direct reconstruction of the historical
-// purchase order and its opening receipt progress.
+// ImportExistingContract records the signed contract and opening snapshot atomically.
+// Finance handles the execution handoff before downstream orders are created.
 func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in ExistingContractInput, op Operator) (ContractView, error) {
+	if !strings.HasPrefix(in.SignedFileKey, fmt.Sprintf("contract-imports/%d/", tenantID)) || strings.TrimSpace(in.SignedFileName) == "" {
+		return ContractView{}, apierr.Invalid("EX_SIGNED_COPY_REQUIRED", "请先上传已签署的历史合同")
+	}
+	verifier, ok := s.files.(FileVerifier)
+	if !ok {
+		return ContractView{}, apierr.Invalid("EX_FILE_VERIFY_UNAVAILABLE", "签署文件校验不可用")
+	}
+	fileSize, fileType, fileErr := verifier.Stat(ctx, in.SignedFileKey)
+	if fileErr != nil || fileSize <= 0 {
+		return ContractView{}, apierr.Invalid("EX_FILE_NOT_UPLOADED", "签署文件尚未上传完成")
+	}
+
 	if in.CustomerID == 0 {
 		return ContractView{}, apierr.Invalid("EX_CUSTOMER_REQUIRED", "请选择客户")
 	}
@@ -48,22 +61,21 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	if len(in.Items) == 0 {
 		return ContractView{}, apierr.Invalid("EX_ITEMS_REQUIRED", "请至少录入一条合同明细")
 	}
-	if in.ProcurementEmployeeID == 0 {
-		return ContractView{}, apierr.Invalid("EX_PROCUREMENT_OWNER_REQUIRED", "请选择原负责采购人员")
+	var procurementEmployee Employee
+	var err error
+	if in.ProcurementEmployeeID != 0 {
+		if s.directory == nil {
+			return ContractView{}, apierr.Invalid("EX_PROCUREMENT_OWNER_UNAVAILABLE", "暂时无法核对负责采购人员")
+		}
+		procurementEmployee, err = s.directory.Get(ctx, in.ProcurementEmployeeID)
+		if err != nil {
+			return ContractView{}, err
+		}
+		if procurementEmployee.Status != "ACTIVE" {
+			return ContractView{}, apierr.Invalid("EX_PROCUREMENT_OWNER_INACTIVE", "原负责采购人员已停用")
+		}
 	}
-	if in.SupplierID == 0 {
-		return ContractView{}, apierr.Invalid("EX_SUPPLIER_REQUIRED", "请选择原供应商")
-	}
-	if s.directory == nil {
-		return ContractView{}, apierr.Invalid("EX_PROCUREMENT_OWNER_UNAVAILABLE", "暂时无法核对负责采购人员")
-	}
-	procurementEmployee, err := s.directory.Get(ctx, in.ProcurementEmployeeID)
-	if err != nil {
-		return ContractView{}, err
-	}
-	if procurementEmployee.Status != "ACTIVE" {
-		return ContractView{}, apierr.Invalid("EX_PROCUREMENT_OWNER_INACTIVE", "原负责采购人员已停用")
-	}
+
 	for value, rule := range map[string][2]string{
 		in.SignedDate:              {"EX_SIGNED_DATE_INVALID", "签订日期"},
 		in.EffectiveDate:           {"EX_EFFECTIVE_DATE_INVALID", "生效日期"},
@@ -157,13 +169,10 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 			}
 			*value.target = parsed
 		}
-		// This intake path reconstructs an order that was already placed before
-		// the ERP took over. The whole contract line therefore belongs to the
-		// historical PO; arrival progress is recorded separately below.
-		opening[i].procured = line.qty
+
 	}
 
-	rate, err := s.rates.Latest(ctx, in.Currency)
+	rate, err := s.effectiveContractRate(ctx, in.Currency)
 	if err != nil {
 		return ContractView{}, err
 	}
@@ -191,7 +200,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 			TenantID: tenantID, ContractNo: contractNo, ExternalContractNo: strings.TrimSpace(in.ExternalContractNo),
 			CustomerID: customer.ID, CustomerName: customer.Name, SalesEmployeeID: ownerID, SalesEmployee: ownerName,
 			ReceivableDueDate: in.Terms.ReceivableDueDate, OpeningReceivedAmount: openingReceived.StringFixed(2),
-			FilePending: in.FilePending, SignedDate: in.SignedDate, EffectiveDate: in.EffectiveDate, CreatedBy: op.ID,
+			FilePending: false, SignedDate: in.SignedDate, EffectiveDate: in.EffectiveDate, CreatedBy: op.ID,
 		})
 		if err != nil {
 			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该原合同号已存在，请核对后再保存")
@@ -208,6 +217,10 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 		if err != nil {
 			return err
 		}
+		if _, err := q.CreateContractAttachment(ctx, store.CreateContractAttachmentParams{TenantID: tenantID, ContractID: contractID, ContractVersionID: versionID, Kind: "SIGNED", FileName: in.SignedFileName, FileKey: in.SignedFileKey, ContentType: fileType, SizeBytes: fileSize, UploadedBy: op.ID, UploaderName: op.Name, Source: SourceManual}); err != nil {
+			return err
+		}
+
 		event := contractEffectiveEvent{
 			ContractID: contractID, ContractNo: contractNo, VersionID: versionID, VersionNo: 1,
 			CustomerID: customer.ID, CustomerName: customer.Name, Currency: in.Currency,
@@ -237,7 +250,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 			event.Items = append(event.Items, effectiveEventItem{
 				LineNo: int32(i + 1), ItemID: itemID, ProductID: line.product.ID, SkuID: skuValue,
 				ProductCode: line.product.Code, ProductName: line.product.Name, Spec: line.in.Spec, Qty: line.qty.String(),
-				RequiredQty: "0", UomID: line.product.UomID, UomCode: line.product.UomCode,
+				RequiredQty: line.qty.Sub(opening[i].procured).String(), UomID: line.product.UomID, UomCode: line.product.UomCode,
 				UnitPrice: line.price.String(), Amount: line.amount.StringFixed(2), HsCode: hs[line.product.ID],
 				PurchaseUnitPrice: line.in.PurchaseUnitPrice, OpeningArrivedQty: opening[i].arrived.String(),
 			})
@@ -252,7 +265,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 		if err != nil {
 			return err
 		}
-		return outbox.Append(ctx, tx, outbox.Event{TenantID: tenantID, AggregateType: "contract", AggregateID: strconv.FormatInt(contractID, 10), EventType: "ContractEffective", Payload: payload})
+		return outbox.Append(ctx, tx, outbox.Event{TenantID: tenantID, AggregateType: "contract", AggregateID: strconv.FormatInt(contractID, 10), EventType: "ContractImportedExecuting", Payload: payload})
 	})
 	if err != nil {
 		return ContractView{}, err

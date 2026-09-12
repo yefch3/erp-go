@@ -1,0 +1,49 @@
+param([switch]$SeedOnly)
+$ErrorActionPreference='Stop'
+$root=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))).TrimEnd([char[]]'\/')
+& (Join-Path $root 'scripts/d4-environment.ps1') -Action CheckRuntime
+$base='http://127.0.0.1:28281';$password='D4-Acceptance-2026!'
+function Login([string]$email,[string]$secret){$s=[Microsoft.PowerShell.Commands.WebRequestSession]::new();Invoke-RestMethod "$base/api/auth/login" -Method Post -ContentType 'application/json' -Body (@{email=$email;password=$secret}|ConvertTo-Json) -WebSession $s|Out-Null;return $s}
+function Api($session,[string]$method,[string]$path,$body){$headers=@{};foreach($cookie in $session.Cookies.GetCookies([uri]$base)){if($cookie.Name -eq 'erp_csrf'){$headers['X-CSRF-Token']=$cookie.Value}};$args=@{Uri="$base/api$path";Method=$method;WebSession=$session;Headers=$headers;ContentType='application/json'};if($null-ne$body){$args.Body=($body|ConvertTo-Json -Depth 50 -Compress)};return (Invoke-RestMethod @args).data}
+function Assert($value,[string]$message){if(!$value){throw $message};Write-Output "PASS $message"}
+function WaitTask($session,[string]$type,[string]$id){for($i=0;$i-lt 60;$i++){$task=@((Api $session GET "/approvals/todos?biz_type=$type&page_size=100" $null).todos)|Where-Object{$_.instance.bizId-eq$id}|Select-Object -First 1;if($task){return $task};Start-Sleep -Milliseconds 500};throw "Approval task missing: $type/$id"}
+function WaitOrder($session,[string]$id,[string]$status){for($i=0;$i-lt 60;$i++){$d=Api $session GET "/purchase-orders/$id" $null;if($d.order.status-eq$status){return $d.order};Start-Sleep -Milliseconds 500};throw "Order $id did not reach $status"}
+function WaitHandoff($session,[string]$id,[string]$status){for($i=0;$i-lt 60;$i++){$d=Api $session GET "/shipping/contract-handoffs/$id" $null;if($d.handoff.status-eq$status){return $d.handoff};Start-Sleep -Milliseconds 500};throw "Shipping handoff $id did not reach $status"}
+function EnsureSupplier($admin,[string]$code,[string]$name,[string]$type){$s=@((Api $admin GET "/suppliers?keyword=$code&page_size=100&status=ALL" $null).suppliers)|Where-Object{$_.code-eq$code}|Select-Object -First 1;if(!$s){$s=(Api $admin POST '/suppliers' @{code=$code;name=$name;nameZh=$name;country='China';countryCode='CN';currency='USD';paymentTerm='按合同';businessTypes=@($type);remark='D4 isolated acceptance'}).supplier};return $s}
+function PutTestPDF([string]$url){$pdf=[Text.Encoding]::ASCII.GetBytes("%PDF-1.4`n1 0 obj<</Type/Catalog>>endobj`n%%EOF");Invoke-WebRequest -Uri $url -Method Put -ContentType 'application/pdf' -Body $pdf|Out-Null}
+
+$admin=Login 'admin@d4.example.test' 'admin123';$buyer=Login 'p1@d4.example.test' $password;$logistics=Login 'l1@d4.example.test' $password;$boss=Login 'b1@d4.example.test' $password;$finance=Login 'f1@d4.example.test' $password;$logisticsManager=Login 'lm1@d4.example.test' $password
+$factoryA=EnsureSupplier $admin 'D4-FACTORY-A' 'D4 验收工厂 A' 'GENERAL';$factoryB=EnsureSupplier $admin 'D4-FACTORY-B' 'D4 验收工厂 B' 'GENERAL';$forwarder=EnsureSupplier $admin 'D4-FORWARDER' 'D4 验收货代' 'FORWARDER';$carrier=EnsureSupplier $admin 'D4-CARRIER' 'D4 验收船公司' 'CARRIER'
+if($SeedOnly){Write-Output 'D4 suppliers ready';return}
+$baseline=Get-Content (Join-Path $PSScriptRoot '../evidence/d4-api-result.json') -Raw|ConvertFrom-Json;$contractID=[string]$baseline.automatedContractId
+$requirements=@((Api $buyer GET "/requirements?contract_id=$contractID&page_size=100" $null).requirements|Sort-Object id)
+Assert ($requirements.Count-eq3-and@($requirements|Where-Object{$_.status-ne'WAITING_REQUOTE'}).Count-eq0) '采购收到三项待重新询价产品'
+$groups=@(@{supplier=$factoryA;lines=@($requirements[0]);currency='CNY';prices=@('720')},@{supplier=$factoryB;lines=@($requirements[1],$requirements[2]);currency='CNY';prices=@('835','955')})
+$orders=@()
+foreach($group in $groups){$lines=@();for($i=0;$i-lt$group.lines.Count;$i++){$r=$group.lines[$i];$quote=(Api $buyer POST "/requirements/$($r.id)/execution-quotes" @{supplierId=[string]$group.supplier.id;currency=$group.currency;unitPrice=$group.prices[$i];expectedDate="2026-10-20";paymentTerms="30% 预付款，70% 发货前付清";validUntil="2026-12-31"}).quote;$lines+=@{requirementId=[string]$r.id;qty=$r.requiredQty;unitPrice=$group.prices[$i];executionQuoteId=[string]$quote.id}};$order=Api $buyer POST '/purchase-orders' @{supplierId=[string]$group.supplier.id;currency=$group.currency;expectedDate='2026-10-20';payableDueDate='2026-09-30';remark='30% 预付款，70% 发货前付清；报价有效期 2026-09-20';fulfillmentMode='DIRECT_SHIP';deliveryLocationType='CUSTOM';deliveryAddress='按外销合同约定';sourceChangeReason='D4 实单重新询价确认';lines=$lines};$orders+=$order}
+Assert ($orders.Count-eq2-and@($orders|Where-Object{$_.poNo-ne$requirements[0].contractNo}).Count-eq0) '三项产品按两家最终工厂自动拆成两张同合同号采购订单'
+foreach($order in $orders){Api $buyer POST "/purchase-orders/$($order.id)/submit" @{}|Out-Null;$task=WaitTask $boss 'PURCHASE_ORDER' ([string]$order.id);Api $boss POST "/approvals/tasks/$($task.task.id)/act" @{action='APPROVE';comment='D4 最终工厂报价确认'}|Out-Null;$approved=WaitOrder $buyer ([string]$order.id) 'ORDERED';$presign=Api $buyer POST "/purchase-orders/$($order.id)/contract/presign" @{fileName="D4-purchase-$($order.id).pdf"};PutTestPDF $presign.uploadUrl;Api $buyer POST "/purchase-orders/$($order.id)/contract" @{contractNo="D4-PC-$($order.id)";paymentTerms='30% 预付款，70% 发货前付清';fileKey=$presign.fileKey;fileName="D4-purchase-$($order.id).pdf"}|Out-Null;Api $finance POST "/purchase-orders/$($order.id)/contract/verify" @{}|Out-Null}
+$procurePay=@((Api $finance GET '/supplier-recon?business_type=PROCUREMENT&page_size=100' $null).items|Where-Object{$_.sourceBusinessId-eq$contractID})
+Assert ($procurePay.Count-eq2-and@($procurePay|Where-Object{!$_.signedContractName-or!$_.requestedAt}).Count-eq0) '采购合同核验后两笔付款申请进入财务出账'
+
+$handoff=@((Api $logistics GET '/shipping/contract-handoffs?status=WAITING_REQUOTE' $null).handoffs|Where-Object{$_.contractId-eq$contractID}|Select-Object -First 1)
+Assert ($null-ne$handoff-and!$handoff.finalForwarderName) '物流任务重新询价前未锁定售前货代'
+$logisticsDraft=@{finalForwarderId=[string]$forwarder.id;finalForwarderName=$forwarder.name;actualCarrierId='0';actualCarrierName='';finalServiceOption='上海至汉堡直航';finalCurrency='USD';finalFreightAmount='1280';finalEtd='2026-10-25';finalEta='2026-11-25';paymentTerms='订舱后付 50%，开船后付 50%';remark='实际承运方在宣船时补充'}
+Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/draft" $logisticsDraft|Out-Null
+Assert ((WaitHandoff $logistics ([string]$handoff.id) 'WAITING_REQUOTE').status-eq'WAITING_REQUOTE') '保存候选方案后仍留在实单物流询价'
+$alternate=$logisticsDraft.Clone();$alternate.finalServiceOption='上海至汉堡中转方案';$alternate.finalFreightAmount='1350';$alternate.remark='备选中转方案'
+Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/draft" $alternate|Out-Null
+$candidates=@((Api $logistics GET "/shipping/contract-handoffs/$($handoff.id)/requote-options" $null).options)
+Assert ($candidates.Count-eq2) '实单物流询价保留多份候选方案'
+$selected=$candidates|Where-Object{$_.freightAmount-eq'1280.00'}|Select-Object -First 1
+Assert ($null-ne$selected) '可以从候选方案中选择指定报价'
+Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/select-draft" @{optionId=[string]$selected.id}|Out-Null
+Assert ((WaitHandoff $logistics ([string]$handoff.id) 'DRAFT').status-eq'DRAFT') '所选方案进入物流订单草稿'
+Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/requote" @{}|Out-Null
+$task=WaitTask $logisticsManager 'SHIPPING_REQUOTE' ([string]$handoff.id);Api $logisticsManager POST "/approvals/tasks/$($task.task.id)/act" @{action='APPROVE';comment='D4 最终物流方案确认'}|Out-Null;WaitHandoff $logistics ([string]$handoff.id) 'APPROVED'|Out-Null
+$presign=Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/contract/presign" @{fileName='D4-forwarder-contract.pdf'};PutTestPDF $presign.uploadUrl;Api $logistics POST "/shipping/contract-handoffs/$($handoff.id)/contract" @{fileKey=$presign.fileKey;fileName='D4-forwarder-contract.pdf';contractNo="D4-LC-$($handoff.id)"}|Out-Null;Api $finance POST "/shipping/contract-handoffs/$($handoff.id)/contract/verify" @{}|Out-Null;Assert ((WaitHandoff $logistics ([string]$handoff.id) 'PAYMENT_REQUESTED').status-eq'PAYMENT_REQUESTED') '财务通过后物流订单进入已委托'
+$shippingPay=(Api $logistics GET "/shipping/contract-handoffs/$($handoff.id)/payment-status" $null).row
+Assert ($shippingPay.businessType-eq'LOGISTICS'-and$shippingPay.supplierName-eq$forwarder.name-and$shippingPay.openAmount-eq'1280.00') '物流付款申请以最终货代为收款方进入统一出账'
+$result=[ordered]@{checkedAt=[DateTimeOffset]::Now.ToString('o');contractId=$contractID;contractNo=$requirements[0].contractNo;productCount=3;purchaseOrderCount=2;purchaseOrderIds=@($orders|ForEach-Object id);purchaseDisplayNumbers=@($orders|ForEach-Object poNo);procurementPayments=$procurePay.Count;shippingHandoffId=$handoff.id;shippingCandidateCount=$candidates.Count;selectedShippingOptionId=$selected.id;finalForwarder=$forwarder.name;actualCarrier='';shippingPaymentOpen=$shippingPay.openAmount;d5Created=$false}
+$evidenceDir=Join-Path $PSScriptRoot '../evidence';New-Item -ItemType Directory -Force $evidenceDir|Out-Null;$result|ConvertTo-Json -Depth 8|Set-Content (Join-Path $evidenceDir 'd4-flow-result.json') -Encoding utf8
+Write-Output "D4 flow complete: contract=$($result.contractNo), purchase orders=$($result.purchaseOrderCount), shipping task=$($result.shippingHandoffId)"
