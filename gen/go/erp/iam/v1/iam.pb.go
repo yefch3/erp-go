@@ -262,13 +262,13 @@ func (x *SetDataScopeResponse) GetSaved() bool {
 
 type LoginRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 老字段。登录框里打的东西从前只能是邮箱；现在也可以是用户名，用下面的
+	// 老字段。登录框里打的东西从前只能是邮箱；现在是任意登录名，用下面的
 	// account 传。老前端还发这个，服务端两个都收：account 为空就用 email。
 	Email    string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	// 登录框里打的东西：用户名或邮箱，服务端按有没有 @ 分。没有「选公司」
-	// 这一步，也不该加——一个登录页服务所有公司；用户名靠全局唯一索引做到
-	// 和邮箱一样系统内唯一。
+	// 登录名：任意字符串，zhangsan 或 zhangsan@xxx.com 都行，系统不关心它像
+	// 不像邮箱，只要全局不重复。没有「选公司」这一步，也不该加——一个登录页
+	// 服务所有公司，靠登录名的全局唯一索引做到系统内唯一。
 	Account       string `protobuf:"bytes,3,opt,name=account,proto3" json:"account,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
