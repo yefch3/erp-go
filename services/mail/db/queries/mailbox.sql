@@ -1477,6 +1477,14 @@ WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR t.account_id = sqlc.narg(account_id)::bigint)
   AND t.view = sqlc.arg(view)::text
+  -- 只看未读。any_unread 是「这条会话里还有没有没读的信」——按会话问，
+  -- 和列表的行是一回事：一行代表一条会话，里面还有没读的就该留在「只看
+  -- 未读」里。
+  --
+  -- 没给它建索引。列表是按 last_at 走索引顺序读前二十五行的，加一个布尔
+  -- 条件只是在这条路上多筛一下；而为一个开关建索引，代价是此后每收一封信
+  -- 都要多维护一棵树。真慢下来了再说。
+  AND (NOT sqlc.arg(unread_only)::boolean OR t.any_unread)
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
   AND (sqlc.narg(cursor_at)::timestamptz IS NULL
@@ -1532,6 +1540,8 @@ FROM (
       AND (sqlc.narg(account_id)::bigint IS NULL
            OR t.account_id = sqlc.narg(account_id)::bigint)
       AND t.view = sqlc.arg(view)::text
+      -- 同上，见 ListThreadsByView。
+      AND (NOT sqlc.arg(unread_only)::boolean OR t.any_unread)
 ) x
 -- 上一页停在哪：asc 往大了走，desc 往小了走。id 兜底，两条会话不可能占同一个位置。
 WHERE (sqlc.narg(cursor_key)::text IS NULL
@@ -1551,7 +1561,10 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR account_id = sqlc.narg(account_id)::bigint)
-  AND view = sqlc.arg(view)::text;
+  AND view = sqlc.arg(view)::text
+  -- 开着「只看未读」时数的也得是未读的那些：分页器数的和列表显示的必须
+  -- 是同一批，否则底下写着「共 300 封」而列表只有 3 行。
+  AND (NOT sqlc.arg(unread_only)::boolean OR any_unread);
 
 -- name: ListThreadAttachments :many
 -- 整条会话的附件，一次取回，两个方向。

@@ -801,6 +801,9 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 		AccountId: acct,
 		SortBy:    r.URL.Query().Get("sort_by"),
 		SortDir:   r.URL.Query().Get("sort_dir"),
+		// 只看未读。和别的开关一样只认 "1"：地址栏里 unread=0 和没有这个
+		// 参数是一个意思，不必两种写法都记。
+		UnreadOnly: r.URL.Query().Get("unread") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

@@ -378,6 +378,11 @@ message ListInboundRequest {
   // 时间给结果；同一个词按两种口径给两份结果，比不支持更糟。
   string sort_by = 6;
   string sort_dir = 7;
+  // 只看未读。按**会话**筛：一行代表一条会话，里面还有没读的信就留下。
+  //
+  // 带 keyword 时不生效，和排序同一条理由——搜索走另一条查询，在那儿再叠
+  // 一层筛选是第三种口径。前端搜索时也不显示这个开关。
+  bool unread_only = 8;
 }
 
 // One message found by a search. It carries the folder because the search

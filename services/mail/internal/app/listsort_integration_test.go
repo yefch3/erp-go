@@ -20,7 +20,7 @@ func walkInbox(t *testing.T, svc *Service, tenantID, employeeID, acct int64, sor
 	var out []string
 	cursor := ""
 	for pages := 0; pages < 10; pages++ {
-		page, err := svc.ListInbound(context.Background(), tenantID, employeeID, acct, "", "INBOX", cursor, 2, sort)
+		page, err := svc.ListInbound(context.Background(), tenantID, employeeID, acct, "", "INBOX", cursor, 2, sort, false)
 		if err != nil {
 			t.Fatalf("%+v: %v", sort, err)
 		}
@@ -123,7 +123,7 @@ func TestInboxSortsByTheColumnClickedAndPagesWithoutRepeating(t *testing.T) {
 		[]string{"A-coil", "e-bar", "d-pipe", "b-steel", "c-plate"})
 
 	// 按大小排时列表要能显示大小——否则排了也看不出排了什么。
-	page, err := svc.ListInbound(ctx, tenantID, employeeID, acct, "", "INBOX", "", 1, ListSort{By: "size"})
+	page, err := svc.ListInbound(ctx, tenantID, employeeID, acct, "", "INBOX", "", 1, ListSort{By: "size"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,17 +135,17 @@ func TestInboxSortsByTheColumnClickedAndPagesWithoutRepeating(t *testing.T) {
 	}
 
 	// 搜索和排序不能一起：报错，不是悄悄按日期排。
-	_, err = svc.ListInbound(ctx, tenantID, employeeID, acct, "coil", "INBOX", "", 20, ListSort{By: "size"})
+	_, err = svc.ListInbound(ctx, tenantID, employeeID, acct, "coil", "INBOX", "", 20, ListSort{By: "size"}, false)
 	if apierr.CodeFromError(err) != "MAIL_SORT_NOT_WITH_KEYWORD" {
 		t.Fatalf("keyword + sort should be refused, got %v", err)
 	}
 	// 只有空格的关键词不算关键词：前端排序栏用的是 trim 过的判断，这里得
 	// 跟它一致，否则排序栏显示着、请求却被拒。
-	if _, err := svc.ListInbound(ctx, tenantID, employeeID, acct, "  ", "INBOX", "", 20, ListSort{By: "size"}); err != nil {
+	if _, err := svc.ListInbound(ctx, tenantID, employeeID, acct, "  ", "INBOX", "", 20, ListSort{By: "size"}, false); err != nil {
 		t.Fatalf("whitespace keyword must not block sorting: %v", err)
 	}
 	// 拼错的列名同样报错。
-	_, err = svc.ListInbound(ctx, tenantID, employeeID, acct, "", "INBOX", "", 20, ListSort{By: "sender"})
+	_, err = svc.ListInbound(ctx, tenantID, employeeID, acct, "", "INBOX", "", 20, ListSort{By: "sender"}, false)
 	if apierr.CodeFromError(err) != "MAIL_SORT_INVALID" {
 		t.Fatalf("unknown column should be refused, got %v", err)
 	}
