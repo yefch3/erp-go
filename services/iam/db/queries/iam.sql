@@ -15,12 +15,12 @@
 --
 -- lower() on both sides: an address is case-insensitive in practice, and
 -- "Alice@" must not be a second account from "alice@". email_verified_at rides
--- along because login has to refuse an account whose mailbox was never proved
--- to exist, and doing it here keeps that check free.
+-- along for the reset-link path, which must only ever mail a mailbox that was
+-- proved to exist. Login itself no longer reads it (see Login).
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        u.locked_until, u.must_change_password,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
-       e.status AS employee_status, e.email_verified_at,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
        t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
@@ -29,11 +29,20 @@ WHERE e.email <> ''
   AND lower(e.email) = lower(sqlc.arg(email)::text);
 
 -- name: GetUserByUsername :one
+-- 登录的另一条路：用户名。和上面同一个形状，Login 才能对两条路做同一套检查。
+--
+-- **不按租户查**，和邮箱那条一样：登录页没有「选公司」这一步，用户名靠
+-- users_username_lower_idx（00059）做到全局唯一。lower() 两边都做，找人不分
+-- 大小写。
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
-       e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
+       u.locked_until, u.must_change_password,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
+       t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
-WHERE u.tenant_id = $1 AND u.username = $2;
+JOIN tenants t ON t.id = u.tenant_id
+WHERE lower(u.username) = lower(sqlc.arg(username)::text);
 
 -- name: RecordLoginSuccess :exec
 -- Clears the deadline as well as the counter. Somebody who was locked at
@@ -192,7 +201,10 @@ WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
       SELECT 1 FROM employee_invitations i
       WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
     ))
-    OR (sqlc.arg(account_status)::text = 'ACTIVE' AND u.status = 'ACTIVE' AND e.email_verified_at IS NOT NULL)
+    -- 有登录行、且没被停用，就是已激活。不再要求 email_verified_at：那只是
+    -- 邀请那条路的痕迹，管理员手动开的账号（填了用户名和密码）没有它，可
+    -- 照样登得进。users 里的一行只在有人有权设了密码时才存在，这就够了。
+    OR (sqlc.arg(account_status)::text = 'ACTIVE' AND u.status = 'ACTIVE')
   )
   AND (
     sqlc.arg(keyword)::text = ''

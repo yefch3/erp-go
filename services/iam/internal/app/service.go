@@ -45,7 +45,6 @@ var (
 	errAccountLocked = apierr.Unauthorized("IAM_ACCOUNT_LOCKED", "账号已停用，请联系管理员")
 	// Told apart from a bad password on purpose. Trying harder cannot fix it;
 	// what the person needs is the invitation mail, so the message says so.
-	errNotActivated = apierr.Unauthorized("IAM_NOT_ACTIVATED", "账号尚未激活，请查收邀请邮件")
 )
 
 // errTooManyAttempts says when, not just no.
@@ -81,60 +80,76 @@ type LoginResult struct {
 	MustChangePassword bool
 }
 
-// Login takes the company address somebody typed, not a username.
+// loginLookupError 把「没这个人」说成「密码错」——措辞一样、耗时一样。
+// 地址和用户名都猜得出来（名字@公司域名、姓名拼音），答得不一样的登录页
+// 就是一份员工名录。
+func loginLookupError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		burnPasswordTime()
+		return errBadCredentials
+	}
+	return fmt.Errorf("login: %w", err)
+}
+
+// Login takes what somebody typed into the one box on the login page: a
+// username, or a company address.
 //
-// The address does two jobs. Its domain says which company this is, so there
-// is no "choose your company" dropdown and no tenant to pass in — a login page
-// serving twenty companies is the same page. And the address itself is the
-// account, which is only meaningful because it had to be proved: an employee
-// row carries email_verified_at only if somebody opened a one-time link sent
-// to that mailbox. A person the company never gave a mailbox has no way to
-// reach that state.
+// No tenant is passed in and no "choose your company" field exists — a login
+// page serving twenty companies is the same page — so both kinds of name have
+// to identify the account system-wide. An address does that by nature; a
+// username does it because of users_username_lower_idx (00059).
 //
-// Nothing here talks to the mail host. That question was asked once, at
-// activation, and its answer is the timestamp. Asking it again on every login
-// would tie the ERP's availability to 263's, and could not be done anyway:
-// the password typed here is ours, not the mailbox's.
-func (s *Service) Login(ctx context.Context, email, password string) (*LoginResult, error) {
-	addr := strings.ToLower(strings.TrimSpace(email))
-	at := strings.LastIndex(addr, "@")
-	if at < 1 || at == len(addr)-1 {
+// 两条路怎么分：有 @ 的是邮箱，没有的是用户名。用户名里禁止 @（见
+// validateUsername），所以不会有一个名字两边都能走。
+//
+// 从前只认邮箱，而且要求那个邮箱点过邀请链接（email_verified_at）。那道闸证明
+// 的是「公司真的给了这个人一个信箱」。客户要的开户方式不走邀请：管理员手动填
+// 用户名和密码，员工拿来登录，账号不必是邮箱、不必绑邮箱。于是那道闸拆掉了。
+// 拆得住的理由：users 里的一行只在有人**有权**设了密码时才存在——管理员开的
+// （OpenAccount、新增员工时填的），或者员工自己点邀请链接设的。存在本身就是
+// 凭证，不需要再问一遍邮箱。
+//
+// Nothing here talks to the mail host. The password typed here is ours, not
+// the mailbox's.
+func (s *Service) Login(ctx context.Context, account, password string) (*LoginResult, error) {
+	name := strings.TrimSpace(account)
+	if name == "" {
 		burnPasswordTime()
 		return nil, errBadCredentials
 	}
-	// The address identifies the account outright; the domain is not consulted.
-	//
-	// It used to be: domain names the tenant, then (tenant, address) names the
-	// account. That reads naturally and is wrong for any address on a public
-	// mail service — and not merely "wrong company": tenant_domains.domain is
-	// a PRIMARY KEY, so the first company to register gmail.com owned it and
-	// the second could not be onboarded at all.
-	//
-	// Deciding *whether* an address is a company mailbox is a separate rule
-	// and still enforced, where it belongs: when an employee is imported or
-	// invited (ListTenantDomains, IsTenantDomain). Login does not repeat it —
-	// an address that reached the employees table already passed it.
-	u, err := s.q.GetUserByEmail(ctx, addr)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Deliberately identical to a wrong password, in wording and in
-			// time. Addresses here are guessable — 名字@公司域名 — so a login
-			// page that answered differently would be a staff directory.
+	// 两条查询刻意做成同一个形状，好让下面那一串检查（停用、锁定、密码、
+	// 强制改密）只写一遍。
+	var u store.GetUserByEmailRow
+	if strings.Contains(name, "@") {
+		addr := strings.ToLower(name)
+		at := strings.LastIndex(addr, "@")
+		if at < 1 || at == len(addr)-1 {
 			burnPasswordTime()
 			return nil, errBadCredentials
 		}
-		return nil, fmt.Errorf("login: %w", err)
+		// The address identifies the account outright; the domain is not
+		// consulted. It used to be: domain names the tenant, then (tenant,
+		// address) names the account — wrong for any address on a public mail
+		// service, and tenant_domains.domain being a PRIMARY KEY meant the
+		// first company to register gmail.com owned it. Whether an address is
+		// a company mailbox is still enforced where it belongs: when an
+		// employee is imported or invited (ListTenantDomains, IsTenantDomain).
+		row, err := s.q.GetUserByEmail(ctx, addr)
+		if err != nil {
+			return nil, loginLookupError(err)
+		}
+		u = row
+	} else {
+		row, err := s.q.GetUserByUsername(ctx, name)
+		if err != nil {
+			return nil, loginLookupError(err)
+		}
+		u = store.GetUserByEmailRow(row)
 	}
 	if u.TenantStatus != "ACTIVE" {
 		return nil, errAccountLocked
 	}
 	tenantID := u.TenantID
-	if !u.EmailVerifiedAt.Valid {
-		// Imported but never activated. Named rather than folded into "wrong
-		// password": the person cannot fix this by trying harder, and the
-		// thing they need is the invitation mail.
-		return nil, errNotActivated
-	}
 	if u.Status == "DISABLED" || u.EmployeeStatus != "ACTIVE" {
 		// A decision somebody made about this account, which no amount of
 		// waiting changes. Distinct from the lock below, which is a deadline.
@@ -173,7 +188,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		return nil, fmt.Errorf("login: record success: %w", err)
 	}
 
-	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName, addr)
+	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName, strings.ToLower(u.EmployeeEmail))
 	if err != nil {
 		return nil, fmt.Errorf("login: issue token: %w", err)
 	}
@@ -413,6 +428,17 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 	if (in.Username == "") != (in.InitialPassword == "") {
 		return store.GetEmployeeRow{}, apierr.Invalid("IAM_EMP_ACCOUNT_INCOMPLETE", "用户名与初始密码需同时提供")
 	}
+	in.Username = strings.TrimSpace(in.Username)
+	if in.Username != "" {
+		if err := validateUsername(in.Username); err != nil {
+			return store.GetEmployeeRow{}, err
+		}
+		// 和 OpenAccount 同一把尺子：用本人的名字、工号、用户名拼出来的密码，
+		// 是猜的人第一个会试的。
+		if err := checkPasswordStrength(in.InitialPassword, in.Email, in.Name, in.Code, in.Username); err != nil {
+			return store.GetEmployeeRow{}, err
+		}
+	}
 	var id int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -462,6 +488,15 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 				TenantID: tenantID, EmployeeID: emp.ID, Username: in.Username, PasswordHash: hash,
 			}); err != nil {
 				return translateUnique(err, "IAM_USERNAME_TAKEN", "用户名已存在")
+			}
+			// 这个密码是管理员打的，管理员知道它。和 OpenAccount、ResetPassword
+			// 同一条规矩：只能开一扇门，就是改密码那扇。从前这条路漏了这一步，
+			// 于是同一件事（管理员设初始密码）走「新增员工」不用改、走「开通
+			// 账号」要改。
+			if _, err := q.SetMustChangePassword(ctx, store.SetMustChangePasswordParams{
+				TenantID: tenantID, EmployeeID: emp.ID, MustChange: true,
+			}); err != nil {
+				return err
 			}
 		}
 		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{

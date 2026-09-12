@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -18,8 +20,12 @@ import (
 // change-password form. operatorID is who opened the account, for the
 // change history.
 func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID, operatorID int64, username, password string) (string, error) {
+	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
 		return "", apierr.Invalid("IAM_ACCOUNT_FIELDS_REQUIRED", "用户名和初始密码必填")
+	}
+	if err := validateUsername(username); err != nil {
+		return "", err
 	}
 	emp, err := s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
 	if err != nil {
@@ -155,4 +161,31 @@ func (s *Service) ListAccounts(ctx context.Context, tenantID int64) (map[int64]s
 		out[r.EmployeeID] = r.Username
 	}
 	return out, nil
+}
+
+// 用户名长什么样。
+//
+// 两到六十四个字，字母、数字、汉字，以及 . _ -。下限是两个字，因为中文名常常
+// 就两个字（张三），而用户名不是秘密——密码才是，短一点不损失什么。**禁止 @**：登录用「有没有 @」
+// 分邮箱和用户名两条路，一个带 @ 的用户名会让两条路都认它，而它们查的是两张
+// 不同的东西（一个是员工的邮箱，一个是登录名）。禁止空白和控制字符是为了
+// 「zhangsan 」和「zhangsan」不能是两个账号。
+//
+// 大小写不管：存的是管理员打的样子，找人时两边都 lower（GetUserByUsername，
+// users_username_lower_idx），所以「ZhangSan」登得进「zhangsan」的账号。
+func validateUsername(u string) error {
+	runes := []rune(u)
+	if len(runes) < 2 || len(runes) > 64 {
+		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名长度应为 2 至 64 个字符")
+	}
+	if strings.ContainsRune(u, '@') {
+		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名不能包含 @；用邮箱登录的账号请走邀请开户")
+	}
+	for _, r := range runes {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名只能包含字母、数字、汉字和 . _ -")
+	}
+	return nil
 }

@@ -242,10 +242,11 @@ async function loadExtras(id: string) {
   }
 }
 
+// 有登录名就是已激活，理由见列表页同一处的注释。
 function activationText(e: Employee): string {
-  if (e.emailVerified) return t('employees.activated')
+  if (e.username || e.emailVerified) return t('employees.activated')
   if (Number(e.inviteExpiresAt)) return t('employees.awaitingActivation')
-  return e.username ? t('employees.notInvited') : t('employees.accountUnopened')
+  return t('employees.accountUnopened')
 }
 
 function prettyJSON(raw: string): string {

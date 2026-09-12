@@ -170,10 +170,14 @@ message SetDataScopeResponse {
 }
 
 message LoginRequest {
-  // The company address. Its domain selects the tenant, so no separate
-  // company field is needed and none should be added.
+  // 老字段。登录框里打的东西从前只能是邮箱；现在也可以是用户名，用下面的
+  // account 传。老前端还发这个，服务端两个都收：account 为空就用 email。
   string email = 1;
   string password = 2;
+  // 登录框里打的东西：用户名或邮箱，服务端按有没有 @ 分。没有「选公司」
+  // 这一步，也不该加——一个登录页服务所有公司；用户名靠全局唯一索引做到
+  // 和邮箱一样系统内唯一。
+  string account = 3;
 }
 
 message LoginResponse {

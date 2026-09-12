@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
@@ -34,6 +35,11 @@ func mustDecode(t *testing.T, body string, msg proto.Message) {
 }
 
 func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
+	// frontend/src/stores/auth.ts —— 登录。account 是用户名或邮箱；老前端发的
+	// 是 email，两种都得收得下，不然换版那一刻谁都登不进。
+	mustDecode(t, `{"account": "zhangsan", "password": "x"}`, &iamv1.LoginRequest{})
+	mustDecode(t, `{"email": "a@b.com", "password": "x"}`, &iamv1.LoginRequest{})
+
 	// frontend/src/components/EmailComposer.vue —— 写信/回复。
 	// accountId 决定这封信从哪个信箱发出去；少了它，proto 收不下整单 400。
 	// 前端把它当字符串发（int64 的 JSON 映射），两种形式都得收得下。
