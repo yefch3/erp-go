@@ -193,25 +193,24 @@
         <!-- Who wrote it, as a person rather than a field: the avatar gives
              the eye somewhere to land before it starts reading, which is the
              whole reason every mail client has one. -->
+        <!-- 一行，不是两行。
+             从前是「名字 + 地址」一行、「收件地址 + 详情」另一行，于是名字长
+             一点（"The Google Workspace Team"）就折成两行，整块头部四行高，
+             把正文推下去——而这四行里没有一句是读信的人要读的。
+             现在全部排在一行上，谁长谁省略号；完整的地址在「详情」里。 -->
         <div class="in-from">
           <span class="avatar" :style="avatarStyle(openedInbound.fromEmail)" aria-hidden="true">
             {{ initialOf(openedInbound.fromName || openedInbound.fromEmail) }}
           </span>
-          <div class="in-who">
-            <div class="in-meta">
-              <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
-              <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
-            </div>
-            <div class="sub">
-              {{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}
-              <!-- 详情 folds the headers away rather than dropping them: a
-                   reader is for reading, but "which address did this really
-                   come from" has to be answerable without leaving the page. -->
-              <button class="details-toggle" @click="detailsOpen = !detailsOpen">
-                {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
-              </button>
-            </div>
-          </div>
+          <span class="in-name strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
+          <span class="in-addr sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+          <span class="in-to sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</span>
+          <!-- 详情 folds the headers away rather than dropping them: a
+               reader is for reading, but "which address did this really
+               come from" has to be answerable without leaving the page. -->
+          <button class="details-toggle" @click="detailsOpen = !detailsOpen">
+            {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
+          </button>
           <el-button
             v-if="canCreateCustomerFromSender"
             class="sender-customer-action"
@@ -940,6 +939,7 @@
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
+          :current="openedInbound?.id"
           @open="openInbound"
           @activate="openMailWindow"
           @star="toggleStar"
@@ -976,6 +976,7 @@
         :mails="draftRows"
         folder="drafts"
         :loading="loading"
+        :current="openedDraft?.id"
         @open="openDraftPreview"
         @activate="editDraftRow"
       />
@@ -1043,6 +1044,7 @@
           folder="sent"
           :loading="loading"
           :sort="listSort"
+          :current="openedInbound?.id"
           @open="openSentRow"
           @activate="openMailWindow"
           @star="toggleStar"
@@ -5164,6 +5166,17 @@ async function doUnsuppress(row: Suppression) {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 挤不下就换行，不是把里面的字挤成一竖条。
+     列表这一栏的宽度现在是人自己拖的，拖到 250px 也合理——那时这一条上的
+     「排序：日期 ↓ / 只看未读 / 全部已读」放不下。放不下有两种办法：把每
+     一样都压窄（于是「排序：日期」竖着排成三行，那正是这次要修的样子），
+     或者整颗按钮挪到下一行。后者永远是对的：一颗按钮要么完整，要么不在。 */
+  flex-wrap: wrap;
+  row-gap: 6px;
+  /* 换到第二行的按钮靠右，跟着第一行那几颗的右边缘走，不是散落在左边。
+     第一行不受影响：那儿有一个 flex:1 的空档（.grow），free space 全被它
+     吃掉了，justify-content 没得分配。 */
+  justify-content: flex-end;
   min-height: 28px;
   margin-bottom: 8px;
 }
@@ -5171,6 +5184,12 @@ async function doUnsuppress(row: Suppression) {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
+  /* 搜的词可以很长，而它不该把整条工具条挤走：超出就省略号，全词在左栏
+     那个搜索框里原样摆着。 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* 排序：一颗不像按钮的按钮。它是这一条上最不重要的控件（一天点零到一次），
    画成实心按钮会和右边那两颗真按钮抢眼睛。 */
@@ -5178,6 +5197,9 @@ async function doUnsuppress(row: Suppression) {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  /* 不折行、不压缩：这五个字是一个整体，断在中间没有任何意义。 */
+  flex: none;
+  white-space: nowrap;
   border: 0;
   background: transparent;
   padding: 3px 10px;
@@ -5339,9 +5361,33 @@ async function doUnsuppress(row: Suppression) {
 .in-from {
   display: flex;
   align-items: center;
-  gap: 12px;
+  /* 一行装下：名字、地址、收件地址、详情、日期。gap 比从前小，因为这一行
+     上东西多了；头像后面单独补一格。 */
+  gap: 6px;
+  min-width: 0;
+}
+.in-from .avatar {
+  margin-right: 4px;
+}
+/* 三段字各自可缩，谁长谁先省略号。名字排在最前、缩得最少：一封信最先要
+   回答的是「谁」。 */
+.in-name {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.in-addr,
+.in-to {
+  flex: 0 2 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sender-customer-action {
+  flex: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
@@ -5363,14 +5409,6 @@ async function doUnsuppress(row: Suppression) {
   font-weight: 500;
   user-select: none;
 }
-.in-who {
-  min-width: 0;
-}
-.in-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
 .in-when {
   white-space: nowrap;
 }
@@ -5388,7 +5426,7 @@ async function doUnsuppress(row: Suppression) {
   font-size: 13px;
 }
 .details-toggle {
-  margin-left: 8px;
+  flex: none;
   padding: 0;
   border: 0;
   background: transparent;

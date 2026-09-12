@@ -53,6 +53,8 @@ export default {
     badLink: 'El enlace de activación no es válido o ya no funciona',
   },
   menu: {
+    collapseNav: 'Ocultar menú',
+    expandNav: 'Mostrar menú',
     stockAndGoods: 'Productos y stock',
     sales: 'Ventas',
     logistics: 'Logística',

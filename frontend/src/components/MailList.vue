@@ -16,7 +16,12 @@
       v-for="m in mails"
       :key="m.id"
       class="row"
-      :class="{ unread: !m.isRead, picked: isPicked(m), dragging: isDragging(m) }"
+      :class="{
+        unread: !m.isRead,
+        picked: isPicked(m),
+        current: m.id === current,
+        dragging: isDragging(m),
+      }"
       :draggable="canDrag"
       @dragstart="onDragStart(m, $event)"
       @dragend="onDragEnd"
@@ -250,6 +255,12 @@ const props = defineProps<{
   // 现在按哪一列排。列表自己不画排序控件（在页面的工具条上），要它只为了
   // 一件事：按大小排的时候，行上才显示大小——排序说明此刻在意的是它。
   sort?: MailSort
+  // 正在右边读的那一封。
+  //
+  // 从前列表上没有这个标记：点开一封信，右边换了内容，而左边四十行一模一样
+  // ——读完一封抬头回来，不知道刚才读的是哪一行，也就不知道该接着读下一行的
+  // 哪一封。每个邮件客户端都标这一行，Foxmail 标成蓝的。
+  current?: string
 }>()
 
 // mark / purge 两个事件随行内按钮一起去掉了：现在列表上没有任何单封操作，
@@ -509,6 +520,29 @@ function ariaFor(m: MailRow) {
    cursor has moved on to the toolbar — which is exactly when it matters. */
 .row.picked {
   background: var(--el-color-primary-light-9);
+}
+
+/* 正在读的那一封。比勾选的那档深一级，左边再加一道竖杠——两种"被选中"要
+   分得开：勾选是"我要对这几封做点什么"，当前是"我正在看这一封"，一个人
+   完全可能同时有这两种状态（勾了六封，正读着第三封）。
+   竖杠画在行里而不是靠 border-left，免得整行文字跟着往右挪 3px。 */
+.row.current {
+  background: var(--el-color-primary-light-8);
+}
+.row.current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--el-color-primary);
+}
+/* 鼠标压上去时那层白（.row:hover）会盖掉上面这块蓝，于是"我正在读的是哪
+   一行"在鼠标扫过列表时一闪一闪。当前这一行不让它盖。 */
+.row.current:hover,
+.row.current:focus-within {
+  background: var(--el-color-primary-light-8);
 }
 /* 正在被拖走的那几行画淡：手上拿着的东西和还留在原地的东西要分得开，
    否则拖多封时看不出到底拿起了哪几封。 */

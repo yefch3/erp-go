@@ -53,6 +53,8 @@ export default {
     badLink: '激活链接无效或已失效',
   },
   menu: {
+    collapseNav: '收起菜单',
+    expandNav: '展开菜单',
     stockAndGoods: '产品与仓储',
     sales: '销售',
     logistics: '物流',

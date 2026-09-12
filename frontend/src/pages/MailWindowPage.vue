@@ -25,22 +25,18 @@
     <template v-else-if="mail">
       <h1 class="in-subject">{{ mail.subject || t('emails.noSubject') }}</h1>
 
+      <!-- 一行，和邮件页的阅读区一样：名字长一点就折成两行、把正文推下去的
+           那个毛病在这里也一样难看。 -->
       <div class="in-from">
         <span class="avatar" :style="avatarStyle(mail.fromEmail)" aria-hidden="true">
           {{ initialOf(mail.fromName || mail.fromEmail) }}
         </span>
-        <div class="in-who">
-          <div class="in-meta">
-            <span class="strong">{{ mail.fromName || mail.fromEmail }}</span>
-            <span class="sub">&lt;{{ mail.fromEmail }}&gt;</span>
-          </div>
-          <div class="sub">
-            {{ t('emails.inboundTo', { to: mail.toEmail }) }}
-            <button class="details-toggle" @click="detailsOpen = !detailsOpen">
-              {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
-            </button>
-          </div>
-        </div>
+        <span class="in-name strong">{{ mail.fromName || mail.fromEmail }}</span>
+        <span class="in-addr sub">&lt;{{ mail.fromEmail }}&gt;</span>
+        <span class="in-to sub">{{ t('emails.inboundTo', { to: mail.toEmail }) }}</span>
+        <button class="details-toggle" @click="detailsOpen = !detailsOpen">
+          {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
+        </button>
         <span class="grow" />
         <span class="sub in-when" :title="zonedStamp(mail.sentAt || mail.receivedAt)">
           {{ shortTime(mail.sentAt || mail.receivedAt) }}
@@ -209,7 +205,26 @@ function initialOf(name: string) {
 .in-from {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  min-width: 0;
+}
+.in-from .avatar {
+  margin-right: 4px;
+}
+.in-name {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.in-addr,
+.in-to {
+  flex: 0 2 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .avatar {
   flex: none;
@@ -222,14 +237,6 @@ function initialOf(name: string) {
   font-size: 15px;
   font-weight: 500;
   user-select: none;
-}
-.in-who {
-  min-width: 0;
-}
-.in-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
 }
 .in-when {
   white-space: nowrap;
@@ -245,7 +252,7 @@ function initialOf(name: string) {
   flex: 1;
 }
 .details-toggle {
-  margin-left: 8px;
+  flex: none;
   padding: 0;
   border: 0;
   background: transparent;

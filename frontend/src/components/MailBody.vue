@@ -318,25 +318,33 @@ function read() {
   try {
     const d = el.contentDocument
     if (!d?.body) return
-    // The body's own height, and only the body's.
+    // 量 <html> 这个盒子的实际高度，不是任何一个 scrollHeight。
     //
-    // This used to take Math.max of the body and the documentElement, and
-    // that was a feedback loop with a very specific symptom: the mail crept
-    // downwards while you were reading it. documentElement.scrollHeight is at
-    // least the frame's viewport height, and the frame's height is whatever we
-    // set last time — so every measurement re-read its own previous answer and
-    // added the slop again. Thirty-two ticks at eight pixels is 256px of
-    // drift, which is exactly what was measured on a real mail: content
-    // 6271px, frame 6527px, difference 256.
+    // 三个候选值，各有各的毛病，实测（Chrome，把 frame 先后设成 120 和 400px）：
     //
-    // documentElement stays as the fallback for the one case it was there
-    // for — a body that reports nothing, which happens when everything in it
-    // is floated or absolutely positioned.
-    const h = d.body.scrollHeight || d.documentElement?.scrollHeight || 0
+    //   documentElement.scrollHeight  120 / 400 —— 跟着 frame 自己走
+    //   body.scrollHeight              54 /  54 —— 稳，但少了 32px
+    //   documentElement.rect.height    86 /  86 —— 稳，而且是对的
+    //
+    // 第一个是那次"读着读着信自己往下长"的原因：它至少等于 frame 的视口高度，
+    // 而 frame 的高度是我们上次写进去的，于是每量一次都把上一次的答案再读回来
+    // 加一遍 slop。三十二跳 × 8px = 256px 的漂移，真信上量到的就是这个数。
+    //
+    // 第二个是上一版的修法，它换来了另一个毛病：**每封信的末尾被切掉一截**。
+    // body 的第一个和最后一个子元素的上下外边距会穿过 body 折叠出去（body 没有
+    // 内边距和边框），而 body.scrollHeight 不含这截折叠出去的边距。一封 <p> 开头
+    // <p> 结尾的信——也就是几乎所有纯文本信——因此少算 16 + 16 = 32px：正文整体
+    // 被那 16px 顶下去，高度却没算，最后一行就被削掉半行。上面那封 86 对 54 的
+    // demo 信就是这样，肉眼可见。
+    //
+    // 第三个既不跟着 frame 走（html 的高度是 auto，就是内容高），又包含折叠出去
+    // 的边距。body.scrollHeight 留作下限：内容全是浮动或绝对定位时，html 盒子
+    // 可能包不住它们。
+    const rect = d.documentElement?.getBoundingClientRect().height ?? 0
+    const h = Math.max(Math.ceil(rect), d.body.scrollHeight)
     if (h > 0) {
-      // Slop so a rounding error cannot produce a scrollbar. Safe to add to
-      // the body's height, which does not include it; adding it to the
-      // documentElement's is what caused the drift above.
+      // Slop so a rounding error cannot produce a scrollbar. 加在一个稳定的
+      // 数上，所以它也只加一次。
       height.value = h + 8
       ready.value = true
     }
