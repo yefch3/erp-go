@@ -2286,6 +2286,11 @@ export default {
     uploadFailed: 'Error al subir la imagen',
     imageWarning: 'Nota: la mayoría de los clientes de correo bloquean las imágenes. Asegúrese de que el mensaje se entienda sin ellas y ponga texto alternativo.',
   },
+  // La ventana aparte que abre un doble clic.
+  mailWindow: {
+    gone: 'No se puede abrir este correo',
+    goneHint: 'Puede que se haya eliminado o que el buzón esté bloqueado ahora mismo: comprueba la ventana principal.',
+  },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',
     showQuoted: 'Mostrar historial citado',

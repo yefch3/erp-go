@@ -8,6 +8,9 @@ export const router = createRouter({
     // what they are here to arrange. Outside the shell and outside the guard.
     { path: '/activate', component: () => import('./pages/ActivatePage.vue') },
     { path: '/reset', component: () => import('./pages/ResetPage.vue') },
+    // 双击一封信弹出来的那个窗口。在 Shell 外面：它不该有顶栏和左侧菜单，
+    // 它就是一封信。守卫照常管——没登录会先去 /login，登完回到这封信。
+    { path: '/mail/:id', component: () => import('./pages/MailWindowPage.vue') },
     {
       path: '/',
       component: () => import('./pages/Shell.vue'),
