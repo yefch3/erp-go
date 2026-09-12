@@ -163,7 +163,11 @@ async function openPreview(a: MailFile) {
     const resp = await post<{ previewUrl?: string }>(
       `/inbound-mails/${mail.value.id}/attachments/${a.id}/preview`,
     )
-    if (resp?.previewUrl) window.open(resp.previewUrl, '_blank', 'noopener')
+    if (!resp?.previewUrl) return
+    // 记在附件上：同一份文件第二次点是直接开的，连请求都不发。阅读区那边
+    // 也是这么做的。
+    a.previewUrl = resp.previewUrl
+    window.open(resp.previewUrl, '_blank', 'noopener')
   } catch {
     // 转不了的理由后端已经用消息说了，拦截器会弹；这里不再叠一层。
   } finally {

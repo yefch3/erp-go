@@ -3312,6 +3312,12 @@ function openInbound(row: MailRow) {
 // 'mail-<id>'，同一封信双击第二次是把已经开着的那个拿到前面来，不是再开
 // 一个一模一样的。
 //
+// **特意没写 noopener**，尽管几乎所有 window.open 都该写它：按 HTML 规范，
+// 带 noopener 时浏览器必须新开一个互不相干的上下文，窗口名字整个被忽略
+// ——于是上面那条「第二次是拿到前面来」就没了，双击十次开十个窗口。
+// 这里不写它是安全的：开的是本站自己的 /mail/<id>，同源，不存在把
+// window.opener 交给外站的问题。
+//
 // 投递记录（kind === 'ERP'）没有这个窗口：邮箱服务器上没有这封信，
 // /inbound-mails/<id> 那条路上什么都没有。双击它就只是点了两下。
 //
@@ -3319,7 +3325,7 @@ function openInbound(row: MailRow) {
 function openMailWindow(row: MailRow) {
   if (row.kind === 'ERP') return
   const url = router.resolve({ path: `/mail/${row.id}` }).href
-  window.open(url, `mail-${row.id}`, 'width=1040,height=860,noopener')
+  window.open(url, `mail-${row.id}`, 'width=1040,height=860')
 }
 
 // Fetches the mail named in the URL. Opening marks it read server-side; the
