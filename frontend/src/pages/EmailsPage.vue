@@ -1497,7 +1497,7 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
-import { LIMITS, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
+import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
 import {
   isListFolder,
   pickedRows as pickedRowsOf,
@@ -2286,26 +2286,29 @@ function colEl(col: Col): HTMLElement | null {
   return col === 'rail' ? railEl.value : listEl.value
 }
 
-// 这一栏所在的那块地方有多宽。文件夹栏量的是整个信箱区；列表量的是它自己
-// 的父节点——也就是「列表 + 分隔条 + 阅读区」那一块。
+// 这一栏最宽能到哪儿：它所在的那块地方，减掉旁边那些不归它的东西。
 //
-// 父节点而不是「信箱区减掉文件夹栏」：后者漏掉了它们之间那条分隔条，实测
-// 因此少留了 34px，阅读区能被挤到 286 而下限写的是 320。
+// 列表量的是自己的父节点——「列表 + 分隔条 + 阅读区」那一块——再减掉分隔条，
+// 所以拖到头时阅读区正好是 0。父节点而不是「信箱区减掉文件夹栏」：后者漏掉
+// 了它们之间那条分隔条。
+//
+// 文件夹栏减掉两条分隔条，再减掉列表**此刻**的宽度：拖它的时候列表不跟着变
+// 窄（它有自己的宽度），能让出来的只有阅读区。
 function roomFor(col: Col): number {
-  if (col === 'list') return listEl.value?.parentElement?.clientWidth ?? Infinity
+  if (col === 'list') {
+    const panes = listEl.value?.parentElement?.clientWidth ?? 0
+    return panes ? panes - SEP_LIST : Infinity
+  }
   const box = mailboxEl.value?.getBoundingClientRect().width || 0
   if (!box) return Infinity
-  // 文件夹栏右边真正占着地方的是列表**此刻**的宽度，而 clampCol 里算的是它的
-  // 下限。多出来的那截先扣掉，否则：把列表拉宽，再把文件夹栏往右拖，两边一
-  // 起挤，阅读区被压到 148px——量出来就是这个数。
   const listNow = listEl.value?.getBoundingClientRect().width ?? 0
-  return box - Math.max(0, listNow - LIMITS.list.min)
+  return box - SEP_RAIL - listNow - SEP_LIST
 }
 
 // 拖到了这个宽度：想要的和正用的一起改，然后存。拖的时候人看得见边界在哪，
 // 所以这里两个数是同一个。
 function dragTo(col: Col, px: number) {
-  const w = clampCol(col, px, roomFor(col))
+  const w = clampCol(px, roomFor(col))
   colW[col] = w
   colWish[col] = w
 }
@@ -2372,7 +2375,7 @@ function onGripKey(col: Col, ev: KeyboardEvent) {
 function refitCols() {
   for (const col of ['rail', 'list'] as Col[]) {
     const wish = colWish[col]
-    colW[col] = wish === null ? null : clampCol(col, wish, roomFor(col))
+    colW[col] = wish === null ? null : clampCol(wish, roomFor(col))
   }
 }
 window.addEventListener('resize', refitCols)

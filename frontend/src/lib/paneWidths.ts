@@ -12,40 +12,28 @@
 
 export type Col = 'rail' | 'list'
 
-/** 每一栏自己的上下限。太窄的列表只剩省略号，太宽的文件夹栏是一片空白。 */
-export const LIMITS: Record<Col, { min: number; max: number }> = {
-  rail: { min: 150, max: 380 },
-  list: { min: 240, max: 640 },
-}
-
-/** 阅读区至少留这么宽。比它再窄，一行正文就只剩三四个词。 */
-export const READER_MIN = 320
-
-// 分隔条自己也占地方：CSS 里文件夹栏那条是 4 + 10 + 4，列表那条是 3 + 10 + 3
-// （留白 + 条 + 留白）。算"还剩多少"的时候要减掉，不然"给阅读区留 320"会少
-// 留这几十像素——量出来的确实是 286。
-const SEP_RAIL = 18
-const SEP_LIST = 16
-
-// 拖一栏的时候，右边还要装下什么。
-export const RESERVE: Record<Col, number> = {
-  // 文件夹栏右边：一条分隔条、列表的下限、另一条分隔条、阅读区的下限。
-  rail: SEP_RAIL + LIMITS.list.min + SEP_LIST + READER_MIN,
-  // 列表的 room 量的是「列表 + 分隔条 + 阅读区」那一整块，所以只剩一条。
-  list: SEP_LIST + READER_MIN,
-}
+// 分隔条自己占的宽度：CSS 里文件夹栏那条是 4 + 10 + 4，列表那条是 3 + 10 + 3
+// （留白 + 条 + 留白）。算「这一栏还能拖到多宽」时要把它们减掉，否则拖到头
+// 会把右边那栏挤出容器，整页多出一条横向滚动条。
+export const SEP_RAIL = 18
+export const SEP_LIST = 16
 
 /**
- * 把一个宽度收进可用范围。
+ * 把一个宽度收进能用的范围。
  *
- * room 是这一栏所在的那块地方有多宽：拖文件夹栏时是整个信箱区，拖列表时是
- * 列表和阅读区合起来那块。窗口被缩小之后，上次拖出来的数可能已经装不下了
- * ——那时让位的是这一栏，而不是被挤到没有的阅读区。
+ * **一条下限都不设。** 从前这里给每栏写了最小宽度（文件夹栏 150、列表 240、
+ * 阅读区 320），拖到那儿就拖不动了——而那三个数是凭空定的：有人就是想把
+ * 列表收成一条窄缝只看时间，也有人想把它拉到半屏当表格用。多窄算窄是拖的
+ * 人自己的事，代码不该替他决定。拖没了也有回去的路：双击分隔条回默认。
+ *
+ * 剩下两条边是硬的，因为它们不是偏好：
+ * · 0——负数不是宽度；
+ * · room——这一栏所在的那块地方有多宽（拖文件夹栏时是整个信箱区，拖列表时
+ *   是「列表 + 分隔条 + 阅读区」那一块，两者都已经减掉分隔条）。再往外拖
+ *   就是把右边那栏挤出容器，换来一条谁都不想要的横向滚动条。
  */
-export function clampCol(col: Col, px: number, room = Infinity): number {
-  const { min, max } = LIMITS[col]
-  const roomy = Math.max(min, room - RESERVE[col])
-  return Math.round(Math.min(Math.max(px, min), Math.min(max, roomy)))
+export function clampCol(px: number, room = Infinity): number {
+  return Math.round(Math.min(Math.max(px, 0), Math.max(0, room)))
 }
 
 function keyOf(col: Col): string {
@@ -57,8 +45,10 @@ export function readWidth(col: Col, store: Pick<Storage, 'getItem'>): number | n
   const raw = store.getItem(keyOf(col))
   if (!raw) return null
   const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0) return null
-  return clampCol(col, n)
+  if (!Number.isFinite(n) || n < 0) return null
+  // 这里不收进 room：读的时候还没有 DOM，量不到屏幕。装不装得下由页面上的
+  // refitCols 在画出来之后说。
+  return Math.round(n)
 }
 
 export function writeWidth(col: Col, px: number, store: Pick<Storage, 'setItem'>): void {
