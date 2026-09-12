@@ -4,6 +4,7 @@ export default {
     subtitle: '报价 · 合同 · 采购 · 仓储 · 船期 · 收汇',
     email: '公司邮箱',
     account: '账号',
+    accountPlaceholder: '用户名或邮箱',
     forgotUsernameHint: '用用户名登录的账号没有邮箱可以收链接，请联系管理员重置密码。',
     password: '密码',
     submit: '登录',

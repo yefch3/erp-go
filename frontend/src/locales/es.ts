@@ -4,6 +4,7 @@ export default {
     subtitle: 'Cotización · Contrato · Compras · Almacén · Embarque · Cobros',
     email: 'Correo de empresa',
     account: 'Cuenta',
+    accountPlaceholder: 'Usuario o correo',
     forgotUsernameHint: 'Las cuentas que acceden con nombre de usuario no tienen correo para recibir el enlace; pide a un administrador que restablezca la contraseña.',
     password: 'Contraseña',
     submit: 'Iniciar sesión',

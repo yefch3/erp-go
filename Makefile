@@ -180,7 +180,8 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 .PHONY: frontend-ci
 frontend-ci: ## Type-check and build the frontend, and run its unit tests (FRONTEND=0 跳过)
 	@if [ "$(FRONTEND)" = "0" ]; then echo "==> frontend-ci: skipped, frontend/ untouched"; \
-	else cd frontend && npm ci && npm run typecheck && npm run build && npm test; fi
+	else cd frontend && npm ci && npm run typecheck && npm run build && npm test \
+	  && cd .. && sh scripts/check-frontend-components.sh; fi
 
 # The single definition of what CI checks. The workflow provides the
 # environment (Postgres, Redis, created databases, migrations) and then calls

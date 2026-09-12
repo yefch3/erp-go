@@ -36,7 +36,7 @@
           <!-- 登录名，一个框。它是任意字符串——zhangsan 或 zhangsan@xxx.com 都行，
                系统不关心它像不像邮箱。没有「选公司」这一步，也不该加：一个
                登录页服务所有公司，靠登录名的全局唯一索引做到系统内唯一。 -->
-          <el-input v-model="form.account" placeholder="用户名或邮箱" autofocus autocomplete="username" @input="errorKey = ''" />
+          <el-input v-model="form.account" :placeholder="t('login.accountPlaceholder')" autofocus autocomplete="username" @input="errorKey = ''" />
         </el-form-item>
         <el-form-item :label="t('login.password')">
           <el-input v-model="form.password" type="password" show-password placeholder="••••••••" @input="errorKey = ''" />
