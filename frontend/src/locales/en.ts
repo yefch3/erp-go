@@ -2172,6 +2172,7 @@ export default {
     signOutAllAsk: 'Sign out of all {n} mailboxes? Each will ask for its password again.',
     signInToRead: 'Sign in to read',
     newFolder: 'New folder',
+    newSubfolder: 'New folder inside this one',
     newFolderAsk: 'Folder name',
     renameFolder: 'Rename folder',
     deleteFolder: 'Delete folder',

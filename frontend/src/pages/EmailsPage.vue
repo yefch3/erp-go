@@ -1455,7 +1455,7 @@ import {
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { isSheetPreview, needsConversion } from '../lib/attachmentPreview'
-import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
+import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
 import { plainTextToHtml } from '../lib/linkifyText'
@@ -2892,11 +2892,18 @@ async function askFolderName(title: string, initial = ''): Promise<string | null
   }
 }
 
-async function createFolder(accountId: number) {
-  const name = await askFolderName(t('mailGate.newFolder'))
+// 新建文件夹。parentId 不给就是顶层；左栏每个自建文件夹行上的「＋」给的是
+// 它自己的 id——建在那个文件夹底下。层级在服务器上是真的（IMAP 的名字就是
+// 路径），所以在 Foxmail 里打开也是同一棵树。
+async function createFolder(accountId: number, parentId?: number) {
+  const name = await askFolderName(t(parentId ? 'mailGate.newSubfolder' : 'mailGate.newFolder'))
   if (!name) return
   try {
-    await post('/mail-folders', { accountId: String(accountId), name })
+    await post('/mail-folders', {
+      accountId: String(accountId),
+      name,
+      ...(parentId ? { parentId: String(parentId) } : {}),
+    })
     await loadCustomFolders(accountId)
   } catch {
     // 拦截器已经弹了后端的原因（重名、服务器拒绝）
@@ -2904,13 +2911,17 @@ async function createFolder(accountId: number) {
 }
 
 async function renameFolder(cf: CustomFolder) {
-  const name = await askFolderName(t('mailGate.renameFolder'), cf.name)
-  if (!name || name === cf.name) return
+  // 输入框里放的是**最后一段**，不是整条路径：改名改的就是这一段，
+  // 而把 "客户/巴西" 整条摆进去，人会以为要连父路径一起重写。
+  const { leaf } = splitFolderPath(cf.name)
+  const name = await askFolderName(t('mailGate.renameFolder'), leaf)
+  if (!name || name === leaf) return
   try {
-    await put(`/mail-folders/${cf.id}`, { name })
+    // 新的 key 由后端说：子文件夹改名之后整条路径是 "客户/智利"，
+    // 而这里只知道「智利」。自己拼会拼出一个不存在的文件夹。
+    const d = await put<{ folder?: CustomFolder }>(`/mail-folders/${cf.id}`, { name })
     await loadCustomFolders(cf.accountId)
-    // 正停在这个文件夹里：它的 key 变了，跟过去
-    if (folder.value === cf.viewKey) switchFolder(`F:${name}`)
+    if (folder.value === cf.viewKey && d?.folder?.viewKey) switchFolder(d.folder.viewKey)
   } catch {
     // 同上
   }

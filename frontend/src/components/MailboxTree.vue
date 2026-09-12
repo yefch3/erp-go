@@ -193,15 +193,20 @@
               droppable: canDrop(b.id, item),
               over: over === `${b.id}:${item.key}`,
             }"
+            :style="indent(item)"
             @dragover="onDragOver(b.id, item, $event)"
             @dragleave="onDragLeave(b.id, item)"
             @drop="onDrop(b.id, item, $event)"
           >
-            <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
+            <button type="button" class="custom-main" :title="item.hostName" @click="emit('select', b.id, item.key)">
               <el-icon class="ficon"><Folder /></el-icon>
               <span class="fname">{{ item.name }}</span>
             </button>
             <span class="custom-acts">
+              <!-- 在这个文件夹**底下**再建一个。放在这一行上而不是做成一个
+                   带「上级」下拉的对话框：想建在哪儿，人手正指着那一行。
+                   Foxmail、Outlook 右键菜单里的「新建子文件夹」也是这个位置。 -->
+              <button type="button" class="custom-act" :title="t('mailGate.newSubfolder')" @click.stop="emit('createFolder', b.id, item.folder!.id)">＋</button>
               <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', item.folder!)">✎</button>
               <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', item.folder!)">✕</button>
             </span>
@@ -343,7 +348,8 @@ const emit = defineEmits<{
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
   /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
-  createFolder: [accountId: number]
+  // 建在哪个信箱里、哪个文件夹底下（不给就是顶层）。
+  createFolder: [accountId: number, parentId?: number]
   renameFolder: [folder: CustomFolder]
   deleteFolder: [folder: CustomFolder]
   /** 把拖着的那几封放进这一格。做什么由 DropTarget 说（挪 or 标）。 */
@@ -355,6 +361,17 @@ const boxes = ref<Mailbox[]>([])
 const adding = ref(false)
 
 // -------------------------------------------------------------- 接住拖拽
+
+/**
+ * 子文件夹往右缩一格。层级是服务器上真的层级（见 lib/mailFolders）。
+ *
+ * 缩进加在外层那一格上，而行里那颗按钮自己已经有 22px 的左内边距（图标和
+ * 文字的起点）——所以这里只出「比上一级多缩多少」，不重复那 22px。
+ */
+function indent(item: RailItem) {
+  const depth = item.depth ?? 0
+  return depth > 0 ? { paddingLeft: `${depth * 14}px` } : undefined
+}
 
 /** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
 const over = ref('')

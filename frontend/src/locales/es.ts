@@ -2178,6 +2178,7 @@ export default {
     signOutAllAsk: '¿Cerrar sesión en los {n} buzones? Cada uno volverá a pedir su contraseña.',
     signInToRead: 'Inicia sesión para ver',
     newFolder: 'Nueva carpeta',
+    newSubfolder: 'Nueva carpeta dentro de esta',
     newFolderAsk: 'Nombre de la carpeta',
     renameFolder: 'Renombrar carpeta',
     deleteFolder: 'Eliminar carpeta',

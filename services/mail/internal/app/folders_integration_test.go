@@ -49,7 +49,9 @@ func (h *folderHost) ArchiveFolder(context.Context, MailAccount) (string, error)
 func (h *folderHost) ListFolders(context.Context, MailAccount) ([]HostFolder, error) {
 	var out []HostFolder
 	for _, n := range append([]string{"INBOX", "已发送", "垃圾邮件", "已删除"}, h.folders...) {
-		out = append(out, HostFolder{Name: n})
+		// 分隔符跟着每一行走，和真的 LIST 一样——建子文件夹时服务层就是从
+		// 这儿问出「拿什么拼路径」的。
+		out = append(out, HostFolder{Name: n, Delim: "/"})
 	}
 	for _, n := range h.special {
 		out = append(out, HostFolder{Name: n, Special: true, Role: "SYSTEM"})
@@ -176,7 +178,7 @@ func (f *folderFixture) viewsOf(t *testing.T, mailID int64) []string {
 func TestCreateFolderMakesItOnTheHostThenRegistersIt(t *testing.T) {
 	f := newFolderFixture(t, 9101)
 	ctx := context.Background()
-	got, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "  供应商  ")
+	got, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "  供应商  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,13 +189,13 @@ func TestCreateFolderMakesItOnTheHostThenRegistersIt(t *testing.T) {
 		t.Errorf("服务器上应该建了一个「供应商」，实际 %v", f.host.created)
 	}
 	// 重名
-	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "供应商"); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_EXISTS") {
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "供应商"); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_EXISTS") {
 		t.Errorf("重名应该被拒：%v", err)
 	}
 	// 不合规的名字：不该碰服务器
 	before := len(f.host.created)
 	for _, bad := range []string{"", "   ", "客户/ACME", "INBOX", "inbox", "Trash", "[Gmail]/x", "a*b", `q"q`, strings.Repeat("长", 121)} {
-		if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, bad); err == nil {
+		if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, bad); err == nil {
 			t.Errorf("%q 不该允许", bad)
 		}
 	}
@@ -201,8 +203,125 @@ func TestCreateFolderMakesItOnTheHostThenRegistersIt(t *testing.T) {
 		t.Errorf("不合规的名字碰了服务器：%v", f.host.created)
 	}
 	// 别人的信箱：一律「不存在」
-	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me+1, f.account, "别人的"); err == nil {
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me+1, f.account, 0, "别人的"); err == nil {
 		t.Error("不该允许在别人的信箱里建文件夹")
+	}
+}
+
+// 建在别的文件夹底下：服务器上是一条带分隔符的路径，不是 ERP 画出来的层级。
+func TestCreateFolderUnderAParentUsesTheHostPath(t *testing.T) {
+	f := newFolderFixture(t, 9111)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "巴西")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.HostName != "客户/巴西" {
+		t.Errorf("服务器上的名字应该是整条路径，实际 %q", child.HostName)
+	}
+	if len(f.host.created) != 2 || f.host.created[1] != "客户/巴西" {
+		t.Errorf("服务器上该建的是「客户/巴西」，实际 %v", f.host.created)
+	}
+	// 同名不同父是两个文件夹：路径不一样。
+	other, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "巴西")
+	if err != nil {
+		t.Fatalf("顶层的同名文件夹该建得出来：%v", err)
+	}
+	if other.HostName != "巴西" {
+		t.Errorf("顶层的不该带路径：%q", other.HostName)
+	}
+	// 上级不存在、或者是别的信箱的：拒。
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 999999, "孤儿"); err == nil {
+		t.Error("上级不存在时不该建")
+	}
+}
+
+// 给子文件夹改名改的是最后一段，不是整条路径。
+//
+// 这条钉的是一次真事故的形状：IMAP 的 RENAME 就是移动，拿新名字当整个路径
+// 发过去，服务器会把这个文件夹连同里面的信一起搬到顶层。
+func TestRenamingAChildKeepsItUnderItsParent(t *testing.T) {
+	f := newFolderFixture(t, 9112)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "巴西")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.svc.RenameMailFolder(ctx, f.tenantID, f.me, child.ID, "智利")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HostName != "客户/智利" {
+		t.Errorf("改名之后还该在「客户」底下，实际 %q", got.HostName)
+	}
+	if len(f.host.renamed) != 1 || f.host.renamed[0] != "客户/巴西→客户/智利" {
+		t.Errorf("发给服务器的改名不对：%v", f.host.renamed)
+	}
+}
+
+// 给父文件夹改名：服务器上整棵子树跟着改（RFC 3501），所以登记和信上的
+// 名字也要跟着走——不跟的话，子文件夹里的信会从左栏消失。
+func TestRenamingAParentMovesItsChildrenAndTheirMail(t *testing.T) {
+	f := newFolderFixture(t, 9113)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "巴西")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.insertMail(t, child.HostName, 7001, "巴西客户询价")
+
+	if _, err := f.svc.RenameMailFolder(ctx, f.tenantID, f.me, parent.ID, "老客户"); err != nil {
+		t.Fatal(err)
+	}
+	var host string
+	if err := f.pool.QueryRow(ctx,
+		`SELECT host_name FROM mail_folders WHERE tenant_id=$1 AND id=$2`,
+		f.tenantID, child.ID).Scan(&host); err != nil {
+		t.Fatal(err)
+	}
+	if host != "老客户/巴西" {
+		t.Errorf("子文件夹的登记没跟着改：%q", host)
+	}
+	var folder string
+	if err := f.pool.QueryRow(ctx,
+		`SELECT folder FROM email_inbound WHERE tenant_id=$1 AND account_id=$2 AND imap_uid=7001`,
+		f.tenantID, f.account).Scan(&folder); err != nil {
+		t.Fatal(err)
+	}
+	if folder != "老客户/巴西" {
+		t.Errorf("子文件夹里那封信没跟着改：%q", folder)
+	}
+}
+
+// 底下还有文件夹就不删：自己先说清楚，别把服务器那句英文原话抛给人。
+func TestDeletingAFolderWithChildrenIsRefused(t *testing.T) {
+	f := newFolderFixture(t, 9114)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "巴西"); err != nil {
+		t.Fatal(err)
+	}
+	err = f.svc.DeleteMailFolder(ctx, f.tenantID, f.me, parent.ID)
+	if err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_HAS_CHILDREN") {
+		t.Errorf("有子文件夹时该拒绝删除：%v", err)
+	}
+	if len(f.host.deleted) != 0 {
+		t.Errorf("不该碰服务器：%v", f.host.deleted)
 	}
 }
 
@@ -339,7 +458,7 @@ func TestSystemFoldersCannotBeRenamedOrDeleted(t *testing.T) {
 func TestRenameFolderRelabelsItsMail(t *testing.T) {
 	f := newFolderFixture(t, 9103)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "旧名")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "旧名")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +481,7 @@ func TestRenameFolderRelabelsItsMail(t *testing.T) {
 func TestDeleteFolderRefusesWhileItStillHoldsMail(t *testing.T) {
 	f := newFolderFixture(t, 9104)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "待清")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "待清")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +513,7 @@ func TestDeleteFolderRefusesWhileItStillHoldsMail(t *testing.T) {
 func TestMoveInboundRepointsTheRowAndTheView(t *testing.T) {
 	f := newFolderFixture(t, 9105)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目A")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "项目A")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +569,7 @@ func TestMoveInboundRepointsTheRowAndTheView(t *testing.T) {
 func TestMarkViewReadStaysInsideTheCustomFolder(t *testing.T) {
 	f := newFolderFixture(t, 9106)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目A")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "项目A")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +616,7 @@ func TestMarkViewReadStaysInsideTheCustomFolder(t *testing.T) {
 func TestMoveInboundBatchMovesWholeThreadsInOneHostCall(t *testing.T) {
 	f := newFolderFixture(t, 9107)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目B")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "项目B")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,7 +690,7 @@ func TestMoveInboundBatchMovesWholeThreadsInOneHostCall(t *testing.T) {
 func TestMoveInboundBatchCapsTheExpandedCountBeforeTouchingTheHost(t *testing.T) {
 	f := newFolderFixture(t, 9108)
 	ctx := context.Background()
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目C")
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "项目C")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +868,7 @@ func TestALongFolderNameStillWorksEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	const long = "重要客户跟进记录2026年度汇总表" // 17 个字，视图键 19 个字符
 
-	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, long)
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, long)
 	if err != nil {
 		t.Fatal(err)
 	}

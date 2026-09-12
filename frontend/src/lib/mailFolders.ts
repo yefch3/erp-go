@@ -111,18 +111,84 @@ export const ROLE_FOLDER_KEY: Record<string, string> = {
   ARCHIVE: 'archive',
 }
 
-/** 左栏一个信箱下面的一行：固定视图或自建文件夹，同一级别。 */
+/** 左栏一个信箱下面的一行：固定视图或自建文件夹。 */
 export interface RailItem {
   key: string
   icon?: unknown
-  /** 服务器上那个文件夹的名字（固定视图没有，用文案）。 */
+  /** 这一行上写的字（固定视图没有，用文案）。自建文件夹写的是**最后一段**。 */
   name?: string
   /** 用户自己建的：只有它有改名和删除。服务器自带的（SYSTEM）没有。 */
   custom: boolean
   /** 文件夹本身，改名/删除要用。 */
   folder?: CustomFolder
-  /** 服务器上的实际名字，鼠标停上去看得到。 */
+  /** 服务器上的实际名字（整条路径），鼠标停上去看得到。 */
   hostName?: string
+  /** 缩进几级。顶层是 0。 */
+  depth?: number
+}
+
+// IMAP 拿一个字符分层级，各家不一样：263、Gmail、QQ 是 '/'，有些 Dovecot 配成
+// '.'，老服务器用 '\\'。**服务器不会把这个字符告诉前端**（列表接口只给名字），
+// 所以这里三个都认——认错的唯一后果是多缩进一级，而认错要同时满足「有个文件
+// 夹正好叫作前缀」这个条件，本来也就该算一家。
+const SEPARATORS = ['/', '.', '\\']
+
+/** 服务器上的全名切成父路径和最后一段。没有父路径就是顶层。 */
+export function splitFolderPath(name: string): { parent: string; leaf: string } {
+  let at = -1
+  let sep = ''
+  for (const s of SEPARATORS) {
+    const i = name.lastIndexOf(s)
+    if (i > at) {
+      at = i
+      sep = s
+    }
+  }
+  if (at <= 0) return { parent: '', leaf: name }
+  return { parent: name.slice(0, at), leaf: name.slice(at + sep.length) }
+}
+
+/**
+ * 把一串文件夹排成一棵树：父在前，孩子跟在后面，各级按名字排。
+ *
+ * 层级不是 ERP 造出来的，是服务器上真的层级——IMAP 的文件夹名字本身就是路径
+ * （"客户/巴西/2026"）。所以在 Foxmail 里建的多层文件夹，在这里看到的是同一
+ * 棵树；反过来也一样。
+ *
+ * 只有**真的存在**的那一段才算父：名字叫 "客户/巴西" 而没有 "客户" 这个文件
+ * 夹时，它照样是顶层的一行（写全名），不会凭空多出一级点不进去的空目录。
+ */
+export function nestFolders(folders: readonly CustomFolder[]): RailItem[] {
+  const byName = new Map(folders.map((f) => [f.name, f]))
+  const children = new Map<string, CustomFolder[]>()
+  const roots: CustomFolder[] = []
+  for (const f of folders) {
+    const { parent } = splitFolderPath(f.name)
+    if (parent && byName.has(parent)) {
+      children.set(parent, [...(children.get(parent) ?? []), f])
+    } else {
+      roots.push(f)
+    }
+  }
+  const byLabel = (a: CustomFolder, b: CustomFolder) => a.name.localeCompare(b.name, 'zh')
+  const out: RailItem[] = []
+  const walk = (list: CustomFolder[], depth: number) => {
+    for (const f of list.slice().sort(byLabel)) {
+      const { parent, leaf } = splitFolderPath(f.name)
+      out.push({
+        key: f.viewKey,
+        // 树上只写最后一段：父路径已经由上一行和缩进说了。没有父的写全名。
+        name: parent && byName.has(parent) ? leaf : f.name,
+        custom: f.role === 'CUSTOM',
+        folder: f,
+        hostName: f.name,
+        depth,
+      })
+      walk(children.get(f.name) ?? [], depth + 1)
+    }
+  }
+  walk(roots, 0)
+  return out
 }
 
 /**
@@ -152,11 +218,10 @@ export function mailboxRail(fixed: readonly FolderDef[], hostFolders: readonly C
   const byName = (a: CustomFolder, b: CustomFolder) => a.name.localeCompare(b.name, 'zh')
   const listed = (role: string) => hostFolders.filter((f) => f.role === role && f.viewKey).slice().sort(byName)
   for (const f of listed('SYSTEM')) {
-    out.push({ key: f.viewKey, name: f.name, custom: false, folder: f, hostName: f.name })
+    out.push({ key: f.viewKey, name: f.name, custom: false, folder: f, hostName: f.name, depth: 0 })
   }
-  for (const f of listed('CUSTOM')) {
-    out.push({ key: f.viewKey, name: f.name, custom: true, folder: f, hostName: f.name })
-  }
+  // 自建的排成树：多层目录在服务器上是真的层级，左栏照着缩进。
+  out.push(...nestFolders(listed('CUSTOM')))
   return out
 }
 

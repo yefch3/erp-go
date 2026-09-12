@@ -1351,7 +1351,7 @@ func (h *Handler) ListMailFolders(ctx context.Context, req *mailv1.ListMailFolde
 
 func (h *Handler) CreateMailFolder(ctx context.Context, req *mailv1.CreateMailFolderRequest) (*mailv1.CreateMailFolderResponse, error) {
 	op := operator(ctx)
-	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetName())
+	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetParentId(), req.GetName())
 	if err != nil {
 		return nil, err
 	}

@@ -1900,6 +1900,32 @@ UPDATE mail_folders
 SET name = sqlc.arg(name)::text, host_name = sqlc.arg(host_name)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
+-- name: RenameMailFolderSubtree :exec
+-- 父文件夹改了名，登记里它下面那些跟着改。
+-- 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+UPDATE mail_folders
+SET name = sqlc.arg(new_prefix)::text || substr(name, length(sqlc.arg(old_prefix)::text) + 1),
+    host_name = sqlc.arg(new_prefix)::text || substr(host_name, length(sqlc.arg(old_prefix)::text) + 1)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND host_name LIKE sqlc.arg(old_prefix)::text || '%';
+
+-- name: RenameInboundFolderPrefix :execrows
+-- 同上，信上存的文件夹名。触发器会重算视图。
+UPDATE email_inbound
+SET folder = sqlc.arg(new_prefix)::text || substr(folder, length(sqlc.arg(old_prefix)::text) + 1)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder LIKE sqlc.arg(old_prefix)::text || '%';
+
+-- name: CountMailFolderChildren :one
+-- 这个文件夹底下还有没有别的文件夹。删之前问一句：服务器多半会拒（有子
+-- 文件夹的不让删），而我们自己先说清楚，比把服务器那句英文原样抛给人好。
+SELECT count(*)::bigint FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND host_name LIKE sqlc.arg(prefix)::text || '%';
+
 -- name: DeleteMailFolder :exec
 DELETE FROM mail_folders
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

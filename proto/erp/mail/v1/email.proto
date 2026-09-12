@@ -482,7 +482,13 @@ message MailFolder {
 }
 message ListMailFoldersRequest { int64 account_id = 1; }
 message ListMailFoldersResponse { repeated MailFolder folders = 1; }
-message CreateMailFolderRequest { int64 account_id = 1; string name = 2; }
+message CreateMailFolderRequest {
+  int64 account_id = 1;
+  string name = 2;
+  // 建在哪个文件夹底下。0 = 顶层。服务器上真的是一层套一层（IMAP 的名字里
+  // 带分隔符），不是 ERP 里画出来的层级——所以在 Foxmail 里看到的也是同一棵树。
+  int64 parent_id = 3;
+}
 message RenameMailFolderRequest { int64 id = 1; string name = 2; }
 message CreateMailFolderResponse { MailFolder folder = 1; }
 message RenameMailFolderResponse { MailFolder folder = 1; }

@@ -1164,7 +1164,7 @@ func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.H
 	var out []app.HostFolder
 	for b := range boxes {
 		role := roleHint(b.Attributes)
-		out = append(out, app.HostFolder{Name: b.Name, Special: role != "", Role: role})
+		out = append(out, app.HostFolder{Name: b.Name, Special: role != "", Role: role, Delim: b.Delimiter})
 	}
 	if err := <-done; err != nil {
 		return nil, fmt.Errorf("列出文件夹失败：%w", err)

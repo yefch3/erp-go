@@ -2172,6 +2172,7 @@ export default {
     signOutAllAsk: '把手上 {n} 个邮箱全部退出？下次每个都要重新登录一次。',
     signInToRead: '登录后查看',
     newFolder: '新建文件夹',
+    newSubfolder: '在这里面新建文件夹',
     newFolderAsk: '文件夹名',
     renameFolder: '重命名文件夹',
     deleteFolder: '删除文件夹',
