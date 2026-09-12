@@ -2293,6 +2293,12 @@ export default {
     gone: 'No se puede abrir este correo',
     goneHint: 'Puede que se haya eliminado o que el buzón esté bloqueado ahora mismo: comprueba la ventana principal.',
   },
+  // El visor de hojas de cálculo adjuntas (se dibuja en una pestaña nueva, sin PDF).
+  sheetWindow: {
+    failed: 'No se puede abrir esta hoja de cálculo',
+    failedHint: 'El archivo puede estar dañado o estar en el antiguo formato .xls que este lector no entiende. Descárgalo y ábrelo en Excel.',
+    truncated: 'Se muestran las primeras {shown} filas de {total}: descarga el archivo para verlo completo.',
+  },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',
     showQuoted: 'Mostrar historial citado',

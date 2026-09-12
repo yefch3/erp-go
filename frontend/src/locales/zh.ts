@@ -2286,6 +2286,12 @@ export default {
     gone: '这封信打不开',
     goneHint: '可能是信已经被删掉了，也可能邮箱这会儿是锁着的——回主窗口看一眼。',
   },
+  // 表格附件的预览页（新标签页里直接画出来，不转 PDF）。
+  sheetWindow: {
+    failed: '这个表格打不开',
+    failedHint: '可能是文件损坏，或者是这个读法认不了的老格式（.xls）。下载下来用 Excel 打开吧。',
+    truncated: '只画了前 {shown} 行，整张表共 {total} 行——要看全的请下载原文件。',
+  },
   reader: {
     bodyFrame: '邮件正文',
     showQuoted: '显示引用的往来',

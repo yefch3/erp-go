@@ -1429,39 +1429,10 @@
     </template>
   </el-dialog>
 
-  <!-- Preview. Rendered from the storage origin rather than ours, so the file
-       cannot reach this page's session even if it tries — and only images and
-       PDFs are ever given a preview URL in the first place. -->
-  <el-dialog
-    v-model="previewOpen"
-    :title="previewing?.fileName"
-    width="min(1000px, 92vw)"
-    top="4vh"
-    append-to-body
-  >
-    <img
-      v-if="previewing && isImage(previewing)"
-      :src="previewing.previewUrl"
-      :alt="previewing.fileName"
-      class="preview-img"
-    />
-    <iframe
-      v-else-if="previewing"
-      :src="previewing.previewUrl"
-      class="preview-frame"
-      :title="previewing.fileName"
-    />
-    <template #footer>
-      <a
-        v-if="previewing?.downloadUrl"
-        class="el-button el-button--primary"
-        :href="previewing.downloadUrl"
-        :download="previewing.fileName"
-      >
-        {{ t('emails.download') }}
-      </a>
-    </template>
-  </el-dialog>
+  <!-- 附件预览从前是这儿的一个对话框，**已经拿掉了**：预览一律新开一个
+       标签页（见 openPreview）。一个 1000px 的对话框里看一份 A4 合同，等于
+       隔着门缝看；而标签页是整块屏幕，还能拖到第二个显示器上、能打印、能搜。
+       表格更进一步，连服务器都不经过——浏览器自己解出来画成表。 -->
 </template>
 
 <script setup lang="ts">
@@ -1483,7 +1454,7 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
-import { needsConversion } from '../lib/attachmentPreview'
+import { isSheetPreview, needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
@@ -4837,9 +4808,6 @@ function downloadExcel() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-const previewOpen = ref(false)
-const previewing = ref<MailFile | null>(null)
-
 const convertingAttachment = ref('')
 const bundling = ref(false)
 
@@ -4880,6 +4848,8 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
     if (convertingAttachment.value) return
     // 翻到别的信上去了，这封就不用预热了。
     if (openedInbound.value?.id !== opened) return
+    // 表格不用预热：它根本不走服务器。needsConversion 已经替表格答了 false，
+    // 这里不必再写一遍。
     if (!needsConversion(a)) continue
     try {
       const resp = await post<{ previewUrl?: string }>(
@@ -4896,22 +4866,39 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
 }
 
 /**
- * 打开预览。
+ * 打开预览。**一律新开一个标签页**，不再在页面里弹对话框。
  *
- * 图片和 PDF 直接开。Word / Excel / PPT 要先请服务器转成 PDF——转换是按需的，
- * 不是每封信一到就把所有附件都转一遍：绝大多数附件没人点开。
+ * 三条路：
  *
- * 转出来的地址写回这个附件对象，所以同一份文件第二次点是直接开的，连请求
- * 都不发。服务器那边也有缓存，换个人点同样不会重转。
+ * · 表格（.xlsx/.csv/.tsv）→ 自己的一页，浏览器当场解出来画成表。
+ *   不转 PDF，服务器完全不参与，也就没有任何中间文件被存下来。
+ *   从前它和 Word 一样送去 LibreOffice 转 PDF，那条路慢（几秒）、宽表被切成
+ *   好几页、而且 PDF 里的单元格选不中也搜不了。
+ * · 图片和 PDF → 直接开那个地址，交给浏览器自带的看图/看 PDF。
+ * · Word / PPT（还有读不了的老 .xls）→ 只能先请服务器转成 PDF，再开新页。
+ *   浏览器里没有第二种办法把 .docx 画出来。
+ *
+ * 新标签页而不是对话框：一个 1000px 宽的对话框里看一份 A4 合同，等于隔着
+ * 门缝看；而标签页是整块屏幕，还能拖到第二个显示器上、能打印、能搜。
+ *
+ * 弹窗拦截器不会拦：这是点击直接触发的。要等服务器转换的那一条先把空白页
+ * 开出来再去转，否则 await 之后再 open 就不算「人点的」了，会被拦。
  */
 async function openPreview(a: MailFile, mailID: string) {
+  if (isSheetPreview(a)) {
+    const id = mailID || openedInbound.value?.id || ''
+    if (!id) return
+    window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)
+    return
+  }
   if (!needsConversion(a)) {
-    previewing.value = a
-    previewOpen.value = true
+    if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
     return
   }
   if (convertingAttachment.value) return
   if (!mailID) return
+  // 先占住标签页（此刻还在这次点击的手势里），转好了再把地址填进去。
+  const tab = window.open('', `preview-${a.id}`)
   convertingAttachment.value = a.id
   try {
     const resp = await post<{ previewUrl?: string }>(
@@ -4919,18 +4906,16 @@ async function openPreview(a: MailFile, mailID: string) {
     )
     if (!resp?.previewUrl) throw new Error('no url')
     a.previewUrl = resp.previewUrl
-    previewing.value = a
-    previewOpen.value = true
+    if (tab) tab.location.replace(resp.previewUrl)
+    else window.open(resp.previewUrl, '_blank', 'noopener')
   } catch {
     // 具体原因（类型不支持、文件太大、转换失败）后端已经用消息说了，
-    // 拦截器会弹出来；这里不再叠一层。
+    // 拦截器会弹出来；这里不再叠一层。开着的空白页得收回去，留着一个
+    // 白页子比什么都没发生更糟。
+    tab?.close()
   } finally {
     convertingAttachment.value = ''
   }
-}
-
-function isImage(a: MailFile) {
-  return (a.contentType || '').toLowerCase().startsWith('image/')
 }
 
 // Why an attachment cannot be downloaded, said accurately.
@@ -5725,20 +5710,6 @@ async function doUnsuppress(row: Suppression) {
 .att-head .side-title {
   margin: 0;
 }
-.preview-img {
-  display: block;
-  max-width: 100%;
-  max-height: 72vh;
-  margin: 0 auto;
-}
-.preview-frame {
-  display: block;
-  width: 100%;
-  height: 72vh;
-  border: 1px solid var(--mail-divider);
-  border-radius: var(--mail-radius);
-}
-
 .excel-context {
   position: fixed;
   z-index: 4000;

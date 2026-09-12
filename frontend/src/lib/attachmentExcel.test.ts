@@ -1,6 +1,6 @@
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { isDirectTableFile, parseTableFile } from './attachmentExcel'
+import { excelSerialToText, isDirectTableFile, parseTableFile } from './attachmentExcel'
 
 // Every current browser accepts 'deflate-raw' here; the stripped Node build
 // running these tests does not. Back it with zlib so the deflate path is
@@ -117,7 +117,7 @@ function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   return out
 }
 
-function xlsx(parts: { shared?: string; sheet1: string; sheet2?: string }, deflate = false): ArrayBuffer {
+function xlsx(parts: { shared?: string; sheet1: string; sheet2?: string; styles?: string }, deflate = false): ArrayBuffer {
   const entries: ZipInput[] = [
     {
       name: 'xl/workbook.xml',
@@ -135,6 +135,7 @@ function xlsx(parts: { shared?: string; sheet1: string; sheet2?: string }, defla
     { name: 'xl/worksheets/sheet1.xml', body: parts.sheet1, deflate },
   ]
   if (parts.shared) entries.push({ name: 'xl/sharedStrings.xml', body: parts.shared, deflate })
+  if (parts.styles) entries.push({ name: 'xl/styles.xml', body: parts.styles, deflate })
   if (parts.sheet2) entries.push({ name: 'xl/worksheets/sheet2.xml', body: parts.sheet2 })
   const zipped = buildZip(entries)
   return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength)
@@ -215,5 +216,69 @@ describe('parseTableFile xlsx', () => {
 
   it('refuses files that are not workbooks', async () => {
     await expect(parseTableFile('fake.xlsx', new TextEncoder().encode('not a zip').buffer as ArrayBuffer)).rejects.toThrow()
+  })
+})
+
+describe('Excel 的日期是个数', () => {
+  it('天数变成日期；带小数的多一截时分', () => {
+    // 45789 = 2025-05-01（Excel 自己也这么显示）。
+    expect(excelSerialToText(45778)).toBe('2025-05-01')
+    expect(excelSerialToText(45778.5)).toBe('2025-05-01 12:00')
+    expect(excelSerialToText(0)).toBe('')
+    expect(excelSerialToText(Number.NaN)).toBe('')
+  })
+
+  it('内置日期格式的单元格按日期读，别的数原样', async () => {
+    const book = await parseTableFile('装箱单.xlsx', xlsx({
+      // cellXfs 第 0 条是常规、第 1 条 numFmtId=14（内置的 m/d/yy）。
+      styles: '<styleSheet><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>',
+      sheet1: `<worksheet><sheetData>
+        <row r="1"><c r="A1" t="inlineStr"><is><t>交期</t></is></c><c r="B1" t="inlineStr"><is><t>数量</t></is></c></row>
+        <row r="2"><c r="A2" s="1"><v>45778</v></c><c r="B2" s="0"><v>45778</v></c></row>
+      </sheetData></worksheet>`,
+    }))
+    // 同一个数：按日期格式的那一格是日期，常规那一格还是数。
+    expect(book.sheets[0].rows[0]).toEqual(['2025-05-01', '45778'])
+  })
+
+  it('自定义格式里有 y/m/d 也算日期，引号里的字面量不算', async () => {
+    const book = await parseTableFile('自定义.xlsx', xlsx({
+      styles: `<styleSheet>
+        <numFmts>
+          <numFmt numFmtId="176" formatCode="yyyy\-mm\-dd"/>
+          <numFmt numFmtId="177" formatCode="0.00&quot;kg&quot;"/>
+        </numFmts>
+        <cellXfs count="2"><xf numFmtId="176"/><xf numFmtId="177"/></cellXfs>
+      </styleSheet>`,
+      sheet1: `<worksheet><sheetData>
+        <row r="1"><c r="A1" t="inlineStr"><is><t>日期</t></is></c><c r="B1" t="inlineStr"><is><t>重量</t></is></c></row>
+        <row r="2"><c r="A2" s="0"><v>45778</v></c><c r="B2" s="1"><v>12.5</v></c></row>
+      </sheetData></worksheet>`,
+    }))
+    // "kg" 里那个 g 不该把一列重量变成日期。
+    expect(book.sheets[0].rows[0]).toEqual(['2025-05-01', '12.5'])
+  })
+
+  it('没有 styles.xml 照样读得出表，只是日期还是那串数', async () => {
+    const book = await parseTableFile('无样式.xlsx', xlsx({
+      sheet1: `<worksheet><sheetData>
+        <row r="1"><c r="A1" t="inlineStr"><is><t>交期</t></is></c></row>
+        <row r="2"><c r="A2" s="1"><v>45778</v></c></row>
+      </sheetData></worksheet>`,
+    }))
+    expect(book.sheets[0].rows[0]).toEqual(['45778'])
+  })
+})
+
+describe('读多少可以调', () => {
+  it('看整张表时把行数上限提上去，导入预览那边不受影响', async () => {
+    const rows = Array.from({ length: 250 }, (_, i) => `<row r="${i + 2}"><c r="A${i + 2}"><v>${i}</v></c></row>`).join('')
+    const book = xlsx({
+      sheet1: `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>n</t></is></c></row>${rows}</sheetData></worksheet>`,
+    })
+    const wide = await parseTableFile('big.xlsx', book, { maxRows: 5000 })
+    expect(wide.sheets[0].rows).toHaveLength(250)
+    const narrow = await parseTableFile('big.xlsx', book)
+    expect(narrow.sheets[0].rows).toHaveLength(200)
   })
 })

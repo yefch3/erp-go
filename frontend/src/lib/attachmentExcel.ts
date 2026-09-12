@@ -18,9 +18,26 @@ export interface DirectWorkbook {
   sheets: DirectSheet[]
 }
 
+// 默认的上限，给「导入用的预览」：那条路上人要看的是"表头对不对、前几行长
+// 什么样"，不是整张表。
 const maxSheets = 20
 const maxColumns = 80
 const maxPreviewRows = 200
+
+/** 读多少。不传就是导入预览那套默认值。 */
+export interface TableLimits {
+  maxSheets?: number
+  maxColumns?: number
+  maxRows?: number
+}
+
+function limitsOf(l?: TableLimits) {
+  return {
+    sheets: l?.maxSheets ?? maxSheets,
+    columns: l?.maxColumns ?? maxColumns,
+    rows: l?.maxRows ?? maxPreviewRows,
+  }
+}
 
 export function isDirectTableFile(name: string, contentType = ''): boolean {
   const dot = name.lastIndexOf('.')
@@ -34,14 +51,18 @@ export function isDirectTableFile(name: string, contentType = ''): boolean {
   )
 }
 
-export async function parseTableFile(name: string, data: ArrayBuffer): Promise<DirectWorkbook> {
+export async function parseTableFile(
+  name: string,
+  data: ArrayBuffer,
+  limits?: TableLimits,
+): Promise<DirectWorkbook> {
   const dot = name.lastIndexOf('.')
   const ext = dot >= 0 ? name.slice(dot).toLowerCase() : ''
   if (ext === '.csv' || ext === '.tsv') {
     const text = new TextDecoder('utf-8').decode(data)
-    return delimitedWorkbook(sheetNameFromFile(name), text, ext === '.tsv' ? '\t' : ',')
+    return delimitedWorkbook(sheetNameFromFile(name), text, ext === '.tsv' ? '\t' : ',', limits)
   }
-  return xlsxWorkbook(new Uint8Array(data))
+  return xlsxWorkbook(new Uint8Array(data), limits)
 }
 
 function sheetNameFromFile(name: string): string {
@@ -52,10 +73,15 @@ function sheetNameFromFile(name: string): string {
 
 // ---------------------------------------------------------------- delimited
 
-function delimitedWorkbook(sheetName: string, text: string, delimiter: string): DirectWorkbook {
+function delimitedWorkbook(
+  sheetName: string,
+  text: string,
+  delimiter: string,
+  limits?: TableLimits,
+): DirectWorkbook {
   const rows = parseDelimited(text.replace(/^﻿/, ''), delimiter).filter((row) => row.some((cell) => cell.trim() !== ''))
   if (rows.length === 0) throw new Error('empty table file')
-  return { sheets: [sheetFromRows(sheetName, rows)] }
+  return { sheets: [sheetFromRows(sheetName, rows, limits)] }
 }
 
 function parseDelimited(text: string, delimiter: string): string[][] {
@@ -111,13 +137,14 @@ function parseDelimited(text: string, delimiter: string): string[][] {
   return rows
 }
 
-function sheetFromRows(name: string, rows: string[][]): DirectSheet {
-  const columns = rows[0].slice(0, maxColumns)
+function sheetFromRows(name: string, rows: string[][], limits?: TableLimits): DirectSheet {
+  const cap = limitsOf(limits)
+  const columns = rows[0].slice(0, cap.columns)
   const data = rows.slice(1)
   return {
     name,
     columns,
-    rows: data.slice(0, maxPreviewRows).map((row) => {
+    rows: data.slice(0, cap.rows).map((row) => {
       const cells = row.slice(0, columns.length)
       while (cells.length < columns.length) cells.push('')
       return cells
@@ -143,7 +170,8 @@ interface ZipMember {
 // 类型加了「背后是哪种 buffer」的参数，而 Blob 只收普通 ArrayBuffer 撑着
 // 的那一种。这里的字节一路来自 File.arrayBuffer()，本来就是普通的；把它
 // 写出来，比在下面某一行加断言诚实。
-async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkbook> {
+async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, limits?: TableLimits): Promise<DirectWorkbook> {
+  const cap = limitsOf(limits)
   const members = zipMembers(bytes)
   const workbookXml = await memberText(bytes, members, 'xl/workbook.xml')
   if (workbookXml === undefined) throw new Error('not an xlsx: no workbook part')
@@ -164,23 +192,27 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkb
     }
   }
 
+  // 哪些单元格样式是日期。没有它，一份装箱单里的「交期」是 45789——一串
+  // 谁都读不懂的数字，而这正是 Excel 里最常见的那一列。见 dateStyles。
+  const dateStyle = await dateStyleSet(bytes, members)
+
   const sheets: DirectSheet[] = []
   for (const match of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
-    if (sheets.length >= maxSheets) break
+    if (sheets.length >= cap.sheets) break
     const name = xmlAttr(match[0], 'name') || `Sheet${sheets.length + 1}`
     const rid = xmlAttr(match[0], 'r:id')
     const part = rid ? rels.get(rid) : undefined
     if (!part) continue
     const xml = await memberText(bytes, members, part)
     if (xml === undefined) continue
-    const rows = worksheetRows(xml, shared)
-    if (rows.length > 0) sheets.push(sheetFromRows(name, rows))
+    const rows = worksheetRows(xml, shared, dateStyle)
+    if (rows.length > 0) sheets.push(sheetFromRows(name, rows, limits))
   }
   if (sheets.length === 0) throw new Error('not an xlsx: no readable sheet')
   return { sheets }
 }
 
-function worksheetRows(xml: string, shared: string[]): string[][] {
+function worksheetRows(xml: string, shared: string[], dateStyle?: Set<number>): string[][] {
   const rows: string[][] = []
   for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
     const cells: string[] = []
@@ -197,6 +229,11 @@ function worksheetRows(xml: string, shared: string[]): string[][] {
         value = collectText(body)
       } else {
         value = firstTagText(body, 'v')
+        // 数字格式说这是日期，就按日期写出来。
+        const style = Number(xmlAttr(attrs, 's'))
+        if (value !== '' && dateStyle?.has(Number.isFinite(style) ? style : -1)) {
+          value = excelSerialToText(Number(value)) || value
+        }
       }
       while (cells.length < index) cells.push('')
       cells[index] = value
@@ -204,6 +241,74 @@ function worksheetRows(xml: string, shared: string[]): string[][] {
     rows.push(cells)
   }
   return rows
+}
+
+// ------------------------------------------------------------- 日期
+//
+// Excel 里的日期就是一个数：1899-12-30 起的天数。哪些单元格该当日期读，写在
+// styles.xml 里——单元格上的 s="3" 是 cellXfs 的第 3 条，那条的 numFmtId 指向
+// 一个数字格式。内置的 14–17、22、45–47 是日期和时间；自定义格式（numFmtId
+// ≥ 164）要看它的 formatCode 里有没有 y/m/d/h/s。
+//
+// 不做这件事的样子是：一份装箱单的「交期」那一列整列显示 45789。这是收到的
+// 表格里最常见的一列，也是最容易让人以为「这个预览是坏的」的一列。
+const builtinDateFormats = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47])
+
+async function dateStyleSet(
+  bytes: Uint8Array<ArrayBuffer>,
+  members: Map<string, ZipMember>,
+): Promise<Set<number>> {
+  const out = new Set<number>()
+  let xml: string | undefined
+  try {
+    xml = await memberText(bytes, members, 'xl/styles.xml')
+  } catch {
+    // 样式读不了不该让整张表读不出来：大不了日期还是那串数字。
+    return out
+  }
+  if (xml === undefined) return out
+
+  // 自定义格式：formatCode 里出现 y/m/d/h/s（引号里的字面量除外）才算日期。
+  const dateFmtIds = new Set<number>()
+  for (const m of xml.matchAll(/<numFmt\b[^>]*>/g)) {
+    const id = Number(xmlAttr(m[0], 'numFmtId'))
+    const code = xmlAttr(m[0], 'formatCode')
+    if (!Number.isFinite(id) || !code) continue
+    if (/[ymdhs]/i.test(code.replace(/"[^"]*"/g, '').replace(/\\./g, ''))) dateFmtIds.add(id)
+  }
+
+  // cellXfs 的顺序就是单元格 s 属性的编号。
+  const cellXfs = xml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)
+  if (!cellXfs) return out
+  let index = 0
+  for (const xf of cellXfs[1].matchAll(/<xf\b[^>]*>/g)) {
+    const id = Number(xmlAttr(xf[0], 'numFmtId'))
+    if (Number.isFinite(id) && (builtinDateFormats.has(id) || dateFmtIds.has(id))) out.add(index)
+    index++
+  }
+  return out
+}
+
+/**
+ * 天数变成「2026-09-12」。带小数的再加上时分。
+ *
+ * 起点是 1899-12-30，不是 12-31：Excel 认为 1900 年有 2 月 29 日（它没有），
+ * 所以 1900-03-01 之后的每个数都比真实天数大一天，把起点往前挪一天正好抵消。
+ * 1900 年 1、2 月的日期因此会差一天——那是 Excel 自己的历史包袱，各家表格
+ * 软件都这么将错就错，而 1900 年的日期不会出现在装箱单上。
+ */
+export function excelSerialToText(serial: number): string {
+  if (!Number.isFinite(serial) || serial <= 0) return ''
+  const ms = Math.round(serial * 86400000)
+  const at = new Date(Date.UTC(1899, 11, 30) + ms)
+  if (Number.isNaN(at.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const day = `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`
+  // 只有日期的那些数是整数（或者差一点点，浮点的锅）。
+  const dayFraction = serial - Math.floor(serial)
+  if (dayFraction < 1 / 86400) return day
+  const time = `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`
+  return `${day} ${time}`
 }
 
 function columnIndex(ref: string): number {
