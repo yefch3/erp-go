@@ -163,29 +163,24 @@ func (s *Service) ListAccounts(ctx context.Context, tenantID int64) (map[int64]s
 	return out, nil
 }
 
-// 用户名长什么样。
+// 登录名长什么样。
 //
-// 两到六十四个字，字母、数字、汉字，以及 . _ -。下限是两个字，因为中文名常常
-// 就两个字（张三），而用户名不是秘密——密码才是，短一点不损失什么。**禁止 @**：登录用「有没有 @」
-// 分邮箱和用户名两条路，一个带 @ 的用户名会让两条路都认它，而它们查的是两张
-// 不同的东西（一个是员工的邮箱，一个是登录名）。禁止空白和控制字符是为了
-// 「zhangsan 」和「zhangsan」不能是两个账号。
+// 两到六十四个字，除了空白和控制字符什么都行——zhangsan、张三、zhangsan@xxx.com
+// 都是合法的登录名。**不管它像不像邮箱**：登录名是任意字符串，邮箱是另一个
+// 字段。下限两个字是因为中文名常常就两个字，而登录名不是秘密，密码才是。
+// 禁空白是为了「zhangsan 」和「zhangsan」不能是两个账号。
 //
 // 大小写不管：存的是管理员打的样子，找人时两边都 lower（GetUserByUsername，
 // users_username_lower_idx），所以「ZhangSan」登得进「zhangsan」的账号。
 func validateUsername(u string) error {
 	runes := []rune(u)
 	if len(runes) < 2 || len(runes) > 64 {
-		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名长度应为 2 至 64 个字符")
-	}
-	if strings.ContainsRune(u, '@') {
-		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名不能包含 @；用邮箱登录的账号请走邀请开户")
+		return apierr.Invalid("IAM_USERNAME_INVALID", "登录名长度应为 2 至 64 个字符")
 	}
 	for _, r := range runes {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-' {
-			continue
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return apierr.Invalid("IAM_USERNAME_INVALID", "登录名不能包含空格或控制字符")
 		}
-		return apierr.Invalid("IAM_USERNAME_INVALID", "用户名只能包含字母、数字、汉字和 . _ -")
 	}
 	return nil
 }

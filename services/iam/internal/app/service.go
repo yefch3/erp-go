@@ -81,8 +81,8 @@ type LoginResult struct {
 }
 
 // loginLookupError 把「没这个人」说成「密码错」——措辞一样、耗时一样。
-// 地址和用户名都猜得出来（名字@公司域名、姓名拼音），答得不一样的登录页
-// 就是一份员工名录。
+// 登录名猜得出来（姓名拼音、名字@公司域名），答得不一样的登录页就是一份
+// 员工名录。
 func loginLookupError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		burnPasswordTime()
@@ -91,23 +91,22 @@ func loginLookupError(err error) error {
 	return fmt.Errorf("login: %w", err)
 }
 
-// Login takes what somebody typed into the one box on the login page: a
-// username, or a company address.
+// Login takes the one thing typed into the login page: the account name.
+//
+// 登录名是任意字符串——zhangsan 可以，zhangsan@xxx.com 也可以——**系统不关心
+// 它长得像不像邮箱**，只要全局不重复。查的是 users.username 这一列，不看
+// 员工的邮箱字段：邮箱是联系方式，也是邮件模块里要绑的东西，和登录名是两
+// 回事。邀请开的户登录名恰好等于邮箱，那只是默认值，不是规则。
 //
 // No tenant is passed in and no "choose your company" field exists — a login
-// page serving twenty companies is the same page — so both kinds of name have
-// to identify the account system-wide. An address does that by nature; a
-// username does it because of users_username_lower_idx (00059).
+// page serving twenty companies is the same page — so the name has to
+// identify the account system-wide, which users_username_lower_idx (00059)
+// guarantees.
 //
-// 两条路怎么分：有 @ 的是邮箱，没有的是用户名。用户名里禁止 @（见
-// validateUsername），所以不会有一个名字两边都能走。
-//
-// 从前只认邮箱，而且要求那个邮箱点过邀请链接（email_verified_at）。那道闸证明
-// 的是「公司真的给了这个人一个信箱」。客户要的开户方式不走邀请：管理员手动填
-// 用户名和密码，员工拿来登录，账号不必是邮箱、不必绑邮箱。于是那道闸拆掉了。
-// 拆得住的理由：users 里的一行只在有人**有权**设了密码时才存在——管理员开的
-// （OpenAccount、新增员工时填的），或者员工自己点邀请链接设的。存在本身就是
-// 凭证，不需要再问一遍邮箱。
+// 从前要求那个邮箱点过邀请链接（email_verified_at）。那道闸证明的是「公司真
+// 的给了这个人一个信箱」。客户要的开户方式不走邀请：管理员手动填账号和密码，
+// 员工拿来登录。于是那道闸拆掉了。拆得住的理由：users 里的一行只在有人**有权**
+// 设了密码时才存在——管理员开的，或本人点邀请链接设的。存在本身就是凭证。
 //
 // Nothing here talks to the mail host. The password typed here is ours, not
 // the mailbox's.
@@ -117,35 +116,11 @@ func (s *Service) Login(ctx context.Context, account, password string) (*LoginRe
 		burnPasswordTime()
 		return nil, errBadCredentials
 	}
-	// 两条查询刻意做成同一个形状，好让下面那一串检查（停用、锁定、密码、
-	// 强制改密）只写一遍。
-	var u store.GetUserByEmailRow
-	if strings.Contains(name, "@") {
-		addr := strings.ToLower(name)
-		at := strings.LastIndex(addr, "@")
-		if at < 1 || at == len(addr)-1 {
-			burnPasswordTime()
-			return nil, errBadCredentials
-		}
-		// The address identifies the account outright; the domain is not
-		// consulted. It used to be: domain names the tenant, then (tenant,
-		// address) names the account — wrong for any address on a public mail
-		// service, and tenant_domains.domain being a PRIMARY KEY meant the
-		// first company to register gmail.com owned it. Whether an address is
-		// a company mailbox is still enforced where it belongs: when an
-		// employee is imported or invited (ListTenantDomains, IsTenantDomain).
-		row, err := s.q.GetUserByEmail(ctx, addr)
-		if err != nil {
-			return nil, loginLookupError(err)
-		}
-		u = row
-	} else {
-		row, err := s.q.GetUserByUsername(ctx, name)
-		if err != nil {
-			return nil, loginLookupError(err)
-		}
-		u = store.GetUserByEmailRow(row)
+	row, err := s.q.GetUserByUsername(ctx, name)
+	if err != nil {
+		return nil, loginLookupError(err)
 	}
+	u := store.GetUserByEmailRow(row)
 	if u.TenantStatus != "ACTIVE" {
 		return nil, errAccountLocked
 	}
@@ -643,6 +618,17 @@ func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateE
 			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(updated), OperatorID: in.OperatorID,
 		}); err != nil {
 			return err
+		}
+		// 邮箱改了、而登录名恰好就是旧邮箱（邀请开的户都这样）：登录名跟着改。
+		// 登录认的是登录名不是邮箱，不跟的话这个人下次得拿**旧**邮箱登，而没人
+		// 会告诉他。管理员手动定的登录名（和邮箱不相等）不动。见 RenameUserLogin。
+		if updated.Email != "" && !strings.EqualFold(current.Email, updated.Email) {
+			if _, err := q.RenameUserLogin(ctx, store.RenameUserLoginParams{
+				TenantID: tenantID, EmployeeID: in.ID,
+				OldUsername: current.Email, NewUsername: updated.Email,
+			}); err != nil {
+				return translateUnique(err, "IAM_USERNAME_TAKEN", "这个邮箱已经是别人的登录名")
+			}
 		}
 		id = in.ID
 		return nil

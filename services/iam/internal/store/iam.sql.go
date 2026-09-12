@@ -981,11 +981,12 @@ type GetUserByUsernameRow struct {
 	TenantStatus       string
 }
 
-// 登录的另一条路：用户名。和上面同一个形状，Login 才能对两条路做同一套检查。
+// 登录用的那一条：登录名是任意字符串（zhangsan 或 zhangsan@xxx.com 都行），
+// 只查这一列，不看员工的邮箱字段。和 GetUserByEmail 同一个形状，因为重置
+// 链接那条路还用后者。
 //
-// **不按租户查**，和邮箱那条一样：登录页没有「选公司」这一步，用户名靠
-// users_username_lower_idx（00059）做到全局唯一。lower() 两边都做，找人不分
-// 大小写。
+// **不按租户查**：登录页没有「选公司」这一步，登录名靠 users_username_lower_idx
+// （00059）做到全局唯一。lower() 两边都做，找人不分大小写。
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getUserByUsername, username)
 	var i GetUserByUsernameRow
@@ -2169,6 +2170,38 @@ WHERE id = $1
 func (q *Queries) RecordLoginSuccess(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, recordLoginSuccess, id)
 	return err
+}
+
+const renameUserLogin = `-- name: RenameUserLogin :execrows
+UPDATE users
+SET username = $1::text, updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND employee_id = $3::bigint
+  AND lower(username) = lower($4::text)
+`
+
+type RenameUserLoginParams struct {
+	NewUsername string
+	TenantID    int64
+	EmployeeID  int64
+	OldUsername string
+}
+
+// 员工的邮箱改了，而登录名恰好就是旧邮箱（邀请开的户都这样），登录名跟着改。
+// 登录名和邮箱本来是两回事（登录名是任意字符串，邮箱只是联系方式），但从前
+// 登录认的是邮箱，改了邮箱的人一直是拿新邮箱登的——这条让那件事继续成立。
+// 管理员手动定的登录名（和邮箱不相等）不动。
+func (q *Queries) RenameUserLogin(ctx context.Context, arg RenameUserLoginParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameUserLogin,
+		arg.NewUsername,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.OldUsername,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const replaceEmployeeRoles = `-- name: ReplaceEmployeeRoles :exec

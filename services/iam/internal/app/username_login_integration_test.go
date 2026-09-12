@@ -1,18 +1,21 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/iam/internal/store"
 )
 
-// 用户名登录（客户要的开户方式：管理员手动填用户名和密码，员工拿来登录，
-// 账号不必是邮箱、不必绑邮箱）。
+// 登录名登录（客户要的开户方式：管理员手动填登录名和密码，员工拿来登录，
+// 登录名是任意字符串、不必是邮箱、不必绑邮箱）。
 //
 // 这里种的员工**没有邮箱、也没有 email_verified_at**——那正是从前登不进的
 // 那种人。能登进，说明「邮箱必须验证过」那道闸真的拆了。
@@ -80,7 +83,7 @@ func TestUsernameLoginNeedsNoMailbox(t *testing.T) {
 	}
 }
 
-// 邮箱登录一切照旧：seedCompany 种的是验证过邮箱的老账号。
+// 老账号照旧：seedCompany 种的是邀请开的户，登录名就是邮箱。
 func TestEmailLoginStillWorksBesideUsernames(t *testing.T) {
 	pool, ctx := loginTestPool(t)
 	const pw = "Ningbo-Container-2026!"
@@ -93,14 +96,13 @@ func TestEmailLoginStillWorksBesideUsernames(t *testing.T) {
 	if _, err := svc.Login(ctx, strings.ToUpper(addr), pw); err != nil {
 		t.Fatalf("email login broke: %v", err)
 	}
-	// 邮箱那条路查的是员工的邮箱，不是用户名——所以拿邮箱账号的用户名（也是
-	// 那个邮箱）去掉 @ 之后是登不进的，两条路不串。
+	// 登录名是整个字符串。去掉 @ 后面那一截就是另一个名字，登不进。
 	if _, err := svc.Login(ctx, "wang", pw); !errors.Is(err, errBadCredentials) {
 		t.Errorf("a bare local part signed in: %v", err)
 	}
 }
 
-// 用户名在整套部署里唯一，不只是公司内唯一：登录页没有「选公司」这一步。
+// 登录名在整套部署里唯一，不只是公司内唯一：登录页没有「选公司」这一步。
 func TestUsernameIsUniqueAcrossTenants(t *testing.T) {
 	pool, ctx := loginTestPool(t)
 	svc := loginService(pool)
@@ -161,4 +163,88 @@ func TestAdminOpenedAccountCountsAsActivated(t *testing.T) {
 	if !found {
 		t.Fatal("an account the administrator opened by hand is not listed as activated")
 	}
+}
+
+// 登录名可以长得像邮箱而不是任何人的邮箱：系统不关心它像不像。
+func TestLoginNameMayLookLikeAnEmail(t *testing.T) {
+	pool, ctx := loginTestPool(t)
+	tenantID := seedCompany(t, ctx, pool, "像邮箱公司", fmt.Sprintf("seed%d@lookalike.example", time.Now().UnixNano()), "Seed-Only-Password-1!")
+	svc := loginService(pool)
+	var employeeID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM employees WHERE tenant_id = $1 AND code = 'E001'`, tenantID).Scan(&employeeID); err != nil {
+		t.Fatal(err)
+	}
+	// 员工没有邮箱；管理员偏偏给他定了一个带 @ 的登录名。
+	if _, err := pool.Exec(ctx, `UPDATE employees SET email = '', email_verified_at = NULL WHERE id = $1`, employeeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM users WHERE employee_id = $1`, employeeID); err != nil {
+		t.Fatal(err)
+	}
+	login := fmt.Sprintf("zhangsan%d@abc.com", time.Now().UnixNano())
+	const pw = "Foshan-Ceramics-2026!"
+	if _, err := svc.OpenAccount(ctx, tenantID, employeeID, 0, login, pw); err != nil {
+		t.Fatalf("an email-looking login name was refused: %v", err)
+	}
+	if _, err := svc.Login(ctx, login, pw); err != nil {
+		t.Fatalf("could not sign in with an email-looking login name: %v", err)
+	}
+}
+
+// 改邮箱时登录名跟不跟：登录名就是旧邮箱的跟，管理员手动定的不跟。
+func TestLoginNameFollowsTheEmailOnlyWhenItWasTheEmail(t *testing.T) {
+	pool, ctx := loginTestPool(t)
+	svc := loginService(pool)
+	const pw = "Dongguan-Toys-2026!"
+	stamp := time.Now().UnixNano()
+
+	// 甲：邀请开的户，登录名 = 邮箱。改邮箱之后要拿新邮箱登。
+	oldA := fmt.Sprintf("a%d@follow.example", stamp)
+	tenantA := seedCompany(t, ctx, pool, "跟着改公司", oldA, pw)
+	empA := employeeOf(t, ctx, pool, tenantA)
+	newA := fmt.Sprintf("a-new%d@follow.example", stamp)
+	if _, err := svc.UpdateEmployee(ctx, tenantA, UpdateEmployeeInput{
+		ID: empA.ID, Code: empA.Code, Name: empA.Name, DepartmentID: empA.DepartmentID,
+		Email: newA, ExpectedVersion: empA.Version,
+	}); err != nil {
+		t.Fatalf("update employee: %v", err)
+	}
+	if _, err := svc.Login(ctx, newA, pw); err != nil {
+		t.Errorf("after the email changed, the new address does not sign in: %v", err)
+	}
+	if _, err := svc.Login(ctx, oldA, pw); !errors.Is(err, errBadCredentials) {
+		t.Errorf("the old address still signs in: %v", err)
+	}
+
+	// 乙：管理员手动定的登录名，和邮箱无关。改邮箱不动它。
+	tenantB := seedCompany(t, ctx, pool, "不跟公司", fmt.Sprintf("b%d@stay.example", stamp), pw)
+	empB := employeeOf(t, ctx, pool, tenantB)
+	if _, err := pool.Exec(ctx, `DELETE FROM users WHERE employee_id = $1`, empB.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.OpenAccount(ctx, tenantB, empB.ID, 0, fmt.Sprintf("lisi%d", stamp), pw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateEmployee(ctx, tenantB, UpdateEmployeeInput{
+		ID: empB.ID, Code: empB.Code, Name: empB.Name, DepartmentID: empB.DepartmentID,
+		Email: fmt.Sprintf("b-new%d@stay.example", stamp), ExpectedVersion: empB.Version,
+	}); err != nil {
+		t.Fatalf("update employee: %v", err)
+	}
+	if _, err := svc.Login(ctx, fmt.Sprintf("lisi%d", stamp), pw); err != nil {
+		t.Errorf("a hand-set login name was disturbed by an email change: %v", err)
+	}
+}
+
+func employeeOf(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID int64) store.GetEmployeeRow {
+	t.Helper()
+	var id int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM employees WHERE tenant_id = $1 AND code = 'E001'`, tenantID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	emp, err := store.New(pool).GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return emp
 }
