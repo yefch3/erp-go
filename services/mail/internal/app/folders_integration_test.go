@@ -483,7 +483,7 @@ func TestMarkViewReadStaysInsideTheCustomFolder(t *testing.T) {
 	}
 
 	// 关键词搜索走的是同一套视图过滤：在文件夹里搜只该看到文件夹里的。
-	page, err := f.svc.ListInbound(ctx, f.tenantID, f.me, f.account, "的", "F:项目A", "", 20, ListSort{})
+	page, err := f.svc.ListInbound(ctx, f.tenantID, f.me, f.account, "的", "F:项目A", "", 20, ListSort{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
