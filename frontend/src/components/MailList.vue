@@ -3,31 +3,11 @@
        separate fact worth comparing down the page; a mail row is one sentence
        — who, about what, when — and reading it as a sentence is what lets the
        eye take forty of them in one pass. -->
-  <div class="mail-list-wrap">
-    <!-- 排序栏。不是表头——上面说了这不是表格——只是一行「按什么排」的开关，
-         照着 263 网页邮箱表头上那几个箭头做的：点一列按它排，再点一下反过来。
-         没给 sortFields 的地方（搜索结果）不出现，因为服务端在那儿不接排序。 -->
-    <div
-      v-if="sortFields && sortFields.length"
-      class="sort-bar"
-      role="toolbar"
-      :aria-label="t('emails.sortBar.label')"
-    >
-      <span class="sort-label">{{ t('emails.sortBar.label') }}</span>
-      <button
-        v-for="f in sortFields"
-        :key="f"
-        type="button"
-        class="sort-key"
-        :class="{ on: sort?.by === f }"
-        :aria-pressed="sort?.by === f"
-        :aria-label="sortAria(f)"
-        :title="t('emails.sortBar.hint')"
-        @click="emit('sort', f)"
-      >
-        {{ t(`emails.sortBar.${f}`) }}<span v-if="sort?.by === f" class="dir" aria-hidden="true">{{ sort?.dir === 'asc' ? '↑' : '↓' }}</span>
-      </button>
-    </div>
+  <!-- 排序栏从前在这个组件的最上面，是一排常驻的开关。**搬到页面的工具条
+       上去了**，变成点开才展开的菜单：那一排开关和「只看未读」「全部已读」
+       说的是同一件事——这份列表现在给你看什么——却分在两行，而且列表这一栏
+       只有三百来像素，一排开关占掉的正是主题的宽度。
+       它一走，外面那层只为了包住它才存在的 div 也跟着走了。 -->
   <ul v-loading="loading" class="mail-list" role="list">
     <!-- 拖一行到左栏的文件夹上就是「挪进去」。
          整行可拖，不是只有某个把手：一列邮件里每一行本身就是那封信，拖它
@@ -200,7 +180,6 @@
            要批量处理仍然走勾选框 + 上方那条批量工具条。 -->
     </li>
   </ul>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -209,7 +188,7 @@ import { useI18n } from 'vue-i18n'
 import { listTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { draggedRows } from '../lib/dragMails'
-import type { MailSort, SortField } from '../lib/mailSort'
+import type { MailSort } from '../lib/mailSort'
 import { Paperclip } from '@element-plus/icons-vue'
 
 export interface MailRow {
@@ -268,9 +247,9 @@ const props = defineProps<{
   // 此刻站在哪个箱。**只有别的箱的命中才挂标签**：站在 263 里搜，每一行都
   // 标着"263"是一列一模一样的噪声，而那几行 Gmail 的正因此淹在里面。
   currentAccount?: number
-  // 现在按哪一列排，以及这份列表允许按哪几列排。两个都不给就没有排序栏。
+  // 现在按哪一列排。列表自己不画排序控件（在页面的工具条上），要它只为了
+  // 一件事：按大小排的时候，行上才显示大小——排序说明此刻在意的是它。
   sort?: MailSort
-  sortFields?: SortField[]
 }>()
 
 // mark / purge 两个事件随行内按钮一起去掉了：现在列表上没有任何单封操作，
@@ -284,7 +263,6 @@ const emit = defineEmits<{
   // 才进编辑），而单击已经把内容摆在右边了，所以少一次点击换不来什么。
   activate: [MailRow]
   star: [MailRow]
-  sort: [SortField]
   'update:selected': [string[]]
   // 拖起来了：带上拖的是哪几封、它们分别属于哪个信箱。页面拿着这两样去
   // 决定左栏哪些文件夹可以接（别的箱的文件夹接不了）。
@@ -309,13 +287,6 @@ const starrable = computed(() => props.folder !== 'junk' && props.folder !== 'dr
 // 「已回复」在哪些列表里有意义。已发送和草稿箱里每一行都是自己写的东西，
 // 问它答过没有是问错了对象。
 const answerable = computed(() => !aboutRecipient.value)
-
-// 读屏器听到的是「大小，降序」，而不是一个箭头。
-function sortAria(f: SortField): string {
-  const name = t(`emails.sortBar.${f}`)
-  if (props.sort?.by !== f) return name
-  return `${name}，${t(props.sort.dir === 'asc' ? 'emails.sortBar.asc' : 'emails.sortBar.desc')}`
-}
 
 function isRecordOnly(m: MailRow) {
   return m.kind === 'ERP'
@@ -730,45 +701,6 @@ function ariaFor(m: MailRow) {
   color: var(--el-text-color-primary);
 }
 
-.sort-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: var(--mail-row-pad);
-  padding-top: 4px;
-  padding-bottom: 4px;
-  font-size: var(--mail-meta);
-  color: var(--el-text-color-secondary);
-}
-.sort-label {
-  margin-right: 6px;
-}
-.sort-key {
-  border: 0;
-  background: transparent;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  transition: background var(--mail-fast) var(--mail-ease), color var(--mail-fast) var(--mail-ease);
-}
-.sort-key:hover {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-primary);
-}
-.sort-key:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: 1px;
-}
-.sort-key.on {
-  color: var(--el-color-primary);
-  font-weight: 600;
-  background: var(--el-color-primary-light-9);
-}
-.dir {
-  margin-left: 2px;
-}
 .when {
   flex: none;
   font-size: var(--mail-meta);

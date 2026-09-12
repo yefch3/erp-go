@@ -1756,7 +1756,12 @@ export default {
       size: '大小',
       asc: '升序',
       desc: '降序',
-      hint: '点一下按这一列排，再点一下反过来',
+      current: '排序：{name}',
+    },
+    colGrip: {
+      rail: '文件夹栏宽度',
+      list: '列表栏宽度',
+      hint: '拖动改变宽度，双击恢复默认',
     },
     download: '下载',
     createCustomerFromSender: '生成客户',

@@ -10,7 +10,7 @@
   <div v-if="locked !== null" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
-    <aside class="rail">
+    <aside ref="railEl" class="rail" :style="colW.rail ? { width: colW.rail + 'px' } : undefined">
       <el-button
         v-if="canWrite && !locked"
         type="primary"
@@ -122,6 +122,25 @@
         </el-dropdown>
       </template>
     </aside>
+
+    <!-- 分隔条：拖它改文件夹栏的宽度。
+         锁着的时候也在——左栏那排信箱锁着照样看得见，宽度也就照样该能调。
+         双击回到默认宽度：拖坏了总得有条回去的路，而"再拖回来"是拖不准的。 -->
+    <div
+      class="col-grip"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="t('emails.colGrip.rail')"
+      :title="t('emails.colGrip.hint')"
+      tabindex="0"
+      :class="{ grabbing: gripping === 'rail' }"
+      @pointerdown="onGripDown('rail', $event)"
+      @pointermove="onGripMove"
+      @pointerup="onGripUp"
+      @pointercancel="onGripUp"
+      @dblclick="resetCol('rail')"
+      @keydown="onGripKey('rail', $event)"
+    />
 
     <!-- 门。开在内容区里而不是整页，左栏那排信箱才留得住——见上面那段。
          单独一个 section 而不是塞进下面那个：pane 里已经有一条按文件夹分的
@@ -602,7 +621,11 @@
       </div>
       </div><!-- /reader-col -->
 
-      <div class="list-col">
+      <div
+        ref="listEl"
+        class="list-col"
+        :style="colW.list ? { flex: `0 0 ${colW.list}px` } : undefined"
+      >
       <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
@@ -760,16 +783,60 @@
           </el-button>
         </template>
         <template v-else>
-        <!-- 搜索的时候标题说的是搜索，不是文件夹。列表里此刻是所有信箱、
-             所有文件夹的命中，顶着「收件箱」三个字会让人以为收件箱里就这
-             么几封。 -->
-        <h2 v-if="isSearching">
+        <!-- 这里从前有一行大字，写着此刻站在哪个文件夹。**去掉了**：左栏那
+             一格已经高亮着，同一件事在一屏上说两遍，而它占的是列表最上面
+             一整行——桌面上的邮件客户端没有一个把文件夹名字再写一遍。
+
+             搜索的那行留着，因为它说的不是文件夹：它说「这是搜什么搜出来
+             的」，而这件事屏幕上没有别处写着。列表里此刻是所有信箱、所有
+             文件夹的命中，不说清楚就会被当成这个文件夹里只有这么几封。 -->
+        <h2 v-if="isSearching" class="search-title">
           {{ t('emails.searchResults', { q: keyword.trim() }) }}
         </h2>
-        <h2 v-else>{{ t(`emails.folders.${folder}`) }}</h2>
         <el-button v-if="isSearching" link @click="clearSearch">
           {{ t('emails.searchClear') }}
         </el-button>
+        <!-- 排序：点开才展开。
+             从前是一排常驻的开关摆在列表最上面（发件人 主题 日期 大小），
+             四个词占掉整整一行，而人一天里改排序的次数是零到一次。菜单里
+             「按哪一列」和「哪个方向」分两段明写，不再靠「点第二下翻方向」
+             ——菜单一点就关，翻没翻人看不见。 -->
+        <el-dropdown
+          v-if="sortFields.length"
+          trigger="click"
+          popper-class="mail-sort-menu"
+          @command="onSortCommand"
+        >
+          <button type="button" class="sort-trigger">
+            {{ t('emails.sortBar.current', { name: t(`emails.sortBar.${listSort.by}`) }) }}
+            <span class="dir" aria-hidden="true">{{ listSort.dir === 'asc' ? '↑' : '↓' }}</span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="f in sortFields"
+                :key="f"
+                :command="`by:${f}`"
+                :class="{ 'sort-on': listSort.by === f }"
+              >
+                {{ t(`emails.sortBar.${f}`) }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                divided
+                command="dir:desc"
+                :class="{ 'sort-on': listSort.dir === 'desc' }"
+              >
+                {{ t('emails.sortBar.desc') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="dir:asc"
+                :class="{ 'sort-on': listSort.dir === 'asc' }"
+              >
+                {{ t('emails.sortBar.asc') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <span class="grow" />
         <!-- 待处理和拒收名单的筛选框留在这儿，没跟着搬到左栏。
              左栏那个搜的是**邮件**；这两张表一个是 ERP 自己的投递记录、
@@ -780,11 +847,12 @@
             v-model="keyword"
             :placeholder="t(`emails.search.${folder}`)"
             clearable
-            style="width: 260px"
+            size="small"
+            style="width: 240px"
             @keyup.enter="reload"
             @clear="reload"
           />
-          <el-button @click="reload">{{ common('query') }}</el-button>
+          <el-button size="small" @click="reload">{{ common('query') }}</el-button>
         </template>
         <!-- 这里从前有一颗「立即收信」。**去掉了**：信箱本来就在自动收——
              打开这一页时拉一次（syncOnOpen），之后守着 IDLE，服务器一有新信
@@ -798,12 +866,13 @@
              的状态，而这件事必须从屏幕上看得出来，不能只存在地址栏里。 -->
         <el-button
           v-if="canFilterUnread"
+          size="small"
           :type="unreadOnly ? 'primary' : ''"
           @click="toggleUnreadOnly"
         >
           {{ t('emails.unreadOnly') }}
         </el-button>
-        <el-button v-if="canMarkAllRead" :loading="markingAll" @click="markAllRead">
+        <el-button v-if="canMarkAllRead" size="small" :loading="markingAll" @click="markAllRead">
           {{ t('emails.markAllRead') }}
         </el-button>
         <!-- Junk out in one click — into the trash, not oblivion. The mail
@@ -814,6 +883,7 @@
              出的那种错。 -->
         <el-button
           v-if="folder === 'junk' && total > 0 && !isSearching"
+          size="small"
           type="danger"
           plain
           :loading="emptying"
@@ -823,6 +893,7 @@
         </el-button>
         <el-button
           v-if="folder === 'trash' && total > 0 && !isSearching"
+          size="small"
           type="danger"
           plain
           :loading="emptying"
@@ -830,7 +901,7 @@
         >
           {{ t('emails.emptyTrash') }}
         </el-button>
-        <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
+        <el-button v-if="folder === 'suppressions' && canSuppress" size="small" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
         </template>
@@ -869,8 +940,6 @@
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
-          :sort-fields="sortFields"
-          @sort="changeSort"
           @open="openInbound"
           @star="toggleStar"
           @dragmails="onDragMails"
@@ -973,8 +1042,6 @@
           folder="sent"
           :loading="loading"
           :sort="listSort"
-          :sort-fields="sortFields"
-          @sort="changeSort"
           @open="openSentRow"
           @star="toggleStar"
           @dragmails="onDragMails"
@@ -1092,6 +1159,26 @@
         </el-button>
       </div>
       </div><!-- /list-col -->
+
+      <!-- 列表和阅读区之间的分隔条。模板里阅读区写在列表前面（见 .panes 那段
+           注释），靠 order 排位置，所以这一条虽然写在最后，画出来是在中间。
+           窄屏下两栏是上下叠着的，那时它自己藏起来——横着拖一条竖线，在一个
+           没有并排的布局上说不通。 -->
+      <div
+        class="col-grip for-list"
+        role="separator"
+        aria-orientation="vertical"
+        :aria-label="t('emails.colGrip.list')"
+        :title="t('emails.colGrip.hint')"
+        tabindex="0"
+        :class="{ grabbing: gripping === 'list' }"
+        @pointerdown="onGripDown('list', $event)"
+        @pointermove="onGripMove"
+        @pointerup="onGripUp"
+        @pointercancel="onGripUp"
+        @dblclick="resetCol('list')"
+        @keydown="onGripKey('list', $event)"
+      />
       </div><!-- /panes -->
     </section>
 
@@ -1401,15 +1488,16 @@ import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
   DEFAULT_SORT,
-  nextSort,
   parseSort,
   sortFieldsFor,
   sortFor,
+  sortFromCommand,
   sortParam,
   type MailSort,
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import { LIMITS, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
 import {
   isListFolder,
   pickedRows as pickedRowsOf,
@@ -1754,8 +1842,10 @@ const sortFields = computed<SortField[]>(() => {
   if (!isInboundView.value || keyword.value.trim()) return []
   return sortFieldsFor('inbox')
 })
-function changeSort(by: SortField) {
-  pushState({ sort: sortParam(nextSort(listSort.value, by)) })
+// 排序菜单点了一项：`by:size`、`dir:asc`。规则（换一列用那一列的自然方向、
+// 方向是菜单里明写的两项）在 lib/mailSort 里，那儿测得到。
+function onSortCommand(cmd: string) {
+  pushState({ sort: sortParam(sortFromCommand(listSort.value, cmd)) })
 }
 
 // 只看未读（issue #368 那条「支持查看未读邮件」）。
@@ -2164,6 +2254,139 @@ function listScroller(): HTMLElement | null {
   }
   return null
 }
+
+// ------------------------------------------------ 三栏宽度可以拖 ---
+// 文件夹栏 | 列表 | 阅读区，两条分隔条，各拖各的。存在 localStorage，下次
+// 打开还是这个宽度。为什么要能拖、为什么没拖过就一个数都不存，见
+// lib/paneWidths。
+//
+// 宽度写成行内样式，不是 CSS 里的类：它是某一个人拖出来的数，没有第二个
+// 地方知道它。没拖过时行内样式整个不写（值是 null），CSS 里那两个默认值
+// ——文件夹栏 208px、列表 clamp(280px, 34%, 400px)——继续管事。
+const railEl = ref<HTMLElement | null>(null)
+const listEl = ref<HTMLElement | null>(null)
+// 想要多宽（colWish）和此刻真用多宽（colW）分开记。
+//
+// 窗口一变窄，装不下的那一栏得让位，否则阅读区被挤到只剩一个词宽。但让位
+// 的只是"此刻用的"那个数：人想要的宽度不变，窗口再拉大，宽度自己回来。
+// 两个数合成一个的话，缩一次窗口就把人拖出来的设置永久改小了。
+const colWish = reactive<Record<Col, number | null>>({
+  rail: readWidth('rail', localStorage),
+  list: readWidth('list', localStorage),
+})
+const colW = reactive<Record<Col, number | null>>({ ...colWish })
+// 正在拖哪一条。只为了让那条分隔条在拖的过程中亮着——手早就离开了它原来的
+// 位置（指针被捕获了），没有这点反馈就不知道自己还按着。
+const gripping = ref<Col | null>(null)
+// 按下去那一刻的位置和宽度。之后每一次移动都从这两个数算起，不累加增量：
+// 累加会把每一次的取整误差叠起来，拖一趟下来鼠标和分隔条差出好几像素。
+let grip: { col: Col; x0: number; w0: number } | null = null
+
+function colEl(col: Col): HTMLElement | null {
+  return col === 'rail' ? railEl.value : listEl.value
+}
+
+// 这一栏所在的那块地方有多宽。文件夹栏量的是整个信箱区；列表量的是它自己
+// 的父节点——也就是「列表 + 分隔条 + 阅读区」那一块。
+//
+// 父节点而不是「信箱区减掉文件夹栏」：后者漏掉了它们之间那条分隔条，实测
+// 因此少留了 34px，阅读区能被挤到 286 而下限写的是 320。
+function roomFor(col: Col): number {
+  if (col === 'list') return listEl.value?.parentElement?.clientWidth ?? Infinity
+  const box = mailboxEl.value?.getBoundingClientRect().width || 0
+  if (!box) return Infinity
+  // 文件夹栏右边真正占着地方的是列表**此刻**的宽度，而 clampCol 里算的是它的
+  // 下限。多出来的那截先扣掉，否则：把列表拉宽，再把文件夹栏往右拖，两边一
+  // 起挤，阅读区被压到 148px——量出来就是这个数。
+  const listNow = listEl.value?.getBoundingClientRect().width ?? 0
+  return box - Math.max(0, listNow - LIMITS.list.min)
+}
+
+// 拖到了这个宽度：想要的和正用的一起改，然后存。拖的时候人看得见边界在哪，
+// 所以这里两个数是同一个。
+function dragTo(col: Col, px: number) {
+  const w = clampCol(col, px, roomFor(col))
+  colW[col] = w
+  colWish[col] = w
+}
+
+function saveCol(col: Col) {
+  const w = colWish[col]
+  if (w !== null) writeWidth(col, w, localStorage)
+}
+
+function onGripDown(col: Col, ev: PointerEvent) {
+  const el = colEl(col)
+  if (!el) return
+  grip = { col, x0: ev.clientX, w0: el.getBoundingClientRect().width }
+  gripping.value = col
+  // 指针捕获：拖快了鼠标会跑到分隔条外面，甚至跑出窗口。捕获之后移动和松开
+  // 都还发到这一条上，不会拖到一半"手滑脱了"。
+  ;(ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId)
+  // 顺手把旁边的文字选上是这类控件最常见的那个脏东西：拖一条分隔条，半列
+  // 邮件主题跟着变蓝。
+  ev.preventDefault()
+}
+
+function onGripMove(ev: PointerEvent) {
+  if (!grip) return
+  dragTo(grip.col, grip.w0 + (ev.clientX - grip.x0))
+}
+
+function onGripUp() {
+  if (!grip) return
+  const col = grip.col
+  grip = null
+  gripping.value = null
+  saveCol(col)
+}
+
+// 双击：忘掉这个数，回到默认宽度。拖坏了总得有条回去的路，而"再拖回来"
+// 是拖不准的。
+function resetCol(col: Col) {
+  colW[col] = null
+  colWish[col] = null
+  clearWidth(col, localStorage)
+}
+
+// 键盘也能调。一条只能用鼠标拖的分隔条，对用键盘的人等于不存在——而它管的
+// 是"主题能看多长"，不是装饰。Home 是回默认，对应鼠标那边的双击。
+function onGripKey(col: Col, ev: KeyboardEvent) {
+  if (ev.key === 'Home') {
+    ev.preventDefault()
+    resetCol(col)
+    return
+  }
+  const step = ev.shiftKey ? 48 : 16
+  const dx = ev.key === 'ArrowLeft' ? -step : ev.key === 'ArrowRight' ? step : 0
+  if (!dx) return
+  const el = colEl(col)
+  if (!el) return
+  ev.preventDefault()
+  dragTo(col, el.getBoundingClientRect().width + dx)
+  saveCol(col)
+}
+
+// 窗口变了之后重新收一遍：装不下的让位，装得下的回到人想要的宽度。存下来
+// 的数一个都不动。
+function refitCols() {
+  for (const col of ['rail', 'list'] as Col[]) {
+    const wish = colWish[col]
+    colW[col] = wish === null ? null : clampCol(col, wish, roomFor(col))
+  }
+}
+window.addEventListener('resize', refitCols)
+onUnmounted(() => window.removeEventListener('resize', refitCols))
+// 什么时候收：这两块出现的那一刻，不在 onMounted——那时它们还没画出来，
+// 量到的宽度是 0。
+//
+// **两块都要盯**，这是个真会咬人的地方：信箱区（mailboxEl）等锁的状态问
+// 出来之后就一直在，锁上也在（左栏那排信箱锁着照样看得见）；而三栏所在的
+// 那块（listEl 的父节点）只有解锁之后才画。令牌过夜就没了，第二天进来是
+// 「先锁着、输密码、再出现三栏」——只盯信箱区的话，那一次收发生在三栏还
+// 不存在的时候，量不到宽度，于是上次在大屏上拖出来的宽度原样套到小屏上，
+// 阅读区被挤成一条。
+watch([mailboxEl, listEl], () => refitCols())
 
 // Setting scrollTop once is not enough: at Vue's nextTick the table is in
 // the DOM but el-table finishes its own height a frame later, so a restore
@@ -4841,7 +5064,9 @@ async function doUnsuppress(row: Suppression) {
    went pale again underneath it. */
 .mailbox {
   display: flex;
-  gap: 18px;
+  /* 从前是 gap: 18px。现在两栏之间站着一条分隔条，那 18px 由「4 + 10 + 4」
+     凑出来：留白没变，中间那 10px 成了能抓住的东西。 */
+  gap: 4px;
   align-items: stretch;
   min-height: 100%;
   background: var(--el-bg-color);
@@ -4935,16 +5160,48 @@ async function doUnsuppress(row: Suppression) {
   --el-table-row-hover-bg-color: var(--mail-row-hover);
   --el-table-border-color: var(--mail-divider);
 }
+/* 列表上方那一条。从前顶着一行 19px 的文件夹名字，所以是"标题栏"；名字
+   去掉之后它就只剩控件了，于是按工具条的尺寸来：里面的按钮全是 small，
+   勾中邮件时换上的那排批量按钮也是 small——两种状态高度一样，勾一封信
+   列表不会跳一下。 */
 .pane-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
-.pane-head h2 {
+.search-title {
   margin: 0;
-  font-size: 19px;
+  font-size: 15px;
+  font-weight: 600;
 }
+/* 排序：一颗不像按钮的按钮。它是这一条上最不重要的控件（一天点零到一次），
+   画成实心按钮会和右边那两颗真按钮抢眼睛。 */
+.sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--mail-meta);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: background var(--mail-fast) var(--mail-ease), color var(--mail-fast) var(--mail-ease);
+}
+.sort-trigger:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.sort-trigger:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
+}
+/* 菜单里"现在按的是这一项"那条规则在 styles/mailbox.css：下拉菜单是挂到
+   <body> 上的，scoped 样式（连 :deep）都够不着它。 */
 /* The select-all box aligns with the per-row boxes below it, so the column
    reads as a column rather than as a stray control above a list. */
 .pick-all {
@@ -5630,7 +5887,8 @@ async function doUnsuppress(row: Suppression) {
   flex: 1;
   min-width: 0;
   display: flex;
-  gap: 16px;
+  /* 同上：3 + 10 + 3 = 从前那 16px。 */
+  gap: 3px;
   align-items: flex-start;
 }
 .list-col {
@@ -5658,6 +5916,49 @@ async function doUnsuppress(row: Suppression) {
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
 }
+/* 分隔条。
+   平时什么都不画——三栏之间本来就该是留白，一条竖线摆在那儿是在把两块内容
+   之间的关系说成"隔开"。鼠标压上来才出现一条细线，告诉你这儿能抓。
+   10px 宽而线只有 2px：4px 的线抓不住（要瞄准），10px 的线看着像一栏。
+   VS Code、Finder、Foxmail 都是这个做法。 */
+.col-grip {
+  flex: 0 0 10px;
+  align-self: stretch;
+  /* 自己是一整条可抓的区域，线画在正中间。 */
+  background: linear-gradient(var(--el-border-color-lighter), var(--el-border-color-lighter))
+    center / 2px 100% no-repeat;
+  opacity: 0;
+  cursor: col-resize;
+  border-radius: 2px;
+  /* 拖的时候别顺手滚动页面（触控板/触摸屏）。 */
+  touch-action: none;
+  transition: opacity var(--mail-fast) var(--mail-ease);
+}
+.col-grip:hover,
+.col-grip:focus-visible,
+.col-grip.grabbing {
+  opacity: 1;
+}
+.col-grip.grabbing {
+  background-image: linear-gradient(var(--el-color-primary), var(--el-color-primary));
+}
+.col-grip:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: -1px;
+}
+/* 列表和阅读区之间那条：和列表同一个 order，写在列表后面，所以画在它右边。
+   不给 order 的话它默认是 0，会跑到最左边去——.panes 里的位置是 order 说
+   了算的，DOM 顺序在那儿是反的（见 .panes 上面那段）。 */
+.col-grip.for-list {
+  order: 1;
+}
+/* 正在拖的时候，整页的光标都是那个左右箭头：指针已经被这条分隔条捕获了，
+   鼠标压在别的东西上也还是在拖它，光标得说出这件事。 */
+.mailbox:has(.col-grip.grabbing) {
+  cursor: col-resize;
+  user-select: none;
+}
+
 /* 没选信时右边说一句话。一片空白看着像坏了。 */
 .reader-empty {
   display: flex;
@@ -5691,6 +5992,11 @@ async function doUnsuppress(row: Suppression) {
     display: none;
   }
   .reader-empty {
+    display: none;
+  }
+  /* 两栏上下叠着的时候没有"中间"：一条横着拖的竖线在这儿说不通。
+     文件夹栏那条留着——.mailbox 在这个宽度下仍然是左右两块。 */
+  .col-grip.for-list {
     display: none;
   }
 }
