@@ -84,7 +84,10 @@ func TestSourcingShippingTaskAndRepeatedCurrentQuotes(t *testing.T) {
 	base.ServiceOptionName = "十月快船"
 	base.EstimatedArrival = "2026-10-04"
 	base.Lines[0].UnitRate = "51"
-	base.ValidUntil = "2026-09-12"
+	// 写死的日期是定时炸弹，见 validFor 上面那段——这一行就是漏网的那个：
+	// 到了 2026-09-12，这份报价在库里（会话时区 Asia/Shanghai）当天就算失效，
+	// 后面「用它建计划」那一步开始答「船运报价已失效」，而代码一个字没改。
+	base.ValidUntil = validFor(20)
 	collaboration, err = svc.AddSourcingShippingOption(ctx, tenantID, base, shipping)
 	if err != nil || len(collaboration.Options) != 2 {
 		t.Fatalf("second carrier option should be retained: options=%d err=%v", len(collaboration.Options), err)
