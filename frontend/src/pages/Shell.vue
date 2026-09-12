@@ -5,7 +5,10 @@
          左边再钉着 220px 的菜单，正文那一栏就只剩一半屏幕。菜单是"我要去
          哪儿"，一天用几次；收起来之后随时一个键点开。
          收起状态记在浏览器里，下次打开还是收着的。 -->
-    <el-aside :width="navOpen ? '220px' : '0px'" class="side">
+    <!-- 收起来时 inert：宽度是 0 但里面的按钮还在文档里，不加这一句，用键盘
+         Tab 的人会一路走进一栏看不见的菜单里。写成 undefined 而不是 false：
+         inert 是"在场即生效"的属性，inert="false" 照样是 inert。 -->
+    <el-aside :width="navOpen ? '220px' : '0px'" class="side" :inert="navOpen ? undefined : true">
       <div class="side-brand">
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>

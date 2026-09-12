@@ -258,7 +258,7 @@ const countMailFolderChildren = `-- name: CountMailFolderChildren :one
 SELECT count(*)::bigint FROM mail_folders
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
-  AND host_name LIKE $3::text || '%'
+  AND left(host_name, length($3::text)) = $3::text
 `
 
 type CountMailFolderChildrenParams struct {
@@ -4002,7 +4002,7 @@ UPDATE email_inbound
 SET folder = $1::text || substr(folder, length($2::text) + 1)
 WHERE tenant_id = $3::bigint
   AND account_id = $4::bigint
-  AND folder LIKE $2::text || '%'
+  AND left(folder, length($2::text)) = $2::text
 `
 
 type RenameInboundFolderPrefixParams struct {
@@ -4012,7 +4012,7 @@ type RenameInboundFolderPrefixParams struct {
 	AccountID int64
 }
 
-// 同上，信上存的文件夹名。触发器会重算视图。
+// 同上，信上存的文件夹名。触发器会重算视图。比前缀同样用 left()。
 func (q *Queries) RenameInboundFolderPrefix(ctx context.Context, arg RenameInboundFolderPrefixParams) (int64, error) {
 	result, err := q.db.Exec(ctx, renameInboundFolderPrefix,
 		arg.NewPrefix,
@@ -4055,7 +4055,7 @@ SET name = $1::text || substr(name, length($2::text) + 1),
     host_name = $1::text || substr(host_name, length($2::text) + 1)
 WHERE tenant_id = $3::bigint
   AND account_id = $4::bigint
-  AND host_name LIKE $2::text || '%'
+  AND left(host_name, length($2::text)) = $2::text
 `
 
 type RenameMailFolderSubtreeParams struct {
@@ -4067,6 +4067,10 @@ type RenameMailFolderSubtreeParams struct {
 
 // 父文件夹改了名，登记里它下面那些跟着改。
 // 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+//
+// 比前缀用 left()，**不用 LIKE**：文件夹名是人起的，里面完全可以有下划线，
+// 而 LIKE 把 _ 当成"任意一个字符"。那样给 "客户_A" 改名会连 "客户XA" 底下的
+// 行一起改掉——服务器上什么都没动，库里的信却挂到了别人名下。
 func (q *Queries) RenameMailFolderSubtree(ctx context.Context, arg RenameMailFolderSubtreeParams) error {
 	_, err := q.db.Exec(ctx, renameMailFolderSubtree,
 		arg.NewPrefix,

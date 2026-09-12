@@ -3282,8 +3282,12 @@ async function reloadPages(opts: { quiet?: boolean } = {}): Promise<boolean> {
 // 收到的信而写信框的发件人还跟着左边高亮的 A，「读 B 的信、从 A 回过去」。
 // 现在那件事由**这封信自己**回答：单封读取会带回 accountId，写信框和
 // replyingAddress 都读它。信箱跟着信走，左栏跟着人走，两件事分开。
+// 打开一封信。**顺手把另一种"打开"关掉**：地址栏里 mail= 和 msg= 是两个独立
+// 的参数，一个是邮箱里的信、一个是 ERP 自己的投递记录，而阅读区一次只显示
+// 一个（模板里 mail 优先）。不清掉的话，在已发送里先点一封信、再点一条投递
+// 记录，右边显示的还是那封信，左边高亮的也还是那一行。
 function openInbound(row: MailRow) {
-  pushState({ mail: row.id })
+  pushState({ mail: row.id, msg: '' })
 }
 
 // 双击一行：这封信自己开一个窗口。
@@ -4961,14 +4965,14 @@ function initialOf(name: string) {
 // ordinary mail page, because that is all there is to show about it.
 function openSentRow(row: MailRow) {
   if (row.kind === 'ERP') {
-    pushState({ msg: row.id })
+    pushState({ msg: row.id, mail: '' })
     return
   }
-  pushState({ mail: row.id })
+  pushState({ mail: row.id, msg: '' })
 }
 
 function openMessage(row: AttentionMessage) {
-  pushState({ msg: row.id })
+  pushState({ msg: row.id, mail: '' })
 }
 
 function backFromOutbound() {

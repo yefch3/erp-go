@@ -340,6 +340,11 @@ function read() {
     // 第三个既不跟着 frame 走（html 的高度是 auto，就是内容高），又包含折叠出去
     // 的边距。body.scrollHeight 留作下限：内容全是浮动或绝对定位时，html 盒子
     // 可能包不住它们。
+    // 剩下的一种会漂的情况写在这儿，免得下次再查一遍：信自己的样式写了
+    // html{height:100%} 时，<html> 的高度就是 frame 的高度，这三个数全都跟着
+    // frame 走，于是每跳一次加 8px。它在改成量 rect 之前也一样会漂（那时是
+    // body 跟着走），不是这次带来的；而且有界——poll 只跑三秒三十跳。真遇到
+    // 一封这样的信，最多多出 240px 空白，不会没完没了。
     const rect = d.documentElement?.getBoundingClientRect().height ?? 0
     const h = Math.max(Math.ceil(rect), d.body.scrollHeight)
     if (h > 0) {

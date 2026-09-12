@@ -37,8 +37,8 @@
     <el-result
       v-else-if="failed"
       icon="warning"
-      :title="t('sheetWindow.failed')"
-      :sub-title="t('sheetWindow.failedHint')"
+      :title="tooBig ? t('sheetWindow.tooBig') : t('sheetWindow.failed')"
+      :sub-title="tooBig ? t('sheetWindow.tooBigHint') : t('sheetWindow.failedHint')"
     >
       <template #extra>
         <a v-if="downloadUrl" class="el-button el-button--primary" :href="downloadUrl" :download="fileName">
@@ -88,9 +88,17 @@ const MAX_SHEETS = 50
 interface Attachment {
   id: string
   fileName: string
+  fileSize?: number | string
   contentType?: string
   downloadUrl?: string
 }
+
+// 超过这个大小就不在浏览器里解了。
+//
+// 上限是这一页的力气，不是格式的限制：一份 25 MB 的 xlsx 解开是几百兆的 XML，
+// 拆完之前这个标签页就没气了——而卡死之前人连「太大了，下载吧」这句话都看不到。
+// 和服务器那边送去转换的上限（MaxConvertBytes）取同一个数。
+const MAX_BYTES = 25 << 20
 
 const route = useRoute()
 const { t } = useI18n()
@@ -101,6 +109,7 @@ const fileName = ref('')
 const downloadUrl = ref('')
 const loading = ref(true)
 const failed = ref(false)
+const tooBig = ref(false)
 
 const sheet = computed(() => book.value?.sheets.find((s) => s.name === active.value) ?? null)
 
@@ -116,6 +125,11 @@ onMounted(async () => {
     fileName.value = file.fileName
     downloadUrl.value = file.downloadUrl
     document.title = file.fileName
+    if (Number(file.fileSize) > MAX_BYTES) {
+      tooBig.value = true
+      failed.value = true
+      return
+    }
 
     // 原文件的字节，从签名地址直接取——和「下载」那颗按钮拿的是同一份东西。
     const resp = await fetch(file.downloadUrl)

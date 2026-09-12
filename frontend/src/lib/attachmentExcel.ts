@@ -205,16 +205,25 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, limits?: TableLimits
     if (!part) continue
     const xml = await memberText(bytes, members, part)
     if (xml === undefined) continue
-    const rows = worksheetRows(xml, shared, dateStyle)
+    const rows = worksheetRows(xml, shared, dateStyle, cap.rows)
     if (rows.length > 0) sheets.push(sheetFromRows(name, rows, limits))
   }
   if (sheets.length === 0) throw new Error('not an xlsx: no readable sheet')
   return { sheets }
 }
 
-function worksheetRows(xml: string, shared: string[], dateStyle?: Set<number>): string[][] {
+// keep 是"最多留几行的内容"。超过之后照样一行一行数下去（"共 8 万行"这句话
+// 要准），但不再拆里面的格子——一张 8 万行的表，光是把每个单元格解出来再扔掉
+// 就够把这一页卡死，而卡死之前人连"只画了前 2000 行"那句话都看不到。
+function worksheetRows(xml: string, shared: string[], dateStyle?: Set<number>, keep = Infinity): string[][] {
   const rows: string[][] = []
+  let seen = 0
   for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    // 表头那一行也占一个名额，所以是 keep + 1。
+    if (++seen > keep + 1) {
+      rows.push([])
+      continue
+    }
     const cells: string[] = []
     for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const attrs = cellMatch[1]

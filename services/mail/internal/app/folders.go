@@ -458,23 +458,22 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 	if f.Role != roleCustom {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "这是邮箱服务器自带的文件夹，不能改名")
 	}
+	// 改的是**最后一段**，不是整条路径：「客户/巴西」改名叫「智利」得到的是
+	// 「客户/智利」。从前这里直接拿新名字当整个路径，于是给一个子文件夹改名
+	// 会把它连同里面的信一起搬到顶层去——服务器上的 RENAME 就是移动。
+	delim := s.hostDelimiter(ctx, acct)
+	parentPath, leaf := splitFolderPath(f.HostName, delim)
+
 	// 改成同名 = 不动。放在校验前面：名单扩了之后，一个改版前就叫「已归档」
 	// 的正当文件夹，改成同名本该是无操作，先校验会把它拒掉。
-	if strings.TrimSpace(name) == f.HostName {
+	// 比的是**最后一段**：嵌套之后 HostName 是整条路径，拿它去比永远不相等，
+	// 这条本该挡住的路就白留了。
+	if strings.TrimSpace(name) == leaf {
 		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName, Role: f.Role}, nil
 	}
 	name, err = validFolderName(name)
 	if err != nil {
 		return MailFolder{}, err
-	}
-	// 改的是**最后一段**，不是整条路径：「客户/巴西」改名叫「智利」得到的是
-	// 「客户/智利」。从前这里直接拿新名字当整个路径，于是给一个子文件夹改名
-	// 会把它连同里面的信一起搬到顶层去——服务器上的 RENAME 就是移动。
-	delim := ""
-	parentPath := ""
-	if strings.TrimSpace(name) != f.HostName {
-		delim = s.hostDelimiter(ctx, acct)
-		parentPath, _ = splitFolderPath(f.HostName, delim)
 	}
 	newHost := name
 	if parentPath != "" {

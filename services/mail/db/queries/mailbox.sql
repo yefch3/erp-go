@@ -1903,20 +1903,24 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- name: RenameMailFolderSubtree :exec
 -- 父文件夹改了名，登记里它下面那些跟着改。
 -- 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+--
+-- 比前缀用 left()，**不用 LIKE**：文件夹名是人起的，里面完全可以有下划线，
+-- 而 LIKE 把 _ 当成"任意一个字符"。那样给 "客户_A" 改名会连 "客户XA" 底下的
+-- 行一起改掉——服务器上什么都没动，库里的信却挂到了别人名下。
 UPDATE mail_folders
 SET name = sqlc.arg(new_prefix)::text || substr(name, length(sqlc.arg(old_prefix)::text) + 1),
     host_name = sqlc.arg(new_prefix)::text || substr(host_name, length(sqlc.arg(old_prefix)::text) + 1)
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
-  AND host_name LIKE sqlc.arg(old_prefix)::text || '%';
+  AND left(host_name, length(sqlc.arg(old_prefix)::text)) = sqlc.arg(old_prefix)::text;
 
 -- name: RenameInboundFolderPrefix :execrows
--- 同上，信上存的文件夹名。触发器会重算视图。
+-- 同上，信上存的文件夹名。触发器会重算视图。比前缀同样用 left()。
 UPDATE email_inbound
 SET folder = sqlc.arg(new_prefix)::text || substr(folder, length(sqlc.arg(old_prefix)::text) + 1)
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
-  AND folder LIKE sqlc.arg(old_prefix)::text || '%';
+  AND left(folder, length(sqlc.arg(old_prefix)::text)) = sqlc.arg(old_prefix)::text;
 
 -- name: CountMailFolderChildren :one
 -- 这个文件夹底下还有没有别的文件夹。删之前问一句：服务器多半会拒（有子
@@ -1924,7 +1928,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 SELECT count(*)::bigint FROM mail_folders
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
-  AND host_name LIKE sqlc.arg(prefix)::text || '%';
+  AND left(host_name, length(sqlc.arg(prefix)::text)) = sqlc.arg(prefix)::text;
 
 -- name: DeleteMailFolder :exec
 DELETE FROM mail_folders

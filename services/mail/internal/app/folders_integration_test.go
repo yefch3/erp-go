@@ -305,6 +305,54 @@ func TestRenamingAParentMovesItsChildrenAndTheirMail(t *testing.T) {
 	}
 }
 
+// 名字里带下划线的文件夹不会牵连邻居。
+//
+// 钉的是 LIKE：'客户_A/%' 里的下划线是"任意一个字符"，于是给「客户_A」改名
+// 会把「客户XA」底下的登记和信一起改掉——服务器上什么都没动，库里的信却挂到
+// 了别人名下。前缀比较因此用 left()，不用 LIKE。
+func TestRenamingAFolderDoesNotTouchLookalikeSiblings(t *testing.T) {
+	f := newFolderFixture(t, 9115)
+	ctx := context.Background()
+	target, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户_A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, target.ID, "巴西"); err != nil {
+		t.Fatal(err)
+	}
+	// 只差那一个字符的邻居，和它底下的一封信。
+	lookalike, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户XA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, lookalike.ID, "智利"); err != nil {
+		t.Fatal(err)
+	}
+	f.insertMail(t, "客户XA/智利", 7101, "邻居的信")
+
+	if _, err := f.svc.RenameMailFolder(ctx, f.tenantID, f.me, target.ID, "老客户"); err != nil {
+		t.Fatal(err)
+	}
+	var host string
+	if err := f.pool.QueryRow(ctx,
+		`SELECT host_name FROM mail_folders WHERE tenant_id=$1 AND account_id=$2 AND host_name LIKE '%智利'`,
+		f.tenantID, f.account).Scan(&host); err != nil {
+		t.Fatal(err)
+	}
+	if host != "客户XA/智利" {
+		t.Errorf("邻居的子文件夹被牵连了：%q", host)
+	}
+	var folder string
+	if err := f.pool.QueryRow(ctx,
+		`SELECT folder FROM email_inbound WHERE tenant_id=$1 AND account_id=$2 AND imap_uid=7101`,
+		f.tenantID, f.account).Scan(&folder); err != nil {
+		t.Fatal(err)
+	}
+	if folder != "客户XA/智利" {
+		t.Errorf("邻居的信被牵连了：%q", folder)
+	}
+}
+
 // 底下还有文件夹就不删：自己先说清楚，别把服务器那句英文原话抛给人。
 func TestDeletingAFolderWithChildrenIsRefused(t *testing.T) {
 	f := newFolderFixture(t, 9114)
