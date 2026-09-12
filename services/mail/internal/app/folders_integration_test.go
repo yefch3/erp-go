@@ -353,6 +353,29 @@ func TestRenamingAFolderDoesNotTouchLookalikeSiblings(t *testing.T) {
 	}
 }
 
+// 子文件夹本身删得掉。
+//
+// 「有子文件夹就不删」那条守卫比的是前缀，而一个子文件夹的前缀（"客户/巴西/"）
+// 底下什么都没有——它不该把自己也算进去。
+func TestDeletingAChildFolderWorks(t *testing.T) {
+	f := newFolderFixture(t, 9116)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "客户")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "巴西")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.DeleteMailFolder(ctx, f.tenantID, f.me, child.ID); err != nil {
+		t.Fatalf("空的子文件夹该删得掉：%v", err)
+	}
+	if len(f.host.deleted) != 1 || f.host.deleted[0] != "客户/巴西" {
+		t.Errorf("发给服务器的该是整条路径：%v", f.host.deleted)
+	}
+}
+
 // 底下还有文件夹就不删：自己先说清楚，别把服务器那句英文原话抛给人。
 func TestDeletingAFolderWithChildrenIsRefused(t *testing.T) {
 	f := newFolderFixture(t, 9114)
