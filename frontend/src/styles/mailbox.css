@@ -98,3 +98,12 @@
   white-space: nowrap;
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
 }
+
+/* 排序菜单里现在按的那一项。粗一点、蓝一点——打开菜单第一眼要看到的是
+   「现在按什么排」，不是四个长得一样的词。
+   写在这里而不是 EmailsPage 的 scoped 样式里：下拉菜单挂在 <body> 上，
+   scoped 样式够不着它。 */
+.mail-sort-menu .sort-on {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
