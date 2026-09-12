@@ -1763,7 +1763,6 @@ const currentRows = computed(() =>
 
 function loadMore() {
   if (!shouldLoadMore(moreState.value)) return
-  loadedMore.value = true
   void load({ append: true, quiet: true })
 }
 
@@ -1839,10 +1838,15 @@ const nextCursor = ref('')
 // 至少一页。别的（还有没有下一页）由 nextCursor 本身回答。
 const loadingMore = ref(false)
 const moreFailed = ref(false)
-// 接过至少一页。两处要用：一是底下那行「共 N 封」只在真的到底时说；二是
-// 新信到了要不要重拉整份列表——接过好几页的人正在往回翻历史，把列表换成
-// 头二十五行等于把他滚了半天的东西收走。
-const loadedMore = ref(false)
+// 已经接出来几页（1 = 只有第一页）。
+//
+// 记页数而不是记一个「接过没有」的布尔，是因为**重新拉的时候要把这几页拼
+// 回来**。屏幕上任何一个「刷新一下列表」的动作——处理完一封信返回、批量
+// 归档、拖走几封、全部已读——都会走重新拉；如果那一下只拿回第一页，滚了
+// 三页的人会突然发现列表只剩二十五行，而他刚才读的那封在第七十行。翻页
+// 时代这件事不明显（重新拉的是**当前那一页**，长度不变），无限滚动把它
+// 放大成每次操作都回到顶上。
+const loadedPages = ref(1)
 const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
@@ -2193,7 +2197,7 @@ function applyRoute() {
   // 「在上一份名单里走到哪」。不清的话，换个文件夹第一次往下滚会拿上一份
   // 名单的游标去要下一页。
   if (!prev || prev.folder !== s.folder || prev.q !== s.q || prev.sort !== s.sort) {
-    loadedMore.value = false
+    loadedPages.value = 1
     moreFailed.value = false
     tableCursor.value = ''
     tablePageCursors.value = []
@@ -2452,7 +2456,7 @@ onUnmounted(
       searching: isSearching.value,
       // 接过下一页的人正在往回翻历史，重拉会把列表换成头二十五行——他滚了
       // 半天的东西就没了。角标照刷。
-      onFirstPage: !loadedMore.value,
+      onFirstPage: loadedPages.value <= 1,
       picked: picked.value.length,
       dragging: !!dragging.value,
       bulkBusy: bulkBusy.value,
@@ -2802,7 +2806,7 @@ watch(currentAccount, (now, before) => {
   const goto = pendingFolder
   pendingFolder = null
   // 换箱等于换了一份完全不同的名单。
-  loadedMore.value = false
+  loadedPages.value = 1
   moreFailed.value = false
   tableCursor.value = ''
   tablePageCursors.value = []
@@ -2835,8 +2839,32 @@ function concatRows<T>(append: boolean, cur: T[], next: T[]): T[] {
 //
 // 两者共用一个函数而不是各写一份，是因为「从哪儿取、取回来怎么解」这两件事
 // 两边一模一样，分开写迟早会有一边漏掉某个参数（筛选、排序、信箱）。
-async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
+// 每一次取列表都领一个号。**只有最新的那一号能把结果写进列表。**
+//
+// 没有这道闸的后果有两种，都不会报错：
+//
+//   一、接下一页的请求还在飞，人点了别的文件夹。新文件夹的第一页先回来，
+//       旧文件夹的第二页后回来——而它手里攥着 append=true，于是收件箱的信
+//       被接在了星标列表底下，游标也被换成收件箱的。
+//   二、同一个文件夹里：接下一页在飞，人把上面几封批量删了。删完那一下重新
+//       拉第一页，这时第一页已经够到原来「第二页」的位置；那个还在飞的请求
+//       回来一接，同一封信出现两遍（MailList 按 id 做 key，会直接撞 key）。
+//
+// 领号而不是 AbortController：请求本身取消不取消无所谓，要紧的是别把过期的
+// 结果写进去。
+let loadSeq = 0
+
+// 回 true 表示这一次的结果真的写进列表了；被更新的一次挤掉、或者失败了，
+// 回 false。reloadPages 靠它决定还要不要往下拼。
+async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean } = {}): Promise<boolean> {
   const append = opts.append === true
+  // 重新拉的时候把已经接出来的那几页拼回来，而不是只拿第一页。single 是
+  // reloadPages 自己往下调时用的，防止无限套娃。
+  if (!append && !opts.single && loadedPages.value > 1) {
+    return reloadPages(opts)
+  }
+  const seq = ++loadSeq
+  const fresh = () => seq === loadSeq
   // 接下一页时用服务端上一次给的游标；重新拉时从头开始。表格类还在翻页，
   // 它们的位置记在 tableCursor 里。
   const cursor = append ? nextCursor.value : isPagedTable.value ? tableCursor.value : ''
@@ -2844,9 +2872,7 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
     loadingMore.value = true
     moreFailed.value = false
   } else {
-    // 重新拉 = 回到第一页。接过的那几页没了，记号也该跟着清——不清的话，
-    // 「接过页就别重拉」那条守卫会一直关着，新信到了列表再也不自动更新。
-    loadedMore.value = false
+    loadedPages.value = 1
     moreFailed.value = false
     if (!opts.quiet) loading.value = true
   }
@@ -2874,6 +2900,8 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
         keyword: keyword.value,
         cursor,
       }, { headers: { 'X-Mail-Unlock-All': searchScopeHeader() } })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       inbound.value = concatRows(append, inbound.value, (d.hits ?? []).map((h) => ({
         ...h.mail,
         // The text around the hit replaces the opening line: showing the
@@ -2908,12 +2936,16 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
         // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
         // 配一个 accountId=A 照样读得到 A 的信。
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       inbound.value = concatRows(append, inbound.value, d.mails ?? [])
       total.value = Number(d.meta?.total ?? 0)
       unreadCount.value = Number(d.unreadCount ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       drafts.value = d.drafts ?? []
     } else if (folder.value === 'scheduled') {
       const d = await get<{
@@ -2924,6 +2956,8 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
         page_size: pageSize,
         cursor,
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       scheduled.value = concatRows(append, scheduled.value, d.sends ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -2939,6 +2973,8 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
         sort_by: listSort.value.by,
         sort_dir: listSort.value.dir,
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       mailboxSent.value = concatRows(append, mailboxSent.value, d.mails ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -2953,6 +2989,8 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
         attention_only: true,
         cursor,
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       messages.value = concatRows(append, messages.value, d.messages ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -2961,21 +2999,46 @@ async function load(opts: { quiet?: boolean; append?: boolean } = {}) {
       const d = await get<{ suppressions: Suppression[] }>('/email-suppressions', {
         keyword: keyword.value,
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       suppressions.value = d.suppressions ?? []
     }
+    if (append) loadedPages.value += 1
+    return true
   } catch (e) {
     // 接下一页失败要说出来并停下：无限滚动最坏的坏法是**静静地停住**，
     // 屏幕上看着就是「到底了」，而其实还有几百封。重新拉整份列表的失败
     // 不在这里接——它有自己的提示路径（横幅、空状态）。
     if (append) {
-      moreFailed.value = true
-      return
+      if (fresh()) moreFailed.value = true
+      return false
     }
     throw e
   } finally {
-    if (append) loadingMore.value = false
-    else if (!opts.quiet) loading.value = false
+    // 过期的一次连「不转圈了」都不该说：它清掉的可能是**新的那一次**正
+    // 亮着的标志，于是观察器以为没人在取，又发一次。
+    if (fresh()) {
+      if (append) loadingMore.value = false
+      else if (!opts.quiet) loading.value = false
+    }
   }
+}
+
+// 重新拉，并把已经接出来的那几页拼回来。
+//
+// 一页一页地拼，不是一次要 N 页：游标是「上一页最后一行的位置」，中间那几页
+// 只能顺着走。页数就是人自己滚出来的那几页，通常两三页。
+//
+// 任何一步没落盘就停：那说明这次重拉已经被更新的一次挤掉了（人又点了别的
+// 文件夹），再往下拼就是往新名单上接旧数据。
+async function reloadPages(opts: { quiet?: boolean } = {}): Promise<boolean> {
+  const want = loadedPages.value
+  if (!(await load({ ...opts, single: true }))) return false
+  for (let i = 1; i < want; i++) {
+    if (!nextCursor.value) break
+    if (!(await load({ append: true, quiet: true }))) return false
+  }
+  return true
 }
 
 // A row click is a navigation; the route watcher does the fetching.
