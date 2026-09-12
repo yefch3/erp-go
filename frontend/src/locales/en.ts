@@ -2280,6 +2280,11 @@ export default {
     uploadFailed: 'Image upload failed',
     imageWarning: 'Note: most mail clients block images by default. Make sure the message still reads without them, and give every image alt text.',
   },
+  // The separate window a double-click opens.
+  mailWindow: {
+    gone: 'This mail will not open',
+    goneHint: 'It may have been deleted, or the mailbox is locked right now — check the main window.',
+  },
   reader: {
     bodyFrame: 'Message body',
     showQuoted: 'Show quoted history',

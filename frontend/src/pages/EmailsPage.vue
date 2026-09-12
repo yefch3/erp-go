@@ -941,6 +941,7 @@
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
           @open="openInbound"
+          @activate="openMailWindow"
           @star="toggleStar"
           @dragmails="onDragMails"
           @dragend="dragging = null"
@@ -1043,6 +1044,7 @@
           :loading="loading"
           :sort="listSort"
           @open="openSentRow"
+          @activate="openMailWindow"
           @star="toggleStar"
           @dragmails="onDragMails"
           @dragend="dragging = null"
@@ -1497,7 +1499,8 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
-import { LIMITS, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
+import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
+import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
 import {
   isListFolder,
   pickedRows as pickedRowsOf,
@@ -2047,21 +2050,9 @@ watch(openedInbound, () => {
   detailsOpen.value = false
 })
 
-// Only the rows that have something in them. An empty "抄送:" is not
-// information, it is a line to read past.
-// 回信地址与发件人不一致。
-//
-// 这不是异常，正常业务里也常见（noreply 发出、客服组统一回收）。所以措辞是
-// 「注意」而不是「警告」：提示要说出事实，由看得懂的人判断，而不是替他断定
-// 这是诈骗——狼来了喊多了，真来的那次就没人听了。
-//
-// 但它值得被看见：伪造一封看似来自老供应商的邮件、把 Reply-To 换成自己的
-// 地址，是骗走货款最常用的一手，而 From 那一行看上去毫无破绽。
-const replyToMismatch = computed(() => {
-  const m = openedInbound.value
-  if (!m?.replyTo || !m.fromEmail) return false
-  return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
-})
+// 回信地址与发件人不一致。判断在 lib/mailDetails（那儿写着为什么值得提醒，
+// 也测得到）；这里只是把它接到当前打开的那封信上。
+const replyToMismatch = computed(() => replyToDiffers(openedInbound.value))
 
 // 工具条最右那颗垃圾桶到底做哪件事。
 //
@@ -2127,33 +2118,9 @@ function onReaderCommand(cmd: string) {
   }
 }
 
-const detailRows = computed(() => {
-  const m = openedInbound.value
-  if (!m) return []
-  const rows: { k: string; v: string }[] = []
-  const add = (k: string, v?: string | number) => {
-    if (v !== undefined && v !== null && v !== '' && v !== 0) rows.push({ k, v: String(v) })
-  }
-  add(t('emails.detail.from'), `${m.fromName ? m.fromName + ' ' : ''}<${m.fromEmail}>`)
-  // 整段，不是第一个：客户群发给七个人的信，这里要看到七个。
-  add(t('emails.detail.to'), m.toAll || m.toEmail)
-  add(t('emails.detail.cc'), m.cc)
-  // 只在与 From 不同时才列：一样的时候它不是信息，是一行要读过去的字。
-  if (replyToMismatch.value) add(t('emails.detail.replyTo'), m.replyTo)
-  add(t('emails.detail.subject'), m.subject)
-  // Gmail 的 mailed-by / signed-by。空表示未记录或未通过验证 —— 两者都不该
-  // 说成「验证失败」，那是在断言一件我们并不知道的事。
-  add(t('emails.detail.mailedBy'), m.authSpf)
-  add(t('emails.detail.signedBy'), m.authDkim)
-  if (m.sentAt) add(t('emails.detail.sentAt'), zonedStamp(m.sentAt))
-  if (m.receivedAt) add(t('emails.detail.receivedAt'), zonedStamp(m.receivedAt))
-  add(t('emails.detail.folder'), m.folder)
-  add(t('emails.detail.size'), m.rawSize ? humanSize(m.rawSize) : '')
-  // Message-ID 不列。它只在追着邮件管理员查日志时有用，而摆在这儿的样子
-  // 像一串谁都看不懂的乱码——用的人问过「这是不是出错了」。后端照样返回，
-  // 要查的时候导出原件里有。
-  return rows
-})
+// 这几行怎么来的在 lib/mailDetails：双击弹出的那个单独窗口画的是同一份，
+// 两边各写一遍的话，哪天多一行「密送」就只会加在其中一处。
+const detailRows = computed(() => mailDetailRows(openedInbound.value, t))
 
 // ---------------------------------------------------------------- URL state
 // The address bar is the source of truth for where the person is: folder,
@@ -2286,26 +2253,29 @@ function colEl(col: Col): HTMLElement | null {
   return col === 'rail' ? railEl.value : listEl.value
 }
 
-// 这一栏所在的那块地方有多宽。文件夹栏量的是整个信箱区；列表量的是它自己
-// 的父节点——也就是「列表 + 分隔条 + 阅读区」那一块。
+// 这一栏最宽能到哪儿：它所在的那块地方，减掉旁边那些不归它的东西。
 //
-// 父节点而不是「信箱区减掉文件夹栏」：后者漏掉了它们之间那条分隔条，实测
-// 因此少留了 34px，阅读区能被挤到 286 而下限写的是 320。
+// 列表量的是自己的父节点——「列表 + 分隔条 + 阅读区」那一块——再减掉分隔条，
+// 所以拖到头时阅读区正好是 0。父节点而不是「信箱区减掉文件夹栏」：后者漏掉
+// 了它们之间那条分隔条。
+//
+// 文件夹栏减掉两条分隔条，再减掉列表**此刻**的宽度：拖它的时候列表不跟着变
+// 窄（它有自己的宽度），能让出来的只有阅读区。
 function roomFor(col: Col): number {
-  if (col === 'list') return listEl.value?.parentElement?.clientWidth ?? Infinity
+  if (col === 'list') {
+    const panes = listEl.value?.parentElement?.clientWidth ?? 0
+    return panes ? panes - SEP_LIST : Infinity
+  }
   const box = mailboxEl.value?.getBoundingClientRect().width || 0
   if (!box) return Infinity
-  // 文件夹栏右边真正占着地方的是列表**此刻**的宽度，而 clampCol 里算的是它的
-  // 下限。多出来的那截先扣掉，否则：把列表拉宽，再把文件夹栏往右拖，两边一
-  // 起挤，阅读区被压到 148px——量出来就是这个数。
   const listNow = listEl.value?.getBoundingClientRect().width ?? 0
-  return box - Math.max(0, listNow - LIMITS.list.min)
+  return box - SEP_RAIL - listNow - SEP_LIST
 }
 
 // 拖到了这个宽度：想要的和正用的一起改，然后存。拖的时候人看得见边界在哪，
 // 所以这里两个数是同一个。
 function dragTo(col: Col, px: number) {
-  const w = clampCol(col, px, roomFor(col))
+  const w = clampCol(px, roomFor(col))
   colW[col] = w
   colWish[col] = w
 }
@@ -2372,7 +2342,7 @@ function onGripKey(col: Col, ev: KeyboardEvent) {
 function refitCols() {
   for (const col of ['rail', 'list'] as Col[]) {
     const wish = colWish[col]
-    colW[col] = wish === null ? null : clampCol(col, wish, roomFor(col))
+    colW[col] = wish === null ? null : clampCol(wish, roomFor(col))
   }
 }
 window.addEventListener('resize', refitCols)
@@ -3330,6 +3300,32 @@ async function reloadPages(opts: { quiet?: boolean } = {}): Promise<boolean> {
 // replyingAddress 都读它。信箱跟着信走，左栏跟着人走，两件事分开。
 function openInbound(row: MailRow) {
   pushState({ mail: row.id })
+}
+
+// 双击一行：这封信自己开一个窗口。
+//
+// 照 Foxmail、Outlook、Apple Mail——桌面邮件客户端双击一封信都是这个意思。
+// 单击已经把信摆在右边了，双击要的是另一件事：把它拿出这三栏，占满一块屏幕
+// 去看，或者摆到第二块屏幕上，一边看信一边在主窗口里填单子。
+//
+// window.open 而不是新标签页：一封信是一个窗口，不是一页网站。给窗口起名
+// 'mail-<id>'，同一封信双击第二次是把已经开着的那个拿到前面来，不是再开
+// 一个一模一样的。
+//
+// **特意没写 noopener**，尽管几乎所有 window.open 都该写它：按 HTML 规范，
+// 带 noopener 时浏览器必须新开一个互不相干的上下文，窗口名字整个被忽略
+// ——于是上面那条「第二次是拿到前面来」就没了，双击十次开十个窗口。
+// 这里不写它是安全的：开的是本站自己的 /mail/<id>，同源，不存在把
+// window.opener 交给外站的问题。
+//
+// 投递记录（kind === 'ERP'）没有这个窗口：邮箱服务器上没有这封信，
+// /inbound-mails/<id> 那条路上什么都没有。双击它就只是点了两下。
+//
+// 弹窗拦截器不会拦：这是双击直接触发的，浏览器认这是人的动作。
+function openMailWindow(row: MailRow) {
+  if (row.kind === 'ERP') return
+  const url = router.resolve({ path: `/mail/${row.id}` }).href
+  window.open(url, `mail-${row.id}`, 'width=1040,height=860')
 }
 
 // Fetches the mail named in the URL. Opening marks it read server-side; the

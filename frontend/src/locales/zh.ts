@@ -2279,6 +2279,11 @@ export default {
     uploadFailed: '图片上传失败',
     imageWarning: '注意：大多数邮箱默认不显示图片。请确保去掉图片后正文依然读得通，并给图片写好替代文字。',
   },
+  // 双击一封信弹出来的那个窗口。
+  mailWindow: {
+    gone: '这封信打不开',
+    goneHint: '可能是信已经被删掉了，也可能邮箱这会儿是锁着的——回主窗口看一眼。',
+  },
   reader: {
     bodyFrame: '邮件正文',
     showQuoted: '显示引用的往来',

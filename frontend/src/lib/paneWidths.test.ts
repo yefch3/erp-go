@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LIMITS, RESERVE, clampCol, clearWidth, readWidth, writeWidth } from './paneWidths'
+import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth } from './paneWidths'
 
 function fakeStore(seed: Record<string, string> = {}) {
   const box: Record<string, string> = { ...seed }
@@ -15,28 +15,28 @@ function fakeStore(seed: Record<string, string> = {}) {
   }
 }
 
-describe('拖出来的宽度收进范围', () => {
-  it('拖过头就停在上下限上', () => {
-    expect(clampCol('list', 10)).toBe(LIMITS.list.min)
-    expect(clampCol('list', 5000)).toBe(LIMITS.list.max)
-    expect(clampCol('rail', 0)).toBe(LIMITS.rail.min)
-    expect(clampCol('rail', 5000)).toBe(LIMITS.rail.max)
+describe('拖出来的宽度', () => {
+  it('想收多窄就多窄——没有下限', () => {
+    expect(clampCol(40, 1000)).toBe(40)
+    expect(clampCol(3, 1000)).toBe(3)
+    expect(clampCol(0, 1000)).toBe(0)
   })
 
-  it('范围内的原样收下，只是取整', () => {
-    expect(clampCol('list', 337.4)).toBe(337)
+  it('往左拖过了头停在 0，不会变成负数', () => {
+    expect(clampCol(-200, 1000)).toBe(0)
   })
 
-  it('屏幕装不下时让位的是这一栏，不是阅读区', () => {
-    // 总共 900：列表拉到 640 的话阅读区剩不到下限。留给阅读区的那份（连同
-    // 中间那条分隔条）先扣掉，剩下的才是列表能占的。
-    expect(clampCol('list', 640, 900)).toBe(900 - RESERVE.list)
-    // 文件夹栏右边还要装下列表和阅读区两个下限，外加两条分隔条。
-    expect(clampCol('rail', 380, 800)).toBe(800 - RESERVE.rail)
+  it('往右拖到头就是这块地方本身：再宽就把右边那栏挤出容器', () => {
+    expect(clampCol(5000, 900)).toBe(900)
   })
 
-  it('窗口窄到连下限都装不下时，下限赢——宁可横向滚，不要一栏消失', () => {
-    expect(clampCol('list', 400, 300)).toBe(LIMITS.list.min)
+  it('取整', () => {
+    expect(clampCol(337.4, 1000)).toBe(337)
+  })
+
+  it('两条分隔条的宽度就是 CSS 里那两组留白加起来', () => {
+    expect(SEP_RAIL).toBe(4 + 10 + 4)
+    expect(SEP_LIST).toBe(3 + 10 + 3)
   })
 })
 
@@ -58,8 +58,8 @@ describe('存和读', () => {
     expect(readWidth('list', fakeStore({ 'mailCol.list': '' }))).toBeNull()
   })
 
-  it('读回来的也要收进范围：上一块屏幕上拖的数，换了屏幕不一定还合适', () => {
-    expect(readWidth('list', fakeStore({ 'mailCol.list': '9999' }))).toBe(LIMITS.list.max)
+  it('读的时候不收进屏幕：那时还没有 DOM，装不装得下画出来才知道', () => {
+    expect(readWidth('list', fakeStore({ 'mailCol.list': '9999' }))).toBe(9999)
   })
 
   it('双击清掉之后就回到没拖过的状态', () => {
