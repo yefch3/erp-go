@@ -19,6 +19,7 @@
           </template>
           <template v-else>
             <p class="forgot-note">{{ t('login.forgotExplain') }}</p>
+            <p class="forgot-note">{{ t('login.forgotUsernameHint') }}</p>
             <el-form-item :label="t('login.email')">
               <el-input v-model="forgotEmail" type="email" placeholder="you@yourcompany.com" />
             </el-form-item>
@@ -31,10 +32,11 @@
       </template>
 
       <el-form v-else :model="form" label-position="top" @keyup.enter="submit">
-        <el-form-item :label="t('login.email')">
-          <!-- The domain of this address selects the company, so there is no
-               company field and none should be added. -->
-          <el-input v-model="form.email" type="email" placeholder="you@yourcompany.com" autofocus @input="errorKey = ''" />
+        <el-form-item :label="t('login.account')">
+          <!-- 登录名，一个框。它是任意字符串——zhangsan 或 zhangsan@xxx.com 都行，
+               系统不关心它像不像邮箱。没有「选公司」这一步，也不该加：一个
+               登录页服务所有公司，靠登录名的全局唯一索引做到系统内唯一。 -->
+          <el-input v-model="form.account" placeholder="用户名或邮箱" autofocus autocomplete="username" @input="errorKey = ''" />
         </el-form-item>
         <el-form-item :label="t('login.password')">
           <el-input v-model="form.password" type="password" show-password placeholder="••••••••" @input="errorKey = ''" />
@@ -77,7 +79,9 @@ const errorKey = ref('')
 // no reason to know it yet. Harmless from any other source: an address in a
 // query string is not a credential, and a wrong one just fails to log in.
 const form = reactive({
-  email: typeof route.query.email === 'string' ? route.query.email : '',
+  // 激活页和重置页跳回来时把地址带在 ?email= 里，这里预填；那些页面还叫它
+  // email，因为它们那儿确实只有邮箱。
+  account: typeof route.query.email === 'string' ? route.query.email : '',
   password: '',
 })
 
@@ -97,7 +101,7 @@ const forgotEmail = ref('')
 function openForgot() {
   // Whatever address is already typed rides along; retyping it would be the
   // only cost of the panel being a panel.
-  forgotEmail.value = form.email
+  forgotEmail.value = form.account.includes('@') ? form.account : ''
   forgotSent.value = false
   forgotOpen.value = true
 }
@@ -119,18 +123,17 @@ async function sendForgot() {
 }
 
 async function submit() {
-  if (!form.email || !form.password) return
+  if (!form.account || !form.password) return
   errorKey.value = ''
   loading.value = true
   try {
-    await auth.login(form.email, form.password)
+    await auth.login(form.account, form.password)
     router.push(landing())
   } catch (e) {
     const code = (e as { code?: string })?.code
     const messages: Record<string, string> = {
       IAM_BAD_CREDENTIALS: 'login.invalidCredentials',
       IAM_ACCOUNT_LOCKED: 'login.accountLocked',
-      IAM_NOT_ACTIVATED: 'login.notActivated',
       GATEWAY_TOO_MANY_ATTEMPTS: 'login.tooManyAttempts',
     }
     errorKey.value = messages[code ?? ''] ?? 'login.failed'

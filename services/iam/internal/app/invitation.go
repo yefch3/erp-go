@@ -21,10 +21,12 @@ import (
 // Activation: turning an employee record into an account somebody can log in
 // to, by proving the company mailbox on it is real and theirs.
 //
-// The rest of the system takes "this person works here" from
-// employees.email_verified_at, and this file is the only thing that sets it
-// outside the bootstrap seed. So it is worth stating what the proof actually
-// is and is not. It is: somebody read a mail sent to an address on a domain
+// employees.email_verified_at is set here and nowhere else outside the
+// bootstrap seed. It used to gate login; it no longer does — an account the
+// administrator opened by hand (username + password, see OpenAccount) can
+// sign in without ever having a mailbox. What the timestamp still says is
+// worth stating precisely, because the employee list and the reset-link path
+// still read it: it is proof that a mailbox exists and is this person's. It is: somebody read a mail sent to an address on a domain
 // the company owns, and opened the link in it. It is not: a claim by an
 // administrator, who can type any address into an employee row.
 //

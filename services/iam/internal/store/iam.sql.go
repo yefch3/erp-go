@@ -851,7 +851,7 @@ const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        u.locked_until, u.must_change_password,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
-       e.status AS employee_status, e.email_verified_at,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
        t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
@@ -874,6 +874,7 @@ type GetUserByEmailRow struct {
 	EmployeeCode       string
 	DepartmentID       int64
 	EmployeeStatus     string
+	EmployeeEmail      string
 	EmailVerifiedAt    pgtype.Timestamptz
 	TenantStatus       string
 }
@@ -894,8 +895,8 @@ type GetUserByEmailRow struct {
 //
 // lower() on both sides: an address is case-insensitive in practice, and
 // "Alice@" must not be a second account from "alice@". email_verified_at rides
-// along because login has to refuse an account whose mailbox was never proved
-// to exist, and doing it here keeps that check free.
+// along for the reset-link path, which must only ever mail a mailbox that was
+// proved to exist. Login itself no longer reads it (see Login).
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i GetUserByEmailRow
@@ -913,6 +914,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.EmployeeCode,
 		&i.DepartmentID,
 		&i.EmployeeStatus,
+		&i.EmployeeEmail,
 		&i.EmailVerifiedAt,
 		&i.TenantStatus,
 	)
@@ -950,33 +952,43 @@ func (q *Queries) GetUserByEmployee(ctx context.Context, arg GetUserByEmployeePa
 
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
-       e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
+       u.locked_until, u.must_change_password,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
+       t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
-WHERE u.tenant_id = $1 AND u.username = $2
+JOIN tenants t ON t.id = u.tenant_id
+WHERE lower(u.username) = lower($1::text)
 `
 
-type GetUserByUsernameParams struct {
-	TenantID int64
-	Username string
-}
-
 type GetUserByUsernameRow struct {
-	ID             int64
-	TenantID       int64
-	EmployeeID     int64
-	Username       string
-	PasswordHash   string
-	Status         string
-	FailedCount    int32
-	EmployeeName   string
-	EmployeeCode   string
-	DepartmentID   int64
-	EmployeeStatus string
+	ID                 int64
+	TenantID           int64
+	EmployeeID         int64
+	Username           string
+	PasswordHash       string
+	Status             string
+	FailedCount        int32
+	LockedUntil        pgtype.Timestamptz
+	MustChangePassword bool
+	EmployeeName       string
+	EmployeeCode       string
+	DepartmentID       int64
+	EmployeeStatus     string
+	EmployeeEmail      string
+	EmailVerifiedAt    pgtype.Timestamptz
+	TenantStatus       string
 }
 
-func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, getUserByUsername, arg.TenantID, arg.Username)
+// 登录用的那一条：登录名是任意字符串（zhangsan 或 zhangsan@xxx.com 都行），
+// 只查这一列，不看员工的邮箱字段。和 GetUserByEmail 同一个形状，因为重置
+// 链接那条路还用后者。
+//
+// **不按租户查**：登录页没有「选公司」这一步，登录名靠 users_username_lower_idx
+// （00059）做到全局唯一。lower() 两边都做，找人不分大小写。
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getUserByUsername, username)
 	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
@@ -986,10 +998,15 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.PasswordHash,
 		&i.Status,
 		&i.FailedCount,
+		&i.LockedUntil,
+		&i.MustChangePassword,
 		&i.EmployeeName,
 		&i.EmployeeCode,
 		&i.DepartmentID,
 		&i.EmployeeStatus,
+		&i.EmployeeEmail,
+		&i.EmailVerifiedAt,
+		&i.TenantStatus,
 	)
 	return i, err
 }
@@ -1468,7 +1485,10 @@ WHERE e.tenant_id = $1::bigint
       SELECT 1 FROM employee_invitations i
       WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
     ))
-    OR ($6::text = 'ACTIVE' AND u.status = 'ACTIVE' AND e.email_verified_at IS NOT NULL)
+    -- 有登录行、且没被停用，就是已激活。不再要求 email_verified_at：那只是
+    -- 邀请那条路的痕迹，管理员手动开的账号（填了用户名和密码）没有它，可
+    -- 照样登得进。users 里的一行只在有人有权设了密码时才存在，这就够了。
+    OR ($6::text = 'ACTIVE' AND u.status = 'ACTIVE')
   )
   AND (
     $7::text = ''
@@ -2150,6 +2170,38 @@ WHERE id = $1
 func (q *Queries) RecordLoginSuccess(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, recordLoginSuccess, id)
 	return err
+}
+
+const renameUserLogin = `-- name: RenameUserLogin :execrows
+UPDATE users
+SET username = $1::text, updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND employee_id = $3::bigint
+  AND lower(username) = lower($4::text)
+`
+
+type RenameUserLoginParams struct {
+	NewUsername string
+	TenantID    int64
+	EmployeeID  int64
+	OldUsername string
+}
+
+// 员工的邮箱改了，而登录名恰好就是旧邮箱（邀请开的户都这样），登录名跟着改。
+// 登录名和邮箱本来是两回事（登录名是任意字符串，邮箱只是联系方式），但从前
+// 登录认的是邮箱，改了邮箱的人一直是拿新邮箱登的——这条让那件事继续成立。
+// 管理员手动定的登录名（和邮箱不相等）不动。
+func (q *Queries) RenameUserLogin(ctx context.Context, arg RenameUserLoginParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameUserLogin,
+		arg.NewUsername,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.OldUsername,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const replaceEmployeeRoles = `-- name: ReplaceEmployeeRoles :exec

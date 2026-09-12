@@ -101,7 +101,11 @@
         <el-table-column :label="t('employees.activation')" min-width="155">
           <template #default="{ row }">
             <div class="cell-stack activation-cell">
-              <el-tag v-if="row.emailVerified" type="success" size="small">
+              <!-- 有登录名就是已激活：users 里的一行只在有人有权设了密码时才
+                   存在（管理员开的、或本人点邀请链接设的）。从前只认
+                   emailVerified，管理员手动开的账号会被标成「未邀请」，而那个人
+                   明明登得进。 -->
+              <el-tag v-if="row.username || row.emailVerified" type="success" size="small">
                 {{ t('employees.activated') }}
               </el-tag>
               <el-tag v-else-if="Number(row.inviteExpiresAt)" type="warning" size="small">
