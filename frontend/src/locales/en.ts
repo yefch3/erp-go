@@ -1979,6 +1979,7 @@ export default {
     dropDraftsHint: 'Delete the {n} selected drafts? They cannot be recovered.',
     noDrafts: 'No drafts',
     noSubject: '(no subject)',
+    popupBlocked: 'The browser blocked the pop-up window — allow pop-ups for this site (address bar, right side) and double-click again',
     answered: 'Replied',
     draftRecipients: '{n} recipient(s)',
     draftTo: 'To',

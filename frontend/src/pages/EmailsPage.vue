@@ -3310,10 +3310,21 @@ function openInbound(row: MailRow) {
 // /inbound-mails/<id> 那条路上什么都没有。双击它就只是点了两下。
 //
 // 弹窗拦截器不会拦：这是双击直接触发的，浏览器认这是人的动作。
+//
+// **开完要 focus()。** 名字已经占着一个窗口时，浏览器只是把那个窗口导到这个
+// 地址，**不会把它拿到前面来**——那个窗口就压在主窗口后面，屏幕上什么都没
+// 发生。第二次双击同一封信"没反应"就是这么来的。
 function openMailWindow(row: MailRow) {
   if (row.kind === 'ERP') return
   const url = router.resolve({ path: `/mail/${row.id}` }).href
-  window.open(url, `mail-${row.id}`, 'width=1040,height=860')
+  const win = window.open(url, `mail-${row.id}`, 'width=1040,height=860')
+  // 被浏览器拦下了（有人把弹窗全局关掉了）。不说一句的话，双击的结果就是
+  // 屏幕上什么都没有，而人只会以为是我们的程序坏了。
+  if (!win) {
+    ElMessage.warning(t('emails.popupBlocked'))
+    return
+  }
+  win.focus()
 }
 
 // Fetches the mail named in the URL. Opening marks it read server-side; the
@@ -4903,7 +4914,8 @@ async function openPreview(a: MailFile, mailID: string) {
   if (isSheetPreview(a)) {
     const id = mailID || openedInbound.value?.id || ''
     if (!id) return
-    window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)
+    // focus 的理由同 openMailWindow：名字占着的那个标签页不会自己跑到前面来。
+    window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()
     return
   }
   if (!needsConversion(a)) {

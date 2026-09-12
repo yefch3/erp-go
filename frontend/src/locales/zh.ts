@@ -1977,6 +1977,7 @@ export default {
     dropDraftsHint: '确认删除选中的 {n} 封草稿？删掉就没有了。',
     noDrafts: '草稿箱是空的',
     noSubject: '（无主题）',
+    popupBlocked: '浏览器拦下了弹出窗口——请在地址栏右边允许本站的弹出窗口，再双击一次',
     // 列表上那个「已回复」标识（issue #364）。
     answered: '已回复',
     draftRecipients: '{n} 位收件人',

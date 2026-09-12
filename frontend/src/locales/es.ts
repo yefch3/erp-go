@@ -1985,6 +1985,7 @@ export default {
     dropDraftsHint: '¿Eliminar los {n} borradores seleccionados? No se podrán recuperar.',
     noDrafts: 'Sin borradores',
     noSubject: '(sin asunto)',
+    popupBlocked: 'El navegador bloqueó la ventana emergente: permite las ventanas emergentes de este sitio (barra de direcciones, a la derecha) y haz doble clic otra vez',
     answered: 'Respondido',
     draftRecipients: '{n} destinatario(s)',
     draftTo: 'Para',
