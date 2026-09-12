@@ -4,6 +4,7 @@ export default {
     subtitle: 'Quotation · Contract · Procurement · Warehouse · Shipping · Receivables',
     email: 'Company email',
     account: 'Account',
+    accountPlaceholder: 'Username or email',
     forgotUsernameHint: 'Accounts that sign in with a username have no mailbox to receive a link; ask an administrator to reset the password.',
     password: 'Password',
     submit: 'Sign in',

@@ -1,10 +1,27 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { isLiveEventsRequest } from './viteProxyPolicy.ts'
 
 // /api 代理到 gateway：开发期前端与后端同源，无需 CORS。
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    // Element Plus 按用到的组件引入，不再整包塞进主包。
+    //
+    // 量过：这个应用用了 63 个组件，而 Element Plus 提供 124 个——日历、走马灯、
+    // 取色器、穿梭框、导览……一个都没用上，却每次打开都要下载一遍。
+    //
+    // **样式仍然整份引**（见 main.ts）。按组件引样式要靠命令式 API
+    // （ElMessage / ElMessageBox / v-loading）各自带上自己那份 css，漏一个的
+    // 样子是某个对话框在某一页上没有边框——四十个页面里找那一个，比省下的
+    // 那点 CSS 贵得多。JS 是这两者里大的那一半，先拿这一半。
+    Components({
+      resolvers: [ElementPlusResolver({ importStyle: false, directives: true })],
+      dts: false,
+    }),
+  ],
   server: {
     // 默认还是 5173（本地 npm run dev 的习惯不变），但允许用 PORT 覆盖：
     // 同一台机器上要开第二个 dev server 时（比如一边留着自己的，一边让
