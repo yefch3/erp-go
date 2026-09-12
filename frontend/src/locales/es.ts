@@ -53,6 +53,8 @@ export default {
     badLink: 'El enlace de activación no es válido o ya no funciona',
   },
   menu: {
+    collapseNav: 'Ocultar menú',
+    expandNav: 'Mostrar menú',
     stockAndGoods: 'Productos y stock',
     sales: 'Ventas',
     logistics: 'Logística',
@@ -1983,6 +1985,7 @@ export default {
     dropDraftsHint: '¿Eliminar los {n} borradores seleccionados? No se podrán recuperar.',
     noDrafts: 'Sin borradores',
     noSubject: '(sin asunto)',
+    popupBlocked: 'El navegador bloqueó la ventana emergente: permite las ventanas emergentes de este sitio (barra de direcciones, a la derecha) y haz doble clic otra vez',
     answered: 'Respondido',
     draftRecipients: '{n} destinatario(s)',
     draftTo: 'Para',
@@ -2176,6 +2179,7 @@ export default {
     signOutAllAsk: '¿Cerrar sesión en los {n} buzones? Cada uno volverá a pedir su contraseña.',
     signInToRead: 'Inicia sesión para ver',
     newFolder: 'Nueva carpeta',
+    newSubfolder: 'Nueva carpeta dentro de esta',
     newFolderAsk: 'Nombre de la carpeta',
     renameFolder: 'Renombrar carpeta',
     deleteFolder: 'Eliminar carpeta',
@@ -2290,6 +2294,14 @@ export default {
   mailWindow: {
     gone: 'No se puede abrir este correo',
     goneHint: 'Puede que se haya eliminado o que el buzón esté bloqueado ahora mismo: comprueba la ventana principal.',
+  },
+  // El visor de hojas de cálculo adjuntas (se dibuja en una pestaña nueva, sin PDF).
+  sheetWindow: {
+    failed: 'No se puede abrir esta hoja de cálculo',
+    failedHint: 'El archivo puede estar dañado o estar en el antiguo formato .xls que este lector no entiende. Descárgalo y ábrelo en Excel.',
+    tooBig: 'Esta hoja de cálculo es demasiado grande',
+    tooBigHint: 'Demasiado grande para dibujarla en el navegador: descárgala y ábrela en Excel.',
+    truncated: 'Se muestran las primeras {shown} filas de {total}: descarga el archivo para verlo completo.',
   },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',

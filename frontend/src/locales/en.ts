@@ -53,6 +53,8 @@ export default {
     badLink: 'This activation link is invalid or no longer works',
   },
   menu: {
+    collapseNav: 'Collapse menu',
+    expandNav: 'Show menu',
     stockAndGoods: 'Products & Stock',
     sales: 'Sales',
     logistics: 'Logistics',
@@ -1977,6 +1979,7 @@ export default {
     dropDraftsHint: 'Delete the {n} selected drafts? They cannot be recovered.',
     noDrafts: 'No drafts',
     noSubject: '(no subject)',
+    popupBlocked: 'The browser blocked the pop-up window — allow pop-ups for this site (address bar, right side) and double-click again',
     answered: 'Replied',
     draftRecipients: '{n} recipient(s)',
     draftTo: 'To',
@@ -2170,6 +2173,7 @@ export default {
     signOutAllAsk: 'Sign out of all {n} mailboxes? Each will ask for its password again.',
     signInToRead: 'Sign in to read',
     newFolder: 'New folder',
+    newSubfolder: 'New folder inside this one',
     newFolderAsk: 'Folder name',
     renameFolder: 'Rename folder',
     deleteFolder: 'Delete folder',
@@ -2284,6 +2288,14 @@ export default {
   mailWindow: {
     gone: 'This mail will not open',
     goneHint: 'It may have been deleted, or the mailbox is locked right now — check the main window.',
+  },
+  // The spreadsheet attachment viewer (rendered in a new tab, no PDF step).
+  sheetWindow: {
+    failed: 'This spreadsheet will not open',
+    failedHint: 'The file may be damaged, or in the older .xls format this reader does not understand. Download it and open it in Excel.',
+    tooBig: 'This spreadsheet is too large',
+    tooBigHint: 'Too large to render in the browser — download it and open it in Excel.',
+    truncated: 'Showing the first {shown} rows of {total} — download the file to see all of it.',
   },
   reader: {
     bodyFrame: 'Message body',

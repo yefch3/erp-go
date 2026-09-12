@@ -254,6 +254,28 @@ func (q *Queries) CountInboundThreads(ctx context.Context, arg CountInboundThrea
 	return column_1, err
 }
 
+const countMailFolderChildren = `-- name: CountMailFolderChildren :one
+SELECT count(*)::bigint FROM mail_folders
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND left(host_name, length($3::text)) = $3::text
+`
+
+type CountMailFolderChildrenParams struct {
+	TenantID  int64
+	AccountID int64
+	Prefix    string
+}
+
+// 这个文件夹底下还有没有别的文件夹。删之前问一句：服务器多半会拒（有子
+// 文件夹的不让删），而我们自己先说清楚，比把服务器那句英文原样抛给人好。
+func (q *Queries) CountMailFolderChildren(ctx context.Context, arg CountMailFolderChildrenParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMailFolderChildren, arg.TenantID, arg.AccountID, arg.Prefix)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingFlagOps = `-- name: CountPendingFlagOps :one
 SELECT count(*)::bigint FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
@@ -3975,6 +3997,35 @@ func (q *Queries) RenameInboundFolder(ctx context.Context, arg RenameInboundFold
 	return result.RowsAffected(), nil
 }
 
+const renameInboundFolderPrefix = `-- name: RenameInboundFolderPrefix :execrows
+UPDATE email_inbound
+SET folder = $1::text || substr(folder, length($2::text) + 1)
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND left(folder, length($2::text)) = $2::text
+`
+
+type RenameInboundFolderPrefixParams struct {
+	NewPrefix string
+	OldPrefix string
+	TenantID  int64
+	AccountID int64
+}
+
+// 同上，信上存的文件夹名。触发器会重算视图。比前缀同样用 left()。
+func (q *Queries) RenameInboundFolderPrefix(ctx context.Context, arg RenameInboundFolderPrefixParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameInboundFolderPrefix,
+		arg.NewPrefix,
+		arg.OldPrefix,
+		arg.TenantID,
+		arg.AccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const renameMailFolder = `-- name: RenameMailFolder :exec
 UPDATE mail_folders
 SET name = $1::text, host_name = $2::text
@@ -3994,6 +4045,38 @@ func (q *Queries) RenameMailFolder(ctx context.Context, arg RenameMailFolderPara
 		arg.HostName,
 		arg.TenantID,
 		arg.ID,
+	)
+	return err
+}
+
+const renameMailFolderSubtree = `-- name: RenameMailFolderSubtree :exec
+UPDATE mail_folders
+SET name = $1::text || substr(name, length($2::text) + 1),
+    host_name = $1::text || substr(host_name, length($2::text) + 1)
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND left(host_name, length($2::text)) = $2::text
+`
+
+type RenameMailFolderSubtreeParams struct {
+	NewPrefix string
+	OldPrefix string
+	TenantID  int64
+	AccountID int64
+}
+
+// 父文件夹改了名，登记里它下面那些跟着改。
+// 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+//
+// 比前缀用 left()，**不用 LIKE**：文件夹名是人起的，里面完全可以有下划线，
+// 而 LIKE 把 _ 当成"任意一个字符"。那样给 "客户_A" 改名会连 "客户XA" 底下的
+// 行一起改掉——服务器上什么都没动，库里的信却挂到了别人名下。
+func (q *Queries) RenameMailFolderSubtree(ctx context.Context, arg RenameMailFolderSubtreeParams) error {
+	_, err := q.db.Exec(ctx, renameMailFolderSubtree,
+		arg.NewPrefix,
+		arg.OldPrefix,
+		arg.TenantID,
+		arg.AccountID,
 	)
 	return err
 }

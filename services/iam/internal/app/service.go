@@ -39,7 +39,9 @@ func New(pool *pgxpool.Pool, jwtSecret string, jwtTTL time.Duration, log *slog.L
 // ---------------------------------------------------------------- auth
 
 var (
-	errBadCredentials = apierr.Unauthorized("IAM_BAD_CREDENTIALS", "邮箱或密码错误")
+	// 「账号」不是「邮箱」：登录名改成任意字符串之后（#428），一个用
+	// zhangsan 登录的人看到"邮箱或密码错误"会去检查一个他根本没填过的东西。
+	errBadCredentials = apierr.Unauthorized("IAM_BAD_CREDENTIALS", "账号或密码错误")
 	// A decision: disabled, or no longer employed here. Waiting does not help,
 	// so the message sends them to somebody who can act.
 	errAccountLocked = apierr.Unauthorized("IAM_ACCOUNT_LOCKED", "账号已停用，请联系管理员")

@@ -1,6 +1,14 @@
 <template>
   <el-container class="shell">
-    <el-aside width="220px" class="side">
+    <!-- 左栏能收起来。
+         收起它是为了别的页面能宽一点——邮件页尤其：它自己已经是三栏了，
+         左边再钉着 220px 的菜单，正文那一栏就只剩一半屏幕。菜单是"我要去
+         哪儿"，一天用几次；收起来之后随时一个键点开。
+         收起状态记在浏览器里，下次打开还是收着的。 -->
+    <!-- 收起来时 inert：宽度是 0 但里面的按钮还在文档里，不加这一句，用键盘
+         Tab 的人会一路走进一栏看不见的菜单里。写成 undefined 而不是 false：
+         inert 是"在场即生效"的属性，inert="false" 照样是 inert。 -->
+    <el-aside :width="navOpen ? '220px' : '0px'" class="side" :inert="navOpen ? undefined : true">
       <div class="side-brand">
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>
@@ -281,7 +289,24 @@
     </el-aside>
     <el-container class="pane-col">
       <el-header class="topbar">
-        <span />
+        <!-- 收起/展开左栏。放在顶栏最左，也就是它收起来之后那块地方的正上方
+             ——按钮要长在它管的东西旁边。 -->
+        <el-tooltip
+          :content="navOpen ? t('menu.collapseNav') : t('menu.expandNav')"
+          placement="bottom"
+          :show-after="0"
+          :hide-after="0"
+        >
+          <button
+            type="button"
+            class="nav-toggle"
+            :aria-label="navOpen ? t('menu.collapseNav') : t('menu.expandNav')"
+            :aria-expanded="navOpen"
+            @click="toggleNav"
+          >
+            <el-icon><Fold v-if="navOpen" /><Expand v-else /></el-icon>
+          </button>
+        </el-tooltip>
         <div class="topbar-right">
           <ShippingArrivalNotifications
             v-if="auth.can('shipping:schedule:read')"
@@ -363,6 +388,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
@@ -377,6 +403,15 @@ const pw = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 const { t } = useI18n()
 const auth = useAuthStore()
+
+// 左栏开着还是收着。存浏览器里：这是一个人对自己屏幕的安排，不是这台机器上
+// 所有人的设置，也不值得占服务器一行。认不出的值一律当"开着"——菜单是找路
+// 的东西，出错时宁可它在。
+const navOpen = ref(localStorage.getItem('shell.nav') !== '0')
+function toggleNav() {
+  navOpen.value = !navOpen.value
+  localStorage.setItem('shell.nav', navOpen.value ? '1' : '0')
+}
 const route = useRoute()
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
@@ -699,6 +734,11 @@ async function changePassword() {
      window taller. overflow-y auto, not scroll: no phantom scrollbar. */
   height: 100%;
   overflow-y: auto;
+  /* 收起来是宽度变成 0，所以横向必须裁掉：不裁的话 220px 的菜单文字会漏在
+     内容区上面。滑过去而不是啪一下消失——那 160ms 是在说"它收到左边去了"，
+     而不是"它没了"，人才知道去哪儿找它。 */
+  overflow-x: hidden;
+  transition: width 160ms var(--el-transition-function-ease-in-out-bezier, ease);
 }
 .pane-col {
   /* min-height:0 is what lets a flex child shrink below its content and
@@ -845,6 +885,30 @@ async function changePassword() {
   justify-content: space-between;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
+}
+/* 收起/展开左栏的那颗。画成一个安静的图标按钮：它一直在顶栏最左边杵着，
+   而人一天点它两次。 */
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 17px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.nav-toggle:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
 }
 .topbar-right {
   display: flex;

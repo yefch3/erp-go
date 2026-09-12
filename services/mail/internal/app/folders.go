@@ -98,6 +98,10 @@ type HostFolder struct {
 	// Role 是属性翻出来的角色提示（DRAFTS/SENT/JUNK/TRASH/ARCHIVE/SYSTEM），
 	// 没有属性就是空串。属性是权威的，所以它在 roleOf 里排在猜名字前面。
 	Role string
+	// Delim 是这台服务器拿什么字符分层级：LIST 回来的那一个。263、Gmail、QQ
+	// 都是 '/'，有些 Dovecot 配成 '.'，老的 UW-IMAP 是 '\'。建子文件夹时要用
+	// 它拼路径——拼错了就是在服务器上建出一个名字里带斜杠的平级文件夹。
+	Delim string
 }
 
 // providerSystemFolders 是各家邮箱服务器自带的系统文件夹名。
@@ -359,12 +363,49 @@ func hostSaysDefaultFolder(err error) bool {
 	return false
 }
 
+// hostDelimiter 问服务器：层级拿什么字符分隔。
+//
+// LIST 的回答里带着它，各家不一样——263、Gmail、QQ 是 '/'，有些 Dovecot 配成
+// '.'。**每次要用的时候现问**，不存起来：建文件夹是个一天几次的动作，一条
+// LIST 换来的是"绝不会在服务器上建出一个名字里带斜杠的平级文件夹"。存一列在
+// 库里省下这条 LIST，代价是它有可能是旧的，而旧的分隔符拼出来的路径是错的。
+//
+// 问不到就按 '/'：绝大多数服务器是它，而这条路只在建子文件夹时才走到。
+func (s *Service) hostDelimiter(ctx context.Context, acct MailAccount) string {
+	folders, err := s.mailbox.ListFolders(ctx, acct)
+	if err == nil {
+		for _, f := range folders {
+			if f.Delim != "" {
+				return f.Delim
+			}
+		}
+	}
+	return "/"
+}
+
+// splitFolderPath 把服务器上的全名切成「父路径」和「自己的名字」。
+// 顶层文件夹没有父路径。分隔符为空（问不到）时一律当顶层。
+func splitFolderPath(hostName, delim string) (parent, leaf string) {
+	if delim == "" {
+		return "", hostName
+	}
+	i := strings.LastIndex(hostName, delim)
+	if i < 0 {
+		return "", hostName
+	}
+	return hostName[:i], hostName[i+len(delim):]
+}
+
 // CreateMailFolder 建一个文件夹：先在服务器上建，成了再登记。
+//
+// parentID 是建在谁底下，0 是顶层。层级是**服务器上真的层级**（IMAP 的名字
+// 里带分隔符，"客户/巴西/2026"），不是 ERP 画出来的：同一棵树在 Foxmail 里
+// 打开也是这个样子。
 //
 // 顺序有讲究。先登记后建，服务器那一步失败就留下一条"有名无实"的记录，
 // 列表里有、点进去空的、挪信过去必失败。反过来，服务器建成了、登记失败，
 // 下一次列表会把它导入回来，没有损失。
-func (s *Service) CreateMailFolder(ctx context.Context, tenantID, employeeID, accountID int64, name string) (MailFolder, error) {
+func (s *Service) CreateMailFolder(ctx context.Context, tenantID, employeeID, accountID, parentID int64, name string) (MailFolder, error) {
 	name, err := validFolderName(name)
 	if err != nil {
 		return MailFolder{}, err
@@ -376,11 +417,26 @@ func (s *Service) CreateMailFolder(ctx context.Context, tenantID, employeeID, ac
 	if s.mailbox == nil {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_NO_HOST", "邮件服务尚未配置")
 	}
-	if err := s.mailbox.CreateFolder(ctx, acct, name); err != nil {
+
+	// 建在谁底下。父文件夹必须是这个信箱的——换个信箱的 id 过来，拼出来的
+	// 路径在这个箱上根本不存在，服务器会拒，但那时错误话是服务器的，不是
+	// 我们的。
+	hostName := name
+	if parentID != 0 {
+		parent, err := s.q.GetMailFolder(ctx, store.GetMailFolderParams{TenantID: tenantID, ID: parentID})
+		if err != nil || parent.AccountID != accountID {
+			return MailFolder{}, apierr.Invalid("MAIL_FOLDER_PARENT_NOT_FOUND", "上级文件夹不存在")
+		}
+		hostName = parent.HostName + s.hostDelimiter(ctx, acct) + name
+	}
+
+	if err := s.mailbox.CreateFolder(ctx, acct, hostName); err != nil {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_CREATE_FAILED", "邮箱服务器拒绝新建这个文件夹："+err.Error())
 	}
+	// name 和 host_name 都存全路径：列表那边按路径认父子（服务器上的名字就是
+	// 路径，Foxmail 里建的多层文件夹同样是这个样子），左栏只显示最后一段。
 	row, err := s.q.CreateMailFolder(ctx, store.CreateMailFolderParams{
-		TenantID: tenantID, AccountID: accountID, Name: name, HostName: name, Role: roleCustom, CreatedBy: employeeID,
+		TenantID: tenantID, AccountID: accountID, Name: hostName, HostName: hostName, Role: roleCustom, CreatedBy: employeeID,
 	})
 	if err != nil {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_EXISTS", "已经有同名的文件夹了")
@@ -402,16 +458,31 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 	if f.Role != roleCustom {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "这是邮箱服务器自带的文件夹，不能改名")
 	}
+	// 改的是**最后一段**，不是整条路径：「客户/巴西」改名叫「智利」得到的是
+	// 「客户/智利」。从前这里直接拿新名字当整个路径，于是给一个子文件夹改名
+	// 会把它连同里面的信一起搬到顶层去——服务器上的 RENAME 就是移动。
+	delim := s.hostDelimiter(ctx, acct)
+	parentPath, leaf := splitFolderPath(f.HostName, delim)
+
 	// 改成同名 = 不动。放在校验前面：名单扩了之后，一个改版前就叫「已归档」
 	// 的正当文件夹，改成同名本该是无操作，先校验会把它拒掉。
-	if strings.TrimSpace(name) == f.HostName {
+	// 比的是**最后一段**：嵌套之后 HostName 是整条路径，拿它去比永远不相等，
+	// 这条本该挡住的路就白留了。
+	if strings.TrimSpace(name) == leaf {
 		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName, Role: f.Role}, nil
 	}
 	name, err = validFolderName(name)
 	if err != nil {
 		return MailFolder{}, err
 	}
-	if err := s.mailbox.RenameFolder(ctx, acct, f.HostName, name); err != nil {
+	newHost := name
+	if parentPath != "" {
+		newHost = parentPath + delim + name
+	}
+	if newHost == f.HostName {
+		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName, Role: f.Role}, nil
+	}
+	if err := s.mailbox.RenameFolder(ctx, acct, f.HostName, newHost); err != nil {
 		if hostSaysDefaultFolder(err) {
 			_ = s.q.SetMailFolderRole(ctx, store.SetMailFolderRoleParams{TenantID: tenantID, ID: f.ID, Role: roleSystem})
 			return MailFolder{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "邮箱服务器说这是它自带的文件夹，不能改名；已按系统文件夹处理")
@@ -419,18 +490,36 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_RENAME_FAILED", "邮箱服务器拒绝重命名："+err.Error())
 	}
 	if err := s.q.RenameMailFolder(ctx, store.RenameMailFolderParams{
-		TenantID: tenantID, ID: folderID, Name: name, HostName: name,
+		TenantID: tenantID, ID: folderID, Name: newHost, HostName: newHost,
 	}); err != nil {
 		return MailFolder{}, err
 	}
 	if _, err := s.q.RenameInboundFolder(ctx, store.RenameInboundFolderParams{
-		TenantID: tenantID, AccountID: f.AccountID, OldFolder: f.HostName, NewFolder: name,
+		TenantID: tenantID, AccountID: f.AccountID, OldFolder: f.HostName, NewFolder: newHost,
 	}); err != nil {
 		// 服务器和登记都改了，只有行没跟上：下次列表按新名字看会是空的。
 		// 记下来，人能查；不回滚——服务器那边已经改了，回滚只会更乱。
 		s.log.Warn("renamed a folder but could not relabel its mail", "folder", f.HostName, "err", err)
 	}
-	return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: name, HostName: name, Role: f.Role}, nil
+	// 服务器上的 RENAME 把整棵子树一起改了（"客户/巴西" 改名，"客户/巴西/2026"
+	// 跟着变），所以登记和信上的名字也要跟着走。不跟的话：子文件夹的登记下次
+	// 对账时被当成"服务器上没了"清掉、再以新名字重新登记，而里面那些信的
+	// folder 还停在旧名字上——它们会从左栏消失，直到下一次全量同步把同一封信
+	// 按新名字再存一遍（于是同一封信两行）。
+	prefix := f.HostName + delim
+	if delim != "" {
+		if err := s.q.RenameMailFolderSubtree(ctx, store.RenameMailFolderSubtreeParams{
+			TenantID: tenantID, AccountID: f.AccountID, OldPrefix: prefix, NewPrefix: newHost + delim,
+		}); err != nil {
+			s.log.Warn("renamed a folder but could not move its children", "folder", f.HostName, "err", err)
+		}
+		if _, err := s.q.RenameInboundFolderPrefix(ctx, store.RenameInboundFolderPrefixParams{
+			TenantID: tenantID, AccountID: f.AccountID, OldPrefix: prefix, NewPrefix: newHost + delim,
+		}); err != nil {
+			s.log.Warn("renamed a folder but could not relabel mail in its children", "folder", f.HostName, "err", err)
+		}
+	}
+	return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: newHost, HostName: newHost, Role: f.Role}, nil
 }
 
 // DeleteMailFolder 删文件夹。**里面还有信就不删**：服务器的 DELETE 会连信一起
@@ -447,6 +536,19 @@ func (s *Service) DeleteMailFolder(ctx context.Context, tenantID, employeeID, fo
 	}
 	if f.Role != roleCustom {
 		return apierr.Invalid("MAIL_FOLDER_SYSTEM", "这是邮箱服务器自带的文件夹，不能删除")
+	}
+	// 底下还有子文件夹就不删。服务器多半也会拒（有子文件夹的删不掉），但那时
+	// 抛出来的是一句英文原话；自己先说清楚，人才知道下一步该干什么。
+	//
+	// 分隔符现问：只有真要删的时候才走这一条 LIST。
+	if delim := s.hostDelimiter(ctx, acct); delim != "" {
+		kids, err := s.q.CountMailFolderChildren(ctx, store.CountMailFolderChildrenParams{
+			TenantID: tenantID, AccountID: f.AccountID, Prefix: f.HostName + delim,
+		})
+		if err == nil && kids > 0 {
+			return apierr.Invalid("MAIL_FOLDER_HAS_CHILDREN",
+				fmt.Sprintf("这个文件夹底下还有 %d 个文件夹，先把它们删掉或移走", kids))
+		}
 	}
 	n, err := s.q.CountInboundInFolder(ctx, store.CountInboundInFolderParams{
 		TenantID: tenantID, AccountID: f.AccountID, Folder: f.HostName,

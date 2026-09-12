@@ -53,6 +53,8 @@ export default {
     badLink: '激活链接无效或已失效',
   },
   menu: {
+    collapseNav: '收起菜单',
+    expandNav: '展开菜单',
     stockAndGoods: '产品与仓储',
     sales: '销售',
     logistics: '物流',
@@ -1975,6 +1977,7 @@ export default {
     dropDraftsHint: '确认删除选中的 {n} 封草稿？删掉就没有了。',
     noDrafts: '草稿箱是空的',
     noSubject: '（无主题）',
+    popupBlocked: '浏览器拦下了弹出窗口——请在地址栏右边允许本站的弹出窗口，再双击一次',
     // 列表上那个「已回复」标识（issue #364）。
     answered: '已回复',
     draftRecipients: '{n} 位收件人',
@@ -2170,6 +2173,7 @@ export default {
     signOutAllAsk: '把手上 {n} 个邮箱全部退出？下次每个都要重新登录一次。',
     signInToRead: '登录后查看',
     newFolder: '新建文件夹',
+    newSubfolder: '在这里面新建文件夹',
     newFolderAsk: '文件夹名',
     renameFolder: '重命名文件夹',
     deleteFolder: '删除文件夹',
@@ -2283,6 +2287,14 @@ export default {
   mailWindow: {
     gone: '这封信打不开',
     goneHint: '可能是信已经被删掉了，也可能邮箱这会儿是锁着的——回主窗口看一眼。',
+  },
+  // 表格附件的预览页（新标签页里直接画出来，不转 PDF）。
+  sheetWindow: {
+    failed: '这个表格打不开',
+    failedHint: '可能是文件损坏，或者是这个读法认不了的老格式（.xls）。下载下来用 Excel 打开吧。',
+    tooBig: '这个表格太大了',
+    tooBigHint: '在浏览器里画不动这么大的表——下载下来用 Excel 打开吧。',
+    truncated: '只画了前 {shown} 行，整张表共 {total} 行——要看全的请下载原文件。',
   },
   reader: {
     bodyFrame: '邮件正文',
