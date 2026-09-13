@@ -2777,6 +2777,9 @@ async function showDraft(id: string) {
 }
 
 function openDraftPreview(row: { id: string }) {
+  // 已经开着的不再点开一次，理由见 openInbound：双击是"接着写"，第一下不该
+  // 把右边重新拉一遍。
+  if (openedDraft.value?.id === row.id) return
   showDraft(row.id)
 }
 
@@ -3287,6 +3290,12 @@ async function reloadPages(opts: { quiet?: boolean } = {}): Promise<boolean> {
 // 一个（模板里 mail 优先）。不清掉的话，在已发送里先点一封信、再点一条投递
 // 记录，右边显示的还是那封信，左边高亮的也还是那一行。
 function openInbound(row: MailRow) {
+  // 已经开着这一封了：什么都不做。
+  //
+  // 从前这里照样 pushState，而 pushState 把"去已经在的地方"当成刷新，把整个
+  // 列表重新拉一遍——拉的时候列表上蒙着一层加载遮罩。双击的第一下触发了这次
+  // 刷新，第二下落在遮罩上，于是「选中的那封双击开不了窗口，别的都行」。
+  if (openedInbound.value?.id === row.id) return
   pushState({ mail: row.id, msg: '' })
 }
 
@@ -4976,10 +4985,13 @@ function initialOf(name: string) {
 // about delivery and opens; a copy from the host's Sent folder opens the
 // ordinary mail page, because that is all there is to show about it.
 function openSentRow(row: MailRow) {
+  // 已经开着的不再点开一次，理由见 openInbound。
   if (row.kind === 'ERP') {
+    if (String(openMail.value?.id ?? '') === row.id) return
     pushState({ msg: row.id, mail: '' })
     return
   }
+  if (openedInbound.value?.id === row.id) return
   pushState({ mail: row.id, msg: '' })
 }
 
