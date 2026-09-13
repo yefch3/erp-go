@@ -431,6 +431,11 @@ services:
       JWT_SECRET: ${DOCS_JWT_SECRET:-erp-dev-docs-secret}
       JWT_HEADER: Authorization
       JWT_IN_BODY: "true"
+    # 环境变量管不到的那几项写在这份 JSON 里（为什么要它，文件里有）。
+    # 挂成 local-production-linux.json 而不是 local.json：后者是启动脚本按
+    # 环境变量生成的，挂上去会被覆盖；前者在它之后加载，能盖过它。
+    volumes:
+      - ./onlyoffice-local.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
     ports:
       - "127.0.0.1:8083:80"
     networks: [infra]
