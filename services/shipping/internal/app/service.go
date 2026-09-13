@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 17
+const SchemaVersion int32 = 20
 
 type Approvals interface {
 	Submit(context.Context, ApprovalSubmission) (int64, error)
@@ -46,6 +47,8 @@ type Service struct {
 	scopes           Scopes
 	customerAccess   CustomerAccess
 	approvals        Approvals
+	holidayClient    *http.Client
+	holidayBaseURL   string
 }
 
 func (s *Service) UseApprovals(a Approvals) { s.approvals = a }
@@ -53,7 +56,7 @@ func (s *Service) UseApprovals(a Approvals) { s.approvals = a }
 // New accepts the small pinger interface so the readiness check remains easy
 // to unit test. Schedule commands require the production pgx pool.
 func New(db databasePinger, fileStores ...Files) *Service {
-	s := &Service{db: db, log: slog.Default(), reminderWake: make(chan struct{}, 1)}
+	s := &Service{db: db, log: slog.Default(), reminderWake: make(chan struct{}, 1), holidayClient: &http.Client{Timeout: 8 * time.Second}, holidayBaseURL: "https://calendar.google.com/calendar/ical/"}
 	if pool, ok := db.(*pgxpool.Pool); ok {
 		s.pool, s.q = pool, store.New(pool)
 	}
@@ -84,6 +87,9 @@ type ScheduleInput struct {
 	LoadingPortCode, LoadingPortTimezone                 string
 	DischargePortCode, DischargePortTimezone             string
 	ETD, ATD, ETA, ATA                                   string
+	BookingNo, BillOfLadingNo                            string
+	WarehouseEntryDate, CustomsDeclarationDate           string
+	FreightCurrency, FreightAmount                       string
 	ResponsibleEmployeeID                                int64
 	ResponsibleName, Remark                              string
 }
@@ -117,10 +123,10 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 	in.PortOfLoading = strings.TrimSpace(in.PortOfLoading)
 	in.PortOfDischarge = strings.TrimSpace(in.PortOfDischarge)
 	in.ResponsibleName = strings.TrimSpace(in.ResponsibleName)
-	if in.VesselName == "" || in.VoyageNo == "" || in.PortOfLoading == "" ||
+	if in.PortOfLoading == "" ||
 		in.PortOfDischarge == "" || in.ResponsibleEmployeeID == 0 || in.ResponsibleName == "" {
 		return store.CreateScheduleParams{}, apierr.Invalid(
-			"SHIPPING_REQUIRED_FIELDS", "船名、航次、起运港、目的港、ETD、ETA 和负责人必填")
+			"SHIPPING_REQUIRED_FIELDS", "起运港、目的港、ETD、ETA 和负责人必填")
 	}
 	etd, err := parseDate(in.ETD, "ETD", true)
 	if err != nil {
@@ -132,6 +138,12 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 	}
 	if eta.Time.Before(etd.Time) {
 		return store.CreateScheduleParams{}, apierr.Invalid("SHIPPING_ETA_BEFORE_ETD", "ETA 不能早于 ETD")
+	}
+	if _, err = parseDate(in.WarehouseEntryDate, "进仓日期", false); err != nil {
+		return store.CreateScheduleParams{}, err
+	}
+	if _, err = parseDate(in.CustomsDeclarationDate, "报关日期", false); err != nil {
+		return store.CreateScheduleParams{}, err
 	}
 	var contractID, customerID, carrierID *int64
 	if in.ContractID > 0 {
@@ -167,11 +179,14 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 		LoadingPortCode: strings.TrimSpace(in.LoadingPortCode), LoadingPortTimezone: strings.TrimSpace(in.LoadingPortTimezone),
 		DischargePortID: dischargePortID, DischargePortCode: strings.TrimSpace(in.DischargePortCode),
 		DischargePortTimezone: strings.TrimSpace(in.DischargePortTimezone),
+		BookingNo:             strings.TrimSpace(in.BookingNo), BillOfLadingNo: strings.TrimSpace(in.BillOfLadingNo),
+		WarehouseEntryDate: strings.TrimSpace(in.WarehouseEntryDate), CustomsDeclarationDate: strings.TrimSpace(in.CustomsDeclarationDate),
+		FreightCurrency: strings.ToUpper(strings.TrimSpace(in.FreightCurrency)), FreightAmount: strings.TrimSpace(in.FreightAmount),
 	}, nil
 }
 
 func (s *Service) rejectDuplicate(ctx context.Context, q *store.Queries, tenantID, excludeID int64, p store.CreateScheduleParams, confirmed bool) error {
-	if confirmed {
+	if confirmed || strings.TrimSpace(p.VesselName) == "" || strings.TrimSpace(p.VoyageNo) == "" {
 		return nil
 	}
 	rows, err := q.FindPossibleDuplicates(ctx, store.FindPossibleDuplicatesParams{
@@ -198,12 +213,16 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		if err != nil {
 			return store.ShippingSchedule{}, err
 		}
-		if handoff.Status != "PENDING" || handoff.CustomerManaged {
-			return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_HANDOFF_NOT_PENDING", "该合同货运批次已处理或由客户自理")
+		if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
+			return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
 		}
 		in.ContractID, in.ContractNo = handoff.ContractID, handoff.ContractNo
 		in.CustomerID, in.CustomerName = handoff.CustomerID, handoff.CustomerName
-		in.CarrierForwarder = handoff.CarrierForwarder
+		in.CarrierID, in.CarrierForwarder = handoff.FinalForwarderID, handoff.FinalForwarderName
+		if handoff.ActualCarrierID != 0 {
+			in.CarrierID, in.CarrierForwarder = handoff.ActualCarrierID, handoff.ActualCarrierName
+		}
+		in.FreightCurrency, in.FreightAmount = handoff.FinalCurrency, numericText(handoff.FinalFreightAmount)
 		in.PortOfLoading, in.PortOfDischarge = handoff.PortOfLoading, handoff.PortOfDischarge
 		if in.ETD == "" && handoff.EstimatedDeparture.Valid {
 			in.ETD = handoff.EstimatedDeparture.Time.Format("2006-01-02")
@@ -239,8 +258,21 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 			if lockErr != nil {
 				return lockErr
 			}
-			if handoff.Status != "PENDING" || handoff.CustomerManaged {
-				return apierr.Conflict("SHIPPING_HANDOFF_NOT_PENDING", "该合同货运批次已处理或由客户自理")
+			if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
+				return apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
+			}
+			// D6 当前采用一份合同一次运输。事务级顾问锁把并发点击串行化，
+			// 随后的存在性检查确保同一合同只能有一条未取消的正式船期。
+			if _, lockErr = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, fmt.Sprintf("shipping-contract:%d:%d", tenantID, handoff.ContractID)); lockErr != nil {
+				return lockErr
+			}
+			var existingNo string
+			lockErr = tx.QueryRow(ctx, `SELECT schedule_no FROM shipping_schedules WHERE tenant_id=$1 AND contract_id=$2 AND status<>'CANCELLED' LIMIT 1`, tenantID, handoff.ContractID).Scan(&existingNo)
+			if lockErr == nil {
+				return apierr.Conflict("SHIPPING_CONTRACT_ALREADY_SCHEDULED", "该合同已建立正式船期："+existingNo)
+			}
+			if !errors.Is(lockErr, pgx.ErrNoRows) {
+				return lockErr
 			}
 		}
 		out, err = q.CreateSchedule(ctx, p)
@@ -349,6 +381,17 @@ func dateText(d pgtype.Date) string {
 	return d.Time.Format("2006-01-02")
 }
 
+func numericText(value pgtype.Numeric) string {
+	if !value.Valid {
+		return ""
+	}
+	plain, err := value.Value()
+	if err != nil || plain == nil {
+		return ""
+	}
+	return fmt.Sprint(plain)
+}
+
 func addChange(ctx context.Context, q *store.Queries, tenantID, id int64, kind, field, oldValue, newValue, reason string, op Operator) error {
 	if oldValue == newValue {
 		return nil
@@ -376,6 +419,10 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		return store.ShippingSchedule{}, err
 	}
 	if err = s.rejectDuplicate(ctx, s.q, tenantID, id, p, confirmed); err != nil {
+		return store.ShippingSchedule{}, err
+	}
+	alertPlans, err := s.scheduleChangeAlertPlans(ctx, tenantID, current, p)
+	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
 	var out store.ShippingSchedule
@@ -409,9 +456,25 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			LoadingPortID: p.LoadingPortID, LoadingPortCode: p.LoadingPortCode,
 			LoadingPortTimezone: p.LoadingPortTimezone, DischargePortID: p.DischargePortID,
 			DischargePortCode: p.DischargePortCode, DischargePortTimezone: p.DischargePortTimezone,
+			BookingNo: p.BookingNo, BillOfLadingNo: p.BillOfLadingNo,
+			WarehouseEntryDate: p.WarehouseEntryDate, CustomsDeclarationDate: p.CustomsDeclarationDate,
+			FreightCurrency: p.FreightCurrency, FreightAmount: p.FreightAmount,
 		})
 		if err != nil {
 			return err
+		}
+		if current.Status == "PLANNED" && current.BookingNo != p.BookingNo {
+			progress := "待订舱"
+			if p.BookingNo != "" {
+				progress = "待开船"
+			}
+			out, err = q.UpdateScheduleProgress(ctx, store.UpdateScheduleProgressParams{
+				TenantID: tenantID, ID: id, CurrentRouteNodeID: current.CurrentRouteNodeID,
+				CurrentProgress: progress, UpdatedBy: op.ID, UpdatedByName: op.Name,
+			})
+			if err != nil {
+				return err
+			}
 		}
 		if dateText(current.Eta) != dateText(p.Eta) {
 			out, err = q.UpdateScheduleETA(ctx, store.UpdateScheduleETAParams{
@@ -449,7 +512,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
 				return err
 			}
-			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, destinationID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
+			if err = createConfiguredTransportReminders(ctx, q, out); err != nil {
 				return err
 			}
 		}
@@ -471,7 +534,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
 				return err
 			}
-			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, destinationID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
+			if err = createConfiguredTransportReminders(ctx, q, out); err != nil {
 				return err
 			}
 		}
@@ -484,7 +547,22 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		if err = addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "vessel_name", current.VesselName, p.VesselName, "基础信息修改", op); err != nil {
 			return err
 		}
-		return addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "voyage_no", current.VoyageNo, p.VoyageNo, "基础信息修改", op)
+		if err = addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "voyage_no", current.VoyageNo, p.VoyageNo, "基础信息修改", op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "DOCUMENT", "booking_no", current.BookingNo, p.BookingNo, "运输资料修改", op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "DOCUMENT", "bill_of_lading_no", current.BillOfLadingNo, p.BillOfLadingNo, "运输资料修改", op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "DATE", "warehouse_entry_date", dateText(current.WarehouseEntryDate), p.WarehouseEntryDate, "运输资料修改", op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "DATE", "customs_declaration_date", dateText(current.CustomsDeclarationDate), p.CustomsDeclarationDate, "运输资料修改", op); err != nil {
+			return err
+		}
+		return createOperationalAlerts(ctx, q, tenantID, id, alertPlans)
 	})
 	if err == nil {
 		s.wakeReminderWorker()

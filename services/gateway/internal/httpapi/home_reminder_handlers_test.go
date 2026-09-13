@@ -50,6 +50,10 @@ func (homeShippingStub) ListBlReminders(context.Context, *shippingv1.ListBlRemin
 	return &shippingv1.ListBlRemindersResponse{}, nil
 }
 
+func (homeShippingStub) ListOperationalAlerts(context.Context, *shippingv1.ListOperationalAlertsRequest, ...grpc.CallOption) (*shippingv1.ListOperationalAlertsResponse, error) {
+	return &shippingv1.ListOperationalAlertsResponse{UnreadCount: 1, Items: []*shippingv1.OperationalAlert{{Id: 31, ScheduleNo: "S-D6-001", Title: "ETD 延后，请联系工厂", DueDate: time.Now().UTC().AddDate(0, 0, 2).Format("2006-01-02")}}}, nil
+}
+
 // 首页汇总必须只读取当前员工有来源权限的数据，并返回统一的到期和未读统计。
 func TestListHomeRemindersUsesSourcePermissionsAndSummary(t *testing.T) {
 	s := &Server{
@@ -66,7 +70,7 @@ func TestListHomeRemindersUsesSourcePermissionsAndSummary(t *testing.T) {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{`"total":2`, `"upcoming":1`, `"overdue":1`, `"unread":2`, `CT-OVERDUE`, `/receivable-due?keyword=CT-OVERDUE`} {
+	for _, want := range []string{`"total":3`, `"upcoming":2`, `"overdue":1`, `"unread":3`, `CT-OVERDUE`, `/receivable-due?keyword=CT-OVERDUE`, `SHIPPING_ACTION`, `S-D6-001`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("response missing %q: %s", want, body)
 		}

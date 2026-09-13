@@ -186,6 +186,22 @@ func TestCreateSourcingCaseOptionalContactAndMasterdataSnapshots(t *testing.T) {
 // 主数据里的业务类型是唯一的角色事实，一家钢厂不能被选成船公司。
 func TestScheduleCarrierRole(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/shipping/schedules", nil)
+	t.Run("已委托合同使用委托快照", func(t *testing.T) {
+		s := &Server{}
+		in := &shippingv1.ScheduleInput{
+			ContractHandoffId: 3,
+			CustomerId:        6001,
+			CustomerName:      "合同客户快照",
+			CarrierId:         8,
+			CarrierForwarder:  "合同承运方快照",
+		}
+		if err := s.resolveShippingMasterdata(req, in, false); err != nil {
+			t.Fatalf("contract handoff snapshot should not depend on current customer or supplier master data: %v", err)
+		}
+		if in.GetCustomerName() != "合同客户快照" || in.GetCarrierForwarder() != "合同承运方快照" {
+			t.Fatal("gateway must leave handoff snapshots for the shipping service to authoritatively replace")
+		}
+	})
 	t.Run("钢厂被拒", func(t *testing.T) {
 		s := &Server{Suppliers: activeSupplierClientStub{status: "ACTIVE", businessTypes: []string{"MATERIAL"}}}
 		in := &shippingv1.ScheduleInput{CarrierId: 8}

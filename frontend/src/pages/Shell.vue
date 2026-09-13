@@ -1,9 +1,19 @@
 <template>
   <el-container class="shell">
-    <el-aside width="220px" class="side" :class="{ 'side-open': navigationOpen }">
+    <el-aside :width="sidebarCollapsed ? '72px' : '220px'" class="side" :class="{ 'side-open': navigationOpen, 'side-collapsed': sidebarCollapsed }">
       <div class="side-brand">
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>
+        <button
+          type="button"
+          class="side-collapse-toggle"
+          :title="sidebarCollapsed ? '展开导航' : '收起导航'"
+          :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'"
+          :aria-expanded="!sidebarCollapsed"
+          @click="toggleSidebar"
+        >
+          {{ sidebarCollapsed ? '›' : '‹' }}
+        </button>
       </div>
       <!-- 菜单按一笔生意的走向排，而不是按模块字母序：待办与邮箱是每天的入口，
            中间四组是一张单子的行程（签合同 → 采购 → 进出库 → 出运），财务收尾，
@@ -14,11 +24,11 @@
              an empty list (and, with no roles at all, a hint to ask the
              administrator) — hiding the page would leave them nowhere. -->
         <el-menu-item index="/todos" :style="moduleStyle('todos')" draggable="true" @dragstart="startModuleDrag('todos', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('todos')" @dragend="finishNavigationDrag">
-          {{ t('menu.todos') }}
+          <span class="module-short" aria-hidden="true"><el-icon><List /></el-icon></span><span class="module-label">{{ t('menu.todos') }}</span>
         </el-menu-item>
         <!-- 邮箱是每位在职 ERP 用户的个人工作入口，访问范围仍由服务端固定为本人。 -->
         <el-menu-item index="/emails" :style="moduleStyle('emails')" draggable="true" @dragstart="startModuleDrag('emails', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('emails')" @dragend="finishNavigationDrag">
-          {{ t('menu.emails') }}
+          <span class="module-short" aria-hidden="true"><el-icon><Message /></el-icon></span><span class="module-label">{{ t('menu.emails') }}</span>
         </el-menu-item>
         <!-- 一张订单的走向：签合同 → 采购 → 出货 → 收钱。四个分组按这个
              顺序排，相邻的就是流程上相邻的。 -->
@@ -45,7 +55,7 @@
               @dragend="finishNavigationDrag"
               @click="salesOpen = !salesOpen"
             >
-              <span>{{ t('menu.sales') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><Sell /></el-icon></span><span class="module-label">{{ t('menu.sales') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -91,7 +101,7 @@
               @dragend="finishNavigationDrag"
               @click="procurementOpen = !procurementOpen"
             >
-              <span>{{ t('menu.procurement') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><ShoppingCart /></el-icon></span><span class="module-label">{{ t('menu.procurement') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -115,7 +125,7 @@
           </nav>
         </el-popover>
         <el-menu-item v-if="auth.can('quality:task:read')" index="/quality/tasks" :style="moduleStyle('quality')" draggable="true" @dragstart="startModuleDrag('quality', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('quality')" @dragend="finishNavigationDrag">
-          {{ t('menu.quality') }}
+          <span class="module-short" aria-hidden="true"><el-icon><CircleCheck /></el-icon></span><span class="module-label">{{ t('menu.quality') }}</span>
         </el-menu-item>
         <el-popover
           v-if="hasWarehouse"
@@ -140,7 +150,7 @@
               @dragend="finishNavigationDrag"
               @click="warehouseOpen = !warehouseOpen"
             >
-              <span>{{ t('menu.stockAndGoods') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><Box /></el-icon></span><span class="module-label">{{ t('menu.stockAndGoods') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -187,7 +197,7 @@
               @dragend="finishNavigationDrag"
               @click="logisticsOpen = !logisticsOpen"
             >
-              <span>{{ t('menu.logistics') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><Van /></el-icon></span><span class="module-label">{{ t('menu.logistics') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -233,7 +243,7 @@
               @dragend="finishNavigationDrag"
               @click="financeOpen = !financeOpen"
             >
-              <span>{{ t('menu.finance') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><Money /></el-icon></span><span class="module-label">{{ t('menu.finance') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -279,7 +289,7 @@
               @dragend="finishNavigationDrag"
               @click="basicDataOpen = !basicDataOpen"
             >
-              <span>{{ t('menu.basicData') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><DataBoard /></el-icon></span><span class="module-label">{{ t('menu.basicData') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -329,7 +339,7 @@
               @dragend="finishNavigationDrag"
               @click="systemOpen = !systemOpen"
             >
-              <span>{{ t('menu.system') }}</span>
+              <span class="module-short" aria-hidden="true"><el-icon><Setting /></el-icon></span><span class="module-label">{{ t('menu.system') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
@@ -354,7 +364,7 @@
         </el-popover>
       </el-menu>
       <div class="side-footer">
-        <LangSwitcher light sidebar />
+        <LangSwitcher light sidebar :collapsed="sidebarCollapsed" />
         <el-popover
           v-model:visible="accountOpen"
           placement="right-end"
@@ -373,7 +383,6 @@
               <strong>{{ auth.employeeName || '—' }}</strong>
               <small>{{ auth.employeeEmail || '—' }}</small>
             </span>
-            <span class="account-card-more" aria-hidden="true">•••</span>
           </button>
           </template>
           <nav class="module-flyout account-flyout" :aria-label="t('profile.accountTitle')">
@@ -448,6 +457,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Box, CircleCheck, DataBoard, List, Message, Money, Sell, Setting, ShoppingCart, Van } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { get, post, quietErrors } from '../api'
@@ -479,6 +489,8 @@ const childDefaults: Record<string,string[]> = {
 }
 const navigationStorageKey = `erp.navigation-order.${auth.employeeId || auth.employeeEmail || 'anonymous'}`
 const navigationPreferences = ref(readNavigationPreferences(navigationStorageKey,moduleDefaults,childDefaults))
+const sidebarStorageKey = `erp.sidebar-collapsed.${auth.employeeId || auth.employeeEmail || 'anonymous'}`
+const sidebarCollapsed = ref(localStorage.getItem(sidebarStorageKey) === 'true')
 const navigationOpen = ref(false)
 watch(() => route.path, () => { navigationOpen.value = false })
 const router = useRouter()
@@ -496,6 +508,18 @@ const warehouseOpen = ref(false)
 const salesOpen = ref(false)
 const logisticsOpen = ref(false)
 const systemOpen = ref(false)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem(sidebarStorageKey, String(sidebarCollapsed.value))
+  salesOpen.value = false
+  procurementOpen.value = false
+  warehouseOpen.value = false
+  logisticsOpen.value = false
+  financeOpen.value = false
+  basicDataOpen.value = false
+  systemOpen.value = false
+}
 const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
@@ -900,6 +924,7 @@ async function changePassword() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: width .22s ease;
 }
 .pane-col {
   /* min-height:0 is what lets a flex child shrink below its content and
@@ -927,10 +952,13 @@ async function changePassword() {
   scrollbar-gutter: stable;
 }
 .side-brand {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 18px 20px;
+  gap: 8px;
+  padding: 18px 38px 18px 14px;
+  min-height: 64px;
+  box-sizing: border-box;
 }
 .side-brand .mark {
   border: 1.5px solid #38bdf8;
@@ -942,8 +970,44 @@ async function changePassword() {
   letter-spacing: 1px;
 }
 .side-brand .txt {
-  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.side-collapse-toggle {
+  position: absolute;
+  top: 17px;
+  right: 7px;
+  width: 26px;
+  height: 30px;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  color: #94a3b8;
+  background: #172033;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.side-collapse-toggle:hover,
+.side-collapse-toggle:focus-visible { outline: none; color: #e2e8f0; border-color: #4b607d; background: #24344d; }
+.module-short {
+  display: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  background: #1b2940;
+  font-size: 14px;
+  font-weight: 650;
+  flex: 0 0 auto;
+}
+.module-short :deep(.el-icon) { font-size: 19px; }
 .side-menu {
   flex: 1;
   min-height: 0;
@@ -975,7 +1039,7 @@ async function changePassword() {
   border: 0;
   border-radius: 7px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   color: #e2e8f0;
@@ -996,7 +1060,6 @@ async function changePassword() {
 .account-card-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-card-copy strong { color: #f1f5f9; font-size: 13px; font-weight: 650; }
 .account-card-copy small { color: #7f8da3; font-size: 10px; }
-.account-card-more { color: #718198; font-size: 13px; letter-spacing: 1px; }
 .account-flyout .module-flyout-item { cursor: pointer; }
 .account-flyout .module-flyout-item:active { cursor: pointer; }
 .module-menu-trigger {
@@ -1038,6 +1101,22 @@ async function changePassword() {
 .module-menu-trigger:hover .module-menu-arrow,
 .module-menu-trigger:focus-visible .module-menu-arrow {
   transform: translateX(3px);
+}
+@media (min-width: 1001px) {
+  .side.side-collapsed .side-brand { padding: 13px 8px; justify-content: center; flex-direction: column; gap: 5px; }
+  .side.side-collapsed .side-brand .mark { padding: 2px 5px; font-size: 11px; }
+  .side.side-collapsed .side-brand .txt { display: none; }
+  .side.side-collapsed .side-collapse-toggle { position: static; width: 34px; height: 24px; margin-left: 0; font-size: 18px; }
+  .side.side-collapsed :deep(.el-menu-item),
+  .side.side-collapsed .module-menu-trigger { width: 56px; height: 52px; margin: 2px 8px; padding: 0; justify-content: center; border-radius: 9px; }
+  .side.side-collapsed :deep(.el-menu-item) { min-width: 56px; }
+  .side.side-collapsed .module-short { display: inline-flex; }
+  .side.side-collapsed .module-label,
+  .side.side-collapsed .module-menu-arrow { display: none; }
+  .side.side-collapsed .side-footer { padding: 10px 8px; align-items: center; }
+  .side.side-collapsed .account-card { width: 56px; min-height: 56px; padding: 6px; display: flex; justify-content: center; }
+  .side.side-collapsed .account-card-copy { display: none; }
+  .side.side-collapsed .account-card-avatar { width: 40px !important; height: 40px !important; }
 }
 :global(.module-flyout-popper.el-popper) {
   padding: 8px;

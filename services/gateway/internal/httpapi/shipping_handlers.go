@@ -43,14 +43,18 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 	if in == nil {
 		return nil
 	}
-	if in.GetCustomerId() > 0 {
+	// 从已委托合同建立船期时，客户和承运方由 shipping 服务在事务内读取
+	// 委托记录并覆盖请求值。历史合同保存的是业务快照，即使对应主数据后来
+	// 停用或迁移，也不能阻断履约；这里仅校验本次重新选择的港口。
+	fromHandoff := in.GetContractHandoffId() > 0
+	if !fromHandoff && in.GetCustomerId() > 0 {
 		customer, err := s.resolveActiveCustomer(r.Context(), in.GetCustomerId())
 		if err != nil {
 			return err
 		}
 		in.CustomerName = customer.GetName()
 	}
-	if in.GetCarrierId() > 0 {
+	if !fromHandoff && in.GetCarrierId() > 0 {
 		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())
 		if err != nil {
 			return err
@@ -551,6 +555,82 @@ func (s *Server) updateShippingArrivalReminderRules(w http.ResponseWriter, r *ht
 	}
 	req.ScheduleId = idFromPath(r)
 	resp, err := s.Shipping.UpdateArrivalReminderRules(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getShippingReminderPreference(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetUserReminderPreference(r.Context(), &shippingv1.GetUserReminderPreferenceRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateShippingReminderPreference(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.UpdateUserReminderPreferenceRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Shipping.UpdateUserReminderPreference(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) syncShippingHolidayCalendars(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.SyncUserHolidayCalendars(r.Context(), &shippingv1.SyncUserHolidayCalendarsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listShippingOperationalAlerts(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListOperationalAlerts(r.Context(), &shippingv1.ListOperationalAlertsRequest{OpenOnly: r.URL.Query().Get("open_only") != "false"})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listScheduleOperationalAlerts(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListScheduleOperationalAlerts(r.Context(), &shippingv1.ListScheduleOperationalAlertsRequest{ScheduleId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markShippingOperationalAlertsRead(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.MarkOperationalAlertsReadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Shipping.MarkOperationalAlertsRead(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) resolveShippingOperationalAlert(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.ResolveOperationalAlertRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "alertID"), 10, 64)
+	resp, err := s.Shipping.ResolveOperationalAlert(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

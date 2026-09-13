@@ -57,15 +57,22 @@ func TestArrivalReminderLifecycle(t *testing.T) {
 		t.Fatalf("读取提醒规则=%v err=%v", days, err)
 	}
 
-	if sent, err := svc.ProcessDueArrivalReminders(ctx, 10); err != nil || sent != 1 {
+	if sent, err := svc.ProcessDueArrivalReminders(ctx, 10); err != nil || sent != 2 {
 		t.Fatalf("first sweep sent=%d err=%v", sent, err)
 	}
 	if sent, err := svc.ProcessDueArrivalReminders(ctx, 10); err != nil || sent != 0 {
 		t.Fatalf("idempotent sweep sent=%d err=%v", sent, err)
 	}
 	page, err := svc.ListArrivalNotifications(ctx, tenantID, 303, false)
-	if err != nil || len(page.Reminders) != 1 || page.UnreadCount != 1 || notifier.calls != 1 {
+	if err != nil || len(page.Reminders) != 2 || page.UnreadCount != 2 || notifier.calls != 2 {
 		t.Fatalf("page=%+v calls=%d err=%v", page, notifier.calls, err)
+	}
+	types := map[string]bool{}
+	for _, reminder := range page.Reminders {
+		types[reminder.ReminderType] = true
+	}
+	if !types["ARRIVAL_14D"] || !types["DEPARTURE_0D"] {
+		t.Fatalf("expected arrival and departure reminders, got %+v", types)
 	}
 	if page.Reminders[0].DetailUrl != "/shipping/"+fmt.Sprint(created.ID) {
 		t.Fatalf("detail url=%q", page.Reminders[0].DetailUrl)
@@ -76,8 +83,10 @@ func TestArrivalReminderLifecycle(t *testing.T) {
 	if _, err = svc.MarkArrivalReminderRead(ctx, tenantID, 999, page.Reminders[0].ID); errorCode(err) != "SHIPPING_REMINDER_NOT_FOUND" {
 		t.Fatalf("cross employee mark code=%q err=%v", errorCode(err), err)
 	}
-	if _, err = svc.MarkArrivalReminderRead(ctx, tenantID, 303, page.Reminders[0].ID); err != nil {
-		t.Fatal(err)
+	for _, reminder := range page.Reminders {
+		if _, err = svc.MarkArrivalReminderRead(ctx, tenantID, 303, reminder.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	page, err = svc.ListArrivalNotifications(ctx, tenantID, 303, true)
 	if err != nil || len(page.Reminders) != 0 || page.UnreadCount != 0 {
@@ -92,7 +101,7 @@ func TestArrivalReminderLifecycle(t *testing.T) {
 		t.Fatalf("revised ETA sent=%d err=%v", sent, err)
 	}
 	page, err = svc.ListArrivalNotifications(ctx, tenantID, 303, false)
-	if err != nil || len(page.Reminders) != 2 || page.UnreadCount != 1 {
+	if err != nil || len(page.Reminders) != 3 || page.UnreadCount != 1 {
 		t.Fatalf("revised page=%+v err=%v", page, err)
 	}
 

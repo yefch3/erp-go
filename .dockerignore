@@ -4,7 +4,10 @@ docs/
 .github/
 .vscode/
 .cache/
+**/.cache/
 .d5-environment/
+.d6-environment/
+.d6-vite*.log
 frontend/node_modules/
 frontend/dist/
 **/*_test.go

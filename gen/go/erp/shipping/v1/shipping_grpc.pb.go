@@ -43,6 +43,13 @@ const (
 	ShippingService_CleanupExpiredArrivalReminders_FullMethodName        = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
 	ShippingService_GetArrivalReminderRules_FullMethodName               = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
 	ShippingService_UpdateArrivalReminderRules_FullMethodName            = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
+	ShippingService_GetUserReminderPreference_FullMethodName             = "/erp.shipping.v1.ShippingService/GetUserReminderPreference"
+	ShippingService_UpdateUserReminderPreference_FullMethodName          = "/erp.shipping.v1.ShippingService/UpdateUserReminderPreference"
+	ShippingService_SyncUserHolidayCalendars_FullMethodName              = "/erp.shipping.v1.ShippingService/SyncUserHolidayCalendars"
+	ShippingService_ListOperationalAlerts_FullMethodName                 = "/erp.shipping.v1.ShippingService/ListOperationalAlerts"
+	ShippingService_ListScheduleOperationalAlerts_FullMethodName         = "/erp.shipping.v1.ShippingService/ListScheduleOperationalAlerts"
+	ShippingService_MarkOperationalAlertsRead_FullMethodName             = "/erp.shipping.v1.ShippingService/MarkOperationalAlertsRead"
+	ShippingService_ResolveOperationalAlert_FullMethodName               = "/erp.shipping.v1.ShippingService/ResolveOperationalAlert"
 	ShippingService_ContractShippingSnapshot_FullMethodName              = "/erp.shipping.v1.ShippingService/ContractShippingSnapshot"
 	ShippingService_ListContractShippingHandoffs_FullMethodName          = "/erp.shipping.v1.ShippingService/ListContractShippingHandoffs"
 	ShippingService_GetContractShippingHandoff_FullMethodName            = "/erp.shipping.v1.ShippingService/GetContractShippingHandoff"
@@ -89,6 +96,13 @@ type ShippingServiceClient interface {
 	CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(ctx context.Context, in *GetArrivalReminderRulesRequest, opts ...grpc.CallOption) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(ctx context.Context, in *UpdateArrivalReminderRulesRequest, opts ...grpc.CallOption) (*UpdateArrivalReminderRulesResponse, error)
+	GetUserReminderPreference(ctx context.Context, in *GetUserReminderPreferenceRequest, opts ...grpc.CallOption) (*GetUserReminderPreferenceResponse, error)
+	UpdateUserReminderPreference(ctx context.Context, in *UpdateUserReminderPreferenceRequest, opts ...grpc.CallOption) (*UpdateUserReminderPreferenceResponse, error)
+	SyncUserHolidayCalendars(ctx context.Context, in *SyncUserHolidayCalendarsRequest, opts ...grpc.CallOption) (*SyncUserHolidayCalendarsResponse, error)
+	ListOperationalAlerts(ctx context.Context, in *ListOperationalAlertsRequest, opts ...grpc.CallOption) (*ListOperationalAlertsResponse, error)
+	ListScheduleOperationalAlerts(ctx context.Context, in *ListScheduleOperationalAlertsRequest, opts ...grpc.CallOption) (*ListScheduleOperationalAlertsResponse, error)
+	MarkOperationalAlertsRead(ctx context.Context, in *MarkOperationalAlertsReadRequest, opts ...grpc.CallOption) (*MarkOperationalAlertsReadResponse, error)
+	ResolveOperationalAlert(ctx context.Context, in *ResolveOperationalAlertRequest, opts ...grpc.CallOption) (*ResolveOperationalAlertResponse, error)
 	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
 	ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(ctx context.Context, in *ListContractShippingHandoffsRequest, opts ...grpc.CallOption) (*ListContractShippingHandoffsResponse, error)
@@ -352,6 +366,76 @@ func (c *shippingServiceClient) UpdateArrivalReminderRules(ctx context.Context, 
 	return out, nil
 }
 
+func (c *shippingServiceClient) GetUserReminderPreference(ctx context.Context, in *GetUserReminderPreferenceRequest, opts ...grpc.CallOption) (*GetUserReminderPreferenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUserReminderPreferenceResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetUserReminderPreference_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) UpdateUserReminderPreference(ctx context.Context, in *UpdateUserReminderPreferenceRequest, opts ...grpc.CallOption) (*UpdateUserReminderPreferenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateUserReminderPreferenceResponse)
+	err := c.cc.Invoke(ctx, ShippingService_UpdateUserReminderPreference_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) SyncUserHolidayCalendars(ctx context.Context, in *SyncUserHolidayCalendarsRequest, opts ...grpc.CallOption) (*SyncUserHolidayCalendarsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncUserHolidayCalendarsResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SyncUserHolidayCalendars_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) ListOperationalAlerts(ctx context.Context, in *ListOperationalAlertsRequest, opts ...grpc.CallOption) (*ListOperationalAlertsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOperationalAlertsResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ListOperationalAlerts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) ListScheduleOperationalAlerts(ctx context.Context, in *ListScheduleOperationalAlertsRequest, opts ...grpc.CallOption) (*ListScheduleOperationalAlertsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListScheduleOperationalAlertsResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ListScheduleOperationalAlerts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) MarkOperationalAlertsRead(ctx context.Context, in *MarkOperationalAlertsReadRequest, opts ...grpc.CallOption) (*MarkOperationalAlertsReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkOperationalAlertsReadResponse)
+	err := c.cc.Invoke(ctx, ShippingService_MarkOperationalAlertsRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) ResolveOperationalAlert(ctx context.Context, in *ResolveOperationalAlertRequest, opts ...grpc.CallOption) (*ResolveOperationalAlertResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveOperationalAlertResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ResolveOperationalAlert_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *shippingServiceClient) ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ContractShippingSnapshotResponse)
@@ -504,6 +588,13 @@ type ShippingServiceServer interface {
 	CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(context.Context, *GetArrivalReminderRulesRequest) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error)
+	GetUserReminderPreference(context.Context, *GetUserReminderPreferenceRequest) (*GetUserReminderPreferenceResponse, error)
+	UpdateUserReminderPreference(context.Context, *UpdateUserReminderPreferenceRequest) (*UpdateUserReminderPreferenceResponse, error)
+	SyncUserHolidayCalendars(context.Context, *SyncUserHolidayCalendarsRequest) (*SyncUserHolidayCalendarsResponse, error)
+	ListOperationalAlerts(context.Context, *ListOperationalAlertsRequest) (*ListOperationalAlertsResponse, error)
+	ListScheduleOperationalAlerts(context.Context, *ListScheduleOperationalAlertsRequest) (*ListScheduleOperationalAlertsResponse, error)
+	MarkOperationalAlertsRead(context.Context, *MarkOperationalAlertsReadRequest) (*MarkOperationalAlertsReadResponse, error)
+	ResolveOperationalAlert(context.Context, *ResolveOperationalAlertRequest) (*ResolveOperationalAlertResponse, error)
 	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
 	ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error)
 	ListContractShippingHandoffs(context.Context, *ListContractShippingHandoffsRequest) (*ListContractShippingHandoffsResponse, error)
@@ -598,6 +689,27 @@ func (UnimplementedShippingServiceServer) GetArrivalReminderRules(context.Contex
 }
 func (UnimplementedShippingServiceServer) UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateArrivalReminderRules not implemented")
+}
+func (UnimplementedShippingServiceServer) GetUserReminderPreference(context.Context, *GetUserReminderPreferenceRequest) (*GetUserReminderPreferenceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUserReminderPreference not implemented")
+}
+func (UnimplementedShippingServiceServer) UpdateUserReminderPreference(context.Context, *UpdateUserReminderPreferenceRequest) (*UpdateUserReminderPreferenceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateUserReminderPreference not implemented")
+}
+func (UnimplementedShippingServiceServer) SyncUserHolidayCalendars(context.Context, *SyncUserHolidayCalendarsRequest) (*SyncUserHolidayCalendarsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncUserHolidayCalendars not implemented")
+}
+func (UnimplementedShippingServiceServer) ListOperationalAlerts(context.Context, *ListOperationalAlertsRequest) (*ListOperationalAlertsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOperationalAlerts not implemented")
+}
+func (UnimplementedShippingServiceServer) ListScheduleOperationalAlerts(context.Context, *ListScheduleOperationalAlertsRequest) (*ListScheduleOperationalAlertsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListScheduleOperationalAlerts not implemented")
+}
+func (UnimplementedShippingServiceServer) MarkOperationalAlertsRead(context.Context, *MarkOperationalAlertsReadRequest) (*MarkOperationalAlertsReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkOperationalAlertsRead not implemented")
+}
+func (UnimplementedShippingServiceServer) ResolveOperationalAlert(context.Context, *ResolveOperationalAlertRequest) (*ResolveOperationalAlertResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveOperationalAlert not implemented")
 }
 func (UnimplementedShippingServiceServer) ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ContractShippingSnapshot not implemented")
@@ -1088,6 +1200,132 @@ func _ShippingService_UpdateArrivalReminderRules_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_GetUserReminderPreference_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserReminderPreferenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetUserReminderPreference(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetUserReminderPreference_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetUserReminderPreference(ctx, req.(*GetUserReminderPreferenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_UpdateUserReminderPreference_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateUserReminderPreferenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).UpdateUserReminderPreference(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_UpdateUserReminderPreference_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).UpdateUserReminderPreference(ctx, req.(*UpdateUserReminderPreferenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_SyncUserHolidayCalendars_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncUserHolidayCalendarsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SyncUserHolidayCalendars(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SyncUserHolidayCalendars_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SyncUserHolidayCalendars(ctx, req.(*SyncUserHolidayCalendarsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_ListOperationalAlerts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOperationalAlertsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ListOperationalAlerts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ListOperationalAlerts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ListOperationalAlerts(ctx, req.(*ListOperationalAlertsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_ListScheduleOperationalAlerts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScheduleOperationalAlertsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ListScheduleOperationalAlerts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ListScheduleOperationalAlerts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ListScheduleOperationalAlerts(ctx, req.(*ListScheduleOperationalAlertsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_MarkOperationalAlertsRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkOperationalAlertsReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).MarkOperationalAlertsRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_MarkOperationalAlertsRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).MarkOperationalAlertsRead(ctx, req.(*MarkOperationalAlertsReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_ResolveOperationalAlert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveOperationalAlertRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ResolveOperationalAlert(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ResolveOperationalAlert_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ResolveOperationalAlert(ctx, req.(*ResolveOperationalAlertRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ShippingService_ContractShippingSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ContractShippingSnapshotRequest)
 	if err := dec(in); err != nil {
@@ -1406,6 +1644,34 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateArrivalReminderRules",
 			Handler:    _ShippingService_UpdateArrivalReminderRules_Handler,
+		},
+		{
+			MethodName: "GetUserReminderPreference",
+			Handler:    _ShippingService_GetUserReminderPreference_Handler,
+		},
+		{
+			MethodName: "UpdateUserReminderPreference",
+			Handler:    _ShippingService_UpdateUserReminderPreference_Handler,
+		},
+		{
+			MethodName: "SyncUserHolidayCalendars",
+			Handler:    _ShippingService_SyncUserHolidayCalendars_Handler,
+		},
+		{
+			MethodName: "ListOperationalAlerts",
+			Handler:    _ShippingService_ListOperationalAlerts_Handler,
+		},
+		{
+			MethodName: "ListScheduleOperationalAlerts",
+			Handler:    _ShippingService_ListScheduleOperationalAlerts_Handler,
+		},
+		{
+			MethodName: "MarkOperationalAlertsRead",
+			Handler:    _ShippingService_MarkOperationalAlertsRead_Handler,
+		},
+		{
+			MethodName: "ResolveOperationalAlert",
+			Handler:    _ShippingService_ResolveOperationalAlert_Handler,
 		},
 		{
 			MethodName: "ContractShippingSnapshot",
