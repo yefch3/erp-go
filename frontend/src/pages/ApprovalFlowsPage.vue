@@ -68,7 +68,7 @@
             <el-table-column :label="t('flows.approverType')" width="130">
               <template #default="{ row }">
                 <el-select v-model="row.approverType" :disabled="!canWrite" style="width: 100%"
-                           @change="() => (row.approverRef = row.approverType === 'MANAGER' ? '1' : '')">
+                           @change="() => (row.approverRef = row.approverType === 'MANAGER' ? '1' : '0')">
                   <el-option v-for="k in APPROVER_TYPES" :key="k" :value="k" :label="t(`flows.types.${k}`)" />
                 </el-select>
               </template>
@@ -83,6 +83,7 @@
                            :disabled="!canWrite" filterable style="width: 100%">
                   <el-option v-for="e in employees" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
                 </el-select>
+                <span v-else-if="row.approverType === 'DEPARTMENT_LEADER' || row.approverType === 'FINANCE_MANAGER'" class="hint">{{ t(`flows.types.${row.approverType}`) }}</span>
                 <el-select v-else v-model="row.approverRef" :disabled="!canWrite" style="width: 100%">
                   <el-option v-for="l in [1, 2, 3, 4]" :key="l" :value="String(l)"
                              :label="t('flows.levelsUp', { n: l })" />
@@ -192,8 +193,8 @@ interface Role { id: string; name: string }
 interface Employee { id: string; code: string; name: string }
 
 // Document types that have a flow. Extend as services gain approvals.
-const BIZ_TYPES = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE']
-const APPROVER_TYPES = ['MANAGER', 'ROLE', 'EMPLOYEE']
+const BIZ_TYPES = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'TRAVEL_REIMBURSEMENT']
+const APPROVER_TYPES = ['MANAGER', 'ROLE', 'EMPLOYEE', 'DEPARTMENT_LEADER', 'FINANCE_MANAGER']
 const APPROVE_MODES = ['ANY', 'ALL']
 
 const { t } = useI18n()

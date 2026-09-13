@@ -49,5 +49,8 @@ export function approvalSourceLink(ref: ApprovalBusinessRef): ApprovalSourceLink
   if (ref.bizType === 'SHIPPING_REQUOTE') {
     return { path: '/shipping/orders', query: { handoff: ref.bizId } }
   }
+  if (ref.bizType === 'TRAVEL_REIMBURSEMENT') {
+	return { path: '/supplier-recon', query: { section: 'travel', claim: ref.bizId } }
+  }
   return null
 }

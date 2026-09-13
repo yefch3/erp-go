@@ -41,3 +41,11 @@ type FxRate struct {
 	Note          string
 	FetchedAt     pgtype.Timestamptz
 }
+
+type FxWatchCurrency struct {
+	TenantID  int64
+	Currency  string
+	SortOrder int32
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}

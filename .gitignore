@@ -53,3 +53,6 @@ coverage.out
 # D6 local isolated runtime and frontend logs
 .d6-environment/
 .d6-vite*.log
+
+# D7 local isolated runtime and frontend logs
+.d7-environment/

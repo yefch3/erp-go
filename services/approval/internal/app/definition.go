@@ -21,7 +21,7 @@ type NodeInput struct {
 	ApproveMode string
 }
 
-var approverTypes = map[string]bool{"ROLE": true, "EMPLOYEE": true, "MANAGER": true}
+var approverTypes = map[string]bool{"ROLE": true, "EMPLOYEE": true, "MANAGER": true, "DEPARTMENT_LEADER": true, "FINANCE_MANAGER": true}
 var approveModes = map[string]bool{"ANY": true, "ALL": true}
 
 func (s *Service) ListDefinitions(ctx context.Context, tenantID int64, bizType string) ([]store.ListDefinitionsRow, error) {
@@ -136,7 +136,7 @@ func validateNode(i int, n NodeInput) error {
 	// MANAGER counts levels and defaults to 1; the other two point at a row
 	// that has to exist, so zero is a configuration mistake worth catching
 	// here rather than at submit time.
-	if n.ApproverType != "MANAGER" && n.ApproverRef == 0 {
+	if n.ApproverType != "MANAGER" && n.ApproverType != "DEPARTMENT_LEADER" && n.ApproverType != "FINANCE_MANAGER" && n.ApproverRef == 0 {
 		return apierr.Invalid("AP_APPROVER_REF_REQUIRED", "请选择审批人").WithMeta("seq", pos)
 	}
 	return nil

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -41,21 +40,36 @@ func (s *Server) fxAnomalies(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-func (s *Server) fxEffective(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Fx.ListEffectiveRates(r.Context(), &fxv1.ListEffectiveRatesRequest{})
+func (s *Server) fxRefresh(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Fx.RefreshRates(r.Context(), &fxv1.RefreshRatesRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
 	s.writeProto(w, resp)
 }
-func (s *Server) fxConfirm(w http.ResponseWriter, r *http.Request) {
-	var req fxv1.ConfirmEffectiveRateRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		s.writeError(w, 400, "FX_INPUT", "汇率输入无效")
+func (s *Server) fxSyncStatus(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Fx.GetSyncStatus(r.Context(), &fxv1.GetSyncStatusRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
-	resp, err := s.Fx.ConfirmEffectiveRate(r.Context(), &req)
+	s.writeProto(w, resp)
+}
+func (s *Server) fxWatched(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Fx.ListWatchedCurrencies(r.Context(), &fxv1.ListWatchedCurrenciesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) fxUpdateWatched(w http.ResponseWriter, r *http.Request) {
+	var req fxv1.UpdateWatchedCurrenciesRequest
+	if !s.decodeBody(w, r, &req) {
+		return
+	}
+	resp, err := s.Fx.UpdateWatchedCurrencies(r.Context(), &req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

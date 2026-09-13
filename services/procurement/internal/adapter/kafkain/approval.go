@@ -20,6 +20,7 @@ type decision struct {
 	BizNo      string `json:"biz_no"`
 	Result     string `json:"result"`
 	Comment    string `json:"comment"`
+	ActedBy    int64  `json:"acted_by"`
 }
 
 // ApprovalDecisions turns "1234 was approved" into a purchase order that is
@@ -36,6 +37,10 @@ func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
 		}
 		if d.BizType == app.BizTypePurchaseOrderChange {
 			return svc.ApplyConfirmationApproval(ctx, e.TenantID, d.BizID, d.InstanceID, d.Result, app.EventClaim(claim))
+		}
+		if d.BizType == app.BizTypeTravelReimbursement {
+			_, err := svc.ApplyTravelApproval(ctx, e.TenantID, d.BizID, d.InstanceID, d.Result, d.Comment, d.ActedBy)
+			return err
 		}
 		if d.BizType != app.BizTypePurchaseOrder {
 			return nil // some other document type; not ours

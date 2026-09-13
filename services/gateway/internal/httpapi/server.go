@@ -677,6 +677,16 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files/presign", s.presignReconFile)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files", s.attachReconFile)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/files/{fileId}/remove", s.removeReconFile)
+		// 出差报销在“出账”内，但每位员工都可建立和查看自己的申请；服务层
+		// 仍按申请人隔离。财务的全量查看、付款和冲销另由 manage 权限控制。
+		r.Get("/api/travel-reimbursements", s.listTravelReimbursements)
+		r.Post("/api/travel-reimbursements", s.createTravelReimbursement)
+		r.Patch("/api/travel-reimbursements/{id}", s.updateTravelReimbursement)
+		r.Post("/api/travel-reimbursements/{id}/submit", s.submitTravelReimbursement)
+		r.Post("/api/travel-reimbursements/{id}/files/presign", s.presignTravelReimbursementFile)
+		r.Post("/api/travel-reimbursements/{id}/files", s.attachTravelReimbursementFile)
+		r.With(s.perm("procurement:reimbursement:manage")).Post("/api/travel-reimbursements/{id}/pay", s.markTravelReimbursementPaid)
+		r.With(s.perm("procurement:reimbursement:manage")).Post("/api/travel-reimbursements/{id}/payment/reverse", s.reverseTravelReimbursementPayment)
 
 		// ── 下面这三组地址整体下线了 ──────────────────────────
 		//
@@ -704,8 +714,6 @@ func (s *Server) Router() http.Handler {
 		// 手工登记一行流水。CSV 之外的另一条入口，RPC 早就有（收款对账那边
 		// 一直在用），只是网关从没给它开过 HTTP 路由——于是银行还没出对账单、
 		// 财务想先把一笔出账记下来的时候，唯一的办法是伪造一行 CSV 导进去。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions", s.recordBankTransaction)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		// **只留 unmatch，不留 match。** 匹配这件事下线了（付款单没有创建
 		// 入口，且和「流水只是记录」的新模型冲突），但**解开历史匹配**必须
 		// 留着：SetBankTransactionOwnership 那道闸遇到已匹配的行会拒绝，
@@ -713,7 +721,6 @@ func (s *Server) Router() http.Handler {
 		// 的指令，那些行的归属从此谁也改不了。
 		//
 		// 这和别处同一条纪律：新路不再走了，老数据的回退口子留着。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
 		// /api/bank-transactions/{id}/match 下线了。
 		//
 		// 它们是「把一行流水对上一张供应商付款单」，而付款单的唯一创建入口
@@ -725,19 +732,13 @@ func (s *Server) Router() http.Handler {
 		// 那些行还要读得出来（列表上照常显示付款单号）。
 		// 那份对账单（PDF）。挂在登记流水同一个权限下——能记这笔钱的人，
 		// 就该能把银行给的那张纸传上来。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment/presign", s.presignBankTransactionFile)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment", s.attachBankTransactionFile)
 		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
 		// 删一条流水——归档，不是抹掉。理由必填，所以是 POST 带 body 而不是
 		// DELETE：带 body 的 DELETE 在代理和客户端那层各家实现不一，丢掉
 		// body 的后果是「你明明填了理由，它说你没填」。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/delete", s.deleteBankTransaction)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/restore", s.restoreBankTransaction)
 		// 改一行流水。理由必填，每处改动留痕（00047）。PUT 因为这是「把整行
 		// 替换成新的样子」；删除那边用 POST 是因为 DELETE 带 body 不可靠，
 		// PUT 没有这个问题。
-		r.With(s.perm("procurement:payment:write")).Put("/api/bank-transactions/{id}", s.updateBankTransaction)
 		// 这一行被改过什么。读，所以是 read 权限。
 		r.With(s.perm("procurement:payment:read")).Get("/api/bank-transactions/{id}/changes", s.listBankTransactionChanges)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
@@ -760,7 +761,9 @@ func (s *Server) Router() http.Handler {
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
-		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
+		// 审批服务会逐任务校验 assignee。部门负责人来自组织架构，未必另有
+		// “审批人”角色，因此这里不再用静态角色权限挡住本人收到的任务。
+		r.Post("/api/approvals/tasks/{id}/act", s.actOnTask)
 		// Reading where a document stands is not acting on it: the salesperson
 		// who submitted a contract needs to see it is waiting on the sales
 		// manager without any power to approve anything.
@@ -928,10 +931,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/keep-sent-copy", s.setKeepSentCopy)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
 		r.Post("/api/customer-offer", s.customerOffer)
-		r.Get("/api/fx/effective", s.fxEffective)
-		r.With(s.perm("fx:rate:write")).Post("/api/fx/effective", s.fxConfirm)
-		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
-		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
+		// D7 汇率是全员可看的独立参考页；这些接口不写业务单据。
+		r.Get("/api/fx/latest", s.fxLatest)
+		r.Get("/api/fx/rates", s.fxRates)
+		r.Get("/api/fx/sync-status", s.fxSyncStatus)
+		r.Post("/api/fx/refresh", s.fxRefresh)
+		r.Get("/api/fx/watched", s.fxWatched)
+		r.With(s.perm("fx:rate:write")).Put("/api/fx/watched", s.fxUpdateWatched)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
 	})
 	return r

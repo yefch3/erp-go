@@ -41,6 +41,7 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	svc := app.New(pool, log)
+	svc.ConfigureFetcher(cfg.FetchURL, cfg.FetchSymbols)
 	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
 	if err != nil {
 		return err

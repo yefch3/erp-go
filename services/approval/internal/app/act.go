@@ -25,6 +25,7 @@ type decisionEvent struct {
 	ActedBy    int64           `json:"acted_by"`
 	Comment    string          `json:"comment"`
 	Summary    json.RawMessage `json:"biz_summary,omitempty"`
+	NodeSeq    int32           `json:"node_seq,omitempty"`
 }
 
 // Act records one approver's decision and moves the instance forward.
@@ -46,6 +47,9 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	inst, err := s.q.GetInstance(ctx, store.GetInstanceParams{TenantID: tenantID, ID: task.InstanceID})
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
+	}
+	if inst.BizType == "TRAVEL_REIMBURSEMENT" && actorID == inst.SubmitterID {
+		return store.ApprovalInstance{}, nil, apierr.Permission("AP_REIMBURSEMENT_SELF", "报销申请不能由本人审批")
 	}
 	if inst.BizType == "CONTRACT" {
 		if actorID == inst.SubmitterID {
@@ -174,7 +178,18 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 			return err
 		}
 		created, err = createTasks(ctx, q, tenantID, locked.ID, *nextNode, nextAssignees)
-		return err
+		if err != nil {
+			return err
+		}
+		payload, err := json.Marshal(decisionEvent{
+			InstanceID: locked.ID, BizType: locked.BizType, BizID: locked.BizID, BizNo: locked.BizNo,
+			Result: "ADVANCED", ActedBy: actorID, Comment: comment, Summary: locked.BizSummary, NodeSeq: nextNode.Seq,
+		})
+		if err != nil {
+			return err
+		}
+		return outbox.Append(ctx, tx, outbox.Event{TenantID: tenantID, AggregateType: "approval",
+			AggregateID: instanceKey(locked.ID), EventType: "ApprovalAdvanced", Payload: payload})
 	})
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err

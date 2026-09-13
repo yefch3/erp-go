@@ -112,6 +112,7 @@ func run(log *slog.Logger) error {
 		Warehouses:       grpcout.NewWarehouses(invConn),
 		Rates:            grpcout.NewRates(fxConn),
 		Scopes:           grpcout.NewScopes(iamConn),
+		People:           grpcout.NewPeople(iamConn),
 		Files:            grpcout.NewFiles(files),
 		Live:             live,
 	})

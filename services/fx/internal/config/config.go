@@ -28,7 +28,7 @@ func Load() Config {
 		// frankfurter.app republishes ECB reference rates, working days only.
 		FetchURL:      env("FX_FETCH_URL", "https://api.frankfurter.app/latest"),
 		FetchSymbols:  strings.Split(env("FX_SYMBOLS", "CNY,EUR,GBP,JPY,HKD"), ","),
-		FetchInterval: envDuration("FX_FETCH_INTERVAL", 6*time.Hour),
+		FetchInterval: envDuration("FX_FETCH_INTERVAL", time.Hour),
 		// A year: enough for the longest range the chart offers, and one
 		// request either way.
 		BackfillDays: envInt("FX_BACKFILL_DAYS", 365),

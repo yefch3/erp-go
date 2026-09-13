@@ -676,11 +676,11 @@ function isProcurementItemActive(path: string) {
   return route.path === path
 }
 
-// 银行流水不再作为独立业务页面；收付款记录分别归入入账和出账。
+// 收付款记录分别归入入账和出账，不再显示独立银行流水入口。
 const financeItems = computed(() => sortByOrder([
   { key: '/customer-recon', path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
-  { key: '/supplier-recon', path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
-  { key: '/fx', path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },
+  { key: '/supplier-recon', path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: true },
+  { key: '/fx', path: '/fx', label: t('financeNav.fx'), allowed: true },
 ].filter((item) => item.allowed), navigationPreferences.value.children.finance))
 const hasFinance = computed(() => financeItems.value.length > 0)
 const financeActive = computed(() => financeItems.value.some((item) => route.path === item.path))

@@ -49,6 +49,9 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "quality_inspection_tasks", true)
 	assertProcurementTable(t, db, "quality_inspection_rounds", true)
 	assertProcurementTable(t, db, "quality_inspection_files", true)
+	assertProcurementTable(t, db, "travel_reimbursements", true)
+	assertProcurementTable(t, db, "travel_reimbursement_files", true)
+	assertProcurementTable(t, db, "travel_reimbursement_history", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
