@@ -85,7 +85,20 @@
 
       <template v-if="mail.attachments?.length">
         <el-divider />
-        <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+        <div class="att-head">
+          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+          <!-- 打成一个 zip 拿走。两个以上才给这颗：只有一个附件时它和旁边的
+               「下载」是同一件事，多一颗只会让人挑。和主窗口阅读区同一条规矩。 -->
+          <el-button
+            v-if="mail.attachments.length > 1"
+            size="small"
+            plain
+            :loading="bundling"
+            @click="downloadAll"
+          >
+            {{ t('emails.downloadAll', { n: mail.attachments.length }) }}
+          </el-button>
+        </div>
         <MailAttachments
           :files="mail.attachments"
           :converting="converting"
@@ -112,7 +125,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { WarningFilled } from '@element-plus/icons-vue'
-import { get, post, quietErrors } from '../api'
+import { download, get, post, quietErrors, saveBlob } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { replyAllRecipients } from '../lib/replyAll'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -166,6 +179,7 @@ const loading = ref(true)
 const failed = ref(false)
 const detailsOpen = ref(false)
 const converting = ref('')
+const bundling = ref(false)
 const composing = ref(false)
 const composer = ref<{
   openReply: (m: WindowMail) => void
@@ -245,6 +259,21 @@ function forward() {
 // 写信框自己已经弹过「已发送」，这里不再叠一句；主窗口的已发送列表会在它
 // 下次拉的时候看到这封信。
 function onSent() {}
+
+/** 把这封信的附件打成一个压缩包下载。上限（40 MB）和超过时的话由后端说。 */
+async function downloadAll() {
+  const id = mail.value?.id
+  if (!id || bundling.value) return
+  bundling.value = true
+  try {
+    const file = await download(`/inbound-mails/${id}/attachments/download`)
+    saveBlob(file.blob, file.fileName)
+  } catch {
+    // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
+  } finally {
+    bundling.value = false
+  }
+}
 
 // 预览一律新开一个标签页，和邮件页那边同一条规矩（见 EmailsPage 的
 // openPreview，那儿写着三条路各自的理由）。表格自己解自己画，不经过服务器；
@@ -444,5 +473,15 @@ function initialOf(name: string) {
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-regular);
+}
+.att-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 0 10px;
+}
+.att-head .side-title {
+  margin: 0;
 }
 </style>
