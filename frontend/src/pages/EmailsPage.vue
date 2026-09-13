@@ -809,6 +809,10 @@
           <button type="button" class="sort-trigger">
             {{ t('emails.sortBar.current', { name: t(`emails.sortBar.${listSort.by}`) }) }}
             <span class="dir" aria-hidden="true">{{ listSort.dir === 'asc' ? '↑' : '↓' }}</span>
+            <!-- 分档开着时在按钮上留一个记号。菜单一点就关，开关的状态只
+                 活在菜单里的话，人看着一份「怎么不是按日期排」的列表，而
+                 按钮上写着「排序：日期 ↓」——那才是最难查的那种。 -->
+            <span v-if="topBadge" class="top-badge" :title="topBadgeTitle">{{ topBadge }}</span>
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -832,6 +836,25 @@
                 :class="{ 'sort-on': listSort.dir === 'asc' }"
               >
                 {{ t('emails.sortBar.asc') }}
+              </el-dropdown-item>
+              <!-- 优先显示（issue #368）。是**开关**不是单选：点一下开、
+                   再点一下关，两个能同时开。所以它们和上面两段不一样，左边
+                   画的是对钩——一排单选里混进两个开关，人看不出哪些是互斥的。
+                   两个都开时星标那一档在前，理由见 lib/mailSort。 -->
+              <el-dropdown-item
+                v-if="canSortTop"
+                divided
+                command="top:star"
+                :class="{ 'sort-on': listSort.starFirst }"
+              >
+                {{ t('emails.sortBar.starFirst') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="canSortTop"
+                command="top:unread"
+                :class="{ 'sort-on': listSort.unreadFirst }"
+              >
+                {{ t('emails.sortBar.unreadFirst') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -1468,6 +1491,7 @@ import {
   sortFor,
   sortFromCommand,
   sortParam,
+  topParam,
   type MailSort,
   type SortField,
 } from '../lib/mailSort'
@@ -1822,16 +1846,35 @@ const sortFields = computed<SortField[]>(() => {
 // 排序菜单点了一项：`by:size`、`dir:asc`。规则（换一列用那一列的自然方向、
 // 方向是菜单里明写的两项）在 lib/mailSort 里，那儿测得到。
 function onSortCommand(cmd: string) {
-  pushState({ sort: sortParam(sortFromCommand(listSort.value, cmd)) })
+  const next = sortFromCommand(listSort.value, cmd)
+  pushState({ sort: sortParam(next), top: topParam(next) })
 }
+// 「星标优先 / 未读优先」只在收件箱那一族给：已发送的行是投递记录，没有
+// 星标也没有未读。搜索时也不给，和排序栏同一条理由——那条路上服务端不接。
+const canSortTop = computed(() => sortFields.value.length > 0 && isInboundView.value)
+// 按钮上的记号。用符号不用文字：这一栏窄下来时按钮自己就先被挤，而
+// 「排序：日期 ↓ ★●」比「排序：日期 ↓ 星标优先 未读优先」活得久得多。
+// 符号看不出是什么意思，所以鼠标停上去有一句话。
+const topBadge = computed(
+  () => (listSort.value.starFirst ? '★' : '') + (listSort.value.unreadFirst ? '●' : ''),
+)
+const topBadgeTitle = computed(() => {
+  const names: string[] = []
+  if (listSort.value.starFirst) names.push(t('emails.sortBar.starFirst'))
+  if (listSort.value.unreadFirst) names.push(t('emails.sortBar.unreadFirst'))
+  return names.join(' · ')
+})
 
 // 只看未读（issue #368 那条「支持查看未读邮件」）。
 //
-// 做成筛选，不做成「未读排前面」。排序那条路在这里是坏的：列表按未读优先排
-// 的话，点开一封信、它一变成已读就立刻往下跳——光标底下的行不见了，而
-// 「标已读不重排」是这个列表刻意守着的一条规矩（见 markRow 那一带的注释）。
-// 筛选没有这个问题：标已读仍然只改那一行的样子，它要到下一次重新拉列表时
-// 才消失，而那时人已经看完了。
+// 这是**筛选**：只留下未读的。它旁边还有一个「未读优先」（排序菜单里，
+// 见 canSortTop），那个是**排序**：读过的还在，只是排到后面去。两个都有，
+// 因为问的是两件事——「我还剩多少没处理」和「先让我看没处理的」。
+//
+// 这一条从前写着「不做成未读排前面」，理由是「点开一封信、它一变成已读就
+// 立刻往下跳，光标底下的行不见了」。那条理由**只针对当场重排**，而不是排序
+// 本身：现在的「未读优先」只在重新拉列表时生效，标已读仍然只改那一行的
+// 样子。「标已读不重排」这条规矩没有动。
 //
 // 开关的状态进地址栏（unread=1），刷新和后退都保得住。
 const unreadOnly = ref(false)
@@ -2120,6 +2163,10 @@ interface UrlState {
   // 只看未读。同样进地址栏，同样的理由：筛着一半刷新一下变回全部，人会
   // 以为收件箱多出来一批信。
   unread: boolean
+  // 优先显示：`star`、`unread`、`star,unread`，见 lib/mailSort 的 topParam。
+  // 单开一个参数而不是塞进 sort，是因为两者互不影响——按大小排的同时可以
+  // 星标优先，而默认排序不进地址栏，塞在一起时分档会跟着一起消失。
+  top: string
   // 在看哪个信箱。空 = 还没选（第一次进来，切换器还没加载完）。
   //
   // 放进 URL 而不是只留在内存里：刷新会回到默认箱而人以为自己还在另一个箱
@@ -2141,6 +2188,10 @@ function parseQuery(q: LocationQuery): UrlState {
   const one = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : v == null ? '' : String(v))
   const f = one(q.folder)
   const p = Number(one(q.page))
+  // 排序和分档一起解：它们是同一个对象的两半（sortFor 要同时看到列和分档
+  // 才知道该保留什么），解两遍是白跑一次，而且两次的入参一旦写岔就是
+  // 「地址栏里写着 star，列表却没分档」这种查不出来的。
+  const parsed = parseSort(one(q.sort), one(q.top))
   return {
     folder: FOLDER_KEYS.has(f) || isCustomFolderKey(f) ? f : 'inbox',
     page: Number.isInteger(p) && p > 1 ? p : 1,
@@ -2149,8 +2200,9 @@ function parseQuery(q: LocationQuery): UrlState {
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
     msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
     acct: /^\d+$/.test(one(q.acct)) ? one(q.acct) : '',
-    sort: sortParam(parseSort(one(q.sort))),
+    sort: sortParam(parsed),
     unread: one(q.unread) === '1',
+    top: topParam(parsed),
   }
 }
 
@@ -2166,6 +2218,7 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.acct) query.acct = s.acct
   if (s.sort) query.sort = s.sort
   if (s.unread) query.unread = '1'
+  if (s.top) query.top = s.top
   return query
 }
 
@@ -2399,7 +2452,7 @@ function applyRoute() {
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
-  sort.value = parseSort(s.sort)
+  sort.value = parseSort(s.sort, s.top)
   unreadOnly.value = s.unread
   // 换了文件夹/关键词/排序/筛选，接过的那几页和表格的翻页位置都作废：它们
   // 记的是「在上一份名单里走到哪」。不清的话，换个文件夹第一次往下滚会拿
@@ -2409,6 +2462,9 @@ function applyRoute() {
     prev.folder !== s.folder ||
     prev.q !== s.q ||
     prev.sort !== s.sort ||
+    // 分档是排序键的一部分（后端把它写在排序键前面），所以改了分档的游标
+    // 就是别人家的游标。不清的话往下滚会从上一种顺序里的某个位置接着要。
+    prev.top !== s.top ||
     prev.unread !== s.unread
   ) {
     loadedPages.value = 1
@@ -2426,6 +2482,8 @@ function applyRoute() {
     prev.sent !== s.sent ||
     prev.acct !== s.acct ||
     prev.sort !== s.sort ||
+    // 分档也要重拉，和排序同一条理由：它改的是整份名单的顺序。
+    prev.top !== s.top ||
     // 切「只看未读」也要重拉。#429 把这一条漏了：那时它靠的是「改筛选会清
     // 游标、游标变了就重拉」，而第一页的游标本来就是空的——于是在第一页上
     // 点这颗按钮，地址栏变了、按钮亮了，列表一动不动。游标移出地址栏之后
@@ -3075,8 +3133,17 @@ function backToList() {
 
 // 接上去还是换掉。抽成一个函数，好让五种列表（收件箱、搜索、已发送、已定时、
 // 待处理）不会有一种漏掉 append。
-function concatRows<T>(append: boolean, cur: T[], next: T[]): T[] {
-  return append ? [...cur, ...next] : next
+//
+// idOf 给了就顺手去重。**收件箱必须给**，因为开着「优先显示」时排序键是会
+// 变的：人在第一页读了几封信，那几条会话就从「未读」那一档掉进「已读」那一
+// 档去；而已读那一档在游标**后面**，于是往下滚时它们会第二次出现。去重把这
+// 一半挡掉。另一半（把读过的标回未读，它跳到游标前面去，这一页看不到它）挡
+// 不住，也不该挡——那时该发生的事是重新拉一次列表，而人本来就会那么做。
+function concatRows<T>(append: boolean, cur: T[], next: T[], idOf?: (r: T) => string | number): T[] {
+  if (!append) return next
+  if (!idOf) return [...cur, ...next]
+  const seen = new Set(cur.map(idOf))
+  return [...cur, ...next.filter((r) => !seen.has(idOf(r)))]
 }
 
 // quiet：不转圈。给后台自己发起的重拉用（新信到了），人点出来的都要转。
@@ -3176,6 +3243,9 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
         // 和 sortFields 用同一个判断（trim 过的）：只有空格的搜索框不算有
         // 关键词，否则排序栏显示着、参数却没带，点了「没反应」。
         ...(keyword.value.trim() ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
+        // 优先显示。和排序一样，有关键词时不带：那条路上服务端会拒。
+        ...(listSort.value.starFirst && !keyword.value.trim() ? { star_first: '1' } : {}),
+        ...(listSort.value.unreadFirst && !keyword.value.trim() ? { unread_first: '1' } : {}),
         // 只看未读。和排序一样，有关键词时不带：那条路上服务端不接。
         ...(unreadOnly.value && !keyword.value.trim() ? { unread: '1' } : {}),
         // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
@@ -3185,7 +3255,7 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
       })
       // 过期的一次不许落盘，见 loadSeq。
       if (!fresh()) return false
-      inbound.value = concatRows(append, inbound.value, d.mails ?? [])
+      inbound.value = concatRows(append, inbound.value, d.mails ?? [], (m) => m.id)
       total.value = Number(d.meta?.total ?? 0)
       unreadCount.value = Number(d.unreadCount ?? 0)
       nextCursor.value = d.nextCursor ?? ''
@@ -5209,6 +5279,13 @@ async function doUnsuppress(row: Suppression) {
 }
 /* 排序：一颗不像按钮的按钮。它是这一条上最不重要的控件（一天点零到一次），
    画成实心按钮会和右边那两颗真按钮抢眼睛。 */
+.top-badge {
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--el-color-primary);
+  letter-spacing: 1px;
+}
 .sort-trigger {
   display: inline-flex;
   align-items: center;

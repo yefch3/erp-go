@@ -22,6 +22,16 @@ type ListSort struct {
 	// Dir：asc | desc。空 = 该列的自然方向（日期和大小新的/大的在前，文本
 	// 从 A 到 Z）。
 	Dir string
+	// StarFirst / UnreadFirst：把星标的、没读的那一档顶到最上面，**在上面
+	// 那一列的排序之上**（issue #368 的「优先显示」）。
+	//
+	// 是分档不是换列：开着「星标优先 + 按日期倒序」，看到的是星标的信里
+	// 新的在前，然后才是没加星的信里新的在前。两个都开时星标那一档在前，
+	// 理由见 ListThreadsByViewSorted 的注释。
+	//
+	// 只有收件箱那一族有。已发送没有星标也没有未读。
+	StarFirst   bool
+	UnreadFirst bool
 }
 
 var (
@@ -29,10 +39,32 @@ var (
 	sentSortColumns    = map[string]bool{"to": true, "subject": true, "date": true, "size": true}
 )
 
-// isDefault 说明这就是一直以来的顺序：日期倒序。收件箱在这一档走的是靠
-// 索引直接读出前二十五行的那条查询；其余任何一档都要把整个箱排一遍。
+// isDefault 说明这就是一直以来的顺序：日期倒序、不分档。收件箱在这一档走
+// 的是靠索引直接读出前二十五行的那条查询；其余任何一档都要把整个箱排一遍。
+//
+// 开了「星标优先」或「未读优先」就不是默认了——那条靠索引的查询按 last_at
+// 读，读不出分档。漏掉这一句的样子是开关点了没反应。
 func (s ListSort) isDefault() bool {
-	return s.By == "date" && s.Dir == "desc"
+	return s.By == "date" && s.Dir == "desc" && s.topKey() == ""
+}
+
+// topKey 是分档开关压成的一小段，进游标用：""｜"s"｜"u"｜"su"。
+func (s ListSort) topKey() string {
+	out := ""
+	if s.StarFirst {
+		out += "s"
+	}
+	if s.UnreadFirst {
+		out += "u"
+	}
+	return out
+}
+
+// withoutTop 去掉分档。已发送那一侧用：它没有星标也没有未读，带着开关过去
+// 只会让游标对不上。
+func (s ListSort) withoutTop() ListSort {
+	s.StarFirst, s.UnreadFirst = false, false
+	return s
 }
 
 // normalizeListSort 把空值补成默认、把不认识的值挡在门外。
@@ -73,9 +105,20 @@ func errSortNotWithKeyword() error {
 // 才能不受分隔符的约束。
 const sortCursorTag = "s1"
 
+// 收件箱那一条多带一段「分档」（见 ListSort.topKey），所以换了标签。
+//
+// 为什么不在 s1 上直接加一段：加了之后 s1 就有五段和六段两种，而第四段是
+// 数字还是字母要靠猜——猜错的样子是翻第二页翻到别处去，不报错。换个标签，
+// 两种形状各自认各自的。
+//
+// s1 仍然要认：换版本时后端先发、前端后发，那几分钟里人手里攥着的是旧游标。
+// 旧游标不带分档，所以只在两个开关都关着时才认它。
+const inboundSortCursorTag = "s2"
+
 func encodeSortCursor(sort ListSort, key string, id int64) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(
-		sortCursorTag + ":" + sort.By + ":" + sort.Dir + ":" + strconv.FormatInt(id, 10) + ":" + key))
+		inboundSortCursorTag + ":" + sort.By + ":" + sort.Dir + ":" + sort.topKey() +
+			":" + strconv.FormatInt(id, 10) + ":" + key))
 }
 
 // decodeSortCursor 解收件箱排序版的游标。空游标是第一页：key 为 nil。
@@ -83,10 +126,31 @@ func decodeSortCursor(cursor string, sort ListSort) (*string, int64, error) {
 	if cursor == "" {
 		return nil, 0, nil
 	}
-	parts, err := sortCursorParts(cursor, 5)
+	if parts, err := sortCursorParts(cursor, 5, sortCursorTag); err == nil {
+		// 换版本之前发出去的那一批。它按的是没有分档的顺序，所以现在开着
+		// 分档就不能接着用——接着用的样子是第二页从一个和当前顺序无关的
+		// 位置开始。
+		if sort.topKey() != "" {
+			return nil, 0, errBadCursor()
+		}
+		return legacySortCursor(parts, sort)
+	}
+	parts, err := sortCursorParts(cursor, 6, inboundSortCursorTag)
 	if err != nil {
 		return nil, 0, err
 	}
+	if parts[1] != sort.By || parts[2] != sort.Dir || parts[3] != sort.topKey() {
+		return nil, 0, errBadCursor()
+	}
+	id, err := strconv.ParseInt(parts[4], 10, 64)
+	if err != nil {
+		return nil, 0, errBadCursor()
+	}
+	key := parts[5]
+	return &key, id, nil
+}
+
+func legacySortCursor(parts []string, sort ListSort) (*string, int64, error) {
 	if parts[1] != sort.By || parts[2] != sort.Dir {
 		return nil, 0, errBadCursor()
 	}
@@ -128,7 +192,7 @@ func decodeSentSortCursor(cursor string, sort ListSort) (key *string, kind strin
 		k := dateSortKey(at.Time)
 		return &k, legacyKind, legacyID, nil
 	}
-	parts, err := sortCursorParts(cursor, 6)
+	parts, err := sortCursorParts(cursor, 6, sortCursorTag)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -143,13 +207,13 @@ func decodeSentSortCursor(cursor string, sort ListSort) (key *string, kind strin
 	return &k, parts[3], id, nil
 }
 
-func sortCursorParts(cursor string, n int) ([]string, error) {
+func sortCursorParts(cursor string, n int, tag string) ([]string, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return nil, errBadCursor()
 	}
 	parts := strings.SplitN(string(raw), ":", n)
-	if len(parts) != n || parts[0] != sortCursorTag {
+	if len(parts) != n || parts[0] != tag {
 		return nil, errBadCursor()
 	}
 	return parts, nil
