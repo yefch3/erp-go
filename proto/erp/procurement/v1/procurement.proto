@@ -715,6 +715,17 @@ service PurchaseOrderService {
   rpc AttachReconFile(AttachReconFileRequest) returns (AttachReconFileResponse);
   rpc ListReconFiles(ListReconFilesRequest) returns (ListReconFilesResponse);
   rpc RemoveReconFile(RemoveReconFileRequest) returns (RemoveReconFileResponse);
+
+  // D7 travel claims live inside Outgoing while retaining their own approval
+  // and payment history.
+  rpc CreateTravelReimbursement(CreateTravelReimbursementRequest) returns (CreateTravelReimbursementResponse);
+  rpc UpdateTravelReimbursement(UpdateTravelReimbursementRequest) returns (UpdateTravelReimbursementResponse);
+  rpc ListTravelReimbursements(ListTravelReimbursementsRequest) returns (ListTravelReimbursementsResponse);
+  rpc SubmitTravelReimbursement(SubmitTravelReimbursementRequest) returns (SubmitTravelReimbursementResponse);
+  rpc PresignTravelReimbursementFile(PresignTravelReimbursementFileRequest) returns (PresignTravelReimbursementFileResponse);
+  rpc AttachTravelReimbursementFile(AttachTravelReimbursementFileRequest) returns (AttachTravelReimbursementFileResponse);
+  rpc MarkTravelReimbursementPaid(MarkTravelReimbursementPaidRequest) returns (MarkTravelReimbursementPaidResponse);
+  rpc ReverseTravelReimbursementPayment(ReverseTravelReimbursementPaymentRequest) returns (ReverseTravelReimbursementPaymentResponse);
   // Bank statement rows: the fifth voice. Imported verbatim from the CSV
   // the bank portal exports, deduplicated by the bank's own reference, and
   // matched to payments — the match lives on the payment and is reversible;
@@ -760,6 +771,8 @@ service PurchaseOrderService {
   // Correct identifying information on a finance-only opening record.
   rpc UpdateManualPayable(UpdateManualPayableRequest) returns (UpdateManualPayableResponse);
 }
+
+
 
 message QualityInspectionTaskLine {
   int64 id = 1;
@@ -2907,3 +2920,89 @@ message SaveExecutionSupplierQuoteRequest {
 message SaveExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
 message DeleteExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
 message DeleteExecutionSupplierQuoteResponse {}
+
+message TravelReimbursement {
+  int64 id = 1;
+  string claim_no = 2;
+  int64 claimant_id = 3;
+  string claimant_name = 4;
+  string department_name = 5;
+  string trip_start = 6;
+  string trip_end = 7;
+  string origin = 8;
+  string destination = 9;
+  string purpose = 10;
+  string amount = 11;
+  string currency = 12;
+  string payment_account = 13;
+  string note = 14;
+  string status = 15;
+  int64 approval_instance_id = 16;
+  string rejection_reason = 17;
+  string paid_at = 18;
+  int64 paid_by = 19;
+  string paid_by_name = 20;
+  string payment_reference = 21;
+  string created_at = 22;
+  string updated_at = 23;
+  repeated TravelReimbursementFile files = 24;
+  repeated TravelReimbursementHistory history = 25;
+}
+
+message TravelReimbursementFile {
+  int64 id = 1;
+  string category = 2;
+  string file_name = 3;
+  string object_key = 4;
+  string url = 5;
+  string uploaded_by_name = 6;
+  string uploaded_at = 7;
+}
+
+message TravelReimbursementHistory {
+  int64 id = 1;
+  string action = 2;
+  string from_status = 3;
+  string to_status = 4;
+  string detail = 5;
+  string actor_name = 6;
+  string created_at = 7;
+}
+
+message CreateTravelReimbursementRequest {
+  string trip_start = 1;
+  string trip_end = 2;
+  string origin = 3;
+  string destination = 4;
+  string purpose = 5;
+  string amount = 6;
+  string currency = 7;
+  string payment_account = 8;
+  string note = 9;
+}
+message UpdateTravelReimbursementRequest {
+  int64 id = 1;
+  string trip_start = 2;
+  string trip_end = 3;
+  string origin = 4;
+  string destination = 5;
+  string purpose = 6;
+  string amount = 7;
+  string currency = 8;
+  string payment_account = 9;
+  string note = 10;
+}
+message ListTravelReimbursementsRequest { bool include_all = 1; string status = 2; }
+message ListTravelReimbursementsResponse { repeated TravelReimbursement items = 1; }
+message SubmitTravelReimbursementRequest { int64 id = 1; }
+message CreateTravelReimbursementResponse { TravelReimbursement reimbursement = 1; }
+message UpdateTravelReimbursementResponse { TravelReimbursement reimbursement = 1; }
+message SubmitTravelReimbursementResponse { TravelReimbursement reimbursement = 1; }
+message PresignTravelReimbursementFileRequest { int64 id = 1; string file_name = 2; string category = 3; }
+message PresignTravelReimbursementFileResponse { string object_key = 1; string upload_url = 2; int32 expires_seconds = 3; }
+message AttachTravelReimbursementFileRequest { int64 id = 1; string object_key = 2; string file_name = 3; string category = 4; }
+message AttachTravelReimbursementFileResponse { TravelReimbursement reimbursement = 1; }
+message MarkTravelReimbursementPaidRequest { int64 id = 1; string paid_at = 2; string payment_account = 3; string payment_reference = 4; }
+message MarkTravelReimbursementPaidResponse { TravelReimbursement reimbursement = 1; }
+message ReverseTravelReimbursementPaymentRequest { int64 id = 1; string reason = 2; }
+message ReverseTravelReimbursementPaymentResponse { TravelReimbursement reimbursement = 1; }

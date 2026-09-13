@@ -2889,87 +2889,95 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PurchaseOrderService_ListFailedEvents_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
-	PurchaseOrderService_ReplayFailedEvent_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
-	PurchaseOrderService_ListOrders_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
-	PurchaseOrderService_GetOrder_FullMethodName                         = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
-	PurchaseOrderService_PreviewOrderImport_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
-	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
-	PurchaseOrderService_ConfirmOrderImport_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
-	PurchaseOrderService_CreateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
-	PurchaseOrderService_UpdateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
-	PurchaseOrderService_SubmitOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
-	PurchaseOrderService_SaveOrderContract_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/SaveOrderContract"
-	PurchaseOrderService_PresignOrderContractUpload_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignOrderContractUpload"
-	PurchaseOrderService_VerifyOrderContract_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VerifyOrderContract"
-	PurchaseOrderService_RequestOrderPayment_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/RequestOrderPayment"
-	PurchaseOrderService_CreateExternalPayable_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateExternalPayable"
-	PurchaseOrderService_GetExternalPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
-	PurchaseOrderService_CancelOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
-	PurchaseOrderService_ReceiveOrder_FullMethodName                     = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
-	PurchaseOrderService_GetOrderDocuments_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
-	PurchaseOrderService_BeginOrderSend_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
-	PurchaseOrderService_CompleteOrderSend_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
-	PurchaseOrderService_GetOrderExecution_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderExecution"
-	PurchaseOrderService_RecordSupplierConfirmation_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/RecordSupplierConfirmation"
-	PurchaseOrderService_SaveProductionMilestone_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
-	PurchaseOrderService_ReportReceiptException_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
-	PurchaseOrderService_ResolveReceiptException_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
-	PurchaseOrderService_RecordInspection_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/RecordInspection"
-	PurchaseOrderService_ResolveInspection_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ResolveInspection"
-	PurchaseOrderService_CloseOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CloseOrder"
-	PurchaseOrderService_ApplyQualityInspection_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ApplyQualityInspection"
-	PurchaseOrderService_ListQualityInspectionTasks_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListQualityInspectionTasks"
-	PurchaseOrderService_GetQualityInspectionTask_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/GetQualityInspectionTask"
-	PurchaseOrderService_StartQualityInspection_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/StartQualityInspection"
-	PurchaseOrderService_SubmitQualityInspectionRound_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/SubmitQualityInspectionRound"
-	PurchaseOrderService_DecideQualityRelease_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/DecideQualityRelease"
-	PurchaseOrderService_PresignQualityInspectionFile_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/PresignQualityInspectionFile"
-	PurchaseOrderService_RegisterQualityInspectionFile_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/RegisterQualityInspectionFile"
-	PurchaseOrderService_CreateSupplierInvoice_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
-	PurchaseOrderService_ListSupplierInvoices_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
-	PurchaseOrderService_GetSupplierInvoice_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
-	PurchaseOrderService_VoidSupplierInvoice_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
-	PurchaseOrderService_MatchSupplierInvoice_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchSupplierInvoice"
-	PurchaseOrderService_PresignSupplierInvoiceFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignSupplierInvoiceFile"
-	PurchaseOrderService_AttachSupplierInvoiceFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/AttachSupplierInvoiceFile"
-	PurchaseOrderService_CreateSupplierPayment_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierPayment"
-	PurchaseOrderService_ListSupplierPayments_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierPayments"
-	PurchaseOrderService_GetSupplierPayment_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierPayment"
-	PurchaseOrderService_AllocateSupplierPayment_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/AllocateSupplierPayment"
-	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
-	PurchaseOrderService_ListSupplierStatements_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ListSupplierStatements"
-	PurchaseOrderService_GetSupplierStatement_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetSupplierStatement"
-	PurchaseOrderService_ListSupplierRecon_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ListSupplierRecon"
-	PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListPurchaseOrderPayments"
-	PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/RecordPurchaseOrderPayment"
-	PurchaseOrderService_CreateManualPayable_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CreateManualPayable"
-	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
-	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
-	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
-	PurchaseOrderService_BackfillPayableDue_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/BackfillPayableDue"
-	PurchaseOrderService_SetPayableDueDate_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/SetPayableDueDate"
-	PurchaseOrderService_PresignReconFile_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/PresignReconFile"
-	PurchaseOrderService_AttachReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AttachReconFile"
-	PurchaseOrderService_ListReconFiles_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/ListReconFiles"
-	PurchaseOrderService_RemoveReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/RemoveReconFile"
-	PurchaseOrderService_ImportBankStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
-	PurchaseOrderService_ListBankTransactions_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
-	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
-	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
-	PurchaseOrderService_DeleteBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/DeleteBankTransaction"
-	PurchaseOrderService_RestoreBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/RestoreBankTransaction"
-	PurchaseOrderService_UpdateBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/UpdateBankTransaction"
-	PurchaseOrderService_ListBankTransactionChanges_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactionChanges"
-	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
-	PurchaseOrderService_RecordBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
-	PurchaseOrderService_PresignBankTransactionFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignBankTransactionFile"
-	PurchaseOrderService_AttachBankTransactionFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/AttachBankTransactionFile"
-	PurchaseOrderService_GetBankTransaction_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
-	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
-	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
-	PurchaseOrderService_SetBankTransactionClaim_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
-	PurchaseOrderService_UpdateManualPayable_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
+	PurchaseOrderService_ListFailedEvents_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
+	PurchaseOrderService_ReplayFailedEvent_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
+	PurchaseOrderService_ListOrders_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
+	PurchaseOrderService_GetOrder_FullMethodName                          = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
+	PurchaseOrderService_PreviewOrderImport_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
+	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
+	PurchaseOrderService_ConfirmOrderImport_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
+	PurchaseOrderService_CreateOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
+	PurchaseOrderService_SubmitOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_SaveOrderContract_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/SaveOrderContract"
+	PurchaseOrderService_PresignOrderContractUpload_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/PresignOrderContractUpload"
+	PurchaseOrderService_VerifyOrderContract_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/VerifyOrderContract"
+	PurchaseOrderService_RequestOrderPayment_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/RequestOrderPayment"
+	PurchaseOrderService_CreateExternalPayable_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CreateExternalPayable"
+	PurchaseOrderService_GetExternalPayable_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
+	PurchaseOrderService_CancelOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
+	PurchaseOrderService_ReceiveOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_GetOrderDocuments_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
+	PurchaseOrderService_BeginOrderSend_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
+	PurchaseOrderService_CompleteOrderSend_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
+	PurchaseOrderService_GetOrderExecution_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/GetOrderExecution"
+	PurchaseOrderService_RecordSupplierConfirmation_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/RecordSupplierConfirmation"
+	PurchaseOrderService_SaveProductionMilestone_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
+	PurchaseOrderService_ReportReceiptException_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
+	PurchaseOrderService_ResolveReceiptException_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
+	PurchaseOrderService_RecordInspection_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/RecordInspection"
+	PurchaseOrderService_ResolveInspection_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ResolveInspection"
+	PurchaseOrderService_CloseOrder_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/CloseOrder"
+	PurchaseOrderService_ApplyQualityInspection_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ApplyQualityInspection"
+	PurchaseOrderService_ListQualityInspectionTasks_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListQualityInspectionTasks"
+	PurchaseOrderService_GetQualityInspectionTask_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/GetQualityInspectionTask"
+	PurchaseOrderService_StartQualityInspection_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/StartQualityInspection"
+	PurchaseOrderService_SubmitQualityInspectionRound_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SubmitQualityInspectionRound"
+	PurchaseOrderService_DecideQualityRelease_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DecideQualityRelease"
+	PurchaseOrderService_PresignQualityInspectionFile_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/PresignQualityInspectionFile"
+	PurchaseOrderService_RegisterQualityInspectionFile_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/RegisterQualityInspectionFile"
+	PurchaseOrderService_CreateSupplierInvoice_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
+	PurchaseOrderService_ListSupplierInvoices_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
+	PurchaseOrderService_GetSupplierInvoice_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
+	PurchaseOrderService_VoidSupplierInvoice_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
+	PurchaseOrderService_MatchSupplierInvoice_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/MatchSupplierInvoice"
+	PurchaseOrderService_PresignSupplierInvoiceFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/PresignSupplierInvoiceFile"
+	PurchaseOrderService_AttachSupplierInvoiceFile_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/AttachSupplierInvoiceFile"
+	PurchaseOrderService_CreateSupplierPayment_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierPayment"
+	PurchaseOrderService_ListSupplierPayments_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ListSupplierPayments"
+	PurchaseOrderService_GetSupplierPayment_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetSupplierPayment"
+	PurchaseOrderService_AllocateSupplierPayment_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/AllocateSupplierPayment"
+	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
+	PurchaseOrderService_ListSupplierStatements_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ListSupplierStatements"
+	PurchaseOrderService_GetSupplierStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/GetSupplierStatement"
+	PurchaseOrderService_ListSupplierRecon_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListSupplierRecon"
+	PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/ListPurchaseOrderPayments"
+	PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/RecordPurchaseOrderPayment"
+	PurchaseOrderService_CreateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/CreateManualPayable"
+	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
+	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
+	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
+	PurchaseOrderService_BackfillPayableDue_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/BackfillPayableDue"
+	PurchaseOrderService_SetPayableDueDate_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/SetPayableDueDate"
+	PurchaseOrderService_PresignReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/PresignReconFile"
+	PurchaseOrderService_AttachReconFile_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/AttachReconFile"
+	PurchaseOrderService_ListReconFiles_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/ListReconFiles"
+	PurchaseOrderService_RemoveReconFile_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/RemoveReconFile"
+	PurchaseOrderService_CreateTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/CreateTravelReimbursement"
+	PurchaseOrderService_UpdateTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/UpdateTravelReimbursement"
+	PurchaseOrderService_ListTravelReimbursements_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ListTravelReimbursements"
+	PurchaseOrderService_SubmitTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/SubmitTravelReimbursement"
+	PurchaseOrderService_PresignTravelReimbursementFile_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/PresignTravelReimbursementFile"
+	PurchaseOrderService_AttachTravelReimbursementFile_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/AttachTravelReimbursementFile"
+	PurchaseOrderService_MarkTravelReimbursementPaid_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/MarkTravelReimbursementPaid"
+	PurchaseOrderService_ReverseTravelReimbursementPayment_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseTravelReimbursementPayment"
+	PurchaseOrderService_ImportBankStatement_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
+	PurchaseOrderService_ListBankTransactions_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
+	PurchaseOrderService_MatchBankTransaction_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
+	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
+	PurchaseOrderService_DeleteBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/DeleteBankTransaction"
+	PurchaseOrderService_RestoreBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RestoreBankTransaction"
+	PurchaseOrderService_UpdateBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/UpdateBankTransaction"
+	PurchaseOrderService_ListBankTransactionChanges_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactionChanges"
+	PurchaseOrderService_UnmatchBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
+	PurchaseOrderService_RecordBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
+	PurchaseOrderService_PresignBankTransactionFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/PresignBankTransactionFile"
+	PurchaseOrderService_AttachBankTransactionFile_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/AttachBankTransactionFile"
+	PurchaseOrderService_GetBankTransaction_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
+	PurchaseOrderService_ListBankAccounts_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
+	PurchaseOrderService_CreateBankAccount_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
+	PurchaseOrderService_SetBankTransactionClaim_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
+	PurchaseOrderService_UpdateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -3091,6 +3099,16 @@ type PurchaseOrderServiceClient interface {
 	AttachReconFile(ctx context.Context, in *AttachReconFileRequest, opts ...grpc.CallOption) (*AttachReconFileResponse, error)
 	ListReconFiles(ctx context.Context, in *ListReconFilesRequest, opts ...grpc.CallOption) (*ListReconFilesResponse, error)
 	RemoveReconFile(ctx context.Context, in *RemoveReconFileRequest, opts ...grpc.CallOption) (*RemoveReconFileResponse, error)
+	// D7 travel claims live inside Outgoing while retaining their own approval
+	// and payment history.
+	CreateTravelReimbursement(ctx context.Context, in *CreateTravelReimbursementRequest, opts ...grpc.CallOption) (*CreateTravelReimbursementResponse, error)
+	UpdateTravelReimbursement(ctx context.Context, in *UpdateTravelReimbursementRequest, opts ...grpc.CallOption) (*UpdateTravelReimbursementResponse, error)
+	ListTravelReimbursements(ctx context.Context, in *ListTravelReimbursementsRequest, opts ...grpc.CallOption) (*ListTravelReimbursementsResponse, error)
+	SubmitTravelReimbursement(ctx context.Context, in *SubmitTravelReimbursementRequest, opts ...grpc.CallOption) (*SubmitTravelReimbursementResponse, error)
+	PresignTravelReimbursementFile(ctx context.Context, in *PresignTravelReimbursementFileRequest, opts ...grpc.CallOption) (*PresignTravelReimbursementFileResponse, error)
+	AttachTravelReimbursementFile(ctx context.Context, in *AttachTravelReimbursementFileRequest, opts ...grpc.CallOption) (*AttachTravelReimbursementFileResponse, error)
+	MarkTravelReimbursementPaid(ctx context.Context, in *MarkTravelReimbursementPaidRequest, opts ...grpc.CallOption) (*MarkTravelReimbursementPaidResponse, error)
+	ReverseTravelReimbursementPayment(ctx context.Context, in *ReverseTravelReimbursementPaymentRequest, opts ...grpc.CallOption) (*ReverseTravelReimbursementPaymentResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -3782,6 +3800,86 @@ func (c *purchaseOrderServiceClient) RemoveReconFile(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CreateTravelReimbursement(ctx context.Context, in *CreateTravelReimbursementRequest, opts ...grpc.CallOption) (*CreateTravelReimbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateTravelReimbursementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateTravelReimbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UpdateTravelReimbursement(ctx context.Context, in *UpdateTravelReimbursementRequest, opts ...grpc.CallOption) (*UpdateTravelReimbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateTravelReimbursementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateTravelReimbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListTravelReimbursements(ctx context.Context, in *ListTravelReimbursementsRequest, opts ...grpc.CallOption) (*ListTravelReimbursementsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTravelReimbursementsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListTravelReimbursements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) SubmitTravelReimbursement(ctx context.Context, in *SubmitTravelReimbursementRequest, opts ...grpc.CallOption) (*SubmitTravelReimbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitTravelReimbursementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SubmitTravelReimbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) PresignTravelReimbursementFile(ctx context.Context, in *PresignTravelReimbursementFileRequest, opts ...grpc.CallOption) (*PresignTravelReimbursementFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignTravelReimbursementFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignTravelReimbursementFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AttachTravelReimbursementFile(ctx context.Context, in *AttachTravelReimbursementFileRequest, opts ...grpc.CallOption) (*AttachTravelReimbursementFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachTravelReimbursementFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AttachTravelReimbursementFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) MarkTravelReimbursementPaid(ctx context.Context, in *MarkTravelReimbursementPaidRequest, opts ...grpc.CallOption) (*MarkTravelReimbursementPaidResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkTravelReimbursementPaidResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_MarkTravelReimbursementPaid_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReverseTravelReimbursementPayment(ctx context.Context, in *ReverseTravelReimbursementPaymentRequest, opts ...grpc.CallOption) (*ReverseTravelReimbursementPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReverseTravelReimbursementPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReverseTravelReimbursementPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportBankStatementResponse)
@@ -4071,6 +4169,16 @@ type PurchaseOrderServiceServer interface {
 	AttachReconFile(context.Context, *AttachReconFileRequest) (*AttachReconFileResponse, error)
 	ListReconFiles(context.Context, *ListReconFilesRequest) (*ListReconFilesResponse, error)
 	RemoveReconFile(context.Context, *RemoveReconFileRequest) (*RemoveReconFileResponse, error)
+	// D7 travel claims live inside Outgoing while retaining their own approval
+	// and payment history.
+	CreateTravelReimbursement(context.Context, *CreateTravelReimbursementRequest) (*CreateTravelReimbursementResponse, error)
+	UpdateTravelReimbursement(context.Context, *UpdateTravelReimbursementRequest) (*UpdateTravelReimbursementResponse, error)
+	ListTravelReimbursements(context.Context, *ListTravelReimbursementsRequest) (*ListTravelReimbursementsResponse, error)
+	SubmitTravelReimbursement(context.Context, *SubmitTravelReimbursementRequest) (*SubmitTravelReimbursementResponse, error)
+	PresignTravelReimbursementFile(context.Context, *PresignTravelReimbursementFileRequest) (*PresignTravelReimbursementFileResponse, error)
+	AttachTravelReimbursementFile(context.Context, *AttachTravelReimbursementFileRequest) (*AttachTravelReimbursementFileResponse, error)
+	MarkTravelReimbursementPaid(context.Context, *MarkTravelReimbursementPaidRequest) (*MarkTravelReimbursementPaidResponse, error)
+	ReverseTravelReimbursementPayment(context.Context, *ReverseTravelReimbursementPaymentRequest) (*ReverseTravelReimbursementPaymentResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -4313,6 +4421,30 @@ func (UnimplementedPurchaseOrderServiceServer) ListReconFiles(context.Context, *
 }
 func (UnimplementedPurchaseOrderServiceServer) RemoveReconFile(context.Context, *RemoveReconFileRequest) (*RemoveReconFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveReconFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateTravelReimbursement(context.Context, *CreateTravelReimbursementRequest) (*CreateTravelReimbursementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateTravelReimbursement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateTravelReimbursement(context.Context, *UpdateTravelReimbursementRequest) (*UpdateTravelReimbursementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateTravelReimbursement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListTravelReimbursements(context.Context, *ListTravelReimbursementsRequest) (*ListTravelReimbursementsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTravelReimbursements not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SubmitTravelReimbursement(context.Context, *SubmitTravelReimbursementRequest) (*SubmitTravelReimbursementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitTravelReimbursement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignTravelReimbursementFile(context.Context, *PresignTravelReimbursementFileRequest) (*PresignTravelReimbursementFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignTravelReimbursementFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AttachTravelReimbursementFile(context.Context, *AttachTravelReimbursementFileRequest) (*AttachTravelReimbursementFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttachTravelReimbursementFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) MarkTravelReimbursementPaid(context.Context, *MarkTravelReimbursementPaidRequest) (*MarkTravelReimbursementPaidResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkTravelReimbursementPaid not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReverseTravelReimbursementPayment(context.Context, *ReverseTravelReimbursementPaymentRequest) (*ReverseTravelReimbursementPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReverseTravelReimbursementPayment not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportBankStatement not implemented")
@@ -5538,6 +5670,150 @@ func _PurchaseOrderService_RemoveReconFile_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CreateTravelReimbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTravelReimbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateTravelReimbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateTravelReimbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateTravelReimbursement(ctx, req.(*CreateTravelReimbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_UpdateTravelReimbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTravelReimbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateTravelReimbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateTravelReimbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateTravelReimbursement(ctx, req.(*UpdateTravelReimbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListTravelReimbursements_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTravelReimbursementsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListTravelReimbursements(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListTravelReimbursements_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListTravelReimbursements(ctx, req.(*ListTravelReimbursementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_SubmitTravelReimbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitTravelReimbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SubmitTravelReimbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SubmitTravelReimbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SubmitTravelReimbursement(ctx, req.(*SubmitTravelReimbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_PresignTravelReimbursementFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignTravelReimbursementFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignTravelReimbursementFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignTravelReimbursementFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignTravelReimbursementFile(ctx, req.(*PresignTravelReimbursementFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AttachTravelReimbursementFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachTravelReimbursementFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AttachTravelReimbursementFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AttachTravelReimbursementFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AttachTravelReimbursementFile(ctx, req.(*AttachTravelReimbursementFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_MarkTravelReimbursementPaid_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkTravelReimbursementPaidRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).MarkTravelReimbursementPaid(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_MarkTravelReimbursementPaid_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).MarkTravelReimbursementPaid(ctx, req.(*MarkTravelReimbursementPaidRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReverseTravelReimbursementPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReverseTravelReimbursementPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReverseTravelReimbursementPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReverseTravelReimbursementPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReverseTravelReimbursementPayment(ctx, req.(*ReverseTravelReimbursementPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_ImportBankStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportBankStatementRequest)
 	if err := dec(in); err != nil {
@@ -6106,6 +6382,38 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveReconFile",
 			Handler:    _PurchaseOrderService_RemoveReconFile_Handler,
+		},
+		{
+			MethodName: "CreateTravelReimbursement",
+			Handler:    _PurchaseOrderService_CreateTravelReimbursement_Handler,
+		},
+		{
+			MethodName: "UpdateTravelReimbursement",
+			Handler:    _PurchaseOrderService_UpdateTravelReimbursement_Handler,
+		},
+		{
+			MethodName: "ListTravelReimbursements",
+			Handler:    _PurchaseOrderService_ListTravelReimbursements_Handler,
+		},
+		{
+			MethodName: "SubmitTravelReimbursement",
+			Handler:    _PurchaseOrderService_SubmitTravelReimbursement_Handler,
+		},
+		{
+			MethodName: "PresignTravelReimbursementFile",
+			Handler:    _PurchaseOrderService_PresignTravelReimbursementFile_Handler,
+		},
+		{
+			MethodName: "AttachTravelReimbursementFile",
+			Handler:    _PurchaseOrderService_AttachTravelReimbursementFile_Handler,
+		},
+		{
+			MethodName: "MarkTravelReimbursementPaid",
+			Handler:    _PurchaseOrderService_MarkTravelReimbursementPaid_Handler,
+		},
+		{
+			MethodName: "ReverseTravelReimbursementPayment",
+			Handler:    _PurchaseOrderService_ReverseTravelReimbursementPayment_Handler,
 		},
 		{
 			MethodName: "ImportBankStatement",

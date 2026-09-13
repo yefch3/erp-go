@@ -1,8 +1,15 @@
 <template>
   <div class="page">
-    <WorkflowPageHeader :title="t('supplierRecon.title')" :description="t('supplierRecon.subtitle')">
-      <template #actions><el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
+    <WorkflowPageHeader :title="isReimbursement ? '出差报销' : t('supplierRecon.title')" :description="isReimbursement ? '提交出差凭证，跟踪部门确认、财务审批和付款。' : t('supplierRecon.subtitle')">
+      <template #actions><el-button v-if="!isReimbursement && canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
     </WorkflowPageHeader>
+
+    <el-radio-group v-if="canReadRecon" :model-value="isReimbursement ? 'travel' : 'payables'" class="module-tabs" @update:model-value="switchSection">
+      <el-radio-button value="payables">供应商付款</el-radio-button>
+      <el-radio-button value="travel">出差报销</el-radio-button>
+    </el-radio-group>
+    <TravelReimbursementPanel v-if="isReimbursement" />
+    <div v-show="!isReimbursement" class="legacy-recon">
 
     <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -391,6 +398,7 @@
         <el-button type="primary" :loading="entryBusy" @click="submitEntry">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -403,6 +411,7 @@ import { backfillRequest, get, patch, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import TravelReimbursementPanel from '../components/TravelReimbursementPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -411,6 +420,11 @@ const auth = useAuthStore()
 // 和网关那行 s.perm("procurement:recon:write") 逐字一致。差一个字就是
 // 「看得见按钮、点下去 403」，或者更糟，反过来。
 const canWrite = auth.can('procurement:recon:write')
+const canReadRecon = auth.can('procurement:recon:read')
+const isReimbursement = computed(() => route.query.section === 'travel' || !canReadRecon)
+function switchSection(value: string | number | boolean | undefined) {
+  void router.push({ path: route.path, query: value === 'travel' ? { section: 'travel' } : {} })
+}
 const manualOpen = ref(false)
 const manualBusy = ref(false)
 const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
@@ -925,7 +939,12 @@ watch(isDone, () => {
   reload()
 })
 
+watch(isReimbursement, (active) => {
+  if (!active) { load(); loadMetrics() }
+})
+
 onMounted(() => {
+	if (isReimbursement.value) return
   load()
   loadMetrics()
 })
@@ -940,6 +959,12 @@ onMounted(() => {
   max-width: 1680px;
   min-width: 0;
   margin: 0 auto;
+}
+.legacy-recon {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }

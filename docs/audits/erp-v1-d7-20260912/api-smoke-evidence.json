@@ -1,0 +1,34 @@
+{
+  "generatedAt": "2026-09-12T23:33:16.3248461-04:00",
+  "reimbursementId": "3",
+  "claimNo": "TR-20260913-000003",
+  "amount": "CNY 680.50",
+  "status": "PAID",
+  "historyEntries": 6,
+  "attachment": {
+    "fileName": "d7-invoice-1789270393.pdf",
+    "uploadedBytes": 36
+  },
+  "approval": {
+    "departmentLeader": "b1@d5.example.test",
+    "selfApprovalDenied": 403,
+    "financeLeader": "d6.f1@d5.example.test"
+  },
+  "visibility": {
+    "unrelatedEmployeeHidden": true
+  },
+  "missingDocumentStatus": 400,
+  "retiredBankWriteStatus": 405,
+  "fx": {
+    "usingCache": true,
+    "provider": "Frankfurter / ECB",
+    "state": "DEGRADED",
+    "watched": [
+      "CNY",
+      "EUR",
+      "GBP",
+      "JPY",
+      "HKD"
+    ]
+  }
+}

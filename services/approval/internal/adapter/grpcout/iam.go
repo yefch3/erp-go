@@ -70,3 +70,20 @@ func (c *IAM) ManagersOf(ctx context.Context, employeeID int64, levels int32) ([
 	}
 	return resp.GetEmployeeIds(), nil
 }
+
+func (c *IAM) DepartmentLeaderOf(ctx context.Context, employeeID int64) (int64, error) {
+	employee, err := c.directory.GetEmployee(ctx, &iamv1.GetEmployeeRequest{Id: employeeID})
+	if err != nil {
+		return 0, err
+	}
+	departments, err := c.directory.ListDepartments(ctx, &iamv1.ListDepartmentsRequest{})
+	if err != nil {
+		return 0, err
+	}
+	for _, department := range departments.GetDepartments() {
+		if department.GetId() == employee.GetEmployee().GetDepartmentId() {
+			return department.GetLeaderEmployeeId(), nil
+		}
+	}
+	return 0, nil
+}

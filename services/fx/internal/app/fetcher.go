@@ -18,7 +18,8 @@ import (
 // Fetch pulls the latest reference rates and upserts one row per symbol.
 // A failed fetch only logs: the system keeps serving the last known or
 // manual rates, which is the designed fallback.
-func (s *Service) Fetch(ctx context.Context, fetchURL string, symbols []string) error {
+func (s *Service) Fetch(ctx context.Context, fetchURL string, symbols []string) (fetchErr error) {
+	defer func() { s.recordFetch(fetchErr) }()
 	u, err := url.Parse(fetchURL)
 	if err != nil {
 		return fmt.Errorf("fx: bad fetch url: %w", err)

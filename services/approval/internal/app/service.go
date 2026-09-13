@@ -35,6 +35,10 @@ type Directory interface {
 	ManagersOf(ctx context.Context, employeeID int64, levels int32) ([]int64, error)
 }
 
+type departmentLeaderDirectory interface {
+	DepartmentLeaderOf(ctx context.Context, employeeID int64) (int64, error)
+}
+
 // Live nudges whoever has a page open. It is a hint, never a guarantee: the
 // engine's correctness does not depend on any of these arriving.
 type Live interface {
@@ -357,6 +361,53 @@ func (s *Service) assigneesFor(ctx context.Context, node store.ApprovalNode, sub
 			return nil, fmt.Errorf("approval: resolve manager of %d: %w", submitterID, err)
 		}
 		return managers, nil
+	case "DEPARTMENT_LEADER":
+		resolver, ok := s.dir.(departmentLeaderDirectory)
+		if !ok {
+			return nil, apierr.Invalid("AP_DEPARTMENT_LEADER_MISSING", "审批服务暂时无法读取部门负责人")
+		}
+		leaderID, err := resolver.DepartmentLeaderOf(ctx, submitterID)
+		if err != nil {
+			return nil, fmt.Errorf("approval: resolve department leader of %d: %w", submitterID, err)
+		}
+		if leaderID == submitterID {
+			managers, err := s.dir.ManagersOf(ctx, submitterID, 1)
+			if err != nil {
+				return nil, err
+			}
+			managers = excludeEmployee(managers, submitterID)
+			if len(managers) > 0 {
+				return managers, nil
+			}
+			bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
+			if err != nil {
+				return nil, err
+			}
+			bosses = excludeEmployee(bosses, submitterID)
+			if len(bosses) > 0 {
+				return bosses, nil
+			}
+		}
+		if leaderID == 0 || leaderID == submitterID {
+			return nil, apierr.Invalid("AP_DEPARTMENT_LEADER_MISSING", "报销人的部门尚未配置可审批的部门负责人")
+		}
+		return []int64{leaderID}, nil
+	case "FINANCE_MANAGER":
+		members, found, err := s.dir.RoleMembersByCode(ctx, "FINANCE_MANAGER")
+		if err != nil {
+			return nil, fmt.Errorf("approval: resolve finance manager: %w", err)
+		}
+		if !found {
+			return nil, apierr.Invalid("AP_FINANCE_MANAGER_MISSING", "请先配置财务负责人角色")
+		}
+		ids = excludeEmployee(members, submitterID)
+		if len(ids) == 0 {
+			bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
+			if err != nil {
+				return nil, err
+			}
+			ids = excludeEmployee(bosses, submitterID)
+		}
 	default:
 		return nil, apierr.Invalid("AP_APPROVER_TYPE_INVALID", "不支持的审批人类型").
 			WithMeta("approver_type", node.ApproverType)
@@ -368,6 +419,16 @@ func (s *Service) assigneesFor(ctx context.Context, node store.ApprovalNode, sub
 			WithMeta("node", node.Name)
 	}
 	return ids, nil
+}
+
+func excludeEmployee(ids []int64, employeeID int64) []int64 {
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id != employeeID {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // managerLevels reads approver_ref as "how far up the reporting line". Zero

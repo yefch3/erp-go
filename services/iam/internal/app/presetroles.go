@@ -97,6 +97,7 @@ var presetRoles = []presetRole{
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",
+			"procurement:reimbursement:manage",
 			"shipping:document:download", "shipping:document:view", "shipping:schedule:read",
 		},
 		Scopes: []presetScope{
@@ -107,6 +108,19 @@ var presetRoles = []presetRole{
 			{"procurement_order", "ALL"}, {"procurement_requirement", "SELF"},
 			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"},
 		},
+	},
+	{
+		Code: "FINANCE_MANAGER", Name: "财务负责人",
+		Description: "审批全公司报销并管理收付款",
+		Permissions: []string{
+			"approval:task:act", "export:contract:read", "export:receipt:read", "export:receipt:write",
+			"export:shipment:read", "fx:rate:read", "fx:rate:write",
+			"masterdata:customer:read", "masterdata:port:read",
+			"procurement:payment:read", "procurement:payment:write",
+			"procurement:recon:read", "procurement:recon:write", "procurement:reimbursement:manage",
+			"shipping:document:download", "shipping:document:view", "shipping:schedule:read",
+		},
+		Scopes: []presetScope{{"export", "ALL"}, {"mail", "SELF"}, {"procurement_order", "ALL"}, {"procurement_requirement", "SELF"}, {"procurement_sourcing", "SELF"}, {"shipping", "ALL"}},
 	},
 	{
 		Code: "BUYER", Name: "采购专员",

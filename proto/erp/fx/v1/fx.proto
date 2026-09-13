@@ -14,6 +14,10 @@ service FxService {
   rpc ListAnomalies(ListAnomaliesRequest) returns (ListAnomaliesResponse);
   rpc ListEffectiveRates(ListEffectiveRatesRequest) returns (ListEffectiveRatesResponse);
   rpc ConfirmEffectiveRate(ConfirmEffectiveRateRequest) returns (ConfirmEffectiveRateResponse);
+  rpc RefreshRates(RefreshRatesRequest) returns (RefreshRatesResponse);
+  rpc GetSyncStatus(GetSyncStatusRequest) returns (GetSyncStatusResponse);
+  rpc ListWatchedCurrencies(ListWatchedCurrenciesRequest) returns (ListWatchedCurrenciesResponse);
+  rpc UpdateWatchedCurrencies(UpdateWatchedCurrenciesRequest) returns (UpdateWatchedCurrenciesResponse);
 }
 
 message Rate {
@@ -80,3 +84,19 @@ message ConfirmEffectiveRateRequest {
   string remark = 4;
 }
 message ConfirmEffectiveRateResponse { EffectiveRate rate = 1; }
+message RefreshRatesRequest {}
+message RefreshRatesResponse { SyncStatus status = 1; }
+message GetSyncStatusRequest {}
+message GetSyncStatusResponse { SyncStatus status = 1; }
+message SyncStatus {
+  string state = 1;
+  string last_attempt_at = 2;
+  string last_success_at = 3;
+  string last_error = 4;
+  bool using_cache = 5;
+  string provider = 6;
+}
+message ListWatchedCurrenciesRequest {}
+message ListWatchedCurrenciesResponse { repeated string currencies = 1; }
+message UpdateWatchedCurrenciesRequest { repeated string currencies = 1; }
+message UpdateWatchedCurrenciesResponse { repeated string currencies = 1; }

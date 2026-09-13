@@ -59,6 +59,13 @@ var defaultFlows = map[string][]defaultFlow{
 			{Seq: 1, Name: "直属上级确认", Type: "MANAGER", Ref: 1},
 		},
 	}},
+	"TRAVEL_REIMBURSEMENT": {{
+		Name: "出差报销审批", MinAmount: "0",
+		Nodes: []defaultNode{
+			{Seq: 1, Name: "部门负责人确认", Type: "DEPARTMENT_LEADER"},
+			{Seq: 2, Name: "财务负责人审批", Type: "FINANCE_MANAGER"},
+		},
+	}},
 }
 
 type defaultFlow struct {
