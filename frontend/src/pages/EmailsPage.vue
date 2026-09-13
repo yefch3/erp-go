@@ -1454,7 +1454,7 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
-import { isSheetPreview, needsConversion } from '../lib/attachmentPreview'
+import { isOfficePreview, isSheetPreview, needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
@@ -4905,6 +4905,13 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
  * 开出来再去转，否则 await 之后再 open 就不算「人点的」了，会被拦。
  */
 async function openPreview(a: MailFile, mailID: string) {
+  // 在线 Office 优先：配了 OnlyOffice 的话 Word / Excel / PPT 都在它里面开。
+  if (isOfficePreview(a)) {
+    const id = mailID || openedInbound.value?.id || ''
+    if (!id) return
+    window.open(router.resolve({ path: `/mail/${id}/office/${a.id}` }).href, `office-${a.id}`)?.focus()
+    return
+  }
   if (isSheetPreview(a)) {
     const id = mailID || openedInbound.value?.id || ''
     if (!id) return

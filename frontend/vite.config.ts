@@ -29,6 +29,17 @@ export default defineConfig({
     // 所以就算不给 PORT，vite 也会自己顺延到下一个空端口。
     port: Number(process.env.PORT) || 5173,
     proxy: {
+      // 在线 Office（OnlyOffice 的 docs 容器）。生产上是前门 nginx 做同一件事。
+      // rewrite 把 /docs 剥掉，ws 是它的长连接。
+      '/docs': {
+        // 127.0.0.1 而不是 localhost：Node 在这台机器上把 localhost 先解成 ::1，
+        // 而容器的端口只发布在 127.0.0.1 上——连不上，Vite 回一个空白的 500。
+        target: process.env.VITE_DOCS_URL || 'http://127.0.0.1:8083',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/docs/, ''),
+        headers: { 'X-Forwarded-Host': 'localhost:5173/docs', 'X-Forwarded-Proto': 'http' },
+      },
       '/api': {
         target: process.env.VITE_GATEWAY_URL || 'http://localhost:8080',
         changeOrigin: true,

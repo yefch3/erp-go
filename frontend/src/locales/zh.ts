@@ -2296,6 +2296,11 @@ export default {
     tooBigHint: '在浏览器里画不动这么大的表——下载下来用 Excel 打开吧。',
     truncated: '只画了前 {shown} 行，整张表共 {total} 行——要看全的请下载原文件。',
   },
+  // 在线 Office 预览页（OnlyOffice）。
+  officeWindow: {
+    failed: '这个文件打不开',
+    failedHint: '可能是在线 Office 没配好、文件损坏，或者信已经被删掉了。回邮件页下载它吧。',
+  },
   reader: {
     bodyFrame: '邮件正文',
     showQuoted: '显示引用的往来',

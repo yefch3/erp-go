@@ -217,7 +217,7 @@ import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
-import { isSheetPreview, needsConversion } from '../lib/attachmentPreview'
+import { isOfficePreview, isSheetPreview, needsConversion } from '../lib/attachmentPreview'
 import { plainTextToHtml } from '../lib/linkifyText'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import '../styles/mailbox.css'
@@ -527,6 +527,10 @@ async function downloadAll() {
 // Word/PPT 还得先转一趟 PDF。
 async function openPreview(a: MailFile) {
   if (!mail.value) return
+  if (isOfficePreview(a)) {
+    window.open(router.resolve({ path: `/mail/${mail.value.id}/office/${a.id}` }).href, `office-${a.id}`)?.focus()
+    return
+  }
   if (isSheetPreview(a)) {
     window.open(router.resolve({ path: `/mail/${mail.value.id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()
     return

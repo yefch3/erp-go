@@ -2303,6 +2303,11 @@ export default {
     tooBigHint: 'Demasiado grande para dibujarla en el navegador: descárgala y ábrela en Excel.',
     truncated: 'Se muestran las primeras {shown} filas de {total}: descarga el archivo para verlo completo.',
   },
+  // La página del visor de Office en línea (OnlyOffice).
+  officeWindow: {
+    failed: 'No se puede abrir este archivo',
+    failedHint: 'Puede que Office en línea no esté configurado, que el archivo esté dañado o que el correo se haya eliminado. Descárgalo desde la página del correo.',
+  },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',
     showQuoted: 'Mostrar historial citado',

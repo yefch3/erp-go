@@ -996,6 +996,16 @@ func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.S
 	return &mailv1.StartInboundExcelConversionResponse{Job: excelJobToProto(job)}, nil
 }
 
+func (h *Handler) OfficePreviewConfig(ctx context.Context, req *mailv1.OfficePreviewConfigRequest) (*mailv1.OfficePreviewConfigResponse, error) {
+	op := operator(ctx)
+	open, err := h.svc.OfficePreviewConfig(ctx, grpcx.TenantID(ctx), op,
+		req.GetInboundId(), req.GetAttachmentId(), req.GetLang())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.OfficePreviewConfigResponse{DocsUrl: open.DocsURL, ConfigJson: open.ConfigJSON, Token: open.Token}, nil
+}
+
 func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.GetInboundExcelConversionJobRequest) (*mailv1.GetInboundExcelConversionJobResponse, error) {
 	op := operator(ctx)
 	job, err := h.svc.GetExcelJob(ctx, grpcx.TenantID(ctx), op.ID, req.GetId())

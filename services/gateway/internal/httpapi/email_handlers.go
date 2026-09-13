@@ -1071,6 +1071,22 @@ func (s *Server) previewInboundAttachment(w http.ResponseWriter, r *http.Request
 	s.writeProto(w, resp)
 }
 
+// officePreviewConfig 要一份「在在线 Office 里打开这个附件」的签名配置。
+// 谁能看、附件属不属于这封信，都在邮件服务里判；这里只转发身份和语言。
+func (s *Server) officePreviewConfig(w http.ResponseWriter, r *http.Request) {
+	inboundID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	attachmentID, _ := strconv.ParseInt(chi.URLParam(r, "attachmentId"), 10, 64)
+	resp, err := s.Emails.OfficePreviewConfig(r.Context(),
+		&mailv1.OfficePreviewConfigRequest{
+			InboundId: inboundID, AttachmentId: attachmentID, Lang: r.URL.Query().Get("lang"),
+		})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // downloadInboundAttachments 把一封信的附件打成压缩包送下去。
 //
 // 响应体照搬 exportMailThread 的写法：同样是「一个文件，直接存盘，不缓存、
