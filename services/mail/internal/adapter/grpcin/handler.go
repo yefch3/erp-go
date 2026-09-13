@@ -859,6 +859,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		HasRaw:      v.HasRaw,
 		Tracked:     v.Tracked,
 		Folder:      v.Folder,
+		View:        v.View,
 
 		MessageIdHeader: v.MessageIDHeader,
 		RawSize:         v.RawSize,

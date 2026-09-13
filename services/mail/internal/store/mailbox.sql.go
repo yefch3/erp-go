@@ -880,6 +880,8 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
        i.imap_uid, i.archived_at,
+       -- 左栏的哪一格。和列表用的是同一个函数，所以两边不会各说各的。
+       coalesce(mail_view_of(i.folder, i.not_junk, i.is_bounce, i.archived_at, i.deleted_at), '')::text AS view,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -921,6 +923,7 @@ type GetInboundRow struct {
 	ToAll          string
 	ImapUid        int64
 	ArchivedAt     pgtype.Timestamptz
+	View           string
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -964,6 +967,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.ToAll,
 		&i.ImapUid,
 		&i.ArchivedAt,
+		&i.View,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
