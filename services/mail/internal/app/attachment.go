@@ -125,6 +125,10 @@ func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attach
 				s.log.Warn("could not sign an attachment preview",
 					"file", a.FileName, "err", err)
 			}
+		} else if s.office != nil && officeDocumentType(a.FileName) != "" {
+			// 在线 Office 里打开。地址不在这里签：点了预览再签，签的是一份
+			// 带签名的配置，见 OfficePreviewConfig。
+			atts[i].PreviewKind = PreviewOffice
 		} else if convertibleToPDF(a.FileName) {
 			// 地址留空：办公文档要转一趟才有得看，而转换只在有人点「预览」
 			// 的时候做。见 PreviewInboundAttachment。

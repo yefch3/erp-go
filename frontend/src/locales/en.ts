@@ -2297,6 +2297,11 @@ export default {
     tooBigHint: 'Too large to render in the browser — download it and open it in Excel.',
     truncated: 'Showing the first {shown} rows of {total} — download the file to see all of it.',
   },
+  // The online Office viewer page (OnlyOffice).
+  officeWindow: {
+    failed: 'This file will not open',
+    failedHint: 'Online Office may not be configured, the file may be damaged, or the mail may have been deleted. Download it from the mail page instead.',
+  },
   reader: {
     bodyFrame: 'Message body',
     showQuoted: 'Show quoted history',

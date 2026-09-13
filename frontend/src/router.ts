@@ -13,6 +13,8 @@ export const router = createRouter({
     { path: '/mail/:id', component: () => import('./pages/MailWindowPage.vue') },
     // 表格附件的预览：在浏览器里直接解出来画成表，不经过服务器转换。
     { path: '/mail/:id/sheet/:att', component: () => import('./pages/SheetWindowPage.vue') },
+    // 办公文档在在线 Office（OnlyOffice）里打开。
+    { path: '/mail/:id/office/:att', component: () => import('./pages/OfficeWindowPage.vue') },
     {
       path: '/',
       component: () => import('./pages/Shell.vue'),

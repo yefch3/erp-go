@@ -25,6 +25,7 @@ FILES="deploy/docker-compose.services.yml deploy/docker-compose.prod.yml"
 # 清单按字母序。加一行之前先回答：生产的 .env 里有它吗？
 EXPECTED=$(cat <<'EOF'
 APPROVAL_DB_DSN
+DOCS_JWT_SECRET
 ERP_SHA
 EXPORT_DB_DSN
 FX_DB_DSN

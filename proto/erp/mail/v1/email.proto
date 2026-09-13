@@ -149,6 +149,9 @@ service EmailService {
   // 前端据此退回纯文本那条路。
   rpc CleanPastedTable(CleanPastedTableRequest) returns (CleanPastedTableResponse);
   rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
+  // 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
+  // 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
+  rpc OfficePreviewConfig(OfficePreviewConfigRequest) returns (OfficePreviewConfigResponse);
   // 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
   // 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
   rpc DownloadInboundAttachments(DownloadInboundAttachmentsRequest) returns (DownloadInboundAttachmentsResponse);
@@ -351,6 +354,8 @@ message InboundAttachment {
   // 怎么预览这个附件。空 = 不能预览，只能下载。
   //
   // "direct"  preview_url 已经填好，直接显示（图片、PDF）。
+  // "office" 在线 Office 里打开（配了 OnlyOffice 时办公文档都是这一档）：
+  // 调 OfficePreviewConfig 拿配置。
   // "convert" 要先转成 PDF：调 PreviewInboundAttachment 拿地址。转换在服务器
   //           上做，第一次几百毫秒，之后有缓存。Word / Excel / PPT 走这条。
   string preview_kind = 8;
@@ -466,6 +471,22 @@ message PreviewInboundAttachmentRequest {
   int64 attachment_id = 2;
 }
 
+message OfficePreviewConfigRequest {
+  int64 inbound_id = 1;
+  int64 attachment_id = 2;
+  // 编辑器界面用哪种语言（zh / en / es），跟着浏览器走。
+  string lang = 3;
+}
+message OfficePreviewConfigResponse {
+  // 浏览器从哪儿加载编辑器（api.js 在它底下）。相对路径（/docs）或完整地址。
+  string docs_url = 1;
+  // 交给 DocsAPI.DocEditor 的那份配置，原样的 JSON。不拆成 proto 字段：那份
+  // 结构是 OnlyOffice 定的，会随版本长，照抄一份只会落后。
+  string config_json = 2;
+  // 配置的签名（HS256 JWT）。Document Server 只认签过的配置——没有这一条，
+  // 谁都能让它去取任意地址上的文件。
+  string token = 3;
+}
 message PreviewInboundAttachmentResponse {
   // 签过名的、有时限的地址，内容是转好的 PDF。
   string preview_url = 1;

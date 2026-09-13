@@ -19,6 +19,15 @@ import { isDirectTableFile } from './attachmentExcel'
 
 export const PREVIEW_DIRECT = 'direct'
 export const PREVIEW_CONVERT = 'convert'
+// 在线 Office 里打开：服务端配了 OnlyOffice 时，办公文档（连表格一起）都是
+// 这一档。优先于下面两种：一个完整的在线 Excel 比浏览器自己画的表强，比转成
+// PDF 更强。
+export const PREVIEW_OFFICE = 'office'
+
+/** 在在线 Office 里开。 */
+export function isOfficePreview(file: PreviewableFile): boolean {
+  return file.previewKind === PREVIEW_OFFICE
+}
 
 export interface PreviewableFile {
   fileName?: string
@@ -34,7 +43,9 @@ export function isSheetPreview(file: PreviewableFile): boolean {
 
 /** 要不要显示「预览」按钮。 */
 export function canPreview(file: PreviewableFile): boolean {
-  return isSheetPreview(file) || Boolean(file.previewUrl) || file.previewKind === PREVIEW_CONVERT
+  return (
+    isOfficePreview(file) || isSheetPreview(file) || Boolean(file.previewUrl) || file.previewKind === PREVIEW_CONVERT
+  )
 }
 
 /**
@@ -46,6 +57,6 @@ export function canPreview(file: PreviewableFile): boolean {
  * 字段，不然同一份合同每次点开都要再问一次服务器。
  */
 export function needsConversion(file: PreviewableFile): boolean {
-  if (isSheetPreview(file)) return false
+  if (isOfficePreview(file) || isSheetPreview(file)) return false
   return file.previewKind === PREVIEW_CONVERT && !file.previewUrl
 }

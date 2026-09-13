@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canPreview, isSheetPreview, needsConversion } from './attachmentPreview'
+import { canPreview, isOfficePreview, isSheetPreview, needsConversion } from './attachmentPreview'
 
 describe('附件预览的两个判断', () => {
   it('图片和 PDF：直接就能看，不用转', () => {
@@ -39,6 +39,20 @@ describe('附件预览的两个判断', () => {
       expect(canPreview(f)).toBe(true)
       expect(needsConversion(f)).toBe(false)
     }
+  })
+
+  it('在线 Office 那一档：有按钮，不转 PDF，表格也归它——哪怕浏览器自己读得动', () => {
+    for (const f of [
+      { fileName: '合同.docx', previewKind: 'office' },
+      { fileName: '装箱单.xlsx', previewKind: 'office' },
+      { fileName: 'old.xls', previewKind: 'office' },
+    ]) {
+      expect(isOfficePreview(f)).toBe(true)
+      expect(canPreview(f)).toBe(true)
+      expect(needsConversion(f)).toBe(false)
+    }
+    // 服务端没标 office 的（没配 OnlyOffice），一切照旧。
+    expect(isOfficePreview({ fileName: '合同.docx', previewKind: 'convert' })).toBe(false)
   })
 
   it('老的 .xls 读不了，还是走转 PDF 那条路', () => {
