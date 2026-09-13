@@ -1473,6 +1473,7 @@ import {
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
+import { printDocument } from '../lib/printDocument'
 import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
 import {
   isListFolder,
@@ -2586,6 +2587,19 @@ function onMailLocked() {
 window.addEventListener('mail-locked', onMailLocked)
 onUnmounted(() => window.removeEventListener('mail-locked', onMailLocked))
 
+// 双击弹出的那个窗口里改了一封信（删了、挪了、归档了、标未读了），它会在
+// 这条频道上说一声。列表在这边，所以这边重新拉一遍；正开着的就是那封而它
+// 已经不在这一格里了的话，阅读区也收起来——右边显示一封列表里没有的信，
+// 看着像坏了。
+const mailBus = new BroadcastChannel('erp-mail')
+mailBus.onmessage = (e: MessageEvent<{ type?: string; id?: string; gone?: boolean }>) => {
+  if (e.data?.type !== 'mail-changed') return
+  if (e.data.gone && openedInbound.value?.id === e.data.id) pushState({ mail: '' })
+  void load({ quiet: true })
+  refreshUnread()
+}
+onUnmounted(() => mailBus.close())
+
 // 退出**当前这一个**信箱。别的箱照开。
 //
 // 从前是全退，因为令牌一个人只有一把。现在一个箱一把，撤掉当前这把之后
@@ -3554,36 +3568,7 @@ async function printThread() {
   if (file) printDocument(await file.text())
 }
 
-// Printing through a frame of our own rather than a new tab.
-//
-// window.open after an await is what a popup blocker exists to stop, and the
-// failure is silent — the click "does nothing". A frame is always allowed.
-// It also keeps the sender's document out of a top-level page at our origin,
-// which matters less here than it would with the original HTML but costs
-// nothing to keep true.
-function printDocument(html: string) {
-  const frame = document.createElement('iframe')
-  frame.setAttribute('aria-hidden', 'true')
-  // Hidden, but laid out. display:none is not laid out and prints blank.
-  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;'
-  frame.srcdoc = html
-  frame.onload = () => {
-    const win = frame.contentWindow
-    if (!win) {
-      frame.remove()
-      return
-    }
-    win.focus()
-    win.print()
-    // Removing the frame while the dialog is still open cancels the job in
-    // Safari, so it goes afterwards — with a timer in case a browser never
-    // fires afterprint, which is the case in more of them than it should be.
-    const drop = () => frame.remove()
-    win.addEventListener('afterprint', drop, { once: true })
-    setTimeout(drop, 120_000)
-  }
-  document.body.appendChild(frame)
-}
+// 打印走 lib/printDocument：双击弹出的单独窗口也要打印，同一段代码。
 
 // Housekeeping straight from a list row, without opening the mail. Each of
 // these also reaches the mail host within seconds; see the write-back queue.

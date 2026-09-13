@@ -299,6 +299,11 @@ message InboundMail {
   // 整段 To 头（解码后原样），给人看的：一封群发给七个人的信，这里是七个。
   // to_email 只是其中第一个。空表示存量还没补（读的那一侧退回 to_email）。
   string to_all = 31;
+  // 这封信此刻在左栏的哪一格：INBOX / ARCHIVE / JUNK / TRASH / F:<自建文件夹>，
+  // 已发送和退信是空串。folder 是服务器上的文件夹名，回答不了「归档了没有」
+  // ——归档是 INBOX 里的一个标记，不是另一个文件夹。单独开窗口读信的那一页
+  // 要靠它决定给哪几颗按钮（回收站里是彻底删除，归档里是取消归档）。
+  string view = 36;
   // 从 to_all 和 cc 里解析出来的地址，给「回复全部」用。已经拆好、小写、
   // 去重，前端不用再对着 "Name <a@x>, b@y" 这种东西写解析器。
   repeated MailParty to_parties = 32;

@@ -20,6 +20,9 @@ type InboundView struct {
 	// 可能是站在 A 箱里点开的，而「点回复从哪个地址发出去」得看这封信是
 	// 哪个箱收到的，不能看左边高亮着谁——那就是「读 B 的信、从 A 回过去」。
 	AccountID      int64
+	// 左栏的哪一格（INBOX / ARCHIVE / JUNK / TRASH / F:…），已发送是空串。
+	// 只有单封读取填它：列表那边站在哪一格本来就知道。
+	View           string
 	FromEmail      string
 	FromName       string
 	ToEmail        string
@@ -414,7 +417,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
-		Folder: row.Folder, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
+		Folder: row.Folder, View: row.View, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
 		ReplyTo: row.ReplyTo, CC: row.Cc,
 		AuthSPF: row.AuthSpf, AuthDKIM: row.AuthDkim,
 		// 存量还没补回来的行 to_all 是空的：退回第一个收件人，至少和从前一样，

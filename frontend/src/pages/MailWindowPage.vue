@@ -9,9 +9,12 @@
      回信这件事本来就该在同一个窗口里完成，而不是"看完这一屏、回主窗口、
      再把信找出来"。
 
-     挪文件夹、归档、删除仍然只在主窗口：那几件事会改列表的样子（这封信还在
-     不在、在哪个文件夹、勾没勾上），而两个窗口各改各的，谁也不知道对方改了
-     什么。回信不改列表，所以没有这个问题。
+     删除、归档、挪文件夹、标未读、导出也在——和主窗口阅读区上那一排一样。
+     这几件会改列表的样子（这封信还在不在、在哪个文件夹），而列表在主窗口里，
+     所以做完要**告诉主窗口一声**：走 BroadcastChannel（同源的窗口都听得到，
+     不依赖 window.opener——刷新过的窗口 opener 是空的），主窗口收到就把列表
+     重新拉一遍。信离开了这一格（删了、挪了、归档了）的话这个窗口顺手关掉：
+     它显示的东西已经不在那儿了。
 
      路由在 Shell 外面：这个窗口不该有顶栏和左侧菜单，它就是一封信。 -->
 <template>
@@ -63,16 +66,95 @@
       <!-- 和主窗口阅读区上那排图标同一套：符号一样、次序一样、tooltip 一样，
            因为它们做的是同一件事。没有的那几颗（删除、归档、挪文件夹）见页头
            那段说明。 -->
-      <div v-if="canWrite" class="in-actions">
-        <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
-          <button type="button" class="tb" :aria-label="t('emails.reply')" @click="reply">↩</button>
+      <div v-if="canWrite || deleteAction || menuAvailable" class="in-actions">
+        <template v-if="canWrite">
+          <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
+            <button type="button" class="tb" :aria-label="t('emails.reply')" @click="reply">↩</button>
+          </el-tooltip>
+          <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
+            <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAll">↩↩</button>
+          </el-tooltip>
+          <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
+            <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forward">↪</button>
+          </el-tooltip>
+        </template>
+        <!-- 删除在最右、隔一条线：前三颗是「继续这封信」，它是「结束这封信」。
+             回收站里它是彻底删除，别处是挪进回收站——tooltip 说的就是按下去
+             会发生什么，图标本身分不出这两者。 -->
+        <span v-if="deleteAction" class="tb-sep" aria-hidden="true" />
+        <el-tooltip
+          v-if="deleteAction"
+          :content="deleteAction.label"
+          placement="bottom"
+          :show-after="0"
+          :hide-after="0"
+        >
+          <button
+            type="button"
+            class="tb tb-danger"
+            :aria-label="deleteAction.label"
+            :disabled="busy"
+            @click="deleteAction.run()"
+          ><el-icon><Delete /></el-icon></button>
         </el-tooltip>
-        <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
-          <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAll">↩↩</button>
-        </el-tooltip>
-        <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
-          <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forward">↪</button>
-        </el-tooltip>
+
+        <span class="grow" />
+
+        <!-- 「⋯」里是其余全部动作，分组和次序照主窗口。 -->
+        <el-dropdown v-if="menuAvailable" trigger="click" placement="bottom-end" @command="onCommand">
+          <button type="button" class="tb" :aria-label="t('emails.moreActions')">
+            <el-icon><MoreFilled /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="canWrite" command="forwardAttachment" :disabled="!mail.hasRaw">
+                {{ t('emails.forwardAsAttachment') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="listed && view !== 'JUNK' && view !== 'TRASH'" command="unread" :divided="canWrite">
+                {{ t('emails.markUnread') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="view === 'JUNK'" command="notJunk" :divided="canWrite">
+                {{ t('emails.notJunk') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="view === 'ARCHIVE'" command="unarchive">
+                {{ t('emails.unarchive') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-else-if="listed && view !== 'JUNK' && view !== 'TRASH'" command="archive">
+                {{ t('emails.archive') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="view === 'TRASH'" command="restore" :divided="canWrite">
+                {{ t('emails.restore') }}
+              </el-dropdown-item>
+
+              <template v-if="canMove">
+                <el-dropdown-item disabled divided>{{ t('emails.moveTo') }}</el-dropdown-item>
+                <el-dropdown-item v-if="view.startsWith('F:')" command="move:0">
+                  {{ t('emails.moveToInbox') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-for="cf in folders"
+                  :key="cf.id"
+                  :command="`move:${cf.id}`"
+                  :disabled="view === cf.viewKey || busy"
+                >
+                  {{ cf.name }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!folders.length" disabled>
+                  {{ t('emails.noFoldersYet') }}
+                </el-dropdown-item>
+              </template>
+
+              <template v-if="canExport && mail.threadKey">
+                <el-dropdown-item command="print" divided :disabled="exporting">
+                  {{ t('emails.exportPrint') }}
+                </el-dropdown-item>
+                <el-dropdown-item command="save" :disabled="exporting">
+                  {{ t('emails.exportSave') }}
+                </el-dropdown-item>
+              </template>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
 
       <el-divider />
@@ -85,7 +167,20 @@
 
       <template v-if="mail.attachments?.length">
         <el-divider />
-        <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+        <div class="att-head">
+          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+          <!-- 打成一个 zip 拿走。两个以上才给这颗：只有一个附件时它和旁边的
+               「下载」是同一件事，多一颗只会让人挑。和主窗口阅读区同一条规矩。 -->
+          <el-button
+            v-if="mail.attachments.length > 1"
+            size="small"
+            plain
+            :loading="bundling"
+            @click="downloadAll"
+          >
+            {{ t('emails.downloadAll', { n: mail.attachments.length }) }}
+          </el-button>
+        </div>
         <MailAttachments
           :files="mail.attachments"
           :converting="converting"
@@ -108,11 +203,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { WarningFilled } from '@element-plus/icons-vue'
-import { get, post, quietErrors } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
+import { del, download, get, post, quietErrors, saveBlob } from '../api'
+import { printDocument } from '../lib/printDocument'
 import { useAuthStore } from '../stores/auth'
 import { replyAllRecipients } from '../lib/replyAll'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -140,6 +237,11 @@ interface WindowMail {
   ccParties?: { name?: string; email: string }[]
   /** 这封信落在哪个信箱：回信默认从同一个箱发出去。 */
   accountId?: number | string
+  /** 左栏的哪一格：INBOX / ARCHIVE / JUNK / TRASH / F:…；已发送是空串。 */
+  view?: string
+  /** 原始 MIME 还在不在——「作为附件转发」要它。 */
+  hasRaw?: boolean
+  threadKey?: string
   subject: string
   sentAt: string
   receivedAt: string
@@ -155,22 +257,70 @@ interface WindowMail {
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 
-// 没有发信权限就不给这三颗按钮——和主窗口阅读区同一个判断。
+// 权限和主窗口阅读区同一套判断。
 const canWrite = computed(() => auth.can('mail:email:write'))
+const canExport = computed(() => auth.can('mail:email:export'))
+
+// 这封信在左栏的哪一格。空串是已发送（或退信）：那一侧没有删除、归档这些。
+const view = computed(() => mail.value?.view ?? '')
+const listed = computed(() => view.value !== '')
+// 「移动到」给不给：和主窗口那颗同一个条件。
+const canMove = computed(
+  () => listed.value && view.value !== 'TRASH' && view.value !== 'JUNK' && mail.value?.folder !== 'SENT',
+)
+// 删除那颗做哪件事。回收站里是彻底删除，别处是挪进回收站。
+const deleteAction = computed(() => {
+  if (!mail.value || !listed.value) return null
+  if (view.value === 'TRASH') return { label: t('emails.purge'), run: purge }
+  return { label: t('emails.toTrash'), run: () => mark({ deleted: true }, { gone: true }) }
+})
+// 「⋯」里到底有没有东西——一个点开是空的菜单比没有这颗按钮更糟。
+const menuAvailable = computed(() => {
+  const m = mail.value
+  if (!m) return false
+  return (
+    canWrite.value
+    || (listed.value && view.value !== 'JUNK' && view.value !== 'TRASH')
+    || view.value === 'JUNK'
+    || view.value === 'TRASH'
+    || canMove.value
+    || (canExport.value && !!m.threadKey)
+  )
+})
+
+// 这个信箱的自建文件夹，「移动到」要列它们。
+const folders = ref<{ id: number; name: string; viewKey: string }[]>([])
+const busy = ref(false)
+const exporting = ref(false)
+
+// 告诉主窗口「这封信变了」。同源的页面都听得到；不用 window.opener——刷新过
+// 的窗口 opener 是空的，而 BroadcastChannel 谁开的都一样。
+const bus = new BroadcastChannel('erp-mail')
+onUnmounted(() => bus.close())
+function notify(gone: boolean) {
+  bus.postMessage({ type: 'mail-changed', id: mail.value?.id ?? '', gone })
+}
+// 信离开了这一格，这个窗口就没有东西可显示了。自己关不掉（不是脚本开的、
+// 或者浏览器不让）就留着，主窗口那边照样已经刷新了。
+function leave() {
+  window.close()
+}
 
 const mail = ref<WindowMail | null>(null)
 const loading = ref(true)
 const failed = ref(false)
 const detailsOpen = ref(false)
 const converting = ref('')
+const bundling = ref(false)
 const composing = ref(false)
 const composer = ref<{
   openReply: (m: WindowMail) => void
   openReplyAll: (m: WindowMail, who: { to: { name?: string; email: string }; cc: { name?: string; email: string }[] }) => void
   openForward: (m: WindowMail) => void
+  openForwardAsAttachment: (m: WindowMail) => void
 } | null>(null)
 // 这个人名下的信箱：写信框拿它画发件人下拉，「回复全部」拿它认出"这次用来
 // 回信的那个地址"（那个地址不进抄送）。
@@ -189,6 +339,7 @@ onMounted(async () => {
     // 信箱清单：写信框要它。悄悄失败——没有它写信框只是不显示发件人下拉，
     // 而这封信本身已经摆在屏幕上了，不该因为一条次要请求变成一页错误。
     void loadBoxes()
+    void loadFolders(Number(d.mail.accountId ?? 0))
   } catch {
     // 信被删了、id 不是自己的、或者信箱这会儿是锁着的。分不出是哪一种，
     // 也不该猜——一句「打不开，回主窗口看看」比一个白屏诚实。
@@ -205,6 +356,116 @@ async function loadBoxes() {
   } catch {
     // 见调用处。
   }
+}
+
+async function loadFolders(accountId: number) {
+  if (!accountId) return
+  try {
+    const d = await get<{ folders?: { id: number | string; name: string; viewKey?: string; role?: string }[] }>(
+      '/mail-folders', { account_id: accountId }, quietErrors,
+    )
+    folders.value = (d.folders ?? [])
+      .filter((f) => f.role === 'CUSTOM' && f.viewKey)
+      .map((f) => ({ id: Number(f.id), name: f.name, viewKey: f.viewKey ?? '' }))
+  } catch {
+    // 没有这份清单只是「移动到」里少几项，信本身已经在屏幕上了。
+  }
+}
+
+// 标记类动作：已读/未读、归档、挪进回收站、还原、不是垃圾。整条会话一起，
+// 和主窗口一样。gone = 做完这封信就不在这一格了，窗口关掉。
+async function mark(flags: Record<string, boolean>, opts: { gone: boolean }) {
+  if (!mail.value || busy.value) return
+  busy.value = true
+  try {
+    await post(`/inbound-mails/${mail.value.id}/mark`, { ...flags, wholeThread: true })
+    notify(opts.gone)
+    if (opts.gone) leave()
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    busy.value = false
+  }
+}
+
+// 彻底删除，只在回收站里有，而且两边一起没：ERP 的副本和邮件服务器上的原件。
+// 确认框说的就是这句，因为这是唯一一件事后没法检查的事。
+async function purge() {
+  if (!mail.value || busy.value) return
+  try {
+    await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
+      type: 'warning',
+      confirmButtonText: t('emails.purge'),
+    })
+  } catch {
+    return
+  }
+  busy.value = true
+  try {
+    await del(`/inbound-mails/${mail.value.id}?whole_thread=true`)
+    ElMessage.success(t('emails.purged'))
+    notify(true)
+    leave()
+  } catch {
+    // 同上
+  } finally {
+    busy.value = false
+  }
+}
+
+async function moveTo(folderId: number) {
+  if (!mail.value || busy.value) return
+  busy.value = true
+  try {
+    await post(`/inbound-mails/${mail.value.id}/move`, { folderId: String(folderId) })
+    ElMessage.success(t('emails.moved'))
+    notify(true)
+    leave()
+  } catch {
+    // 同上
+  } finally {
+    busy.value = false
+  }
+}
+
+async function fetchTranscript() {
+  const key = mail.value?.threadKey
+  if (!key || exporting.value) return null
+  exporting.value = true
+  try {
+    return await download('/mail-threads/export', {
+      key,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      lang: locale.value,
+    })
+  } catch {
+    return null
+  } finally {
+    exporting.value = false
+  }
+}
+
+function onCommand(cmd: string) {
+  if (cmd.startsWith('move:')) {
+    void moveTo(Number(cmd.slice(5)))
+    return
+  }
+  switch (cmd) {
+    case 'forwardAttachment': return void forwardAsAttachment()
+    case 'unread': return void mark({ read: false }, { gone: false })
+    case 'notJunk': return void mark({ notJunk: true }, { gone: true })
+    case 'archive': return void mark({ archived: true }, { gone: true })
+    case 'unarchive': return void mark({ archived: false }, { gone: true })
+    case 'restore': return void mark({ deleted: false }, { gone: true })
+    case 'print': return void fetchTranscript().then(async (f) => { if (f) printDocument(await f.text()) })
+    case 'save': return void fetchTranscript().then((f) => { if (f) saveBlob(f.blob, f.fileName) })
+  }
+}
+
+function forwardAsAttachment() {
+  if (!mail.value?.hasRaw) return
+  const m = mail.value
+  void openComposer(() => composer.value?.openForwardAsAttachment(m))
 }
 
 /** 这次回信从哪个地址发出去。写信框的发件人默认值同源，两边不会各说各的。 */
@@ -245,6 +506,21 @@ function forward() {
 // 写信框自己已经弹过「已发送」，这里不再叠一句；主窗口的已发送列表会在它
 // 下次拉的时候看到这封信。
 function onSent() {}
+
+/** 把这封信的附件打成一个压缩包下载。上限（40 MB）和超过时的话由后端说。 */
+async function downloadAll() {
+  const id = mail.value?.id
+  if (!id || bundling.value) return
+  bundling.value = true
+  try {
+    const file = await download(`/inbound-mails/${id}/attachments/download`)
+    saveBlob(file.blob, file.fileName)
+  } catch {
+    // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
+  } finally {
+    bundling.value = false
+  }
+}
 
 // 预览一律新开一个标签页，和邮件页那边同一条规矩（见 EmailsPage 的
 // openPreview，那儿写着三条路各自的理由）。表格自己解自己画，不经过服务器；
@@ -439,10 +715,35 @@ function initialOf(name: string) {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
+.tb:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tb-danger:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--el-border-color-lighter);
+}
 .side-title {
   margin: 26px 0 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-regular);
+}
+.att-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 0 10px;
+}
+.att-head .side-title {
+  margin: 0;
 }
 </style>
