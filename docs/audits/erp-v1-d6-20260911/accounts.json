@@ -1,0 +1,14 @@
+﻿{
+    "frontend":  "http://127.0.0.1:25375",
+    "gateway":  "http://127.0.0.1:28282",
+    "password":  "D6-Acceptance-2026!",
+    "accounts":  {
+                     "finance":  "d6.f1@d5.example.test",
+                     "logistics":  "d6.l1@d5.example.test",
+                     "buyer":  "d6.p1@d5.example.test"
+                 },
+    "fixture":  {
+                    "handoffId":  "3",
+                    "contract":  "CT-D6-ACCEPT-001"
+                }
+}

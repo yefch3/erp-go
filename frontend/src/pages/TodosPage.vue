@@ -199,8 +199,11 @@
           <el-table-column :label="t('common.status')" width="100"><template #default="{ row }"><el-tag size="small" :type="row.unread ? 'primary' : 'info'" effect="plain">{{ row.unread ? t('todos.unread') : t('todos.read') }}</el-tag></template></el-table-column>
           <el-table-column :label="t('common.actions')" width="170" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="row.unread" link type="primary" @click="markReminderRead(row)">{{ t('todos.markRead') }}</el-button>
-              <el-button link type="primary" @click="openReminder(row)">{{ t('common.view') }}</el-button>
+              <el-button v-if="row.source === 'SHIPPING_ACTION'" link type="primary" @click="resolveOperationalReminder(row)">填写结果</el-button>
+              <template v-else>
+                <el-button v-if="row.unread" link type="primary" @click="markReminderRead(row)">{{ t('todos.markRead') }}</el-button>
+                <el-button link type="primary" @click="openReminder(row)">{{ t('common.view') }}</el-button>
+              </template>
             </template>
           </el-table-column>
           <template #empty><HomeEmpty :description="t('todos.emptyReminders')" /></template>
@@ -319,6 +322,7 @@ const hasDataSource = computed(() => hasApprovalSource.value || hasReminderSourc
 const reminderSourceOptions = computed<HomeReminderSource[]>(() => [
   ...(auth.can('export:receipt:read') ? ['RECEIVABLE' as const] : []),
   ...(auth.can('shipping:schedule:read') ? ['ARRIVAL' as const, 'BL' as const] : []),
+  'SHIPPING_ACTION',
 ])
 const statusOptions = computed(() => activeTab.value === 'handled'
   ? ['APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'SKIPPED']
@@ -585,6 +589,19 @@ async function openReminder(item: HomeReminder) {
     try { await markReminderRead(item) } catch { /* 原业务入口仍应可打开 */ }
   }
   if (item.detailUrl) await router.push(item.detailUrl)
+}
+
+async function resolveOperationalReminder(item: HomeReminder) {
+  const result = await ElMessageBox.prompt(
+    '请填写你已完成的联系、核对或付款准备结果。处理结果会同步回正式船期。',
+    item.title,
+    { inputPlaceholder: '例如：已联系工厂，确认新的进仓安排', inputValidator: (value: string) => !!value.trim() || '请填写处理结果' },
+  ).catch(() => null)
+  if (!result) return
+  await post(`/shipping/operational-alerts/${item.sourceId}/resolve`, { resolutionNote: result.value })
+  announceReminderChanged()
+  await load()
+  ElMessage.success('处理结果已同步')
 }
 
 type SummaryValue = string | number | boolean | null | SummaryValue[] | { [key: string]: SummaryValue }

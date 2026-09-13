@@ -168,7 +168,7 @@ func (q *Queries) ListContractShippingHandoffs(ctx context.Context, arg ListCont
 
 const markContractShippingHandoffScheduled = `-- name: MarkContractShippingHandoffScheduled :exec
 UPDATE contract_shipping_handoffs SET status='SCHEDULED',schedule_id=$1
-WHERE tenant_id=$2 AND id=$3 AND status='PENDING'
+WHERE tenant_id=$2 AND id=$3 AND status='PAYMENT_REQUESTED'
 `
 
 type MarkContractShippingHandoffScheduledParams struct {

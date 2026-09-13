@@ -5,13 +5,19 @@ INSERT INTO shipping_schedules (
     etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
     created_by, created_by_name, updated_by, updated_by_name, carrier_id,
     loading_port_id, loading_port_code, loading_port_timezone,
-    discharge_port_id, discharge_port_code, discharge_port_timezone, contract_handoff_id
+    discharge_port_id, discharge_port_code, discharge_port_timezone, contract_handoff_id,
+    booking_no, bill_of_lading_no, warehouse_entry_date, customs_declaration_date,
+    freight_currency, freight_amount
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
     $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
     'PLANNED', $17, $18, $19, $18, $19, $20, $21, $22, $23, $24, $25, $26,
-    nullif(sqlc.arg(contract_handoff_id)::bigint, 0)
+    nullif(sqlc.arg(contract_handoff_id)::bigint, 0),
+    sqlc.arg(booking_no), sqlc.arg(bill_of_lading_no),
+    nullif(sqlc.arg(warehouse_entry_date)::text, '')::date,
+    nullif(sqlc.arg(customs_declaration_date)::text, '')::date,
+    sqlc.arg(freight_currency), sqlc.arg(freight_amount)
 )
 RETURNING *;
 
@@ -104,6 +110,68 @@ WHERE tenant_id = sqlc.arg(tenant_id)
   AND (sqlc.narg(eta_from)::date IS NULL OR eta >= sqlc.narg(eta_from)::date)
   AND (sqlc.narg(eta_to)::date IS NULL OR eta <= sqlc.narg(eta_to)::date);
 
+-- name: GetUserReminderPreference :one
+SELECT * FROM shipping_user_reminder_preferences
+WHERE tenant_id = sqlc.arg(tenant_id) AND employee_id = sqlc.arg(employee_id);
+
+-- name: UpsertUserReminderPreference :one
+INSERT INTO shipping_user_reminder_preferences
+ (tenant_id, employee_id, lead_days, timezone, holiday_country_codes)
+VALUES (sqlc.arg(tenant_id), sqlc.arg(employee_id), sqlc.arg(lead_days), sqlc.arg(timezone), sqlc.arg(holiday_country_codes))
+ON CONFLICT (tenant_id, employee_id) DO UPDATE SET
+ lead_days=excluded.lead_days, timezone=excluded.timezone,
+ holiday_country_codes=excluded.holiday_country_codes, updated_at=now()
+RETURNING *;
+
+-- name: CreateOperationalAlert :exec
+INSERT INTO shipping_operational_alerts (
+ tenant_id, schedule_id, alert_type, recipient_employee_id, recipient_role,
+ title, content, old_value, new_value, due_date
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+ON CONFLICT (tenant_id, schedule_id, alert_type, recipient_employee_id, new_value) DO NOTHING;
+
+-- name: ListOperationalAlertsForRecipient :many
+SELECT a.*, s.schedule_no, s.contract_no
+FROM shipping_operational_alerts a
+JOIN shipping_schedules s ON s.tenant_id=a.tenant_id AND s.id=a.schedule_id
+WHERE a.tenant_id=$1 AND a.recipient_employee_id=$2
+  AND (NOT sqlc.arg(open_only)::boolean OR a.resolved_at IS NULL)
+ORDER BY a.resolved_at NULLS FIRST, a.created_at DESC, a.id DESC
+LIMIT 200;
+
+-- name: ListOperationalAlertsForSchedule :many
+SELECT a.*, s.schedule_no, s.contract_no
+FROM shipping_operational_alerts a
+JOIN shipping_schedules s ON s.tenant_id=a.tenant_id AND s.id=a.schedule_id
+WHERE a.tenant_id=$1 AND a.schedule_id=$2
+ORDER BY a.created_at DESC, a.id DESC;
+
+-- name: MarkOperationalAlertsRead :execrows
+UPDATE shipping_operational_alerts SET read_at=COALESCE(read_at,now())
+WHERE tenant_id=$1 AND recipient_employee_id=$2
+  AND (cardinality(sqlc.arg(ids)::bigint[])=0 OR id=ANY(sqlc.arg(ids)::bigint[]));
+
+-- name: ResolveOperationalAlert :one
+UPDATE shipping_operational_alerts SET
+ read_at=COALESCE(read_at,now()), resolved_at=now(), resolution_note=$4,
+ resolved_by=$2, resolved_by_name=$5
+WHERE tenant_id=$1 AND recipient_employee_id=$2 AND id=$3 AND resolved_at IS NULL
+RETURNING *;
+
+-- name: UpdateUserReminderCalendarSync :one
+UPDATE shipping_user_reminder_preferences SET
+ calendar_sync_status = sqlc.arg(calendar_sync_status),
+ last_sync_at = now(),
+ last_success_at = CASE WHEN sqlc.arg(calendar_sync_status)::text = 'SYNCED' THEN now() ELSE last_success_at END,
+ last_error = sqlc.arg(last_error),
+ cached_holidays = CASE
+   WHEN sqlc.arg(calendar_sync_status)::text = 'SYNCED' THEN sqlc.arg(cached_holidays)::jsonb
+   ELSE cached_holidays
+ END,
+ updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND employee_id = sqlc.arg(employee_id)
+RETURNING *;
+
 -- name: UpdateSchedule :one
 UPDATE shipping_schedules SET
     contract_id = $3, contract_no = $4, customer_id = $5, customer_name = $6,
@@ -114,7 +182,11 @@ UPDATE shipping_schedules SET
     updated_by = $19, updated_by_name = $20, updated_at = now(),
     carrier_id = $21,
     loading_port_id = $22, loading_port_code = $23, loading_port_timezone = $24,
-    discharge_port_id = $25, discharge_port_code = $26, discharge_port_timezone = $27
+    discharge_port_id = $25, discharge_port_code = $26, discharge_port_timezone = $27,
+    booking_no = sqlc.arg(booking_no), bill_of_lading_no = sqlc.arg(bill_of_lading_no),
+    warehouse_entry_date = nullif(sqlc.arg(warehouse_entry_date)::text, '')::date,
+    customs_declaration_date = nullif(sqlc.arg(customs_declaration_date)::text, '')::date,
+    freight_currency = sqlc.arg(freight_currency), freight_amount = sqlc.arg(freight_amount)
 WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('COMPLETED','CANCELLED')
 RETURNING *;
 
@@ -307,7 +379,22 @@ WHERE tenant_id = $1 AND schedule_id = $2 AND status IN ('PENDING','FAILED','PRO
 INSERT INTO shipping_arrival_reminders (
     tenant_id, schedule_id, destination_node_id, recipient_employee_id,
     reminder_type, eta_revision, target_eta, due_at
-) VALUES ($1,$2,$3,$4,'ARRIVAL_' || sqlc.arg(lead_days)::int || 'D',$5,$6,($6::date - sqlc.arg(lead_days)::int)::timestamp AT TIME ZONE 'UTC')
+) VALUES ($1,$2,$3,$4,'ARRIVAL_' || sqlc.arg(lead_days)::int || 'D',$5,$6,sqlc.arg(due_at)::timestamptz)
+ON CONFLICT (tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision)
+DO UPDATE SET target_eta = EXCLUDED.target_eta, due_at = EXCLUDED.due_at,
+    status = 'PENDING', sent_at = NULL, read_at = NULL, attempt_count = 0,
+    last_error = '', next_retry_at = NULL, updated_at = now()
+WHERE shipping_arrival_reminders.status <> 'SENT';
+
+-- name: CreateRouteEventReminder :exec
+INSERT INTO shipping_arrival_reminders (
+    tenant_id, schedule_id, destination_node_id, recipient_employee_id,
+    reminder_type, eta_revision, target_eta, due_at
+) VALUES (
+    $1,$2,$3,$4,
+    sqlc.arg(event_type)::text || '_' || sqlc.arg(lead_days)::int || 'D',
+    $5,$6,sqlc.arg(due_at)::timestamptz
+)
 ON CONFLICT (tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision)
 DO UPDATE SET target_eta = EXCLUDED.target_eta, due_at = EXCLUDED.due_at,
     status = 'PENDING', sent_at = NULL, read_at = NULL, attempt_count = 0,
@@ -339,22 +426,33 @@ SELECT r.id
 FROM shipping_arrival_reminders r
 JOIN shipping_schedules s
   ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+JOIN shipping_route_nodes n
+  ON n.tenant_id = r.tenant_id AND n.id = r.destination_node_id
 WHERE r.status IN ('PENDING','FAILED')
   AND COALESCE(r.next_retry_at, r.due_at) <= now()
   AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+  AND n.is_active
+  AND ((r.reminder_type LIKE 'ARRIVAL_%' AND n.actual_arrival_at IS NULL)
+    OR (r.reminder_type LIKE 'DEPARTURE_%' AND n.actual_departure_at IS NULL AND n.node_type <> 'DESTINATION'))
 ORDER BY COALESCE(r.next_retry_at, r.due_at), r.id
 LIMIT $1;
 
 -- name: GetDueArrivalReminderForUpdate :one
 SELECT r.*, s.schedule_no, s.contract_no, s.customer_name, s.vessel_name,
-       s.voyage_no, s.port_of_discharge, s.status AS schedule_status
+       s.voyage_no, s.port_of_loading, s.port_of_discharge, s.status AS schedule_status,
+       n.port_name, n.node_type
 FROM shipping_arrival_reminders r
 JOIN shipping_schedules s
   ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+JOIN shipping_route_nodes n
+  ON n.tenant_id = r.tenant_id AND n.id = r.destination_node_id
 WHERE r.id = $1
   AND r.status IN ('PENDING','FAILED')
   AND COALESCE(r.next_retry_at, r.due_at) <= now()
   AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+  AND n.is_active
+  AND ((r.reminder_type LIKE 'ARRIVAL_%' AND n.actual_arrival_at IS NULL)
+    OR (r.reminder_type LIKE 'DEPARTURE_%' AND n.actual_departure_at IS NULL AND n.node_type <> 'DESTINATION'))
 FOR UPDATE OF r;
 
 -- name: MarkArrivalReminderSent :one
@@ -374,10 +472,14 @@ WHERE id = $1;
 -- name: CancelIneligibleArrivalReminders :exec
 UPDATE shipping_arrival_reminders r
 SET status = 'CANCELLED', updated_at = now()
-FROM shipping_schedules s
+FROM shipping_schedules s, shipping_route_nodes n
 WHERE s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND n.tenant_id = r.tenant_id AND n.id = r.destination_node_id
   AND r.status IN ('PENDING','FAILED','PROCESSING')
-  AND s.status IN ('ARRIVED','COMPLETED','CANCELLED');
+  AND (s.status IN ('ARRIVED','COMPLETED','CANCELLED')
+    OR NOT n.is_active
+    OR (r.reminder_type LIKE 'ARRIVAL_%' AND n.actual_arrival_at IS NOT NULL)
+    OR (r.reminder_type LIKE 'DEPARTURE_%' AND (n.actual_departure_at IS NOT NULL OR n.node_type = 'DESTINATION')));
 
 -- name: ListEmployeeArrivalNotifications :many
 SELECT * FROM shipping_arrival_reminders

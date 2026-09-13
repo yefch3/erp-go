@@ -10,7 +10,7 @@
     popper-class="language-flyout-popper"
   >
     <template #reference>
-      <button type="button" class="lang-sidebar">
+      <button type="button" class="lang-sidebar" :class="{ 'is-collapsed': collapsed }">
         <svg class="lang-icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="8.5" />
           <path d="M3.8 12h16.4M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5S14.2 18.2 12 20.5M12 3.5C9.8 5.8 8.7 8.6 8.7 12s1.1 6.2 3.3 8.5" />
@@ -54,7 +54,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LOCALE_LABELS, setLocale, type Locale } from '../i18n'
 
-defineProps<{ light?: boolean; sidebar?: boolean }>()
+defineProps<{ light?: boolean; sidebar?: boolean; collapsed?: boolean }>()
 const { locale } = useI18n()
 const sidebarOpen = ref(false)
 
@@ -107,6 +107,14 @@ function chooseLocale(next: Locale) {
 .lang-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .lang-copy small { color: #718198; font-size: 10px; letter-spacing: .04em; }
 .lang-copy strong { color: inherit; font-size: 13px; font-weight: 600; }
+.lang-sidebar.is-collapsed {
+  width: 56px;
+  min-height: 52px;
+  padding: 7px;
+  display: flex;
+  justify-content: center;
+}
+.lang-sidebar.is-collapsed .lang-copy { display: none; }
 .language-flyout-popper.el-popper {
   --el-popover-bg-color: #172033;
   --el-popover-border-color: #334155;

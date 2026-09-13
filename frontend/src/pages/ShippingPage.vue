@@ -31,8 +31,8 @@
               <el-button type="primary" @click="search">{{ t('common.query') }}</el-button>
             </div>
             <div v-if="more" class="date-filters">
-              <span>ETD</span><el-date-picker v-model="filter.etdRange" type="daterange" value-format="YYYY-MM-DD" range-separator="—" />
-              <span>ETA</span><el-date-picker v-model="filter.etaRange" type="daterange" value-format="YYYY-MM-DD" range-separator="—" />
+              <span>预计离港（ETD）</span><el-date-picker v-model="filter.etdRange" type="daterange" value-format="YYYY-MM-DD" range-separator="—" />
+              <span>预计到港（ETA）</span><el-date-picker v-model="filter.etaRange" type="daterange" value-format="YYYY-MM-DD" range-separator="—" />
             </div>
             <div class="table-scroll">
               <el-table :data="rows" v-loading="loading" @row-dblclick="detail">
@@ -40,12 +40,21 @@
                 <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="140" />
                 <el-table-column :label="t('shipping.vesselVoyage')" min-width="160"><template #default="{ row }">{{ row.vesselName }} / {{ row.voyageNo }}</template></el-table-column>
                 <el-table-column label="路线" min-width="170"><template #default="{ row }">{{ row.portOfLoading }} → {{ row.portOfDischarge }}</template></el-table-column>
-                <el-table-column prop="eta" label="最新ETA" width="115" />
+                <el-table-column prop="eta" label="最新预计到港（ETA）" width="175" />
                 <el-table-column prop="currentProgress" label="当前进度" min-width="150" />
-                <el-table-column label="变化" min-width="160"><template #default="{ row }"><el-tag v-if="row.delayDays > 0" :type="row.delayDays >= 4 ? 'danger' : 'warning'" class="change-tag">+{{ row.delayDays }}天</el-tag><el-tag v-if="row.hasTemporaryCall" type="warning" class="change-tag">临时挂港</el-tag><span v-if="!row.delayDays && !row.hasTemporaryCall">—</span></template></el-table-column>
-                <el-table-column :label="t('common.status')" width="110"><template #default="{ row }"><el-tag :type="statusTag(row.status)">{{ t(`shipping.statuses.${row.status}`) }}</el-tag></template></el-table-column>
+                <el-table-column label="提醒" min-width="180"><template #default="{ row }"><el-tag v-if="departureNotice(row)" type="warning" class="change-tag">{{departureNotice(row)}}</el-tag><el-tag v-if="row.delayDays > 0" :type="row.delayDays >= 4 ? 'danger' : 'warning'" class="change-tag">到港延后 {{ row.delayDays }} 天</el-tag><el-tag v-if="row.hasTemporaryCall" type="warning" class="change-tag">临时挂港</el-tag><span v-if="!row.delayDays && !row.hasTemporaryCall && !departureNotice(row)">—</span></template></el-table-column>
+                <el-table-column :label="t('common.status')" width="110"><template #default="{ row }"><el-tag :type="statusTag(row.status)">{{ shippingStatusLabel(row,t) }}</el-tag></template></el-table-column>
                 <el-table-column prop="responsibleName" :label="t('shipping.responsible')" width="120" />
-                <el-table-column v-if="auth.can('shipping:schedule:write')" :label="t('common.actions')" fixed="right" width="90"><template #default="{ row }"><el-button link type="primary" :disabled="['COMPLETED', 'CANCELLED'].includes(row.status)" @click.stop="editing = row; dialogOpen = true">{{ t('common.edit') }}</el-button></template></el-table-column>
+                <el-table-column v-if="auth.can('shipping:schedule:write')" :label="t('common.actions')" fixed="right" width="125" align="center"><template #default="{ row }">
+                  <el-dropdown trigger="click" @command="handleRowAction($event, row)">
+                    <el-button type="primary" plain @click.stop>{{ t('orders.moreActions') }} ▾</el-button>
+                    <template #dropdown><el-dropdown-menu>
+                      <el-dropdown-item command="edit" :disabled="['COMPLETED', 'CANCELLED'].includes(row.status)">{{ t('common.edit') }}</el-dropdown-item>
+                      <el-dropdown-item command="account">{{ t('shipping.openAccount') }}</el-dropdown-item>
+                      <el-dropdown-item command="delete" divided :disabled="row.status !== 'PLANNED'"><span class="danger-action">{{ t('common.delete') }}</span></el-dropdown-item>
+                    </el-dropdown-menu></template>
+                  </el-dropdown>
+                </template></el-table-column>
               </el-table>
             </div>
             <el-empty v-if="!loading && !rows.length" :description="t('shipping.empty')" />
@@ -53,22 +62,24 @@
           </el-card>
     </section>
 
-    <ShippingScheduleDialog v-model="dialogOpen" :schedule="editing" @saved="saved" />
+    <ShippingScheduleDialog v-model="dialogOpen" :schedule="editing" :handoff="creatingHandoff" @saved="saved" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { get } from '../api'
-import ShippingScheduleDialog from '../components/ShippingScheduleDialog.vue'
+import { useRoute, useRouter } from 'vue-router'
+import { get, post } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import ShippingScheduleDialog, { type ContractShippingHandoff } from '../components/ShippingScheduleDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import { SHIPPING_STATUSES, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
+import { SHIPPING_STATUSES, shippingStatusLabel, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const rows = ref<ShippingSchedule[]>([])
 const loading = ref(false)
@@ -78,6 +89,7 @@ const pageSize = ref(20)
 const more = ref(false)
 const dialogOpen = ref(false)
 const editing = ref<ShippingSchedule>()
+const creatingHandoff = ref<ContractShippingHandoff>()
 const filter = reactive({ keyword: '', status: 'ACTIVE', portOfLoading: '', portOfDischarge: '', etdRange: [] as string[], etaRange: [] as string[] })
 const stats = ref<ShippingStatistics>({ inTransit: '0', arrivingWithin7Days: '0', delayed: '0', temporaryCall: '0' })
 const statItems = computed(() => [
@@ -87,7 +99,7 @@ const statItems = computed(() => [
   { label: '临时挂港', value: stats.value.temporaryCall },
 ])
 
-watch(dialogOpen, (value) => { if (!value) editing.value = undefined })
+watch(dialogOpen, (value) => { if (!value) { editing.value = undefined; creatingHandoff.value = undefined } })
 
 async function load() {
   loading.value = true
@@ -111,8 +123,37 @@ function search() { page.value = 1; void load() }
 function changePage(value: number) { page.value = value; void load() }
 function changeSize(value: number) { pageSize.value = value; page.value = 1; void load() }
 function detail(row: ShippingSchedule) { void router.push(`/shipping/${row.id}`) }
-function saved() { void load() }
-onMounted(load)
+function departureNotice(row:ShippingSchedule){
+  if(row.status!=='PLANNED'||!row.etd)return ''
+  const target=new Date(`${row.etd}T00:00:00`);if(Number.isNaN(target.getTime()))return ''
+  const today=new Date();today.setHours(0,0,0,0)
+  const days=Math.round((target.getTime()-today.getTime())/86_400_000)
+  if(days<0)return `预计开船已过 ${-days} 天`
+  if(days===0)return '预计今天开船'
+  return days<=7?`预计 ${days} 天后开船`:''
+}
+function saved(schedule:ShippingSchedule) { void router.replace(`/shipping/${schedule.id}`) }
+async function handleRowAction(command:string,row:ShippingSchedule){
+  if(command==='edit'){editing.value=row;dialogOpen.value=true;return}
+  if(command==='account'){
+    if(!auth.can('procurement:recon:read')){ElMessage.warning(t('shipping.accountPermissionRequired'));return}
+    await router.push({path:'/supplier-recon',query:{keyword:row.contractNo}});return
+  }
+  if(command!=='delete'||row.status!=='PLANNED')return
+  try{await ElMessageBox.confirm(t('shipping.deleteScheduleConfirm',{no:row.scheduleNo}),t('shipping.deleteSchedule'),{type:'warning',confirmButtonText:t('common.delete'),cancelButtonText:t('common.cancel')})}catch(action){if(action==='cancel'||action==='close')return;throw action}
+  await post(`/shipping/schedules/${row.id}/cancel`,{reason:t('shipping.deletedMistakeReason')})
+  ElMessage.success(t('shipping.scheduleDeleted'))
+  await load()
+}
+async function openDelegatedOrder(){
+  const id=String(route.query.handoff??'')
+  if(!id)return
+  const data=await get<{handoff:ContractShippingHandoff}>(`/shipping/contract-handoffs/${id}`)
+  if(data.handoff.status==='SCHEDULED'&&data.handoff.scheduleId){await router.replace(`/shipping/${data.handoff.scheduleId}`);return}
+  if(data.handoff.status!=='PAYMENT_REQUESTED'){await router.replace('/shipping/schedules');return}
+  creatingHandoff.value=data.handoff;dialogOpen.value=true
+}
+onMounted(async()=>{await load();await openDelegatedOrder()})
 </script>
 
 <style scoped>

@@ -1,18 +1,21 @@
 <template><div v-loading="loading">
-  <div class="page-head"><div><el-button link @click="router.push('/shipping/schedules')">← {{ t('shipping.back') }}</el-button><h2>{{ schedule?.scheduleNo }}</h2></div><div v-if="schedule"><el-tag :type="statusTag(schedule.status)">{{ t(`shipping.statuses.${schedule.status}`) }}</el-tag><el-tag v-if="schedule.delayDays>0" :type="schedule.delayDays>=4?'danger':'warning'">+{{schedule.delayDays}}天</el-tag><el-tag v-if="schedule.hasTemporaryCall" type="warning">临时挂港</el-tag><el-button v-if="basicWritable" @click="editOpen=true">编辑基础信息</el-button><el-button v-if="progressWritable" type="primary" @click="progressOpen=true">更新船期进度</el-button><el-button v-if="basicWritable&&schedule.status==='ARRIVED'" :loading="saving" @click="completeSchedule">确认完成</el-button><el-button v-if="basicWritable&&schedule.status!=='ARRIVED'" type="danger" plain @click="cancelSchedule">{{ t('shipping.cancelSchedule') }}</el-button></div></div>
+  <div class="page-head"><div><el-button link @click="router.push('/shipping/schedules')">← {{ t('shipping.back') }}</el-button><h2>{{ schedule?.scheduleNo }}</h2></div><div v-if="schedule"><el-tag :type="statusTag(schedule.status)">{{ shippingStatusLabel(schedule,t) }}</el-tag><el-tag v-if="schedule.delayDays>0" :type="schedule.delayDays>=4?'danger':'warning'">+{{schedule.delayDays}}天</el-tag><el-tag v-if="schedule.hasTemporaryCall" type="warning">临时挂港</el-tag><el-button v-if="basicWritable" @click="editOpen=true">编辑基础信息</el-button><el-button v-if="progressWritable" type="primary" @click="progressOpen=true">更新船期进度</el-button><el-button v-if="basicWritable&&schedule.status==='ARRIVED'" :loading="saving" @click="completeSchedule">确认完成</el-button><el-button v-if="basicWritable&&schedule.status!=='ARRIVED'" type="danger" plain @click="cancelSchedule">{{ t('shipping.cancelSchedule') }}</el-button></div></div>
+  <div v-if="transportNotices.length" class="transport-notices"><el-alert v-for="notice in transportNotices" :key="notice.key" :title="notice.title" :type="notice.type" :closable="false" show-icon /></div>
   <el-card v-if="schedule" shadow="never"><el-tabs>
-    <el-tab-pane label="基础信息"><el-descriptions :column="2" border><el-descriptions-item :label="t('shipping.contractNo')">{{schedule.contractNo||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.customer')">{{schedule.customerName||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.carrier')">{{schedule.carrierForwarder||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.responsible')">{{schedule.responsibleName}}</el-descriptions-item><el-descriptions-item :label="t('shipping.vessel')">{{schedule.vesselName}}</el-descriptions-item><el-descriptions-item :label="t('shipping.voyage')">{{schedule.voyageNo}}</el-descriptions-item><el-descriptions-item label="原始ETA">{{schedule.originalEta}}</el-descriptions-item><el-descriptions-item label="最新ETA"><span :class="delayClass">{{schedule.eta}}</span><span v-if="schedule.delayDays>0">（+{{schedule.delayDays}}天）</span></el-descriptions-item><el-descriptions-item label="当前进度">{{schedule.currentProgress||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.remark')">{{schedule.remark||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.createdBy')">{{schedule.createdByName}} · {{formatTime(schedule.createdAt)}}</el-descriptions-item><el-descriptions-item :label="t('shipping.updatedBy')">{{schedule.updatedByName}} · {{formatTime(schedule.updatedAt)}}</el-descriptions-item></el-descriptions></el-tab-pane>
+    <el-tab-pane label="基础信息"><el-descriptions :column="2" border><el-descriptions-item :label="t('shipping.contractNo')">{{schedule.contractNo||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.customer')">{{schedule.customerName||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.carrier')">{{schedule.carrierForwarder||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.responsible')">{{schedule.responsibleName}}</el-descriptions-item><el-descriptions-item :label="t('shipping.vessel')">{{schedule.vesselName||'待补充'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.voyage')">{{schedule.voyageNo||'待补充'}}</el-descriptions-item><el-descriptions-item label="订舱号">{{schedule.bookingNo||'待补充'}}</el-descriptions-item><el-descriptions-item label="提单号">{{schedule.billOfLadingNo||'待补充'}}</el-descriptions-item><el-descriptions-item label="进仓日期">{{schedule.warehouseEntryDate||'—'}}</el-descriptions-item><el-descriptions-item label="报关日期">{{schedule.customsDeclarationDate||'—'}}</el-descriptions-item><el-descriptions-item label="物流费用">{{schedule.freightAmount?`${schedule.freightCurrency} ${schedule.freightAmount}`:'—'}}</el-descriptions-item><el-descriptions-item label="原始预计到港（ETA）">{{schedule.originalEta}}</el-descriptions-item><el-descriptions-item label="最新预计到港（ETA）"><span :class="delayClass">{{schedule.eta}}</span><span v-if="schedule.delayDays>0">（+{{schedule.delayDays}}天）</span></el-descriptions-item><el-descriptions-item label="当前进度">{{schedule.currentProgress||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.remark')">{{schedule.remark||'—'}}</el-descriptions-item><el-descriptions-item :label="t('shipping.createdBy')">{{schedule.createdByName}} · {{formatTime(schedule.createdAt)}}</el-descriptions-item><el-descriptions-item :label="t('shipping.updatedBy')">{{schedule.updatedByName}} · {{formatTime(schedule.updatedAt)}}</el-descriptions-item></el-descriptions></el-tab-pane>
     <el-tab-pane label="港口路线">
-      <div class="route-head"><div><strong>{{schedule.currentProgress}}</strong><span class="muted"> · 路线版本 {{schedule.routeVersion}}</span></div><el-button v-if="routeWritable" type="primary" plain @click="routeOpen=true">新增港口</el-button></div>
+      <div class="route-head"><div><strong>{{schedule.currentProgress}}</strong><span class="muted"> · 路线版本 {{schedule.routeVersion}}</span></div><el-button v-if="routeWritable" type="primary" plain @click="routeOpen=true">添加中转港</el-button></div>
+      <div class="route-overview"><div class="overview-title"><strong>当前港口时间</strong><span>以下时间均按各港口当地时区显示</span></div><el-table :data="routeNodes" size="small" border><el-table-column label="港口" min-width="150"><template #default="{row}"><strong>{{row.portName}}</strong><div class="muted">{{nodeTypeText(row.nodeType)}} · {{row.timezone||'UTC'}}</div></template></el-table-column><el-table-column label="预计到港（ETA）" min-width="180"><template #default="{row}">{{formatExpectedNodeTime(row,'arrival')}}</template></el-table-column><el-table-column label="实际到港（ATA）" min-width="180"><template #default="{row}">{{formatNodeTime(row.actualArrivalAt,row.timezone)}}</template></el-table-column><el-table-column label="预计离港（ETD）" min-width="180"><template #default="{row}">{{row.nodeType==='DESTINATION'?'不适用':formatExpectedNodeTime(row,'departure')}}</template></el-table-column><el-table-column label="实际离港（ATD）" min-width="180"><template #default="{row}">{{row.nodeType==='DESTINATION'?'不适用':formatNodeTime(row.actualDepartureAt,row.timezone)}}</template></el-table-column></el-table></div>
       <div v-if="hiddenCompletedCount" class="completed-toggle"><span>已收起 {{hiddenCompletedCount}} 个已离港/已跳过港口</span><el-button link type="primary" @click="showCompleted=!showCompleted">{{showCompleted?'收起历史港口':'展开查看'}}</el-button></div>
       <el-timeline class="route-timeline"><el-timeline-item v-for="item in visibleRouteNodes" :key="item.node.id" :type="nodeColor(item.node)" :hollow="item.node.nodeStatus==='PLANNED'" placement="top">
-        <el-card shadow="never" :class="['route-node',item.node.nodeType==='TEMPORARY'?'temporary':'',isCompletedNode(item.node)?'completed':'',isCurrentNode(item.node)?'current':'']"><div class="node-title"><div><strong>{{item.node.portName}}</strong><el-tag size="small" :type="item.node.nodeType==='TEMPORARY'?'warning':'info'">{{nodeTypeText(item.node.nodeType)}}</el-tag><el-tag size="small" :type="nodeStatusType(displayNodeStatus(item.node))">{{nodeStatusText(displayNodeStatus(item.node))}}</el-tag><el-tag v-if="item.node.nodeType==='TEMPORARY'" size="small" type="warning">临时挂港</el-tag></div><div class="node-actions"><el-button v-if="progressWritable" link type="primary" @click="openTimeEditor(item.node)">编辑时间</el-button><template v-if="routeWritable&&['TRANSIT','TEMPORARY'].includes(item.node.nodeType)"><el-button link :disabled="item.index<=1" @click="moveNode(item.index,-1)">上移</el-button><el-button link :disabled="item.index>=routeNodes.length-2" @click="moveNode(item.index,1)">下移</el-button><el-button v-if="canRemoveNode(item.node)" link type="danger" @click="removeNode(item.node)">移除港口</el-button></template></div></div><div class="times"><span>预计到港：{{formatNodeTime(item.node.latestEtaAt,item.node.timezone)}}</span><span>实际到港：{{formatNodeTime(item.node.actualArrivalAt,item.node.timezone)}}</span><span>预计离港：{{formatNodeTime(item.node.latestEtdAt,item.node.timezone)}}</span><span>实际离港：{{formatNodeTime(item.node.actualDepartureAt,item.node.timezone)}}</span></div><div v-if="item.node.remark" class="muted">{{item.node.remark}}</div></el-card></el-timeline-item>
+        <el-card shadow="never" :class="['route-node',item.node.nodeType==='TEMPORARY'?'temporary':'',isCompletedNode(item.node)?'completed':'',isCurrentNode(item.node)?'current':'']"><div class="node-title"><div><strong>{{item.node.portName}}</strong><el-tag size="small" :type="item.node.nodeType==='TEMPORARY'?'warning':'info'">{{nodeTypeText(item.node.nodeType)}}</el-tag><el-tag size="small" :type="nodeStatusType(displayNodeStatus(item.node))">{{nodeStatusText(item.node)}}</el-tag><el-tag v-if="item.node.nodeType==='TEMPORARY'" size="small" type="warning">临时挂港</el-tag></div><div class="node-actions"><el-button v-if="progressWritable" link type="primary" @click="openTimeEditor(item.node)">{{nodeTimeActionText(item.node)}}</el-button><template v-if="routeWritable&&['TRANSIT','TEMPORARY'].includes(item.node.nodeType)"><el-button link :disabled="item.index<=1" @click="moveNode(item.index,-1)">上移</el-button><el-button link :disabled="item.index>=routeNodes.length-2" @click="moveNode(item.index,1)">下移</el-button><el-button v-if="canRemoveNode(item.node)" link type="danger" @click="removeNode(item.node)">移除港口</el-button></template></div></div><div class="times"><span>预计到港（ETA）：{{formatExpectedNodeTime(item.node,'arrival')}}</span><span>实际到港（ATA）：{{formatNodeTime(item.node.actualArrivalAt,item.node.timezone)}}</span><template v-if="item.node.nodeType!=='DESTINATION'"><span>预计离港（ETD）：{{formatExpectedNodeTime(item.node,'departure')}}</span><span>实际离港（ATD）：{{formatNodeTime(item.node.actualDepartureAt,item.node.timezone)}}</span></template></div><div v-if="item.node.remark" class="muted">{{item.node.remark}}</div></el-card></el-timeline-item>
       </el-timeline>
-      <el-divider content-position="left">延误记录</el-divider>
-      <el-table :data="delayEvents" size="small"><el-table-column prop="createdAt" label="时间" width="170"><template #default="{row}">{{formatTime(row.createdAt)}}</template></el-table-column><el-table-column label="ETA变化" width="190"><template #default="{row}">{{row.oldEta}} → {{row.newEta}}</template></el-table-column><el-table-column label="本次变化" width="100"><template #default="{row}"><span :class="row.changeDays>0?'danger-text':'success-text'">{{row.changeDays>0?'+':''}}{{row.changeDays}}天</span></template></el-table-column><el-table-column label="累计" width="100"><template #default="{row}">+{{row.cumulativeDelayDays}}天</template></el-table-column><el-table-column prop="reason" label="原因"/><el-table-column prop="operatorName" label="操作人" width="110"/></el-table>
+      <el-divider content-position="left">预计时间变更记录</el-divider>
+      <p class="change-help">记录每次港口预计到港（ETA）或预计离港（ETD）的调整，并明确显示提前或延后。</p>
+      <el-table :data="delayEvents" size="small" empty-text="尚未调整过港口预计时间"><el-table-column label="港口" min-width="130"><template #default="{row}">{{delayPortName(row)}}</template></el-table-column><el-table-column label="时间项目" width="150"><template #default="{row}">{{delayEventName(row)}}</template></el-table-column><el-table-column label="变更前" width="130"><template #default="{row}">{{row.oldEta||'—'}}</template></el-table-column><el-table-column label="变更后" width="130"><template #default="{row}">{{row.newEta||'—'}}</template></el-table-column><el-table-column label="变化" width="120"><template #default="{row}"><span :class="delayChangeClass(row)">{{delayChangeText(row)}}</span></template></el-table-column><el-table-column prop="reason" label="说明" min-width="220"/><el-table-column prop="operatorName" label="操作人" width="110"/><el-table-column prop="createdAt" label="更新时间" width="170"><template #default="{row}">{{formatTime(row.createdAt)}}</template></el-table-column></el-table>
     </el-tab-pane>
     <el-tab-pane label="单证附件"><ShippingDocumentsPanel v-if="schedule" :schedule-id="schedule.id" @changed="load" /></el-tab-pane>
-    <el-tab-pane label="变更记录"><el-timeline v-if="changes.length"><el-timeline-item v-for="change in changes" :key="change.id" :timestamp="formatTime(change.createdAt)" placement="top"><strong>{{change.operatorName}} · {{change.changeType}}</strong><div>{{change.fieldName}}：{{change.oldValue||'—'}} → {{change.newValue||'—'}}</div><div class="reason">{{change.reason}}</div></el-timeline-item></el-timeline><el-empty v-else :description="t('shipping.noChanges')" /></el-tab-pane>
+    <el-tab-pane label="协同提醒"><el-table :data="operationalAlerts" empty-text="暂无跨部门协同提醒"><el-table-column prop="title" label="事项" min-width="220"/><el-table-column label="变化" width="190"><template #default="{row}">{{row.oldValue||'—'}} → {{row.newValue||'—'}}</template></el-table-column><el-table-column prop="recipientRole" label="处理部门" width="110"><template #default="{row}">{{row.recipientRole==='FINANCE'?'财务':'采购'}}</template></el-table-column><el-table-column label="状态" width="110"><template #default="{row}"><el-tag :type="row.resolvedAt?'success':'warning'">{{row.resolvedAt?'已处理':'待处理'}}</el-tag></template></el-table-column><el-table-column label="处理结果" min-width="210"><template #default="{row}">{{row.resolutionNote||'—'}}<span v-if="row.resolvedByName" class="muted"> · {{row.resolvedByName}}</span></template></el-table-column><el-table-column label="操作" width="100"><template #default="{row}"><el-button v-if="!row.resolvedAt&&String(row.recipientEmployeeId)===String(auth.employeeId)" link type="primary" @click="resolveAlert(row)">填写结果</el-button></template></el-table-column></el-table></el-tab-pane><el-tab-pane label="变更记录"><el-timeline v-if="changes.length"><el-timeline-item v-for="change in changes" :key="change.id" :timestamp="formatTime(change.createdAt)" placement="top"><strong>{{change.operatorName}} · {{change.changeType}}</strong><div>{{change.fieldName}}：{{change.oldValue||'—'}} → {{change.newValue||'—'}}</div><div class="reason">{{change.reason}}</div></el-timeline-item></el-timeline><el-empty v-else :description="t('shipping.noChanges')" /></el-tab-pane>
   </el-tabs></el-card>
   <ShippingScheduleDialog v-if="schedule" v-model="editOpen" :schedule="schedule" @saved="load" />
   <ShippingRouteNodeDialog v-if="schedule" v-model="routeOpen" :schedule-id="schedule.id" :route-version="schedule.routeVersion" :nodes="routeNodes" @saved="load" />
@@ -24,13 +27,13 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { del, get, post, put } from '../api'
+import { del, get, post, put, quietErrors } from '../api'
 import ShippingScheduleDialog from '../components/ShippingScheduleDialog.vue'
 import ShippingRouteNodeDialog from '../components/ShippingRouteNodeDialog.vue'
 import ShippingProgressDialog from '../components/ShippingProgressDialog.vue'
 import ShippingRouteNodeTimeDialog from '../components/ShippingRouteNodeTimeDialog.vue'
 import ShippingDocumentsPanel from '../components/ShippingDocumentsPanel.vue'
-import { statusTag, type ScheduleChange, type ShippingSchedule, type ShippingRouteNode, type ShippingDelayEvent } from '../shipping'
+import { shippingStatusLabel, statusTag, type ScheduleChange, type ShippingSchedule, type ShippingRouteNode, type ShippingDelayEvent, type ShippingOperationalAlert } from '../shipping'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -41,6 +44,8 @@ const schedule = ref<ShippingSchedule>()
 const changes = ref<ScheduleChange[]>([])
 const routeNodes = ref<ShippingRouteNode[]>([])
 const delayEvents = ref<ShippingDelayEvent[]>([])
+const operationalAlerts = ref<ShippingOperationalAlert[]>([])
+const reminderLeadDays = ref<number[]>([7])
 const editingNode = ref<ShippingRouteNode>()
 const loading = ref(false)
 const saving = ref(false)
@@ -58,6 +63,33 @@ const hiddenCompletedCount = computed(() => routeNodes.value.filter(isCompletedN
 const visibleRouteNodes = computed(() => routeNodes.value
   .map((node, index) => ({ node, index }))
   .filter(item => showCompleted.value || !isCompletedNode(item.node)))
+type TransportNotice = { key:string; title:string; type:'warning'|'error' }
+const transportNotices = computed<TransportNotice[]>(() => {
+  if (!schedule.value || ['ARRIVED','COMPLETED','CANCELLED'].includes(schedule.value.status)) return []
+  const maxLeadDays = Math.max(0, ...reminderLeadDays.value)
+  const notices:TransportNotice[] = []
+  const add = (node:ShippingRouteNode, kind:'arrival'|'departure', value:string) => {
+    if (!value) return
+    const target = new Date(value)
+    if (Number.isNaN(target.getTime())) return
+    const hours = (target.getTime() - Date.now()) / 3_600_000
+    if (hours > maxLeadDays * 24) return
+    const isDeparture = kind === 'departure'
+    const action = isDeparture ? '实际离港（ATD）' : '实际到港（ATA）'
+    const event = isDeparture && node.nodeType === 'ORIGIN' ? `从 ${node.portName} 开船` : `${node.portName} ${isDeparture ? '离港' : '到港'}`
+    let title = ''
+    if (hours < 0) title = `${event}的预计时间已到，请及时确认并登记${action}`
+    else if (hours <= 24) title = `预计在 24 小时内${event}，请提前准备并登记${action}`
+    else title = `预计 ${Math.ceil(hours / 24)} 天后${event}，请提前准备并登记${action}`
+    notices.push({ key:`${node.id}-${kind}`, title, type:hours < 0 ? 'error' : 'warning' })
+  }
+  for (const node of routeNodes.value) {
+    if (node.nodeStatus === 'SKIPPED') continue
+    if (!node.actualArrivalAt) add(node, 'arrival', node.latestEtaAt)
+    if (node.nodeType !== 'DESTINATION' && !node.actualDepartureAt) add(node, 'departure', node.latestEtdAt)
+  }
+  return notices.sort((a,b) => a.key.localeCompare(b.key))
+})
 
 async function load() {
   loading.value = true
@@ -67,6 +99,9 @@ async function load() {
     changes.value = data.changes
     routeNodes.value = data.routeNodes
     delayEvents.value = data.delayEvents
+    operationalAlerts.value = (await get<{items:ShippingOperationalAlert[]}>(`/shipping/schedules/${route.params.id}/operational-alerts`)).items??[]
+    const rules = await get<{leadDays:number[]}>(`/shipping/schedules/${route.params.id}/reminder-rules`, undefined, quietErrors).catch(()=>({leadDays:[7]}))
+    reminderLeadDays.value = rules.leadDays?.length ? rules.leadDays : [7]
   } finally {
     loading.value = false
   }
@@ -81,8 +116,39 @@ function formatNodeTime(value: string, timezone: string) {
     return formatTime(value)
   }
 }
+function formatExpectedNodeTime(node: ShippingRouteNode, direction: 'arrival' | 'departure') {
+  const latest = direction === 'arrival' ? node.latestEtaAt : node.latestEtdAt
+  const original = direction === 'arrival' ? node.originalEtaAt : node.originalEtdAt
+  const scheduleDate = direction === 'arrival' ? schedule.value?.eta : schedule.value?.etd
+  if (latest && latest === original && scheduleDate && latest.slice(0, 10) === scheduleDate) return scheduleDate
+  return formatNodeTime(latest, node.timezone)
+}
+function delayPortName(row: ShippingDelayEvent) {
+  const node = routeNodes.value.find(item => String(item.id) === String(row.affectedNodeId))
+  if (node) return `${node.portName}（${nodeTypeText(node.nodeType)}）`
+  const destination = routeNodes.value.find(item => item.nodeType === 'DESTINATION')
+  return row.impactType === 'SCHEDULE' && destination ? `${destination.portName}（目的港）` : '整条船期'
+}
+function delayEventName(row: ShippingDelayEvent) {
+  return row.reasonCode === 'ETD_CHANGED' ? '预计离港（ETD）' : '预计到港（ETA）'
+}
+function delayChangeText(row: ShippingDelayEvent) {
+  if (!row.oldEta && row.newEta) return '首次补充'
+  if (row.oldEta && !row.newEta) return '已清空'
+  if (row.changeDays > 0) return `延后 ${row.changeDays} 天`
+  if (row.changeDays < 0) return `提前 ${Math.abs(row.changeDays)} 天`
+  return '同日时间调整'
+}
+function delayChangeClass(row: ShippingDelayEvent) {
+  return row.changeDays > 0 ? 'danger-text' : row.changeDays < 0 ? 'success-text' : 'warning-text'
+}
 function nodeTypeText(value: string) { return ({ ORIGIN: '起运港', TRANSIT: '中转港', TEMPORARY: '临时挂靠港', DESTINATION: '目的港' } as Record<string, string>)[value] ?? value }
-function nodeStatusText(value: string) { return ({ PLANNED: '未到达', APPROACHING: '驶向中', ARRIVED: '已到港', DEPARTED: '已离港', SKIPPED: '已跳过' } as Record<string, string>)[value] ?? value }
+function nodeStatusText(node: ShippingRouteNode) {
+  const status = displayNodeStatus(node)
+  if (status === 'PLANNED') return node.nodeType === 'ORIGIN' ? '待离港' : '待到港'
+  return ({ APPROACHING: '运输途中', ARRIVED: '已到港', DEPARTED: '已离港', SKIPPED: '已跳过' } as Record<string, string>)[status] ?? status
+}
+function nodeTimeActionText(node: ShippingRouteNode) { return node.nodeType === 'ORIGIN' ? '更新离港时间' : node.nodeType === 'DESTINATION' ? '更新到港时间' : '更新港口时间' }
 function nodeStatusType(value: string) { return value === 'DEPARTED' ? 'success' : value === 'SKIPPED' ? 'info' : value === 'APPROACHING' ? 'primary' : value === 'ARRIVED' ? 'success' : 'info' }
 function displayNodeStatus(node: ShippingRouteNode) { if (node.nodeStatus !== 'APPROACHING' || isCurrentNode(node)) return node.nodeStatus; return node.actualArrivalAt ? 'ARRIVED' : 'PLANNED' }
 function nodeColor(node: ShippingRouteNode) { if (node.nodeType === 'TEMPORARY') return 'warning'; if (['ARRIVED', 'DEPARTED'].includes(node.nodeStatus)) return 'success'; return 'primary' }
@@ -145,6 +211,13 @@ async function completeSchedule() {
   }
 }
 
+async function resolveAlert(item:ShippingOperationalAlert){
+  const result=await ElMessageBox.prompt(item.recipientRole==='FINANCE'?'请填写付款准备处理结果':'请填写联系工厂的处理结果','完成运输协同待办',{inputValidator:value=>!!value.trim()||'请填写处理结果'}).catch(()=>null)
+  if(!result)return
+  await post(`/shipping/operational-alerts/${item.id}/resolve`,{resolutionNote:result.value})
+  ElMessage.success('处理结果已同步到船期和我的待办');await load()
+}
+
 async function cancelSchedule() {
   let value: string
   try {
@@ -161,8 +234,8 @@ async function cancelSchedule() {
 onMounted(load)
 </script>
 <style scoped>
-.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}.page-head h2{display:inline-block;margin:0 18px 0 8px}.page-head>div{display:flex;align-items:center;gap:10px}
-.route-head,.node-title{display:flex;align-items:center;justify-content:space-between}.route-head{margin-bottom:18px}.route-timeline{max-width:900px}.route-node.temporary{border-color:var(--el-color-warning)}.route-node.completed{opacity:.72;background:var(--el-fill-color-lighter)}.route-node.current{border-color:var(--el-color-primary);box-shadow:0 0 0 1px var(--el-color-primary-light-7)}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}.page-head h2{display:inline-block;margin:0 18px 0 8px}.page-head>div{display:flex;align-items:center;gap:10px}.transport-notices{display:grid;gap:8px;margin-bottom:16px}
+.route-head,.node-title{display:flex;align-items:center;justify-content:space-between}.route-head{margin-bottom:14px}.route-overview{margin-bottom:24px;padding:14px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-fill-color-extra-light)}.overview-title{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}.overview-title span,.change-help{color:var(--el-text-color-secondary);font-size:13px}.change-help{margin:-4px 0 12px}.route-timeline{max-width:900px}.route-node.temporary{border-color:var(--el-color-warning)}.route-node.completed{opacity:.72;background:var(--el-fill-color-lighter)}.route-node.current{border-color:var(--el-color-primary);box-shadow:0 0 0 1px var(--el-color-primary-light-7)}
 .node-title>div,.node-actions{display:flex;align-items:center;gap:8px}.completed-toggle{display:flex;align-items:center;gap:8px;margin:0 0 16px 28px;color:var(--el-text-color-secondary)}
 .times{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:8px;margin:12px 0;color:var(--el-text-color-regular)}.muted,.reason{color:var(--el-text-color-secondary)}.reason{margin-top:5px}.danger-text{color:var(--el-color-danger);font-weight:600}.warning-text{color:var(--el-color-warning);font-weight:600}.success-text{color:var(--el-color-success);font-weight:600}
 @media(max-width:700px){.times{grid-template-columns:1fr}.page-head{align-items:flex-start}.page-head>div:last-child{flex-wrap:wrap;justify-content:flex-end}}

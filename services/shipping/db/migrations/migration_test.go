@@ -46,6 +46,10 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "contract_shipping_handoffs", true)
 	assertTable(t, db, "processed_events", true)
 	assertColumn(t, db, "shipping_schedules", "contract_handoff_id", true)
+	assertColumn(t, db, "shipping_schedules", "booking_no", true)
+	assertColumn(t, db, "shipping_schedules", "freight_amount", true)
+	assertTable(t, db, "shipping_user_reminder_preferences", true)
+	assertTable(t, db, "shipping_operational_alerts", true)
 
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
@@ -60,6 +64,8 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_documents", false)
 	assertTable(t, db, "contract_shipping_handoffs", false)
 	assertTable(t, db, "processed_events", false)
+	assertTable(t, db, "shipping_user_reminder_preferences", false)
+	assertTable(t, db, "shipping_operational_alerts", false)
 
 	if err := goose.Up(db, "."); err != nil {
 		t.Fatalf("second up: %v", err)
@@ -74,6 +80,9 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_arrival_reminder_rules", true)
 	assertTable(t, db, "contract_shipping_handoffs", true)
 	assertTable(t, db, "processed_events", true)
+	assertColumn(t, db, "shipping_schedules", "booking_no", true)
+	assertTable(t, db, "shipping_user_reminder_preferences", true)
+	assertTable(t, db, "shipping_operational_alerts", true)
 }
 
 func assertColumn(t *testing.T, db *sql.DB, table, column string, want bool) {

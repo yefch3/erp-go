@@ -37,6 +37,18 @@ export interface ShippingSchedule {
   delayDays: number
   hasTemporaryCall: boolean
   currentProgress: string
+  bookingNo: string
+  billOfLadingNo: string
+  warehouseEntryDate: string
+  customsDeclarationDate: string
+  freightCurrency: string
+  freightAmount: string
+}
+
+export function shippingStatusLabel(schedule: Pick<ShippingSchedule, 'status'|'bookingNo'>, translate: (key:string)=>string): string {
+  if (schedule.status === 'PLANNED') return schedule.bookingNo ? '待开船' : '待订舱'
+  if (schedule.status === 'SAILED') return '运输中'
+  return translate(`shipping.statuses.${schedule.status}`)
 }
 
 export interface ShippingRouteNode {
@@ -79,6 +91,36 @@ export interface ShippingStatistics {
   arrivingWithin7Days: string
   delayed: string
   temporaryCall: string
+}
+
+export interface ShippingReminderPreference {
+  leadDays: number[]
+  timezone: string
+  holidayCountryCodes: string[]
+  calendarSyncStatus: 'NOT_CONFIGURED'|'SYNCED'|'STALE'|'FAILED'
+  lastSyncAt: string
+  lastSuccessAt: string
+  lastError: string
+}
+
+export interface ShippingOperationalAlert {
+  id: string
+  scheduleId: string
+  scheduleNo: string
+  contractNo: string
+  alertType: 'ETA_ADVANCED'|'ETD_DELAYED'|'WAREHOUSE_DELAYED'
+  recipientEmployeeId: string
+  recipientRole: string
+  title: string
+  content: string
+  oldValue: string
+  newValue: string
+  dueDate: string
+  readAt: string
+  resolvedAt: string
+  resolutionNote: string
+  resolvedByName: string
+  createdAt: string
 }
 
 export interface ScheduleChange {

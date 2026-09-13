@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	homeReminderReceivable = "RECEIVABLE"
-	homeReminderArrival    = "ARRIVAL"
-	homeReminderBL         = "BL"
+	homeReminderReceivable     = "RECEIVABLE"
+	homeReminderArrival        = "ARRIVAL"
+	homeReminderBL             = "BL"
+	homeReminderShippingAction = "SHIPPING_ACTION"
 )
 
 type homeReminderItem struct {
@@ -128,6 +129,22 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 				addHomeReminderTiming(&summary, timing)
 			}
 		}
+
+	}
+
+	// 运输协同待办是定向给当前员工的。采购收件人不需要获得整个船期模块的读取
+	// 权限；shipping 服务按 tenant + employee 双重条件过滤，避免泄露其他船期资料。
+	actionResp, err := s.Shipping.ListOperationalAlerts(r.Context(), &shippingv1.ListOperationalAlertsRequest{OpenOnly: true})
+	if err != nil {
+		sources = append(sources, homeReminderSourceState{Source: homeReminderShippingAction, Message: "运输协同待办暂时不可用"})
+	} else {
+		sources = append(sources, homeReminderSourceState{Source: homeReminderShippingAction, Available: true})
+		summary.Unread += actionResp.GetUnreadCount()
+		for _, row := range actionResp.GetItems() {
+			timing := classifyHomeReminderDate(row.GetDueDate(), today)
+			items = append(items, homeReminderItem{Key: homeReminderShippingAction + ":" + strconv.FormatInt(row.GetId(), 10), Source: homeReminderShippingAction, SourceID: strconv.FormatInt(row.GetId(), 10), Title: row.GetTitle(), Content: row.GetContent(), BizNo: row.GetScheduleNo(), DueAt: row.GetDueDate(), CreatedAt: row.GetCreatedAt(), Unread: row.GetReadAt() == "", Timing: timing})
+			addHomeReminderTiming(&summary, timing)
+		}
 	}
 
 	items = filterAndSortHomeReminders(items, r)
@@ -226,6 +243,14 @@ func (s *Server) markHomeRemindersRead(w http.ResponseWriter, r *http.Request) {
 				}
 				marked++
 			}
+		}
+	}
+	if input.Source == "" || input.Source == "ALL" || input.Source == homeReminderShippingAction {
+		resp, err := s.Shipping.MarkOperationalAlertsRead(r.Context(), &shippingv1.MarkOperationalAlertsReadRequest{Ids: ids})
+		if err != nil {
+			sourceErrors = append(sourceErrors, homeReminderSourceState{Source: homeReminderShippingAction, Message: "运输协同待办标记失败"})
+		} else {
+			marked += resp.GetMarked()
 		}
 	}
 

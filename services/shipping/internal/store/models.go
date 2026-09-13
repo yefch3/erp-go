@@ -210,6 +210,26 @@ type ShippingExecutionRequoteOption struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
+type ShippingOperationalAlert struct {
+	ID                  int64
+	TenantID            int64
+	ScheduleID          int64
+	AlertType           string
+	RecipientEmployeeID int64
+	RecipientRole       string
+	Title               string
+	Content             string
+	OldValue            string
+	NewValue            string
+	DueDate             pgtype.Date
+	ReadAt              pgtype.Timestamptz
+	ResolvedAt          pgtype.Timestamptz
+	ResolutionNote      string
+	ResolvedBy          *int64
+	ResolvedByName      string
+	CreatedAt           pgtype.Timestamptz
+}
+
 type ShippingRouteNode struct {
 	ID                int64
 	TenantID          int64
@@ -238,48 +258,54 @@ type ShippingRouteNode struct {
 }
 
 type ShippingSchedule struct {
-	ID                    int64
-	TenantID              int64
-	ScheduleNo            string
-	ContractID            *int64
-	ContractNo            string
-	CustomerID            *int64
-	CustomerName          string
-	CarrierForwarder      string
-	VesselName            string
-	VoyageNo              string
-	PortOfLoading         string
-	PortOfDischarge       string
-	Etd                   pgtype.Date
-	Atd                   pgtype.Date
-	Eta                   pgtype.Date
-	Ata                   pgtype.Date
-	ResponsibleEmployeeID int64
-	ResponsibleName       string
-	Status                string
-	Remark                string
-	CreatedBy             int64
-	CreatedByName         string
-	CreatedAt             pgtype.Timestamptz
-	UpdatedBy             int64
-	UpdatedByName         string
-	UpdatedAt             pgtype.Timestamptz
-	OriginalEta           pgtype.Date
-	EtaRevision           int32
-	RouteVersion          int32
-	DelayDays             int32
-	HasTemporaryCall      bool
-	CurrentProgress       string
-	LatestProgressAt      pgtype.Timestamptz
-	CurrentRouteNodeID    *int64
-	CarrierID             *int64
-	LoadingPortID         *int64
-	LoadingPortCode       string
-	LoadingPortTimezone   string
-	DischargePortID       *int64
-	DischargePortCode     string
-	DischargePortTimezone string
-	ContractHandoffID     *int64
+	ID                     int64
+	TenantID               int64
+	ScheduleNo             string
+	ContractID             *int64
+	ContractNo             string
+	CustomerID             *int64
+	CustomerName           string
+	CarrierForwarder       string
+	VesselName             string
+	VoyageNo               string
+	PortOfLoading          string
+	PortOfDischarge        string
+	Etd                    pgtype.Date
+	Atd                    pgtype.Date
+	Eta                    pgtype.Date
+	Ata                    pgtype.Date
+	ResponsibleEmployeeID  int64
+	ResponsibleName        string
+	Status                 string
+	Remark                 string
+	CreatedBy              int64
+	CreatedByName          string
+	CreatedAt              pgtype.Timestamptz
+	UpdatedBy              int64
+	UpdatedByName          string
+	UpdatedAt              pgtype.Timestamptz
+	OriginalEta            pgtype.Date
+	EtaRevision            int32
+	RouteVersion           int32
+	DelayDays              int32
+	HasTemporaryCall       bool
+	CurrentProgress        string
+	LatestProgressAt       pgtype.Timestamptz
+	CurrentRouteNodeID     *int64
+	CarrierID              *int64
+	LoadingPortID          *int64
+	LoadingPortCode        string
+	LoadingPortTimezone    string
+	DischargePortID        *int64
+	DischargePortCode      string
+	DischargePortTimezone  string
+	ContractHandoffID      *int64
+	BookingNo              string
+	BillOfLadingNo         string
+	WarehouseEntryDate     pgtype.Date
+	CustomsDeclarationDate pgtype.Date
+	FreightCurrency        string
+	FreightAmount          string
 }
 
 type ShippingScheduleChange struct {
@@ -299,4 +325,18 @@ type ShippingScheduleChange struct {
 	OldValueJson []byte
 	NewValueJson []byte
 	RouteVersion *int32
+}
+
+type ShippingUserReminderPreference struct {
+	TenantID            int64
+	EmployeeID          int64
+	LeadDays            []int32
+	Timezone            string
+	HolidayCountryCodes []string
+	CalendarSyncStatus  string
+	LastSyncAt          pgtype.Timestamptz
+	LastSuccessAt       pgtype.Timestamptz
+	LastError           string
+	CachedHolidays      []byte
+	UpdatedAt           pgtype.Timestamptz
 }

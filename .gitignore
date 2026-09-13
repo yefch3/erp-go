@@ -49,3 +49,7 @@ coverage.out
 # D5 local isolated runtime and transient test caches
 .d5-environment/
 **/.cache/
+
+# D6 local isolated runtime and frontend logs
+.d6-environment/
+.d6-vite*.log

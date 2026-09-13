@@ -38,4 +38,4 @@ SELECT * FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
 
 -- name: MarkContractShippingHandoffScheduled :exec
 UPDATE contract_shipping_handoffs SET status='SCHEDULED',schedule_id=sqlc.arg(schedule_id)
-WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id) AND status='PENDING';
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id) AND status='PAYMENT_REQUESTED';

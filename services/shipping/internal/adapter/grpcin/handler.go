@@ -73,6 +73,9 @@ func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 		LoadingPortId: loadingPortID, LoadingPortCode: s.LoadingPortCode,
 		LoadingPortTimezone: s.LoadingPortTimezone, DischargePortId: dischargePortID,
 		DischargePortCode: s.DischargePortCode, DischargePortTimezone: s.DischargePortTimezone,
+		BookingNo: s.BookingNo, BillOfLadingNo: s.BillOfLadingNo,
+		WarehouseEntryDate: dateValue(s.WarehouseEntryDate), CustomsDeclarationDate: dateValue(s.CustomsDeclarationDate),
+		FreightCurrency: s.FreightCurrency, FreightAmount: s.FreightAmount,
 	}
 }
 
@@ -191,6 +194,9 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 		LoadingPortID: in.GetLoadingPortId(), LoadingPortCode: in.GetLoadingPortCode(), LoadingPortTimezone: in.GetLoadingPortTimezone(),
 		DischargePortID: in.GetDischargePortId(), DischargePortCode: in.GetDischargePortCode(), DischargePortTimezone: in.GetDischargePortTimezone(),
 		ContractHandoffID: in.GetContractHandoffId(),
+		BookingNo:         in.GetBookingNo(), BillOfLadingNo: in.GetBillOfLadingNo(),
+		WarehouseEntryDate: in.GetWarehouseEntryDate(), CustomsDeclarationDate: in.GetCustomsDeclarationDate(),
+		FreightCurrency: in.GetFreightCurrency(), FreightAmount: in.GetFreightAmount(),
 	}
 }
 
@@ -302,6 +308,8 @@ func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {
 		DelayDays: r.DelayDays, HasTemporaryCall: r.HasTemporaryCall, CurrentProgress: r.CurrentProgress,
 		LoadingPortID: r.LoadingPortID, LoadingPortCode: r.LoadingPortCode, LoadingPortTimezone: r.LoadingPortTimezone,
 		DischargePortID: r.DischargePortID, DischargePortCode: r.DischargePortCode, DischargePortTimezone: r.DischargePortTimezone,
+		BookingNo: r.BookingNo, BillOfLadingNo: r.BillOfLadingNo,
+		WarehouseEntryDate: r.WarehouseEntryDate, CustomsDeclarationDate: r.CustomsDeclarationDate,
 	})
 }
 
@@ -422,6 +430,82 @@ func (h *Handler) UpdateArrivalReminderRules(ctx context.Context, req *shippingv
 		return nil, err
 	}
 	return &shippingv1.UpdateArrivalReminderRulesResponse{LeadDays: days}, nil
+}
+
+func reminderPreferenceToProto(value app.UserReminderPreference) *shippingv1.UserReminderPreference {
+	return &shippingv1.UserReminderPreference{
+		LeadDays: value.LeadDays, Timezone: value.Timezone, HolidayCountryCodes: value.HolidayCountryCodes,
+		CalendarSyncStatus: value.CalendarSyncStatus, LastSyncAt: value.LastSyncAt,
+		LastSuccessAt: value.LastSuccessAt, LastError: value.LastError,
+	}
+}
+
+func (h *Handler) GetUserReminderPreference(ctx context.Context, _ *shippingv1.GetUserReminderPreferenceRequest) (*shippingv1.GetUserReminderPreferenceResponse, error) {
+	preference, err := h.svc.GetUserReminderPreference(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetUserReminderPreferenceResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func (h *Handler) UpdateUserReminderPreference(ctx context.Context, req *shippingv1.UpdateUserReminderPreferenceRequest) (*shippingv1.UpdateUserReminderPreferenceResponse, error) {
+	preference, err := h.svc.UpdateUserReminderPreference(ctx, grpcx.TenantID(ctx), req.GetLeadDays(), req.GetTimezone(), req.GetHolidayCountryCodes(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.UpdateUserReminderPreferenceResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func (h *Handler) SyncUserHolidayCalendars(ctx context.Context, _ *shippingv1.SyncUserHolidayCalendarsRequest) (*shippingv1.SyncUserHolidayCalendarsResponse, error) {
+	preference, err := h.svc.SyncUserHolidayCalendars(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SyncUserHolidayCalendarsResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func operationalAlertToProto(value app.OperationalAlert) *shippingv1.OperationalAlert {
+	return &shippingv1.OperationalAlert{Id: value.ID, ScheduleId: value.ScheduleID, RecipientEmployeeId: value.RecipientEmployeeID, ScheduleNo: value.ScheduleNo, ContractNo: value.ContractNo, AlertType: value.AlertType, RecipientRole: value.RecipientRole, Title: value.Title, Content: value.Content, OldValue: value.OldValue, NewValue: value.NewValue, DueDate: value.DueDate, ReadAt: value.ReadAt, ResolvedAt: value.ResolvedAt, ResolutionNote: value.ResolutionNote, ResolvedByName: value.ResolvedByName, CreatedAt: value.CreatedAt}
+}
+
+func (h *Handler) ListOperationalAlerts(ctx context.Context, req *shippingv1.ListOperationalAlertsRequest) (*shippingv1.ListOperationalAlertsResponse, error) {
+	items, unread, err := h.svc.ListOperationalAlerts(ctx, grpcx.TenantID(ctx), req.GetOpenOnly(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.OperationalAlert, 0, len(items))
+	for _, item := range items {
+		out = append(out, operationalAlertToProto(item))
+	}
+	return &shippingv1.ListOperationalAlertsResponse{Items: out, UnreadCount: unread}, nil
+}
+
+func (h *Handler) ListScheduleOperationalAlerts(ctx context.Context, req *shippingv1.ListScheduleOperationalAlertsRequest) (*shippingv1.ListScheduleOperationalAlertsResponse, error) {
+	items, err := h.svc.ListScheduleOperationalAlerts(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.OperationalAlert, 0, len(items))
+	for _, item := range items {
+		out = append(out, operationalAlertToProto(item))
+	}
+	return &shippingv1.ListScheduleOperationalAlertsResponse{Items: out}, nil
+}
+
+func (h *Handler) MarkOperationalAlertsRead(ctx context.Context, req *shippingv1.MarkOperationalAlertsReadRequest) (*shippingv1.MarkOperationalAlertsReadResponse, error) {
+	marked, err := h.svc.MarkOperationalAlertsRead(ctx, grpcx.TenantID(ctx), req.GetIds(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkOperationalAlertsReadResponse{Marked: marked}, nil
+}
+
+func (h *Handler) ResolveOperationalAlert(ctx context.Context, req *shippingv1.ResolveOperationalAlertRequest) (*shippingv1.ResolveOperationalAlertResponse, error) {
+	item, err := h.svc.ResolveOperationalAlert(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetResolutionNote(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.ResolveOperationalAlertResponse{Alert: operationalAlertToProto(item)}, nil
 }
 
 func (h *Handler) GetShippingStatistics(ctx context.Context, _ *shippingv1.GetShippingStatisticsRequest) (*shippingv1.GetShippingStatisticsResponse, error) {

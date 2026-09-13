@@ -34,6 +34,13 @@ service ShippingService {
   rpc CleanupExpiredArrivalReminders(CleanupExpiredArrivalRemindersRequest) returns (CleanupExpiredArrivalRemindersResponse);
   rpc GetArrivalReminderRules(GetArrivalReminderRulesRequest) returns (GetArrivalReminderRulesResponse);
   rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
+  rpc GetUserReminderPreference(GetUserReminderPreferenceRequest) returns (GetUserReminderPreferenceResponse);
+  rpc UpdateUserReminderPreference(UpdateUserReminderPreferenceRequest) returns (UpdateUserReminderPreferenceResponse);
+  rpc SyncUserHolidayCalendars(SyncUserHolidayCalendarsRequest) returns (SyncUserHolidayCalendarsResponse);
+  rpc ListOperationalAlerts(ListOperationalAlertsRequest) returns (ListOperationalAlertsResponse);
+  rpc ListScheduleOperationalAlerts(ListScheduleOperationalAlertsRequest) returns (ListScheduleOperationalAlertsResponse);
+  rpc MarkOperationalAlertsRead(MarkOperationalAlertsReadRequest) returns (MarkOperationalAlertsReadResponse);
+  rpc ResolveOperationalAlert(ResolveOperationalAlertRequest) returns (ResolveOperationalAlertResponse);
   // 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
   rpc ContractShippingSnapshot(ContractShippingSnapshotRequest) returns (ContractShippingSnapshotResponse);
   rpc ListContractShippingHandoffs(ListContractShippingHandoffsRequest) returns (ListContractShippingHandoffsResponse);
@@ -98,6 +105,12 @@ message Schedule {
   int64 discharge_port_id = 36;
   string discharge_port_code = 37;
   string discharge_port_timezone = 38;
+  string booking_no = 39;
+  string bill_of_lading_no = 40;
+  string warehouse_entry_date = 41;
+  string customs_declaration_date = 42;
+  string freight_currency = 43;
+  string freight_amount = 44;
 }
 
 message RouteNode {
@@ -178,6 +191,12 @@ message ScheduleInput {
   string discharge_port_code = 22;
   string discharge_port_timezone = 23;
   int64 contract_handoff_id = 24;
+  string booking_no = 25;
+  string bill_of_lading_no = 26;
+  string warehouse_entry_date = 27;
+  string customs_declaration_date = 28;
+  string freight_currency = 29;
+  string freight_amount = 30;
 }
 
 message ContractShippingHandoff {
@@ -422,6 +441,54 @@ message UpdateArrivalReminderRulesRequest {
   repeated int32 lead_days = 2;
 }
 message UpdateArrivalReminderRulesResponse { repeated int32 lead_days = 1; }
+
+message UserReminderPreference {
+  repeated int32 lead_days = 1;
+  string timezone = 2;
+  repeated string holiday_country_codes = 3;
+  string calendar_sync_status = 4;
+  string last_sync_at = 5;
+  string last_success_at = 6;
+  string last_error = 7;
+}
+message GetUserReminderPreferenceRequest {}
+message GetUserReminderPreferenceResponse { UserReminderPreference preference = 1; }
+message UpdateUserReminderPreferenceRequest {
+  repeated int32 lead_days = 1;
+  string timezone = 2;
+  repeated string holiday_country_codes = 3;
+}
+message UpdateUserReminderPreferenceResponse { UserReminderPreference preference = 1; }
+message SyncUserHolidayCalendarsRequest {}
+message SyncUserHolidayCalendarsResponse { UserReminderPreference preference = 1; }
+
+message OperationalAlert {
+  int64 id = 1;
+  int64 schedule_id = 2;
+  string schedule_no = 3;
+  string contract_no = 4;
+  string alert_type = 5;
+  string recipient_role = 6;
+  string title = 7;
+  string content = 8;
+  string old_value = 9;
+  string new_value = 10;
+  string due_date = 11;
+  string read_at = 12;
+  string resolved_at = 13;
+  string resolution_note = 14;
+  string resolved_by_name = 15;
+  string created_at = 16;
+  int64 recipient_employee_id = 17;
+}
+message ListOperationalAlertsRequest { bool open_only = 1; }
+message ListScheduleOperationalAlertsRequest { int64 schedule_id = 1; }
+message ListOperationalAlertsResponse { repeated OperationalAlert items = 1; int64 unread_count = 2; }
+message ListScheduleOperationalAlertsResponse { repeated OperationalAlert items = 1; }
+message MarkOperationalAlertsReadRequest { repeated int64 ids = 1; }
+message MarkOperationalAlertsReadResponse { int64 marked = 1; }
+message ResolveOperationalAlertRequest { int64 id = 1; string resolution_note = 2; }
+message ResolveOperationalAlertResponse { OperationalAlert alert = 1; }
 
 // BlReminder 是提单签发提醒收件箱里的一条。
 message BlReminder {

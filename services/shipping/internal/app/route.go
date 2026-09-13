@@ -69,13 +69,6 @@ func timestampText(v pgtype.Timestamptz) string {
 	return v.Time.Format(time.RFC3339)
 }
 
-func timestampDate(v pgtype.Timestamptz) pgtype.Date {
-	if !v.Valid {
-		return pgtype.Date{}
-	}
-	return pgtype.Date{Time: v.Time, Valid: true}
-}
-
 func sameTimestamp(a, b pgtype.Timestamptz) bool {
 	return a.Valid == b.Valid && (!a.Valid || a.Time.Equal(b.Time))
 }
@@ -132,7 +125,7 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	if err != nil {
 		return err
 	}
-	destination, err := q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
+	_, err = q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, SequenceNo: 2, NodeType: "DESTINATION",
 		PortID: s.DischargePortID, PortCode: s.DischargePortCode, PortName: s.PortOfDischarge,
 		Timezone: s.DischargePortTimezone, OriginalEtaAt: dateTimestamp(s.Eta),
@@ -143,7 +136,7 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	}
 	_, err = q.UpdateScheduleProgress(ctx, store.UpdateScheduleProgressParams{
 		TenantID: s.TenantID, ID: s.ID, CurrentRouteNodeID: &origin.ID,
-		CurrentProgress: "等待离开 " + s.PortOfLoading, UpdatedBy: op.ID, UpdatedByName: op.Name,
+		CurrentProgress: "待订舱", UpdatedBy: op.ID, UpdatedByName: op.Name,
 	})
 	if err != nil {
 		return err
@@ -153,10 +146,7 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	}); err != nil {
 		return err
 	}
-	return q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{
-		TenantID: s.TenantID, ScheduleID: s.ID, DestinationNodeID: destination.ID,
-		RecipientEmployeeID: s.ResponsibleEmployeeID, EtaRevision: s.EtaRevision, TargetEta: s.Eta, LeadDays: 7,
-	})
+	return createConfiguredTransportReminders(ctx, q, s)
 }
 
 func (s *Service) GetScheduleDetails(ctx context.Context, tenantID, id int64, operators ...Operator) (ScheduleDetails, error) {
@@ -501,7 +491,7 @@ func deriveProgress(nodes []store.ShippingRouteNode) (int64, string, string) {
 // ETA/ETD values are intentionally untouched. Every changed field is appended
 // to the schedule history, and terminal changes are synchronized to the
 // schedule summary and its ETA reminder lifecycle.
-func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current store.ShippingSchedule, node store.ShippingRouteNode, in ProgressInput, op Operator) (store.ShippingSchedule, error) {
+func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current store.ShippingSchedule, node store.ShippingRouteNode, in ProgressInput, op Operator, financeRecipients []int64) (store.ShippingSchedule, error) {
 	latestETA, err := parseTimestamp(in.LatestETAAt, "预计到港时间")
 	if err != nil {
 		return store.ShippingSchedule{}, err
@@ -560,6 +550,34 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 			break
 		}
 	}
+	recordExpectedChange := func(eventType string, oldValue, newValue pgtype.Timestamptz) error {
+		if sameTimestamp(oldValue, newValue) {
+			return nil
+		}
+		oldDate := timestampEventDate(oldValue, node.Timezone)
+		newDate := timestampEventDate(newValue, node.Timezone)
+		var changeDays int32
+		if oldDate.Valid && newDate.Valid {
+			changeDays = int32(newDate.Time.Sub(oldDate.Time).Hours() / 24)
+		}
+		label := "预计到港（ETA）"
+		if eventType == "ETD_CHANGED" {
+			label = "预计离港（ETD）"
+		}
+		_, err := q.AddDelayEvent(ctx, store.AddDelayEventParams{
+			TenantID: current.TenantID, ScheduleID: current.ID, ImpactType: "PORT", AffectedNodeID: &node.ID,
+			ReasonCode: eventType, Reason: "更新" + node.PortName + "的" + label, Note: strings.TrimSpace(in.Note),
+			OldEta: oldDate, NewEta: newDate, ChangeDays: changeDays, CumulativeDelayDays: current.DelayDays,
+			OperatorID: op.ID, OperatorName: op.Name,
+		})
+		return err
+	}
+	if err = recordExpectedChange("ETA_CHANGED", node.LatestEtaAt, latestETA); err != nil {
+		return store.ShippingSchedule{}, err
+	}
+	if err = recordExpectedChange("ETD_CHANGED", node.LatestEtdAt, latestETD); err != nil {
+		return store.ShippingSchedule{}, err
+	}
 	estimateChanged := !sameTimestamp(node.LatestEtaAt, latestETA) || !sameTimestamp(node.LatestEtdAt, latestETD)
 	actualChanged := !sameTimestamp(node.ActualArrivalAt, actualArrival) || !sameTimestamp(node.ActualDepartureAt, actualDeparture)
 	if err = validateRouteTimeline(routeNodes, estimateChanged, actualChanged); err != nil {
@@ -575,7 +593,6 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
-	out := current
 	for _, c := range changes {
 		if sameTimestamp(c.old, c.new) {
 			continue
@@ -586,39 +603,36 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 	}
 
 	if node.NodeType == "ORIGIN" && !sameTimestamp(node.LatestEtdAt, latestETD) {
-		out, err = q.SetScheduleETD(ctx, store.SetScheduleETDParams{TenantID: current.TenantID, ID: current.ID, Etd: timestampDate(latestETD), UpdatedBy: op.ID, UpdatedByName: op.Name})
+		_, err = q.SetScheduleETD(ctx, store.SetScheduleETDParams{TenantID: current.TenantID, ID: current.ID, Etd: timestampEventDate(latestETD, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 	}
 	if err == nil && node.NodeType == "ORIGIN" && !sameTimestamp(node.ActualDepartureAt, actualDeparture) {
-		out, err = q.SetScheduleATDNullable(ctx, store.SetScheduleATDNullableParams{TenantID: current.TenantID, ID: current.ID, Atd: timestampDate(actualDeparture), UpdatedBy: op.ID, UpdatedByName: op.Name})
+		_, err = q.SetScheduleATDNullable(ctx, store.SetScheduleATDNullableParams{TenantID: current.TenantID, ID: current.ID, Atd: timestampEventDate(actualDeparture, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 	}
 	if err == nil && node.NodeType == "DESTINATION" && !sameTimestamp(node.ActualArrivalAt, actualArrival) {
-		out, err = q.SetScheduleATANullable(ctx, store.SetScheduleATANullableParams{TenantID: current.TenantID, ID: current.ID, Ata: timestampDate(actualArrival), UpdatedBy: op.ID, UpdatedByName: op.Name})
+		_, err = q.SetScheduleATANullable(ctx, store.SetScheduleATANullableParams{TenantID: current.TenantID, ID: current.ID, Ata: timestampEventDate(actualArrival, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 	}
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
 
+	var out store.ShippingSchedule
 	if node.NodeType == "DESTINATION" && !sameTimestamp(node.LatestEtaAt, latestETA) {
-		newETA := timestampDate(latestETA)
+		newETA := timestampEventDate(latestETA, node.Timezone)
 		if dateText(newETA) != dateText(current.Eta) {
 			oldETA := current.Eta
 			out, err = q.UpdateScheduleETA(ctx, store.UpdateScheduleETAParams{TenantID: current.TenantID, ID: current.ID, Eta: newETA, UpdatedBy: op.ID, UpdatedByName: op.Name})
 			if err != nil {
 				return store.ShippingSchedule{}, err
 			}
-			_, err = q.AddDelayEvent(ctx, store.AddDelayEventParams{
-				TenantID: current.TenantID, ScheduleID: current.ID, ImpactType: "PORT", AffectedNodeID: &node.ID,
-				ReasonCode: "OTHER", Reason: in.Reason, Note: strings.TrimSpace(in.Note),
-				OldEta: oldETA, NewEta: newETA, ChangeDays: int32(newETA.Time.Sub(oldETA.Time).Hours() / 24),
-				CumulativeDelayDays: out.DelayDays, OperatorID: op.ID, OperatorName: op.Name,
-			})
-			if err != nil {
-				return store.ShippingSchedule{}, err
+			if plan, ok := financeETAChangePlan(current.ScheduleNo, oldETA, newETA, financeRecipients); ok {
+				if err = createOperationalAlerts(ctx, q, current.TenantID, current.ID, []operationalAlertPlan{plan}); err != nil {
+					return store.ShippingSchedule{}, err
+				}
 			}
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: current.TenantID, ScheduleID: current.ID}); err != nil {
 				return store.ShippingSchedule{}, err
 			}
-			if err = createConfiguredArrivalReminders(ctx, q, current.TenantID, current.ID, node.ID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
+			if err = createConfiguredTransportReminders(ctx, q, out); err != nil {
 				return store.ShippingSchedule{}, err
 			}
 		}
@@ -647,6 +661,14 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 			}
 		}
 	}
+	if status != "ARRIVED" && (estimateChanged || actualChanged) {
+		if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: current.TenantID, ScheduleID: current.ID}); err != nil {
+			return store.ShippingSchedule{}, err
+		}
+		if err = createConfiguredTransportReminders(ctx, q, out); err != nil {
+			return store.ShippingSchedule{}, err
+		}
+	}
 	return out, nil
 }
 
@@ -661,6 +683,14 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 	in.Reason = strings.TrimSpace(in.Reason)
 	if in.RouteNodeID == 0 || in.Action == "" || in.Reason == "" {
 		return store.ShippingSchedule{}, nil, nil, apierr.Invalid("SHIPPING_PROGRESS_FIELDS_REQUIRED", "港口、进度动作和原因必填")
+	}
+	var financeRecipients []int64
+	if in.Action == "UPDATE_ETA" || in.Action == "UPDATE_TIMES" {
+		var err error
+		financeRecipients, err = s.recipientsForRoles(ctx, tenantID, "FINANCE")
+		if err != nil {
+			return store.ShippingSchedule{}, nil, nil, err
+		}
 	}
 	var out store.ShippingSchedule
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
@@ -776,6 +806,11 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			if err != nil {
 				return err
 			}
+			if plan, ok := financeETAChangePlan(current.ScheduleNo, oldETA, newETA, financeRecipients); ok {
+				if err = createOperationalAlerts(ctx, q, tenantID, id, []operationalAlertPlan{plan}); err != nil {
+					return err
+				}
+			}
 			changeDays := int32(newETA.Time.Sub(oldETA.Time).Hours() / 24)
 			_, err = q.AddDelayEvent(ctx, store.AddDelayEventParams{
 				TenantID: tenantID, ScheduleID: id, ImpactType: impact,
@@ -790,7 +825,7 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
 				return err
 			}
-			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, node.ID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
+			if err = createConfiguredTransportReminders(ctx, q, out); err != nil {
 				return err
 			}
 			if err = addChange(ctx, q, tenantID, id, "ETA", "latest_eta", dateText(oldETA), dateText(newETA), in.Reason, op); err != nil {
@@ -798,7 +833,7 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			}
 			progress = current.CurrentProgress
 		case "UPDATE_TIMES":
-			out, err = s.updateNodeTimes(ctx, q, current, node, in, op)
+			out, err = s.updateNodeTimes(ctx, q, current, node, in, op, financeRecipients)
 			progress = current.CurrentProgress
 		default:
 			return apierr.Invalid("SHIPPING_PROGRESS_ACTION_INVALID", "进度动作无效")

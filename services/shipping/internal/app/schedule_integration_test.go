@@ -161,8 +161,15 @@ func TestRouteAndRepeatedDelays(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	details, err := svc.GetScheduleDetails(ctx, tenantID, created.ID)
-	if err != nil || len(details.Route) != 2 || len(details.Reminders) != 1 {
+	if err != nil || len(details.Route) != 2 || len(details.Reminders) != 2 {
 		t.Fatalf("initial details route=%d reminders=%d err=%v", len(details.Route), len(details.Reminders), err)
+	}
+	reminderTypes := map[string]bool{}
+	for _, reminder := range details.Reminders {
+		reminderTypes[reminder.ReminderType] = true
+	}
+	if !reminderTypes["ARRIVAL_7D"] || !reminderTypes["DEPARTURE_7D"] {
+		t.Fatalf("initial reminders must cover destination arrival and origin departure: %+v", reminderTypes)
 	}
 	nodes, version, err := svc.AddRouteNode(ctx, tenantID, created.ID, RouteNodeInput{
 		NodeType: "TEMPORARY", PortName: "Port Klang", InsertAfterNodeID: details.Route[0].ID,
@@ -240,7 +247,10 @@ func TestRouteAndRepeatedDelays(t *testing.T) {
 			cancelled++
 		}
 	}
-	if pending != 1 || cancelled != 2 {
+	// Active reminders cover origin departure, both events at the temporary
+	// port, and destination arrival. Superseded destination ETA reminders stay
+	// cancelled as audit history.
+	if pending != 4 || cancelled != 2 {
 		t.Fatalf("reminders pending=%d cancelled=%d all=%+v", pending, cancelled, details.Reminders)
 	}
 }

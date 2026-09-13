@@ -43,8 +43,15 @@ func TestValidateScheduleInput(t *testing.T) {
 		t.Fatalf("valid input: %v", err)
 	}
 
+	// 船名和航次在建立正式船期时允许未知，订舱前可以后补。
+	pendingVessel := validInput()
+	pendingVessel.VesselName, pendingVessel.VoyageNo = "", ""
+	if _, err := validateInput(pendingVessel); err != nil {
+		t.Fatalf("pending vessel should be accepted: %v", err)
+	}
+
 	missing := validInput()
-	missing.VesselName = ""
+	missing.PortOfLoading = ""
 	if _, err := validateInput(missing); errorCode(err) != "SHIPPING_REQUIRED_FIELDS" {
 		t.Fatalf("missing vessel code = %q, err=%v", errorCode(err), err)
 	}

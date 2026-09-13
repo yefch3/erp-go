@@ -64,6 +64,8 @@ var presetRoles = []presetRole{
 			"masterdata:supplier:read", "masterdata:port:read",
 			"procurement:exception:write", "procurement:order:read", "procurement:receipt:write",
 			"product:product:read",
+			"shipping:document:download", "shipping:document:invalidate",
+			"shipping:document:upload", "shipping:document:view",
 			"shipping:progress:write", "shipping:route:write",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"shipping:sourcing:read", "shipping:sourcing:write",
@@ -95,6 +97,7 @@ var presetRoles = []presetRole{
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",
+			"shipping:document:download", "shipping:document:view", "shipping:schedule:read",
 		},
 		Scopes: []presetScope{
 			{"export", "ALL"}, {"mail", "SELF"},
@@ -102,7 +105,7 @@ var presetRoles = []presetRole{
 			// 就等于零行，供应商对账页会打得开却一张单都没有，且不报错。
 			// 和 00050 给 1 号租户改的那一条是同一件事——这里管的是新开的租户。
 			{"procurement_order", "ALL"}, {"procurement_requirement", "SELF"},
-			{"procurement_sourcing", "SELF"},
+			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"},
 		},
 	},
 	{
