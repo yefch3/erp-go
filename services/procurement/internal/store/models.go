@@ -1360,3 +1360,56 @@ type SupplierQuoteLine struct {
 	LeadTime        string
 	Remark          string
 }
+
+type TravelReimbursement struct {
+	ID                 int64
+	TenantID           int64
+	ClaimNo            string
+	ClaimantID         int64
+	ClaimantName       string
+	DepartmentName     string
+	TripStart          pgtype.Date
+	TripEnd            pgtype.Date
+	Origin             string
+	Destination        string
+	Purpose            string
+	Amount             pgtype.Numeric
+	Currency           string
+	PaymentAccount     string
+	Note               string
+	Status             string
+	ApprovalInstanceID *int64
+	RejectionReason    string
+	PaidAt             pgtype.Date
+	PaidBy             *int64
+	PaidByName         string
+	PaymentReference   string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type TravelReimbursementFile struct {
+	ID              int64
+	TenantID        int64
+	ReimbursementID int64
+	Category        string
+	FileName        string
+	ObjectKey       string
+	UploadedBy      int64
+	UploadedByName  string
+	UploadedAt      pgtype.Timestamptz
+	RemovedAt       pgtype.Timestamptz
+}
+
+type TravelReimbursementHistory struct {
+	ID              int64
+	TenantID        int64
+	ReimbursementID int64
+	Action          string
+	FromStatus      string
+	ToStatus        string
+	Detail          string
+	ActorID         int64
+	ActorName       string
+	CreatedAt       pgtype.Timestamptz
+}
