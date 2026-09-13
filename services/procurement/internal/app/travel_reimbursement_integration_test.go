@@ -43,9 +43,9 @@ func TestTravelReimbursementApprovalPaymentLifecycle(t *testing.T) {
 	}
 	defer pool.Close()
 	tenant := time.Now().UnixNano()
-	defer pool.Exec(ctx, "DELETE FROM travel_reimbursement_history WHERE tenant_id=$1", tenant)
-	defer pool.Exec(ctx, "DELETE FROM travel_reimbursement_files WHERE tenant_id=$1", tenant)
-	defer pool.Exec(ctx, "DELETE FROM travel_reimbursements WHERE tenant_id=$1", tenant)
+	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM travel_reimbursement_history WHERE tenant_id=$1", tenant) }()
+	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM travel_reimbursement_files WHERE tenant_id=$1", tenant) }()
+	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM travel_reimbursements WHERE tenant_id=$1", tenant) }()
 	approvals := &d7ApprovalStub{}
 	svc := New(pool, Deps{Approvals: approvals, People: d7PeopleStub{}, Files: d7FilesStub{}})
 	owner := Operator{ID: 71, Name: "申请人"}

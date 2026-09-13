@@ -253,7 +253,9 @@ func (s *Service) AttachTravelFile(ctx context.Context, tenantID, id int64, key,
 		return v, err
 	}
 	if v.Status == "PENDING_PAYMENT" {
-		_, err = s.pool.Exec(ctx, `UPDATE travel_reimbursements SET status='DRAFT',approval_instance_id=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id)
+		if _, err = s.pool.Exec(ctx, `UPDATE travel_reimbursements SET status='DRAFT',approval_instance_id=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id); err != nil {
+			return v, err
+		}
 		_ = s.addTravelHistory(ctx, tenantID, id, "DOCUMENT_ADDED", v.Status, "DRAFT", "主要凭证变化，原审批失效", op)
 	} else {
 		_ = s.addTravelHistory(ctx, tenantID, id, "DOCUMENT_ADDED", v.Status, v.Status, category+" · "+filepath.Base(name), op)
