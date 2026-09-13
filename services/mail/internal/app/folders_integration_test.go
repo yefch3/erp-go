@@ -376,6 +376,76 @@ func TestDeletingAChildFolderWorks(t *testing.T) {
 	}
 }
 
+// 对账不能把刚建的子文件夹删掉。
+//
+// 这条钉的是一次真事故：在 ERP 里建了 test，再在它底下建 test1，成功；点
+// test1 的删除答「文件夹不存在」。对账那一步把带 '/' 的名字整个当成"奇怪
+// 字符"跳过，接着又把它当成"服务器上没了"从登记里删掉——左栏上还显示着，
+// 库里已经没有它了。
+func TestReconcileKeepsNestedFolders(t *testing.T) {
+	f := newFolderFixture(t, 9117)
+	ctx := context.Background()
+	parent, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, 0, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, parent.ID, "test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	acct, err := f.svc.ForAccount(ctx, f.tenantID, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 服务器上有它（假服务器的 CreateFolder 把名字记进了 folders）。对账之后
+	// 登记还得在，而且是**同一行**——id 变了前端手里那个就是死的。
+	f.svc.syncHostFolders(ctx, f.tenantID, f.me, acct)
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *MailFolder
+	for i := range got {
+		if got[i].HostName == "test/test1" {
+			found = &got[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("对账把子文件夹删掉了：%+v", got)
+	}
+	if found.ID != child.ID || found.Role != roleCustom {
+		t.Errorf("子文件夹该还是原来那一行（id %d，CUSTOM），实际 %+v", child.ID, *found)
+	}
+	// 所以删它是删得掉的——事故里就是这一步答「文件夹不存在」。
+	if err := f.svc.DeleteMailFolder(ctx, f.tenantID, f.me, child.ID); err != nil {
+		t.Errorf("对账之后子文件夹该删得掉：%v", err)
+	}
+}
+
+// 在 Foxmail 里建的多层文件夹，对账时要登记进来，而不是当成奇怪名字跳过。
+func TestReconcileRegistersHostNestedFolders(t *testing.T) {
+	f := newFolderFixture(t, 9118)
+	ctx := context.Background()
+	f.host.folders = []string{"客户", "客户/巴西", "客户/巴西/2026", "带\"引号\"的"}
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := map[string]string{}
+	for _, g := range got {
+		roles[g.HostName] = g.Role
+	}
+	for _, name := range []string{"客户", "客户/巴西", "客户/巴西/2026"} {
+		if roles[name] != roleCustom {
+			t.Errorf("%s 该登记成自建文件夹，实际 %q", name, roles[name])
+		}
+	}
+	// 真正的奇怪字符还是不接。
+	if _, ok := roles["带\"引号\"的"]; ok {
+		t.Error("名字里带引号的不该登记")
+	}
+}
+
 // 底下还有文件夹就不删：自己先说清楚，别把服务器那句英文原话抛给人。
 func TestDeletingAFolderWithChildrenIsRefused(t *testing.T) {
 	f := newFolderFixture(t, 9114)

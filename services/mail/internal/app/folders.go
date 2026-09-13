@@ -312,8 +312,8 @@ func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int6
 	}
 	onHost := map[string]bool{}
 	for _, hf := range names {
-		if _, err := validFolderName(hf.Name); err != nil && roleOf(hf, specials) == roleCustom {
-			continue // 带层级或奇怪字符的自建文件夹，v1 不接；系统的名字不受这条限制
+		if roleOf(hf, specials) == roleCustom && !hostFolderAcceptable(hf.Name, hf.Delim) {
+			continue // 名字里有奇怪字符的自建文件夹不接；系统的名字不受这条限制
 		}
 		onHost[hf.Name] = true
 		if _, err := s.q.UpsertHostFolder(ctx, store.UpsertHostFolderParams{
@@ -337,6 +337,38 @@ func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int6
 			s.log.Warn("could not drop a folder gone from the host", "account", acct.AccountID, "folder", r.HostName, "err", err)
 		}
 	}
+}
+
+// hostFolderAcceptable 说服务器上的一个自建文件夹能不能登记进来。
+//
+// 层级是正当的：名字里带分隔符的是子文件夹（"客户/巴西"），不是奇怪字符。
+// 所以**按段**检查——每一段单独过 validFolderName 禁的那几个字符和长度。
+// 保留名那条不查：服务器上已经存在的东西轮不到我们批准。
+//
+// 从前这里整个名字过 validFolderName，于是任何带 '/' 的都被当成"v1 不接"
+// 跳过；接着下面那段"服务器上没了"的清理看它不在 onHost 里，把登记删掉。
+// 后果是 ERP 里刚建的子文件夹一对账就从库里消失：左栏上还显示着（那份列表
+// 是对账前拿到的），点删除答「文件夹不存在」，下次进来它整个不见了——而
+// 服务器上它还在，再建同名又被服务器拒。
+func hostFolderAcceptable(name, delim string) bool {
+	segs := []string{name}
+	if delim != "" {
+		segs = strings.Split(name, delim)
+	}
+	for _, seg := range segs {
+		if strings.TrimSpace(seg) == "" {
+			return false
+		}
+		if n := len([]rune(seg)); n > maxFolderNameRunes {
+			return false
+		}
+		for _, r := range seg {
+			if strings.ContainsRune(`/\*%"`, r) || unicode.IsControl(r) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // hostSaysDefaultFolder 认出服务器「这是默认文件夹，不能改/删」的答复：
