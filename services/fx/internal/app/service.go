@@ -136,7 +136,7 @@ func (s *Service) UpdateWatched(ctx context.Context, tenantID, actorID int64, cu
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err = tx.Exec(ctx, `DELETE FROM fx_watch_currencies WHERE tenant_id=$1`, tenantID); err != nil {
 		return nil, err
 	}
