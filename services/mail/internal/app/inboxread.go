@@ -20,6 +20,9 @@ type InboundView struct {
 	// 可能是站在 A 箱里点开的，而「点回复从哪个地址发出去」得看这封信是
 	// 哪个箱收到的，不能看左边高亮着谁——那就是「读 B 的信、从 A 回过去」。
 	AccountID      int64
+	// 左栏的哪一格（INBOX / ARCHIVE / JUNK / TRASH / F:…），已发送是空串。
+	// 只有单封读取填它：列表那边站在哪一格本来就知道。
+	View           string
 	FromEmail      string
 	FromName       string
 	ToEmail        string
@@ -180,7 +183,12 @@ func threadRowsFromSearch(rows []store.ListInboundThreadsRow) []threadRow {
 // 任何一档走 ListThreadsByViewSorted。**带关键词时不能排序**：关键词走的是
 // 按会话匹配的搜索查询，那条按时间给结果——同一个词按两种口径给两份结果，
 // 比不支持更糟，所以直接报错而不是悄悄按日期排。
-func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID int64, keyword, view, cursor string, size int32, sort ListSort) (InboundPage, error) {
+// unreadOnly 是列表上那个「只看未读」开关。按**会话**筛（any_unread），和列表
+// 的行是一回事：一行代表一条会话，里面还有没读的信就该留下。
+//
+// **带关键词时它不生效**，和排序一样：搜索走的是另一条按会话匹配的查询，
+// 在那条路上再叠一个筛选是第三种口径。前端搜索时也不显示这个开关。
+func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID int64, keyword, view, cursor string, size int32, sort ListSort, unreadOnly bool) (InboundPage, error) {
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
@@ -230,7 +238,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		}
 		fast, err := s.q.ListThreadsByView(ctx, store.ListThreadsByViewParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
-			CursorAt: at, CursorID: id, RowLimit: size,
+			CursorAt: at, CursorID: id, RowLimit: size, UnreadOnly: unreadOnly,
 		})
 		if err != nil {
 			return InboundPage{}, err
@@ -238,6 +246,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		rows = threadRowsFromView(fast)
 		if total, err = s.q.CountThreadsByView(ctx, store.CountThreadsByViewParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			UnreadOnly: unreadOnly,
 		}); err != nil {
 			return InboundPage{}, err
 		}
@@ -251,7 +260,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		sorted, err := s.q.ListThreadsByViewSorted(ctx, store.ListThreadsByViewSortedParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
 			SortBy: sort.By, SortDir: sort.Dir,
-			CursorKey: key, CursorID: id, RowLimit: size,
+			CursorKey: key, CursorID: id, RowLimit: size, UnreadOnly: unreadOnly,
 		})
 		if err != nil {
 			return InboundPage{}, err
@@ -260,6 +269,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		// 总数和排序无关，和不排序那条用同一个数。
 		if total, err = s.q.CountThreadsByView(ctx, store.CountThreadsByViewParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			UnreadOnly: unreadOnly,
 		}); err != nil {
 			return InboundPage{}, err
 		}
@@ -407,7 +417,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
-		Folder: row.Folder, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
+		Folder: row.Folder, View: row.View, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
 		ReplyTo: row.ReplyTo, CC: row.Cc,
 		AuthSPF: row.AuthSpf, AuthDKIM: row.AuthDkim,
 		// 存量还没补回来的行 to_all 是空的：退回第一个收件人，至少和从前一样，

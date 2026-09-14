@@ -147,6 +147,16 @@ func run(log *slog.Logger) error {
 		log.Warn("GOTENBERG_URL is not set — Word and Excel attachments cannot be previewed")
 	}
 
+	// 在线 Office。地址和密钥缺一个都算没配（NewOffice 回 nil），那时办公文档
+	// 走上面那个转 PDF 的转换器；两个都没有就只能下载。
+	office := app.NewOffice(cfg.DocsURL, cfg.DocsJWTSecret)
+	switch {
+	case office != nil:
+		log.Info("online Office preview is available", "docs", office.PublicURL)
+	case cfg.DocsURL != "" || cfg.DocsJWTSecret != "":
+		log.Warn("DOCS_URL and DOCS_JWT_SECRET must both be set — online Office preview is off")
+	}
+
 	svc := app.New(pool, app.Deps{
 		Numbering: grpcout.NewNumbering(mdConn),
 		Directory: grpcout.NewDirectory(iamConn),
@@ -157,6 +167,7 @@ func run(log *slog.Logger) error {
 		Secrets:   secrets,
 		Live:      live,
 		Converter: converter,
+		Office:    office,
 	}, log)
 	if cfg.OpenAIAPIKey == "" {
 		log.Warn("OPENAI_API_KEY is not set — mail-to-Excel conversion is unavailable")

@@ -370,6 +370,15 @@ func TestOfficeAttachmentPreviewRouteIsRegistered(t *testing.T) {
 	}
 }
 
+// 在线 Office 预览要一份签名配置，也是一条新地址。少了它，前端那一页拿到
+// 404 就只会说一句「打不开」。
+func TestOfficeViewerConfigRouteIsRegistered(t *testing.T) {
+	const want = "GET /api/inbound-mails/{id}/attachments/{attachmentId}/office"
+	if !routeSet(t)[want] {
+		t.Fatalf("缺少路由：%s", want)
+	}
+}
+
 // 附件打包下载。少了这条，页面上那颗「下载全部」点了拿到 404，而 catch 里
 // 只会说一句「下载失败」。
 func TestAttachmentBundleDownloadRouteIsRegistered(t *testing.T) {

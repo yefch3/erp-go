@@ -189,6 +189,8 @@ type Deps struct {
 	// only the preview of a .docx/.xls say it is not configured — the file is
 	// still listed and still downloadable.
 	Converter Converter
+	// 在线 Office（OnlyOffice）。nil = 没配。
+	Office *Office
 }
 
 type Service struct {
@@ -205,6 +207,7 @@ type Service struct {
 	provider  Provider
 	files     Files
 	converter Converter
+	office    *Office
 	tables    TableExtractor
 	// 模型单价，只用来把 token 折成钱给人看。零值就不折——不猜价格。
 	pricing ModelPricing
@@ -242,7 +245,7 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		number: d.Numbering, directory: d.Directory, scopes: d.Scopes,
-		provider: d.Provider, files: d.Files, converter: d.Converter, tables: d.Tables,
+		provider: d.Provider, files: d.Files, converter: d.Converter, office: d.Office, tables: d.Tables,
 		pricing: d.Pricing,
 		secrets: d.Secrets, live: d.Live, log: log,
 	}

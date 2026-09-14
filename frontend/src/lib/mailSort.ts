@@ -52,11 +52,28 @@ export function parseSort(raw: string | undefined | null): MailSort {
   return DEFAULT_SORT
 }
 
-// 点了排序栏上的一列：点的是当前那列就翻方向，点的是别的列就按那列的
-// 自然方向来。
-export function nextSort(cur: MailSort, clicked: SortField): MailSort {
-  if (cur.by === clicked) return { by: clicked, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
-  return { by: clicked, dir: defaultDir(clicked) }
+// 排序菜单里点了一项。
+//
+// 菜单里"按哪一列"和"哪个方向"是分开的两段（Foxmail 的排序菜单就是这样），
+// 所以一条命令要么说列、要么说方向：`by:size`、`dir:asc`。
+//
+// 从前这里是 nextSort——"点同一列第二次翻方向"。那条规则配的是常驻在列表
+// 上方的一排开关：开关就在眼前，点第二下看得见结果。搬进弹出菜单之后它不
+// 成立了：点一下菜单就关上，人看不到自己把方向翻了，下次想翻还得再开一次
+// 菜单猜一遍。方向改成菜单里两项明写的东西。
+//
+// 认不出的命令原样返回：菜单里只可能发出这两种，但命令是字符串，而字符串
+// 总有一天会被别处拼错。那时该发生的事是"什么都没变"。
+export function sortFromCommand(cur: MailSort, cmd: string): MailSort {
+  const [kind, val] = cmd.split(':')
+  if (kind === 'dir') {
+    if (val !== 'asc' && val !== 'desc') return cur
+    return cur.dir === val ? cur : { by: cur.by, dir: val }
+  }
+  if (kind !== 'by' || !val || !isField(val)) return cur
+  // 点的就是当前这一列：方向归方向那两项管，这里什么都不做。
+  if (cur.by === val) return cur
+  return { by: val, dir: defaultDir(val) }
 }
 
 // 这一侧认不认这一列。切文件夹时排序会重置，所以对不上只可能是手写的

@@ -29,9 +29,14 @@ func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 // ---------------------------------------------------------------- auth
 
 func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.LoginResponse, error) {
-	res, err := // No tenant from the context: the address decides which company
-		// this is. A login page serving twenty of them is the same page.
-		h.svc.Login(ctx, req.GetEmail(), req.GetPassword())
+	// No tenant from the context: what was typed decides which company this
+	// is. A login page serving twenty of them is the same page.
+	// account 是新字段（登录名，任意字符串）；老前端只发 email，两个都收。
+	account := req.GetAccount()
+	if account == "" {
+		account = req.GetEmail()
+	}
+	res, err := h.svc.Login(ctx, account, req.GetPassword())
 	if err != nil {
 		return nil, err
 	}

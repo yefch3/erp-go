@@ -15,12 +15,12 @@
 --
 -- lower() on both sides: an address is case-insensitive in practice, and
 -- "Alice@" must not be a second account from "alice@". email_verified_at rides
--- along because login has to refuse an account whose mailbox was never proved
--- to exist, and doing it here keeps that check free.
+-- along for the reset-link path, which must only ever mail a mailbox that was
+-- proved to exist. Login itself no longer reads it (see Login).
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        u.locked_until, u.must_change_password,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
-       e.status AS employee_status, e.email_verified_at,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
        t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
@@ -29,11 +29,32 @@ WHERE e.email <> ''
   AND lower(e.email) = lower(sqlc.arg(email)::text);
 
 -- name: GetUserByUsername :one
+-- 登录用的那一条：登录名是任意字符串（zhangsan 或 zhangsan@xxx.com 都行），
+-- 只查这一列，不看员工的邮箱字段。和 GetUserByEmail 同一个形状，因为重置
+-- 链接那条路还用后者。
+--
+-- **不按租户查**：登录页没有「选公司」这一步，登录名靠 users_username_lower_idx
+-- （00059）做到全局唯一。lower() 两边都做，找人不分大小写。
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
-       e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
+       u.locked_until, u.must_change_password,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email AS employee_email, e.email_verified_at,
+       t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
-WHERE u.tenant_id = $1 AND u.username = $2;
+JOIN tenants t ON t.id = u.tenant_id
+WHERE lower(u.username) = lower(sqlc.arg(username)::text);
+
+-- name: RenameUserLogin :execrows
+-- 员工的邮箱改了，而登录名恰好就是旧邮箱（邀请开的户都这样），登录名跟着改。
+-- 登录名和邮箱本来是两回事（登录名是任意字符串，邮箱只是联系方式），但从前
+-- 登录认的是邮箱，改了邮箱的人一直是拿新邮箱登的——这条让那件事继续成立。
+-- 管理员手动定的登录名（和邮箱不相等）不动。
+UPDATE users
+SET username = sqlc.arg(new_username)::text, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND lower(username) = lower(sqlc.arg(old_username)::text);
 
 -- name: RecordLoginSuccess :exec
 -- Clears the deadline as well as the counter. Somebody who was locked at
@@ -192,7 +213,10 @@ WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
       SELECT 1 FROM employee_invitations i
       WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
     ))
-    OR (sqlc.arg(account_status)::text = 'ACTIVE' AND u.status = 'ACTIVE' AND e.email_verified_at IS NOT NULL)
+    -- 有登录行、且没被停用，就是已激活。不再要求 email_verified_at：那只是
+    -- 邀请那条路的痕迹，管理员手动开的账号（填了用户名和密码）没有它，可
+    -- 照样登得进。users 里的一行只在有人有权设了密码时才存在，这就够了。
+    OR (sqlc.arg(account_status)::text = 'ACTIVE' AND u.status = 'ACTIVE')
   )
   AND (
     sqlc.arg(keyword)::text = ''

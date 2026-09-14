@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -18,8 +20,12 @@ import (
 // change-password form. operatorID is who opened the account, for the
 // change history.
 func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID, operatorID int64, username, password string) (string, error) {
+	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
 		return "", apierr.Invalid("IAM_ACCOUNT_FIELDS_REQUIRED", "用户名和初始密码必填")
+	}
+	if err := validateUsername(username); err != nil {
+		return "", err
 	}
 	emp, err := s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
 	if err != nil {
@@ -155,4 +161,26 @@ func (s *Service) ListAccounts(ctx context.Context, tenantID int64) (map[int64]s
 		out[r.EmployeeID] = r.Username
 	}
 	return out, nil
+}
+
+// 登录名长什么样。
+//
+// 两到六十四个字，除了空白和控制字符什么都行——zhangsan、张三、zhangsan@xxx.com
+// 都是合法的登录名。**不管它像不像邮箱**：登录名是任意字符串，邮箱是另一个
+// 字段。下限两个字是因为中文名常常就两个字，而登录名不是秘密，密码才是。
+// 禁空白是为了「zhangsan 」和「zhangsan」不能是两个账号。
+//
+// 大小写不管：存的是管理员打的样子，找人时两边都 lower（GetUserByUsername，
+// users_username_lower_idx），所以「ZhangSan」登得进「zhangsan」的账号。
+func validateUsername(u string) error {
+	runes := []rune(u)
+	if len(runes) < 2 || len(runes) > 64 {
+		return apierr.Invalid("IAM_USERNAME_INVALID", "登录名长度应为 2 至 64 个字符")
+	}
+	for _, r := range runes {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return apierr.Invalid("IAM_USERNAME_INVALID", "登录名不能包含空格或控制字符")
+		}
+	}
+	return nil
 }

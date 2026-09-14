@@ -132,6 +132,16 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
+      # 在线 Office，分两步点亮：
+      #   1. DOCS_JWT_SECRET **必填**（下面 docs 容器也用它）。它不是这个功能的
+      #      开关，是那台容器的门锁——容器一起来就在 infra 网上、前门一转发就
+      #      对着公网，门锁不能是"有就锁、没有就敞着"。
+      #   2. DOCS_URL 默认空 = 功能关着，预览走转 PDF 那条老路。前门 nginx 的
+      #      /docs/ 放好之后，在 .env 里写 DOCS_URL=/docs，下一次部署就亮。
+      #      先亮后放 nginx 的话，会有一段时间预览按钮指向一个 404。
+      DOCS_URL: ${DOCS_URL:-}
+      DOCS_JWT_SECRET: ${DOCS_JWT_SECRET:?set in deploy/.env — openssl rand -hex 32}
+
   # 转换器在生产上用的是同一个公开镜像，不跟着 ERP_SHA 走：它不是我们的代码。
   gotenberg:
     image: gotenberg/gotenberg:8
@@ -165,3 +175,10 @@ services:
     networks: [infra]
     ports:
       - "127.0.0.1:8082:80"
+  docs:
+    # 同一份镜像，密钥从 .env 来，**必填**：这台容器会主动出去取文件，而它在
+    # infra 网上、前门一转发就对着公网。空密钥意味着什么由它的启动脚本决定
+    # （可能是一把随机的，也可能是一把默认的），而"可能"不该是一道门锁的状态。
+    # 少了这个变量整条部署停在插值那一步——这正是要的：宁可不上线，不敞着门。
+    environment:
+      JWT_SECRET: ${DOCS_JWT_SECRET:?set in deploy/.env — openssl rand -hex 32}

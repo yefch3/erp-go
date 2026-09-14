@@ -149,6 +149,9 @@ service EmailService {
   // 前端据此退回纯文本那条路。
   rpc CleanPastedTable(CleanPastedTableRequest) returns (CleanPastedTableResponse);
   rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
+  // 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
+  // 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
+  rpc OfficePreviewConfig(OfficePreviewConfigRequest) returns (OfficePreviewConfigResponse);
   // 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
   // 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
   rpc DownloadInboundAttachments(DownloadInboundAttachmentsRequest) returns (DownloadInboundAttachmentsResponse);
@@ -299,6 +302,11 @@ message InboundMail {
   // 整段 To 头（解码后原样），给人看的：一封群发给七个人的信，这里是七个。
   // to_email 只是其中第一个。空表示存量还没补（读的那一侧退回 to_email）。
   string to_all = 31;
+  // 这封信此刻在左栏的哪一格：INBOX / ARCHIVE / JUNK / TRASH / F:<自建文件夹>，
+  // 已发送和退信是空串。folder 是服务器上的文件夹名，回答不了「归档了没有」
+  // ——归档是 INBOX 里的一个标记，不是另一个文件夹。单独开窗口读信的那一页
+  // 要靠它决定给哪几颗按钮（回收站里是彻底删除，归档里是取消归档）。
+  string view = 36;
   // 从 to_all 和 cc 里解析出来的地址，给「回复全部」用。已经拆好、小写、
   // 去重，前端不用再对着 "Name <a@x>, b@y" 这种东西写解析器。
   repeated MailParty to_parties = 32;
@@ -346,6 +354,8 @@ message InboundAttachment {
   // 怎么预览这个附件。空 = 不能预览，只能下载。
   //
   // "direct"  preview_url 已经填好，直接显示（图片、PDF）。
+  // "office" 在线 Office 里打开（配了 OnlyOffice 时办公文档都是这一档）：
+  // 调 OfficePreviewConfig 拿配置。
   // "convert" 要先转成 PDF：调 PreviewInboundAttachment 拿地址。转换在服务器
   //           上做，第一次几百毫秒，之后有缓存。Word / Excel / PPT 走这条。
   string preview_kind = 8;
@@ -378,6 +388,11 @@ message ListInboundRequest {
   // 时间给结果；同一个词按两种口径给两份结果，比不支持更糟。
   string sort_by = 6;
   string sort_dir = 7;
+  // 只看未读。按**会话**筛：一行代表一条会话，里面还有没读的信就留下。
+  //
+  // 带 keyword 时不生效，和排序同一条理由——搜索走另一条查询，在那儿再叠
+  // 一层筛选是第三种口径。前端搜索时也不显示这个开关。
+  bool unread_only = 8;
 }
 
 // One message found by a search. It carries the folder because the search
@@ -456,6 +471,22 @@ message PreviewInboundAttachmentRequest {
   int64 attachment_id = 2;
 }
 
+message OfficePreviewConfigRequest {
+  int64 inbound_id = 1;
+  int64 attachment_id = 2;
+  // 编辑器界面用哪种语言（zh / en / es），跟着浏览器走。
+  string lang = 3;
+}
+message OfficePreviewConfigResponse {
+  // 浏览器从哪儿加载编辑器（api.js 在它底下）。相对路径（/docs）或完整地址。
+  string docs_url = 1;
+  // 交给 DocsAPI.DocEditor 的那份配置，原样的 JSON。不拆成 proto 字段：那份
+  // 结构是 OnlyOffice 定的，会随版本长，照抄一份只会落后。
+  string config_json = 2;
+  // 配置的签名（HS256 JWT）。Document Server 只认签过的配置——没有这一条，
+  // 谁都能让它去取任意地址上的文件。
+  string token = 3;
+}
 message PreviewInboundAttachmentResponse {
   // 签过名的、有时限的地址，内容是转好的 PDF。
   string preview_url = 1;
@@ -477,7 +508,13 @@ message MailFolder {
 }
 message ListMailFoldersRequest { int64 account_id = 1; }
 message ListMailFoldersResponse { repeated MailFolder folders = 1; }
-message CreateMailFolderRequest { int64 account_id = 1; string name = 2; }
+message CreateMailFolderRequest {
+  int64 account_id = 1;
+  string name = 2;
+  // 建在哪个文件夹底下。0 = 顶层。服务器上真的是一层套一层（IMAP 的名字里
+  // 带分隔符），不是 ERP 里画出来的层级——所以在 Foxmail 里看到的也是同一棵树。
+  int64 parent_id = 3;
+}
 message RenameMailFolderRequest { int64 id = 1; string name = 2; }
 message CreateMailFolderResponse { MailFolder folder = 1; }
 message RenameMailFolderResponse { MailFolder folder = 1; }

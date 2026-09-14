@@ -712,8 +712,15 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 	// mailbox owner: an inbox is personal.
 	if newInbox > 0 && s.live != nil {
 		// 推给人，不是推给账号：收件箱是个人的，而一个人可能有好几个信箱。
+		//
+		// 但要说清是**哪个箱**来了信。页面拿这个决定要不要重拉眼前的列表：
+		// 站在 Gmail 里，263 来了一封，角标该动、列表不该动——重拉一遍
+		// Gmail 的列表除了多一次往返什么都不会变。不带的话页面只能每次都拉。
 		s.live.ToEmployees(ctx, cfg.TenantID, []int64{acct.EmployeeID},
-			livefeed.Event{Type: livefeed.MailInbound})
+			livefeed.Event{
+				Type:    livefeed.MailInbound,
+				Subject: fmt.Sprintf("MAILBOX:%d", acct.AccountID),
+			})
 	}
 	return newInbox, nil
 }

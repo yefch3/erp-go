@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAILBOX_FOLDER_KEYS,
+  nestFolders,
+  splitFolderPath,
   SHARED_FOLDER_KEYS,
   expandedAfterSwitch,
   isMailboxFolder,
@@ -91,5 +93,48 @@ describe('存在 localStorage 里的那串', () => {
     expect(parseExpanded('{"a":1}')).toEqual([])
     expect(parseExpanded('[0,-3,"x",null]')).toEqual([])
     expect(parseExpanded('[4,"7"]')).toEqual([4, 7])
+  })
+})
+
+describe('多层文件夹', () => {
+  const cf = (name: string, id = 1) => ({ id, accountId: 1, name, viewKey: `F:${name}`, role: 'CUSTOM' })
+
+  it('路径切成父和最后一段', () => {
+    expect(splitFolderPath('客户')).toEqual({ parent: '', leaf: '客户' })
+    expect(splitFolderPath('客户/巴西')).toEqual({ parent: '客户', leaf: '巴西' })
+    expect(splitFolderPath('客户/巴西/2026')).toEqual({ parent: '客户/巴西', leaf: '2026' })
+    // 有些服务器拿点分层。
+    expect(splitFolderPath('客户.巴西')).toEqual({ parent: '客户', leaf: '巴西' })
+  })
+
+  it('父在前、孩子跟着，缩进一级，行上只写最后一段', () => {
+    const out = nestFolders([cf('客户/巴西', 2), cf('客户', 1), cf('供应商', 3)])
+    expect(out.map((i) => [i.name, i.depth])).toEqual([
+      ['供应商', 0],
+      ['客户', 0],
+      ['巴西', 1],
+    ])
+    // 点进去用的 key 还是整条路径——服务器上的文件夹就叫这个。
+    expect(out[2].key).toBe('F:客户/巴西')
+    expect(out[2].hostName).toBe('客户/巴西')
+  })
+
+  it('三层也排得下去', () => {
+    const out = nestFolders([cf('客户/巴西/2026', 3), cf('客户', 1), cf('客户/巴西', 2)])
+    expect(out.map((i) => [i.name, i.depth])).toEqual([
+      ['客户', 0],
+      ['巴西', 1],
+      ['2026', 2],
+    ])
+  })
+
+  it('父不存在时照样是顶层的一行，写全名——不凭空造一级点不进去的空目录', () => {
+    const out = nestFolders([cf('客户/巴西', 2)])
+    expect(out.map((i) => [i.name, i.depth])).toEqual([['客户/巴西', 0]])
+  })
+
+  it('名字里带点但没有那个父文件夹的，不算嵌套', () => {
+    const out = nestFolders([cf('2026.09 报价', 1)])
+    expect(out.map((i) => [i.name, i.depth])).toEqual([['2026.09 报价', 0]])
   })
 })

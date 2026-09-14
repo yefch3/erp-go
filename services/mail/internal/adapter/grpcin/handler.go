@@ -859,6 +859,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		HasRaw:      v.HasRaw,
 		Tracked:     v.Tracked,
 		Folder:      v.Folder,
+		View:        v.View,
 
 		MessageIdHeader: v.MessageIDHeader,
 		RawSize:         v.RawSize,
@@ -894,7 +895,7 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 	op := operator(ctx)
 	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize(),
-		app.ListSort{By: req.GetSortBy(), Dir: req.GetSortDir()})
+		app.ListSort{By: req.GetSortBy(), Dir: req.GetSortDir()}, req.GetUnreadOnly())
 	if err != nil {
 		return nil, err
 	}
@@ -993,6 +994,16 @@ func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.S
 		return nil, err
 	}
 	return &mailv1.StartInboundExcelConversionResponse{Job: excelJobToProto(job)}, nil
+}
+
+func (h *Handler) OfficePreviewConfig(ctx context.Context, req *mailv1.OfficePreviewConfigRequest) (*mailv1.OfficePreviewConfigResponse, error) {
+	op := operator(ctx)
+	open, err := h.svc.OfficePreviewConfig(ctx, grpcx.TenantID(ctx), op,
+		req.GetInboundId(), req.GetAttachmentId(), req.GetLang())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.OfficePreviewConfigResponse{DocsUrl: open.DocsURL, ConfigJson: open.ConfigJSON, Token: open.Token}, nil
 }
 
 func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.GetInboundExcelConversionJobRequest) (*mailv1.GetInboundExcelConversionJobResponse, error) {
@@ -1351,7 +1362,7 @@ func (h *Handler) ListMailFolders(ctx context.Context, req *mailv1.ListMailFolde
 
 func (h *Handler) CreateMailFolder(ctx context.Context, req *mailv1.CreateMailFolderRequest) (*mailv1.CreateMailFolderResponse, error) {
 	op := operator(ctx)
-	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetName())
+	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetParentId(), req.GetName())
 	if err != nil {
 		return nil, err
 	}
