@@ -1804,6 +1804,8 @@ export default {
       asc: 'Ascending',
       desc: 'Descending',
       current: 'Sort: {name}',
+      starFirst: 'Starred first',
+      unreadFirst: 'Unread first',
     },
     colGrip: {
       rail: 'Folder column width',

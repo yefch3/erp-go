@@ -15,13 +15,16 @@ func TestListSortFillsDefaultsAndRejectsWhatItDoesNotKnow(t *testing.T) {
 		want    ListSort
 		wantErr string
 	}{
-		{"空 = 日期倒序", ListSort{}, inboundSortColumns, ListSort{"date", "desc"}, ""},
-		{"大小默认大的在前", ListSort{By: "size"}, inboundSortColumns, ListSort{"size", "desc"}, ""},
-		{"主题默认 A 到 Z", ListSort{By: "subject"}, inboundSortColumns, ListSort{"subject", "asc"}, ""},
+		{"空 = 日期倒序", ListSort{}, inboundSortColumns, ListSort{By: "date", Dir: "desc"}, ""},
+		{"大小默认大的在前", ListSort{By: "size"}, inboundSortColumns, ListSort{By: "size", Dir: "desc"}, ""},
+		{"主题默认 A 到 Z", ListSort{By: "subject"}, inboundSortColumns, ListSort{By: "subject", Dir: "asc"}, ""},
 		{"收件人在收件箱那侧不认", ListSort{By: "to"}, inboundSortColumns, ListSort{}, "MAIL_SORT_INVALID"},
 		{"发件人在已发送那侧不认", ListSort{By: "from"}, sentSortColumns, ListSort{}, "MAIL_SORT_INVALID"},
 		{"方向拼错", ListSort{By: "date", Dir: "down"}, inboundSortColumns, ListSort{}, "MAIL_SORT_INVALID"},
-		{"给全了照收", ListSort{By: "to", Dir: "desc"}, sentSortColumns, ListSort{"to", "desc"}, ""},
+		{"给全了照收", ListSort{By: "to", Dir: "desc"}, sentSortColumns, ListSort{By: "to", Dir: "desc"}, ""},
+		// 分档跟着过，不被补默认值那一段吃掉。
+		{"分档原样带过去", ListSort{StarFirst: true, UnreadFirst: true}, inboundSortColumns,
+			ListSort{By: "date", Dir: "desc", StarFirst: true, UnreadFirst: true}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -102,5 +105,26 @@ func TestDateSortKeyIsTwentyDigitsOfUTC(t *testing.T) {
 	}
 	if len(got) != 20 {
 		t.Fatalf("key must be fixed width for lexical order to be time order, got %d", len(got))
+	}
+}
+
+// 开着分档就不是「一直以来的顺序」了：那条靠索引直接读前二十五行的查询
+// 按 last_at 读，读不出分档。这一句要是漏了，开关点了没反应。
+func TestTopFlagsAreNotTheDefaultSort(t *testing.T) {
+	if !(ListSort{By: "date", Dir: "desc"}).isDefault() {
+		t.Fatal("日期倒序、不分档，就是默认")
+	}
+	for _, s := range []ListSort{
+		{By: "date", Dir: "desc", StarFirst: true},
+		{By: "date", Dir: "desc", UnreadFirst: true},
+		{By: "date", Dir: "desc", StarFirst: true, UnreadFirst: true},
+	} {
+		if s.isDefault() {
+			t.Fatalf("%+v 开着分档，不能走靠索引那条查询", s)
+		}
+	}
+	// 已发送没有星标也没有未读，开关得脱干净。
+	if got := (ListSort{By: "date", Dir: "desc", StarFirst: true, UnreadFirst: true}).withoutTop(); got.topKey() != "" {
+		t.Fatalf("已发送那一侧不该带分档：%+v", got)
 	}
 }
