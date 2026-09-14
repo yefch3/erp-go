@@ -4,12 +4,15 @@ import (
 	"github.com/shopspring/decimal"
 
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	// The zone database, compiled in.
 	//
@@ -33,6 +36,7 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/gotenberg"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcout"
+	"github.com/sgao19/erp-go/services/mail/internal/adapter/httpin"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/mailfetch"
 	openaiadapter "github.com/sgao19/erp-go/services/mail/internal/adapter/openai"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/provider"
@@ -149,12 +153,12 @@ func run(log *slog.Logger) error {
 
 	// 在线 Office。地址和密钥缺一个都算没配（NewOffice 回 nil），那时办公文档
 	// 走上面那个转 PDF 的转换器；两个都没有就只能下载。
-	office := app.NewOffice(cfg.DocsURL, cfg.DocsJWTSecret)
+	office := app.NewOffice(cfg.DocsURL, cfg.DocsJWTSecret, cfg.OfficeInternalURL)
 	switch {
 	case office != nil:
-		log.Info("online Office preview is available", "docs", office.PublicURL)
-	case cfg.DocsURL != "" || cfg.DocsJWTSecret != "":
-		log.Warn("DOCS_URL and DOCS_JWT_SECRET must both be set — online Office preview is off")
+		log.Info("online Office is available", "docs", office.PublicURL, "callback", office.InternalURL)
+	case cfg.DocsURL != "" || cfg.DocsJWTSecret != "" || cfg.OfficeInternalURL != "":
+		log.Warn("DOCS_URL, DOCS_JWT_SECRET and OFFICE_INTERNAL_URL must all be set — online Office is off")
 	}
 
 	svc := app.New(pool, app.Deps{
@@ -269,6 +273,38 @@ func run(log *slog.Logger) error {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return err
+	}
+
+	// Document Server 取文件和回存改动走的那个口。只在容器网里，不发布到
+	// 宿主机；没配 OFFICE_INTERNAL_URL 就根本不起（那时在线 Office 只读，
+	// 起一个谁都不会来敲的口只是多一个面）。
+	if office != nil {
+		officeSrv := &http.Server{
+			Addr:    cfg.OfficeInternalAddr,
+			Handler: httpin.NewOfficeMux(svc, log),
+			// 全套超时，不只是读头。这个口只该被同一张网里的 docs 容器敲，
+			// 但"只该"不是"只会"：对面慢下来或者被人拿住时，没有超时的连接
+			// 会一直占着 goroutine。
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			// 递文件那一下最大 50 MB，走容器网；两分钟宽裕。
+			WriteTimeout: 2 * time.Minute,
+			IdleTimeout:  60 * time.Second,
+		}
+		go func() {
+			<-ctx.Done()
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = officeSrv.Shutdown(shutCtx)
+		}()
+		go func() {
+			log.Info("office callback listening", "addr", cfg.OfficeInternalAddr)
+			if err := officeSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				// 起不来不该把整个服务带走：邮件的收发和这个口无关，
+				// 坏掉的只是「附件能不能在线改」。
+				log.Error("office callback server stopped", "err", err)
+			}
+		}()
 	}
 	go func() {
 		<-ctx.Done()

@@ -1757,6 +1757,7 @@ export default {
     bccLabel: 'CCO',
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
+    attachmentEdited: 'Editado · v{n}',
     converting: 'Convirtiendo…',
     downloadAll: 'Descargar todo ({n})',
     sortBar: {
@@ -2309,6 +2310,9 @@ export default {
   officeWindow: {
     failed: 'No se puede abrir este archivo',
     failedHint: 'Puede que Office en línea no esté configurado, que el archivo esté dañado o que el correo se haya eliminado. Descárgalo desde la página del correo.',
+    edit: 'Editar',
+    version: 'Versión {n}',
+    editNote: 'Los cambios se guardan como una versión nueva; el archivo que envió el cliente no se toca',
   },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',

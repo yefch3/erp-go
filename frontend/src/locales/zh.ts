@@ -1747,6 +1747,7 @@ export default {
     bccLabel: '密送',
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
+    attachmentEdited: '已改 · 第 {n} 版',
     converting: '转换中…',
     downloadAll: '下载全部（{n}）',
     sortBar: {
@@ -2302,6 +2303,9 @@ export default {
   officeWindow: {
     failed: '这个文件打不开',
     failedHint: '可能是在线 Office 没配好、文件损坏，或者信已经被删掉了。回邮件页下载它吧。',
+    edit: '编辑',
+    version: '第 {n} 版',
+    editNote: '改动会存成新的一版，客户发来的原件不动',
   },
   reader: {
     bodyFrame: '邮件正文',

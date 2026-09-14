@@ -359,6 +359,12 @@ message InboundAttachment {
   // "convert" 要先转成 PDF：调 PreviewInboundAttachment 拿地址。转换在服务器
   //           上做，第一次几百毫秒，之后有缓存。Word / Excel / PPT 走这条。
   string preview_kind = 8;
+  // 这个附件在浏览器里被改过几回。0 = 没人改过。
+  //
+  // **download_url 永远是原件**，不跟着这个数走：客户发来的那一份是默认，
+  // 改过的那一版要明着要（在线打开拿到的就是最新版）。原件永不覆盖是这个
+  // 功能的前提，见迁移 00065。
+  int32 revision = 9;
 }
 
 message ListInboundRequest {
@@ -487,6 +493,9 @@ message OfficePreviewConfigRequest {
   int64 attachment_id = 2;
   // 编辑器界面用哪种语言（zh / en / es），跟着浏览器走。
   string lang = 3;
+  // 以可编辑的方式打开。**想不等于能**：没配内网回程时照样只读，而且不报错
+  // ——那时人要的是看这份文件。到底是不是可编辑，看响应里的 editable。
+  bool edit = 4;
 }
 message OfficePreviewConfigResponse {
   // 浏览器从哪儿加载编辑器（api.js 在它底下）。相对路径（/docs）或完整地址。
@@ -497,6 +506,11 @@ message OfficePreviewConfigResponse {
   // 配置的签名（HS256 JWT）。Document Server 只认签过的配置——没有这一条，
   // 谁都能让它去取任意地址上的文件。
   string token = 3;
+  // 这一次是不是真的可以改。界面按它决定要不要说那句「改动会存成新一版，
+  // 原件不动」——只读时说这句话是误导。
+  bool editable = 4;
+  // 打开的是第几版。0 = 客户发来的原件，1 起是改过的。
+  int32 version = 5;
 }
 message PreviewInboundAttachmentResponse {
   // 签过名的、有时限的地址，内容是转好的 PDF。
