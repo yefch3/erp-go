@@ -1077,12 +1077,31 @@ func (s *Server) previewInboundAttachment(w http.ResponseWriter, r *http.Request
 
 // officePreviewConfig 要一份「在在线 Office 里打开这个附件」的签名配置。
 // 谁能看、附件属不属于这封信，都在邮件服务里判；这里只转发身份和语言。
+//
+// **这条路由挂在 mail:email:read 上，但带 edit=1 时它是写**：签出来的配置带
+// 回存地址，人改完会在库里落一条新版本。所以这里单独再问一次写权限——只读
+// 和写在这套系统里是分得开的两个权限（有"只读审计"这样的角色），一个只被
+// 授予读的人不该能给客户的附件添版本。
 func (s *Server) officePreviewConfig(w http.ResponseWriter, r *http.Request) {
 	inboundID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	attachmentID, _ := strconv.ParseInt(chi.URLParam(r, "attachmentId"), 10, 64)
+	// 和别的开关一样只认 "1"。
+	edit := r.URL.Query().Get("edit") == "1"
+	if edit {
+		ok, err := s.allowed(r.Context(), "mail:email:write")
+		if err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
+		// 没有写权限就退回只读，不报 403：人点开这一页要的是看这份文件，
+		// 而「编辑」那颗按钮会因为响应里 editable=false 自己消失。
+		edit = ok
+	}
 	resp, err := s.Emails.OfficePreviewConfig(r.Context(),
 		&mailv1.OfficePreviewConfigRequest{
 			InboundId: inboundID, AttachmentId: attachmentID, Lang: r.URL.Query().Get("lang"),
+			// 想不等于能：邮件服务那边没配内网回程时也是只读。
+			Edit: edit,
 		})
 	if err != nil {
 		s.writeGRPCError(w, err)

@@ -287,6 +287,19 @@ type MailAccount struct {
 	PushCheckedAt pgtype.Timestamptz
 }
 
+// 收件箱附件在线编辑后的版本；原件在 email_inbound_attachments 上，永不覆盖
+type MailAttachmentRevision struct {
+	ID           int64
+	TenantID     int64
+	AttachmentID int64
+	InboundID    int64
+	Version      int32
+	FileKey      string
+	FileSize     int64
+	EditedBy     int64
+	EditedAt     pgtype.Timestamptz
+}
+
 type MailBindingLog struct {
 	ID         int64
 	TenantID   int64

@@ -1770,6 +1770,11 @@ export default {
     title: 'Email Outreach',
     subtitle: 'Bulk sends · one message per recipient · failures handled by hand',
     compose: 'Compose',
+    composeTo: 'To {n} recipients',
+    paneMinimize: 'Minimise',
+    paneRestore: 'Restore',
+    paneExpand: 'Expand',
+    paneDock: 'Back to the corner',
     tabCampaigns: 'Campaigns',
     tabAttention: 'Needs attention',
     tabSuppressions: 'Do-not-contact',
@@ -1792,6 +1797,7 @@ export default {
     bccLabel: 'BCC',
     bccHint: 'People on BCC receive the mail; nobody on To or CC can see that they did.',
     previewFile: 'Preview',
+    attachmentEdited: 'Edited · v{n}',
     converting: 'Converting…',
     downloadAll: 'Download all ({n})',
     sortBar: {
@@ -2344,6 +2350,9 @@ export default {
   officeWindow: {
     failed: 'This file will not open',
     failedHint: 'Online Office may not be configured, the file may be damaged, or the mail may have been deleted. Download it from the mail page instead.',
+    edit: 'Edit',
+    version: 'Version {n}',
+    editNote: 'Edits are saved as a new version; the file the customer sent is left untouched',
   },
   reader: {
     bodyFrame: 'Message body',

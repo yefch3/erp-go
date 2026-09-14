@@ -141,6 +141,10 @@ services:
       #      先亮后放 nginx 的话，会有一段时间预览按钮指向一个 404。
       DOCS_URL: ${DOCS_URL:-}
       DOCS_JWT_SECRET: ${DOCS_JWT_SECRET:?set in deploy/.env — openssl rand -hex 32}
+      # docs 容器从容器网里怎么找回邮件服务：取附件、把改完的存回来。
+      # 默认值就是对的，列在这里是为了让它能被 .env 改掉（换端口、换服务名）。
+      # 空 = 在线 Office 整个关掉，见 app.NewOffice。
+      OFFICE_INTERNAL_URL: ${OFFICE_INTERNAL_URL:-http://mail:9011}
 
   # 转换器在生产上用的是同一个公开镜像，不跟着 ERP_SHA 走：它不是我们的代码。
   gotenberg:

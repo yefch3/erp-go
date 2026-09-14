@@ -19,7 +19,7 @@ type InboundView struct {
 	// 这封信落在哪个信箱。搜索横跨信箱之后必须跟着信走：一封 B 箱收到的信
 	// 可能是站在 A 箱里点开的，而「点回复从哪个地址发出去」得看这封信是
 	// 哪个箱收到的，不能看左边高亮着谁——那就是「读 B 的信、从 A 回过去」。
-	AccountID      int64
+	AccountID int64
 	// 左栏的哪一格（INBOX / ARCHIVE / JUNK / TRASH / F:…），已发送是空串。
 	// 只有单封读取填它：列表那边站在哪一格本来就知道。
 	View           string
@@ -36,10 +36,10 @@ type InboundView struct {
 	// \Answered 标志。只在列表上有值——单封读取不需要它，那一页上「回复」
 	// 按钮本来就在手边。
 	IsAnswered bool
-	ReceivedAt     time.Time
-	SentAt         time.Time
-	BodyHTML       string
-	BodyText       string
+	ReceivedAt time.Time
+	SentAt     time.Time
+	BodyHTML   string
+	BodyText   string
 	// The conversation quoted back inside this message, split out so the
 	// reader can fold it. Empty means there was nothing worth folding, which
 	// is the answer for most mail — see SplitQuotedHistory.
@@ -129,7 +129,7 @@ func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
-			IsAnswered: r.IsAnswered,
+			IsAnswered:  r.IsAnswered,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
 		})
 	}
@@ -143,7 +143,7 @@ func threadRowsFromSorted(rows []store.ListThreadsByViewSortedRow) []threadRow {
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
-			IsAnswered: r.IsAnswered,
+			IsAnswered:  r.IsAnswered,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
 			RawSize: r.RawSize, SortKey: r.SortKey,
 		})
@@ -494,6 +494,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 			v.Attachments = append(v.Attachments, Attachment{
 				ID: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 				FileSize: a.FileSize, FileKey: a.FileKey, ContentID: a.ContentID,
+				Revision: a.RevVersion,
 			})
 		}
 		// Parts the body has already shown inline are not attachments to a
@@ -511,12 +512,12 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 
 // ThreadItem is one turn of a conversation, either direction.
 type ThreadItem struct {
-	Direction    string
-	ID           int64
-	Subject      string
-	Body         string
-	Quoted       string
-	BodyFormat   string
+	Direction  string
+	ID         int64
+	Subject    string
+	Body       string
+	Quoted     string
+	BodyFormat string
 	// Counterparty 在两个方向上说的**不是同一件事**：我发出的那行它是收件人，
 	// 收到的那行它是发件人。界面上却是同一列，于是一条会话里上下两行的地址
 	// 一个是「发给谁」一个是「谁发的」，看的人无从分辨。留着不动是因为别处
@@ -592,6 +593,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 			flat = append(flat, Attachment{
 				ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
 				FileSize: f.FileSize, FileKey: f.FileKey, ContentID: f.ContentID,
+				Revision: f.RevVersion,
 			})
 		}
 		// Signed once for the whole conversation, and here rather than at
