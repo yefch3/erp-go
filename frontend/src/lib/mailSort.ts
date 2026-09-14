@@ -12,10 +12,20 @@ export type SortDir = 'asc' | 'desc'
 export interface MailSort {
   by: SortField
   dir: SortDir
+  // 「星标优先」「未读优先」：把这两档顶到最上面，在上面那一列的排序**之上**
+  // 再分一层（issue #368 的「优先显示」）。
+  //
+  // 是分档，不是筛选：没加星的信还在，只是排在后面。想只看一档，用列表上
+  // 那颗「只看未读」。
+  //
+  // 分档不跟着方向翻。点了升序，星标那一档**还是**在最上面，翻的是档内的
+  // 顺序——「置顶」的意思就是这个。
+  starFirst: boolean
+  unreadFirst: boolean
 }
 
-// 一直以来的顺序：新的在前。地址栏里不写它，/emails 就是 /emails。
-export const DEFAULT_SORT: MailSort = { by: 'date', dir: 'desc' }
+// 一直以来的顺序：新的在前、不分档。地址栏里不写它，/emails 就是 /emails。
+export const DEFAULT_SORT: MailSort = { by: 'date', dir: 'desc', starFirst: false, unreadFirst: false }
 
 const FIELDS: SortField[] = ['from', 'to', 'subject', 'date', 'size']
 
@@ -37,19 +47,43 @@ export function defaultDir(by: SortField): SortDir {
 
 // 地址栏里的样子：`size:desc`。默认排序是空串，免得每个链接都拖着一段
 // 谁都没点过的参数。
+//
+// 分档不在这个参数里，它有自己的 `top`（见 topParam）。分开是因为两者
+// 互不影响：按大小排的同时可以星标优先，而把四种组合塞进一段字符串，
+// 解的时候就要认八种写法。
 export function sortParam(s: MailSort): string {
   if (s.by === DEFAULT_SORT.by && s.dir === DEFAULT_SORT.dir) return ''
   return `${s.by}:${s.dir}`
 }
 
+// 地址栏里的分档：`star`、`unread`、`star,unread`。都没开是空串。
+export function topParam(s: MailSort): string {
+  const on: string[] = []
+  if (s.starFirst) on.push('star')
+  if (s.unreadFirst) on.push('unread')
+  return on.join(',')
+}
+
 // 解地址栏。认不出的一律回默认：一个手改坏的链接该看到的是收件箱，不是白屏。
-export function parseSort(raw: string | undefined | null): MailSort {
-  if (!raw) return DEFAULT_SORT
+export function parseSort(raw: string | undefined | null, top?: string | null): MailSort {
+  const flags = parseTop(top)
+  const base = { ...DEFAULT_SORT, ...flags }
+  if (!raw) return base
   const [by, dir] = raw.split(':')
-  if (!by || !isField(by)) return DEFAULT_SORT
-  if (dir === 'asc' || dir === 'desc') return { by, dir }
-  if (!dir) return { by, dir: defaultDir(by) }
-  return DEFAULT_SORT
+  if (!by || !isField(by)) return base
+  if (dir === 'asc' || dir === 'desc') return { ...base, by, dir }
+  if (!dir) return { ...base, by, dir: defaultDir(by) }
+  return base
+}
+
+// 认不出的档名**忽略**，不整条作废：`top=star,typo` 该给出星标优先，而不是
+// 退回不分档。退回的样子和「这个开关坏了」一模一样。
+function parseTop(raw: string | undefined | null): Pick<MailSort, 'starFirst' | 'unreadFirst'> {
+  const parts = (raw ?? '').split(',')
+  return {
+    starFirst: parts.includes('star'),
+    unreadFirst: parts.includes('unread'),
+  }
 }
 
 // 排序菜单里点了一项。
@@ -68,16 +102,31 @@ export function sortFromCommand(cur: MailSort, cmd: string): MailSort {
   const [kind, val] = cmd.split(':')
   if (kind === 'dir') {
     if (val !== 'asc' && val !== 'desc') return cur
-    return cur.dir === val ? cur : { by: cur.by, dir: val }
+    return cur.dir === val ? cur : { ...cur, dir: val }
+  }
+  // 分档那两项是**开关**，不是单选：点一下开，再点一下关，两个可以同时开。
+  // 所以这里翻转而不是赋值——菜单里它们左边画着对钩，看得见开着没开着，
+  // 「点第二下关掉」这件事不用猜。
+  if (kind === 'top') {
+    if (val === 'star') return { ...cur, starFirst: !cur.starFirst }
+    if (val === 'unread') return { ...cur, unreadFirst: !cur.unreadFirst }
+    return cur
   }
   if (kind !== 'by' || !val || !isField(val)) return cur
   // 点的就是当前这一列：方向归方向那两项管，这里什么都不做。
   if (cur.by === val) return cur
-  return { by: val, dir: defaultDir(val) }
+  return { ...cur, by: val, dir: defaultDir(val) }
 }
 
 // 这一侧认不认这一列。切文件夹时排序会重置，所以对不上只可能是手写的
 // 地址——那时按默认排，而不是把「按发件人」硬套到已发送上。
+//
+// 已发送那一侧**没有分档**：那里的行是投递记录，既没有星标也没有未读。
+// 分档留在地址栏里（切回收件箱还在），只是在这一侧不生效。
 export function sortFor(side: 'inbox' | 'sent', s: MailSort): MailSort {
-  return sortFieldsFor(side).includes(s.by) ? s : DEFAULT_SORT
+  if (side === 'sent') {
+    const base = sortFieldsFor(side).includes(s.by) ? s : DEFAULT_SORT
+    return { ...base, starFirst: false, unreadFirst: false }
+  }
+  return sortFieldsFor(side).includes(s.by) ? s : { ...DEFAULT_SORT, starFirst: s.starFirst, unreadFirst: s.unreadFirst }
 }

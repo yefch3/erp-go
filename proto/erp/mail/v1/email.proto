@@ -393,6 +393,17 @@ message ListInboundRequest {
   // 带 keyword 时不生效，和排序同一条理由——搜索走另一条查询，在那儿再叠
   // 一层筛选是第三种口径。前端搜索时也不显示这个开关。
   bool unread_only = 8;
+  // 「星标优先」「未读优先」：把这两档顶到列表最上面，在 sort_by 之上再分
+  // 一层（issue #368）。开着「星标优先 + 按日期倒序」看到的是：先是加了星
+  // 的信、新的在前，然后才是没加星的、新的在前。
+  //
+  // 不是筛选——没加星的信还在，只是排在后面。想只看一档用 unread_only。
+  //
+  // 两个都开时星标那一档在前：星是人手动点的，未读是系统给的。
+  //
+  // 带 keyword 时和排序一样不接。
+  bool star_first = 9;
+  bool unread_first = 10;
 }
 
 // One message found by a search. It carries the folder because the search

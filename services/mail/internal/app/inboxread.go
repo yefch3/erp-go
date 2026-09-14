@@ -260,6 +260,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		sorted, err := s.q.ListThreadsByViewSorted(ctx, store.ListThreadsByViewSortedParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
 			SortBy: sort.By, SortDir: sort.Dir,
+			StarFirst: sort.StarFirst, UnreadFirst: sort.UnreadFirst,
 			CursorKey: key, CursorID: id, RowLimit: size, UnreadOnly: unreadOnly,
 		})
 		if err != nil {
@@ -989,7 +990,10 @@ func errNotFound() error {
 // 已发送的搜索和排序可以同时用——它们是同一条查询，不存在两种口径。
 func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accountID int64, keyword, cursor string, size int32, sort ListSort) (InboundPage, error) {
 	_, size = normalizePage(1, size)
-	sort, err := normalizeListSort(sort, sentSortColumns)
+	// 已发送没有星标也没有未读，「优先显示」在这一侧不存在。调用方今天传
+	// 不进来（proto 里那条请求没有这两个字段），这里再脱一层是因为游标里
+	// 带着分档：万一哪天传进来了，对不上的样子是翻第二页翻到别处去。
+	sort, err := normalizeListSort(sort.withoutTop(), sentSortColumns)
 	if err != nil {
 		return InboundPage{}, err
 	}
