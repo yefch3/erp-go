@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
 
 // .vue 文件里，最后一个块之后不许再有东西。
@@ -13,7 +14,7 @@ import { describe, expect, test } from 'vitest'
 // 一路亮到线上，我还照着「build 通过」说结构是合法的。
 //
 // 所以钉在这里：一个字符都不许漏在块外。
-const SRC = new URL('..', import.meta.url).pathname
+const SRC = fileURLToPath(new URL('..', import.meta.url))
 
 function vueFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

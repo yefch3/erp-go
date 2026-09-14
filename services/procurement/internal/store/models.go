@@ -198,6 +198,35 @@ type FailedEvent struct {
 	ParkedAt      pgtype.Timestamptz
 }
 
+type InquiryAttachment struct {
+	TenantID  int64
+	CaseID    int64
+	Revision  int64
+	Kind      string
+	ObjectKey string
+	Name      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+type InquiryQuote struct {
+	ID              int64
+	TenantID        int64
+	CaseID          int64
+	InquiryRevision int64
+	Kind            string
+	Body            []byte
+	CreatedBy       int64
+	CreatedByName   string
+	CreatedAt       pgtype.Timestamptz
+	SubmittedAt     pgtype.Timestamptz
+	SubmittedBy     *int64
+	UpdatedBy       int64
+	UpdatedByName   string
+	UpdatedAt       pgtype.Timestamptz
+	Version         int64
+}
+
 type InquiryTemplate struct {
 	ID            int64
 	TenantID      int64
@@ -224,6 +253,17 @@ type InquiryTemplateField struct {
 	DefaultValue string
 	DataType     string
 	IsCustom     bool
+}
+
+type ManualPayableCorrection struct {
+	ID              int64
+	TenantID        int64
+	PoID            int64
+	BeforeData      []byte
+	AfterData       []byte
+	CorrectedBy     int64
+	CorrectedByName string
+	CorrectedAt     pgtype.Timestamptz
 }
 
 type OutboxEvent struct {
@@ -342,6 +382,25 @@ type ProcurementReworkRequest struct {
 	ResolutionNote      string
 }
 
+type PurchaseExecutionSupplierQuote struct {
+	ID            int64
+	TenantID      int64
+	RequirementID int64
+	SupplierID    int64
+	SupplierCode  string
+	SupplierName  string
+	Currency      string
+	UnitPrice     pgtype.Numeric
+	ExpectedDate  pgtype.Date
+	PaymentTerms  string
+	ValidUntil    pgtype.Date
+	Remark        string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
 type PurchaseInspection struct {
 	ID              int64
 	TenantID        int64
@@ -365,54 +424,68 @@ type PurchaseInspection struct {
 }
 
 type PurchaseOrder struct {
-	ID                   int64
-	TenantID             int64
-	PoNo                 string
-	SupplierID           int64
-	SupplierCode         string
-	SupplierName         string
-	Currency             string
-	TotalAmount          pgtype.Numeric
-	ExpectedDate         pgtype.Date
-	Status               string
-	ApprovalInstanceID   *int64
-	RejectReason         string
-	CancelReason         string
-	BuyerID              int64
-	BuyerName            string
-	Remark               string
-	OrderedAt            pgtype.Timestamptz
-	CreatedAt            pgtype.Timestamptz
-	UpdatedAt            pgtype.Timestamptz
-	SendStatus           string
-	SentTo               string
-	SentAt               pgtype.Timestamptz
-	SentByID             int64
-	SentByName           string
-	SendError            string
-	SendTemplateVersion  string
-	SendAttachmentNames  []byte
-	ClosedAt             pgtype.Timestamptz
-	ClosedByID           int64
-	ClosedByName         string
-	SourceQuotationID    int64
-	SourceQuotationNo    string
-	SourceCostScenarioID int64
-	FactoryID            int64
-	FactoryCode          string
-	FactoryName          string
-	FulfillmentMode      string
-	DeliveryLocationType string
-	DeliveryPortID       int64
-	DeliveryPortCode     string
-	DeliveryPortName     string
-	WarehouseID          int64
-	WarehouseName        string
-	DeliveryAddress      string
-	SourceChangeReason   string
-	CloseNote            string
-	ShortfallAction      string
-	PayableDueDate       pgtype.Date
+	ID                       int64
+	TenantID                 int64
+	PoNo                     string
+	SupplierID               int64
+	SupplierCode             string
+	SupplierName             string
+	Currency                 string
+	TotalAmount              pgtype.Numeric
+	ExpectedDate             pgtype.Date
+	Status                   string
+	ApprovalInstanceID       *int64
+	RejectReason             string
+	CancelReason             string
+	BuyerID                  int64
+	BuyerName                string
+	Remark                   string
+	OrderedAt                pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+	SendStatus               string
+	SentTo                   string
+	SentAt                   pgtype.Timestamptz
+	SentByID                 int64
+	SentByName               string
+	SendError                string
+	SendTemplateVersion      string
+	SendAttachmentNames      []byte
+	ClosedAt                 pgtype.Timestamptz
+	ClosedByID               int64
+	ClosedByName             string
+	SourceQuotationID        int64
+	SourceQuotationNo        string
+	SourceCostScenarioID     int64
+	FactoryID                int64
+	FactoryCode              string
+	FactoryName              string
+	FulfillmentMode          string
+	DeliveryLocationType     string
+	DeliveryPortID           int64
+	DeliveryPortCode         string
+	DeliveryPortName         string
+	WarehouseID              int64
+	WarehouseName            string
+	DeliveryAddress          string
+	SourceChangeReason       string
+	CloseNote                string
+	ShortfallAction          string
+	PayableDueDate           pgtype.Date
+	BusinessType             string
+	SourceBusinessID         int64
+	ExportContractNo         string
+	BusinessDocumentNo       string
+	PaymentTerms             string
+	SignedContractKey        string
+	SignedContractName       string
+	SignedContractUploadedAt pgtype.Timestamptz
+	ContractVerifiedAt       pgtype.Timestamptz
+	ContractVerifiedBy       int64
+	ContractVerifiedByName   string
+	PaymentRequestedAt       pgtype.Timestamptz
+	PaymentRequestedBy       int64
+	PaymentRequestedByName   string
 }
 
 type PurchaseOrderDueChange struct {
@@ -658,6 +731,98 @@ type PurchaseSupplierConfirmationLine struct {
 	ConfirmedUnitPrice pgtype.Numeric
 }
 
+type QualityInspectionFile struct {
+	ID             int64
+	TenantID       int64
+	TaskID         int64
+	RoundID        *int64
+	TaskLineID     *int64
+	Category       string
+	ObjectKey      string
+	FileName       string
+	ContentType    string
+	SizeBytes      int64
+	Supplemental   bool
+	UploadedBy     int64
+	UploadedByName string
+	UploadedAt     pgtype.Timestamptz
+}
+
+type QualityInspectionRound struct {
+	ID                 int64
+	TenantID           int64
+	TaskID             int64
+	RoundNo            int32
+	InspectedAt        pgtype.Timestamptz
+	InspectionLocation string
+	InspectorID        int64
+	InspectorName      string
+	Remark             string
+	CreatedAt          pgtype.Timestamptz
+}
+
+type QualityInspectionRoundLine struct {
+	ID                 int64
+	TenantID           int64
+	RoundID            int64
+	TaskLineID         int64
+	Result             string
+	InspectedQty       pgtype.Numeric
+	QualifiedQty       pgtype.Numeric
+	UnqualifiedQty     pgtype.Numeric
+	IssueDescription   string
+	HandlingSuggestion string
+}
+
+type QualityInspectionTask struct {
+	ID                        int64
+	TenantID                  int64
+	PoID                      int64
+	TaskNo                    string
+	BatchNo                   int32
+	Status                    string
+	ExpectedDate              pgtype.Date
+	InspectionLocation        string
+	ContactName               string
+	ContactPhone              string
+	Remark                    string
+	RequestedBy               int64
+	RequestedByName           string
+	RequestedAt               pgtype.Timestamptz
+	InspectorID               int64
+	InspectorName             string
+	StartedAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	ProcurementHandlingStatus string
+	ProcurementHandlingAction string
+	ProcurementHandlingNote   string
+	ProcurementHandledBy      int64
+	ProcurementHandledByName  string
+	ProcurementHandledAt      pgtype.Timestamptz
+}
+
+type QualityInspectionTaskLine struct {
+	ID                   int64
+	TenantID             int64
+	TaskID               int64
+	PoItemID             int64
+	ProductName          string
+	Spec                 string
+	UomCode              string
+	OrderedQty           pgtype.Numeric
+	RequestedQty         pgtype.Numeric
+	QualifiedQty         pgtype.Numeric
+	UnresolvedQty        pgtype.Numeric
+	FinalResult          string
+	IssueDescription     string
+	HandlingSuggestion   string
+	ApprovedReleaseQty   pgtype.Numeric
+	ReleaseDecidedBy     int64
+	ReleaseDecidedByName string
+	ReleaseDecidedAt     pgtype.Timestamptz
+}
+
 type SourcingCase struct {
 	ID                     int64
 	TenantID               int64
@@ -692,6 +857,9 @@ type SourcingCase struct {
 	ReturnReason           string
 	ReturnFields           []string
 	ContactID              int64
+	InquiryBody            []byte
+	InquiryRevision        int64
+	InquirySubmittedAt     pgtype.Timestamptz
 }
 
 type SourcingCaseChange struct {
@@ -1197,4 +1365,57 @@ type SupplierQuoteLine struct {
 	Moq             pgtype.Numeric
 	LeadTime        string
 	Remark          string
+}
+
+type TravelReimbursement struct {
+	ID                 int64
+	TenantID           int64
+	ClaimNo            string
+	ClaimantID         int64
+	ClaimantName       string
+	DepartmentName     string
+	TripStart          pgtype.Date
+	TripEnd            pgtype.Date
+	Origin             string
+	Destination        string
+	Purpose            string
+	Amount             pgtype.Numeric
+	Currency           string
+	PaymentAccount     string
+	Note               string
+	Status             string
+	ApprovalInstanceID *int64
+	RejectionReason    string
+	PaidAt             pgtype.Date
+	PaidBy             *int64
+	PaidByName         string
+	PaymentReference   string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type TravelReimbursementFile struct {
+	ID              int64
+	TenantID        int64
+	ReimbursementID int64
+	Category        string
+	FileName        string
+	ObjectKey       string
+	UploadedBy      int64
+	UploadedByName  string
+	UploadedAt      pgtype.Timestamptz
+	RemovedAt       pgtype.Timestamptz
+}
+
+type TravelReimbursementHistory struct {
+	ID              int64
+	TenantID        int64
+	ReimbursementID int64
+	Action          string
+	FromStatus      string
+	ToStatus        string
+	Detail          string
+	ActorID         int64
+	ActorName       string
+	CreatedAt       pgtype.Timestamptz
 }

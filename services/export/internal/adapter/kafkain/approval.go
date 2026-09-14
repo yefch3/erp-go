@@ -17,6 +17,9 @@ import (
 // export actually acts on are declared; the rest is ignored on purpose, so a
 // new field upstream does not break this consumer.
 type decision struct {
+	Summary struct {
+		RequestKey string `json:"approval_request_key"`
+	} `json:"biz_summary"`
 	InstanceID int64  `json:"instance_id"`
 	BizType    string `json:"biz_type"`
 	BizID      int64  `json:"biz_id"`
@@ -40,7 +43,7 @@ func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
 			return nil // some other document type; not ours to handle
 		}
 
-		status, err := svc.ApplyApprovalDecision(ctx, e.TenantID, d.BizID, d.Result, app.EventClaim(claim))
+		status, err := svc.ApplyApprovalDecision(ctx, e.TenantID, d.BizID, d.Result, app.EventClaim(claim), app.ApprovalProof{InstanceID: d.InstanceID, RequestKey: d.Summary.RequestKey})
 		if err == nil {
 			log.Info("contract advanced by approval",
 				"contract_id", d.BizID, "contract_no", d.BizNo,

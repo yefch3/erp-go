@@ -10,6 +10,8 @@ import (
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // portSnapshotName 生成船期使用的港口名称快照；中文名缺失时回退到英文名。
@@ -41,14 +43,18 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 	if in == nil {
 		return nil
 	}
-	if in.GetCustomerId() > 0 {
+	// 从已委托合同建立船期时，客户和承运方由 shipping 服务在事务内读取
+	// 委托记录并覆盖请求值。历史合同保存的是业务快照，即使对应主数据后来
+	// 停用或迁移，也不能阻断履约；这里仅校验本次重新选择的港口。
+	fromHandoff := in.GetContractHandoffId() > 0
+	if !fromHandoff && in.GetCustomerId() > 0 {
 		customer, err := s.resolveActiveCustomer(r.Context(), in.GetCustomerId())
 		if err != nil {
 			return err
 		}
 		in.CustomerName = customer.GetName()
 	}
-	if in.GetCarrierId() > 0 {
+	if !fromHandoff && in.GetCarrierId() > 0 {
 		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())
 		if err != nil {
 			return err
@@ -107,6 +113,151 @@ func (s *Server) listShippingSchedules(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listContractShippingHandoffs(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Shipping.ListContractShippingHandoffs(r.Context(), &shippingv1.ListContractShippingHandoffsRequest{Status: r.URL.Query().Get("status")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getContractShippingHandoff(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetContractShippingHandoff(r.Context(), &shippingv1.GetContractShippingHandoffRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) listContractShippingRequoteOptions(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListContractShippingRequoteOptions(r.Context(), &shippingv1.ListContractShippingRequoteOptionsRequest{HandoffId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) submitContractShippingRequote(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SubmitContractShippingRequoteRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SubmitContractShippingRequote(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SaveContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SaveContractShippingRequoteDraft(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) deleteContractShippingRequoteOption(w http.ResponseWriter, r *http.Request) {
+	optionID, _ := strconv.ParseInt(chi.URLParam(r, "optionID"), 10, 64)
+	resp, err := s.Shipping.DeleteContractShippingRequoteOption(r.Context(), &shippingv1.DeleteContractShippingRequoteOptionRequest{HandoffId: idFromPath(r), OptionId: optionID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) selectContractShippingRequoteDraft(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SelectContractShippingRequoteDraftRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.HandoffId = idFromPath(r)
+	resp, err := s.Shipping.SelectContractShippingRequoteDraft(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) presignContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.PresignContractShippingContractUploadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.PresignContractShippingContractUpload(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.SaveContractShippingContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.SaveContractShippingContract(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	h := resp.GetHandoff()
+	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) verifyContractShippingContract(w http.ResponseWriter, r *http.Request) {
+	id := idFromPath(r)
+	payable, err := s.Orders.GetExternalPayable(r.Context(), &prv1.GetExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err = s.Orders.VerifyOrderContract(r.Context(), &prv1.VerifyOrderContractRequest{Id: payable.GetRow().GetPoId()}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Shipping.VerifyContractShippingContract(r.Context(), &shippingv1.VerifyContractShippingContractRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) requestContractShippingPayment(w http.ResponseWriter, r *http.Request) {
+	id := idFromPath(r)
+	detail, err := s.Shipping.GetContractShippingHandoff(r.Context(), &shippingv1.GetContractShippingHandoffRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	h := detail.GetHandoff()
+	if h.GetStatus() != "CONTRACT_VERIFIED" {
+		s.writeGRPCError(w, status.Error(codes.FailedPrecondition, "货代合同经财务上级或老板核验后才能申请付款"))
+		return
+	}
+	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err = s.Shipping.MarkContractShippingPaymentRequested(r.Context(), &shippingv1.MarkContractShippingPaymentRequestedRequest{Id: id}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, payable)
+}
+func (s *Server) getContractShippingPaymentStatus(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.GetExternalPayable(r.Context(), &prv1.GetExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -404,6 +555,82 @@ func (s *Server) updateShippingArrivalReminderRules(w http.ResponseWriter, r *ht
 	}
 	req.ScheduleId = idFromPath(r)
 	resp, err := s.Shipping.UpdateArrivalReminderRules(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getShippingReminderPreference(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetUserReminderPreference(r.Context(), &shippingv1.GetUserReminderPreferenceRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateShippingReminderPreference(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.UpdateUserReminderPreferenceRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Shipping.UpdateUserReminderPreference(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) syncShippingHolidayCalendars(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.SyncUserHolidayCalendars(r.Context(), &shippingv1.SyncUserHolidayCalendarsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listShippingOperationalAlerts(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListOperationalAlerts(r.Context(), &shippingv1.ListOperationalAlertsRequest{OpenOnly: r.URL.Query().Get("open_only") != "false"})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listScheduleOperationalAlerts(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListScheduleOperationalAlerts(r.Context(), &shippingv1.ListScheduleOperationalAlertsRequest{ScheduleId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markShippingOperationalAlertsRead(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.MarkOperationalAlertsReadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Shipping.MarkOperationalAlertsRead(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) resolveShippingOperationalAlert(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.ResolveOperationalAlertRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "alertID"), 10, 64)
+	resp, err := s.Shipping.ResolveOperationalAlert(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

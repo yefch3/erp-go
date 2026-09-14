@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-09-12T20:18:54.3842462-04:00",
+  "contractNo": "CT-D6-SMOKE-1789258726",
+  "handoffId": "16",
+  "scheduleId": "46",
+  "scheduleNo": "SCH-20260913-000022",
+  "duplicateCreateStatus": 409,
+  "freight": "USD 2100",
+  "executionFields": {
+    "billOfLadingNo": "BL-D6-001",
+    "warehouseEntryDate": "2026-09-16",
+    "customsDeclarationDate": "2026-09-18",
+    "bookingNo": "BOOK-D6-001"
+  },
+  "reminderPreference": {
+    "weekendOnly": true,
+    "leadDays": [
+      14,
+      7,
+      3
+    ],
+    "timezone": "Asia/Shanghai",
+    "countries": []
+  },
+  "alerts": {
+    "buyer": 2,
+    "finance": 1,
+    "buyerResolution": "已联系工厂并确认新的进仓安排"
+  },
+  "attachment": {
+    "id": "17",
+    "fileName": "d6-transport-1789258726.pdf",
+    "downloadedBytes": 42769,
+    "financeVisible": true
+  },
+  "permissions": {
+    "financeScheduleWrite": 403,
+    "buyerDocumentView": 403,
+    "financeDocumentUpload": 403
+  }
+}

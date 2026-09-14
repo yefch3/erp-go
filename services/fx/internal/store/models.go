@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type EffectiveRate struct {
+	TenantID      int64
+	BaseCurrency  string
+	QuoteCurrency string
+	Rate          pgtype.Numeric
+	ConfirmedByID int64
+	ConfirmedBy   string
+	ConfirmedAt   pgtype.Timestamptz
+	Remark        string
+}
+
 type FxAnomaly struct {
 	ID            int64
 	QuoteCurrency string
@@ -29,4 +40,12 @@ type FxRate struct {
 	CreatedBy     int64
 	Note          string
 	FetchedAt     pgtype.Timestamptz
+}
+
+type FxWatchCurrency struct {
+	TenantID  int64
+	Currency  string
+	SortOrder int32
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
 }

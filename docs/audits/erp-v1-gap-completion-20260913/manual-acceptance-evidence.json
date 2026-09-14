@@ -1,0 +1,14 @@
+{
+  "readyToApplyOrder": "PO-GAP-APPLY-001 (6 MT + 4 MT)",
+  "purchaseOrder": "PO-GAP-MANUAL-001",
+  "taskNo": "QI-PO-GAP-MANUAL-001-01",
+  "taskId": "43",
+  "requestedQty": "10.0000",
+  "qualifiedQty": "8.0000",
+  "unresolvedQty": "2.0000",
+  "owner": "P1",
+  "todo": "PENDING",
+  "repeatApply": "returned original task",
+  "attachment": "人工验收质检说明.txt",
+  "preparedAt": "2026-09-13T17:35:50.7598846-04:00"
+}

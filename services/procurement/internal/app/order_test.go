@@ -113,6 +113,13 @@ func TestApprovalRequirementConflict(t *testing.T) {
 		}
 	})
 
+	t.Run("D4 demand awaiting final requote", func(t *testing.T) {
+		req := store.RequirementsForOrderRow{ID: 7, Status: "WAITING_REQUOTE", OpenQty: "5"}
+		if got := approvalRequirementConflict([]store.RequirementsForOrderRow{req}, []store.PurchaseOrderItemsForUpdateRow{item}); got != "" {
+			t.Fatalf("valid D4 approval was rejected: %s", got)
+		}
+	})
+
 	t.Run("another order consumed the demand", func(t *testing.T) {
 		req := store.RequirementsForOrderRow{ID: 7, Status: "ORDERED", OpenQty: "0"}
 		got := approvalRequirementConflict([]store.RequirementsForOrderRow{req}, []store.PurchaseOrderItemsForUpdateRow{item})

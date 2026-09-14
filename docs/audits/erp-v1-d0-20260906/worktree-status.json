@@ -1,0 +1,49 @@
+[
+  {
+    "path": "C:/Users/16789/Documents/erp-go/source",
+    "head": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+    "status": []
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-audit-20260906",
+    "head": "cc797854286aebb5e20344bf363facf0325611aa",
+    "status": [
+      "?? docs/audits/"
+    ]
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-d0-20260906",
+    "head": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+    "status": [
+      "?? docs/audits/"
+    ]
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/main-latest-test",
+    "head": "4ae9149c653416e9778a19716754dd9076944024",
+    "status": [
+      "?? docs/Guia-de-Pruebas-Internas-Sistema-Completo-Espanol.md",
+      "?? docs/Internal-Test-Guide-Full-System-English.md",
+      "?? docs/Internal-Test-User-Guide-Sales-Procurement-Logistics.md",
+      "?? docs/内测一页流程-销售采购物流.md",
+      "?? docs/内测用户指南-全系统.md",
+      "?? docs/内测用户指南-销售采购物流.md",
+      "?? output/"
+    ]
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t7",
+    "head": "6db9ec71019bbe4fa83464aa8c9df6314a8acdcb",
+    "status": []
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t8",
+    "head": "edb8ea9fb5c3ae4d9cac2d7317f21bbffd50c1ec",
+    "status": []
+  },
+  {
+    "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-workflow",
+    "head": "e56dd278ba7934d7c77d1431e88af3946987fc75",
+    "status": []
+  }
+]

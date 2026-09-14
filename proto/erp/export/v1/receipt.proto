@@ -43,6 +43,9 @@ service ReceiptService {
   // 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
   // closed_only 翻面就是「已完成」页。
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
+  // Finance releases an executing contract to Procurement and Logistics by
+  // recording one of the four approved execution conditions.
+  rpc ConfirmContractExecutionCondition(ConfirmContractExecutionConditionRequest) returns (ConfirmContractExecutionConditionResponse);
   // 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
   rpc RecordContractReceipt(RecordContractReceiptRequest) returns (RecordContractReceiptResponse);
   // Add a receivable that existed before the company started using ERP.
@@ -62,6 +65,8 @@ service ReceiptService {
   // 应收提醒收件箱（E1 第二期）。
   rpc ListReceivableReminders(ListReceivableRemindersRequest) returns (ListReceivableRemindersResponse);
   rpc MarkReceivableRemindersRead(MarkReceivableRemindersReadRequest) returns (MarkReceivableRemindersReadResponse);
+  // Correct identifying information on a finance-only opening record.
+  rpc UpdateManualReceivable(UpdateManualReceivableRequest) returns (UpdateManualReceivableResponse);
 }
 
 // BankAccount is one of our own accounts. Kept so a transfer between two of
@@ -363,6 +368,13 @@ message ReceivableDue {
   string closed_note = 16;
   string closed_by_name = 17;
   string closed_at = 18;
+  // True only for an opening record entered directly by Finance.
+  bool manually_entered = 19;
+  string execution_condition_status = 20; // NOT_APPLICABLE | WAITING | READY
+  string execution_condition_type = 21;
+  string execution_condition_confirmed_at = 22;
+  string execution_condition_confirmed_by_name = 23;
+  string execution_condition_note = 24;
 }
 
 message ListReceivableDueRequest {
@@ -377,6 +389,21 @@ message ListReceivableDueRequest {
 message ListReceivableDueResponse {
   repeated ReceivableDue items = 1;
   erp.common.v1.PageMeta meta = 2;
+}
+
+message ConfirmContractExecutionConditionRequest {
+  int64 contract_id = 1;
+  // PREPAYMENT_RECEIVED | LETTER_OF_CREDIT_RECEIVED |
+  // NO_PREPAYMENT_REQUIRED | SPECIAL_APPROVAL
+  string condition_type = 2;
+  string note = 3;
+}
+message ConfirmContractExecutionConditionResponse {
+  string status = 1;
+  string condition_type = 2;
+  string confirmed_at = 3;
+  string confirmed_by_name = 4;
+  string note = 5;
 }
 
 // ReceivableReminder 是应收提醒收件箱里的一条。
@@ -466,3 +493,12 @@ message MarkReceivableRemindersReadRequest {
   repeated int64 ids = 1;
 }
 message MarkReceivableRemindersReadResponse { int64 marked = 1; }
+
+// Appended to preserve message indexes for existing generated clients.
+message UpdateManualReceivableRequest {
+  int64 contract_id = 1;
+  string customer_name = 2;
+  string contract_no = 3;
+  string due_date = 4;
+}
+message UpdateManualReceivableResponse { ReceiptProgress progress = 1; }

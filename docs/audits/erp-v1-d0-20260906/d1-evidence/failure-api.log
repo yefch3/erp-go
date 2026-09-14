@@ -1,0 +1,12 @@
+Validated: C:\Users\16789\Documents\erp-go\.worktrees\erp-v1-d0-20260906\.d1-environment\compose.json; dedicated internal networks and volumes; loopback ports; database targets are isolated postgres only.
+D1 actor B1 employee=11
+D1 actor L1 employee=6
+D1 actor L2 employee=7
+D1 actor M1 employee=8
+D1 actor P1 employee=4
+D1 actor P2 employee=5
+D1 actor S1 employee=2
+D1 actor S2 employee=3
+D1 actor U1 employee=9
+A14 real tenant 22001 SALES/SELF login: tenant 1 inquiry and list inaccessible
+A13 export unavailable preserved source; service restored, withdrawal retry cleared quote inquiry=26

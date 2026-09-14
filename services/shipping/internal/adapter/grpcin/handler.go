@@ -73,6 +73,9 @@ func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 		LoadingPortId: loadingPortID, LoadingPortCode: s.LoadingPortCode,
 		LoadingPortTimezone: s.LoadingPortTimezone, DischargePortId: dischargePortID,
 		DischargePortCode: s.DischargePortCode, DischargePortTimezone: s.DischargePortTimezone,
+		BookingNo: s.BookingNo, BillOfLadingNo: s.BillOfLadingNo,
+		WarehouseEntryDate: dateValue(s.WarehouseEntryDate), CustomsDeclarationDate: dateValue(s.CustomsDeclarationDate),
+		FreightCurrency: s.FreightCurrency, FreightAmount: s.FreightAmount,
 	}
 }
 
@@ -191,27 +194,106 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 		LoadingPortID: in.GetLoadingPortId(), LoadingPortCode: in.GetLoadingPortCode(), LoadingPortTimezone: in.GetLoadingPortTimezone(),
 		DischargePortID: in.GetDischargePortId(), DischargePortCode: in.GetDischargePortCode(), DischargePortTimezone: in.GetDischargePortTimezone(),
 		ContractHandoffID: in.GetContractHandoffId(),
+		BookingNo:         in.GetBookingNo(), BillOfLadingNo: in.GetBillOfLadingNo(),
+		WarehouseEntryDate: in.GetWarehouseEntryDate(), CustomsDeclarationDate: in.GetCustomsDeclarationDate(),
+		FreightCurrency: in.GetFreightCurrency(), FreightAmount: in.GetFreightAmount(),
 	}
 }
 
 func (h *Handler) ListContractShippingHandoffs(ctx context.Context, req *shippingv1.ListContractShippingHandoffsRequest) (*shippingv1.ListContractShippingHandoffsResponse, error) {
-	rows, err := h.svc.ListContractShippingHandoffs(ctx, grpcx.TenantID(ctx), req.GetStatus())
+	rows, err := h.svc.ListD4ContractHandoffs(ctx, grpcx.TenantID(ctx), req.GetStatus())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*shippingv1.ContractShippingHandoff, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &shippingv1.ContractShippingHandoff{
-			Id: row.ID, ContractId: row.ContractID, ContractNo: row.ContractNo, ContractVersionId: row.ContractVersionID,
-			VersionNo: row.VersionNo, CustomerId: row.CustomerID, CustomerName: row.CustomerName, BatchNo: row.BatchNo,
-			ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
-			CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis,
-			PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture,
-			EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark, Status: row.Status,
-			ScheduleId: row.ScheduleID, CreatedAt: timeValue(row.CreatedAt),
-		})
+		out = append(out, handoffToProto(row))
 	}
 	return &shippingv1.ListContractShippingHandoffsResponse{Handoffs: out}, nil
+}
+
+func handoffToProto(row app.ContractHandoff) *shippingv1.ContractShippingHandoff {
+	out := &shippingv1.ContractShippingHandoff{Id: row.ID, ContractId: row.ContractID, ContractNo: row.ContractNo, ContractVersionId: row.ContractVersionID, VersionNo: row.VersionNo, CustomerId: row.CustomerID, CustomerName: row.CustomerName, BatchNo: row.BatchNo, ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName, CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis, PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture, EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark, Status: row.Status, ScheduleId: row.ScheduleID, CreatedAt: row.CreatedAt, FinalForwarderId: row.FinalForwarderID, FinalForwarderName: row.FinalForwarderName, ActualCarrierId: row.ActualCarrierID, ActualCarrierName: row.ActualCarrierName, FinalServiceOption: row.FinalServiceOption, FinalCurrency: row.FinalCurrency, FinalFreightAmount: row.FinalFreightAmount, FinalEtd: row.FinalETD, FinalEta: row.FinalETA, PaymentTerms: row.PaymentTerms, ForwarderContractNo: row.ForwarderContractNo, ApprovalInstanceId: row.ApprovalInstanceID, ReturnReason: row.ReturnReason, OperatorName: row.OperatorName, SignedContractName: row.SignedContractName, SignedContractUrl: row.SignedContractURL, SignedContractUploadedAt: row.SignedContractUploadedAt, ContractVerifiedAt: row.ContractVerifiedAt, ContractVerifiedByName: row.ContractVerifiedByName, PaymentRequestedAt: row.PaymentRequestedAt, UpdatedAt: row.UpdatedAt, SignedContractKey: row.SignedContractKey}
+	for _, item := range row.CargoItems {
+		out.CargoItems = append(out.CargoItems, &shippingv1.ContractShippingCargoItem{Id: item.ID, ContractItemId: item.ContractItemID, LineNo: item.LineNo, ProductCode: item.ProductCode, ProductName: item.ProductName, Specification: item.Specification, Quantity: item.Quantity, UomCode: item.UomCode, Remark: item.Remark})
+	}
+	return out
+}
+func (h *Handler) GetContractShippingHandoff(ctx context.Context, req *shippingv1.GetContractShippingHandoffRequest) (*shippingv1.GetContractShippingHandoffResponse, error) {
+	v, err := h.svc.GetContractHandoff(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetContractShippingHandoffResponse{Handoff: handoffToProto(v)}, nil
+}
+func requoteOptionToProto(row app.ShippingRequoteOption) *shippingv1.ShippingRequoteOption {
+	return &shippingv1.ShippingRequoteOption{Id: row.ID, HandoffId: row.HandoffID, ForwarderId: row.ForwarderID, ForwarderName: row.ForwarderName, ActualCarrierId: row.ActualCarrierID, ActualCarrierName: row.ActualCarrierName, ServiceOption: row.ServiceOption, Currency: row.Currency, FreightAmount: row.FreightAmount, Etd: row.ETD, Eta: row.ETA, PaymentTerms: row.PaymentTerms, Remark: row.Remark, CreatedBy: row.CreatedBy, CreatedByName: row.CreatedByName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+}
+func (h *Handler) ListContractShippingRequoteOptions(ctx context.Context, req *shippingv1.ListContractShippingRequoteOptionsRequest) (*shippingv1.ListContractShippingRequoteOptionsResponse, error) {
+	rows, err := h.svc.ListShippingRequoteOptions(ctx, grpcx.TenantID(ctx), req.GetHandoffId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.ShippingRequoteOption, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, requoteOptionToProto(row))
+	}
+	return &shippingv1.ListContractShippingRequoteOptionsResponse{Options: out}, nil
+}
+func (h *Handler) SubmitContractShippingRequote(ctx context.Context, req *shippingv1.SubmitContractShippingRequoteRequest) (*shippingv1.SubmitContractShippingRequoteResponse, error) {
+	v, err := h.svc.SubmitFinalRequote(ctx, grpcx.TenantID(ctx), req.GetId(), app.FinalRequoteInput{OptionID: req.GetOptionId(), FinalForwarderID: req.GetFinalForwarderId(), FinalForwarderName: req.GetFinalForwarderName(), ActualCarrierID: req.GetActualCarrierId(), ActualCarrierName: req.GetActualCarrierName(), FinalServiceOption: req.GetFinalServiceOption(), FinalCurrency: req.GetFinalCurrency(), FinalFreightAmount: req.GetFinalFreightAmount(), FinalETD: req.GetFinalEtd(), FinalETA: req.GetFinalEta(), PaymentTerms: req.GetPaymentTerms(), ForwarderContractNo: req.GetForwarderContractNo(), Remark: req.GetRemark()}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SubmitContractShippingRequoteResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) SaveContractShippingRequoteDraft(ctx context.Context, req *shippingv1.SaveContractShippingRequoteDraftRequest) (*shippingv1.SaveContractShippingRequoteDraftResponse, error) {
+	v, err := h.svc.SaveFinalRequoteDraft(ctx, grpcx.TenantID(ctx), req.GetId(), app.FinalRequoteInput{OptionID: req.GetOptionId(), FinalForwarderID: req.GetFinalForwarderId(), FinalForwarderName: req.GetFinalForwarderName(), ActualCarrierID: req.GetActualCarrierId(), ActualCarrierName: req.GetActualCarrierName(), FinalServiceOption: req.GetFinalServiceOption(), FinalCurrency: req.GetFinalCurrency(), FinalFreightAmount: req.GetFinalFreightAmount(), FinalETD: req.GetFinalEtd(), FinalETA: req.GetFinalEta(), PaymentTerms: req.GetPaymentTerms(), ForwarderContractNo: req.GetForwarderContractNo(), Remark: req.GetRemark()}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SaveContractShippingRequoteDraftResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) DeleteContractShippingRequoteOption(ctx context.Context, req *shippingv1.DeleteContractShippingRequoteOptionRequest) (*shippingv1.DeleteContractShippingRequoteOptionResponse, error) {
+	if err := h.svc.DeleteShippingRequoteOption(ctx, grpcx.TenantID(ctx), req.GetHandoffId(), req.GetOptionId()); err != nil {
+		return nil, err
+	}
+	return &shippingv1.DeleteContractShippingRequoteOptionResponse{}, nil
+}
+func (h *Handler) SelectContractShippingRequoteDraft(ctx context.Context, req *shippingv1.SelectContractShippingRequoteDraftRequest) (*shippingv1.SelectContractShippingRequoteDraftResponse, error) {
+	v, err := h.svc.SelectFinalRequoteDraft(ctx, grpcx.TenantID(ctx), req.GetHandoffId(), req.GetOptionId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SelectContractShippingRequoteDraftResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) PresignContractShippingContractUpload(ctx context.Context, req *shippingv1.PresignContractShippingContractUploadRequest) (*shippingv1.PresignContractShippingContractUploadResponse, error) {
+	v, err := h.svc.PresignShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.PresignContractShippingContractUploadResponse{FileKey: v.Key, UploadUrl: v.URL, ExpiresSeconds: v.Expires}, nil
+}
+func (h *Handler) SaveContractShippingContract(ctx context.Context, req *shippingv1.SaveContractShippingContractRequest) (*shippingv1.SaveContractShippingContractResponse, error) {
+	v, err := h.svc.SaveShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileKey(), req.GetFileName(), req.GetContractNo())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SaveContractShippingContractResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) VerifyContractShippingContract(ctx context.Context, req *shippingv1.VerifyContractShippingContractRequest) (*shippingv1.VerifyContractShippingContractResponse, error) {
+	v, err := h.svc.VerifyShippingContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.VerifyContractShippingContractResponse{Handoff: handoffToProto(v)}, nil
+}
+func (h *Handler) MarkContractShippingPaymentRequested(ctx context.Context, req *shippingv1.MarkContractShippingPaymentRequestedRequest) (*shippingv1.MarkContractShippingPaymentRequestedResponse, error) {
+	v, err := h.svc.MarkShippingPaymentRequested(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkContractShippingPaymentRequestedResponse{Handoff: handoffToProto(v)}, nil
 }
 
 func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {
@@ -226,6 +308,8 @@ func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {
 		DelayDays: r.DelayDays, HasTemporaryCall: r.HasTemporaryCall, CurrentProgress: r.CurrentProgress,
 		LoadingPortID: r.LoadingPortID, LoadingPortCode: r.LoadingPortCode, LoadingPortTimezone: r.LoadingPortTimezone,
 		DischargePortID: r.DischargePortID, DischargePortCode: r.DischargePortCode, DischargePortTimezone: r.DischargePortTimezone,
+		BookingNo: r.BookingNo, BillOfLadingNo: r.BillOfLadingNo,
+		WarehouseEntryDate: r.WarehouseEntryDate, CustomsDeclarationDate: r.CustomsDeclarationDate,
 	})
 }
 
@@ -346,6 +430,82 @@ func (h *Handler) UpdateArrivalReminderRules(ctx context.Context, req *shippingv
 		return nil, err
 	}
 	return &shippingv1.UpdateArrivalReminderRulesResponse{LeadDays: days}, nil
+}
+
+func reminderPreferenceToProto(value app.UserReminderPreference) *shippingv1.UserReminderPreference {
+	return &shippingv1.UserReminderPreference{
+		LeadDays: value.LeadDays, Timezone: value.Timezone, HolidayCountryCodes: value.HolidayCountryCodes,
+		CalendarSyncStatus: value.CalendarSyncStatus, LastSyncAt: value.LastSyncAt,
+		LastSuccessAt: value.LastSuccessAt, LastError: value.LastError,
+	}
+}
+
+func (h *Handler) GetUserReminderPreference(ctx context.Context, _ *shippingv1.GetUserReminderPreferenceRequest) (*shippingv1.GetUserReminderPreferenceResponse, error) {
+	preference, err := h.svc.GetUserReminderPreference(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetUserReminderPreferenceResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func (h *Handler) UpdateUserReminderPreference(ctx context.Context, req *shippingv1.UpdateUserReminderPreferenceRequest) (*shippingv1.UpdateUserReminderPreferenceResponse, error) {
+	preference, err := h.svc.UpdateUserReminderPreference(ctx, grpcx.TenantID(ctx), req.GetLeadDays(), req.GetTimezone(), req.GetHolidayCountryCodes(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.UpdateUserReminderPreferenceResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func (h *Handler) SyncUserHolidayCalendars(ctx context.Context, _ *shippingv1.SyncUserHolidayCalendarsRequest) (*shippingv1.SyncUserHolidayCalendarsResponse, error) {
+	preference, err := h.svc.SyncUserHolidayCalendars(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.SyncUserHolidayCalendarsResponse{Preference: reminderPreferenceToProto(preference)}, nil
+}
+
+func operationalAlertToProto(value app.OperationalAlert) *shippingv1.OperationalAlert {
+	return &shippingv1.OperationalAlert{Id: value.ID, ScheduleId: value.ScheduleID, RecipientEmployeeId: value.RecipientEmployeeID, ScheduleNo: value.ScheduleNo, ContractNo: value.ContractNo, AlertType: value.AlertType, RecipientRole: value.RecipientRole, Title: value.Title, Content: value.Content, OldValue: value.OldValue, NewValue: value.NewValue, DueDate: value.DueDate, ReadAt: value.ReadAt, ResolvedAt: value.ResolvedAt, ResolutionNote: value.ResolutionNote, ResolvedByName: value.ResolvedByName, CreatedAt: value.CreatedAt}
+}
+
+func (h *Handler) ListOperationalAlerts(ctx context.Context, req *shippingv1.ListOperationalAlertsRequest) (*shippingv1.ListOperationalAlertsResponse, error) {
+	items, unread, err := h.svc.ListOperationalAlerts(ctx, grpcx.TenantID(ctx), req.GetOpenOnly(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.OperationalAlert, 0, len(items))
+	for _, item := range items {
+		out = append(out, operationalAlertToProto(item))
+	}
+	return &shippingv1.ListOperationalAlertsResponse{Items: out, UnreadCount: unread}, nil
+}
+
+func (h *Handler) ListScheduleOperationalAlerts(ctx context.Context, req *shippingv1.ListScheduleOperationalAlertsRequest) (*shippingv1.ListScheduleOperationalAlertsResponse, error) {
+	items, err := h.svc.ListScheduleOperationalAlerts(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.OperationalAlert, 0, len(items))
+	for _, item := range items {
+		out = append(out, operationalAlertToProto(item))
+	}
+	return &shippingv1.ListScheduleOperationalAlertsResponse{Items: out}, nil
+}
+
+func (h *Handler) MarkOperationalAlertsRead(ctx context.Context, req *shippingv1.MarkOperationalAlertsReadRequest) (*shippingv1.MarkOperationalAlertsReadResponse, error) {
+	marked, err := h.svc.MarkOperationalAlertsRead(ctx, grpcx.TenantID(ctx), req.GetIds(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkOperationalAlertsReadResponse{Marked: marked}, nil
+}
+
+func (h *Handler) ResolveOperationalAlert(ctx context.Context, req *shippingv1.ResolveOperationalAlertRequest) (*shippingv1.ResolveOperationalAlertResponse, error) {
+	item, err := h.svc.ResolveOperationalAlert(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetResolutionNote(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.ResolveOperationalAlertResponse{Alert: operationalAlertToProto(item)}, nil
 }
 
 func (h *Handler) GetShippingStatistics(ctx context.Context, _ *shippingv1.GetShippingStatisticsRequest) (*shippingv1.GetShippingStatisticsResponse, error) {

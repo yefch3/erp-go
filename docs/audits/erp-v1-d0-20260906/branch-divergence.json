@@ -1,0 +1,58 @@
+[
+  {
+    "branch": "codex/erp-v1-audit-20260906",
+    "main_left_branch_right": "0\t0"
+  },
+  {
+    "branch": "codex/erp-v1-d0-20260906",
+    "main_left_branch_right": "0\t2"
+  },
+  {
+    "branch": "codex/fix-finance-actions-responsive",
+    "main_left_branch_right": "0\t2"
+  },
+  {
+    "branch": "codex/role-permission-i18n",
+    "main_left_branch_right": "24\t0"
+  },
+  {
+    "branch": "codex/sourcing-t3",
+    "main_left_branch_right": "87\t0"
+  },
+  {
+    "branch": "codex/sourcing-t4",
+    "main_left_branch_right": "82\t1"
+  },
+  {
+    "branch": "codex/sourcing-t5",
+    "main_left_branch_right": "81\t1"
+  },
+  {
+    "branch": "codex/sourcing-t6",
+    "main_left_branch_right": "71\t0"
+  },
+  {
+    "branch": "codex/sourcing-t7",
+    "main_left_branch_right": "59\t0"
+  },
+  {
+    "branch": "codex/sourcing-t8",
+    "main_left_branch_right": "48\t11"
+  },
+  {
+    "branch": "codex/sourcing-t9",
+    "main_left_branch_right": "47\t1"
+  },
+  {
+    "branch": "codex/sourcing-workflow",
+    "main_left_branch_right": "88\t0"
+  },
+  {
+    "branch": "codex/t3-ci-fix",
+    "main_left_branch_right": "85\t0"
+  },
+  {
+    "branch": "main",
+    "main_left_branch_right": "0\t0"
+  }
+]

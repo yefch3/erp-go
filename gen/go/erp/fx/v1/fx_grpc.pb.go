@@ -19,20 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	FxService_GetLatestRate_FullMethodName = "/erp.fx.v1.FxService/GetLatestRate"
-	FxService_ListRates_FullMethodName     = "/erp.fx.v1.FxService/ListRates"
-	FxService_ListAnomalies_FullMethodName = "/erp.fx.v1.FxService/ListAnomalies"
+	FxService_GetLatestRate_FullMethodName           = "/erp.fx.v1.FxService/GetLatestRate"
+	FxService_ListRates_FullMethodName               = "/erp.fx.v1.FxService/ListRates"
+	FxService_ListAnomalies_FullMethodName           = "/erp.fx.v1.FxService/ListAnomalies"
+	FxService_ListEffectiveRates_FullMethodName      = "/erp.fx.v1.FxService/ListEffectiveRates"
+	FxService_ConfirmEffectiveRate_FullMethodName    = "/erp.fx.v1.FxService/ConfirmEffectiveRate"
+	FxService_RefreshRates_FullMethodName            = "/erp.fx.v1.FxService/RefreshRates"
+	FxService_GetSyncStatus_FullMethodName           = "/erp.fx.v1.FxService/GetSyncStatus"
+	FxService_ListWatchedCurrencies_FullMethodName   = "/erp.fx.v1.FxService/ListWatchedCurrencies"
+	FxService_UpdateWatchedCurrencies_FullMethodName = "/erp.fx.v1.FxService/UpdateWatchedCurrencies"
 )
 
 // FxServiceClient is the client API for FxService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// FxService is the platform exchange-rate provider. Rates come exclusively
-// from the API feed (business decision 2026-07-27: manual entry removed);
-// anomaly detection now runs on fetch, comparing against the previous rate.
-// Rates are global market facts (deliberately tenant-free); every document
-// freezes its own snapshot at business time.
+// FxService provides global market reference rates and tenant-specific,
+// manually confirmed effective rates. Documents freeze their own snapshots.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -41,6 +44,12 @@ type FxServiceClient interface {
 	GetLatestRate(ctx context.Context, in *GetLatestRateRequest, opts ...grpc.CallOption) (*GetLatestRateResponse, error)
 	ListRates(ctx context.Context, in *ListRatesRequest, opts ...grpc.CallOption) (*ListRatesResponse, error)
 	ListAnomalies(ctx context.Context, in *ListAnomaliesRequest, opts ...grpc.CallOption) (*ListAnomaliesResponse, error)
+	ListEffectiveRates(ctx context.Context, in *ListEffectiveRatesRequest, opts ...grpc.CallOption) (*ListEffectiveRatesResponse, error)
+	ConfirmEffectiveRate(ctx context.Context, in *ConfirmEffectiveRateRequest, opts ...grpc.CallOption) (*ConfirmEffectiveRateResponse, error)
+	RefreshRates(ctx context.Context, in *RefreshRatesRequest, opts ...grpc.CallOption) (*RefreshRatesResponse, error)
+	GetSyncStatus(ctx context.Context, in *GetSyncStatusRequest, opts ...grpc.CallOption) (*GetSyncStatusResponse, error)
+	ListWatchedCurrencies(ctx context.Context, in *ListWatchedCurrenciesRequest, opts ...grpc.CallOption) (*ListWatchedCurrenciesResponse, error)
+	UpdateWatchedCurrencies(ctx context.Context, in *UpdateWatchedCurrenciesRequest, opts ...grpc.CallOption) (*UpdateWatchedCurrenciesResponse, error)
 }
 
 type fxServiceClient struct {
@@ -81,15 +90,72 @@ func (c *fxServiceClient) ListAnomalies(ctx context.Context, in *ListAnomaliesRe
 	return out, nil
 }
 
+func (c *fxServiceClient) ListEffectiveRates(ctx context.Context, in *ListEffectiveRatesRequest, opts ...grpc.CallOption) (*ListEffectiveRatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEffectiveRatesResponse)
+	err := c.cc.Invoke(ctx, FxService_ListEffectiveRates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fxServiceClient) ConfirmEffectiveRate(ctx context.Context, in *ConfirmEffectiveRateRequest, opts ...grpc.CallOption) (*ConfirmEffectiveRateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmEffectiveRateResponse)
+	err := c.cc.Invoke(ctx, FxService_ConfirmEffectiveRate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fxServiceClient) RefreshRates(ctx context.Context, in *RefreshRatesRequest, opts ...grpc.CallOption) (*RefreshRatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefreshRatesResponse)
+	err := c.cc.Invoke(ctx, FxService_RefreshRates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fxServiceClient) GetSyncStatus(ctx context.Context, in *GetSyncStatusRequest, opts ...grpc.CallOption) (*GetSyncStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSyncStatusResponse)
+	err := c.cc.Invoke(ctx, FxService_GetSyncStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fxServiceClient) ListWatchedCurrencies(ctx context.Context, in *ListWatchedCurrenciesRequest, opts ...grpc.CallOption) (*ListWatchedCurrenciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWatchedCurrenciesResponse)
+	err := c.cc.Invoke(ctx, FxService_ListWatchedCurrencies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fxServiceClient) UpdateWatchedCurrencies(ctx context.Context, in *UpdateWatchedCurrenciesRequest, opts ...grpc.CallOption) (*UpdateWatchedCurrenciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateWatchedCurrenciesResponse)
+	err := c.cc.Invoke(ctx, FxService_UpdateWatchedCurrencies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FxServiceServer is the server API for FxService service.
 // All implementations must embed UnimplementedFxServiceServer
 // for forward compatibility.
 //
-// FxService is the platform exchange-rate provider. Rates come exclusively
-// from the API feed (business decision 2026-07-27: manual entry removed);
-// anomaly detection now runs on fetch, comparing against the previous rate.
-// Rates are global market facts (deliberately tenant-free); every document
-// freezes its own snapshot at business time.
+// FxService provides global market reference rates and tenant-specific,
+// manually confirmed effective rates. Documents freeze their own snapshots.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -98,6 +164,12 @@ type FxServiceServer interface {
 	GetLatestRate(context.Context, *GetLatestRateRequest) (*GetLatestRateResponse, error)
 	ListRates(context.Context, *ListRatesRequest) (*ListRatesResponse, error)
 	ListAnomalies(context.Context, *ListAnomaliesRequest) (*ListAnomaliesResponse, error)
+	ListEffectiveRates(context.Context, *ListEffectiveRatesRequest) (*ListEffectiveRatesResponse, error)
+	ConfirmEffectiveRate(context.Context, *ConfirmEffectiveRateRequest) (*ConfirmEffectiveRateResponse, error)
+	RefreshRates(context.Context, *RefreshRatesRequest) (*RefreshRatesResponse, error)
+	GetSyncStatus(context.Context, *GetSyncStatusRequest) (*GetSyncStatusResponse, error)
+	ListWatchedCurrencies(context.Context, *ListWatchedCurrenciesRequest) (*ListWatchedCurrenciesResponse, error)
+	UpdateWatchedCurrencies(context.Context, *UpdateWatchedCurrenciesRequest) (*UpdateWatchedCurrenciesResponse, error)
 	mustEmbedUnimplementedFxServiceServer()
 }
 
@@ -116,6 +188,24 @@ func (UnimplementedFxServiceServer) ListRates(context.Context, *ListRatesRequest
 }
 func (UnimplementedFxServiceServer) ListAnomalies(context.Context, *ListAnomaliesRequest) (*ListAnomaliesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListAnomalies not implemented")
+}
+func (UnimplementedFxServiceServer) ListEffectiveRates(context.Context, *ListEffectiveRatesRequest) (*ListEffectiveRatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListEffectiveRates not implemented")
+}
+func (UnimplementedFxServiceServer) ConfirmEffectiveRate(context.Context, *ConfirmEffectiveRateRequest) (*ConfirmEffectiveRateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmEffectiveRate not implemented")
+}
+func (UnimplementedFxServiceServer) RefreshRates(context.Context, *RefreshRatesRequest) (*RefreshRatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RefreshRates not implemented")
+}
+func (UnimplementedFxServiceServer) GetSyncStatus(context.Context, *GetSyncStatusRequest) (*GetSyncStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSyncStatus not implemented")
+}
+func (UnimplementedFxServiceServer) ListWatchedCurrencies(context.Context, *ListWatchedCurrenciesRequest) (*ListWatchedCurrenciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWatchedCurrencies not implemented")
+}
+func (UnimplementedFxServiceServer) UpdateWatchedCurrencies(context.Context, *UpdateWatchedCurrenciesRequest) (*UpdateWatchedCurrenciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateWatchedCurrencies not implemented")
 }
 func (UnimplementedFxServiceServer) mustEmbedUnimplementedFxServiceServer() {}
 func (UnimplementedFxServiceServer) testEmbeddedByValue()                   {}
@@ -192,6 +282,114 @@ func _FxService_ListAnomalies_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FxService_ListEffectiveRates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEffectiveRatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).ListEffectiveRates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_ListEffectiveRates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).ListEffectiveRates(ctx, req.(*ListEffectiveRatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FxService_ConfirmEffectiveRate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmEffectiveRateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).ConfirmEffectiveRate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_ConfirmEffectiveRate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).ConfirmEffectiveRate(ctx, req.(*ConfirmEffectiveRateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FxService_RefreshRates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshRatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).RefreshRates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_RefreshRates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).RefreshRates(ctx, req.(*RefreshRatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FxService_GetSyncStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSyncStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).GetSyncStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_GetSyncStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).GetSyncStatus(ctx, req.(*GetSyncStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FxService_ListWatchedCurrencies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWatchedCurrenciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).ListWatchedCurrencies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_ListWatchedCurrencies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).ListWatchedCurrencies(ctx, req.(*ListWatchedCurrenciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FxService_UpdateWatchedCurrencies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateWatchedCurrenciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).UpdateWatchedCurrencies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_UpdateWatchedCurrencies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).UpdateWatchedCurrencies(ctx, req.(*UpdateWatchedCurrenciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FxService_ServiceDesc is the grpc.ServiceDesc for FxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -210,6 +408,30 @@ var FxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAnomalies",
 			Handler:    _FxService_ListAnomalies_Handler,
+		},
+		{
+			MethodName: "ListEffectiveRates",
+			Handler:    _FxService_ListEffectiveRates_Handler,
+		},
+		{
+			MethodName: "ConfirmEffectiveRate",
+			Handler:    _FxService_ConfirmEffectiveRate_Handler,
+		},
+		{
+			MethodName: "RefreshRates",
+			Handler:    _FxService_RefreshRates_Handler,
+		},
+		{
+			MethodName: "GetSyncStatus",
+			Handler:    _FxService_GetSyncStatus_Handler,
+		},
+		{
+			MethodName: "ListWatchedCurrencies",
+			Handler:    _FxService_ListWatchedCurrencies_Handler,
+		},
+		{
+			MethodName: "UpdateWatchedCurrencies",
+			Handler:    _FxService_UpdateWatchedCurrencies_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -45,6 +45,17 @@ func (s *Service) AuthorizeSourcingCase(ctx context.Context, tenantID, caseID in
 	if err != nil {
 		return err
 	}
+	if head.Status == "INTAKE_PENDING" {
+		if access, ok := s.scopes.(InquiryAccess); ok {
+			allowed, e := access.HasPermission(ctx, op.ID, "sales:inquiry:read")
+			if e != nil {
+				return e
+			}
+			if !allowed {
+				return apierr.NotFound("SC_CASE_NOT_FOUND", "询盘不存在")
+			}
+		}
+	}
 	visible, err := s.visibleSourcingTo(ctx, op)
 	if err != nil {
 		return err

@@ -82,6 +82,49 @@ func (s *Server) submitOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) presignOrderContract(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.PresignOrderContractUploadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.PresignOrderContractUpload(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveOrderContract(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.SaveOrderContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.SaveOrderContract(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) verifyOrderContract(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.VerifyOrderContract(r.Context(), &prv1.VerifyOrderContractRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) requestOrderPayment(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.RequestOrderPayment(r.Context(), &prv1.RequestOrderPaymentRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CancelOrderRequest{}
 	if !s.decodeBody(w, r, req) {

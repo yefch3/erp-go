@@ -1013,25 +1013,29 @@ WHERE c.tenant_id = $1::bigint
   AND ($2::bool OR c.sales_employee_id = ANY($3::bigint[]))
   -- 默认只看在跑的。签之前没什么进程可言，作废的也不必占地方。
   AND ($4::text <> '' OR c.status IN ('EFFECTIVE', 'EXECUTING', 'COMPLETED'))
-  AND ($4::text = '' OR c.status = $4::text)
-  AND ($5::bigint = 0 OR c.customer_id = $5::bigint)
-  AND ($6::text = ''
-       OR c.contract_no ILIKE '%' || $6::text || '%'
-       OR c.external_contract_no ILIKE '%' || $6::text || '%'
-       OR c.customer_name ILIKE '%' || $6::text || '%')
+  AND ($4::text = '' OR c.status = $4::text
+ OR ($4::text='PENDING_APPROVAL' AND c.status='DRAFT')
+ OR ($4::text='EXECUTING' AND c.status='EFFECTIVE'))
+ AND ($5::bigint=0 OR c.sales_employee_id=$5::bigint)
+  AND ($6::bigint = 0 OR c.customer_id = $6::bigint)
+  AND ($7::text = ''
+       OR c.contract_no ILIKE '%' || $7::text || '%'
+       OR c.external_contract_no ILIKE '%' || $7::text || '%'
+       OR c.customer_name ILIKE '%' || $7::text || '%')
 ORDER BY c.effective_at DESC NULLS LAST, c.id DESC
-LIMIT $8::int OFFSET $7::int
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListContractExecutionParams struct {
-	TenantID    int64
-	ScopeAll    bool
-	EmployeeIds []int64
-	Status      string
-	CustomerID  int64
-	Keyword     string
-	RowOffset   int32
-	RowLimit    int32
+	TenantID        int64
+	ScopeAll        bool
+	EmployeeIds     []int64
+	Status          string
+	SalesEmployeeID int64
+	CustomerID      int64
+	Keyword         string
+	RowOffset       int32
+	RowLimit        int32
 }
 
 type ListContractExecutionRow struct {
@@ -1071,6 +1075,7 @@ func (q *Queries) ListContractExecution(ctx context.Context, arg ListContractExe
 		arg.ScopeAll,
 		arg.EmployeeIds,
 		arg.Status,
+		arg.SalesEmployeeID,
 		arg.CustomerID,
 		arg.Keyword,
 		arg.RowOffset,
@@ -1254,7 +1259,7 @@ func (q *Queries) ListContractVersions(ctx context.Context, arg ListContractVers
 const listContracts = `-- name: ListContracts :many
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
-    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at, c.updated_at,
     c.external_contract_no, c.entry_source,
     coalesce(c.receivable_due_date::text, '')::text AS receivable_due_date,
     coalesce(v.currency, '')::text AS currency,
@@ -1279,26 +1284,30 @@ WHERE c.tenant_id = $1::bigint
        -- Documents this person was asked to approve are visible whatever the
        -- scope says; an approver who cannot read the contract cannot approve it.
        OR c.id = ANY($4::bigint[]))
-  AND ($5::text = '' OR c.status = $5::text)
-  AND ($6::bigint = 0 OR c.customer_id = $6::bigint)
-  AND ($7::text = ''
-       OR c.contract_no ILIKE '%' || $7::text || '%'
-       OR c.external_contract_no ILIKE '%' || $7::text || '%'
-       OR c.customer_name ILIKE '%' || $7::text || '%')
+  AND ($5::text = '' OR c.status = $5::text
+ OR ($5::text='PENDING_APPROVAL' AND c.status='DRAFT')
+ OR ($5::text='EXECUTING' AND c.status='EFFECTIVE'))
+ AND ($6::bigint=0 OR c.sales_employee_id=$6::bigint)
+  AND ($7::bigint = 0 OR c.customer_id = $7::bigint)
+  AND ($8::text = ''
+       OR c.contract_no ILIKE '%' || $8::text || '%'
+       OR c.external_contract_no ILIKE '%' || $8::text || '%'
+       OR c.customer_name ILIKE '%' || $8::text || '%')
 ORDER BY c.id DESC
-LIMIT $9::int OFFSET $8::int
+LIMIT $10::int OFFSET $9::int
 `
 
 type ListContractsParams struct {
-	TenantID    int64
-	VisibleAll  bool
-	VisibleIds  []int64
-	InvolvedIds []int64
-	Status      string
-	CustomerID  int64
-	Keyword     string
-	RowOffset   int32
-	RowLimit    int32
+	TenantID        int64
+	VisibleAll      bool
+	VisibleIds      []int64
+	InvolvedIds     []int64
+	Status          string
+	SalesEmployeeID int64
+	CustomerID      int64
+	Keyword         string
+	RowOffset       int32
+	RowLimit        int32
 }
 
 type ListContractsRow struct {
@@ -1313,6 +1322,7 @@ type ListContractsRow struct {
 	SignedAt           pgtype.Timestamptz
 	EffectiveAt        pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 	ExternalContractNo string
 	EntrySource        string
 	ReceivableDueDate  string
@@ -1332,6 +1342,7 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 		arg.VisibleIds,
 		arg.InvolvedIds,
 		arg.Status,
+		arg.SalesEmployeeID,
 		arg.CustomerID,
 		arg.Keyword,
 		arg.RowOffset,
@@ -1356,6 +1367,7 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 			&i.SignedAt,
 			&i.EffectiveAt,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.ExternalContractNo,
 			&i.EntrySource,
 			&i.ReceivableDueDate,

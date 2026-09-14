@@ -1,0 +1,16 @@
+{
+  "frontend": "http://127.0.0.1:25375",
+  "gateway": "http://127.0.0.1:28282",
+  "password": "D5-Acceptance-2026!",
+  "accounts": {
+    "buyer": "p1@d5.example.test",
+    "quality": "q1@d5.example.test",
+    "sales": "s1@d5.example.test",
+    "logistics": "l1@d5.example.test",
+    "boss": "b1@d5.example.test"
+  },
+  "fixture": {
+    "quantity": "10 MT",
+    "purchaseOrder": "PO-D5-ACCEPT-001"
+  }
+}

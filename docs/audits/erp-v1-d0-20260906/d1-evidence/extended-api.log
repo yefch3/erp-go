@@ -1,0 +1,14 @@
+D1 actor B1 employee=11
+D1 actor L1 employee=6
+D1 actor L2 employee=7
+D1 actor M1 employee=8
+D1 actor P1 employee=4
+D1 actor P2 employee=5
+D1 actor S1 employee=2
+D1 actor S2 employee=3
+D1 actor U1 employee=9
+Attachments: submitted source downloadable by procurement; unrelated sales denied
+A06 126 prices saved, submitted and updated by P2; S1 receives exact last-row price
+A07-A09 same forwarder two plans, optional dates, partial cargo and USD/CNY totals passed
+A14/A16 sales write-back, unprivileged access and retired participation rejected
+UI acceptance fixture inquiry=16, 126 products, P2/L2 edits and two logistics plans

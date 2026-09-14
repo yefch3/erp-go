@@ -1,0 +1,184 @@
+{
+  "checkedAt": "2026-09-07T22:10:03.2511891-04:00",
+  "project": "erp-d2-20260907",
+  "gatewayHealth": 200,
+  "containers": [
+    {
+      "service": "export",
+      "container": "/erp-d2-20260907-export-1",
+      "image": "erp-d2-20260907/export:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "gateway",
+      "container": "/erp-d2-20260907-gateway-1",
+      "image": "erp-d2-20260907/gateway:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_ingress",
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": null
+    },
+    {
+      "service": "approval",
+      "container": "/erp-d2-20260907-approval-1",
+      "image": "erp-d2-20260907/approval:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "iam",
+      "container": "/erp-d2-20260907-iam-1",
+      "image": "erp-d2-20260907/iam:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "fx",
+      "container": "/erp-d2-20260907-fx-1",
+      "image": "erp-d2-20260907/fx:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "procurement",
+      "container": "/erp-d2-20260907-procurement-1",
+      "image": "erp-d2-20260907/procurement:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "inventory",
+      "container": "/erp-d2-20260907-inventory-1",
+      "image": "erp-d2-20260907/inventory:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "mail",
+      "container": "/erp-d2-20260907-mail-1",
+      "image": "erp-d2-20260907/mail:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_convert",
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "shipping",
+      "container": "/erp-d2-20260907-shipping-1",
+      "image": "erp-d2-20260907/shipping:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "product",
+      "container": "/erp-d2-20260907-product-1",
+      "image": "erp-d2-20260907/product:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "masterdata",
+      "container": "/erp-d2-20260907-masterdata-1",
+      "image": "erp-d2-20260907/masterdata:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "postgres",
+      "container": "/erp-d2-20260907-postgres-1",
+      "image": "postgres:16-alpine",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [
+        "erp-d2-20260907_pgdata"
+      ],
+      "databaseTarget": null
+    },
+    {
+      "service": "redis",
+      "container": "/erp-d2-20260907-redis-1",
+      "image": "redis:7-alpine",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [
+        "erp-d2-20260907_redisdata"
+      ],
+      "databaseTarget": null
+    },
+    {
+      "service": "kafka",
+      "container": "/erp-d2-20260907-kafka-1",
+      "image": "confluentinc/cp-kafka:7.6.0",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [
+        "erp-d2-20260907_kafkadata",
+        "ac61f179ee3ddfdb518f99fbcac4e8e9de78b1dbabe30abf0a875c7e966b90aa"
+      ],
+      "databaseTarget": null
+    },
+    {
+      "service": "minio",
+      "container": "/erp-d2-20260907-minio-1",
+      "image": "minio/minio:latest",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_ingress",
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [
+        "erp-d2-20260907_miniodata"
+      ],
+      "databaseTarget": null
+    }
+  ]
+}

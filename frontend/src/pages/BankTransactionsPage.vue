@@ -160,11 +160,16 @@
         <!-- 「匹配付款单」已下线：付款单的创建入口随供应商付款页一起没了，
              而且它和新模型本来就冲突——流水只是记录，不参与核销。存量已经
              对上的付款单号仍然显示，那是历史留痕，读得出来才对得上账。 -->
-        <el-table-column :label="t('bankTransactions.matchAndActions')" width="190" fixed="right">
+        <el-table-column :label="t('common.actions')" width="170" fixed="right">
           <template #default="{ row }">
             <div class="match-cell">
               <el-tag v-if="row.matchedPaymentNo" size="small" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
-              <div class="row-actions">
+              <el-dropdown v-if="canWrite" trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+                <el-button type="primary" plain>
+                  {{ t('bankTransactions.moreActions') }}<span class="drop-arrow">▼</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
                 <!-- 「改归属」并进了编辑——那个表单里本来就有归属这一项。
                      noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值
                      时到浏览器是字符串 "0"，而 "0" 是真值。见 lib/protoId.ts。
@@ -172,27 +177,25 @@
                      已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改
                      归属那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——
                      不给这个按钮，那些行的归属从此谁也改不了。 -->
-                <el-button
-                  v-if="canWrite && !noId(row.matchedPaymentId)"
-                  size="small" link type="danger" @click="unmatch(row)"
-                >{{ t('bankTransactions.unmatch') }}</el-button>
+                    <el-dropdown-item v-if="!noId(row.matchedPaymentId)" command="unmatch">
+                      {{ t('bankTransactions.unmatch') }}
+                    </el-dropdown-item>
                 <!-- 删是归档：行留着，理由和署名跟着行走。已被认领或已匹配
                      付款单的会被后端拒掉并说清楚先做哪一步。 -->
                 <!-- 改一行流水。有了它，「某个字段写错了」不用再走「删掉
                      重新登记」——而那条路还会撞上流水号的唯一键。 -->
-                <el-button
-                  v-if="canWrite && view === 'live'"
-                  size="small" link type="primary" @click="openEdit(row)"
-                >{{ t('common.edit') }}</el-button>
-                <el-button
-                  v-if="canWrite && view === 'live'"
-                  size="small" link type="danger" @click="openDelete(row)"
-                >{{ t('common.delete') }}</el-button>
-                <el-button
-                  v-if="canWrite && view === 'deleted'"
-                  size="small" link type="primary" @click="restore(row)"
-                >{{ t('bankTransactions.restore') }}</el-button>
-              </div>
+                    <el-dropdown-item v-if="view === 'live'" :divided="!noId(row.matchedPaymentId)" command="edit">
+                      {{ t('common.edit') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="view === 'live'" command="delete">
+                      {{ t('common.delete') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="view === 'deleted'" command="restore">
+                      {{ t('bankTransactions.restore') }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -831,6 +834,13 @@ async function onFilePicked(e: Event) {
 // 新建匹配已下线（选付款单、采纳建议）。**解开历史匹配留着**：改归属那道
 // 闸遇到已匹配的行会拒绝并让人「先取消匹配」，没有这条路那句话就是个做不到
 // 的指令，那些行的归属从此谁也改不了。
+function handleRowCommand(row: TxnRow, command: string) {
+  if (command === 'edit') openEdit(row)
+  else if (command === 'delete') openDelete(row)
+  else if (command === 'restore') void restore(row)
+  else if (command === 'unmatch') void unmatch(row)
+}
+
 async function unmatch(row: TxnRow) {
   await post(`/bank-transactions/${row.id}/unmatch`, {})
   ElMessage.success(t('bankTransactions.unmatchedOk'))
@@ -1098,6 +1108,10 @@ onMounted(load)
   display: flex;
   flex-direction: column;
   gap: 18px;
+  width: 100%;
+  max-width: 1680px;
+  min-width: 0;
+  margin: 0 auto;
 }
 .page-head {
   display: flex;
@@ -1120,6 +1134,7 @@ onMounted(load)
   color: var(--el-text-color-regular);
 }
 .panel {
+  min-width: 0;
   padding: 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
@@ -1178,6 +1193,7 @@ onMounted(load)
   align-items: flex-start;
   gap: 2px;
 }
+.drop-arrow { margin-left: 7px; font-size: 10px; }
 /* 一行里最多三个按钮，横排、间距靠 gap 而不是 el-button 自带的 margin
    ——link 型按钮之间默认没有间距，挤在一起会被读成一个词。 */
 .row-actions {
@@ -1194,6 +1210,18 @@ onMounted(load)
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+@media (max-width: 768px) {
+  .page-head { flex-direction: column; align-items: stretch; }
+  .head-actions { align-items: stretch; }
+  .head-actions :deep(.el-select),
+  .head-actions :deep(.el-button) { width: 100% !important; margin-left: 0; }
+  .panel { padding: 12px; }
+  .filters { align-items: stretch; }
+  .filters :deep(.el-select),
+  .filters :deep(.el-input),
+  .filters :deep(.el-button) { width: 100% !important; max-width: none !important; margin-left: 0; }
+  .pager { justify-content: flex-start; overflow-x: auto; }
 }
 </style>
 

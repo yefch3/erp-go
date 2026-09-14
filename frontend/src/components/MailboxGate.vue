@@ -270,4 +270,14 @@ async function verify(code: string) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+
+.gate { padding: 32px 0; min-width: 0; }
+.gate-card { width: 100%; max-width: 460px; min-width: 0; box-sizing: border-box; border-radius: 16px; padding: 12px; box-shadow: 0 8px 28px #0f172a08; }
+.gate-title { font-size: 22px; color: #172b4d; }
+.gate-text { line-height: 1.8; }
+@media (max-width: 760px) {
+  .gate { padding: 12px 0; }
+  .gate-card { padding: 0; }
+}
+
 </style>

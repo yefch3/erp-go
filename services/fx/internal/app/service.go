@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -32,12 +34,127 @@ type Rate struct {
 }
 
 type Service struct {
-	q   *store.Queries
-	log *slog.Logger
+	pool                     *pgxpool.Pool
+	access                   Access
+	q                        *store.Queries
+	log                      *slog.Logger
+	syncMu                   sync.RWMutex
+	fetchURL                 string
+	fetchSymbols             []string
+	lastAttempt, lastSuccess time.Time
+	lastFetchError           string
 }
 
 func New(pool *pgxpool.Pool, log *slog.Logger) *Service {
-	return &Service{q: store.New(pool), log: log}
+	return &Service{pool: pool, q: store.New(pool), log: log}
+}
+
+type SyncStatus struct {
+	State                    string
+	LastAttempt, LastSuccess time.Time
+	LastError                string
+	UsingCache               bool
+	Provider                 string
+}
+
+func (s *Service) ConfigureFetcher(url string, symbols []string) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	s.fetchURL = url
+	s.fetchSymbols = append([]string(nil), symbols...)
+}
+func (s *Service) Refresh(ctx context.Context) (SyncStatus, error) {
+	s.syncMu.RLock()
+	url := s.fetchURL
+	symbols := append([]string(nil), s.fetchSymbols...)
+	s.syncMu.RUnlock()
+	if url == "" {
+		err := errors.New("汇率同步尚未配置")
+		s.recordFetch(err)
+		return s.SyncStatus(), nil
+	}
+	if err := s.Fetch(ctx, url, symbols); err != nil {
+		s.log.WarnContext(ctx, "fx refresh failed; serving cached rates", "error", err)
+	}
+	// A provider outage is a supported degraded state. The caller receives the
+	// sync status and continues using the most recent successful data.
+	return s.SyncStatus(), nil
+}
+func (s *Service) SyncStatus() SyncStatus {
+	s.syncMu.RLock()
+	defer s.syncMu.RUnlock()
+	state := "READY"
+	if s.lastFetchError != "" {
+		state = "DEGRADED"
+	}
+	if s.lastAttempt.IsZero() {
+		state = "STARTING"
+	}
+	return SyncStatus{State: state, LastAttempt: s.lastAttempt, LastSuccess: s.lastSuccess, LastError: s.lastFetchError, UsingCache: s.lastFetchError != "", Provider: "Frankfurter / ECB"}
+}
+func (s *Service) recordFetch(err error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	s.lastAttempt = time.Now().UTC()
+	if err != nil {
+		s.lastFetchError = err.Error()
+	} else {
+		s.lastFetchError = ""
+		s.lastSuccess = s.lastAttempt
+	}
+}
+func (s *Service) ListWatched(ctx context.Context, tenantID int64) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT currency FROM fx_watch_currencies WHERE tenant_id=$1 ORDER BY sort_order,currency`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return []string{"CNY", "EUR", "GBP", "JPY", "HKD"}, nil
+	}
+	return out, rows.Err()
+}
+func (s *Service) UpdateWatched(ctx context.Context, tenantID, actorID int64, currencies []string) ([]string, error) {
+	clean := []string{}
+	seen := map[string]bool{}
+	for _, c := range currencies {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if err := validCurrency(c); err != nil {
+			return nil, err
+		}
+		if !seen[c] && c != "USD" {
+			seen[c] = true
+			clean = append(clean, c)
+		}
+	}
+	if len(clean) == 0 || len(clean) > 12 {
+		return nil, apierr.Invalid("FX_WATCH_INVALID", "请关注 1 至 12 个非 USD 币种")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `DELETE FROM fx_watch_currencies WHERE tenant_id=$1`, tenantID); err != nil {
+		return nil, err
+	}
+	for i, c := range clean {
+		if _, err = tx.Exec(ctx, `INSERT INTO fx_watch_currencies(tenant_id,currency,sort_order,created_by) VALUES($1,$2,$3,$4)`, tenantID, c, i, actorID); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return clean, nil
 }
 
 func (s *Service) GetLatest(ctx context.Context, quote string) (Rate, error) {
@@ -80,7 +197,6 @@ func (s *Service) ListRates(ctx context.Context, quote string, days int32) ([]Ra
 	}
 	return out, nil
 }
-
 
 type AnomalyRow = store.ListAnomaliesRow
 

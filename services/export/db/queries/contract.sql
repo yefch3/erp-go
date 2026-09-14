@@ -76,7 +76,7 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id);
 -- name: ListContracts :many
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
-    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at, c.updated_at,
     c.external_contract_no, c.entry_source,
     coalesce(c.receivable_due_date::text, '')::text AS receivable_due_date,
     coalesce(v.currency, '')::text AS currency,
@@ -103,7 +103,10 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
        -- Documents this person was asked to approve are visible whatever the
        -- scope says; an approver who cannot read the contract cannot approve it.
        OR c.id = ANY(sqlc.arg(involved_ids)::bigint[]))
-  AND (sqlc.arg(status)::text = '' OR c.status = sqlc.arg(status)::text)
+  AND (sqlc.arg(status)::text = '' OR c.status = sqlc.arg(status)::text
+ OR (sqlc.arg(status)::text='PENDING_APPROVAL' AND c.status='DRAFT')
+ OR (sqlc.arg(status)::text='EXECUTING' AND c.status='EFFECTIVE'))
+ AND (sqlc.arg(sales_employee_id)::bigint=0 OR c.sales_employee_id=sqlc.arg(sales_employee_id)::bigint)
   AND (sqlc.arg(customer_id)::bigint = 0 OR c.customer_id = sqlc.arg(customer_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -616,7 +619,10 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(scope_all)::bool OR c.sales_employee_id = ANY(sqlc.arg(employee_ids)::bigint[]))
   -- 默认只看在跑的。签之前没什么进程可言，作废的也不必占地方。
   AND (sqlc.arg(status)::text <> '' OR c.status IN ('EFFECTIVE', 'EXECUTING', 'COMPLETED'))
-  AND (sqlc.arg(status)::text = '' OR c.status = sqlc.arg(status)::text)
+  AND (sqlc.arg(status)::text = '' OR c.status = sqlc.arg(status)::text
+ OR (sqlc.arg(status)::text='PENDING_APPROVAL' AND c.status='DRAFT')
+ OR (sqlc.arg(status)::text='EXECUTING' AND c.status='EFFECTIVE'))
+ AND (sqlc.arg(sales_employee_id)::bigint=0 OR c.sales_employee_id=sqlc.arg(sales_employee_id)::bigint)
   AND (sqlc.arg(customer_id)::bigint = 0 OR c.customer_id = sqlc.arg(customer_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'

@@ -9,14 +9,14 @@
   >
     <template #reference>
       <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
-        <el-button class="bell" text circle aria-label="到港提醒">
+        <el-button class="bell" text circle aria-label="运输提醒">
           <el-icon :size="20"><Bell /></el-icon>
         </el-button>
       </el-badge>
     </template>
 
     <div class="heading">
-      <strong>到港提醒</strong>
+      <strong>运输提醒</strong>
       <div class="heading-actions">
         <el-button link type="danger" size="small" :loading="cleaning" @click="cleanupExpiredReminders">
           清理过期
@@ -32,8 +32,12 @@
         <span>{{ unreadCount }} 条未读</span>
       </div>
     </div>
+    <div v-if="loadFailed" class="load-error">
+      <span>运输提醒暂时无法读取，现有提醒已保留。</span>
+      <el-button link type="primary" size="small" :loading="loading" @click="load(false)">重新加载</el-button>
+    </div>
     <el-scrollbar max-height="420px">
-      <el-empty v-if="!loading && reminders.length === 0" description="暂无到港提醒" :image-size="72" />
+      <el-empty v-if="!loading && reminders.length === 0" description="暂无运输提醒" :image-size="72" />
       <div
         v-for="item in reminders"
         :key="item.id"
@@ -67,7 +71,7 @@ import { h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification, ElSwitch } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { del, get, post } from '../api'
+import { del, get, post, quietErrors } from '../api'
 import { onLive } from '../live'
 import type { ShippingArrivalReminder } from '../shipping'
 import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
@@ -75,6 +79,7 @@ import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders
 const router = useRouter()
 const open = ref(false)
 const loading = ref(false)
+const loadFailed = ref(false)
 const cleaning = ref(false)
 const reminders = ref<ShippingArrivalReminder[]>([])
 const unreadCount = ref(0)
@@ -90,13 +95,18 @@ const disabledItemPopups = ref<Record<string, boolean>>({})
 async function load(autoPopup = false) {
   loading.value = true
   try {
-    const data = await get<{ reminders: ShippingArrivalReminder[]; unreadCount: string }>('/shipping/reminders')
+    const data = await get<{ reminders: ShippingArrivalReminder[]; unreadCount: string }>('/shipping/reminders', undefined, quietErrors)
     reminders.value = data.reminders ?? []
     disabledItemPopups.value = Object.fromEntries(
       reminders.value.map((item) => [String(item.id), localStorage.getItem(`${itemPopupPreferencePrefix}${item.id}`) === '0']),
     )
     unreadCount.value = Number(data.unreadCount ?? 0)
+    loadFailed.value = false
     if (autoPopup && popupEnabled.value) showAutomaticPopups(reminders.value)
+  } catch {
+    // 顶栏会在进入系统和每分钟轮询时后台读取提醒。服务刚启动或短暂繁忙时，
+    // 保留上一次成功结果并等待下一次重试；用户打开铃铛后能看到重试入口。
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -119,7 +129,7 @@ function showAutomaticPopups(items: ShippingArrivalReminder[]) {
       pendingPopups.delete(popupKey)
       if (!popupEnabled.value || !isItemPopupEnabled(item) || activePopups.has(popupKey)) return
       const notice = ElNotification({
-        title: item.title || '到港提醒',
+        title: item.title || '运输提醒',
         message: h('div', [
           h('p', { style: 'margin: 0 0 12px; line-height: 1.6;' }, item.content),
           h('div', { style: 'display: flex; gap: 8px;' }, [
@@ -177,7 +187,7 @@ function setItemPopupEnabled(item: ShippingArrivalReminder, value: string | numb
   if (popupEnabled.value && router.currentRoute.value.path.startsWith('/shipping')) showAutomaticPopups([item])
 }
 
-// 关闭开关后记住用户选择并立即收起所有到港弹窗；重新开启时立即拉取一次。
+// 关闭开关后记住用户选择并立即收起所有运输提醒弹窗；重新开启时立即拉取一次。
 function setPopupEnabled(value: string | number | boolean) {
   const enabled = Boolean(value)
   popupEnabled.value = enabled
@@ -192,7 +202,7 @@ function setPopupEnabled(value: string | number | boolean) {
 // 清理只删除当前员工已经过期的通知，不会删除对应船期。
 async function cleanupExpiredReminders() {
   await ElMessageBox.confirm(
-    '将删除 ETA 已过期，或船期已到港、已完成、已取消的提醒。船期数据不会被删除。',
+    '将删除对应港口日期已过期，或船期已到港、已完成、已取消的运输提醒。船期数据不会被删除。',
     '清理过期提醒',
     { confirmButtonText: '确认清理', cancelButtonText: '取消', type: 'warning' },
   )
@@ -260,6 +270,7 @@ defineExpose({ refreshAndPopup: () => load(true) })
 .heading { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 10px; border-bottom: 1px solid #e5e7eb; }
 .heading span { color: #64748b; font-size: 12px; }
 .heading-actions { display: flex; align-items: center; gap: 12px; }
+.load-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 6px 4px; padding: 8px 10px; border-radius: 6px; color: #92400e; background: #fffbeb; font-size: 12px; }
 .notice { position: relative; display: flex; align-items: center; width: 100%; border-bottom: 1px solid #f1f5f9; background: #fff; }
 .notice:hover { background: #f8fafc; }
 .notice.unread { background: #eff6ff; }

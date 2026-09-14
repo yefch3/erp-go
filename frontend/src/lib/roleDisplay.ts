@@ -15,6 +15,7 @@ const roleNames: Record<string, Record<Locale, string>> = {
   SALES: { zh: '销售专员', en: 'Sales representative', es: 'Representante de ventas' },
   SALES_MANAGER: { zh: '销售经理', en: 'Sales manager', es: 'Responsable de ventas' },
   SHIPPING_MANAGER: { zh: '船运经理', en: 'Shipping manager', es: 'Responsable de embarques' },
+	QUALITY_INSPECTOR: { zh: '质检专员', en: 'Quality inspector', es: 'Inspector de calidad' },
 }
 
 const roleDescriptions: Record<string, Record<Locale, string>> = {
@@ -44,7 +45,7 @@ const roleDescriptions: Record<string, Record<Locale, string>> = {
     es: 'Gestionar abastecimiento, necesidades excepcionales, aprobación y cancelación de órdenes',
   },
   SALES: {
-    zh: '维护本人客户询盘、客户报价和出口合同',
+    zh: '维护本人客户询盘、客户报价和外销合同',
     en: 'Maintain own customer inquiries, quotations and export contracts',
     es: 'Mantener sus consultas, cotizaciones y contratos de exportación',
   },
@@ -58,6 +59,11 @@ const roleDescriptions: Record<string, Record<Locale, string>> = {
     en: 'Manage presales shipping inquiries, owners and consolidated shipping plans',
     es: 'Gestionar consultas de transporte, responsables y planes de envío consolidados',
   },
+	QUALITY_INSPECTOR: {
+		zh: '处理工厂出货前质检并保存每轮资料',
+		en: 'Perform pre-shipment factory inspections and retain every round of evidence',
+		es: 'Realizar inspecciones previas al envío y conservar la evidencia de cada ronda',
+	},
 }
 
 const resources: Record<string, Record<'en' | 'es', string>> = {
@@ -91,6 +97,9 @@ const resources: Record<string, Record<'en' | 'es', string>> = {
   'procurement:requirement': { en: 'purchase requirements', es: 'necesidades de compra' },
   'procurement:sourcing': { en: 'supplier sourcing', es: 'abastecimiento de proveedores' },
   'product:product': { en: 'products', es: 'productos' },
+	'quality:task': { en: 'quality inspection tasks', es: 'tareas de inspección de calidad' },
+	'quality:file': { en: 'quality inspection files', es: 'archivos de inspección de calidad' },
+	'quality:release': { en: 'partial qualified release', es: 'liberación parcial conforme' },
   'sales:inquiry': { en: 'customer inquiries', es: 'consultas de clientes' },
   'sales:procurement-progress': { en: 'procurement progress', es: 'progreso de compras' },
   'shipping:document': { en: 'shipping documents', es: 'documentos de embarque' },
@@ -121,6 +130,8 @@ const actions: Record<string, Record<'en' | 'es', (resource: string) => string>>
   act: { en: (r) => `Process ${r}`, es: (r) => `Procesar ${r}` },
   exception: { en: (r) => `Create exceptional ${r}`, es: (r) => `Crear ${r} excepcionales` },
   transfer: { en: (r) => `Transfer ${r}`, es: (r) => `Transferir ${r}` },
+	request: { en: (r) => `Request ${r}`, es: (r) => `Solicitar ${r}` },
+	decide: { en: (r) => `Decide ${r}`, es: (r) => `Decidir ${r}` },
 }
 
 export function roleDisplayName(code: string, fallback: string, locale: string): string {

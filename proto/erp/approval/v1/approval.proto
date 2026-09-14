@@ -55,7 +55,7 @@ message MyInvolvedDocumentsResponse {
 message Node {
   int32 seq = 1;
   string name = 2;
-  // ROLE, EMPLOYEE or MANAGER.
+  // ROLE, EMPLOYEE, MANAGER, DEPARTMENT_LEADER or FINANCE_MANAGER.
   string approver_type = 3;
   // Role id, employee id, or - for MANAGER - how far up the reporting line
   // (1 is the submitter's own manager).

@@ -34,10 +34,10 @@ const (
 )
 
 // normalizeArrivalReminderDays 校验、去重并按从大到小排列提醒天数。
-// 0 代表到港当天；空列表代表关闭该船期尚未触发的到港提醒。
+// 0 代表港口事件当天；空列表代表关闭该船期尚未触发的运输提醒。
 func normalizeArrivalReminderDays(days []int32) ([]int32, error) {
 	if len(days) > maxArrivalReminderRules {
-		return nil, apierr.Invalid("SHIPPING_REMINDER_RULE_LIMIT", "每条船期最多设置 20 个到港提醒")
+		return nil, apierr.Invalid("SHIPPING_REMINDER_RULE_LIMIT", "每条船期最多设置 20 个运输提醒")
 	}
 	seen := make(map[int32]struct{}, len(days))
 	out := make([]int32, 0, len(days))
@@ -55,22 +55,116 @@ func normalizeArrivalReminderDays(days []int32) ([]int32, error) {
 	return out, nil
 }
 
-// createConfiguredArrivalReminders 按船期当前规则为最新 ETA 建立待发送提醒。
-// 已经发送过的同版本、同天数提醒由数据库唯一约束保护，不会重复发送。
-func createConfiguredArrivalReminders(ctx context.Context, q *store.Queries, tenantID, scheduleID, destinationNodeID, employeeID int64, etaRevision int32, eta pgtype.Date) error {
-	days, err := q.ListArrivalReminderRules(ctx, store.ListArrivalReminderRulesParams{TenantID: tenantID, ScheduleID: scheduleID})
+func timestampEventDate(value pgtype.Timestamptz, timezone string) pgtype.Date {
+	if !value.Valid {
+		return pgtype.Date{}
+	}
+	location, err := time.LoadLocation(strings.TrimSpace(timezone))
+	if err != nil {
+		location = time.UTC
+	}
+	local := value.Time.In(location)
+	return pgtype.Date{Time: time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC), Valid: true}
+}
+
+func transportEventRevision(value pgtype.Timestamptz) int32 {
+	if !value.Valid {
+		return 0
+	}
+	// 数据库字段沿用旧版 eta_revision。毫秒时间散列让港口时间每次变化都能
+	// 生成一个新版本，同时相同时间重复保存仍保持幂等。
+	return int32((value.Time.UTC().UnixMilli() % 2147483646) + 1)
+}
+
+// createConfiguredTransportReminders 为各有效港口的预计到港和预计离港建立提醒。
+// 目的港没有离港业务，因此只生成到港提醒；已经发生的实际事件不再提醒。
+func createConfiguredTransportReminders(ctx context.Context, q *store.Queries, schedule store.ShippingSchedule) error {
+	days, err := q.ListArrivalReminderRules(ctx, store.ListArrivalReminderRulesParams{TenantID: schedule.TenantID, ScheduleID: schedule.ID})
 	if err != nil {
 		return err
 	}
-	for _, day := range days {
-		if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{
-			TenantID: tenantID, ScheduleID: scheduleID, DestinationNodeID: destinationNodeID,
-			RecipientEmployeeID: employeeID, EtaRevision: etaRevision, TargetEta: eta, LeadDays: day,
-		}); err != nil {
-			return err
+	preference, err := q.GetUserReminderPreference(ctx, store.GetUserReminderPreferenceParams{TenantID: schedule.TenantID, EmployeeID: schedule.ResponsibleEmployeeID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		preference = store.ShippingUserReminderPreference{Timezone: "UTC", CachedHolidays: []byte("{}")}
+	}
+	nodes, err := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: schedule.TenantID, ScheduleID: schedule.ID})
+	if err != nil {
+		return err
+	}
+	create := func(node store.ShippingRouteNode, eventType string, at pgtype.Timestamptz) error {
+		target := timestampEventDate(at, node.Timezone)
+		now := time.Now().UTC()
+		type pendingReminder struct {
+			day int32
+			due pgtype.Timestamptz
+		}
+		var latestDue *pendingReminder
+		createDay := func(day int32, due pgtype.Timestamptz) error {
+			return q.CreateRouteEventReminder(ctx, store.CreateRouteEventReminderParams{
+				TenantID: schedule.TenantID, ScheduleID: schedule.ID, DestinationNodeID: node.ID,
+				RecipientEmployeeID: schedule.ResponsibleEmployeeID, EtaRevision: transportEventRevision(at),
+				TargetEta: target, EventType: eventType, LeadDays: day, DueAt: due,
+			})
+		}
+		for _, day := range days {
+			due := arrivalReminderDueAt(target, day, preference.Timezone, preference.CachedHolidays)
+			if due.Time.After(now) {
+				if err := createDay(day, due); err != nil {
+					return err
+				}
+				continue
+			}
+			if latestDue == nil || due.Time.After(latestDue.due.Time) {
+				latestDue = &pendingReminder{day: day, due: due}
+			}
+		}
+		// 如果修改时间时已经越过多个提醒点，只即时补发最近的一条，避免
+		// 同一个港口事件一次弹出 14/7/3 天三条相同通知。
+		if latestDue != nil {
+			if err := createDay(latestDue.day, latestDue.due); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, node := range nodes {
+		if !node.IsActive {
+			continue
+		}
+		if node.LatestEtaAt.Valid && !node.ActualArrivalAt.Valid {
+			if err := create(node, "ARRIVAL", node.LatestEtaAt); err != nil {
+				return err
+			}
+		}
+		if node.NodeType != "DESTINATION" && node.LatestEtdAt.Valid && !node.ActualDepartureAt.Valid {
+			if err := create(node, "DEPARTURE", node.LatestEtdAt); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// arrivalReminderDueAt applies the recipient's business timezone and skips
+// Saturdays and Sundays. Lead day 0 always means the ETA date itself.
+func arrivalReminderDueAt(eta pgtype.Date, leadDays int32, timezone string, _ []byte) pgtype.Timestamptz {
+	location, err := time.LoadLocation(strings.TrimSpace(timezone))
+	if err != nil {
+		location = time.UTC
+	}
+	year, month, day := eta.Time.Date()
+	due := time.Date(year, month, day, 0, 0, 0, 0, location)
+	for remaining := leadDays; remaining > 0; {
+		due = due.AddDate(0, 0, -1)
+		if due.Weekday() == time.Saturday || due.Weekday() == time.Sunday {
+			continue
+		}
+		remaining--
+	}
+	return pgtype.Timestamptz{Time: due.UTC(), Valid: eta.Valid}
 }
 
 // GetArrivalReminderRules 返回某条船期当前启用的全部提前天数。
@@ -127,21 +221,7 @@ func (s *Service) UpdateArrivalReminderRules(ctx context.Context, tenantID, sche
 				return err
 			}
 		}
-		nodes, err := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: tenantID, ScheduleID: scheduleID})
-		if err != nil {
-			return err
-		}
-		var destinationID int64
-		for _, node := range nodes {
-			if node.NodeType == "DESTINATION" && node.IsActive {
-				destinationID = node.ID
-				break
-			}
-		}
-		if destinationID == 0 {
-			return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
-		}
-		if err = createConfiguredArrivalReminders(ctx, q, tenantID, scheduleID, destinationID, current.ResponsibleEmployeeID, current.EtaRevision, current.Eta); err != nil {
+		if err = createConfiguredTransportReminders(ctx, q, current); err != nil {
 			return err
 		}
 		toText := func(values []int32) string {
@@ -151,7 +231,7 @@ func (s *Service) UpdateArrivalReminderRules(ctx context.Context, tenantID, sche
 			}
 			return strings.Join(parts, ",")
 		}
-		return addChange(ctx, q, tenantID, scheduleID, "REMINDER", "arrival_reminder_days", toText(oldDays), toText(normalized), "修改到港提醒设置", op)
+		return addChange(ctx, q, tenantID, scheduleID, "REMINDER", "transport_reminder_days", toText(oldDays), toText(normalized), "修改运输提醒设置", op)
 	})
 	if err == nil {
 		s.wakeReminderWorker()
@@ -175,13 +255,17 @@ func reminderRetryAt(attempt int32, now time.Time) time.Time {
 
 // arrivalReminderLeadDays 从持久化的提醒类型（例如 ARRIVAL_14D）读取提前天数。
 // 无法识别的旧数据使用通用标题，避免再次显示错误的固定天数。
-func arrivalReminderLeadDays(reminderType string) (int32, bool) {
-	value := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(reminderType), "ARRIVAL_"), "D")
+func transportReminderType(reminderType string) (string, int32, bool) {
+	parts := strings.Split(strings.TrimSpace(reminderType), "_")
+	if len(parts) != 2 || (parts[0] != "ARRIVAL" && parts[0] != "DEPARTURE") {
+		return "", 0, false
+	}
+	value := strings.TrimSuffix(parts[1], "D")
 	days, err := strconv.ParseInt(value, 10, 32)
 	if err != nil || days < 0 {
-		return 0, false
+		return "", 0, false
 	}
-	return int32(days), true
+	return parts[0], int32(days), true
 }
 
 func arrivalReminderText(r store.GetDueArrivalReminderForUpdateRow, now time.Time) (string, string, string) {
@@ -191,23 +275,40 @@ func arrivalReminderText(r store.GetDueArrivalReminderForUpdateRow, now time.Tim
 		}
 		return strings.TrimSpace(v)
 	}
-	title := "船期即将到港"
+	eventType, _, _ := transportReminderType(r.ReminderType)
+	eventName := "到港"
+	if eventType == "DEPARTURE" {
+		eventName = "开船"
+	}
+	title := "船期即将" + eventName
 	if r.TargetEta.Valid {
 		today := now.UTC().Truncate(24 * time.Hour)
 		eta := r.TargetEta.Time.UTC().Truncate(24 * time.Hour)
 		days := int(eta.Sub(today) / (24 * time.Hour))
 		switch {
 		case days > 0:
-			title = fmt.Sprintf("船期预计 %d 天后到港", days)
+			title = fmt.Sprintf("船期预计 %d 天后%s", days, eventName)
 		case days == 0:
-			title = "船期预计今天到港"
+			title = "船期预计今天" + eventName
 		default:
 			title = fmt.Sprintf("船期预计已逾期 %d 天", -days)
 		}
 	}
-	content := fmt.Sprintf("船期编号：%s；合同编号：%s；客户：%s；船名/航次：%s / %s；目的港：%s；最新 ETA：%s",
+	portName := r.PortName
+	if strings.TrimSpace(portName) == "" {
+		portName = r.PortOfDischarge
+		if eventType == "DEPARTURE" {
+			portName = r.PortOfLoading
+		}
+	}
+	port := value(portName)
+	timeLabel := "预计到港（ETA）"
+	if eventType == "DEPARTURE" {
+		timeLabel = "预计离港（ETD）"
+	}
+	content := fmt.Sprintf("船期编号：%s；合同编号：%s；客户：%s；船名/航次：%s / %s；港口：%s；%s：%s",
 		value(r.ScheduleNo), value(r.ContractNo), value(r.CustomerName), value(r.VesselName),
-		value(r.VoyageNo), value(r.PortOfDischarge), dateText(r.TargetEta))
+		value(r.VoyageNo), port, timeLabel, dateText(r.TargetEta))
 	return title, content, fmt.Sprintf("/shipping/%d", r.ScheduleID)
 }
 
@@ -242,12 +343,12 @@ func (s *Service) ProcessDueArrivalReminders(ctx context.Context, batchSize int3
 			if getErr != nil {
 				return getErr
 			}
-			field := "arrival_reminder"
-			if days, ok := arrivalReminderLeadDays(candidate.ReminderType); ok {
-				field = fmt.Sprintf("arrival_%dd", days)
+			field := "transport_reminder"
+			if eventType, days, ok := transportReminderType(candidate.ReminderType); ok {
+				field = fmt.Sprintf("%s_%dd", strings.ToLower(eventType), days)
 			}
 			return addChange(ctx, q, candidate.TenantID, candidate.ScheduleID, "REMINDER", field, "", title,
-				"系统按最新 ETA 生成到港提醒", Operator{Name: "系统提醒任务"})
+				"系统按最新港口时间生成运输提醒", Operator{Name: "系统提醒任务"})
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -337,7 +438,7 @@ func (s *Service) MarkArrivalReminderRead(ctx context.Context, tenantID, employe
 		TenantID: tenantID, RecipientEmployeeID: employeeID, ID: reminderID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return store.ShippingArrivalReminder{}, apierr.NotFound("SHIPPING_REMINDER_NOT_FOUND", "到港提醒不存在")
+		return store.ShippingArrivalReminder{}, apierr.NotFound("SHIPPING_REMINDER_NOT_FOUND", "运输提醒不存在")
 	}
 	return row, err
 }

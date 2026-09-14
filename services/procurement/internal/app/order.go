@@ -33,9 +33,10 @@ const (
 // OrderLine is one requirement going onto an order, with the price agreed
 // with the supplier.
 type OrderLine struct {
-	RequirementID int64
-	Qty           string
-	UnitPrice     string
+	RequirementID    int64
+	Qty              string
+	UnitPrice        string
+	ExecutionQuoteID int64
 	// Filled by an Excel import. Ordinary order entry leaves it blank because
 	// the order line takes its unit directly from the selected requirement.
 	UomCode string
@@ -114,8 +115,9 @@ type receivedLine struct {
 // up, and stocking up belongs on a requirement of its own where it is visible
 // rather than buried inside a contract's order.
 type parsedOrderLine struct {
-	qty, price decimal.Decimal
-	uomCode    string
+	qty, price       decimal.Decimal
+	uomCode          string
+	executionQuoteID int64
 }
 
 type preparedOrder struct {
@@ -184,7 +186,7 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, require
 			return preparedOrder{}, apierr.Invalid("PO_LINE_DUPLICATED",
 				"同一采购需求在一张采购单里只能出现一次")
 		}
-		want[l.RequirementID] = parsedOrderLine{qty: qty, price: price, uomCode: strings.TrimSpace(l.UomCode)}
+		want[l.RequirementID] = parsedOrderLine{qty: qty, price: price, uomCode: strings.TrimSpace(l.UomCode), executionQuoteID: l.ExecutionQuoteID}
 		ids = append(ids, l.RequirementID)
 	}
 	return preparedOrder{in: in, want: want, ids: ids}, nil
@@ -225,6 +227,9 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	}
 
 	total := decimal.Zero
+	allExecutionRequote := true
+	executionContractNo := ""
+	var executionContractID int64
 	var quoteID, scenarioID, inheritedSupplierID, factoryID int64
 	var quoteNo, factoryCode, factoryName string
 	for _, r := range reqs {
@@ -251,7 +256,31 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				WithMeta("open", available.String())
 		}
 		total = total.Add(p.qty.Mul(p.price))
-		if r.Source == "CUSTOMER_QUOTATION" {
+		if r.Status != "WAITING_REQUOTE" {
+			allExecutionRequote = false
+		} else if executionContractNo == "" {
+			executionContractNo = r.ContractNo
+			executionContractID = r.ContractID
+		} else if executionContractNo != r.ContractNo {
+			return head, apierr.Invalid("PO_EXECUTION_CONTRACT_MIXED", "实单重新询价一次只能处理一份外销合同")
+		}
+		if r.Status == "WAITING_REQUOTE" {
+			if p.executionQuoteID == 0 {
+				return head, apierr.Invalid("PO_EXECUTION_QUOTE_REQUIRED", "请先在实单询价中选择工厂报价")
+			}
+			var quoteRequirementID, quoteSupplierID int64
+			var quoteCurrency, quotePrice string
+			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,unit_price::text FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice); err == pgx.ErrNoRows {
+				return head, apierr.Invalid("PO_EXECUTION_QUOTE_NOT_FOUND", "所选实单报价不存在，请刷新后重试")
+			} else if err != nil {
+				return head, err
+			}
+			quotedPrice, err := decimal.NewFromString(quotePrice)
+			if err != nil || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
+				return head, apierr.Invalid("PO_EXECUTION_QUOTE_MISMATCH", "采购订单草稿必须使用实单询价中选定的工厂、币种和单价")
+			}
+		}
+		if r.Source == "CUSTOMER_QUOTATION" && r.Status != "WAITING_REQUOTE" {
 			if quoteID == 0 {
 				quoteID, quoteNo, scenarioID = r.QuotationID, r.QuotationNo, r.CostScenarioID
 				inheritedSupplierID = r.InheritedSupplierID
@@ -311,13 +340,64 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		}
 	}
 
+	// A final requote may be generated again after an approver returns it, or
+	// after the browser only managed to create some of the supplier groups.
+	// Continue the existing editable document for this contract and supplier
+	// instead of trying to insert the same business document number again.
+	// This also makes the UI's multi-supplier loop safe to retry.
+	reusedExecutionDraft := false
+	if allExecutionRequote && executionContractID > 0 {
+		var existingID int64
+		var existingStatus string
+		err := tx.QueryRow(ctx, `SELECT id,status FROM purchase_orders
+			WHERE tenant_id=$1 AND business_type='PROCUREMENT' AND source_business_id=$2 AND supplier_id=$3
+			  AND status IN ('DRAFT','REJECTED','PENDING_APPROVAL')
+			ORDER BY id DESC LIMIT 1 FOR UPDATE`, tenantID, executionContractID, in.SupplierID).Scan(&existingID, &existingStatus)
+		if err != nil && err != pgx.ErrNoRows {
+			return head, err
+		}
+		if err == nil {
+			if existingStatus == poPending {
+				return head, apierr.Conflict("PO_EXECUTION_ALREADY_PENDING", "该工厂的采购单正在审批中，请勿重复生成")
+			}
+			updated, updateErr := q.UpdatePurchaseOrderDraft(ctx, store.UpdatePurchaseOrderDraftParams{
+				TenantID: tenantID, ID: existingID, SupplierID: in.SupplierID,
+				SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
+				PayableDueDate: in.PayableDueDate,
+				Currency:       in.Currency, TotalAmount: total.StringFixed(2),
+				ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
+				Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
+				DeliveryLocationType: in.DeliveryLocationType,
+				DeliveryPortID:       in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode,
+				DeliveryPortName: in.DeliveryPortName, WarehouseID: in.WarehouseID,
+				WarehouseName: in.WarehouseName, DeliveryAddress: in.DeliveryAddress,
+				SourceChangeReason: in.SourceChangeReason,
+			})
+			if updateErr != nil {
+				return head, updateErr
+			}
+			head = store.CreatePurchaseOrderRow(updated)
+			if _, updateErr = tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark)); updateErr != nil {
+				return head, updateErr
+			}
+			if updateErr = q.DeletePurchaseOrderItems(ctx, store.DeletePurchaseOrderItemsParams{TenantID: tenantID, PoID: head.ID}); updateErr != nil {
+				return head, updateErr
+			}
+			reusedExecutionDraft = true
+		}
+	}
+
 	// The number is drawn only once every line has passed. Asking earlier
 	// would burn one on each refusal, and refusals are routine here, so
 	// the order series would jump and look like lost paperwork.
-	for attempt := 0; attempt < 2; attempt++ {
-		no, err := s.numbering.Next(ctx, "PURCHASE_ORDER")
-		if err != nil {
-			return head, err
+	for attempt := 0; !reusedExecutionDraft && attempt < 2; attempt++ {
+		no := executionContractNo
+		var err error
+		if !allExecutionRequote || no == "" {
+			no, err = s.numbering.Next(ctx, "PURCHASE_ORDER")
+			if err != nil {
+				return head, err
+			}
 		}
 		// PostgreSQL marks a transaction failed after a unique violation. A
 		// savepoint lets us roll back only the collided insert and safely draw
@@ -330,7 +410,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			TenantID: tenantID, PoNo: no, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			PayableDueDate: in.PayableDueDate,
-			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
+			Currency:       in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, SourceQuotationID: quoteID, SourceQuotationNo: quoteNo,
 			SourceCostScenarioID: scenarioID, FactoryID: factoryID, FactoryCode: factoryCode, FactoryName: factoryName,
@@ -354,6 +434,12 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
 		}
 		return head, err
+	}
+	if allExecutionRequote && !reusedExecutionDraft {
+		_, err := tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark))
+		if err != nil {
+			return head, err
+		}
 	}
 	for _, r := range reqs {
 		p := want[r.ID]
@@ -433,7 +519,7 @@ func (s *Service) UpdateOrder(
 		total := decimal.Zero
 		for _, requirement := range reqs {
 			line := want[requirement.ID]
-			if requirement.Status != "PENDING" && requirement.Status != "PARTIALLY_ORDERED" {
+			if requirement.Status != "PENDING" && requirement.Status != "PARTIALLY_ORDERED" && requirement.Status != "WAITING_REQUOTE" {
 				return apierr.Invalid("PO_REQUIREMENT_CLOSED", "「"+requirement.ProductName+"」的采购需求已关闭，不能下单").
 					WithMeta("status", requirement.Status)
 			}
@@ -445,7 +531,7 @@ func (s *Service) UpdateOrder(
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
-			if requirement.Source == "CUSTOMER_QUOTATION" {
+			if requirement.Source == "CUSTOMER_QUOTATION" && requirement.Status != "WAITING_REQUOTE" {
 				// 换成另一份报价始终不行——那已经是另一笔生意了。换供应商
 				// 则与新建单一个规矩：写明原因就放行。
 				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID {
@@ -471,7 +557,7 @@ func (s *Service) UpdateOrder(
 			TenantID: tenantID, ID: id, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			PayableDueDate: in.PayableDueDate,
-			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
+			Currency:       in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
 			DeliveryLocationType: in.DeliveryLocationType,
@@ -732,7 +818,7 @@ func approvalRequirementConflict(
 	}
 	for _, it := range items {
 		r, ok := byID[it.RequirementID]
-		if !ok || (r.Status != "PENDING" && r.Status != "PARTIALLY_ORDERED") {
+		if !ok || (r.Status != "PENDING" && r.Status != "PARTIALLY_ORDERED" && r.Status != "WAITING_REQUOTE") {
 			return "采购需求「" + it.ProductName + "」已经关闭或被其他采购单占用，请重新建立采购单"
 		}
 		open, err := decimal.NewFromString(r.OpenQty)

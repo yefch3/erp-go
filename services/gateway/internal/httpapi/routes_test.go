@@ -70,24 +70,48 @@ func TestExistingContractTakeoverRouteIsRegistered(t *testing.T) {
 	}
 }
 
-// 流水删除那一组。少一条，页面上「删除」或「恢复」点了没反应——而且是
-// 静默的：前端拿到 404，catch 里只当成一次失败。
-func TestBankTransactionDeleteRoutesAreRegistered(t *testing.T) {
+func TestD7TravelReimbursementAndReferenceFxRoutes(t *testing.T) {
 	have := routeSet(t)
 	for _, want := range []string{
-		// 删是归档不是抹掉，理由必填。POST 而不是 DELETE：带 body 的 DELETE
-		// 在代理和客户端那层各家实现不一，丢掉 body 的后果是「你明明填了
-		// 理由，它说你没填」。
-		"POST /api/bank-transactions/{id}/delete",
-		// 误删之后重新登记同一笔会被流水号的唯一键挡住，而那行在列表里又
-		// 看不见——没有这条路，人只会觉得系统在胡说。
-		"POST /api/bank-transactions/{id}/restore",
-		// 改一行流水，理由必填、每处改动留痕。
-		"PUT /api/bank-transactions/{id}",
-		"GET /api/bank-transactions/{id}/changes",
+		"GET /api/travel-reimbursements", "POST /api/travel-reimbursements",
+		"PATCH /api/travel-reimbursements/{id}", "POST /api/travel-reimbursements/{id}/submit",
+		"POST /api/travel-reimbursements/{id}/files/presign", "POST /api/travel-reimbursements/{id}/files",
+		"POST /api/travel-reimbursements/{id}/pay", "POST /api/travel-reimbursements/{id}/payment/reverse",
+		"GET /api/fx/latest", "GET /api/fx/rates", "GET /api/fx/sync-status", "POST /api/fx/refresh",
+		"GET /api/fx/watched", "PUT /api/fx/watched",
 	} {
 		if !have[want] {
-			t.Errorf("路由没注册：%s", want)
+			t.Errorf("D7 路由没注册：%s", want)
+		}
+	}
+	for _, gone := range []string{"GET /api/fx/effective", "POST /api/fx/effective"} {
+		if have[gone] {
+			t.Errorf("有效汇率写入入口必须保持下线：%s", gone)
+		}
+	}
+}
+
+// D7 把银行流水收口为历史只读资料。写入口不得被顺手重新挂回。
+func TestRetiredBankTransactionWriteRoutesStayGone(t *testing.T) {
+	have := routeSet(t)
+	for _, gone := range []string{
+		"POST /api/bank-transactions",
+		"POST /api/bank-transactions/import",
+		"POST /api/bank-transactions/{id}/unmatch",
+		"POST /api/bank-transactions/{id}/attachment/presign",
+		"POST /api/bank-transactions/{id}/attachment",
+		"POST /api/bank-transactions/{id}/ownership",
+		"POST /api/bank-transactions/{id}/delete",
+		"POST /api/bank-transactions/{id}/restore",
+		"PUT /api/bank-transactions/{id}",
+	} {
+		if have[gone] {
+			t.Errorf("退役银行流水写入口又被注册：%s", gone)
+		}
+	}
+	for _, kept := range []string{"GET /api/bank-transactions", "GET /api/bank-transactions/{id}/changes"} {
+		if !have[kept] {
+			t.Errorf("历史只读入口丢失：%s", kept)
 		}
 	}
 }
@@ -98,14 +122,15 @@ func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 	// 和 frontend/src/pages/ReceivableDuePage.vue（待核销 / 已完成两页）
 	// 以及 BankTransactionsPage 的「收款账户」一一对应。
 	want := []string{
-		"GET /api/receivable-due",                  // 两页共用的列表，closed 参数翻面
-		"POST /api/receivable-due/{id}/receipts",   // 「记一笔收款」（手填，不连流水）
-		"POST /api/contract-receipts/{id}/reverse", // 冲销记错的那一笔
-		"POST /api/receivable-due/{id}/close",      // 「确认核销完成」（转到已完成页）
-		"POST /api/receivable-due/{id}/reopen",     // 「撤销完成」（回到待核销页）
-		"POST /api/receivable-due/{id}/due-date",   // 「改到期日」（合同的常规编辑口只对草稿开放）
-		"GET /api/contracts/{id}/receipts",         // 展开行看这张合同的收款明细
-		"GET /api/bank-accounts",                   // 「收款账户」（现在在银行流水页上）
+		"GET /api/receivable-due",                           // 两页共用的列表，closed 参数翻面
+		"POST /api/receivable-due/{id}/receipts",            // 「记一笔收款」（手填，不连流水）
+		"POST /api/contract-receipts/{id}/reverse",          // 冲销记错的那一笔
+		"POST /api/receivable-due/{id}/close",               // 「确认核销完成」（转到已完成页）
+		"POST /api/receivable-due/{id}/reopen",              // 「撤销完成」（回到待核销页）
+		"POST /api/receivable-due/{id}/due-date",            // 「改到期日」（合同的常规编辑口只对草稿开放）
+		"POST /api/receivable-due/{id}/execution-condition", // 财务确认合同可以进入执行队列
+		"GET /api/contracts/{id}/receipts",                  // 展开行看这张合同的收款明细
+		"GET /api/bank-accounts",                            // 「收款账户」（现在在银行流水页上）
 		"POST /api/bank-accounts",
 	}
 	for _, w := range want {
@@ -141,25 +166,6 @@ func TestRetiredReceiptQueueRoutesStayGone(t *testing.T) {
 		if have[gone] {
 			t.Errorf("%s 又回来了——收款对账那条写路径是有意撤掉的，"+
 				"核销现在只从「待核销」页走 /api/receivable-due/{id}/receipts", gone)
-		}
-	}
-}
-
-// 银行流水那一组同样要齐，而且**不能和收款对账用同一个地址**。
-func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
-	have := routeSet(t)
-	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
-	want := []string{
-		"GET /api/bank-transactions",         // 列表
-		"POST /api/bank-transactions",        // 「登记流水」（手工，CSV 之外的入口）
-		"POST /api/bank-transactions/import", // 「导入对账单 CSV」
-		// match / unmatch 已下线，见 TestRetiredSupplierPageRoutesStayGone。
-		"POST /api/bank-transactions/{id}/attachment/presign", // 传对账单：要直传地址
-		"POST /api/bank-transactions/{id}/attachment",         // 传对账单：传完登记 key
-	}
-	for _, w := range want {
-		if !have[w] {
-			t.Errorf("银行流水少了这条地址：%s", w)
 		}
 	}
 }

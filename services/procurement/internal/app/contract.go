@@ -113,6 +113,7 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate, Source: "CONTRACT",
 				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,
 				SourceUnitPrice: "0",
+				InitialStatus:   "WAITING_REQUOTE",
 			}
 			if len(snapshots) > 0 {
 				if err := applyContractProcurementSnapshot(e, line, line.Qty, snapshots[index], &params); err != nil {

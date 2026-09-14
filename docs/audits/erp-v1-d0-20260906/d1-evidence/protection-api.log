@@ -1,0 +1,12 @@
+D1 actor B1 employee=11
+D1 actor L1 employee=6
+D1 actor L2 employee=7
+D1 actor M1 employee=8
+D1 actor P1 employee=4
+D1 actor P2 employee=5
+D1 actor S1 employee=2
+D1 actor S2 employee=3
+D1 actor U1 employee=9
+A12 real gateway/export ACCEPTED protected inquiry=17 quotation=11
+A12 real gateway/export CONTRACT protected inquiry=18 quotation=12
+A10-A13 export committed/local rollback reported failure; retry cleared both, resubmit qty=7, P/L old revision rejected, old attachment rejected inquiry=19

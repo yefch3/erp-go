@@ -1,0 +1,15 @@
+{
+  "frontend": "http://127.0.0.1:25375",
+  "gateway": "http://127.0.0.1:28282",
+  "accounts": {
+    "claimant": { "email": "d6.l1@d5.example.test", "password": "D6-Acceptance-2026!" },
+    "departmentLeader": { "email": "b1@d5.example.test", "password": "D5-Acceptance-2026!" },
+    "financeLeader": { "email": "d6.f1@d5.example.test", "password": "D6-Acceptance-2026!" },
+    "unrelatedEmployee": { "email": "d6.p1@d5.example.test", "password": "D6-Acceptance-2026!" }
+  },
+  "fixture": {
+    "paidClaimNo": "TR-20260913-000003",
+    "department": "总部",
+    "amount": "CNY 680.50"
+  }
+}

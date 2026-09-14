@@ -12,7 +12,7 @@
 --
 -- lower()：登录时不分大小写找人，「ZhangSan」和「zhangsan」不能是两个账号。
 -- 上线前查过生产：22 个用户名零冲突。
-CREATE UNIQUE INDEX users_username_lower_idx ON users (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username));
 
 -- +goose Down
 DROP INDEX IF EXISTS users_username_lower_idx;

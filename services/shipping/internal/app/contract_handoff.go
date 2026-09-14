@@ -18,6 +18,18 @@ type ContractEffective struct {
 	CustomerID   int64                       `json:"customer_id"`
 	CustomerName string                      `json:"customer_name"`
 	Shipments    []ContractEffectiveShipment `json:"shipments"`
+	Items        []ContractEffectiveItem     `json:"items"`
+}
+
+type ContractEffectiveItem struct {
+	LineNo         int32  `json:"line_no"`
+	ContractItemID int64  `json:"contract_item_id"`
+	ProductCode    string `json:"product_code"`
+	ProductName    string `json:"product_name"`
+	Spec           string `json:"spec"`
+	Qty            string `json:"qty"`
+	UomCode        string `json:"uom_code"`
+	Remark         string `json:"remark"`
 }
 
 type ContractEffectiveShipment struct {
@@ -53,8 +65,21 @@ func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, even
 				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
 				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
 				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+				InitialStatus: "WAITING_REQUOTE",
 			}); err != nil {
 				return err
+			}
+			var handoffID int64
+			if err := tx.QueryRow(ctx, `SELECT id FROM contract_shipping_handoffs WHERE tenant_id=$1 AND contract_version_id=$2 AND batch_no=$3`, tenantID, event.VersionID, shipment.BatchNo).Scan(&handoffID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM contract_shipping_handoff_cargo WHERE tenant_id=$1 AND handoff_id=$2`, tenantID, handoffID); err != nil {
+				return err
+			}
+			for _, item := range event.Items {
+				if _, err := tx.Exec(ctx, `INSERT INTO contract_shipping_handoff_cargo (tenant_id,handoff_id,contract_item_id,line_no,product_code,product_name,specification,quantity,uom_code,remark) VALUES($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9,$10)`, tenantID, handoffID, item.ContractItemID, item.LineNo, item.ProductCode, item.ProductName, item.Spec, item.Qty, item.UomCode, item.Remark); err != nil {
+					return err
+				}
 			}
 		}
 		return q.SupersedeOldContractShippingHandoffs(ctx, store.SupersedeOldContractShippingHandoffsParams{

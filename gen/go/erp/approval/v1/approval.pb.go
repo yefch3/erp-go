@@ -178,7 +178,7 @@ type Node struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Seq   int32                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
 	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// ROLE, EMPLOYEE or MANAGER.
+	// ROLE, EMPLOYEE, MANAGER, DEPARTMENT_LEADER or FINANCE_MANAGER.
 	ApproverType string `protobuf:"bytes,3,opt,name=approver_type,json=approverType,proto3" json:"approver_type,omitempty"`
 	// Role id, employee id, or - for MANAGER - how far up the reporting line
 	// (1 is the submitter's own manager).

@@ -2,6 +2,7 @@ package grpcin
 
 import (
 	"context"
+	"github.com/sgao19/erp-go/pkg/apierr"
 
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
@@ -129,25 +130,7 @@ func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
 }
 
 func (h *SourcingHandler) CreateSalesPlan(ctx context.Context, req *prv1.CreateSalesPlanRequest) (*prv1.CreateSalesPlanResponse, error) {
-	in := app.NewSalesPlan{CaseID: req.GetCaseId(), ProcurementPlanID: req.GetProcurementPlanId(),
-		ShippingPlanID: req.GetShippingPlanId(), ValidUntil: req.GetValidUntil(),
-		CustomerNote: req.GetCustomerNote(), InternalNote: req.GetInternalNote()}
-	for _, row := range req.GetItems() {
-		in.Items = append(in.Items, app.SalesPlanItemInput{SourcingLineID: row.GetSourcingLineId(),
-			ProcurementPlanItemID: row.GetProcurementPlanItemId(), ShippingPlanItemID: row.GetShippingPlanItemId(),
-			OptionType: row.GetOptionType(), Priority: row.GetPriority(), CustomerCurrency: row.GetCustomerCurrency(),
-			CustomerUnitPrice: row.GetCustomerUnitPrice(), PromisedDeliveryDate: row.GetPromisedDeliveryDate(), LineNote: row.GetLineNote()})
-	}
-	for _, row := range req.GetShippingOptions() {
-		in.ShippingOptions = append(in.ShippingOptions, app.SalesShippingOptionInput{
-			ShippingPlanItemIDs: row.GetShippingPlanItemIds(), CustomerCurrency: row.GetCustomerCurrency(),
-			CustomerFreightAmount: row.GetCustomerFreightAmount(), CustomerNote: row.GetCustomerNote()})
-	}
-	view, err := h.svc.CreateSalesPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateSalesPlanResponse{SalesPlan: salesPlan(view)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价方案和补充任务操作已退出，请使用当前报价页面")
 }
 
 func (h *SourcingHandler) ListSalesPlans(ctx context.Context, req *prv1.ListSalesPlansRequest) (*prv1.ListSalesPlansResponse, error) {
@@ -199,13 +182,7 @@ func (h *SourcingHandler) CreateSalesProcurementRework(ctx context.Context, req 
 }
 
 func (h *SourcingHandler) CreateShippingRework(ctx context.Context, req *prv1.CreateShippingReworkRequest) (*prv1.CreateShippingReworkResponse, error) {
-	row, err := h.svc.CreateShippingRework(ctx, grpcx.TenantID(ctx), app.ShippingReworkInput{CaseID: req.GetCaseId(),
-		SalesPlanID: req.GetSalesPlanId(), SourcingLineID: req.GetSourcingLineId(), ShippingOptionLineID: req.GetShippingOptionLineId(),
-		RequestType: req.GetRequestType(), Reason: req.GetReason()}, sourcingOperator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &prv1.CreateShippingReworkResponse{ReworkRequest: shippingRework(row)}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价方案和补充任务操作已退出，请使用当前报价页面")
 }
 
 func (h *SourcingHandler) ListShippingReworks(ctx context.Context, req *prv1.ListShippingReworksRequest) (*prv1.ListShippingReworksResponse, error) {
@@ -233,11 +210,7 @@ func (h *SourcingHandler) ListMyShippingReworks(ctx context.Context, _ *prv1.Lis
 }
 
 func (h *SourcingHandler) ResolveShippingRework(ctx context.Context, req *prv1.ResolveShippingReworkRequest) (*prv1.ResolveShippingReworkResponse, error) {
-	in := app.ShippingReworkResolution{Note: req.GetResolutionNote(), Currency: req.GetFinalCurrency(), FreightAmount: req.GetFinalFreightAmount(), EstimatedDeparture: req.GetFinalEstimatedDeparture(), EstimatedArrival: req.GetFinalEstimatedArrival(), ValidUntil: req.GetFinalValidUntil()}
-	if err := h.svc.ResolveShippingRework(ctx, grpcx.TenantID(ctx), req.GetId(), in, sourcingOperator(ctx)); err != nil {
-		return nil, err
-	}
-	return &prv1.ResolveShippingReworkResponse{}, nil
+	return nil, apierr.Conflict("INQUIRY_WORKFLOW_RETIRED", "原询价方案和补充任务操作已退出，请使用当前报价页面")
 }
 
 func (h *SourcingHandler) ConfirmCustomerSelection(ctx context.Context, req *prv1.ConfirmCustomerSelectionRequest) (*prv1.ConfirmCustomerSelectionResponse, error) {

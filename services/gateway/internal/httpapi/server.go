@@ -360,14 +360,17 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/direct", s.createDirectContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing", s.importExistingContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing/files/presign", s.presignExistingContractFile)
 		r.With(s.perm("export:contract:write")).Put("/api/contracts/{id}", s.updateContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/submit", s.submitContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/change", s.changeContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/sign", s.signContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/complete", s.completeContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/cancel", s.cancelContract)
 		// Contract paperwork. The bytes never pass through here: the browser
 		// uploads straight to object storage with a signed URL.
 		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/files", s.listContractFiles)
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/approvals", s.contractApprovals)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files/presign", s.presignContractFile)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files", s.registerContractFile)
 		r.With(s.perm("export:contract:write")).Delete("/api/contract-files/{id}", s.removeContractFile)
@@ -393,6 +396,17 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}", s.getContractShippingHandoff)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/requote-options", s.listContractShippingRequoteOptions)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/draft", s.saveContractShippingRequoteDraft)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/select-draft", s.selectContractShippingRequoteDraft)
+		r.With(s.perm("shipping:schedule:write")).Delete("/api/shipping/contract-handoffs/{id}/requote-options/{optionID}", s.deleteContractShippingRequoteOption)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/requote", s.submitContractShippingRequote)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/contract/presign", s.presignContractShippingContract)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/contract", s.saveContractShippingContract)
+		r.With(s.perm("procurement:recon:write")).Post("/api/shipping/contract-handoffs/{id}/contract/verify", s.verifyContractShippingContract)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/payment-request", s.requestContractShippingPayment)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/payment-status", s.getContractShippingPaymentStatus)
 		// 售前任务列表属于船运操作台，而不是采购/销售的只读案件视图。
 		// 后两者通过各自的 sourcing case collaboration 接口查看结果，
 		// 不能凭普通船期只读权限进入船运人员的工作队列。
@@ -412,10 +426,19 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Post("/api/bl-reminders/read", s.markBLRemindersRead)
 		r.With(s.perm("shipping:schedule:read")).Delete("/api/shipping/reminders/expired", s.cleanupExpiredShippingArrivalReminders)
 		r.With(s.perm("shipping:schedule:read")).Post("/api/shipping/reminders/{reminderID}/read", s.markShippingArrivalReminderRead)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/reminder-preferences", s.getShippingReminderPreference)
+		r.With(s.perm("shipping:schedule:read")).Put("/api/shipping/reminder-preferences", s.updateShippingReminderPreference)
+		r.With(s.perm("shipping:schedule:read")).Post("/api/shipping/reminder-preferences/sync", s.syncShippingHolidayCalendars)
+		// 跨部门协同待办由 shipping 服务按当前员工严格隔离。采购收件人无需因此获得
+		// 整个船期模块的读取权限，也能在“我的待办”读取、标记和填写处理结果。
+		r.Get("/api/shipping/operational-alerts", s.listShippingOperationalAlerts)
+		r.Post("/api/shipping/operational-alerts/read", s.markShippingOperationalAlertsRead)
+		r.Post("/api/shipping/operational-alerts/{alertID}/resolve", s.resolveShippingOperationalAlert)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}", s.getShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/schedules", s.createShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}", s.updateShippingSchedule)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/reminder-rules", s.getShippingArrivalReminderRules)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/operational-alerts", s.listScheduleOperationalAlerts)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}/reminder-rules", s.updateShippingArrivalReminderRules)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/schedules/{id}/status", s.updateShippingScheduleStatus)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/schedules/{id}/cancel", s.cancelShippingSchedule)
@@ -454,12 +477,14 @@ func (s *Server) Router() http.Handler {
 		// {id} 一个是合同、一个是收款记录，所以地址前缀故意不同。
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/receipts", s.recordContractReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/manual", s.createManualReceivable)
+		r.With(s.perm("export:receipt:write")).Patch("/api/receivable-due/{id}/manual", s.updateManualReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/contract-receipts/{id}/reverse", s.reverseContractReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/close", s.closeReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/reopen", s.reopenReceivable)
 		// 事后改一份合同的应收到期日。合同的常规编辑口只对草稿开放、且只放
 		// 销售属主过，所以财务这条路自己开一个门，和「确认完成」并排。
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/due-date", s.setReceivableDueDate)
+		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/execution-condition", s.confirmContractExecutionCondition)
 		// 应收提醒按登录人隔离，同时要求具备收款读取权限，避免首页或徽标成为权限后门。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-reminders", s.listReceivableReminders)
 		r.With(s.perm("export:receipt:read")).Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)
@@ -478,7 +503,7 @@ func (s *Server) Router() http.Handler {
 		// How much of one contract has been collected. Gated on reading
 		// contracts rather than receipts: this is the salesperson's view of
 		// their own deal, not the finance queue.
-		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/receipts", s.getContractReceipts)
+		r.With(s.perm("export:receipt:read")).Get("/api/contracts/{id}/receipts", s.getContractReceipts)
 		// Handing a deal to somebody else is a supervisor's act, so it gets its
 		// own permission rather than riding on :write — the people who may edit
 		// their own documents are exactly the people who may not reassign them.
@@ -515,7 +540,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/confirm", s.confirmOutbound)
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
+		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}/execution-quotes", s.listExecutionSupplierQuotes)
+		r.With(s.perm("procurement:order:write")).Post("/api/requirements/execution-suppliers/resolve", s.resolveExecutionSupplier)
+		r.With(s.perm("procurement:order:write")).Post("/api/requirements/{id}/execution-quotes", s.saveExecutionSupplierQuote)
+		r.With(s.perm("procurement:order:write")).Delete("/api/requirements/{id}/execution-quotes/{quoteId}", s.deleteExecutionSupplierQuote)
 		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:order:write")).Post("/api/requirements/purchase-template/export", s.exportPurchaseTemplate)
+		r.Post("/api/inquiry-workspace", s.inquiryWorkspace)
+		r.Get("/api/inquiry-files", s.inquiryFile)
 		// 客户询盘由销售维护；客户选择项不因此开放完整客户档案菜单。
 		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options", s.listSourcingCustomerOptions)
 		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options/{id}/contacts", s.listSourcingCustomerContacts)
@@ -542,7 +573,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/participants", s.listSourcingParticipants)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/shipping-collaboration", s.getCaseShippingCollaboration)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases", s.createSourcingCase)
-		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-intakes/import", s.importSourcingIntake)
+		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-intakes/import", s.retiredInquiryAction)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases/{id}/lines", s.addSourcingLine)
 		// 标准询盘模板属于销售接收客户需求的工具。
 		r.With(s.perm("sales:inquiry:read")).Get("/api/inquiry-templates", s.listInquiryTemplates)
@@ -579,11 +610,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/confirm", s.confirmCostScenario)
 		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/submit-to-sales", s.submitCostToSales)
 		// 采购经理确认成本，到此采购责任结束；生成客户报价只由销售报价权限控制。
-		r.With(s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.createCustomerQuotationFromCost)
+		r.With(s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.retiredInquiryAction)
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/factory-rfqs/{id}/workbook", s.getFactoryRFQWorkbook)
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes/import", s.importSupplierQuoteWorkbook)
-		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.sendFactoryRFQ)
+		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.retiredInquiryAction)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
 		r.With(s.perm("procurement:requirement:exception")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)
@@ -608,12 +639,28 @@ func (s *Server) Router() http.Handler {
 		).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract/presign", s.presignOrderContract)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract", s.saveOrderContract)
+		r.With(s.perm("procurement:recon:write")).Post("/api/purchase-orders/{id}/contract/verify", s.verifyOrderContract)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/payment-request", s.requestOrderPayment)
 		r.With(s.perm("procurement:order:cancel")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/documents", s.getOrderDocuments)
 		r.With(s.perm("procurement:order:send")).Post("/api/purchase-orders/{id}/send", s.sendPurchaseOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/execution", s.getOrderExecution)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/supplier-confirmations", s.recordSupplierConfirmation)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
+		// D5 出厂前质检是采购交接给独立质检部门的业务任务，不走审批流。
+		r.With(s.perm("quality:task:request")).Post("/api/purchase-orders/{id}/quality-inspections", s.applyQualityInspection)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/quality-inspections", s.getOrderQualityInspections)
+		r.With(s.perm("procurement:order:read")).Get("/api/quality/procurement-todos", s.listQualityProcurementTodos)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/quality-inspections/handling", s.recordQualityProcurementHandling)
+		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks", s.listQualityTasks)
+		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks/{id}", s.getQualityTask)
+		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/start", s.startQualityTask)
+		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/rounds", s.submitQualityRound)
+		r.With(s.perm("quality:release:decide")).Post("/api/quality/tasks/{id}/release", s.decideQualityRelease)
+		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files/presign", s.presignQualityFile)
+		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files", s.registerQualityFile)
 
 		// 供应商这边只剩「供应商对账」一个界面：一张采购单一行，员工手填
 		// 核销数字、手动确认完成。发票页、付款页、往来汇总页都已下线。
@@ -621,6 +668,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/manual", s.createManualPayable)
+		r.With(s.perm("procurement:recon:write")).Patch("/api/supplier-recon/{id}/manual", s.updateManualPayable)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
@@ -633,6 +681,16 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files/presign", s.presignReconFile)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files", s.attachReconFile)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/files/{fileId}/remove", s.removeReconFile)
+		// 出差报销在“出账”内，但每位员工都可建立和查看自己的申请；服务层
+		// 仍按申请人隔离。财务的全量查看、付款和冲销另由 manage 权限控制。
+		r.Get("/api/travel-reimbursements", s.listTravelReimbursements)
+		r.Post("/api/travel-reimbursements", s.createTravelReimbursement)
+		r.Patch("/api/travel-reimbursements/{id}", s.updateTravelReimbursement)
+		r.Post("/api/travel-reimbursements/{id}/submit", s.submitTravelReimbursement)
+		r.Post("/api/travel-reimbursements/{id}/files/presign", s.presignTravelReimbursementFile)
+		r.Post("/api/travel-reimbursements/{id}/files", s.attachTravelReimbursementFile)
+		r.With(s.perm("procurement:reimbursement:manage")).Post("/api/travel-reimbursements/{id}/pay", s.markTravelReimbursementPaid)
+		r.With(s.perm("procurement:reimbursement:manage")).Post("/api/travel-reimbursements/{id}/payment/reverse", s.reverseTravelReimbursementPayment)
 
 		// ── 下面这三组地址整体下线了 ──────────────────────────
 		//
@@ -660,8 +718,6 @@ func (s *Server) Router() http.Handler {
 		// 手工登记一行流水。CSV 之外的另一条入口，RPC 早就有（收款对账那边
 		// 一直在用），只是网关从没给它开过 HTTP 路由——于是银行还没出对账单、
 		// 财务想先把一笔出账记下来的时候，唯一的办法是伪造一行 CSV 导进去。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions", s.recordBankTransaction)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		// **只留 unmatch，不留 match。** 匹配这件事下线了（付款单没有创建
 		// 入口，且和「流水只是记录」的新模型冲突），但**解开历史匹配**必须
 		// 留着：SetBankTransactionOwnership 那道闸遇到已匹配的行会拒绝，
@@ -669,7 +725,6 @@ func (s *Server) Router() http.Handler {
 		// 的指令，那些行的归属从此谁也改不了。
 		//
 		// 这和别处同一条纪律：新路不再走了，老数据的回退口子留着。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
 		// /api/bank-transactions/{id}/match 下线了。
 		//
 		// 它们是「把一行流水对上一张供应商付款单」，而付款单的唯一创建入口
@@ -681,19 +736,13 @@ func (s *Server) Router() http.Handler {
 		// 那些行还要读得出来（列表上照常显示付款单号）。
 		// 那份对账单（PDF）。挂在登记流水同一个权限下——能记这笔钱的人，
 		// 就该能把银行给的那张纸传上来。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment/presign", s.presignBankTransactionFile)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment", s.attachBankTransactionFile)
 		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
 		// 删一条流水——归档，不是抹掉。理由必填，所以是 POST 带 body 而不是
 		// DELETE：带 body 的 DELETE 在代理和客户端那层各家实现不一，丢掉
 		// body 的后果是「你明明填了理由，它说你没填」。
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/delete", s.deleteBankTransaction)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/restore", s.restoreBankTransaction)
 		// 改一行流水。理由必填，每处改动留痕（00047）。PUT 因为这是「把整行
 		// 替换成新的样子」；删除那边用 POST 是因为 DELETE 带 body 不可靠，
 		// PUT 没有这个问题。
-		r.With(s.perm("procurement:payment:write")).Put("/api/bank-transactions/{id}", s.updateBankTransaction)
 		// 这一行被改过什么。读，所以是 read 权限。
 		r.With(s.perm("procurement:payment:read")).Get("/api/bank-transactions/{id}/changes", s.listBankTransactionChanges)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
@@ -716,7 +765,9 @@ func (s *Server) Router() http.Handler {
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
-		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
+		// 审批服务会逐任务校验 assignee。部门负责人来自组织架构，未必另有
+		// “审批人”角色，因此这里不再用静态角色权限挡住本人收到的任务。
+		r.Post("/api/approvals/tasks/{id}/act", s.actOnTask)
 		// Reading where a document stands is not acting on it: the salesperson
 		// who submitted a contract needs to see it is waiting on the sales
 		// manager without any power to approve anything.
@@ -885,8 +936,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/keep-sent-copy", s.setKeepSentCopy)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
-		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
-		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
+		r.Post("/api/customer-offer", s.customerOffer)
+		// D7 汇率是全员可看的独立参考页；这些接口不写业务单据。
+		r.Get("/api/fx/latest", s.fxLatest)
+		r.Get("/api/fx/rates", s.fxRates)
+		r.Get("/api/fx/sync-status", s.fxSyncStatus)
+		r.Post("/api/fx/refresh", s.fxRefresh)
+		r.Get("/api/fx/watched", s.fxWatched)
+		r.With(s.perm("fx:rate:write")).Put("/api/fx/watched", s.fxUpdateWatched)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
 	})
 	return r

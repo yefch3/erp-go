@@ -24,6 +24,20 @@ func NewScopes(conn *grpc.ClientConn) *Scopes {
 	return &Scopes{client: iamv1.NewAccessServiceClient(conn)}
 }
 
+type People struct{ client iamv1.DirectoryServiceClient }
+
+func NewPeople(conn *grpc.ClientConn) *People {
+	return &People{client: iamv1.NewDirectoryServiceClient(conn)}
+}
+func (p *People) Employee(ctx context.Context, employeeID int64) (app.EmployeeIdentity, error) {
+	resp, err := p.client.GetEmployee(ctx, &iamv1.GetEmployeeRequest{Id: employeeID})
+	if err != nil {
+		return app.EmployeeIdentity{}, err
+	}
+	e := resp.GetEmployee()
+	return app.EmployeeIdentity{ID: e.GetId(), Name: e.GetName(), DepartmentName: e.GetDepartmentName()}, nil
+}
+
 func (s *Scopes) VisibleEmployees(ctx context.Context, employeeID int64, module string) (app.Visibility, error) {
 	resp, err := s.client.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: employeeID, Module: module})
 	if err != nil {
@@ -147,4 +161,12 @@ func (a *Approvals) Submit(ctx context.Context, in app.ApprovalSubmission) (int6
 		}
 	}
 	return 0, err
+}
+
+func (a *Approvals) Involved(ctx context.Context, employeeID int64, bizType string) ([]int64, error) {
+	resp, err := a.client.MyInvolvedDocuments(ctx, &apv1.MyInvolvedDocumentsRequest{EmployeeId: employeeID, BizType: bizType})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetBizIds(), nil
 }

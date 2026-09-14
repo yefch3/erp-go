@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
 
@@ -20,6 +21,10 @@ import (
 type Files interface {
 	PresignPut(ctx context.Context, key string) (url string, expires int32, err error)
 	PresignGet(ctx context.Context, key string) (string, error)
+}
+
+type FileVerifier interface {
+	Stat(context.Context, string) (int64, string, error)
 }
 
 // FileView is a stored file plus a link to fetch it.
@@ -58,6 +63,9 @@ func (s *Service) PresignContractFile(ctx context.Context, tenantID, contractID 
 	}
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return "", "", 0, err
+	}
+	if view.Contract.Status == "COMPLETED" {
+		return "", "", 0, apierr.Conflict("EX_CONTRACT_COMPLETED", "已完成合同仅可查看")
 	}
 	key = contractObjectKey(tenantID, contractID, fileName)
 	url, expires, err = s.files.PresignPut(ctx, key)
@@ -109,27 +117,59 @@ func (s *Service) RegisterContractFile(ctx context.Context, tenantID, contractID
 		versionID = view.Version.ID
 	}
 
-	id, err := s.q.CreateContractAttachment(ctx, store.CreateContractAttachmentParams{
-		TenantID: tenantID, ContractID: contractID, ContractVersionID: versionID,
-		Kind: kind, FileName: in.FileName, FileKey: in.Key,
-		ContentType: in.ContentType, SizeBytes: in.Size,
-		UploadedBy: op.ID, UploaderName: op.Name,
-		// Hardcoded, never read from the request. An employee holding a scan
-		// and an e-signature platform posting a completed envelope must stay
-		// distinguishable, and a field the client can set is not a
-		// distinction - it is a suggestion.
-		Source: SourceManual,
-	})
-	if err != nil {
-		if isUniqueViolation(err) {
-			return FileView{}, apierr.Conflict("EX_FILE_ALREADY_REGISTERED", "该文件已登记")
-		}
+	verifier, ok := s.files.(FileVerifier)
+	if !ok {
+		return FileView{}, apierr.Internal("EX_FILE_VERIFY_UNAVAILABLE", "文件校验服务不可用")
+	}
+	actualSize, actualType, err := verifier.Stat(ctx, in.Key)
+	if err != nil || actualSize <= 0 {
+		return FileView{}, apierr.Invalid("EX_FILE_NOT_UPLOADED", "文件尚未上传完成，请重新上传")
+	}
+	in.Size = actualSize
+	in.ContentType = actualType
+	var belongs bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 AND id=$3)`, tenantID, contractID, versionID).Scan(&belongs); err != nil {
 		return FileView{}, err
 	}
-	if kind == "SIGNED" && view.Contract.EntrySource == "EXISTING_CONTRACT" {
-		if err := s.q.ClearContractFilePending(ctx, store.ClearContractFilePendingParams{TenantID: tenantID, ID: contractID}); err != nil {
-			return FileView{}, err
+	if !belongs {
+		return FileView{}, apierr.Invalid("EX_FILE_VERSION", "附件版本不属于该合同")
+	}
+	var id int64
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: contractID})
+		if err != nil {
+			return err
 		}
+		if locked.Status == "COMPLETED" {
+			return apierr.Conflict("EX_CONTRACT_COMPLETED", "已完成合同仅可查看")
+		}
+		id, err = q.CreateContractAttachment(ctx, store.CreateContractAttachmentParams{
+			TenantID: tenantID, ContractID: contractID, ContractVersionID: versionID,
+			Kind: kind, FileName: in.FileName, FileKey: in.Key,
+			ContentType: in.ContentType, SizeBytes: in.Size,
+			UploadedBy: op.ID, UploaderName: op.Name,
+			// Hardcoded, never read from the request. An employee holding a scan
+			// and an e-signature platform posting a completed envelope must stay
+			// distinguishable, and a field the client can set is not a
+			// distinction - it is a suggestion.
+			Source: SourceManual,
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return apierr.Conflict("EX_FILE_ALREADY_REGISTERED", "该文件已登记")
+			}
+			return err
+		}
+		if kind == "SIGNED" && view.Contract.EntrySource == "EXISTING_CONTRACT" {
+			if err := q.ClearContractFilePending(ctx, store.ClearContractFilePendingParams{TenantID: tenantID, ID: contractID}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return FileView{}, err
 	}
 	row, err := s.q.GetContractAttachment(ctx, store.GetContractAttachmentParams{TenantID: tenantID, ID: id})
 	if err != nil {
@@ -187,23 +227,31 @@ func (s *Service) RemoveContractFile(ctx context.Context, tenantID, id int64, op
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return false, err
 	}
-	// The countersigned copy is why the contract is in force. Letting it be
-	// deleted afterwards would leave an effective contract with nothing behind
-	// it, which is exactly the state the upload requirement exists to prevent.
-	if att.Kind == "SIGNED" && view.Contract.CurrentVersionID != 0 {
-		return false, apierr.Conflict("EX_SIGNED_COPY_LOCKED",
-			"合同已生效，签署件是生效依据，不能删除")
-	}
-	rows, err := s.q.DeleteContractAttachment(ctx,
-		store.DeleteContractAttachmentParams{TenantID: tenantID, ID: id})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, apierr.NotFound("EX_FILE_NOT_FOUND", "文件不存在")
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: att.ContractID})
+		if err != nil {
+			return err
 		}
+		if locked.Status == "COMPLETED" {
+			return apierr.Conflict("EX_CONTRACT_COMPLETED", "已完成合同仅可查看")
+		}
+		// Serialize deletion with start execution: neither operation can leave
+		// an executing contract without its signed evidence.
+		if att.Kind == "SIGNED" && locked.CurrentVersionID != 0 {
+			return apierr.Conflict("EX_SIGNED_COPY_LOCKED", "合同已开始执行，签署件不能删除")
+		}
+		rows, err := q.DeleteContractAttachment(ctx, store.DeleteContractAttachmentParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return apierr.NotFound("EX_FILE_NOT_FOUND", "文件不存在")
+		}
+		return nil
+	})
+	if err != nil {
 		return false, err
-	}
-	if rows == 0 {
-		return false, apierr.NotFound("EX_FILE_NOT_FOUND", "文件不存在")
 	}
 	return true, nil
 }
@@ -216,4 +264,16 @@ func (s *Service) withDownloadURL(ctx context.Context, row store.ListContractAtt
 		return FileView{Row: row}
 	}
 	return FileView{Row: row, DownloadURL: url}
+}
+
+func (s *Service) PresignExistingContractFile(ctx context.Context, tenant int64, name string) (string, string, int32, error) {
+	if err := s.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return "", "", 0, err
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", "", 0, apierr.Invalid("EX_FILE_NAME_REQUIRED", "文件名必填")
+	}
+	key := strings.Replace(contractObjectKey(tenant, 0, name), fmt.Sprintf("contracts/%d/0/", tenant), fmt.Sprintf("contract-imports/%d/", tenant), 1)
+	url, expires, err := s.files.PresignPut(ctx, key)
+	return key, url, expires, err
 }

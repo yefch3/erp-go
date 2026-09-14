@@ -26,11 +26,13 @@ const (
 	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
 	ContractService_CreateContractFromQuotation_FullMethodName = "/erp.export.v1.ContractService/CreateContractFromQuotation"
 	ContractService_CreateContract_FullMethodName              = "/erp.export.v1.ContractService/CreateContract"
+	ContractService_PresignExistingContractFile_FullMethodName = "/erp.export.v1.ContractService/PresignExistingContractFile"
 	ContractService_ImportExistingContract_FullMethodName      = "/erp.export.v1.ContractService/ImportExistingContract"
 	ContractService_UpdateContract_FullMethodName              = "/erp.export.v1.ContractService/UpdateContract"
 	ContractService_SubmitContract_FullMethodName              = "/erp.export.v1.ContractService/SubmitContract"
 	ContractService_ChangeContract_FullMethodName              = "/erp.export.v1.ContractService/ChangeContract"
 	ContractService_SignContract_FullMethodName                = "/erp.export.v1.ContractService/SignContract"
+	ContractService_CompleteContract_FullMethodName            = "/erp.export.v1.ContractService/CompleteContract"
 	ContractService_CancelContract_FullMethodName              = "/erp.export.v1.ContractService/CancelContract"
 	ContractService_PresignContractFile_FullMethodName         = "/erp.export.v1.ContractService/PresignContractFile"
 	ContractService_RegisterContractFile_FullMethodName        = "/erp.export.v1.ContractService/RegisterContractFile"
@@ -66,6 +68,7 @@ type ContractServiceClient interface {
 	CreateContract(ctx context.Context, in *CreateContractRequest, opts ...grpc.CallOption) (*CreateContractResponse, error)
 	// Import a contract already signed outside the ERP and start only the work
 	// that remains at the hand-over point.
+	PresignExistingContractFile(ctx context.Context, in *PresignExistingContractFileRequest, opts ...grpc.CallOption) (*PresignExistingContractFileResponse, error)
 	ImportExistingContract(ctx context.Context, in *ImportExistingContractRequest, opts ...grpc.CallOption) (*ImportExistingContractResponse, error)
 	// Edit a draft, or correct the non-financial header/terms of a manually
 	// imported existing contract. Executed quantities and priced lines remain
@@ -77,6 +80,7 @@ type ContractServiceClient interface {
 	ChangeContract(ctx context.Context, in *ChangeContractRequest, opts ...grpc.CallOption) (*ChangeContractResponse, error)
 	// Record the customer's signature; this is what makes a version effective.
 	SignContract(ctx context.Context, in *SignContractRequest, opts ...grpc.CallOption) (*SignContractResponse, error)
+	CompleteContract(ctx context.Context, in *CompleteContractRequest, opts ...grpc.CallOption) (*CompleteContractResponse, error)
 	CancelContract(ctx context.Context, in *CancelContractRequest, opts ...grpc.CallOption) (*CancelContractResponse, error)
 	// Files: the drafted PDF and the copy the customer signed and sent back.
 	// Uploads go straight to object storage; the service only signs the URL
@@ -170,6 +174,16 @@ func (c *contractServiceClient) CreateContract(ctx context.Context, in *CreateCo
 	return out, nil
 }
 
+func (c *contractServiceClient) PresignExistingContractFile(ctx context.Context, in *PresignExistingContractFileRequest, opts ...grpc.CallOption) (*PresignExistingContractFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignExistingContractFileResponse)
+	err := c.cc.Invoke(ctx, ContractService_PresignExistingContractFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *contractServiceClient) ImportExistingContract(ctx context.Context, in *ImportExistingContractRequest, opts ...grpc.CallOption) (*ImportExistingContractResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportExistingContractResponse)
@@ -214,6 +228,16 @@ func (c *contractServiceClient) SignContract(ctx context.Context, in *SignContra
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SignContractResponse)
 	err := c.cc.Invoke(ctx, ContractService_SignContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) CompleteContract(ctx context.Context, in *CompleteContractRequest, opts ...grpc.CallOption) (*CompleteContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteContractResponse)
+	err := c.cc.Invoke(ctx, ContractService_CompleteContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +340,7 @@ type ContractServiceServer interface {
 	CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error)
 	// Import a contract already signed outside the ERP and start only the work
 	// that remains at the hand-over point.
+	PresignExistingContractFile(context.Context, *PresignExistingContractFileRequest) (*PresignExistingContractFileResponse, error)
 	ImportExistingContract(context.Context, *ImportExistingContractRequest) (*ImportExistingContractResponse, error)
 	// Edit a draft, or correct the non-financial header/terms of a manually
 	// imported existing contract. Executed quantities and priced lines remain
@@ -327,6 +352,7 @@ type ContractServiceServer interface {
 	ChangeContract(context.Context, *ChangeContractRequest) (*ChangeContractResponse, error)
 	// Record the customer's signature; this is what makes a version effective.
 	SignContract(context.Context, *SignContractRequest) (*SignContractResponse, error)
+	CompleteContract(context.Context, *CompleteContractRequest) (*CompleteContractResponse, error)
 	CancelContract(context.Context, *CancelContractRequest) (*CancelContractResponse, error)
 	// Files: the drafted PDF and the copy the customer signed and sent back.
 	// Uploads go straight to object storage; the service only signs the URL
@@ -371,6 +397,9 @@ func (UnimplementedContractServiceServer) CreateContractFromQuotation(context.Co
 func (UnimplementedContractServiceServer) CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateContract not implemented")
 }
+func (UnimplementedContractServiceServer) PresignExistingContractFile(context.Context, *PresignExistingContractFileRequest) (*PresignExistingContractFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignExistingContractFile not implemented")
+}
 func (UnimplementedContractServiceServer) ImportExistingContract(context.Context, *ImportExistingContractRequest) (*ImportExistingContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportExistingContract not implemented")
 }
@@ -385,6 +414,9 @@ func (UnimplementedContractServiceServer) ChangeContract(context.Context, *Chang
 }
 func (UnimplementedContractServiceServer) SignContract(context.Context, *SignContractRequest) (*SignContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignContract not implemented")
+}
+func (UnimplementedContractServiceServer) CompleteContract(context.Context, *CompleteContractRequest) (*CompleteContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompleteContract not implemented")
 }
 func (UnimplementedContractServiceServer) CancelContract(context.Context, *CancelContractRequest) (*CancelContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelContract not implemented")
@@ -554,6 +586,24 @@ func _ContractService_CreateContract_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ContractService_PresignExistingContractFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignExistingContractFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).PresignExistingContractFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_PresignExistingContractFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).PresignExistingContractFile(ctx, req.(*PresignExistingContractFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ContractService_ImportExistingContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportExistingContractRequest)
 	if err := dec(in); err != nil {
@@ -640,6 +690,24 @@ func _ContractService_SignContract_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ContractServiceServer).SignContract(ctx, req.(*SignContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_CompleteContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).CompleteContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_CompleteContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).CompleteContract(ctx, req.(*CompleteContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -806,6 +874,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ContractService_CreateContract_Handler,
 		},
 		{
+			MethodName: "PresignExistingContractFile",
+			Handler:    _ContractService_PresignExistingContractFile_Handler,
+		},
+		{
 			MethodName: "ImportExistingContract",
 			Handler:    _ContractService_ImportExistingContract_Handler,
 		},
@@ -824,6 +896,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SignContract",
 			Handler:    _ContractService_SignContract_Handler,
+		},
+		{
+			MethodName: "CompleteContract",
+			Handler:    _ContractService_CompleteContract_Handler,
 		},
 		{
 			MethodName: "CancelContract",

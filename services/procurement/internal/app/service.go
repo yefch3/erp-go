@@ -59,6 +59,19 @@ type Approvals interface {
 	Submit(ctx context.Context, in ApprovalSubmission) (int64, error)
 }
 
+type approvalInvolvement interface {
+	Involved(ctx context.Context, employeeID int64, bizType string) ([]int64, error)
+}
+
+type People interface {
+	Employee(ctx context.Context, employeeID int64) (EmployeeIdentity, error)
+}
+
+type EmployeeIdentity struct {
+	ID                   int64
+	Name, DepartmentName string
+}
+
 // Suppliers resolves the current master-data record before an order snapshot
 // is written. Names and codes sent by a browser are display values, not facts.
 type Suppliers interface {
@@ -112,12 +125,14 @@ type ApprovalSubmission struct {
 
 // Deps are the outside services procurement talks to.
 type Deps struct {
-	Numbering  Numbering
-	Approvals  Approvals
-	Suppliers  Suppliers
-	Warehouses Warehouses
-	Rates      Rates
-	Scopes     Scopes
+	InquiryDocuments InquiryDocuments
+	Numbering        Numbering
+	Approvals        Approvals
+	Suppliers        Suppliers
+	Warehouses       Warehouses
+	Rates            Rates
+	Scopes           Scopes
+	People           People
 	// Optional in tests; main always wires it. Nil degrades attachment
 	// endpoints to a clean error instead of a panic.
 	Files Files
@@ -129,17 +144,19 @@ type Deps struct {
 }
 
 type Service struct {
-	pool       *pgxpool.Pool
-	q          *store.Queries
-	numbering  Numbering
-	approvals  Approvals
-	suppliers  Suppliers
-	warehouses Warehouses
-	rates      Rates
-	scopes     Scopes
-	files      Files
-	live       *livefeed.Publisher
-	log        *slog.Logger
+	inquiryDocuments InquiryDocuments
+	pool             *pgxpool.Pool
+	q                *store.Queries
+	numbering        Numbering
+	approvals        Approvals
+	suppliers        Suppliers
+	warehouses       Warehouses
+	rates            Rates
+	scopes           Scopes
+	files            Files
+	live             *livefeed.Publisher
+	log              *slog.Logger
+	people           People
 
 	// Three-way-match tolerance, zero unless the operator widens it.
 	// See UseMatchTolerance for what the two numbers mean.
@@ -153,10 +170,11 @@ type Service struct {
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
-		pool: pool, q: store.New(pool),
+		inquiryDocuments: d.InquiryDocuments,
+		pool:             pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
 		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates,
-		scopes: d.Scopes, files: d.Files, live: d.Live, log: orDefaultLog(d.Log),
+		scopes: d.Scopes, people: d.People, files: d.Files, live: d.Live, log: orDefaultLog(d.Log),
 	}
 }
 
