@@ -361,12 +361,16 @@ func TestSupplierReconFileRoutesAreAllRegistered(t *testing.T) {
 	}
 }
 
-// Word / Excel 预览是一条新地址。少了它，前端点「预览」拿到 404，而 catch
-// 里只会说一句「预览失败」——看不出是路由没注册还是文件转不了。
-func TestOfficeAttachmentPreviewRouteIsRegistered(t *testing.T) {
-	const want = "POST /api/inbound-mails/{id}/attachments/{attachmentId}/preview"
-	if !routeSet(t)[want] {
-		t.Fatalf("缺少路由：%s", want)
+// 「先转成 PDF 再预览」那条路 2026-09-14 退役了（在线 Office 接管之后它
+// 走不到），路由也撤了。
+//
+// 反过来钉住：**它不该再回来**。这条断言看着多余，但撤路由和撤前端是两次
+// 改动，而把一条没有实现的路由留在表上，症状是点了预览拿到一句
+// MAIL_PREVIEW_RETIRED——比 404 更难查，因为它看起来像"功能还在，只是坏了"。
+func TestRetiredPdfPreviewRouteIsGone(t *testing.T) {
+	const gone = "POST /api/inbound-mails/{id}/attachments/{attachmentId}/preview"
+	if routeSet(t)[gone] {
+		t.Fatalf("这条路由已经退役，不该还在：%s", gone)
 	}
 }
 

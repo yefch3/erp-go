@@ -66,13 +66,6 @@ type Config struct {
 	// Redis, for pushing "new mail" hints to open browser tabs.
 	RedisAddr string
 
-	// Where the document converter listens. Empty turns off preview of Word
-	// and Excel attachments and nothing else: those files stay listed and
-	// stay downloadable, the preview button just says it is not configured.
-	GotenbergURL string
-	// How long to wait for one conversion. A document can keep LibreOffice
-	// busy indefinitely, and this request is hanging off somebody's click.
-	GotenbergTimeout time.Duration
 	// 在线 Office（OnlyOffice Document Server）。DocsURL 是浏览器加载编辑器的
 	// 地址（生产上是前门 nginx 转发的 /docs）；DocsJWTSecret 是签配置的密钥，
 	// 必须和 docs 容器的 JWT_SECRET 一致。**没有默认值**：一把能从仓库里读到
@@ -144,8 +137,6 @@ func Load() Config {
 		DialTimeout:         envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
 		SyncHistory:         envInt("MAIL_SYNC_HISTORY", 500),
 		RedisAddr:           os.Getenv("REDIS_ADDR"),
-		GotenbergURL:        os.Getenv("GOTENBERG_URL"),
-		GotenbergTimeout:    envDuration("GOTENBERG_TIMEOUT", 60*time.Second),
 		DocsURL:             os.Getenv("DOCS_URL"),
 		DocsJWTSecret:       os.Getenv("DOCS_JWT_SECRET"),
 		OfficeInternalURL:   os.Getenv("OFFICE_INTERNAL_URL"),

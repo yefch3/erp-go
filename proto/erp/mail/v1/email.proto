@@ -148,7 +148,14 @@ service EmailService {
   // 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
   // 前端据此退回纯文本那条路。
   rpc CleanPastedTable(CleanPastedTableRequest) returns (CleanPastedTableResponse);
-  rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
+  // **已退役（2026-09-14）。** 办公文档现在直接在在线 Office 里打开，不再
+  // 先转成 PDF；实现已经撤掉，调它会得到 MAIL_PREVIEW_RETIRED。
+  //
+  // 留在这儿只是因为 proto 用 FILE 档的兼容检查——从文件里删一个 rpc 是破坏性
+  // 变更。按仓库的两版规矩，下一版把它和下面那两个 message 一起拿掉。
+  rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse) {
+    option deprecated = true;
+  }
   // 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
   // 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
   rpc OfficePreviewConfig(OfficePreviewConfigRequest) returns (OfficePreviewConfigResponse);
@@ -354,10 +361,11 @@ message InboundAttachment {
   // 怎么预览这个附件。空 = 不能预览，只能下载。
   //
   // "direct"  preview_url 已经填好，直接显示（图片、PDF）。
-  // "office" 在线 Office 里打开（配了 OnlyOffice 时办公文档都是这一档）：
-  // 调 OfficePreviewConfig 拿配置。
-  // "convert" 要先转成 PDF：调 PreviewInboundAttachment 拿地址。转换在服务器
-  //           上做，第一次几百毫秒，之后有缓存。Word / Excel / PPT 走这条。
+  // "office"  在线 Office 里打开：调 OfficePreviewConfig 拿配置。配了
+  //           OnlyOffice 时，Word / Excel / PPT 都是这一档。
+  //
+  // 从前还有 "convert"——先转成 PDF 再看。2026-09-14 连同 Gotenberg 一起
+  // 退役，**服务端不再产生这个值**；收到它的客户端该当成"不能预览"。
   string preview_kind = 8;
   // 这个附件在浏览器里被改过几回。0 = 没人改过。
   //
@@ -482,7 +490,13 @@ message CleanPastedTableResponse {
   string table = 1;
 }
 
+// 已退役，见上面那个 rpc。
+//
+// 这两个 message **不加 deprecated**：处理器的签名必须引用它们（gRPC 接口要
+// 求实现每一个方法），一标弃用 staticcheck 就会因为"用了弃用的类型"把 lint
+// 拦下来。弃用标在 rpc 上，意思已经到了。
 message PreviewInboundAttachmentRequest {
+
   // 附件所属的那封信。权限跟着信走，不跟着附件走：附件 id 是猜得出来的。
   int64 inbound_id = 1;
   int64 attachment_id = 2;
@@ -513,6 +527,7 @@ message OfficePreviewConfigResponse {
   int32 version = 5;
 }
 message PreviewInboundAttachmentResponse {
+
   // 签过名的、有时限的地址，内容是转好的 PDF。
   string preview_url = 1;
 }

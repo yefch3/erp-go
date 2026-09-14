@@ -183,7 +183,6 @@
         </div>
         <MailAttachments
           :files="mail.attachments"
-          :converting="converting"
           :mail-id="String(mail.id)"
           @preview="openPreview"
         />
@@ -217,7 +216,7 @@ import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
-import { isOfficePreview, isSheetPreview, needsConversion } from '../lib/attachmentPreview'
+import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
 import { plainTextToHtml } from '../lib/linkifyText'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import '../styles/mailbox.css'
@@ -313,7 +312,6 @@ const mail = ref<WindowMail | null>(null)
 const loading = ref(true)
 const failed = ref(false)
 const detailsOpen = ref(false)
-const converting = ref('')
 const bundling = ref(false)
 const composing = ref(false)
 const composer = ref<{
@@ -523,9 +521,8 @@ async function downloadAll() {
 }
 
 // 预览一律新开一个标签页，和邮件页那边同一条规矩（见 EmailsPage 的
-// openPreview，那儿写着三条路各自的理由）。表格自己解自己画，不经过服务器；
-// Word/PPT 还得先转一趟 PDF。
-async function openPreview(a: MailFile) {
+// openPreview，那儿写着几条路各自的理由）。
+function openPreview(a: MailFile) {
   if (!mail.value) return
   if (isOfficePreview(a)) {
     window.open(router.resolve({ path: `/mail/${mail.value.id}/office/${a.id}` }).href, `office-${a.id}`)?.focus()
@@ -535,30 +532,7 @@ async function openPreview(a: MailFile) {
     window.open(router.resolve({ path: `/mail/${mail.value.id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()
     return
   }
-  if (!needsConversion(a)) {
-    if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
-    return
-  }
-  if (converting.value) return
-  // 先占住标签页（此刻还在这次点击的手势里），转好了再把地址填进去。
-  const tab = window.open('', `preview-${a.id}`)
-  converting.value = a.id
-  try {
-    const resp = await post<{ previewUrl?: string }>(
-      `/inbound-mails/${mail.value.id}/attachments/${a.id}/preview`,
-    )
-    if (!resp?.previewUrl) throw new Error('no url')
-    // 记在附件上：同一份文件第二次点是直接开的，连请求都不发。阅读区那边
-    // 也是这么做的。
-    a.previewUrl = resp.previewUrl
-    if (tab) tab.location.replace(resp.previewUrl)
-    else window.open(resp.previewUrl, '_blank', 'noopener')
-  } catch {
-    // 转不了的理由后端已经用消息说了，拦截器会弹；这里不再叠一层。
-    tab?.close()
-  } finally {
-    converting.value = ''
-  }
+  if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
 }
 
 function avatarStyle(email: string) {

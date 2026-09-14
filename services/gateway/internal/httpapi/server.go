@@ -853,10 +853,6 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
-		// Word / Excel / PPT 的预览：转成 PDF 再看。POST 因为第一次真的会
-		// 干活（转换并写进对象存储），之后是缓存命中。
-		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
-			Post("/api/inbound-mails/{id}/attachments/{attachmentId}/preview", s.previewInboundAttachment)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Get("/api/inbound-mails/{id}/attachments/{attachmentId}/office", s.officePreviewConfig)
 		// 一次把这封信的附件全下载下来。生产上 835 封信带 3 个以上附件，

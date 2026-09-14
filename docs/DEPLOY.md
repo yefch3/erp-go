@@ -119,7 +119,7 @@ Connection ""`，上层那三行代理头对它**全部失效**——包括 `X-F
 | `FRONTEND_BASE_URL` | 激活链接里的域名，必须是外面能打开的那个 |
 | `MAIL_PUBLIC_BASE_URL` | 发出去的邮件里图片的地址，同上 |
 | `DOCS_JWT_SECRET` | 在线 Office（OnlyOffice 的 `docs` 容器）的门锁：邮件服务用它签"打开这个文件"的配置，容器用它验。**必填，没有它部署停在第一步**——那台容器会主动出去取文件，门锁不能是可选的。`openssl rand -hex 32` |
-| `DOCS_URL` | 在线 Office 的开关。默认空 = 关着，附件预览走"转成 PDF"那条老路。把 `deploy/host-nginx.conf` 里那段 `location /docs/` 放到服务器上、reload 之后，写 `DOCS_URL=/docs`，下一次部署就亮。**顺序不能反**：先亮后放 nginx，预览按钮会指向一个 404 |
+| `DOCS_URL` | 在线 Office 的开关。**默认空 = 办公文档没有预览，只能下载**——转成 PDF 那条老路（Gotenberg）2026-09-14 退役了，没有第二条路。把 `deploy/host-nginx.conf` 里那段 `location /docs/` 放到服务器上、reload 之后，写 `DOCS_URL=/docs`，下一次部署就亮。**顺序不能反**：先亮后放 nginx，预览按钮会指向一个 404 |
 | `OFFICE_INTERNAL_URL` | `docs` 容器从容器网里怎么找回邮件服务：取附件、把改完的存回来。默认 `http://mail:9011` 就是对的，一般不用写。这个口**不发布到宿主机**（compose 里是 `expose` 不是 `ports`），nginx 里也没有任何一条 location 指向它——它是一个会写文件的口，不能站在前门后面。空 = 在线 Office 整个关掉（不是"只读"） |
 
 ### 智能转换的单价（选填，但不填就看不见钱）

@@ -11,14 +11,14 @@ import (
 // 而那一天没人会想起来是这里松的。
 func TestPastedTableDropsAnythingDangerous(t *testing.T) {
 	cases := map[string]string{
-		"脚本": `<table><tr><td><script>alert(1)</script>a</td></tr></table>`,
+		"脚本":    `<table><tr><td><script>alert(1)</script>a</td></tr></table>`,
 		"事件处理器": `<table><tr><td onclick="steal()" onmouseover="x()">a</td></tr></table>`,
 		"图片（外链会泄露「这封信被打开了」，Word 的是本地路径）": `<table><tr><td><img src="https://tracker.example/x.gif">a</td></tr></table>`,
-		"iframe":     `<table><tr><td><iframe src="https://evil.example"></iframe>a</td></tr></table>`,
+		"iframe":        `<table><tr><td><iframe src="https://evil.example"></iframe>a</td></tr></table>`,
 		"javascript 链接": `<table><tr><td><a href="javascript:alert(1)">a</a></td></tr></table>`,
 		"data 链接":       `<table><tr><td><a href="data:text/html,<script>alert(1)</script>">a</a></td></tr></table>`,
-		"表单":             `<table><tr><td><form action="https://evil.example"><input name="p"></form>a</td></tr></table>`,
-		"style 块":        `<table><tr><td><style>body{display:none}</style>a</td></tr></table>`,
+		"表单":            `<table><tr><td><form action="https://evil.example"><input name="p"></form>a</td></tr></table>`,
+		"style 块":       `<table><tr><td><style>body{display:none}</style>a</td></tr></table>`,
 	}
 	for name, in := range cases {
 		out := CleanPastedTable(in)

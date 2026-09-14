@@ -234,6 +234,12 @@ type EmailServiceClient interface {
 	// 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
 	// 前端据此退回纯文本那条路。
 	CleanPastedTable(ctx context.Context, in *CleanPastedTableRequest, opts ...grpc.CallOption) (*CleanPastedTableResponse, error)
+	// Deprecated: Do not use.
+	// **已退役（2026-09-14）。** 办公文档现在直接在在线 Office 里打开，不再
+	// 先转成 PDF；实现已经撤掉，调它会得到 MAIL_PREVIEW_RETIRED。
+	//
+	// 留在这儿只是因为 proto 用 FILE 档的兼容检查——从文件里删一个 rpc 是破坏性
+	// 变更。按仓库的两版规矩，下一版把它和下面那两个 message 一起拿掉。
 	PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error)
 	// 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
 	// 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
@@ -829,6 +835,7 @@ func (c *emailServiceClient) CleanPastedTable(ctx context.Context, in *CleanPast
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *emailServiceClient) PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PreviewInboundAttachmentResponse)
@@ -1243,6 +1250,12 @@ type EmailServiceServer interface {
 	// 认不出表格就回空串——那不是错误，粘一段普通文字进来本来就走不到这里，
 	// 前端据此退回纯文本那条路。
 	CleanPastedTable(context.Context, *CleanPastedTableRequest) (*CleanPastedTableResponse, error)
+	// Deprecated: Do not use.
+	// **已退役（2026-09-14）。** 办公文档现在直接在在线 Office 里打开，不再
+	// 先转成 PDF；实现已经撤掉，调它会得到 MAIL_PREVIEW_RETIRED。
+	//
+	// 留在这儿只是因为 proto 用 FILE 档的兼容检查——从文件里删一个 rpc 是破坏性
+	// 变更。按仓库的两版规矩，下一版把它和下面那两个 message 一起拿掉。
 	PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error)
 	// 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
 	// 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。

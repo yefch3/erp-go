@@ -34,14 +34,9 @@
         :show-after="0"
         :hide-after="0"
       >
-        <button
-          type="button"
-          class="fbtn preview"
-          :disabled="converting === a.id"
-          @click="emit('preview', a, mailId ?? '')"
-        >
-          <el-icon><Loading v-if="converting === a.id" /><View v-else /></el-icon>
-          <span>{{ converting === a.id ? t('emails.converting') : t('emails.previewFile') }}</span>
+        <button type="button" class="fbtn preview" @click="emit('preview', a, mailId ?? '')">
+          <el-icon><View /></el-icon>
+          <span>{{ t('emails.previewFile') }}</span>
         </button>
       </el-tooltip>
       <el-tooltip
@@ -61,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { Download, Loading, Paperclip, View } from '@element-plus/icons-vue'
+import { Download, Paperclip, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { humanSize } from '../lib/humanSize'
 import { canPreview } from '../lib/attachmentPreview'
@@ -83,9 +78,6 @@ export interface MailFile {
 
 defineProps<{
   files: MailFile[]
-  // 正在转换的那个附件的 id。转换要往返服务器，按钮得说一声自己在忙，
-  // 不然第一次点 Word 的人会以为没反应，然后连点。
-  converting?: string
   // 这些附件属于哪封信。会话视图里一屏有好几封，各是各的号——用当前打开的
   // 那一封去请求，转出来的会是别人的附件。空表示这一组不支持转换预览
   // （我们自己发出去的那些）。

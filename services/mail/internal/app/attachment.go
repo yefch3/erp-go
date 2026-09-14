@@ -1,15 +1,27 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io"
 	"path"
 	"strings"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
+)
+
+// PreviewKind 的取值。空表示不能预览，只能下载。
+//
+// 从前还有第三档 "convert"——先在服务器上转成 PDF 再看。在线 Office 上线之后
+// 它变成了走不到的死路：转 PDF 认的那十种扩展名是在线 Office 认的十二种的
+// **子集**，而判断顺序是先问 Office。2026-09-14 连同 Gotenberg 一起退役。
+const (
+	// 地址已经填好，浏览器直接就能显示：图片和 PDF。
+	PreviewDirect = "direct"
 )
 
 // Size caps. Not arbitrary: recipient servers commonly refuse a message much
@@ -61,12 +73,12 @@ type Attachment struct {
 	// page, and safe to render from the storage origin. Empty otherwise, which
 	// is how the UI knows not to offer a preview it cannot honour.
 	PreviewURL string
-	// 怎么预览：""（不能）、"direct"（PreviewURL 已经能用）、"convert"
-	// （办公文档，要先调 PreviewInboundAttachment 转一次）。
+	// 怎么预览：""（不能）、"direct"（PreviewURL 已经能用）、"office"
+	// （在线 Office 里打开，取值见上面那个 const 块）。
 	//
 	// 分成两个字段而不是「URL 空就是不能预览」：办公文档能预览，但它的地址
-	// 要等有人真的点了才生成——列表里给每个 .xlsx 都转一遍 PDF，是把没人看的
-	// 附件也转了。
+	// 要等有人真的点了才签——列表里给每个 .xlsx 都签一份配置，是给没人看的
+	// 附件也白签一次。
 	PreviewKind string
 	// The name the body points at when it embeds this part inline. Not sent to
 	// the client: it exists so the reader can drop the parts the body has
@@ -134,10 +146,6 @@ func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attach
 			// 在线 Office 里打开。地址不在这里签：点了预览再签，签的是一份
 			// 带签名的配置，见 OfficePreviewConfig。
 			atts[i].PreviewKind = PreviewOffice
-		} else if convertibleToPDF(a.FileName) {
-			// 地址留空：办公文档要转一趟才有得看，而转换只在有人点「预览」
-			// 的时候做。见 PreviewInboundAttachment。
-			atts[i].PreviewKind = PreviewConvert
 		}
 	}
 	return atts
@@ -410,4 +418,32 @@ func randomToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+var errTooLarge = errors.New("object exceeds the cap")
+
+// readCapped 读一个对象，最多读 cap 字节。
+//
+// 库里那个 file_size 是入库时记下的一个数，不是对象存储此刻的事实。**上限
+// 必须由读这一侧执行**：只信 file_size 的话，一行写着 1 KB、对象却有 100 MB
+// 的附件会被整个读进内存——这个服务同时在跑所有公司的收信。
+//
+// 多读一个字节来分辨「正好到上限」和「超了」，不然正好到上限的文件会被误判。
+//
+// 从 officepreview.go 搬过来的：转 PDF 那条路退役了（见迁移说明），但这一段
+// 和它无关——打包下载、在线 Office 取件都在用。
+func (s *Service) readCapped(ctx context.Context, key string, cap int64) ([]byte, error) {
+	rc, err := s.files.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(io.LimitReader(rc, cap+1)); err != nil {
+		return nil, err
+	}
+	if int64(buf.Len()) > cap {
+		return nil, errTooLarge
+	}
+	return buf.Bytes(), nil
 }
