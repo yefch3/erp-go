@@ -5,7 +5,7 @@
 ALTER TABLE purchase_requirements DROP CONSTRAINT purchase_requirements_status_check;
 ALTER TABLE purchase_requirements ADD CONSTRAINT purchase_requirements_status_check
   CHECK (status IN ('WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED', 'ORDERED',
-                    'SUPERSEDED', 'CANCELLED'));
+                    'RECEIVED', 'SUPERSEDED', 'CANCELLED'));
 
 -- +goose Down
 UPDATE purchase_requirements SET status='PENDING' WHERE status='WAITING_REQUOTE';
