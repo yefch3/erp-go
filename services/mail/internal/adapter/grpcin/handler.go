@@ -895,7 +895,10 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 	op := operator(ctx)
 	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize(),
-		app.ListSort{By: req.GetSortBy(), Dir: req.GetSortDir()}, req.GetUnreadOnly())
+		app.ListSort{
+			By: req.GetSortBy(), Dir: req.GetSortDir(),
+			StarFirst: req.GetStarFirst(), UnreadFirst: req.GetUnreadFirst(),
+		}, req.GetUnreadOnly())
 	if err != nil {
 		return nil, err
 	}

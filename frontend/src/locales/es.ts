@@ -1769,6 +1769,8 @@ export default {
       asc: 'Ascendente',
       desc: 'Descendente',
       current: 'Orden: {name}',
+      starFirst: 'Destacados primero',
+      unreadFirst: 'No leídos primero',
     },
     colGrip: {
       rail: 'Ancho de la columna de carpetas',

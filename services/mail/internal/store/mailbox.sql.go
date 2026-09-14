@@ -3331,44 +3331,54 @@ FROM (
            m.received_at, m.sent_at,
            t.msg_count::int                AS thread_count,
            m.raw_size,
-           (CASE $1::text
-              WHEN 'from'    THEN lower(coalesce(nullif(m.from_name, ''), m.from_email))
-              WHEN 'subject' THEN lower(m.subject)
-              WHEN 'size'    THEN lpad(m.raw_size::text, 20, '0')
-              ELSE to_char(t.last_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
-            END)::text                    AS sort_key
+           (CASE WHEN $1::boolean
+                   THEN CASE WHEN t.any_starred = ($2::text = 'desc')
+                             THEN '1' ELSE '0' END
+                   ELSE '' END
+            || CASE WHEN $3::boolean
+                    THEN CASE WHEN t.any_unread = ($2::text = 'desc')
+                              THEN '1' ELSE '0' END
+                    ELSE '' END
+            || CASE $4::text
+                 WHEN 'from'    THEN lower(coalesce(nullif(m.from_name, ''), m.from_email))
+                 WHEN 'subject' THEN lower(m.subject)
+                 WHEN 'size'    THEN lpad(m.raw_size::text, 20, '0')
+                 ELSE to_char(t.last_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+               END)::text                 AS sort_key
     FROM mail_thread_view t
     JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
-    WHERE t.tenant_id = $2::bigint
-      AND t.owner_id = $3::bigint
-      AND ($4::bigint IS NULL
-           OR t.account_id = $4::bigint)
-      AND t.view = $5::text
+    WHERE t.tenant_id = $5::bigint
+      AND t.owner_id = $6::bigint
+      AND ($7::bigint IS NULL
+           OR t.account_id = $7::bigint)
+      AND t.view = $8::text
       -- 同上，见 ListThreadsByView。
-      AND (NOT $6::boolean OR t.any_unread)
+      AND (NOT $9::boolean OR t.any_unread)
 ) x
-WHERE ($7::text IS NULL
-       OR CASE WHEN $8::text = 'asc'
-               THEN (x.sort_key, x.id) > ($7::text, $9::bigint)
-               ELSE (x.sort_key, x.id) < ($7::text, $9::bigint)
+WHERE ($10::text IS NULL
+       OR CASE WHEN $2::text = 'asc'
+               THEN (x.sort_key, x.id) > ($10::text, $11::bigint)
+               ELSE (x.sort_key, x.id) < ($10::text, $11::bigint)
           END)
-ORDER BY CASE WHEN $8::text = 'asc' THEN x.sort_key END ASC,
-         CASE WHEN $8::text = 'asc' THEN x.id END ASC,
+ORDER BY CASE WHEN $2::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN $2::text = 'asc' THEN x.id END ASC,
          x.sort_key DESC, x.id DESC
-LIMIT $10::int
+LIMIT $12::int
 `
 
 type ListThreadsByViewSortedParams struct {
-	SortBy     string
-	TenantID   int64
-	OwnerID    int64
-	AccountID  *int64
-	View       string
-	UnreadOnly bool
-	CursorKey  *string
-	SortDir    string
-	CursorID   int64
-	RowLimit   int32
+	StarFirst   bool
+	SortDir     string
+	UnreadFirst bool
+	SortBy      string
+	TenantID    int64
+	OwnerID     int64
+	AccountID   *int64
+	View        string
+	UnreadOnly  bool
+	CursorKey   *string
+	CursorID    int64
+	RowLimit    int32
 }
 
 type ListThreadsByViewSortedRow struct {
@@ -3408,9 +3418,27 @@ type ListThreadsByViewSortedRow struct {
 // 方向靠两组 CASE：asc 时前两个键生效、后两个键在完全相同的 (sort_key, id)
 // 上才轮得到（不可能相同，所以无害）；desc 时前两个键全是 NULL，等价于
 // 只按后两个排。
+//
+// **「星标优先」「未读优先」是排序键前面的一个字符**，不是另一条 ORDER BY。
+//
+// 这样做是因为游标只认 (sort_key, id) 一种形状：把分档写进 ORDER BY 就得
+// 给游标再加一段，而多一段就多一处「翻到第二页时对不上」的地方。前缀是
+// 定宽的一个字符（开关关着时是空串，开着时全表都有），所以字典序比出来
+// 的先后 = 先比档、再比列，正是要的。
+//
+// 前缀要看方向：置顶的意思是「永远在最上面」，而方向是人自己选的。
+// desc 时 ORDER BY 从大往小，星标给 '1'；asc 时从小往大，星标给 '0'。
+// 两种方向下星标都在最前面。判断写成 `any_starred = (sort_dir = 'desc')`
+// 就是这个意思：两者一致给 '1'，不一致给 '0'。
+//
+// 星标排在未读前面（两个都开时）：星是人手动点的，未读是系统给的，
+// 人手动标记的那一档该压过自动的那一档。
 // 上一页停在哪：asc 往大了走，desc 往小了走。id 兜底，两条会话不可能占同一个位置。
 func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsByViewSortedParams) ([]ListThreadsByViewSortedRow, error) {
 	rows, err := q.db.Query(ctx, listThreadsByViewSorted,
+		arg.StarFirst,
+		arg.SortDir,
+		arg.UnreadFirst,
 		arg.SortBy,
 		arg.TenantID,
 		arg.OwnerID,
@@ -3418,7 +3446,6 @@ func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsBy
 		arg.View,
 		arg.UnreadOnly,
 		arg.CursorKey,
-		arg.SortDir,
 		arg.CursorID,
 		arg.RowLimit,
 	)

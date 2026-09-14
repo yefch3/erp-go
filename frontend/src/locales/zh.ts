@@ -1759,6 +1759,8 @@ export default {
       asc: '升序',
       desc: '降序',
       current: '排序：{name}',
+      starFirst: '星标优先',
+      unreadFirst: '未读优先',
     },
     colGrip: {
       rail: '文件夹栏宽度',
