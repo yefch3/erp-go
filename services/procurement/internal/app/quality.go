@@ -40,15 +40,17 @@ type QualityFile struct {
 	UploadedAt                                                              time.Time
 }
 type QualityTask struct {
-	ID, POID                                                                                          int64
-	TaskNo, PONo, SupplierName                                                                        string
-	BatchNo                                                                                           int32
-	Status, ExpectedDate, Location, ContactName, ContactPhone, Remark, RequestedByName, InspectorName string
-	RequestedAt                                                                                       time.Time
-	StartedAt, CompletedAt                                                                            *time.Time
-	Lines                                                                                             []QualityTaskLine
-	Rounds                                                                                            []QualityRound
-	Files                                                                                             []QualityFile
+	ID, POID                                                                                                int64
+	TaskNo, PONo, SupplierName                                                                              string
+	BatchNo                                                                                                 int32
+	Status, ExpectedDate, Location, ContactName, ContactPhone, Remark, RequestedByName, InspectorName       string
+	RequestedAt                                                                                             time.Time
+	StartedAt, CompletedAt                                                                                  *time.Time
+	ProcurementHandlingStatus, ProcurementHandlingAction, ProcurementHandlingNote, ProcurementHandledByName string
+	ProcurementHandledAt                                                                                    *time.Time
+	Lines                                                                                                   []QualityTaskLine
+	Rounds                                                                                                  []QualityRound
+	Files                                                                                                   []QualityFile
 }
 type ApplyQualityLine struct {
 	POItemID int64
@@ -120,9 +122,6 @@ func parsePositiveQty(raw string) (decimal.Decimal, error) {
 }
 
 func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in ApplyQualityInput, op Operator) (QualityTask, error) {
-	if len(in.Lines) == 0 {
-		return QualityTask{}, apierr.Invalid("QUALITY_LINES_REQUIRED", "请至少选择一个产品")
-	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return QualityTask{}, err
@@ -142,10 +141,19 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_NOT_ORDERED", "采购单尚未进入已下单状态，不能申请质检")
 	}
-	var batch int32
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(MAX(batch_no),0)+1 FROM quality_inspection_tasks WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.POID).Scan(&batch); err != nil {
+	// A purchase order has one whole-order inspection task. Locking the order
+	// above serializes concurrent requests; repeated clicks are idempotent and
+	// return the existing task instead of creating a second batch.
+	var existingTaskID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM quality_inspection_tasks WHERE tenant_id=$1 AND po_id=$2 ORDER BY id LIMIT 1`, tenantID, in.POID).Scan(&existingTaskID)
+	if err == nil {
+		_ = tx.Rollback(ctx)
+		return s.GetQualityTask(ctx, tenantID, existingTaskID)
+	}
+	if err != pgx.ErrNoRows {
 		return QualityTask{}, err
 	}
+	const batch int32 = 1
 	taskNo := fmt.Sprintf("QI-%s-%02d", poNo, batch)
 	var taskID int64
 	err = tx.QueryRow(ctx, `INSERT INTO quality_inspection_tasks(tenant_id,po_id,task_no,batch_no,expected_date,inspection_location,contact_name,contact_phone,remark,requested_by,requested_by_name)
@@ -153,34 +161,36 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	if err != nil {
 		return QualityTask{}, err
 	}
-	seen := map[int64]bool{}
-	for _, line := range in.Lines {
-		if line.POItemID <= 0 || seen[line.POItemID] {
-			return QualityTask{}, apierr.Invalid("QUALITY_LINE_DUPLICATE", "同一产品不能在一次申请中重复")
+	rows, err := tx.Query(ctx, `SELECT id,product_name,spec,uom_code,qty FROM purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id FOR UPDATE`, tenantID, in.POID)
+	if err != nil {
+		return QualityTask{}, err
+	}
+	type wholeOrderItem struct {
+		id                 int64
+		product, spec, uom string
+		ordered            decimal.Decimal
+	}
+	items := []wholeOrderItem{}
+	for rows.Next() {
+		var item wholeOrderItem
+		if err = rows.Scan(&item.id, &item.product, &item.spec, &item.uom, &item.ordered); err != nil {
+			rows.Close()
+			return QualityTask{}, err
 		}
-		seen[line.POItemID] = true
-		qty, e := parsePositiveQty(line.Qty)
-		if e != nil {
-			return QualityTask{}, e
+		items = append(items, item)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return QualityTask{}, err
+	}
+	itemCount := len(items)
+	for _, item := range items {
+		if _, err = tx.Exec(ctx, `INSERT INTO quality_inspection_task_lines(tenant_id,task_id,po_item_id,product_name,spec,uom_code,ordered_qty,requested_qty,unresolved_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$7)`, tenantID, taskID, item.id, item.product, item.spec, item.uom, item.ordered); err != nil {
+			return QualityTask{}, err
 		}
-		var product, spec, uom string
-		var ordered, already decimal.Decimal
-		e = tx.QueryRow(ctx, `SELECT i.product_name,i.spec,i.uom_code,i.qty,
-		 COALESCE((SELECT SUM(l.requested_qty) FROM quality_inspection_task_lines l JOIN quality_inspection_tasks t ON t.id=l.task_id AND t.tenant_id=l.tenant_id WHERE l.tenant_id=i.tenant_id AND l.po_item_id=i.id),0)
-		 FROM purchase_order_items i WHERE i.tenant_id=$1 AND i.po_id=$2 AND i.id=$3 FOR UPDATE`, tenantID, in.POID, line.POItemID).Scan(&product, &spec, &uom, &ordered, &already)
-		if e == pgx.ErrNoRows {
-			return QualityTask{}, apierr.Invalid("QUALITY_ITEM_INVALID", "申请中包含不属于该采购单的产品")
-		}
-		if e != nil {
-			return QualityTask{}, e
-		}
-		if already.Add(qty).GreaterThan(ordered) {
-			return QualityTask{}, apierr.Conflict("QUALITY_QTY_EXCEEDED", fmt.Sprintf("%s 累计送检数量超过采购数量", product))
-		}
-		_, e = tx.Exec(ctx, `INSERT INTO quality_inspection_task_lines(tenant_id,task_id,po_item_id,product_name,spec,uom_code,ordered_qty,requested_qty,unresolved_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8)`, tenantID, taskID, line.POItemID, product, spec, uom, ordered, qty)
-		if e != nil {
-			return QualityTask{}, e
-		}
+	}
+	if itemCount == 0 {
+		return QualityTask{}, apierr.Invalid("QUALITY_LINES_REQUIRED", "采购单没有可质检的产品")
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return QualityTask{}, err
@@ -224,7 +234,7 @@ func (s *Service) ListQualityTasks(ctx context.Context, tenantID int64, tab, key
 
 func (s *Service) GetQualityTask(ctx context.Context, tenantID, id int64) (QualityTask, error) {
 	var q QualityTask
-	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt)
+	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at,t.procurement_handling_status,t.procurement_handling_action,t.procurement_handling_note,t.procurement_handled_by_name,t.procurement_handled_at FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt, &q.ProcurementHandlingStatus, &q.ProcurementHandlingAction, &q.ProcurementHandlingNote, &q.ProcurementHandledByName, &q.ProcurementHandledAt)
 	if err == pgx.ErrNoRows {
 		return q, apierr.NotFound("QUALITY_TASK_NOT_FOUND", "质检任务不存在")
 	}
@@ -404,7 +414,7 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 			return QualityTask{}, err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location))
+	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,procurement_handling_status=CASE WHEN $7>0 THEN 'PENDING' WHEN procurement_handling_status='PENDING' THEN 'COMPLETED' ELSE procurement_handling_status END,procurement_handling_action=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN 'REINSPECTION_PASS' ELSE procurement_handling_action END,procurement_handling_note=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN '复检全部合格，系统自动完成采购异常待办' ELSE procurement_handling_note END,procurement_handled_at=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN now() ELSE procurement_handled_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location), unresolvedCount)
 	if err != nil {
 		return QualityTask{}, err
 	}
@@ -416,32 +426,97 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 }
 
 func (s *Service) DecideQualityRelease(ctx context.Context, tenantID, id int64, lines []DecideQualityLine, op Operator) (QualityTask, error) {
-	if len(lines) == 0 {
-		return QualityTask{}, apierr.Invalid("QUALITY_RELEASE_REQUIRED", "请填写允许先发的合格数量")
+	return QualityTask{}, apierr.Conflict("QUALITY_PARTIAL_SHIPMENT_DISABLED", "当前不允许部分合格先发，请先完成处理或复检")
+}
+
+func (s *Service) ListOrderQualityTasks(ctx context.Context, tenantID, poID int64) ([]QualityTask, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM quality_inspection_tasks WHERE tenant_id=$1 AND po_id=$2 ORDER BY batch_no DESC`, tenantID, poID)
+	if err != nil {
+		return nil, err
 	}
-	tx, err := s.pool.Begin(ctx)
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]QualityTask, 0, len(ids))
+	for _, id := range ids {
+		q, e := s.GetQualityTask(ctx, tenantID, id)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, q)
+	}
+	return out, nil
+}
+
+func (s *Service) ListQualityProcurementTodos(ctx context.Context, tenantID int64, op Operator) ([]QualityTask, error) {
+	rows, err := s.pool.Query(ctx, `SELECT t.id FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND o.buyer_id=$2 AND t.procurement_handling_status='PENDING' ORDER BY t.updated_at DESC`, tenantID, op.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	out := make([]QualityTask, 0, len(ids))
+	for _, id := range ids {
+		q, e := s.GetQualityTask(ctx, tenantID, id)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, q)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) RecordQualityProcurementHandling(ctx context.Context, tenantID, poID, taskID int64, action, note string, op Operator) (QualityTask, error) {
+	action = strings.ToUpper(strings.TrimSpace(action))
+	note = strings.TrimSpace(note)
+	if action != "REWORK" && action != "REPLACEMENT" && action != "CANCEL_SHORTAGE" {
+		return QualityTask{}, apierr.Invalid("QUALITY_HANDLING_ACTION_INVALID", "请选择返工、换货或取消缺少数量")
+	}
+	if note == "" {
+		return QualityTask{}, apierr.Invalid("QUALITY_HANDLING_NOTE_REQUIRED", "请填写采购处理结果")
+	}
+	var buyerID int64
+	err := s.pool.QueryRow(ctx, `SELECT o.buyer_id FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2 AND t.po_id=$3`, tenantID, taskID, poID).Scan(&buyerID)
+	if err == pgx.ErrNoRows {
+		return QualityTask{}, apierr.NotFound("QUALITY_TASK_NOT_FOUND", "质检任务不存在")
+	}
 	if err != nil {
 		return QualityTask{}, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	for _, l := range lines {
-		qty, e := decimal.NewFromString(strings.TrimSpace(l.Qty))
-		if e != nil || qty.IsNegative() {
-			return QualityTask{}, apierr.Invalid("QUALITY_RELEASE_INVALID", "放行数量无效")
-		}
-		ct, e := tx.Exec(ctx, `UPDATE quality_inspection_task_lines SET approved_release_qty=$4,release_decided_by=$5,release_decided_by_name=$6,release_decided_at=now() WHERE tenant_id=$1 AND task_id=$2 AND id=$3 AND $4<=qualified_qty`, tenantID, id, l.TaskLineID, qty, op.ID, op.Name)
-		if e != nil {
-			return QualityTask{}, e
-		}
-		if ct.RowsAffected() != 1 {
-			return QualityTask{}, apierr.Conflict("QUALITY_RELEASE_EXCEEDED", "允许先发数量不能超过当前合格数量")
-		}
+	if buyerID != op.ID {
+		return QualityTask{}, apierr.Permission("QUALITY_HANDLING_OWNER", "只有采购单负责人可以记录处理结果")
 	}
-	if err = tx.Commit(ctx); err != nil {
+	ct, err := s.pool.Exec(ctx, `UPDATE quality_inspection_tasks SET procurement_handling_status='COMPLETED',procurement_handling_action=$4::text,procurement_handling_note=$5,procurement_handled_by=$6,procurement_handled_by_name=$7,procurement_handled_at=now(),status=CASE WHEN $4::text='CANCEL_SHORTAGE' THEN 'COMPLETED' ELSE status END,completed_at=CASE WHEN $4::text='CANCEL_SHORTAGE' THEN now() ELSE completed_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND po_id=$3 AND procurement_handling_status='PENDING'`, tenantID, taskID, poID, action, note, op.ID, op.Name)
+	if err != nil {
 		return QualityTask{}, err
 	}
+	if ct.RowsAffected() != 1 {
+		return QualityTask{}, apierr.Conflict("QUALITY_HANDLING_NOT_PENDING", "该质检异常已经处理或无需处理")
+	}
+	if action == "CANCEL_SHORTAGE" {
+		_, err = s.pool.Exec(ctx, `UPDATE quality_inspection_task_lines SET approved_release_qty=qualified_qty WHERE tenant_id=$1 AND task_id=$2`, tenantID, taskID)
+		if err != nil {
+			return QualityTask{}, err
+		}
+	}
 	s.nudge(ctx, tenantID)
-	return s.GetQualityTask(ctx, tenantID, id)
+	return s.GetQualityTask(ctx, tenantID, taskID)
 }
 
 func (s *Service) PresignQualityFile(ctx context.Context, tenantID, taskID int64, fileName string) (string, string, int32, error) {

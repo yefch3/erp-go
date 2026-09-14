@@ -69,10 +69,16 @@ func (s *Service) Refresh(ctx context.Context) (SyncStatus, error) {
 	symbols := append([]string(nil), s.fetchSymbols...)
 	s.syncMu.RUnlock()
 	if url == "" {
-		return s.SyncStatus(), apierr.Internal("FX_FETCH_NOT_CONFIGURED", "汇率同步尚未配置")
+		err := errors.New("汇率同步尚未配置")
+		s.recordFetch(err)
+		return s.SyncStatus(), nil
 	}
-	err := s.Fetch(ctx, url, symbols)
-	return s.SyncStatus(), err
+	if err := s.Fetch(ctx, url, symbols); err != nil {
+		s.log.WarnContext(ctx, "fx refresh failed; serving cached rates", "error", err)
+	}
+	// A provider outage is a supported degraded state. The caller receives the
+	// sync status and continues using the most recent successful data.
+	return s.SyncStatus(), nil
 }
 func (s *Service) SyncStatus() SyncStatus {
 	s.syncMu.RLock()

@@ -56,3 +56,6 @@ coverage.out
 
 # D7 local isolated runtime and frontend logs
 .d7-environment/
+
+# D1-D7 confirmed-gap local isolated runtime and frontend logs
+.gap-environment/

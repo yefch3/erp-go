@@ -18,13 +18,23 @@ import (
 
 func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64, view OfferView) error {
 	b := view.Body
-	if len(b.Transports) > 0 {
-		accepted := false
-		for _, t := range b.Transports {
-			accepted = accepted || t.Accepted
+	for _, line := range b.Lines {
+		if strings.TrimSpace(line.UnitPrice) == "" {
+			return apierr.Invalid("OFFER_PRICE_REQUIRED", "请在客户选定物流后核对最终单价，再确认成交")
 		}
-		if !accepted {
+	}
+	if len(b.Transports) > 0 && b.Incoterm != "FOB" {
+		accepted := 0
+		for _, t := range b.Transports {
+			if t.Accepted {
+				accepted++
+			}
+		}
+		if accepted == 0 {
 			return apierr.Invalid("OFFER_ACCEPTED_TRANSPORT", "请记录客户实际接受的运输方案和对应产品数量")
+		}
+		if accepted > 1 {
+			return apierr.Invalid("OFFER_ONE_SHIPMENT", "一份合同当前只允许选择一个运输方案")
 		}
 	}
 	if err := validBusinessDate(b.Delivery, "OFFER_DELIVERY", "交货日期"); err != nil {
@@ -123,6 +133,9 @@ func offerPDF(view OfferView) ([]byte, error) {
 		status := "候选方案"
 		if tr.Accepted {
 			status = "客户已选择"
+			if b.Incoterm == "CFR" && b.LogisticsQuoteID == tr.QuoteID {
+				status += "；运费已计入产品单价，不另加收"
+			}
 		}
 		shipments = append(shipments, store.ListQuotationShipmentsRow{BatchNo: int32(i + 1), CarrierForwarder: logistics.Company, ServiceOptionName: tr.Title, Currency: tr.Currency, FreightAmount: tr.Price, PortOfLoading: logistics.LoadingPort, PortOfDischarge: logistics.DestinationPort, EstimatedDeparture: logistics.Departure, EstimatedArrival: logistics.Arrival, ValidUntil: logistics.ValidUntil, Remark: status + "；" + tr.Remark})
 	}

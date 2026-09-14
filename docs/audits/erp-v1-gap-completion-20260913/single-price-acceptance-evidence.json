@@ -1,0 +1,11 @@
+{
+  "caseId": "93",
+  "caseNumber": "SC-20260914-000086",
+  "title": "报价流程验收：上海钢材出口",
+  "products": 3,
+  "procurementQuotes": 1,
+  "logisticsQuotes": 1,
+  "offerStatus": "PENDING",
+  "salesUrl": "http://127.0.0.1:25475/sales/quotations?id=93",
+  "preparedAt": "2026-09-13T19:04:51.5854792-04:00"
+}

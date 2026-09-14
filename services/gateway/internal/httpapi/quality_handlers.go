@@ -95,3 +95,32 @@ func (s *Server) registerQualityFile(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+func (s *Server) getOrderQualityInspections(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.GetOrderQualityInspections(r.Context(), &prv1.GetOrderQualityInspectionsRequest{PoId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) listQualityProcurementTodos(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListQualityProcurementTodos(r.Context(), &prv1.ListQualityProcurementTodosRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) recordQualityProcurementHandling(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.RecordQualityProcurementHandlingRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.PoId = idFromPath(r)
+	resp, err := s.Orders.RecordQualityProcurementHandling(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

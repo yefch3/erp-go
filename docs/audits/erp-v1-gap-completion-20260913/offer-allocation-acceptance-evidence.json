@@ -1,0 +1,11 @@
+{
+  "caseId": "92",
+  "caseNumber": "SC-20260914-000085",
+  "title": "GAP-CD-ACCEPT-001 五公式与物流分摊验收",
+  "products": 3,
+  "procurementQuotes": 2,
+  "logisticsQuotes": 2,
+  "offerStatus": "PENDING",
+  "salesUrl": "http://127.0.0.1:25475/sales/quotations?id=92",
+  "preparedAt": "2026-09-13T18:27:53.0556972-04:00"
+}

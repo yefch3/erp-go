@@ -2926,6 +2926,9 @@ const (
 	PurchaseOrderService_DecideQualityRelease_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DecideQualityRelease"
 	PurchaseOrderService_PresignQualityInspectionFile_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/PresignQualityInspectionFile"
 	PurchaseOrderService_RegisterQualityInspectionFile_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/RegisterQualityInspectionFile"
+	PurchaseOrderService_GetOrderQualityInspections_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/GetOrderQualityInspections"
+	PurchaseOrderService_ListQualityProcurementTodos_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListQualityProcurementTodos"
+	PurchaseOrderService_RecordQualityProcurementHandling_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/RecordQualityProcurementHandling"
 	PurchaseOrderService_CreateSupplierInvoice_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
 	PurchaseOrderService_ListSupplierInvoices_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
 	PurchaseOrderService_GetSupplierInvoice_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
@@ -3044,6 +3047,11 @@ type PurchaseOrderServiceClient interface {
 	DecideQualityRelease(ctx context.Context, in *DecideQualityReleaseRequest, opts ...grpc.CallOption) (*DecideQualityReleaseResponse, error)
 	PresignQualityInspectionFile(ctx context.Context, in *PresignQualityInspectionFileRequest, opts ...grpc.CallOption) (*PresignQualityInspectionFileResponse, error)
 	RegisterQualityInspectionFile(ctx context.Context, in *RegisterQualityInspectionFileRequest, opts ...grpc.CallOption) (*RegisterQualityInspectionFileResponse, error)
+	// Procurement-facing read-only result and exception handling. These calls do
+	// not grant access to the Quality workspace.
+	GetOrderQualityInspections(ctx context.Context, in *GetOrderQualityInspectionsRequest, opts ...grpc.CallOption) (*GetOrderQualityInspectionsResponse, error)
+	ListQualityProcurementTodos(ctx context.Context, in *ListQualityProcurementTodosRequest, opts ...grpc.CallOption) (*ListQualityProcurementTodosResponse, error)
+	RecordQualityProcurementHandling(ctx context.Context, in *RecordQualityProcurementHandlingRequest, opts ...grpc.CallOption) (*RecordQualityProcurementHandlingResponse, error)
 	// Supplier invoices: the third leg of the three-way match. Lives on the
 	// order service because an invoice is meaningless except against orders.
 	CreateSupplierInvoice(ctx context.Context, in *CreateSupplierInvoiceRequest, opts ...grpc.CallOption) (*CreateSupplierInvoiceResponse, error)
@@ -3524,6 +3532,36 @@ func (c *purchaseOrderServiceClient) RegisterQualityInspectionFile(ctx context.C
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterQualityInspectionFileResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_RegisterQualityInspectionFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetOrderQualityInspections(ctx context.Context, in *GetOrderQualityInspectionsRequest, opts ...grpc.CallOption) (*GetOrderQualityInspectionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrderQualityInspectionsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetOrderQualityInspections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListQualityProcurementTodos(ctx context.Context, in *ListQualityProcurementTodosRequest, opts ...grpc.CallOption) (*ListQualityProcurementTodosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListQualityProcurementTodosResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListQualityProcurementTodos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RecordQualityProcurementHandling(ctx context.Context, in *RecordQualityProcurementHandlingRequest, opts ...grpc.CallOption) (*RecordQualityProcurementHandlingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordQualityProcurementHandlingResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RecordQualityProcurementHandling_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4114,6 +4152,11 @@ type PurchaseOrderServiceServer interface {
 	DecideQualityRelease(context.Context, *DecideQualityReleaseRequest) (*DecideQualityReleaseResponse, error)
 	PresignQualityInspectionFile(context.Context, *PresignQualityInspectionFileRequest) (*PresignQualityInspectionFileResponse, error)
 	RegisterQualityInspectionFile(context.Context, *RegisterQualityInspectionFileRequest) (*RegisterQualityInspectionFileResponse, error)
+	// Procurement-facing read-only result and exception handling. These calls do
+	// not grant access to the Quality workspace.
+	GetOrderQualityInspections(context.Context, *GetOrderQualityInspectionsRequest) (*GetOrderQualityInspectionsResponse, error)
+	ListQualityProcurementTodos(context.Context, *ListQualityProcurementTodosRequest) (*ListQualityProcurementTodosResponse, error)
+	RecordQualityProcurementHandling(context.Context, *RecordQualityProcurementHandlingRequest) (*RecordQualityProcurementHandlingResponse, error)
 	// Supplier invoices: the third leg of the three-way match. Lives on the
 	// order service because an invoice is meaningless except against orders.
 	CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error)
@@ -4340,6 +4383,15 @@ func (UnimplementedPurchaseOrderServiceServer) PresignQualityInspectionFile(cont
 }
 func (UnimplementedPurchaseOrderServiceServer) RegisterQualityInspectionFile(context.Context, *RegisterQualityInspectionFileRequest) (*RegisterQualityInspectionFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterQualityInspectionFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetOrderQualityInspections(context.Context, *GetOrderQualityInspectionsRequest) (*GetOrderQualityInspectionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOrderQualityInspections not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListQualityProcurementTodos(context.Context, *ListQualityProcurementTodosRequest) (*ListQualityProcurementTodosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListQualityProcurementTodos not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RecordQualityProcurementHandling(context.Context, *RecordQualityProcurementHandlingRequest) (*RecordQualityProcurementHandlingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordQualityProcurementHandling not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierInvoice not implemented")
@@ -5180,6 +5232,60 @@ func _PurchaseOrderService_RegisterQualityInspectionFile_Handler(srv interface{}
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).RegisterQualityInspectionFile(ctx, req.(*RegisterQualityInspectionFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetOrderQualityInspections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrderQualityInspectionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetOrderQualityInspections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetOrderQualityInspections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetOrderQualityInspections(ctx, req.(*GetOrderQualityInspectionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListQualityProcurementTodos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListQualityProcurementTodosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListQualityProcurementTodos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListQualityProcurementTodos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListQualityProcurementTodos(ctx, req.(*ListQualityProcurementTodosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RecordQualityProcurementHandling_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordQualityProcurementHandlingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RecordQualityProcurementHandling(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RecordQualityProcurementHandling_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RecordQualityProcurementHandling(ctx, req.(*RecordQualityProcurementHandlingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6274,6 +6380,18 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterQualityInspectionFile",
 			Handler:    _PurchaseOrderService_RegisterQualityInspectionFile_Handler,
+		},
+		{
+			MethodName: "GetOrderQualityInspections",
+			Handler:    _PurchaseOrderService_GetOrderQualityInspections_Handler,
+		},
+		{
+			MethodName: "ListQualityProcurementTodos",
+			Handler:    _PurchaseOrderService_ListQualityProcurementTodos_Handler,
+		},
+		{
+			MethodName: "RecordQualityProcurementHandling",
+			Handler:    _PurchaseOrderService_RecordQualityProcurementHandling_Handler,
 		},
 		{
 			MethodName: "CreateSupplierInvoice",

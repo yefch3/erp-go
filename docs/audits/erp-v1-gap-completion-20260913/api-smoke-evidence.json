@@ -1,0 +1,12 @@
+{
+  "testedAt": "2026-09-13T20:22:28.7375074-04:00",
+  "purchaseOrder": "PO-GAP-SMOKE-001",
+  "taskId": "46",
+  "ownerTodo": "created then completed",
+  "unrelatedBuyerTodo": "not visible",
+  "purchaseOrderQuality": "read-only conclusion, quantities, issue and attachment",
+  "qualityModuleForBuyer": "HTTP 403",
+  "partialRelease": "HTTP 403 and permission removed",
+  "finalStatus": "COMPLETED",
+  "approvedForOnlyShipment": "10.0000"
+}

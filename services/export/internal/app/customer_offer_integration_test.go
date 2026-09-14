@@ -110,6 +110,8 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 		t.Fatal(first, err)
 	}
 	body := first.Body
+	body.QuoteFX = "7.05"
+	body.QuoteFXConfirmed = true
 	body.Lines[0].Quantity = "60"
 	body.Lines[0].UnitPrice = "125"
 	if _, err := call(2, OfferCommand{Action: "save", CaseID: "901", Body: body}); err == nil {

@@ -83,22 +83,33 @@ type OfferTransport struct {
 	Quantities map[string]string `json:"quantities"`
 }
 type OfferBody struct {
-	CustomerID      string           `json:"customerId"`
-	Customer        string           `json:"customer"`
-	ContactID       string           `json:"contactId"`
-	Contact         string           `json:"contact"`
-	Currency        string           `json:"currency"`
-	Delivery        string           `json:"delivery"`
-	LoadingPort     string           `json:"loadingPort"`
-	DestinationPort string           `json:"destinationPort"`
-	Incoterm        string           `json:"incoterm"`
-	Payment         string           `json:"payment"`
-	ValidUntil      string           `json:"validUntil"`
-	Remark          string           `json:"remark"`
-	Lines           []OfferLine      `json:"lines"`
-	Transports      []OfferTransport `json:"transports"`
-	Rates           []OfferRate      `json:"rates"`
-	Total           string           `json:"total"`
+	PricingSnapshot      string                     `json:"pricingSnapshot,omitempty"`
+	LogisticsQuoteID     string                     `json:"logisticsQuoteId"`
+	CustomerID           string                     `json:"customerId"`
+	Customer             string                     `json:"customer"`
+	ContactID            string                     `json:"contactId"`
+	Contact              string                     `json:"contact"`
+	Currency             string                     `json:"currency"`
+	QuoteFX              string                     `json:"quoteFx"`
+	QuoteFXConfirmed     bool                       `json:"quoteFxConfirmed"`
+	Delivery             string                     `json:"delivery"`
+	LoadingPort          string                     `json:"loadingPort"`
+	DestinationPort      string                     `json:"destinationPort"`
+	Incoterm             string                     `json:"incoterm"`
+	Payment              string                     `json:"payment"`
+	ValidUntil           string                     `json:"validUntil"`
+	Remark               string                     `json:"remark"`
+	Lines                []OfferLine                `json:"lines"`
+	Transports           []OfferTransport           `json:"transports"`
+	Rates                []OfferRate                `json:"rates"`
+	Total                string                     `json:"total"`
+	LogisticsAllocations []OfferLogisticsAllocation `json:"logisticsAllocations"`
+}
+type OfferLogisticsAllocation struct {
+	ProductID string `json:"productId"`
+	Product   string `json:"product"`
+	Currency  string `json:"currency"`
+	Amount    string `json:"amount"`
 }
 type OfferCommand struct {
 	LineID   string    `json:"lineId"`
@@ -108,11 +119,12 @@ type OfferCommand struct {
 	Body     OfferBody `json:"body"`
 }
 type OfferView struct {
-	Body        OfferBody    `json:"body"`
-	Revision    int64        `json:"revision"`
-	Status      string       `json:"status"`
-	QuotationID string       `json:"quotationId"`
-	ContractID  string       `json:"contractId"`
-	CanEdit     bool         `json:"canEdit"`
-	Source      OfferInquiry `json:"source"`
+	PricingStale bool         `json:"pricingStale"`
+	Body         OfferBody    `json:"body"`
+	Revision     int64        `json:"revision"`
+	Status       string       `json:"status"`
+	QuotationID  string       `json:"quotationId"`
+	ContractID   string       `json:"contractId"`
+	CanEdit      bool         `json:"canEdit"`
+	Source       OfferInquiry `json:"source"`
 }
