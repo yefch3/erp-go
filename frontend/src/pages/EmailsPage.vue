@@ -10,7 +10,7 @@
   <div v-if="locked !== null" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
-    <aside class="rail">
+    <aside ref="railEl" class="rail" :style="colW.rail ? { width: colW.rail + 'px' } : undefined">
       <el-button
         v-if="canWrite && !locked"
         type="primary"
@@ -123,6 +123,25 @@
       </template>
     </aside>
 
+    <!-- 分隔条：拖它改文件夹栏的宽度。
+         锁着的时候也在——左栏那排信箱锁着照样看得见，宽度也就照样该能调。
+         双击回到默认宽度：拖坏了总得有条回去的路，而"再拖回来"是拖不准的。 -->
+    <div
+      class="col-grip"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="t('emails.colGrip.rail')"
+      :title="t('emails.colGrip.hint')"
+      tabindex="0"
+      :class="{ grabbing: gripping === 'rail' }"
+      @pointerdown="onGripDown('rail', $event)"
+      @pointermove="onGripMove"
+      @pointerup="onGripUp"
+      @pointercancel="onGripUp"
+      @dblclick="resetCol('rail')"
+      @keydown="onGripKey('rail', $event)"
+    />
+
     <!-- 门。开在内容区里而不是整页，左栏那排信箱才留得住——见上面那段。
          单独一个 section 而不是塞进下面那个：pane 里已经有一条按文件夹分的
          v-if/v-else 链，插进去会把它拆散。 -->
@@ -174,25 +193,24 @@
         <!-- Who wrote it, as a person rather than a field: the avatar gives
              the eye somewhere to land before it starts reading, which is the
              whole reason every mail client has one. -->
+        <!-- 一行，不是两行。
+             从前是「名字 + 地址」一行、「收件地址 + 详情」另一行，于是名字长
+             一点（"The Google Workspace Team"）就折成两行，整块头部四行高，
+             把正文推下去——而这四行里没有一句是读信的人要读的。
+             现在全部排在一行上，谁长谁省略号；完整的地址在「详情」里。 -->
         <div class="in-from">
           <span class="avatar" :style="avatarStyle(openedInbound.fromEmail)" aria-hidden="true">
             {{ initialOf(openedInbound.fromName || openedInbound.fromEmail) }}
           </span>
-          <div class="in-who">
-            <div class="in-meta">
-              <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
-              <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
-            </div>
-            <div class="sub">
-              {{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}
-              <!-- 详情 folds the headers away rather than dropping them: a
-                   reader is for reading, but "which address did this really
-                   come from" has to be answerable without leaving the page. -->
-              <button class="details-toggle" @click="detailsOpen = !detailsOpen">
-                {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
-              </button>
-            </div>
-          </div>
+          <span class="in-name strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
+          <span class="in-addr sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+          <span class="in-to sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</span>
+          <!-- 详情 folds the headers away rather than dropping them: a
+               reader is for reading, but "which address did this really
+               come from" has to be answerable without leaving the page. -->
+          <button class="details-toggle" @click="detailsOpen = !detailsOpen">
+            {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
+          </button>
           <el-button
             v-if="canCreateCustomerFromSender"
             class="sender-customer-action"
@@ -602,7 +620,11 @@
       </div>
       </div><!-- /reader-col -->
 
-      <div class="list-col">
+      <div
+        ref="listEl"
+        class="list-col"
+        :style="colW.list ? { flex: `0 0 ${colW.list}px` } : undefined"
+      >
       <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
@@ -760,16 +782,60 @@
           </el-button>
         </template>
         <template v-else>
-        <!-- 搜索的时候标题说的是搜索，不是文件夹。列表里此刻是所有信箱、
-             所有文件夹的命中，顶着「收件箱」三个字会让人以为收件箱里就这
-             么几封。 -->
-        <h2 v-if="isSearching">
+        <!-- 这里从前有一行大字，写着此刻站在哪个文件夹。**去掉了**：左栏那
+             一格已经高亮着，同一件事在一屏上说两遍，而它占的是列表最上面
+             一整行——桌面上的邮件客户端没有一个把文件夹名字再写一遍。
+
+             搜索的那行留着，因为它说的不是文件夹：它说「这是搜什么搜出来
+             的」，而这件事屏幕上没有别处写着。列表里此刻是所有信箱、所有
+             文件夹的命中，不说清楚就会被当成这个文件夹里只有这么几封。 -->
+        <h2 v-if="isSearching" class="search-title">
           {{ t('emails.searchResults', { q: keyword.trim() }) }}
         </h2>
-        <h2 v-else>{{ t(`emails.folders.${folder}`) }}</h2>
         <el-button v-if="isSearching" link @click="clearSearch">
           {{ t('emails.searchClear') }}
         </el-button>
+        <!-- 排序：点开才展开。
+             从前是一排常驻的开关摆在列表最上面（发件人 主题 日期 大小），
+             四个词占掉整整一行，而人一天里改排序的次数是零到一次。菜单里
+             「按哪一列」和「哪个方向」分两段明写，不再靠「点第二下翻方向」
+             ——菜单一点就关，翻没翻人看不见。 -->
+        <el-dropdown
+          v-if="sortFields.length"
+          trigger="click"
+          popper-class="mail-sort-menu"
+          @command="onSortCommand"
+        >
+          <button type="button" class="sort-trigger">
+            {{ t('emails.sortBar.current', { name: t(`emails.sortBar.${listSort.by}`) }) }}
+            <span class="dir" aria-hidden="true">{{ listSort.dir === 'asc' ? '↑' : '↓' }}</span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="f in sortFields"
+                :key="f"
+                :command="`by:${f}`"
+                :class="{ 'sort-on': listSort.by === f }"
+              >
+                {{ t(`emails.sortBar.${f}`) }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                divided
+                command="dir:desc"
+                :class="{ 'sort-on': listSort.dir === 'desc' }"
+              >
+                {{ t('emails.sortBar.desc') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="dir:asc"
+                :class="{ 'sort-on': listSort.dir === 'asc' }"
+              >
+                {{ t('emails.sortBar.asc') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <span class="grow" />
         <!-- 待处理和拒收名单的筛选框留在这儿，没跟着搬到左栏。
              左栏那个搜的是**邮件**；这两张表一个是 ERP 自己的投递记录、
@@ -780,11 +846,12 @@
             v-model="keyword"
             :placeholder="t(`emails.search.${folder}`)"
             clearable
-            style="width: 260px"
+            size="small"
+            style="width: 240px"
             @keyup.enter="reload"
             @clear="reload"
           />
-          <el-button @click="reload">{{ common('query') }}</el-button>
+          <el-button size="small" @click="reload">{{ common('query') }}</el-button>
         </template>
         <!-- 这里从前有一颗「立即收信」。**去掉了**：信箱本来就在自动收——
              打开这一页时拉一次（syncOnOpen），之后守着 IDLE，服务器一有新信
@@ -794,7 +861,17 @@
              this list, so it does what this list shows.
              Not in junk or the trash: nobody reads their spam folder to the
              end, and what those two need is a way to be rid of it. -->
-        <el-button v-if="canMarkAllRead" :loading="markingAll" @click="markAllRead">
+        <!-- 只看未读。开着时按钮自己是实心的——筛选是一种「列表现在不完整」
+             的状态，而这件事必须从屏幕上看得出来，不能只存在地址栏里。 -->
+        <el-button
+          v-if="canFilterUnread"
+          size="small"
+          :type="unreadOnly ? 'primary' : ''"
+          @click="toggleUnreadOnly"
+        >
+          {{ t('emails.unreadOnly') }}
+        </el-button>
+        <el-button v-if="canMarkAllRead" size="small" :loading="markingAll" @click="markAllRead">
           {{ t('emails.markAllRead') }}
         </el-button>
         <!-- Junk out in one click — into the trash, not oblivion. The mail
@@ -805,6 +882,7 @@
              出的那种错。 -->
         <el-button
           v-if="folder === 'junk' && total > 0 && !isSearching"
+          size="small"
           type="danger"
           plain
           :loading="emptying"
@@ -814,6 +892,7 @@
         </el-button>
         <el-button
           v-if="folder === 'trash' && total > 0 && !isSearching"
+          size="small"
           type="danger"
           plain
           :loading="emptying"
@@ -821,7 +900,7 @@
         >
           {{ t('emails.emptyTrash') }}
         </el-button>
-        <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
+        <el-button v-if="folder === 'suppressions' && canSuppress" size="small" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
         </template>
@@ -860,21 +939,30 @@
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
           :sort="listSort"
-          :sort-fields="sortFields"
-          @sort="changeSort"
+          :current="openedInbound?.id"
           @open="openInbound"
+          @activate="openMailWindow"
           @star="toggleStar"
           @dragmails="onDragMails"
           @dragend="dragging = null"
         />
+        <!-- 空的时候要说清是**哪一种**空。筛着「只看未读」而一封未读都没有，
+             和这个文件夹本来就是空的，在屏幕上长得一模一样——不说清楚，人会
+             以为信不见了。所以这一档单独一句话，还带一个出口。 -->
         <el-empty
           v-if="!loading && inbound.length === 0"
           :description="
             isSearching
               ? t('emails.searchEmpty', { q: keyword })
-              : t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')
+              : unreadOnly
+                ? t('emails.noUnread')
+                : t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')
           "
-        />
+        >
+          <el-button v-if="unreadOnly && !isSearching" @click="toggleUnreadOnly">
+            {{ t('emails.showAll') }}
+          </el-button>
+        </el-empty>
       </template>
 
       <!-- --------------------------------------------------------- drafts -->
@@ -888,6 +976,7 @@
         :mails="draftRows"
         folder="drafts"
         :loading="loading"
+        :current="openedDraft?.id"
         @open="openDraftPreview"
         @activate="editDraftRow"
       />
@@ -955,9 +1044,9 @@
           folder="sent"
           :loading="loading"
           :sort="listSort"
-          :sort-fields="sortFields"
-          @sort="changeSort"
+          :current="openedInbound?.id"
           @open="openSentRow"
+          @activate="openMailWindow"
           @star="toggleStar"
           @dragmails="onDragMails"
           @dragend="dragging = null"
@@ -1044,19 +1133,56 @@
         </el-table-column>
       </el-table>
 
-      <!-- Cursor paging: 上一页 / 下一页 only, no page numbers. A jump to
-           page 40 has no meaning when pages are positions in a list that
-           grows at the top — Gmail's pager for the same reason. -->
-      <div v-if="isKeysetView && (total > 0 || cursorStack.length)" class="pager keyset">
+      <!-- 往下滚就接着加载，照 Foxmail。
+           哨兵：它一露到视口里就去取下一页。**不用滚动事件**——列表列在宽屏
+           是自己滚、窄屏是整页滚，一套滚动事件接不住两种容器；而
+           IntersectionObserver 算的是「实际可见」，中间那层滚动容器的裁剪
+           它自己会算进去。 -->
+      <div v-if="canLoadMore" ref="moreEl" class="more-sentinel" aria-hidden="true" />
+      <div v-if="moreLine !== 'none'" class="more-line">
+        <span v-if="moreLine === 'loading'" class="sub">{{ t('emails.loadingMore') }}</span>
+        <template v-else-if="moreLine === 'failed'">
+          <span class="sub">{{ t('emails.loadMoreFailed') }}</span>
+          <el-button size="small" link type="primary" @click="retryLoadMore">
+            {{ t('emails.retryLoadMore') }}
+          </el-button>
+        </template>
+        <span v-else class="sub">{{ t('emails.totalMails', { n: total }) }}</span>
+      </div>
+
+      <!-- 待处理和已定时还是翻页：它们是操作清单不是信箱——一屏看完一批、
+           处理掉、再翻一批，比无限往下滚更合手；而 el-table 套在无限滚动里
+           也不好收场。它们的游标记在内存里（见 tablePageCursors）。 -->
+      <div v-if="isPagedTable && total > 0" class="pager keyset">
         <span class="sub">{{ t('emails.totalMails', { n: total }) }}</span>
-        <el-button size="small" :disabled="!cursorStack.length" @click="prevPage">
+        <el-button size="small" :disabled="!tablePageCursors.length" @click="prevTablePage">
           {{ t('emails.prevPage') }}
         </el-button>
-        <el-button size="small" :disabled="!nextCursor" @click="nextPage">
+        <el-button size="small" :disabled="!nextCursor" @click="nextTablePage">
           {{ t('emails.nextPage') }}
         </el-button>
       </div>
       </div><!-- /list-col -->
+
+      <!-- 列表和阅读区之间的分隔条。模板里阅读区写在列表前面（见 .panes 那段
+           注释），靠 order 排位置，所以这一条虽然写在最后，画出来是在中间。
+           窄屏下两栏是上下叠着的，那时它自己藏起来——横着拖一条竖线，在一个
+           没有并排的布局上说不通。 -->
+      <div
+        class="col-grip for-list"
+        role="separator"
+        aria-orientation="vertical"
+        :aria-label="t('emails.colGrip.list')"
+        :title="t('emails.colGrip.hint')"
+        tabindex="0"
+        :class="{ grabbing: gripping === 'list' }"
+        @pointerdown="onGripDown('list', $event)"
+        @pointermove="onGripMove"
+        @pointerup="onGripUp"
+        @pointercancel="onGripUp"
+        @dblclick="resetCol('list')"
+        @keydown="onGripKey('list', $event)"
+      />
       </div><!-- /panes -->
     </section>
 
@@ -1303,39 +1429,10 @@
     </template>
   </el-dialog>
 
-  <!-- Preview. Rendered from the storage origin rather than ours, so the file
-       cannot reach this page's session even if it tries — and only images and
-       PDFs are ever given a preview URL in the first place. -->
-  <el-dialog
-    v-model="previewOpen"
-    :title="previewing?.fileName"
-    width="min(1000px, 92vw)"
-    top="4vh"
-    append-to-body
-  >
-    <img
-      v-if="previewing && isImage(previewing)"
-      :src="previewing.previewUrl"
-      :alt="previewing.fileName"
-      class="preview-img"
-    />
-    <iframe
-      v-else-if="previewing"
-      :src="previewing.previewUrl"
-      class="preview-frame"
-      :title="previewing.fileName"
-    />
-    <template #footer>
-      <a
-        v-if="previewing?.downloadUrl"
-        class="el-button el-button--primary"
-        :href="previewing.downloadUrl"
-        :download="previewing.fileName"
-      >
-        {{ t('emails.download') }}
-      </a>
-    </template>
-  </el-dialog>
+  <!-- 附件预览从前是这儿的一个对话框，**已经拿掉了**：预览一律新开一个
+       标签页（见 openPreview）。一个 1000px 的对话框里看一份 A4 合同，等于
+       隔着门缝看；而标签页是整块屏幕，还能拖到第二个显示器上、能打印、能搜。
+       表格更进一步，连服务器都不经过——浏览器自己解出来画成表。 -->
 </template>
 
 <script setup lang="ts">
@@ -1357,8 +1454,8 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
-import { needsConversion } from '../lib/attachmentPreview'
-import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
+import { isOfficePreview, isSheetPreview, needsConversion } from '../lib/attachmentPreview'
+import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
 import { plainTextToHtml } from '../lib/linkifyText'
@@ -1366,15 +1463,18 @@ import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
   DEFAULT_SORT,
-  nextSort,
   parseSort,
   sortFieldsFor,
   sortFor,
+  sortFromCommand,
   sortParam,
   type MailSort,
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
+import { printDocument } from '../lib/printDocument'
+import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
 import {
   isListFolder,
   pickedRows as pickedRowsOf,
@@ -1410,6 +1510,8 @@ import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
 import DraftReader, { type DraftDetail } from '../components/DraftReader.vue'
 import { draftPreviewContext, draftToRow } from '../lib/draftRow'
+import { shouldReloadList } from '../lib/liveInbox'
+import { moreStatus, shouldLoadMore, type MoreState } from '../lib/infiniteList'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -1717,9 +1819,101 @@ const sortFields = computed<SortField[]>(() => {
   if (!isInboundView.value || keyword.value.trim()) return []
   return sortFieldsFor('inbox')
 })
-function changeSort(by: SortField) {
-  pushState({ sort: sortParam(nextSort(listSort.value, by)) })
+// 排序菜单点了一项：`by:size`、`dir:asc`。规则（换一列用那一列的自然方向、
+// 方向是菜单里明写的两项）在 lib/mailSort 里，那儿测得到。
+function onSortCommand(cmd: string) {
+  pushState({ sort: sortParam(sortFromCommand(listSort.value, cmd)) })
 }
+
+// 只看未读（issue #368 那条「支持查看未读邮件」）。
+//
+// 做成筛选，不做成「未读排前面」。排序那条路在这里是坏的：列表按未读优先排
+// 的话，点开一封信、它一变成已读就立刻往下跳——光标底下的行不见了，而
+// 「标已读不重排」是这个列表刻意守着的一条规矩（见 markRow 那一带的注释）。
+// 筛选没有这个问题：标已读仍然只改那一行的样子，它要到下一次重新拉列表时
+// 才消失，而那时人已经看完了。
+//
+// 开关的状态进地址栏（unread=1），刷新和后退都保得住。
+const unreadOnly = ref(false)
+// 搜索时不给这个开关：搜索走的是另一条查询，服务端在那条路上不接这个筛选，
+// 排序栏消失也是同一条理由。
+const canFilterUnread = computed(() => isInboundView.value && !isSearching.value)
+function toggleUnreadOnly() {
+  pushState({ unread: !unreadOnly.value })
+}
+// ------------------------------------------------ 往下滚就接着加载 ---
+// 邮件列表（收件箱那一族、搜索结果、已发送）往下接；待处理和已定时是表格，
+// 还是翻页，理由见模板里那两段注释。
+const isMailList = computed(() => isSearching.value || isInboundView.value || folder.value === 'sent')
+const isPagedTable = computed(() => folder.value === 'attention' || folder.value === 'scheduled')
+
+const moreState = computed<MoreState>(() => ({
+  hasMore: !!nextCursor.value,
+  loading: loading.value,
+  loadingMore: loadingMore.value,
+  failed: moreFailed.value,
+  supported: isMailList.value,
+}))
+// 哨兵只在还有下一页时挂出来：到底之后留着它，观察器会一直盯着一个永远
+// 可见的元素。
+const canLoadMore = computed(() => moreState.value.supported && !!nextCursor.value)
+const moreLine = computed(() => moreStatus(moreState.value, currentRows.value > 0))
+const currentRows = computed(() =>
+  isSearching.value || isInboundView.value ? inbound.value.length : mailboxSent.value.length,
+)
+
+function loadMore() {
+  if (!shouldLoadMore(moreState.value)) return
+  void load({ append: true, quiet: true })
+}
+
+// 人点「重试」。**单独一个入口**，因为 shouldLoadMore 里那条「上一次失败了
+// 就别再取」挡的是观察器（否则对着一个坏掉的接口每秒敲一次），不是挡人。
+// 把这两种意图混在一个函数里的后果是那颗按钮点下去什么都不发生。
+function retryLoadMore() {
+  moreFailed.value = false
+  loadMore()
+}
+
+const moreEl = ref<HTMLElement | null>(null)
+let moreObserver: IntersectionObserver | null = null
+// rootMargin：提前 300px 就开始取，滚到底的时候下一页多半已经在了。
+// root 不指定（用视口）：列表列在宽屏是自己滚、窄屏是整页滚，而
+// IntersectionObserver 算可见性时会把中间那层滚动容器的裁剪算进去，
+// 两种布局用同一套代码。
+watch(moreEl, (el) => {
+  moreObserver?.disconnect()
+  moreObserver = null
+  if (!el) return
+  moreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) loadMore()
+    },
+    { rootMargin: '300px 0px' },
+  )
+  moreObserver.observe(el)
+})
+onUnmounted(() => moreObserver?.disconnect())
+
+// ------------------------------------------------ 表格类的翻页 ---
+// 游标记在内存里，不进地址栏（见 pushState 上的注释）。一页一个游标，
+// 「上一页」就是把上一个弹出来重放。
+const tablePageCursors = ref<string[]>([])
+function nextTablePage() {
+  if (!nextCursor.value) return
+  tablePageCursors.value = [...tablePageCursors.value, tableCursor.value]
+  tableCursor.value = nextCursor.value
+  load()
+}
+function prevTablePage() {
+  const stack = tablePageCursors.value
+  if (!stack.length) return
+  tableCursor.value = stack[stack.length - 1]
+  tablePageCursors.value = stack.slice(0, -1)
+  load()
+}
+const tableCursor = ref('')
+
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -1742,6 +1936,19 @@ const mailboxSent = ref<SentMail[]>([])
 const unreadCount = ref(0)
 // Where the next inbound page starts; empty means this is the last one.
 const nextCursor = ref('')
+// 往下滚接下一页的三个状态。**只有这三个**：在取、上一次失败了、已经接过
+// 至少一页。别的（还有没有下一页）由 nextCursor 本身回答。
+const loadingMore = ref(false)
+const moreFailed = ref(false)
+// 已经接出来几页（1 = 只有第一页）。
+//
+// 记页数而不是记一个「接过没有」的布尔，是因为**重新拉的时候要把这几页拼
+// 回来**。屏幕上任何一个「刷新一下列表」的动作——处理完一封信返回、批量
+// 归档、拖走几封、全部已读——都会走重新拉；如果那一下只拿回第一页，滚了
+// 三页的人会突然发现列表只剩二十五行，而他刚才读的那封在第七十行。翻页
+// 时代这件事不明显（重新拉的是**当前那一页**，长度不变），无限滚动把它
+// 放大成每次操作都回到顶上。
+const loadedPages = ref(1)
 const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
@@ -1817,21 +2024,9 @@ watch(openedInbound, () => {
   detailsOpen.value = false
 })
 
-// Only the rows that have something in them. An empty "抄送:" is not
-// information, it is a line to read past.
-// 回信地址与发件人不一致。
-//
-// 这不是异常，正常业务里也常见（noreply 发出、客服组统一回收）。所以措辞是
-// 「注意」而不是「警告」：提示要说出事实，由看得懂的人判断，而不是替他断定
-// 这是诈骗——狼来了喊多了，真来的那次就没人听了。
-//
-// 但它值得被看见：伪造一封看似来自老供应商的邮件、把 Reply-To 换成自己的
-// 地址，是骗走货款最常用的一手，而 From 那一行看上去毫无破绽。
-const replyToMismatch = computed(() => {
-  const m = openedInbound.value
-  if (!m?.replyTo || !m.fromEmail) return false
-  return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
-})
+// 回信地址与发件人不一致。判断在 lib/mailDetails（那儿写着为什么值得提醒，
+// 也测得到）；这里只是把它接到当前打开的那封信上。
+const replyToMismatch = computed(() => replyToDiffers(openedInbound.value))
 
 // 工具条最右那颗垃圾桶到底做哪件事。
 //
@@ -1897,33 +2092,9 @@ function onReaderCommand(cmd: string) {
   }
 }
 
-const detailRows = computed(() => {
-  const m = openedInbound.value
-  if (!m) return []
-  const rows: { k: string; v: string }[] = []
-  const add = (k: string, v?: string | number) => {
-    if (v !== undefined && v !== null && v !== '' && v !== 0) rows.push({ k, v: String(v) })
-  }
-  add(t('emails.detail.from'), `${m.fromName ? m.fromName + ' ' : ''}<${m.fromEmail}>`)
-  // 整段，不是第一个：客户群发给七个人的信，这里要看到七个。
-  add(t('emails.detail.to'), m.toAll || m.toEmail)
-  add(t('emails.detail.cc'), m.cc)
-  // 只在与 From 不同时才列：一样的时候它不是信息，是一行要读过去的字。
-  if (replyToMismatch.value) add(t('emails.detail.replyTo'), m.replyTo)
-  add(t('emails.detail.subject'), m.subject)
-  // Gmail 的 mailed-by / signed-by。空表示未记录或未通过验证 —— 两者都不该
-  // 说成「验证失败」，那是在断言一件我们并不知道的事。
-  add(t('emails.detail.mailedBy'), m.authSpf)
-  add(t('emails.detail.signedBy'), m.authDkim)
-  if (m.sentAt) add(t('emails.detail.sentAt'), zonedStamp(m.sentAt))
-  if (m.receivedAt) add(t('emails.detail.receivedAt'), zonedStamp(m.receivedAt))
-  add(t('emails.detail.folder'), m.folder)
-  add(t('emails.detail.size'), m.rawSize ? humanSize(m.rawSize) : '')
-  // Message-ID 不列。它只在追着邮件管理员查日志时有用，而摆在这儿的样子
-  // 像一串谁都看不懂的乱码——用的人问过「这是不是出错了」。后端照样返回，
-  // 要查的时候导出原件里有。
-  return rows
-})
+// 这几行怎么来的在 lib/mailDetails：双击弹出的那个单独窗口画的是同一份，
+// 两边各写一遍的话，哪天多一行「密送」就只会加在其中一处。
+const detailRows = computed(() => mailDetailRows(openedInbound.value, t))
 
 // ---------------------------------------------------------------- URL state
 // The address bar is the source of truth for where the person is: folder,
@@ -1942,13 +2113,13 @@ interface UrlState {
   mail: string
   // The outbound counterpart: one sent mail the ERP has a record of.
   msg: string
-  // Where an inbound list page starts. Opaque server token; empty is the
-  // first page. Offset paging (page) still drives sent/attention.
-  cursor: string
   // 按哪一列排：`size:desc` 这种，见 lib/mailSort。空 = 日期倒序。
   // 放进地址栏是为了刷新和后退都保得住——排到一半刷新一下回到按日期排，
   // 人会以为自己看错了。
   sort: string
+  // 只看未读。同样进地址栏，同样的理由：筛着一半刷新一下变回全部，人会
+  // 以为收件箱多出来一批信。
+  unread: boolean
   // 在看哪个信箱。空 = 还没选（第一次进来，切换器还没加载完）。
   //
   // 放进 URL 而不是只留在内存里：刷新会回到默认箱而人以为自己还在另一个箱
@@ -1977,9 +2148,9 @@ function parseQuery(q: LocationQuery): UrlState {
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
     msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
-    cursor: one(q.c),
     acct: /^\d+$/.test(one(q.acct)) ? one(q.acct) : '',
     sort: sortParam(parseSort(one(q.sort))),
+    unread: one(q.unread) === '1',
   }
 }
 
@@ -1992,9 +2163,9 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.folder === 'sent' && s.sent !== 'erp') query.sent = s.sent
   if (s.mail) query.mail = s.mail
   if (s.msg) query.msg = s.msg
-  if (s.cursor) query.c = s.cursor
   if (s.acct) query.acct = s.acct
   if (s.sort) query.sort = s.sort
+  if (s.unread) query.unread = '1'
   return query
 }
 
@@ -2025,6 +2196,142 @@ function listScroller(): HTMLElement | null {
   return null
 }
 
+// ------------------------------------------------ 三栏宽度可以拖 ---
+// 文件夹栏 | 列表 | 阅读区，两条分隔条，各拖各的。存在 localStorage，下次
+// 打开还是这个宽度。为什么要能拖、为什么没拖过就一个数都不存，见
+// lib/paneWidths。
+//
+// 宽度写成行内样式，不是 CSS 里的类：它是某一个人拖出来的数，没有第二个
+// 地方知道它。没拖过时行内样式整个不写（值是 null），CSS 里那两个默认值
+// ——文件夹栏 208px、列表 clamp(280px, 34%, 400px)——继续管事。
+const railEl = ref<HTMLElement | null>(null)
+const listEl = ref<HTMLElement | null>(null)
+// 想要多宽（colWish）和此刻真用多宽（colW）分开记。
+//
+// 窗口一变窄，装不下的那一栏得让位，否则阅读区被挤到只剩一个词宽。但让位
+// 的只是"此刻用的"那个数：人想要的宽度不变，窗口再拉大，宽度自己回来。
+// 两个数合成一个的话，缩一次窗口就把人拖出来的设置永久改小了。
+const colWish = reactive<Record<Col, number | null>>({
+  rail: readWidth('rail', localStorage),
+  list: readWidth('list', localStorage),
+})
+const colW = reactive<Record<Col, number | null>>({ ...colWish })
+// 正在拖哪一条。只为了让那条分隔条在拖的过程中亮着——手早就离开了它原来的
+// 位置（指针被捕获了），没有这点反馈就不知道自己还按着。
+const gripping = ref<Col | null>(null)
+// 按下去那一刻的位置和宽度。之后每一次移动都从这两个数算起，不累加增量：
+// 累加会把每一次的取整误差叠起来，拖一趟下来鼠标和分隔条差出好几像素。
+let grip: { col: Col; x0: number; w0: number } | null = null
+
+function colEl(col: Col): HTMLElement | null {
+  return col === 'rail' ? railEl.value : listEl.value
+}
+
+// 这一栏最宽能到哪儿：它所在的那块地方，减掉旁边那些不归它的东西。
+//
+// 列表量的是自己的父节点——「列表 + 分隔条 + 阅读区」那一块——再减掉分隔条，
+// 所以拖到头时阅读区正好是 0。父节点而不是「信箱区减掉文件夹栏」：后者漏掉
+// 了它们之间那条分隔条。
+//
+// 文件夹栏减掉两条分隔条，再减掉列表**此刻**的宽度：拖它的时候列表不跟着变
+// 窄（它有自己的宽度），能让出来的只有阅读区。
+function roomFor(col: Col): number {
+  if (col === 'list') {
+    const panes = listEl.value?.parentElement?.clientWidth ?? 0
+    return panes ? panes - SEP_LIST : Infinity
+  }
+  const box = mailboxEl.value?.getBoundingClientRect().width || 0
+  if (!box) return Infinity
+  const listNow = listEl.value?.getBoundingClientRect().width ?? 0
+  return box - SEP_RAIL - listNow - SEP_LIST
+}
+
+// 拖到了这个宽度：想要的和正用的一起改，然后存。拖的时候人看得见边界在哪，
+// 所以这里两个数是同一个。
+function dragTo(col: Col, px: number) {
+  const w = clampCol(px, roomFor(col))
+  colW[col] = w
+  colWish[col] = w
+}
+
+function saveCol(col: Col) {
+  const w = colWish[col]
+  if (w !== null) writeWidth(col, w, localStorage)
+}
+
+function onGripDown(col: Col, ev: PointerEvent) {
+  const el = colEl(col)
+  if (!el) return
+  grip = { col, x0: ev.clientX, w0: el.getBoundingClientRect().width }
+  gripping.value = col
+  // 指针捕获：拖快了鼠标会跑到分隔条外面，甚至跑出窗口。捕获之后移动和松开
+  // 都还发到这一条上，不会拖到一半"手滑脱了"。
+  ;(ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId)
+  // 顺手把旁边的文字选上是这类控件最常见的那个脏东西：拖一条分隔条，半列
+  // 邮件主题跟着变蓝。
+  ev.preventDefault()
+}
+
+function onGripMove(ev: PointerEvent) {
+  if (!grip) return
+  dragTo(grip.col, grip.w0 + (ev.clientX - grip.x0))
+}
+
+function onGripUp() {
+  if (!grip) return
+  const col = grip.col
+  grip = null
+  gripping.value = null
+  saveCol(col)
+}
+
+// 双击：忘掉这个数，回到默认宽度。拖坏了总得有条回去的路，而"再拖回来"
+// 是拖不准的。
+function resetCol(col: Col) {
+  colW[col] = null
+  colWish[col] = null
+  clearWidth(col, localStorage)
+}
+
+// 键盘也能调。一条只能用鼠标拖的分隔条，对用键盘的人等于不存在——而它管的
+// 是"主题能看多长"，不是装饰。Home 是回默认，对应鼠标那边的双击。
+function onGripKey(col: Col, ev: KeyboardEvent) {
+  if (ev.key === 'Home') {
+    ev.preventDefault()
+    resetCol(col)
+    return
+  }
+  const step = ev.shiftKey ? 48 : 16
+  const dx = ev.key === 'ArrowLeft' ? -step : ev.key === 'ArrowRight' ? step : 0
+  if (!dx) return
+  const el = colEl(col)
+  if (!el) return
+  ev.preventDefault()
+  dragTo(col, el.getBoundingClientRect().width + dx)
+  saveCol(col)
+}
+
+// 窗口变了之后重新收一遍：装不下的让位，装得下的回到人想要的宽度。存下来
+// 的数一个都不动。
+function refitCols() {
+  for (const col of ['rail', 'list'] as Col[]) {
+    const wish = colWish[col]
+    colW[col] = wish === null ? null : clampCol(wish, roomFor(col))
+  }
+}
+window.addEventListener('resize', refitCols)
+onUnmounted(() => window.removeEventListener('resize', refitCols))
+// 什么时候收：这两块出现的那一刻，不在 onMounted——那时它们还没画出来，
+// 量到的宽度是 0。
+//
+// **两块都要盯**，这是个真会咬人的地方：信箱区（mailboxEl）等锁的状态问
+// 出来之后就一直在，锁上也在（左栏那排信箱锁着照样看得见）；而三栏所在的
+// 那块（listEl 的父节点）只有解锁之后才画。令牌过夜就没了，第二天进来是
+// 「先锁着、输密码、再出现三栏」——只盯信箱区的话，那一次收发生在三栏还
+// 不存在的时候，量不到宽度，于是上次在大屏上拖出来的宽度原样套到小屏上，
+// 阅读区被挤成一条。
+watch([mailboxEl, listEl], () => refitCols())
+
 // Setting scrollTop once is not enough: at Vue's nextTick the table is in
 // the DOM but el-table finishes its own height a frame later, so a restore
 // aimed past the half-built height gets clamped and stays there. Retried
@@ -2044,23 +2351,16 @@ function restoreListScroll(top: number, tries = 8) {
 // cursor it came from. Kept in history state rather than a component ref so
 // it survives a refresh and so back/forward each restore the stack as it
 // stood on that entry.
-const cursorStack = ref<string[]>([])
 
-function stackFromHistory(): string[] {
-  const st = (history.state as { mailStack?: unknown } | null)?.mailStack
-  return Array.isArray(st) ? (st as string[]) : []
-}
-
-function pushState(over: Partial<UrlState>, stack?: string[]) {
+// 游标不再进地址栏：邮件列表改成往下滚就接着加载之后，「翻到哪一页」不再是
+// 一个状态——只有「已经接了几页」，而那和滚动位置一样，是屏幕的样子不是内容
+// 的样子。一条带游标的链接发给同事，对方打开会落在列表中间、上面什么都没有。
+//
+// 表格类（待处理、已定时）还在翻页，但它们的游标也不进地址栏了：翻到第三页
+// 刷新一下回到第一页，比一条发出去打不开的链接好接受。
+function pushState(over: Partial<UrlState>) {
   const cur = applied ?? parseQuery(route.query)
   const next = { ...cur, ...over }
-  // A page number and a cursor are two answers to the same question; setting
-  // one has to clear the other or a stale cursor would survive a search.
-  // 换排序也一样：游标记的是「按上一种顺序翻到哪」，换了顺序它就指向
-  // 一个不存在的位置，服务端会直接拒收。
-  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined || over.sort !== undefined)) {
-    next.cursor = ''
-  }
   // "Back to the list" is one intent however it is spelled, and inbound and
   // outbound details occupy the same slot on screen. Clearing them together
   // here beats remembering to name all three at every call site — the kind of
@@ -2074,7 +2374,7 @@ function pushState(over: Partial<UrlState>, stack?: string[]) {
     load()
     return
   }
-  router.push({ query: toQuery(next), state: { mailStack: stack ?? [] } })
+  router.push({ query: toQuery(next) })
 }
 
 // The one place the URL turns into screen state. Loads only what changed:
@@ -2096,12 +2396,26 @@ function applyRoute() {
     // a later render — so this is the last honest reading of where it stood.
     listScroll.set(scrollKey(prev), listScroller()?.scrollTop ?? 0)
   }
-  cursorStack.value = stackFromHistory()
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
   sort.value = parseSort(s.sort)
-  // 地址栏说了在看哪个箱就照做。这是后退/前进/刷新走的那条路：
+  unreadOnly.value = s.unread
+  // 换了文件夹/关键词/排序/筛选，接过的那几页和表格的翻页位置都作废：它们
+  // 记的是「在上一份名单里走到哪」。不清的话，换个文件夹第一次往下滚会拿
+  // 上一份名单的游标去要下一页。
+  if (
+    !prev ||
+    prev.folder !== s.folder ||
+    prev.q !== s.q ||
+    prev.sort !== s.sort ||
+    prev.unread !== s.unread
+  ) {
+    loadedPages.value = 1
+    moreFailed.value = false
+    tableCursor.value = ''
+    tablePageCursors.value = []
+  }  // 地址栏说了在看哪个箱就照做。这是后退/前进/刷新走的那条路：
   // 不同步的话，URL 里写着 A 箱而列表按 B 箱拉。
   if (s.acct) currentAccount.value = Number(s.acct)
   if (
@@ -2110,9 +2424,13 @@ function applyRoute() {
     prev.page !== s.page ||
     prev.q !== s.q ||
     prev.sent !== s.sent ||
-    prev.cursor !== s.cursor ||
     prev.acct !== s.acct ||
-    prev.sort !== s.sort
+    prev.sort !== s.sort ||
+    // 切「只看未读」也要重拉。#429 把这一条漏了：那时它靠的是「改筛选会清
+    // 游标、游标变了就重拉」，而第一页的游标本来就是空的——于是在第一页上
+    // 点这颗按钮，地址栏变了、按钮亮了，列表一动不动。游标移出地址栏之后
+    // 那条间接的路彻底没了，这里必须直说。
+    prev.unread !== s.unread
   ) {
     load()
   }
@@ -2269,6 +2587,19 @@ function onMailLocked() {
 window.addEventListener('mail-locked', onMailLocked)
 onUnmounted(() => window.removeEventListener('mail-locked', onMailLocked))
 
+// 双击弹出的那个窗口里改了一封信（删了、挪了、归档了、标未读了），它会在
+// 这条频道上说一声。列表在这边，所以这边重新拉一遍；正开着的就是那封而它
+// 已经不在这一格里了的话，阅读区也收起来——右边显示一封列表里没有的信，
+// 看着像坏了。
+const mailBus = new BroadcastChannel('erp-mail')
+mailBus.onmessage = (e: MessageEvent<{ type?: string; id?: string; gone?: boolean }>) => {
+  if (e.data?.type !== 'mail-changed') return
+  if (e.data.gone && openedInbound.value?.id === e.data.id) pushState({ mail: '' })
+  void load({ quiet: true })
+  refreshUnread()
+}
+onUnmounted(() => mailBus.close())
+
 // 退出**当前这一个**信箱。别的箱照开。
 //
 // 从前是全退，因为令牌一个人只有一把。现在一个箱一把，撤掉当前这把之后
@@ -2335,6 +2666,14 @@ function init() {
 // IMAP sync stores it, publishes a hint, and every open tab of the owner's
 // hears it here. The re-fetch goes through the normal API, so this is only
 // ever "go and look", never data.
+//
+// 角标永远刷；列表要不要重拉，规则在 lib/liveInbox。这里从前写着「开着一封
+// 信就不重拉」——那是两栏布局的规矩（读信会盖住列表），三栏之后列表就在打开
+// 的信旁边，而一封信几乎总是开着的，于是列表**永远**不更新：角标在涨、列表
+// 纹丝不动、非得手动刷新。两边各自的道理见那个文件。
+//
+// 重拉是安静的（不转圈）：这不是人点出来的动作，一转圈就像是页面自己出了
+// 什么事。新的一行出现在顶上就是全部的反馈。
 onUnmounted(
   onLive((e) => {
     if (e.type === 'mail.excel_job.changed') {
@@ -2342,13 +2681,19 @@ onUnmounted(
       return
     }
     if (e.type !== 'mail.inbound') return
-    // Not while reading a mail: yanking the list from under the detail page
-    // would be invisible, and the unread badge covers the news.
-    if (folder.value === 'inbox' && !openedInbound.value) {
-      load()
-    } else {
-      refreshUnread()
-    }
+    refreshUnread()
+    const reload = shouldReloadList(e.subject, {
+      folder: folder.value,
+      searching: isSearching.value,
+      // 接过下一页的人正在往回翻历史，重拉会把列表换成头二十五行——他滚了
+      // 半天的东西就没了。角标照刷。
+      onFirstPage: loadedPages.value <= 1,
+      picked: picked.value.length,
+      dragging: !!dragging.value,
+      bulkBusy: bulkBusy.value,
+      currentAccount: currentAccount.value,
+    })
+    if (reload) void load({ quiet: true })
   }),
 )
 
@@ -2446,6 +2791,9 @@ async function showDraft(id: string) {
 }
 
 function openDraftPreview(row: { id: string }) {
+  // 已经开着的不再点开一次，理由见 openInbound：双击是"接着写"，第一下不该
+  // 把右边重新拉一遍。
+  if (openedDraft.value?.id === row.id) return
   showDraft(row.id)
 }
 
@@ -2561,11 +2909,18 @@ async function askFolderName(title: string, initial = ''): Promise<string | null
   }
 }
 
-async function createFolder(accountId: number) {
-  const name = await askFolderName(t('mailGate.newFolder'))
+// 新建文件夹。parentId 不给就是顶层；左栏每个自建文件夹行上的「＋」给的是
+// 它自己的 id——建在那个文件夹底下。层级在服务器上是真的（IMAP 的名字就是
+// 路径），所以在 Foxmail 里打开也是同一棵树。
+async function createFolder(accountId: number, parentId?: number) {
+  const name = await askFolderName(t(parentId ? 'mailGate.newSubfolder' : 'mailGate.newFolder'))
   if (!name) return
   try {
-    await post('/mail-folders', { accountId: String(accountId), name })
+    await post('/mail-folders', {
+      accountId: String(accountId),
+      name,
+      ...(parentId ? { parentId: String(parentId) } : {}),
+    })
     await loadCustomFolders(accountId)
   } catch {
     // 拦截器已经弹了后端的原因（重名、服务器拒绝）
@@ -2573,13 +2928,17 @@ async function createFolder(accountId: number) {
 }
 
 async function renameFolder(cf: CustomFolder) {
-  const name = await askFolderName(t('mailGate.renameFolder'), cf.name)
-  if (!name || name === cf.name) return
+  // 输入框里放的是**最后一段**，不是整条路径：改名改的就是这一段，
+  // 而把 "客户/巴西" 整条摆进去，人会以为要连父路径一起重写。
+  const { leaf } = splitFolderPath(cf.name)
+  const name = await askFolderName(t('mailGate.renameFolder'), leaf)
+  if (!name || name === leaf) return
   try {
-    await put(`/mail-folders/${cf.id}`, { name })
+    // 新的 key 由后端说：子文件夹改名之后整条路径是 "客户/智利"，
+    // 而这里只知道「智利」。自己拼会拼出一个不存在的文件夹。
+    const d = await put<{ folder?: CustomFolder }>(`/mail-folders/${cf.id}`, { name })
     await loadCustomFolders(cf.accountId)
-    // 正停在这个文件夹里：它的 key 变了，跟过去
-    if (folder.value === cf.viewKey) switchFolder(`F:${name}`)
+    if (folder.value === cf.viewKey && d?.folder?.viewKey) switchFolder(d.folder.viewKey)
   } catch {
     // 同上
   }
@@ -2691,10 +3050,12 @@ watch(currentAccount, (now, before) => {
   // （解绑后自动切、新绑一个箱）留在原来那个文件夹，和从前一样。
   const goto = pendingFolder
   pendingFolder = null
-  pushState(
-    { page: 1, q: '', mail: '', cursor: '', acct: String(now), sort: '', ...(goto ? { folder: goto } : {}) },
-    [],
-  )
+  // 换箱等于换了一份完全不同的名单。
+  loadedPages.value = 1
+  moreFailed.value = false
+  tableCursor.value = ''
+  tablePageCursors.value = []
+  pushState({ page: 1, q: '', mail: '', acct: String(now), sort: '', ...(goto ? { folder: goto } : {}) })
   // 从锁着的状态回来时，页面上那些只在解锁后才拉的东西（草稿数、待处理数、
   // 同步健康）都还是空的或者过期的。init 会把它们一起补上。
   if (wasLocked) {
@@ -2708,26 +3069,58 @@ watch(currentAccount, (now, before) => {
   checkSyncHealth()
 })
 
-// Inbound lists page by cursor: forward hands back the token the server
-// returned, back replays the one this page was reached with. Both are
-// navigations, so the address bar and the browser's own buttons stay honest.
-function nextPage() {
-  if (!nextCursor.value) return
-  pushState({ cursor: nextCursor.value, mail: '' }, [...cursorStack.value, applied?.cursor ?? ''])
-}
-
-function prevPage() {
-  const stack = cursorStack.value
-  if (!stack.length) return
-  pushState({ cursor: stack[stack.length - 1], mail: '' }, stack.slice(0, -1))
-}
-
 function backToList() {
   pushState({ mail: '' })
 }
 
-async function load() {
-  loading.value = true
+// 接上去还是换掉。抽成一个函数，好让五种列表（收件箱、搜索、已发送、已定时、
+// 待处理）不会有一种漏掉 append。
+function concatRows<T>(append: boolean, cur: T[], next: T[]): T[] {
+  return append ? [...cur, ...next] : next
+}
+
+// quiet：不转圈。给后台自己发起的重拉用（新信到了），人点出来的都要转。
+// append：接在现有这批后面，而不是换掉——往下滚到底时走这条。
+//
+// 两者共用一个函数而不是各写一份，是因为「从哪儿取、取回来怎么解」这两件事
+// 两边一模一样，分开写迟早会有一边漏掉某个参数（筛选、排序、信箱）。
+// 每一次取列表都领一个号。**只有最新的那一号能把结果写进列表。**
+//
+// 没有这道闸的后果有两种，都不会报错：
+//
+//   一、接下一页的请求还在飞，人点了别的文件夹。新文件夹的第一页先回来，
+//       旧文件夹的第二页后回来——而它手里攥着 append=true，于是收件箱的信
+//       被接在了星标列表底下，游标也被换成收件箱的。
+//   二、同一个文件夹里：接下一页在飞，人把上面几封批量删了。删完那一下重新
+//       拉第一页，这时第一页已经够到原来「第二页」的位置；那个还在飞的请求
+//       回来一接，同一封信出现两遍（MailList 按 id 做 key，会直接撞 key）。
+//
+// 领号而不是 AbortController：请求本身取消不取消无所谓，要紧的是别把过期的
+// 结果写进去。
+let loadSeq = 0
+
+// 回 true 表示这一次的结果真的写进列表了；被更新的一次挤掉、或者失败了，
+// 回 false。reloadPages 靠它决定还要不要往下拼。
+async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean } = {}): Promise<boolean> {
+  const append = opts.append === true
+  // 重新拉的时候把已经接出来的那几页拼回来，而不是只拿第一页。single 是
+  // reloadPages 自己往下调时用的，防止无限套娃。
+  if (!append && !opts.single && loadedPages.value > 1) {
+    return reloadPages(opts)
+  }
+  const seq = ++loadSeq
+  const fresh = () => seq === loadSeq
+  // 接下一页时用服务端上一次给的游标；重新拉时从头开始。表格类还在翻页，
+  // 它们的位置记在 tableCursor 里。
+  const cursor = append ? nextCursor.value : isPagedTable.value ? tableCursor.value : ''
+  if (append) {
+    loadingMore.value = true
+    moreFailed.value = false
+  } else {
+    loadedPages.value = 1
+    moreFailed.value = false
+    if (!opts.quiet) loading.value = true
+  }
   try {
     if (isSearching.value) {
       // A search crosses folders, so it is a different request with a
@@ -2750,9 +3143,11 @@ async function load() {
       }>('/mail-search', {
         page_size: pageSize,
         keyword: keyword.value,
-        cursor: applied?.cursor ?? '',
+        cursor,
       }, { headers: { 'X-Mail-Unlock-All': searchScopeHeader() } })
-      inbound.value = (d.hits ?? []).map((h) => ({
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
+      inbound.value = concatRows(append, inbound.value, (d.hits ?? []).map((h) => ({
         ...h.mail,
         // The text around the hit replaces the opening line: showing the
         // first sentence of a mail that matched on its fourth paragraph
@@ -2760,7 +3155,7 @@ async function load() {
         snippet: h.matchSnippet,
         matchFolder: h.folder,
         matchAccount: Number(h.accountId ?? 0),
-      }))
+      })))
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
       // unreadCount is deliberately left alone: it counts the mailbox, and a
@@ -2775,23 +3170,29 @@ async function load() {
         page_size: pageSize,
         keyword: keyword.value,
         view: currentView.value,
-        cursor: applied?.cursor ?? '',
+        cursor,
         // 排序只在没有关键词时带：有关键词走的是搜索查询，服务端会拒绝
         // 在它上面排序（排序栏那时也不显示）。
         // 和 sortFields 用同一个判断（trim 过的）：只有空格的搜索框不算有
         // 关键词，否则排序栏显示着、参数却没带，点了「没反应」。
         ...(keyword.value.trim() ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
+        // 只看未读。和排序一样，有关键词时不带：那条路上服务端不接。
+        ...(unreadOnly.value && !keyword.value.trim() ? { unread: '1' } : {}),
         // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
         // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
         // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
         // 配一个 accountId=A 照样读得到 A 的信。
       })
-      inbound.value = d.mails ?? []
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
+      inbound.value = concatRows(append, inbound.value, d.mails ?? [])
       total.value = Number(d.meta?.total ?? 0)
       unreadCount.value = Number(d.unreadCount ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       drafts.value = d.drafts ?? []
     } else if (folder.value === 'scheduled') {
       const d = await get<{
@@ -2800,9 +3201,11 @@ async function load() {
         nextCursor: string
       }>('/email-scheduled', {
         page_size: pageSize,
-        cursor: applied?.cursor ?? '',
+        cursor,
       })
-      scheduled.value = d.sends ?? []
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
+      scheduled.value = concatRows(append, scheduled.value, d.sends ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'sent') {
@@ -2813,11 +3216,13 @@ async function load() {
       }>('/mailbox-sent', {
         page_size: pageSize,
         keyword: keyword.value,
-        cursor: applied?.cursor ?? '',
+        cursor,
         sort_by: listSort.value.by,
         sort_dir: listSort.value.dir,
       })
-      mailboxSent.value = d.mails ?? []
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
+      mailboxSent.value = concatRows(append, mailboxSent.value, d.mails ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'attention') {
@@ -2829,9 +3234,11 @@ async function load() {
         page_size: pageSize,
         keyword: keyword.value,
         attention_only: true,
-        cursor: applied?.cursor ?? '',
+        cursor,
       })
-      messages.value = d.messages ?? []
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
+      messages.value = concatRows(append, messages.value, d.messages ?? [])
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
       attentionCount.value = total.value
@@ -2839,11 +3246,46 @@ async function load() {
       const d = await get<{ suppressions: Suppression[] }>('/email-suppressions', {
         keyword: keyword.value,
       })
+      // 过期的一次不许落盘，见 loadSeq。
+      if (!fresh()) return false
       suppressions.value = d.suppressions ?? []
     }
+    if (append) loadedPages.value += 1
+    return true
+  } catch (e) {
+    // 接下一页失败要说出来并停下：无限滚动最坏的坏法是**静静地停住**，
+    // 屏幕上看着就是「到底了」，而其实还有几百封。重新拉整份列表的失败
+    // 不在这里接——它有自己的提示路径（横幅、空状态）。
+    if (append) {
+      if (fresh()) moreFailed.value = true
+      return false
+    }
+    throw e
   } finally {
-    loading.value = false
+    // 过期的一次连「不转圈了」都不该说：它清掉的可能是**新的那一次**正
+    // 亮着的标志，于是观察器以为没人在取，又发一次。
+    if (fresh()) {
+      if (append) loadingMore.value = false
+      else if (!opts.quiet) loading.value = false
+    }
   }
+}
+
+// 重新拉，并把已经接出来的那几页拼回来。
+//
+// 一页一页地拼，不是一次要 N 页：游标是「上一页最后一行的位置」，中间那几页
+// 只能顺着走。页数就是人自己滚出来的那几页，通常两三页。
+//
+// 任何一步没落盘就停：那说明这次重拉已经被更新的一次挤掉了（人又点了别的
+// 文件夹），再往下拼就是往新名单上接旧数据。
+async function reloadPages(opts: { quiet?: boolean } = {}): Promise<boolean> {
+  const want = loadedPages.value
+  if (!(await load({ ...opts, single: true }))) return false
+  for (let i = 1; i < want; i++) {
+    if (!nextCursor.value) break
+    if (!(await load({ append: true, quiet: true }))) return false
+  }
+  return true
 }
 
 // A row click is a navigation; the route watcher does the fetching.
@@ -2857,8 +3299,55 @@ async function load() {
 // 收到的信而写信框的发件人还跟着左边高亮的 A，「读 B 的信、从 A 回过去」。
 // 现在那件事由**这封信自己**回答：单封读取会带回 accountId，写信框和
 // replyingAddress 都读它。信箱跟着信走，左栏跟着人走，两件事分开。
+// 打开一封信。**顺手把另一种"打开"关掉**：地址栏里 mail= 和 msg= 是两个独立
+// 的参数，一个是邮箱里的信、一个是 ERP 自己的投递记录，而阅读区一次只显示
+// 一个（模板里 mail 优先）。不清掉的话，在已发送里先点一封信、再点一条投递
+// 记录，右边显示的还是那封信，左边高亮的也还是那一行。
 function openInbound(row: MailRow) {
-  pushState({ mail: row.id })
+  // 已经开着这一封了：什么都不做。
+  //
+  // 从前这里照样 pushState，而 pushState 把"去已经在的地方"当成刷新，把整个
+  // 列表重新拉一遍——拉的时候列表上蒙着一层加载遮罩。双击的第一下触发了这次
+  // 刷新，第二下落在遮罩上，于是「选中的那封双击开不了窗口，别的都行」。
+  if (openedInbound.value?.id === row.id) return
+  pushState({ mail: row.id, msg: '' })
+}
+
+// 双击一行：这封信自己开一个窗口。
+//
+// 照 Foxmail、Outlook、Apple Mail——桌面邮件客户端双击一封信都是这个意思。
+// 单击已经把信摆在右边了，双击要的是另一件事：把它拿出这三栏，占满一块屏幕
+// 去看，或者摆到第二块屏幕上，一边看信一边在主窗口里填单子。
+//
+// window.open 而不是新标签页：一封信是一个窗口，不是一页网站。给窗口起名
+// 'mail-<id>'，同一封信双击第二次是把已经开着的那个拿到前面来，不是再开
+// 一个一模一样的。
+//
+// **特意没写 noopener**，尽管几乎所有 window.open 都该写它：按 HTML 规范，
+// 带 noopener 时浏览器必须新开一个互不相干的上下文，窗口名字整个被忽略
+// ——于是上面那条「第二次是拿到前面来」就没了，双击十次开十个窗口。
+// 这里不写它是安全的：开的是本站自己的 /mail/<id>，同源，不存在把
+// window.opener 交给外站的问题。
+//
+// 投递记录（kind === 'ERP'）没有这个窗口：邮箱服务器上没有这封信，
+// /inbound-mails/<id> 那条路上什么都没有。双击它就只是点了两下。
+//
+// 弹窗拦截器不会拦：这是双击直接触发的，浏览器认这是人的动作。
+//
+// **开完要 focus()。** 名字已经占着一个窗口时，浏览器只是把那个窗口导到这个
+// 地址，**不会把它拿到前面来**——那个窗口就压在主窗口后面，屏幕上什么都没
+// 发生。第二次双击同一封信"没反应"就是这么来的。
+function openMailWindow(row: MailRow) {
+  if (row.kind === 'ERP') return
+  const url = router.resolve({ path: `/mail/${row.id}` }).href
+  const win = window.open(url, `mail-${row.id}`, 'width=1040,height=860')
+  // 被浏览器拦下了（有人把弹窗全局关掉了）。不说一句的话，双击的结果就是
+  // 屏幕上什么都没有，而人只会以为是我们的程序坏了。
+  if (!win) {
+    ElMessage.warning(t('emails.popupBlocked'))
+    return
+  }
+  win.focus()
 }
 
 // Fetches the mail named in the URL. Opening marks it read server-side; the
@@ -3079,36 +3568,7 @@ async function printThread() {
   if (file) printDocument(await file.text())
 }
 
-// Printing through a frame of our own rather than a new tab.
-//
-// window.open after an await is what a popup blocker exists to stop, and the
-// failure is silent — the click "does nothing". A frame is always allowed.
-// It also keeps the sender's document out of a top-level page at our origin,
-// which matters less here than it would with the original HTML but costs
-// nothing to keep true.
-function printDocument(html: string) {
-  const frame = document.createElement('iframe')
-  frame.setAttribute('aria-hidden', 'true')
-  // Hidden, but laid out. display:none is not laid out and prints blank.
-  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;'
-  frame.srcdoc = html
-  frame.onload = () => {
-    const win = frame.contentWindow
-    if (!win) {
-      frame.remove()
-      return
-    }
-    win.focus()
-    win.print()
-    // Removing the frame while the dialog is still open cancels the job in
-    // Safari, so it goes afterwards — with a timer in case a browser never
-    // fires afterprint, which is the case in more of them than it should be.
-    const drop = () => frame.remove()
-    win.addEventListener('afterprint', drop, { once: true })
-    setTimeout(drop, 120_000)
-  }
-  document.body.appendChild(frame)
-}
+// 打印走 lib/printDocument：双击弹出的单独窗口也要打印，同一段代码。
 
 // Housekeeping straight from a list row, without opening the mail. Each of
 // these also reaches the mail host within seconds; see the write-back queue.
@@ -4365,9 +4825,6 @@ function downloadExcel() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-const previewOpen = ref(false)
-const previewing = ref<MailFile | null>(null)
-
 const convertingAttachment = ref('')
 const bundling = ref(false)
 
@@ -4408,6 +4865,8 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
     if (convertingAttachment.value) return
     // 翻到别的信上去了，这封就不用预热了。
     if (openedInbound.value?.id !== opened) return
+    // 表格不用预热：它根本不走服务器。needsConversion 已经替表格答了 false，
+    // 这里不必再写一遍。
     if (!needsConversion(a)) continue
     try {
       const resp = await post<{ previewUrl?: string }>(
@@ -4424,22 +4883,47 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
 }
 
 /**
- * 打开预览。
+ * 打开预览。**一律新开一个标签页**，不再在页面里弹对话框。
  *
- * 图片和 PDF 直接开。Word / Excel / PPT 要先请服务器转成 PDF——转换是按需的，
- * 不是每封信一到就把所有附件都转一遍：绝大多数附件没人点开。
+ * 三条路：
  *
- * 转出来的地址写回这个附件对象，所以同一份文件第二次点是直接开的，连请求
- * 都不发。服务器那边也有缓存，换个人点同样不会重转。
+ * · 表格（.xlsx/.csv/.tsv）→ 自己的一页，浏览器当场解出来画成表。
+ *   不转 PDF，服务器完全不参与，也就没有任何中间文件被存下来。
+ *   从前它和 Word 一样送去 LibreOffice 转 PDF，那条路慢（几秒）、宽表被切成
+ *   好几页、而且 PDF 里的单元格选不中也搜不了。
+ * · 图片和 PDF → 直接开那个地址，交给浏览器自带的看图/看 PDF。
+ * · Word / PPT（还有读不了的老 .xls）→ 只能先请服务器转成 PDF，再开新页。
+ *   浏览器里没有第二种办法把 .docx 画出来。
+ *
+ * 新标签页而不是对话框：一个 1000px 宽的对话框里看一份 A4 合同，等于隔着
+ * 门缝看；而标签页是整块屏幕，还能拖到第二个显示器上、能打印、能搜。
+ *
+ * 弹窗拦截器不会拦：这是点击直接触发的。要等服务器转换的那一条先把空白页
+ * 开出来再去转，否则 await 之后再 open 就不算「人点的」了，会被拦。
  */
 async function openPreview(a: MailFile, mailID: string) {
+  // 在线 Office 优先：配了 OnlyOffice 的话 Word / Excel / PPT 都在它里面开。
+  if (isOfficePreview(a)) {
+    const id = mailID || openedInbound.value?.id || ''
+    if (!id) return
+    window.open(router.resolve({ path: `/mail/${id}/office/${a.id}` }).href, `office-${a.id}`)?.focus()
+    return
+  }
+  if (isSheetPreview(a)) {
+    const id = mailID || openedInbound.value?.id || ''
+    if (!id) return
+    // focus 的理由同 openMailWindow：名字占着的那个标签页不会自己跑到前面来。
+    window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()
+    return
+  }
   if (!needsConversion(a)) {
-    previewing.value = a
-    previewOpen.value = true
+    if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
     return
   }
   if (convertingAttachment.value) return
   if (!mailID) return
+  // 先占住标签页（此刻还在这次点击的手势里），转好了再把地址填进去。
+  const tab = window.open('', `preview-${a.id}`)
   convertingAttachment.value = a.id
   try {
     const resp = await post<{ previewUrl?: string }>(
@@ -4447,18 +4931,16 @@ async function openPreview(a: MailFile, mailID: string) {
     )
     if (!resp?.previewUrl) throw new Error('no url')
     a.previewUrl = resp.previewUrl
-    previewing.value = a
-    previewOpen.value = true
+    if (tab) tab.location.replace(resp.previewUrl)
+    else window.open(resp.previewUrl, '_blank', 'noopener')
   } catch {
     // 具体原因（类型不支持、文件太大、转换失败）后端已经用消息说了，
-    // 拦截器会弹出来；这里不再叠一层。
+    // 拦截器会弹出来；这里不再叠一层。开着的空白页得收回去，留着一个
+    // 白页子比什么都没发生更糟。
+    tab?.close()
   } finally {
     convertingAttachment.value = ''
   }
-}
-
-function isImage(a: MailFile) {
-  return (a.contentType || '').toLowerCase().startsWith('image/')
 }
 
 // Why an attachment cannot be downloaded, said accurately.
@@ -4492,15 +4974,18 @@ function initialOf(name: string) {
 // about delivery and opens; a copy from the host's Sent folder opens the
 // ordinary mail page, because that is all there is to show about it.
 function openSentRow(row: MailRow) {
+  // 已经开着的不再点开一次，理由见 openInbound。
   if (row.kind === 'ERP') {
-    pushState({ msg: row.id })
+    if (String(openMail.value?.id ?? '') === row.id) return
+    pushState({ msg: row.id, mail: '' })
     return
   }
-  pushState({ mail: row.id })
+  if (openedInbound.value?.id === row.id) return
+  pushState({ mail: row.id, msg: '' })
 }
 
 function openMessage(row: AttentionMessage) {
-  pushState({ msg: row.id })
+  pushState({ msg: row.id, mail: '' })
 }
 
 function backFromOutbound() {
@@ -4590,7 +5075,9 @@ async function doUnsuppress(row: Suppression) {
    went pale again underneath it. */
 .mailbox {
   display: flex;
-  gap: 18px;
+  /* 从前是 gap: 18px。现在两栏之间站着一条分隔条，那 18px 由「4 + 10 + 4」
+     凑出来：留白没变，中间那 10px 成了能抓住的东西。 */
+  gap: 4px;
   align-items: stretch;
   min-height: 100%;
   background: var(--el-bg-color);
@@ -4684,16 +5171,68 @@ async function doUnsuppress(row: Suppression) {
   --el-table-row-hover-bg-color: var(--mail-row-hover);
   --el-table-border-color: var(--mail-divider);
 }
+/* 列表上方那一条。从前顶着一行 19px 的文件夹名字，所以是"标题栏"；名字
+   去掉之后它就只剩控件了，于是按工具条的尺寸来：里面的按钮全是 small，
+   勾中邮件时换上的那排批量按钮也是 small——两种状态高度一样，勾一封信
+   列表不会跳一下。 */
 .pane-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  /* 挤不下就换行，不是把里面的字挤成一竖条。
+     列表这一栏的宽度现在是人自己拖的，拖到 250px 也合理——那时这一条上的
+     「排序：日期 ↓ / 只看未读 / 全部已读」放不下。放不下有两种办法：把每
+     一样都压窄（于是「排序：日期」竖着排成三行，那正是这次要修的样子），
+     或者整颗按钮挪到下一行。后者永远是对的：一颗按钮要么完整，要么不在。 */
+  flex-wrap: wrap;
+  row-gap: 6px;
+  /* 换到第二行的按钮靠右，跟着第一行那几颗的右边缘走，不是散落在左边。
+     第一行不受影响：那儿有一个 flex:1 的空档（.grow），free space 全被它
+     吃掉了，justify-content 没得分配。 */
+  justify-content: flex-end;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
-.pane-head h2 {
+.search-title {
   margin: 0;
-  font-size: 19px;
+  font-size: 15px;
+  font-weight: 600;
+  /* 搜的词可以很长，而它不该把整条工具条挤走：超出就省略号，全词在左栏
+     那个搜索框里原样摆着。 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* 排序：一颗不像按钮的按钮。它是这一条上最不重要的控件（一天点零到一次），
+   画成实心按钮会和右边那两颗真按钮抢眼睛。 */
+.sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  /* 不折行、不压缩：这五个字是一个整体，断在中间没有任何意义。 */
+  flex: none;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--mail-meta);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: background var(--mail-fast) var(--mail-ease), color var(--mail-fast) var(--mail-ease);
+}
+.sort-trigger:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.sort-trigger:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
+}
+/* 菜单里"现在按的是这一项"那条规则在 styles/mailbox.css：下拉菜单是挂到
+   <body> 上的，scoped 样式（连 :deep）都够不着它。 */
 /* The select-all box aligns with the per-row boxes below it, so the column
    reads as a column rather than as a stray control above a list. */
 .pick-all {
@@ -4772,6 +5311,18 @@ async function doUnsuppress(row: Suppression) {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+/* 哨兵本身没有高度也不占位：它只是给观察器一个「看得见了没」的靶子。 */
+.more-sentinel {
+  height: 1px;
+}
+.more-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0 18px;
+}
+
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
@@ -4823,9 +5374,33 @@ async function doUnsuppress(row: Suppression) {
 .in-from {
   display: flex;
   align-items: center;
-  gap: 12px;
+  /* 一行装下：名字、地址、收件地址、详情、日期。gap 比从前小，因为这一行
+     上东西多了；头像后面单独补一格。 */
+  gap: 6px;
+  min-width: 0;
+}
+.in-from .avatar {
+  margin-right: 4px;
+}
+/* 三段字各自可缩，谁长谁先省略号。名字排在最前、缩得最少：一封信最先要
+   回答的是「谁」。 */
+.in-name {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.in-addr,
+.in-to {
+  flex: 0 2 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sender-customer-action {
+  flex: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
@@ -4847,14 +5422,6 @@ async function doUnsuppress(row: Suppression) {
   font-weight: 500;
   user-select: none;
 }
-.in-who {
-  min-width: 0;
-}
-.in-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
 .in-when {
   white-space: nowrap;
 }
@@ -4872,7 +5439,7 @@ async function doUnsuppress(row: Suppression) {
   font-size: 13px;
 }
 .details-toggle {
-  margin-left: 8px;
+  flex: none;
   padding: 0;
   border: 0;
   background: transparent;
@@ -5171,20 +5738,6 @@ async function doUnsuppress(row: Suppression) {
 .att-head .side-title {
   margin: 0;
 }
-.preview-img {
-  display: block;
-  max-width: 100%;
-  max-height: 72vh;
-  margin: 0 auto;
-}
-.preview-frame {
-  display: block;
-  width: 100%;
-  height: 72vh;
-  border: 1px solid var(--mail-divider);
-  border-radius: var(--mail-radius);
-}
-
 .excel-context {
   position: fixed;
   z-index: 4000;
@@ -5367,7 +5920,8 @@ async function doUnsuppress(row: Suppression) {
   flex: 1;
   min-width: 0;
   display: flex;
-  gap: 16px;
+  /* 同上：3 + 10 + 3 = 从前那 16px。 */
+  gap: 3px;
   align-items: flex-start;
 }
 .list-col {
@@ -5395,6 +5949,49 @@ async function doUnsuppress(row: Suppression) {
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
 }
+/* 分隔条。
+   平时什么都不画——三栏之间本来就该是留白，一条竖线摆在那儿是在把两块内容
+   之间的关系说成"隔开"。鼠标压上来才出现一条细线，告诉你这儿能抓。
+   10px 宽而线只有 2px：4px 的线抓不住（要瞄准），10px 的线看着像一栏。
+   VS Code、Finder、Foxmail 都是这个做法。 */
+.col-grip {
+  flex: 0 0 10px;
+  align-self: stretch;
+  /* 自己是一整条可抓的区域，线画在正中间。 */
+  background: linear-gradient(var(--el-border-color-lighter), var(--el-border-color-lighter))
+    center / 2px 100% no-repeat;
+  opacity: 0;
+  cursor: col-resize;
+  border-radius: 2px;
+  /* 拖的时候别顺手滚动页面（触控板/触摸屏）。 */
+  touch-action: none;
+  transition: opacity var(--mail-fast) var(--mail-ease);
+}
+.col-grip:hover,
+.col-grip:focus-visible,
+.col-grip.grabbing {
+  opacity: 1;
+}
+.col-grip.grabbing {
+  background-image: linear-gradient(var(--el-color-primary), var(--el-color-primary));
+}
+.col-grip:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: -1px;
+}
+/* 列表和阅读区之间那条：和列表同一个 order，写在列表后面，所以画在它右边。
+   不给 order 的话它默认是 0，会跑到最左边去——.panes 里的位置是 order 说
+   了算的，DOM 顺序在那儿是反的（见 .panes 上面那段）。 */
+.col-grip.for-list {
+  order: 1;
+}
+/* 正在拖的时候，整页的光标都是那个左右箭头：指针已经被这条分隔条捕获了，
+   鼠标压在别的东西上也还是在拖它，光标得说出这件事。 */
+.mailbox:has(.col-grip.grabbing) {
+  cursor: col-resize;
+  user-select: none;
+}
+
 /* 没选信时右边说一句话。一片空白看着像坏了。 */
 .reader-empty {
   display: flex;
@@ -5428,6 +6025,11 @@ async function doUnsuppress(row: Suppression) {
     display: none;
   }
   .reader-empty {
+    display: none;
+  }
+  /* 两栏上下叠着的时候没有"中间"：一条横着拖的竖线在这儿说不通。
+     文件夹栏那条留着——.mailbox 在这个宽度下仍然是左右两块。 */
+  .col-grip.for-list {
     display: none;
   }
 }

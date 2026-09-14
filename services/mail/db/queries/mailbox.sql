@@ -632,6 +632,8 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
        i.imap_uid, i.archived_at,
+       -- 左栏的哪一格。和列表用的是同一个函数，所以两边不会各说各的。
+       coalesce(mail_view_of(i.folder, i.not_junk, i.is_bounce, i.archived_at, i.deleted_at), '')::text AS view,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -1477,6 +1479,14 @@ WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR t.account_id = sqlc.narg(account_id)::bigint)
   AND t.view = sqlc.arg(view)::text
+  -- 只看未读。any_unread 是「这条会话里还有没有没读的信」——按会话问，
+  -- 和列表的行是一回事：一行代表一条会话，里面还有没读的就该留在「只看
+  -- 未读」里。
+  --
+  -- 没给它建索引。列表是按 last_at 走索引顺序读前二十五行的，加一个布尔
+  -- 条件只是在这条路上多筛一下；而为一个开关建索引，代价是此后每收一封信
+  -- 都要多维护一棵树。真慢下来了再说。
+  AND (NOT sqlc.arg(unread_only)::boolean OR t.any_unread)
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
   AND (sqlc.narg(cursor_at)::timestamptz IS NULL
@@ -1532,6 +1542,8 @@ FROM (
       AND (sqlc.narg(account_id)::bigint IS NULL
            OR t.account_id = sqlc.narg(account_id)::bigint)
       AND t.view = sqlc.arg(view)::text
+      -- 同上，见 ListThreadsByView。
+      AND (NOT sqlc.arg(unread_only)::boolean OR t.any_unread)
 ) x
 -- 上一页停在哪：asc 往大了走，desc 往小了走。id 兜底，两条会话不可能占同一个位置。
 WHERE (sqlc.narg(cursor_key)::text IS NULL
@@ -1551,7 +1563,10 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR account_id = sqlc.narg(account_id)::bigint)
-  AND view = sqlc.arg(view)::text;
+  AND view = sqlc.arg(view)::text
+  -- 开着「只看未读」时数的也得是未读的那些：分页器数的和列表显示的必须
+  -- 是同一批，否则底下写着「共 300 封」而列表只有 3 行。
+  AND (NOT sqlc.arg(unread_only)::boolean OR any_unread);
 
 -- name: ListThreadAttachments :many
 -- 整条会话的附件，一次取回，两个方向。
@@ -1886,6 +1901,36 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 UPDATE mail_folders
 SET name = sqlc.arg(name)::text, host_name = sqlc.arg(host_name)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: RenameMailFolderSubtree :exec
+-- 父文件夹改了名，登记里它下面那些跟着改。
+-- 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+--
+-- 比前缀用 left()，**不用 LIKE**：文件夹名是人起的，里面完全可以有下划线，
+-- 而 LIKE 把 _ 当成"任意一个字符"。那样给 "客户_A" 改名会连 "客户XA" 底下的
+-- 行一起改掉——服务器上什么都没动，库里的信却挂到了别人名下。
+UPDATE mail_folders
+SET name = sqlc.arg(new_prefix)::text || substr(name, length(sqlc.arg(old_prefix)::text) + 1),
+    host_name = sqlc.arg(new_prefix)::text || substr(host_name, length(sqlc.arg(old_prefix)::text) + 1)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND left(host_name, length(sqlc.arg(old_prefix)::text)) = sqlc.arg(old_prefix)::text;
+
+-- name: RenameInboundFolderPrefix :execrows
+-- 同上，信上存的文件夹名。触发器会重算视图。比前缀同样用 left()。
+UPDATE email_inbound
+SET folder = sqlc.arg(new_prefix)::text || substr(folder, length(sqlc.arg(old_prefix)::text) + 1)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND left(folder, length(sqlc.arg(old_prefix)::text)) = sqlc.arg(old_prefix)::text;
+
+-- name: CountMailFolderChildren :one
+-- 这个文件夹底下还有没有别的文件夹。删之前问一句：服务器多半会拒（有子
+-- 文件夹的不让删），而我们自己先说清楚，比把服务器那句英文原样抛给人好。
+SELECT count(*)::bigint FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND left(host_name, length(sqlc.arg(prefix)::text)) = sqlc.arg(prefix)::text;
 
 -- name: DeleteMailFolder :exec
 DELETE FROM mail_folders

@@ -193,15 +193,20 @@
               droppable: canDrop(b.id, item),
               over: over === `${b.id}:${item.key}`,
             }"
+            :style="indent(item)"
             @dragover="onDragOver(b.id, item, $event)"
             @dragleave="onDragLeave(b.id, item)"
             @drop="onDrop(b.id, item, $event)"
           >
-            <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
+            <button type="button" class="custom-main" :title="item.hostName" @click="emit('select', b.id, item.key)">
               <el-icon class="ficon"><Folder /></el-icon>
               <span class="fname">{{ item.name }}</span>
             </button>
             <span class="custom-acts">
+              <!-- 在这个文件夹**底下**再建一个。放在这一行上而不是做成一个
+                   带「上级」下拉的对话框：想建在哪儿，人手正指着那一行。
+                   Foxmail、Outlook 右键菜单里的「新建子文件夹」也是这个位置。 -->
+              <button type="button" class="custom-act" :title="t('mailGate.newSubfolder')" @click.stop="emit('createFolder', b.id, item.folder!.id)">＋</button>
               <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', item.folder!)">✎</button>
               <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', item.folder!)">✕</button>
             </span>
@@ -343,7 +348,8 @@ const emit = defineEmits<{
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
   /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
-  createFolder: [accountId: number]
+  // 建在哪个信箱里、哪个文件夹底下（不给就是顶层）。
+  createFolder: [accountId: number, parentId?: number]
   renameFolder: [folder: CustomFolder]
   deleteFolder: [folder: CustomFolder]
   /** 把拖着的那几封放进这一格。做什么由 DropTarget 说（挪 or 标）。 */
@@ -355,6 +361,19 @@ const boxes = ref<Mailbox[]>([])
 const adding = ref(false)
 
 // -------------------------------------------------------------- 接住拖拽
+
+/**
+ * 子文件夹往右缩一格。层级是服务器上真的层级（见 lib/mailFolders）。
+ *
+ * 缩进加在外层那一格上，而行里那颗按钮自己已经有 22px 的左内边距（图标和
+ * 文字的起点）——所以这里只出「比上一级多缩多少」，不重复那 22px。
+ */
+function indent(item: RailItem) {
+  // 最多缩四级。这一栏只有两百来像素，再深就只剩省略号了——真要看清楚，
+  // 这一栏本身是能拖宽的。
+  const depth = Math.min(item.depth ?? 0, 4)
+  return depth > 0 ? { paddingLeft: `${depth * 12}px` } : undefined
+}
 
 /** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
 const over = ref('')
@@ -630,6 +649,9 @@ defineExpose({ reload: load })
 }
 .custom-acts {
   display: none;
+  /* 不许被压缩：里面三颗按钮自己不会变窄，容器一被压，它们就溢出到行外
+     （行外就是栏外）。该让位的是左边那个名字，它有省略号。 */
+  flex: none;
   gap: 2px;
   padding-right: 6px;
 }
@@ -753,6 +775,11 @@ defineExpose({ reload: load })
   align-items: center;
   gap: 10px;
   width: 100%;
+  /* border-box，否则 width:100% 加上左右内边距会比这一栏宽 16–24px，多出来
+     的那截被 .rail 的 overflow 裁掉。空着的时候看不出来（裁掉的是留白），
+     而一旦右边站着按钮，最右那颗就点不着了——多层文件夹的「删除」正是这么
+     消失的：缩进把它又往右推了一截。 */
+  box-sizing: border-box;
   height: var(--mail-row-h);
   padding: 0 12px;
   margin-bottom: 2px;

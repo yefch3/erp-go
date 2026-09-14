@@ -73,6 +73,12 @@ type Config struct {
 	// How long to wait for one conversion. A document can keep LibreOffice
 	// busy indefinitely, and this request is hanging off somebody's click.
 	GotenbergTimeout time.Duration
+	// 在线 Office（OnlyOffice Document Server）。DocsURL 是浏览器加载编辑器的
+	// 地址（生产上是前门 nginx 转发的 /docs）；DocsJWTSecret 是签配置的密钥，
+	// 必须和 docs 容器的 JWT_SECRET 一致。**没有默认值**：一把能从仓库里读到
+	// 的密钥等于没有。两个都空就是没配，办公文档退回转 PDF 那条老路。
+	DocsURL       string
+	DocsJWTSecret string
 	// Google OAuth application credentials. The secret identifies our app to
 	// Google, never a user to anything.
 	GoogleClientID     string
@@ -132,6 +138,8 @@ func Load() Config {
 		RedisAddr:           os.Getenv("REDIS_ADDR"),
 		GotenbergURL:        os.Getenv("GOTENBERG_URL"),
 		GotenbergTimeout:    envDuration("GOTENBERG_TIMEOUT", 60*time.Second),
+		DocsURL:             os.Getenv("DOCS_URL"),
+		DocsJWTSecret:       os.Getenv("DOCS_JWT_SECRET"),
 		GoogleClientID:      os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret:  os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		PublicBaseURL:       os.Getenv("MAIL_PUBLIC_BASE_URL"),

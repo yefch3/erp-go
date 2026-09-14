@@ -801,6 +801,9 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 		AccountId: acct,
 		SortBy:    r.URL.Query().Get("sort_by"),
 		SortDir:   r.URL.Query().Get("sort_dir"),
+		// 只看未读。和别的开关一样只认 "1"：地址栏里 unread=0 和没有这个
+		// 参数是一个意思，不必两种写法都记。
+		UnreadOnly: r.URL.Query().Get("unread") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -1060,6 +1063,22 @@ func (s *Server) previewInboundAttachment(w http.ResponseWriter, r *http.Request
 	resp, err := s.Emails.PreviewInboundAttachment(r.Context(),
 		&mailv1.PreviewInboundAttachmentRequest{
 			InboundId: inboundID, AttachmentId: attachmentID,
+		})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// officePreviewConfig 要一份「在在线 Office 里打开这个附件」的签名配置。
+// 谁能看、附件属不属于这封信，都在邮件服务里判；这里只转发身份和语言。
+func (s *Server) officePreviewConfig(w http.ResponseWriter, r *http.Request) {
+	inboundID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	attachmentID, _ := strconv.ParseInt(chi.URLParam(r, "attachmentId"), 10, 64)
+	resp, err := s.Emails.OfficePreviewConfig(r.Context(),
+		&mailv1.OfficePreviewConfigRequest{
+			InboundId: inboundID, AttachmentId: attachmentID, Lang: r.URL.Query().Get("lang"),
 		})
 	if err != nil {
 		s.writeGRPCError(w, err)

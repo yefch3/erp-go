@@ -57,14 +57,15 @@ export const useAuthStore = defineStore('auth', {
     },
   },
   actions: {
-    async login(email: string, password: string) {
+    // account：用户名或邮箱，服务端按有没有 @ 分。
+    async login(account: string, password: string) {
       // The login page renders authentication failures beside the form. Keep
       // the global interceptor quiet so a rejected password is not announced
       // twice (and so the page can translate the stable error code itself).
       // The response's Set-Cookie pair IS the session — nothing to store
       // here. accessToken no longer appears in the body at all, so there is
       // nothing a script hooked into fetch could have captured either.
-      const data = await post<LoginData>('/auth/login', { email, password }, quietErrors)
+      const data = await post<LoginData>('/auth/login', { account, password }, quietErrors)
       this.employeeId = data.employee.id
       this.employeeName = data.employee.name
       this.employeeEmail = data.employee.email ?? ''

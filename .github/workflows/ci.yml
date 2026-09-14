@@ -50,9 +50,34 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-          cache-dependency-path: |
-            pkg/go.sum
-            gen/go.sum
+          # 缓存交给下面那两步，setup-go 自带的不够用：它只在 key 未命中时保存
+          # 一次，而 key 只看 go.sum——于是保存下来的永远是「某次依赖变动那天」
+          # 的编译缓存，之后每一次 CI 都在拿一份越来越旧的东西。
+          cache: false
+
+      # Go 的编译缓存和模块缓存，外加 golangci-lint 自己的分析缓存。
+      #
+      # 量过：一次 `make ci` 五分五十秒，其中 **buf 40 秒、sqlc 78 秒、
+      # golangci-lint 40 秒、goose 16 秒**——全是 `go run 工具@版本` 在从源码
+      # 现编译工具本身，加起来将近三分钟，和这次改了什么毫无关系。编译结果
+      # 本来就会落在 ~/.cache/go-build 里，问题只是从来没被保存下来。
+      #
+      # **每次都恢复、只在 main 上保存。** restore-keys 按前缀取最近的一份，
+      # 所以 PR 拿到的是 main 最近一次跑完留下的缓存；PR 自己不保存——缓存
+      # 一两个 GB，上传要几十秒，那是 PR 上没人想等的时间，而 main 上的 CI
+      # 没人在等（部署只等 build，不等它）。
+      - name: Restore Go caches
+        id: gocache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            ~/.cache/golangci-lint
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum', 'Makefile') }}-${{ github.run_id }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum', 'Makefile') }}-
+            go-${{ runner.os }}-
 
       # The frontend half of `make ci`. Node is the only thing the runner is
       # missing for it; the checks themselves live in the Makefile, same rule
@@ -86,14 +111,48 @@ jobs:
           PG_PORT: "5432"
         run: make migrate
 
+      # 这批改动能影响到哪些模块。规则和它自己的测试在 scripts/ci-scope.sh。
+      #
+      # **只有 PR 收窄范围，push 到 main 一律全跑。** PR 上跳过的那些，合进去
+      # 之后在 main 上补齐；main 红了几分钟内就知道。所以范围算错的代价是
+      # 「PR 绿了、main 红了一次」，不是「坏代码悄悄上线」——部署等的是 build
+      # 那条流水线，main 上全量跑一遍不拖慢上线。
+      - name: Scope
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            sh scripts/ci-scope.sh "origin/${{ github.base_ref }}" HEAD > /tmp/scope.out 2> /tmp/scope.txt
+          else
+            printf 'modules=all\nfrontend=1\n' > /tmp/scope.out
+            echo "ci-scope: push to main, running everything" > /tmp/scope.txt
+          fi
+          cat /tmp/scope.txt
+          cat /tmp/scope.out >> "$GITHUB_OUTPUT"
+          { echo '### CI scope'; echo '```'; cat /tmp/scope.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       # This file provides the environment; the Makefile's ci target is the
       # single definition of what gets checked. When this file carried its
       # own list of steps, that list and `make ci` disagreed - which is how
       # check-mail-sandbox, a guard that had already caught a real incident,
       # ended up running nowhere. If a check is worth running here, it goes
       # in the ci target, where `make ci` on a laptop runs it too.
+      #
+      # MODULES / FRONTEND 只是把范围收窄，跑的仍然是同一个 ci 目标——本地
+      # `make ci-pr` 跑的和这里一模一样。
       - name: ci
         env:
           PG_PORT: "5432"
           REDIS_PORT: "6379"
-        run: make ci
+        run: make ci MODULES="${{ steps.scope.outputs.modules }}" FRONTEND="${{ steps.scope.outputs.frontend }}"
+
+      # 只在 main 上保存，理由见 Restore 那一步。always()：这次 CI 红了缓存
+      # 也照样有用——编译出来的工具和依赖不因为一条测试失败而作废。
+      - name: Save Go caches
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            ~/.cache/golangci-lint
+          key: ${{ steps.gocache.outputs.cache-primary-key }}

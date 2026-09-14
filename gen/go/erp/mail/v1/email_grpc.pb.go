@@ -71,6 +71,7 @@ const (
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_CleanPastedTable_FullMethodName             = "/erp.mail.v1.EmailService/CleanPastedTable"
 	EmailService_PreviewInboundAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PreviewInboundAttachment"
+	EmailService_OfficePreviewConfig_FullMethodName          = "/erp.mail.v1.EmailService/OfficePreviewConfig"
 	EmailService_DownloadInboundAttachments_FullMethodName   = "/erp.mail.v1.EmailService/DownloadInboundAttachments"
 	EmailService_ListMailFolders_FullMethodName              = "/erp.mail.v1.EmailService/ListMailFolders"
 	EmailService_CreateMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/CreateMailFolder"
@@ -234,6 +235,9 @@ type EmailServiceClient interface {
 	// 前端据此退回纯文本那条路。
 	CleanPastedTable(ctx context.Context, in *CleanPastedTableRequest, opts ...grpc.CallOption) (*CleanPastedTableResponse, error)
 	PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error)
+	// 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
+	// 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
+	OfficePreviewConfig(ctx context.Context, in *OfficePreviewConfigRequest, opts ...grpc.CallOption) (*OfficePreviewConfigResponse, error)
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(ctx context.Context, in *DownloadInboundAttachmentsRequest, opts ...grpc.CallOption) (*DownloadInboundAttachmentsResponse, error)
@@ -835,6 +839,16 @@ func (c *emailServiceClient) PreviewInboundAttachment(ctx context.Context, in *P
 	return out, nil
 }
 
+func (c *emailServiceClient) OfficePreviewConfig(ctx context.Context, in *OfficePreviewConfigRequest, opts ...grpc.CallOption) (*OfficePreviewConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OfficePreviewConfigResponse)
+	err := c.cc.Invoke(ctx, EmailService_OfficePreviewConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) DownloadInboundAttachments(ctx context.Context, in *DownloadInboundAttachmentsRequest, opts ...grpc.CallOption) (*DownloadInboundAttachmentsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DownloadInboundAttachmentsResponse)
@@ -1230,6 +1244,9 @@ type EmailServiceServer interface {
 	// 前端据此退回纯文本那条路。
 	CleanPastedTable(context.Context, *CleanPastedTableRequest) (*CleanPastedTableResponse, error)
 	PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error)
+	// 在线 Office（OnlyOffice）里打开一个附件：返回一份签过名的编辑器配置。
+	// 文件本身不经过这里——Document Server 拿配置里的签名地址自己去取。
+	OfficePreviewConfig(context.Context, *OfficePreviewConfigRequest) (*OfficePreviewConfigResponse, error)
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error)
@@ -1466,6 +1483,9 @@ func (UnimplementedEmailServiceServer) CleanPastedTable(context.Context, *CleanP
 }
 func (UnimplementedEmailServiceServer) PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreviewInboundAttachment not implemented")
+}
+func (UnimplementedEmailServiceServer) OfficePreviewConfig(context.Context, *OfficePreviewConfigRequest) (*OfficePreviewConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OfficePreviewConfig not implemented")
 }
 func (UnimplementedEmailServiceServer) DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DownloadInboundAttachments not implemented")
@@ -2502,6 +2522,24 @@ func _EmailService_PreviewInboundAttachment_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_OfficePreviewConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OfficePreviewConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).OfficePreviewConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_OfficePreviewConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).OfficePreviewConfig(ctx, req.(*OfficePreviewConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_DownloadInboundAttachments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DownloadInboundAttachmentsRequest)
 	if err := dec(in); err != nil {
@@ -3184,6 +3222,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreviewInboundAttachment",
 			Handler:    _EmailService_PreviewInboundAttachment_Handler,
+		},
+		{
+			MethodName: "OfficePreviewConfig",
+			Handler:    _EmailService_OfficePreviewConfig_Handler,
 		},
 		{
 			MethodName: "DownloadInboundAttachments",

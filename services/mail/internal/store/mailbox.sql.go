@@ -254,6 +254,28 @@ func (q *Queries) CountInboundThreads(ctx context.Context, arg CountInboundThrea
 	return column_1, err
 }
 
+const countMailFolderChildren = `-- name: CountMailFolderChildren :one
+SELECT count(*)::bigint FROM mail_folders
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND left(host_name, length($3::text)) = $3::text
+`
+
+type CountMailFolderChildrenParams struct {
+	TenantID  int64
+	AccountID int64
+	Prefix    string
+}
+
+// 这个文件夹底下还有没有别的文件夹。删之前问一句：服务器多半会拒（有子
+// 文件夹的不让删），而我们自己先说清楚，比把服务器那句英文原样抛给人好。
+func (q *Queries) CountMailFolderChildren(ctx context.Context, arg CountMailFolderChildrenParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMailFolderChildren, arg.TenantID, arg.AccountID, arg.Prefix)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingFlagOps = `-- name: CountPendingFlagOps :one
 SELECT count(*)::bigint FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
@@ -418,13 +440,17 @@ WHERE tenant_id = $1::bigint
   AND ($3::bigint IS NULL
        OR account_id = $3::bigint)
   AND view = $4::text
+  -- 开着「只看未读」时数的也得是未读的那些：分页器数的和列表显示的必须
+  -- 是同一批，否则底下写着「共 300 封」而列表只有 3 行。
+  AND (NOT $5::boolean OR any_unread)
 `
 
 type CountThreadsByViewParams struct {
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
 }
 
 // Conversations, not messages: the pager has to count what the list shows.
@@ -434,6 +460,7 @@ func (q *Queries) CountThreadsByView(ctx context.Context, arg CountThreadsByView
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 	)
 	var column_1 int64
 	err := row.Scan(&column_1)
@@ -853,6 +880,8 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
        i.imap_uid, i.archived_at,
+       -- 左栏的哪一格。和列表用的是同一个函数，所以两边不会各说各的。
+       coalesce(mail_view_of(i.folder, i.not_junk, i.is_bounce, i.archived_at, i.deleted_at), '')::text AS view,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -894,6 +923,7 @@ type GetInboundRow struct {
 	ToAll          string
 	ImapUid        int64
 	ArchivedAt     pgtype.Timestamptz
+	View           string
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -937,6 +967,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.ToAll,
 		&i.ImapUid,
 		&i.ArchivedAt,
+		&i.View,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
@@ -3182,23 +3213,32 @@ WHERE t.tenant_id = $1::bigint
   AND ($3::bigint IS NULL
        OR t.account_id = $3::bigint)
   AND t.view = $4::text
+  -- 只看未读。any_unread 是「这条会话里还有没有没读的信」——按会话问，
+  -- 和列表的行是一回事：一行代表一条会话，里面还有没读的就该留在「只看
+  -- 未读」里。
+  --
+  -- 没给它建索引。列表是按 last_at 走索引顺序读前二十五行的，加一个布尔
+  -- 条件只是在这条路上多筛一下；而为一个开关建索引，代价是此后每收一封信
+  -- 都要多维护一棵树。真慢下来了再说。
+  AND (NOT $5::boolean OR t.any_unread)
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
-  AND ($5::timestamptz IS NULL
-       OR (t.last_at, t.last_id) < ($5::timestamptz,
-                                    $6::bigint))
+  AND ($6::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < ($6::timestamptz,
+                                    $7::bigint))
 ORDER BY t.last_at DESC, t.last_id DESC
-LIMIT $7::int
+LIMIT $8::int
 `
 
 type ListThreadsByViewParams struct {
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
-	CursorAt  pgtype.Timestamptz
-	CursorID  int64
-	RowLimit  int32
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	CursorAt   pgtype.Timestamptz
+	CursorID   int64
+	RowLimit   int32
 }
 
 type ListThreadsByViewRow struct {
@@ -3239,6 +3279,7 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 		arg.CursorAt,
 		arg.CursorID,
 		arg.RowLimit,
@@ -3303,28 +3344,31 @@ FROM (
       AND ($4::bigint IS NULL
            OR t.account_id = $4::bigint)
       AND t.view = $5::text
+      -- 同上，见 ListThreadsByView。
+      AND (NOT $6::boolean OR t.any_unread)
 ) x
-WHERE ($6::text IS NULL
-       OR CASE WHEN $7::text = 'asc'
-               THEN (x.sort_key, x.id) > ($6::text, $8::bigint)
-               ELSE (x.sort_key, x.id) < ($6::text, $8::bigint)
+WHERE ($7::text IS NULL
+       OR CASE WHEN $8::text = 'asc'
+               THEN (x.sort_key, x.id) > ($7::text, $9::bigint)
+               ELSE (x.sort_key, x.id) < ($7::text, $9::bigint)
           END)
-ORDER BY CASE WHEN $7::text = 'asc' THEN x.sort_key END ASC,
-         CASE WHEN $7::text = 'asc' THEN x.id END ASC,
+ORDER BY CASE WHEN $8::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN $8::text = 'asc' THEN x.id END ASC,
          x.sort_key DESC, x.id DESC
-LIMIT $9::int
+LIMIT $10::int
 `
 
 type ListThreadsByViewSortedParams struct {
-	SortBy    string
-	TenantID  int64
-	OwnerID   int64
-	AccountID *int64
-	View      string
-	CursorKey *string
-	SortDir   string
-	CursorID  int64
-	RowLimit  int32
+	SortBy     string
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	CursorKey  *string
+	SortDir    string
+	CursorID   int64
+	RowLimit   int32
 }
 
 type ListThreadsByViewSortedRow struct {
@@ -3372,6 +3416,7 @@ func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsBy
 		arg.OwnerID,
 		arg.AccountID,
 		arg.View,
+		arg.UnreadOnly,
 		arg.CursorKey,
 		arg.SortDir,
 		arg.CursorID,
@@ -3956,6 +4001,35 @@ func (q *Queries) RenameInboundFolder(ctx context.Context, arg RenameInboundFold
 	return result.RowsAffected(), nil
 }
 
+const renameInboundFolderPrefix = `-- name: RenameInboundFolderPrefix :execrows
+UPDATE email_inbound
+SET folder = $1::text || substr(folder, length($2::text) + 1)
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND left(folder, length($2::text)) = $2::text
+`
+
+type RenameInboundFolderPrefixParams struct {
+	NewPrefix string
+	OldPrefix string
+	TenantID  int64
+	AccountID int64
+}
+
+// 同上，信上存的文件夹名。触发器会重算视图。比前缀同样用 left()。
+func (q *Queries) RenameInboundFolderPrefix(ctx context.Context, arg RenameInboundFolderPrefixParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameInboundFolderPrefix,
+		arg.NewPrefix,
+		arg.OldPrefix,
+		arg.TenantID,
+		arg.AccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const renameMailFolder = `-- name: RenameMailFolder :exec
 UPDATE mail_folders
 SET name = $1::text, host_name = $2::text
@@ -3975,6 +4049,38 @@ func (q *Queries) RenameMailFolder(ctx context.Context, arg RenameMailFolderPara
 		arg.HostName,
 		arg.TenantID,
 		arg.ID,
+	)
+	return err
+}
+
+const renameMailFolderSubtree = `-- name: RenameMailFolderSubtree :exec
+UPDATE mail_folders
+SET name = $1::text || substr(name, length($2::text) + 1),
+    host_name = $1::text || substr(host_name, length($2::text) + 1)
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND left(host_name, length($2::text)) = $2::text
+`
+
+type RenameMailFolderSubtreeParams struct {
+	NewPrefix string
+	OldPrefix string
+	TenantID  int64
+	AccountID int64
+}
+
+// 父文件夹改了名，登记里它下面那些跟着改。
+// 服务器上的 RENAME 是连子树一起改的（RFC 3501），所以这不是"顺带"，是必须。
+//
+// 比前缀用 left()，**不用 LIKE**：文件夹名是人起的，里面完全可以有下划线，
+// 而 LIKE 把 _ 当成"任意一个字符"。那样给 "客户_A" 改名会连 "客户XA" 底下的
+// 行一起改掉——服务器上什么都没动，库里的信却挂到了别人名下。
+func (q *Queries) RenameMailFolderSubtree(ctx context.Context, arg RenameMailFolderSubtreeParams) error {
+	_, err := q.db.Exec(ctx, renameMailFolderSubtree,
+		arg.NewPrefix,
+		arg.OldPrefix,
+		arg.TenantID,
+		arg.AccountID,
 	)
 	return err
 }

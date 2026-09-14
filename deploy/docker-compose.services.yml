@@ -344,6 +344,11 @@ services:
       # 那些附件照样列得出来、下载得下来，只是预览按钮说没配。
       GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
       GOTENBERG_TIMEOUT: ${GOTENBERG_TIMEOUT:-60s}
+      # 在线 Office（下面那个 docs 容器）。DOCS_URL 是浏览器加载编辑器的地址：
+      # 本地走 Vite 代理的 /docs，生产走前门 nginx 转发的同一个路径。密钥必须
+      # 和 docs 容器的 JWT_SECRET 一致；本地给个开发用的默认值，生产从 .env 来。
+      DOCS_URL: ${DOCS_URL:-/docs}
+      DOCS_JWT_SECRET: ${DOCS_JWT_SECRET:-erp-dev-docs-secret}
     ports:
       - "127.0.0.1:9010:9010"
     networks: [infra, convert]
@@ -410,6 +415,33 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     networks: [convert]
+    restart: unless-stopped
+
+  # 在线 Office：OnlyOffice Document Server。附件的「预览」在浏览器里开成一个
+  # 完整的 Excel / Word / PPT——能翻、能搜、能选、能复制，不再转成 PDF。
+  #
+  # 它是一台会主动出去取文件的服务器：邮件服务签一份"打开这个地址"的配置，
+  # 它拿配置里的签名地址去对象存储取原件。所以两件事定死：
+  #   · JWT 必须开，密钥和邮件服务的 DOCS_JWT_SECRET 同一把——不签的话，能碰到
+  #     它的人都能让它去取任意地址上的文件；
+  #   · 它在 infra 网上而不是 convert 网上：convert 不通外网，而生产的附件在 S3。
+  # 镜像约 3 GB，常驻约 2 GB 内存（里面自带 nginx、node、postgres、rabbitmq）。
+  # 只绑 127.0.0.1：外面进来的路是前门 nginx 的 /docs/。
+  docs:
+    image: onlyoffice/documentserver:9.4.0
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${DOCS_JWT_SECRET:-erp-dev-docs-secret}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "true"
+    # 环境变量管不到的那几项写在这份 JSON 里（为什么要它，文件里有）。
+    # 挂成 local-production-linux.json 而不是 local.json：后者是启动脚本按
+    # 环境变量生成的，挂上去会被覆盖；前者在它之后加载，能盖过它。
+    volumes:
+      - ./onlyoffice-local.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
+    ports:
+      - "127.0.0.1:8083:80"
+    networks: [infra]
     restart: unless-stopped
 
   # The one door that may face outwards, and it is a very narrow one.
