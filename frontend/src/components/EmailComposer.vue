@@ -1,13 +1,55 @@
 <template>
-  <el-dialog
-    :model-value="modelValue"
-    :title="t('emails.compose')"
-    width="1000px"
-    top="4vh"
-    :close-on-click-modal="false"
-    :before-close="onBeforeClose"
-    @update:model-value="close"
-  >
+  <!-- 写信框：**停在右下角，后面那一页照常用**。
+       从前是一个带遮罩的对话框，遮罩把整页盖住——于是「照着刚收到的那封信
+       回一句」这件最常做的事做不了：看不见那封信，更选不中、复制不了。
+       Gmail 的写信窗就是这么解的，这里照着做。
+
+       所以它不是 el-dialog：那个东西必带一层铺满屏幕的 overlay，即使把
+       modal 关掉，那一层仍然在最上面接着点击。自己画一个浮层，后面那一页
+       连选中文字都不受影响。
+
+       三档：停靠（默认）、放大（居中大窗，长信用）、收起（只剩标题条）。
+       人选的那一档记在本地，下次开还是它。 -->
+  <Teleport to="body">
+    <section
+      v-if="modelValue"
+      ref="shell"
+      class="composer"
+      :class="`is-${pane}`"
+      role="dialog"
+      :aria-label="composerTitle"
+      tabindex="-1"
+    >
+      <!-- 标题条。收起来的时候整条是一颗按钮——那时它是唯一能点的东西。 -->
+      <header class="composer-bar" @click="pane === 'min' && toggleMinimize()">
+        <span class="composer-title ellipsis">{{ composerTitle }}</span>
+        <button
+          type="button"
+          class="composer-btn"
+          :title="pane === 'min' ? t('emails.paneRestore') : t('emails.paneMinimize')"
+          @click.stop="toggleMinimize()"
+        >
+          <el-icon><Minus v-if="pane !== 'min'" /><FullScreen v-else /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="composer-btn"
+          :title="pane === 'full' ? t('emails.paneDock') : t('emails.paneExpand')"
+          @click.stop="setPane(pane === 'full' ? 'dock' : 'full')"
+        >
+          <el-icon><Rank /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="composer-btn"
+          :title="common('cancel')"
+          @click.stop="requestClose()"
+        >
+          <el-icon><Close /></el-icon>
+        </button>
+      </header>
+
+      <div v-show="pane !== 'min'" class="composer-body">
     <!-- Stated once, plainly, where the person sending can see it: which of
          the two promises this send makes. Separate = nobody sees anybody
          else; merged = everybody sees everybody, on purpose. -->
@@ -266,8 +308,10 @@
       </el-alert>
     </el-card>
 
-    <template #footer>
-      <span class="foot">
+      </div>
+
+      <footer v-show="pane !== 'min'" class="composer-foot">
+        <span class="foot">
         <!-- Said quietly, but said. Autosaving without telling anybody buys
              no confidence: people who cannot see it happening keep reaching
              for 保存草稿 anyway, and the ones who do trust it have only our
@@ -308,9 +352,10 @@
             <el-icon><Clock /></el-icon>
           </el-button>
         </el-button-group>
-      </span>
-    </template>
-  </el-dialog>
+        </span>
+      </footer>
+    </section>
+  </Teleport>
 
   <!-- Scheduling asks two questions, and the second one is the point: a
        time without a zone is ambiguous the moment the customer is not in
@@ -415,7 +460,7 @@ import { applyTemplateToBody, type AppliedTemplate } from '../lib/mailTemplateAp
 import { linkedAttachmentFlags } from '../lib/bigAttachments'
 import { computed, h, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock } from '@element-plus/icons-vue'
+import { Clock, Close, FullScreen, Minus, Rank } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import MailBody from './MailBody.vue'
 import { get, post, quietErrors } from '../api'
@@ -625,10 +670,10 @@ function setQuoted(html: string) {
 
 // 框子一出现就填。
 //
-// 和 setQuoted 各管一头，缺一不可：写信框是个对话框，第一次打开时 el-dialog
-// 才把里面的东西渲染出来，那时 setQuoted 那一个 nextTick 早过去了，框还不
-// 存在；反过来，对话框已经开着时再回复一封，reset 把 quoted 清空又立刻填上，
-// 同一拍里 v-if 没真的翻过，元素被复用，这个 watch 不会响。
+// 和 setQuoted 各管一头，缺一不可：写信框里的东西要到它真的打开了才渲染
+// （最外层那个 v-if），那时 setQuoted 那一个 nextTick 早过去了，框还不存在；
+// 反过来，写信框已经开着时再回复一封，reset 把 quoted 清空又立刻填上，同一拍
+// 里 v-if 没真的翻过，元素被复用，这个 watch 不会响。
 watch(quoteBox, (el) => {
   if (el) fillQuoteBox()
 })
@@ -1537,9 +1582,9 @@ function reportResult(res: CreateResult, at = '', undoable = false) {
 // Every way out of the composer funnels through here — the footer button, the
 // X, and Escape — so the guard cannot be walked around.
 //
-// Wired to :before-close rather than @close. The close event fires while the
-// dialog is already closing, and emitting from inside it wedges the dialog
-// half-open; before-close is the hook designed to run first and decide.
+// 从前这里写着「接在 el-dialog 的 :before-close 上」。那个钩子随着 el-dialog
+// 一起没了——现在关窗的每一条路（底下的取消、标题条的 ✕、Esc）都是先问
+// requestClose，它拿到"确实要放弃"才调这里。
 // Closing resets. Two bugs lived here: the cancel button was wired as
 // `@click="close"`, so Vue handed it the MouseEvent — a truthy value — and
 // the composer emitted "stay open" instead of closing. And state was only
@@ -1572,16 +1617,240 @@ async function requestClose() {
   if (await confirmDiscard()) close(false)
 }
 
-// Element Plus routes the ✕, Escape and modal clicks through before-close, but
-// not the parent setting the prop false. Guarding here therefore catches every
-// way the user can dismiss the dialog while leaving the programmatic exits —
-// sending, saving a draft — free to close unconditionally.
-async function onBeforeClose(done: () => void) {
-  if (await confirmDiscard()) done()
+// ---------------------------------------------------------- 窗口那三档 ---
+//
+// dock：停在右下角，后面那一页照常用。默认。
+// full：居中的大窗，写长信、贴大段引用时用。仍然不加遮罩——加了就又回到
+//       「看不见后面那封信」，而那正是这次要解决的事。
+// min ：只剩标题条。写到一半要回去翻另一封信时用，内容一个字都不丢。
+type Pane = 'dock' | 'full' | 'min'
+
+const PANE_KEY = 'mail.composerPane'
+
+// 记在本地：习惯用大窗的人不该每写一封信就再点一次。收起那一档**不记**
+// ——它是「我先去看一眼别的」，不是一种偏好；记下来的话下次打开是一条
+// 标题条，看着像写信框坏了。
+function readPane(): Pane {
+  try {
+    return localStorage.getItem(PANE_KEY) === 'full' ? 'full' : 'dock'
+  } catch {
+    // 无痕模式、被沙箱掐掉的 storage。记不住而已，不该连框都开不出来。
+    return 'dock'
+  }
+}
+const pane = ref<Pane>(readPane())
+// 收起之前是哪一档。展开要回到**那一档**，不是回到默认的停靠——放大着写了
+// 半天、收起去翻一封信、再展开却缩回小窗，是那种一次就够烦人的事。
+const paneBeforeMin = ref<Pane>(pane.value)
+function setPane(next: Pane) {
+  if (next === 'min') {
+    if (pane.value !== 'min') paneBeforeMin.value = pane.value
+  } else {
+    // 先切再记。反过来写的话，storage 一抛异常（无痕模式）按钮就成了死的，
+    // 而"记不住偏好"和"点了没反应"是两码事。
+    try {
+      localStorage.setItem(PANE_KEY, next)
+    } catch {
+      /* 记不住就算了 */
+    }
+  }
+  pane.value = next
+}
+// 标题条上那颗按钮：收起的时候它是「展开」，回到收起之前那一档。
+function toggleMinimize() {
+  setPane(pane.value === 'min' ? paneBeforeMin.value : 'min')
+}
+// 每次打开都从记住的那一档开始（而不是上次关窗时碰巧收起着）。
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (!open) {
+      document.removeEventListener('keydown', onDocumentEsc)
+      restoreFocus()
+      return
+    }
+    pane.value = readPane()
+    paneBeforeMin.value = pane.value
+    focusBeforeOpen.value = document.activeElement as HTMLElement | null
+    document.addEventListener('keydown', onDocumentEsc)
+    // 焦点送进框里。送到框本身而不是第一个输入框：第一个是收件人的远程搜索
+    // 框，一聚焦就弹出下拉，而人多数时候是来回复的、收件人早就填好了。
+    void nextTick(() => shell.value?.focus())
+  },
+)
+// 组件被销毁时框可能还开着（切页面、弹窗关掉）。监听留在 document 上的话，
+// 下一次 Esc 会打到一个已经不存在的框上。
+onBeforeUnmount(() => document.removeEventListener('keydown', onDocumentEsc))
+
+// 标题条上写什么。收起来之后这行字是唯一的线索，所以写收件人和主题，
+// 而不是干巴巴一个「写邮件」。aria-label 用的是同一句：屏幕读出来的名字
+// 和眼睛看到的标题该是一个。
+const composerTitle = computed(() => {
+  const subject = form.subject.trim()
+  if (subject) return subject
+  const to = selected.value.length
+  if (to > 0) return t('emails.composeTo', { n: to })
+  return t('emails.compose')
+})
+
+// ---- Esc 关窗。**必须听在 document 上。** ----
+//
+// 绑在写信框那个 section 上不行：从列表点「写邮件」之后焦点还留在那颗按钮上，
+// 而写信框是 Teleport 到 body 的另一棵子树——按 Esc 根本传不到它身上，于是
+// 「点开就按 Esc」这条最常走的路一点反应都没有。从前 el-dialog 是听在
+// document 上的，换掉它就得自己补回来。
+//
+// 但不能见 Esc 就关：定时发送、插入变量、「要放弃这封信吗」都是 Element 自己
+// 的对话框，它们各自也吃 Esc。那时该关的是它们，不是整个写信框——一次误关
+// 丢的是一整封信。所以先看有没有别的浮层开着，有就让给它。
+function anyElementOverlayOpen() {
+  return [...document.querySelectorAll('.el-overlay')].some(
+    (o) => getComputedStyle(o).display !== 'none',
+  )
+}
+function onDocumentEsc(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !props.modelValue) return
+  // 收起着的时候 Esc 不算数：那时它是一条标题条，不是一个"开着的框"。
+  if (pane.value === 'min' || anyElementOverlayOpen()) return
+  e.stopPropagation()
+  void requestClose()
+}
+
+// ---- 焦点 ----
+//
+// **不做 focus trap**，这是有意的：这个框是非模态的，后面那一页本来就该能用
+// （能选中、能复制，这正是这次改动的理由）。把 Tab 圈死在框里，等于用键盘的
+// 人回到了从前那个"外面什么都碰不了"的状态。WAI-ARIA 对非模态对话框的规矩
+// 也是这样：不困住焦点，但**要**打开时把焦点送进去、关上时还回去。
+const focusBeforeOpen = ref<HTMLElement | null>(null)
+const shell = ref<HTMLElement | null>(null)
+function restoreFocus() {
+  const el = focusBeforeOpen.value
+  focusBeforeOpen.value = null
+  // 还在页面上才还回去：那颗按钮可能已经随着列表重绘没了。
+  if (el && document.contains(el)) el.focus()
 }
 </script>
 
 <style scoped>
+/* ------------------------------------------------------------ 窗口本身 ---
+   停靠的浮层，没有遮罩。z-index 取 1900，夹在两头之间：
+
+   · 要压住页面本身的内容；
+   · 又要**低于** Element 自己那套对话框（它从 2000 起往上发号）——定时发送、
+     插入变量、「要放弃这封信吗」都是它发的号，压过它们的话，人会看到一个
+     点不着的确认框。
+
+   页面里还有两个比 1900 高的：邮件列表的右键菜单（4000）和船期提醒那个铃铛
+   气泡（5000，挂在 Shell 上，每一页都在）。它们盖在写信框上面是对的——那两个
+   都是"点一下弹出来、看完就走"的东西，正在写的信不该把它们压住。 */
+.composer {
+  position: fixed;
+  z-index: 1900;
+  display: flex;
+  flex-direction: column;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 24%);
+  overflow: hidden;
+}
+/* 右下角。和 Gmail 一样贴着右边、贴着底——**贴底**是关键：写信框不该
+   遮住列表的上半截，那里正是人要照着抄的东西。 */
+.composer.is-dock {
+  right: 24px;
+  bottom: 0;
+  width: min(620px, calc(100vw - 48px));
+  height: min(640px, calc(100vh - 48px));
+}
+/* 放大：居中的大窗，仍然不加遮罩。 */
+.composer.is-full {
+  left: 50%;
+  top: 4vh;
+  transform: translateX(-50%);
+  width: min(1000px, calc(100vw - 48px));
+  height: 88vh;
+  border-radius: 10px;
+}
+/* 收起：只剩标题条。宽度收窄，免得一条空条横在屏幕下方。 */
+.composer.is-min {
+  right: 24px;
+  bottom: 0;
+  width: min(360px, calc(100vw - 48px));
+  height: auto;
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 8px 14px;
+  background: var(--el-color-primary);
+  color: #fff;
+  flex: none;
+}
+.composer.is-min .composer-bar {
+  cursor: pointer;
+}
+.composer-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.composer-btn:hover {
+  background: rgb(255 255 255 / 18%);
+}
+.composer-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+/* 中间那段自己滚。写信框长短不一（引用展开、附件一堆），而标题条和底下
+   那排按钮必须一直在眼前——尤其是「发送」。 */
+.composer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 4px;
+}
+.composer-foot {
+  flex: none;
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}
+/* 窄屏上那排按钮要换行，不能被裁掉。
+   外层 overflow:hidden，而那一排是 justify-content:flex-end 的——放不下时
+   先被切掉的是**左边**，也就是「取消」和「存草稿」，而且不留滚动条：手机上
+   点不着，也看不出少了东西。换行比挤成一行重要。 */
+.composer-foot .foot {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* 换行之后那个撑开的空格没意义了，反而会把按钮推成一列。 */
+.composer-foot .foot-grow {
+  flex: 1 0 0;
+  min-width: 0;
+}
+
 /* The composer follows the same rhythm as the list it opens over. Element's
    default form spacing is built for settings pages, where every row is a
    separate decision; a compose window is one continuous act and reads better
