@@ -850,7 +850,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
 		IsAnswered: v.IsAnswered,
-		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
+		BodyHtml:   v.BodyHTML, QuotedHtml: v.QuotedHTML,
 		BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,
 		Kind:        v.Kind,
@@ -884,7 +884,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		m.Attachments = append(m.Attachments, &mailv1.InboundAttachment{
 			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
-			PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind,
+			PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind, Revision: a.Revision,
 			Stored: a.FileKey != "",
 		})
 	}
@@ -1002,11 +1002,14 @@ func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.S
 func (h *Handler) OfficePreviewConfig(ctx context.Context, req *mailv1.OfficePreviewConfigRequest) (*mailv1.OfficePreviewConfigResponse, error) {
 	op := operator(ctx)
 	open, err := h.svc.OfficePreviewConfig(ctx, grpcx.TenantID(ctx), op,
-		req.GetInboundId(), req.GetAttachmentId(), req.GetLang())
+		req.GetInboundId(), req.GetAttachmentId(), req.GetLang(), req.GetEdit())
 	if err != nil {
 		return nil, err
 	}
-	return &mailv1.OfficePreviewConfigResponse{DocsUrl: open.DocsURL, ConfigJson: open.ConfigJSON, Token: open.Token}, nil
+	return &mailv1.OfficePreviewConfigResponse{
+		DocsUrl: open.DocsURL, ConfigJson: open.ConfigJSON, Token: open.Token,
+		Editable: open.Editable, Version: open.Version,
+	}, nil
 }
 
 func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.GetInboundExcelConversionJobRequest) (*mailv1.GetInboundExcelConversionJobResponse, error) {
@@ -1087,7 +1090,7 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 			it.Attachments = append(it.Attachments, &mailv1.InboundAttachment{
 				Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 				FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
-				PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind,
+				PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind, Revision: a.Revision,
 				Stored: a.FileKey != "",
 			})
 		}

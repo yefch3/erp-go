@@ -79,6 +79,14 @@ type Config struct {
 	// 的密钥等于没有。两个都空就是没配，办公文档退回转 PDF 那条老路。
 	DocsURL       string
 	DocsJWTSecret string
+	// Document Server 从容器网里怎么找回邮件服务：取附件、回存改动。
+	// 形如 http://mail:9011。**空 = 在线 Office 只读**——没有这条路，
+	// 改完的东西回不来。
+	//
+	// OfficeInternalAddr 是本服务监听它的地址。这个口不往宿主机发布，
+	// 公网到不了；理由见 adapter/httpin 那个包的开头。
+	OfficeInternalURL  string
+	OfficeInternalAddr string
 	// Google OAuth application credentials. The secret identifies our app to
 	// Google, never a user to anything.
 	GoogleClientID     string
@@ -140,6 +148,8 @@ func Load() Config {
 		GotenbergTimeout:    envDuration("GOTENBERG_TIMEOUT", 60*time.Second),
 		DocsURL:             os.Getenv("DOCS_URL"),
 		DocsJWTSecret:       os.Getenv("DOCS_JWT_SECRET"),
+		OfficeInternalURL:   os.Getenv("OFFICE_INTERNAL_URL"),
+		OfficeInternalAddr:  env("OFFICE_INTERNAL_ADDR", ":9011"),
 		GoogleClientID:      os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret:  os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		PublicBaseURL:       os.Getenv("MAIL_PUBLIC_BASE_URL"),

@@ -346,8 +346,18 @@ services:
       # 和 docs 容器的 JWT_SECRET 一致；本地给个开发用的默认值，生产从 .env 来。
       DOCS_URL: ${DOCS_URL:-/docs}
       DOCS_JWT_SECRET: ${DOCS_JWT_SECRET:-erp-dev-docs-secret}
+      # docs 容器从容器网里怎么找回来：取附件、把改完的存回来。
+      #
+      # **这个口不发布到宿主机**（下面 ports 里没有它，只有 expose），公网
+      # 和本机都到不了，nginx 里也没有任何一条 location 指向它。它是一个会
+      # 写文件的口，不能站在前门后面。
+      #
+      # 空 = 在线 Office 整个关掉（不是"只读"）。理由见 app.NewOffice。
+      OFFICE_INTERNAL_URL: ${OFFICE_INTERNAL_URL:-http://mail:9011}
     ports:
       - "127.0.0.1:9010:9010"
+    expose:
+      - "9011"
     networks: [infra, convert]
     depends_on: [masterdata, iam]
     restart: unless-stopped
@@ -417,13 +427,20 @@ services:
   # 在线 Office：OnlyOffice Document Server。附件的「预览」在浏览器里开成一个
   # 完整的 Excel / Word / PPT——能翻、能搜、能选、能复制，不再转成 PDF。
   #
-  # 它是一台会主动出去取文件的服务器：邮件服务签一份"打开这个地址"的配置，
-  # 它拿配置里的签名地址去对象存储取原件。所以两件事定死：
-  #   · JWT 必须开，密钥和邮件服务的 DOCS_JWT_SECRET 同一把——不签的话，能碰到
-  #     它的人都能让它去取任意地址上的文件；
-  #   · 它在 infra 网上而不是 convert 网上：convert 不通外网，而生产的附件在 S3。
+  # 它是一台会主动出去取文件、也会主动回来敲门的服务器。文件不再由它去对象
+  # 存储取，而是找邮件服务要（mail:9011）；改完之后它回敲同一个口。所以：
+  #   · JWT 必须开，密钥和邮件服务的 DOCS_JWT_SECRET 同一把。它给自己发出的
+  #     每个请求签名，邮件服务两头都验——**这正是"附件能被改"的前提**：不验
+  #     签名的回调，等于谁都能往附件里塞一版。
+  #   · 它在 infra 网上而不是 convert 网上：convert 不通外网，而它要够得着
+  #     mail，也要能被前门转发进来。
   # 镜像约 3 GB，常驻约 2 GB 内存（里面自带 nginx、node、postgres、rabbitmq）。
   # 只绑 127.0.0.1：外面进来的路是前门 nginx 的 /docs/。
+  #
+  # 这里曾经挂过一份 onlyoffice-local.json，把它往外发请求时的签名关掉——
+  # 那是 #443 的权宜之计：S3 见到签名地址上再带一个 Authorization 头就答 400。
+  # 现在文件由我们自己递，S3 再没机会见到那个头，那份覆盖也就不需要了；而
+  # 留着它就等于回调永远没有签名。**不要把它加回来。**
   docs:
     image: onlyoffice/documentserver:9.4.0
     environment:
@@ -431,11 +448,6 @@ services:
       JWT_SECRET: ${DOCS_JWT_SECRET:-erp-dev-docs-secret}
       JWT_HEADER: Authorization
       JWT_IN_BODY: "true"
-    # 环境变量管不到的那几项写在这份 JSON 里（为什么要它，文件里有）。
-    # 挂成 local-production-linux.json 而不是 local.json：后者是启动脚本按
-    # 环境变量生成的，挂上去会被覆盖；前者在它之后加载，能盖过它。
-    volumes:
-      - ./onlyoffice-local.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
     ports:
       - "127.0.0.1:8083:80"
     networks: [infra]

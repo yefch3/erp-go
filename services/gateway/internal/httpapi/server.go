@@ -4,6 +4,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -901,20 +902,37 @@ func (s *Server) perm(code string) func(http.Handler) http.Handler {
 				s.writeError(w, http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "缺少登录凭证")
 				return
 			}
-			resp, err := s.Access.CheckPermission(r.Context(), &iamv1.CheckPermissionRequest{
-				EmployeeId: op.EmployeeID, PermissionCode: code,
-			})
+			allowed, err := s.allowed(r.Context(), code)
 			if err != nil {
 				s.writeGRPCError(w, err)
 				return
 			}
-			if !resp.GetAllowed() {
+			if !allowed {
 				s.writeError(w, http.StatusForbidden, "AUTH_PERMISSION_DENIED", "没有执行此操作的权限")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// allowed 问一句这个人有没有某个权限，不自己写响应。
+//
+// perm 是"没有就挡在门外"；这个是给**同一个端点分两档**用的——在线 Office
+// 那条路只读是 mail:email:read，而带上 edit=1 就会签出一份能回存的配置，
+// 那是写。两档挂在同一条路由上，中间件表达不了。
+func (s *Server) allowed(ctx context.Context, code string) (bool, error) {
+	op, ok := grpcx.OperatorFromContext(ctx)
+	if !ok || op.EmployeeID == 0 {
+		return false, nil
+	}
+	resp, err := s.Access.CheckPermission(ctx, &iamv1.CheckPermissionRequest{
+		EmployeeId: op.EmployeeID, PermissionCode: code,
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.GetAllowed(), nil
 }
 
 // ---------------------------------------------------------------- middleware
