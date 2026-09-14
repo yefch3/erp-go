@@ -87,9 +87,17 @@
             <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3><p>{{ t('quality.todoHint') }}</p></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
             <el-table :data="visibleQualityTasks" class="home-table sourcing-todo-table">
               <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('quality.pending') }}</div></template></el-table-column>
-              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{ row }"><div class="item-title">{{ row.taskNo }} · {{ row.poNo }}</div><div class="item-meta">{{ row.supplierName }} · {{ t('quality.batch') }} #{{ row.batchNo }}</div><div class="item-summary">{{ t('quality.expectedDate') }}：{{ row.expectedDate || '—' }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{ row }"><div class="item-title">{{ row.taskNo }} · {{ row.poNo }}</div><div class="item-meta">{{ row.supplierName }} · 整单质检</div><div class="item-summary">{{ t('quality.expectedDate') }}：{{ row.expectedDate || '—' }}</div></template></el-table-column>
               <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('quality.pending') }}</el-tag></template></el-table-column>
               <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{ row }"><router-link :to="{ path:'/quality/tasks', query:{ task:String(row.id) } }" class="doc-link">{{ t('quality.todoAction') }}</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleQualityProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>质检异常处理</h3><p>质检已有最终结果，请采购单负责人联系工厂并记录处理结果。</p></div><el-tag type="warning" effect="plain">{{qualityProcurementTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleQualityProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">禁止先发</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{row.taskNo}} · {{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div><div class="item-summary">{{qualityTodoSummary(row)}}</div></template></el-table-column>
+              <el-table-column :label="t('common.actions')" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{status:'ORDERED',order:String(row.poId)}}" class="doc-link">进入采购单</router-link></template></el-table-column>
             </el-table>
           </section>
           <section v-if="visibleExecutionProcurementTasks.length" class="todo-source-section">
@@ -148,7 +156,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -250,6 +258,7 @@ interface ExecutionRequirement { id:string; contractId:string; contractNo:string
 interface ExecutionProcurementTask { key:string; contractNo:string; customerName:string; productNames:string; productCount:number; requiredDate:string }
 interface ExecutionShippingTask { id:string; contractNo:string; customerName:string; batchNo:number; portOfLoading:string; portOfDischarge:string; status:string }
 interface QualityTodoTask { id:string; taskNo:string; poNo:string; supplierName:string; batchNo:number; expectedDate:string; status:string }
+interface QualityProcurementTodo extends QualityTodoTask {poId:string;lines:Array<{productName:string;requestedQty:string;qualifiedQty:string;uomCode:string;issueDescription:string}>}
 type HomeTab = 'pending' | 'submitted' | 'responsible' | 'reminders' | 'handled'
 
 const HomeEmpty = defineComponent({
@@ -284,6 +293,8 @@ const executionShippingTasks = ref<ExecutionShippingTask[]>([])
 const executionShippingTasksAvailable = ref(false)
 const qualityTasks = ref<QualityTodoTask[]>([])
 const qualityTasksAvailable = ref(false)
+const qualityProcurementTasks=ref<QualityProcurementTodo[]>([])
+const qualityProcurementTasksAvailable=ref(false)
 const finalShippingResolveOpen = ref(false)
 const finalShippingSaving = ref(false)
 const finalShippingResolveForm = reactive({id:'',note:'',currency:'USD',freightAmount:'',estimatedDeparture:'',estimatedArrival:'',validUntil:''})
@@ -304,8 +315,8 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0))
-const combinedPendingAvailable = computed(() => inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value)
+const combinedPendingTotal = computed(() => inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
+const combinedPendingAvailable = computed(() => inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
@@ -314,6 +325,8 @@ const visibleShippingTasks = computed(() => { const query=keyword.value.trim().t
 const visibleExecutionProcurementTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionProcurementTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.productNames].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 const visibleExecutionShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return executionShippingTasks.value.filter(row=>!query||[row.contractNo,row.customerName,row.portOfLoading,row.portOfDischarge].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 const visibleQualityTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return qualityTasks.value.filter(row=>!query||[row.taskNo,row.poNo,row.supplierName].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
+const visibleQualityProcurementTasks=computed(()=>{const query=keyword.value.trim().toLocaleLowerCase();return qualityProcurementTasks.value.filter(row=>!query||[row.taskNo,row.poNo,row.supplierName].some(v=>String(v||'').toLocaleLowerCase().includes(query)))})
+function qualityTodoSummary(row:QualityProcurementTodo){return row.lines.filter(l=>Number(l.requestedQty)>Number(l.qualifiedQty)).map(l=>`${l.productName} 未合格 ${Number(l.requestedQty)-Number(l.qualifiedQty)} ${l.uomCode}${l.issueDescription?' · '+l.issueDescription:''}`).join('；')}
 
 const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'SHIPPING_REQUOTE', 'TRAVEL_REIMBURSEMENT', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
@@ -406,6 +419,7 @@ async function loadQualityTasks() {
     qualityTasksAvailable.value = false
   }
 }
+async function loadQualityProcurementTasks(){if(!auth.can('procurement:order:read')){qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false;return}try{const data=await get<{tasks:QualityProcurementTodo[]}>('/quality/procurement-todos',{},quietErrors);qualityProcurementTasks.value=data.tasks??[];qualityProcurementTasksAvailable.value=true}catch{qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false}}
 
 async function loadExecutionProcurementTasks() {
   if (!auth.can('procurement:requirement:read')) {
@@ -558,8 +572,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(),loadQualityProcurementTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(),loadQualityProcurementTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {

@@ -280,6 +280,26 @@
         </el-table-column>
       </el-table>
 
+      <section v-if="qualityDetails.length" class="quality-summary">
+        <div class="side-title">出货前质检结果（只读）</div>
+        <el-card v-for="task in qualityDetails" :key="task.id" shadow="never" class="quality-summary-card">
+          <div class="quality-summary-head"><strong>{{ task.taskNo }}</strong><el-tag :type="qualityResultType(task)">{{ qualityOverallLabel(task) }}</el-tag></div>
+          <el-table :data="task.lines" size="small">
+            <el-table-column prop="productName" label="产品" min-width="160" />
+            <el-table-column label="送检 / 合格 / 不合格" min-width="210"><template #default="{row}">{{ trim(row.requestedQty) }} / {{ trim(row.qualifiedQty) }} / {{ trim(String(Number(row.requestedQty)-Number(row.qualifiedQty))) }} {{ row.uomCode }}</template></el-table-column>
+            <el-table-column prop="issueDescription" label="异常说明" min-width="180"><template #default="{row}">{{row.issueDescription||'—'}}</template></el-table-column>
+          </el-table>
+          <div v-if="task.files?.length" class="quality-files"><b>质检附件：</b><a v-for="file in task.files" :key="file.id" :href="file.downloadUrl" target="_blank">{{file.fileName}}</a></div>
+          <el-alert v-if="task.procurementHandlingStatus==='PENDING'" type="warning" :closable="false" show-icon title="质检存在未合格数量，请采购记录处理结果后安排复检；当前不能先发货。" />
+          <div v-if="task.procurementHandlingStatus==='PENDING'" class="quality-handle">
+            <el-select v-model="qualityAction[task.id]" placeholder="选择处理方式"><el-option value="REWORK" label="返工"/><el-option value="REPLACEMENT" label="换货"/><el-option value="CANCEL_SHORTAGE" label="取消缺少数量"/></el-select>
+            <el-input v-model="qualityNote[task.id]" placeholder="填写与工厂确认的处理结果" />
+            <el-button type="primary" :loading="saving" @click="saveQualityHandling(task)">保存处理结果</el-button>
+          </div>
+          <div v-else-if="task.procurementHandlingStatus==='COMPLETED'" class="sub">采购处理：{{qualityActionLabel(task.procurementHandlingAction)}} · {{task.procurementHandlingNote}} · {{task.procurementHandledByName}}</div>
+        </el-card>
+      </section>
+
       <template v-if="detailReceipts.length">
         <div class="side-title">{{ t('orders.receipts') }}</div>
         <el-table :data="detailReceipts" size="small">
@@ -538,7 +558,7 @@
         <el-table :data="qualityItems" border>
           <el-table-column prop="productName" :label="t('quality.product')" min-width="240"><template #default="{row}"><b>{{row.productName}}</b><div class="sub">{{row.spec||'—'}}</div></template></el-table-column>
           <el-table-column :label="t('quality.orderedQty')" width="160"><template #default="{row}">{{trim(row.qty)}} {{row.uomCode}}</template></el-table-column>
-          <el-table-column :label="t('quality.applyQty')" width="250"><template #default="{row}"><el-input v-model="qualityQty[row.id]"><template #append>{{row.uomCode}}</template></el-input></template></el-table-column>
+          <el-table-column label="本次送检" width="190"><template #default="{row}"><el-tag type="success" effect="plain">整单 {{trim(row.qty)}} {{row.uomCode}}</el-tag></template></el-table-column>
         </el-table>
         <el-form-item :label="t('quality.remark')" style="margin-top:14px"><el-input v-model="qualityForm.remark" type="textarea" :rows="3" /></el-form-item>
       </el-form>
@@ -721,6 +741,10 @@ const detailOpen = ref(false)
 const detail = ref<Order | null>(null)
 const detailItems = ref<OrderItem[]>([])
 const detailReceipts = ref<Receipt[]>([])
+interface QualityDetail {id:string;taskNo:string;status:string;lines:Array<{productName:string;requestedQty:string;qualifiedQty:string;uomCode:string;finalResult:string;issueDescription:string}>;files:Array<{id:string;fileName:string;downloadUrl:string}>;procurementHandlingStatus:string;procurementHandlingAction:string;procurementHandlingNote:string;procurementHandledByName:string}
+const qualityDetails=ref<QualityDetail[]>([])
+const qualityAction=reactive<Record<string,string>>({})
+const qualityNote=reactive<Record<string,string>>({})
 
 const receiveOpen = ref(false)
 const receiving = ref<Order | null>(null)
@@ -763,7 +787,6 @@ const contractForm = reactive({ contractNo: '', paymentTerms: '' })
 const qualityOpen = ref(false)
 const qualityOrder = ref<Order | null>(null)
 const qualityItems = ref<OrderItem[]>([])
-const qualityQty = reactive<Record<string,string>>({})
 const qualityForm = reactive({ expectedDate:'', location:'', contactName:'', contactPhone:'', remark:'' })
 
 function lineConfirmationProgress(item: OrderItem): number {
@@ -1016,16 +1039,16 @@ function runOrderAction(row: Order, key: string) {
 }
 
 async function openQualityApplication(row: Order) {
-	const d=await get<{items:OrderItem[]}>(`/purchase-orders/${row.id}`)
+	const [d,q]=await Promise.all([get<{items:OrderItem[]}>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`)])
+	if((q.tasks||[]).length){ElMessage.info('该采购单已有整单质检任务，已打开原质检资料');await openDetail(row);return}
 	qualityOrder.value=row;qualityItems.value=d.items||[]
-	for(const item of qualityItems.value) qualityQty[item.id]=''
 	qualityForm.expectedDate='';qualityForm.location=row.factoryName||row.supplierName;qualityForm.contactName='';qualityForm.contactPhone='';qualityForm.remark=''
 	qualityOpen.value=true
 }
 async function submitQualityApplication(){
 	if(!qualityOrder.value)return
-	const lines=qualityItems.value.filter(i=>Number(qualityQty[i.id])>0).map(i=>({po_item_id:Number(i.id),qty:qualityQty[i.id]}))
-	if(!lines.length){ElMessage.warning(t('quality.pickQty'));return}
+	if(!qualityItems.value.length){ElMessage.warning('采购单没有可质检的产品');return}
+	const lines=qualityItems.value.map(i=>({po_item_id:Number(i.id),qty:i.qty}))
 	saving.value=true
 	try{await post(`/purchase-orders/${qualityOrder.value.id}/quality-inspections`,{expected_date:qualityForm.expectedDate,inspection_location:qualityForm.location,contact_name:qualityForm.contactName,contact_phone:qualityForm.contactPhone,remark:qualityForm.remark,lines});ElMessage.success(t('quality.applied'));qualityOpen.value=false}
 	finally{saving.value=false}
@@ -1323,12 +1346,17 @@ function selectOrderWarehouse(id: number) {
 }
 
 async function openDetail(row: Order) {
-  const d = await get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`)
+  const [d,q] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`)])
   detail.value = d.order
   detailItems.value = d.items ?? []
   detailReceipts.value = d.receipts ?? []
+  qualityDetails.value=q.tasks??[]
   detailOpen.value = true
 }
+function qualityOverallLabel(task:QualityDetail){if(task.lines.every(l=>l.finalResult==='PASS'))return '合格';if(task.lines.some(l=>l.finalResult==='FAIL'))return '不合格';return '部分合格'}
+function qualityResultType(task:QualityDetail){return task.lines.every(l=>l.finalResult==='PASS')?'success':task.lines.some(l=>l.finalResult==='FAIL')?'danger':'warning'}
+function qualityActionLabel(v:string){return ({REWORK:'返工',REPLACEMENT:'换货',CANCEL_SHORTAGE:'取消缺少数量'} as Record<string,string>)[v]||v}
+async function saveQualityHandling(task:QualityDetail){const action=qualityAction[task.id],note=(qualityNote[task.id]||'').trim();if(!action||!note){ElMessage.warning('请选择处理方式并填写处理结果');return}saving.value=true;try{await post(`/purchase-orders/${detail.value?.id}/quality-inspections/handling`,{task_id:Number(task.id),action,result_note:note});ElMessage.success('采购处理结果已保存');if(detail.value)await openDetail(detail.value)}finally{saving.value=false}}
 
 async function downloadOrder(row: Order, format: string) {
   if (format !== 'xlsx' && format !== 'pdf') return
@@ -1651,10 +1679,11 @@ onMounted(async () => {
   const importedOrder = String(route.query.order ?? '')
   if (importedOrder) {
     try {
-      const detailResponse = await get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${importedOrder}`)
+      const [detailResponse,qualityResponse] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${importedOrder}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${importedOrder}/quality-inspections`)])
       detail.value = detailResponse.order
       detailItems.value = detailResponse.items ?? []
       detailReceipts.value = detailResponse.receipts ?? []
+      qualityDetails.value=qualityResponse.tasks??[]
       detailOpen.value = true
       router.replace({ path: '/purchase-orders' })
     } catch {
@@ -1834,6 +1863,7 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+.quality-summary{margin-top:18px}.quality-summary-card{margin-bottom:12px}.quality-summary-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.quality-files{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.quality-handle{display:grid;grid-template-columns:150px 1fr auto;gap:10px;margin-top:12px}
 @media (max-width: 760px) {
   .execution-section-head { align-items: flex-start; flex-direction: column; }
   .overall-progress { width: 100%; }

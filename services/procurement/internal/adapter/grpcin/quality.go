@@ -17,7 +17,7 @@ func qualityTime(v *time.Time) string {
 	return v.Format(time.RFC3339)
 }
 func qualityTaskProto(q app.QualityTask) *prv1.QualityInspectionTask {
-	out := &prv1.QualityInspectionTask{Id: q.ID, PoId: q.POID, TaskNo: q.TaskNo, PoNo: q.PONo, SupplierName: q.SupplierName, BatchNo: q.BatchNo, Status: q.Status, ExpectedDate: q.ExpectedDate, InspectionLocation: q.Location, ContactName: q.ContactName, ContactPhone: q.ContactPhone, Remark: q.Remark, RequestedByName: q.RequestedByName, RequestedAt: q.RequestedAt.Format(time.RFC3339), InspectorName: q.InspectorName, StartedAt: qualityTime(q.StartedAt), CompletedAt: qualityTime(q.CompletedAt)}
+	out := &prv1.QualityInspectionTask{Id: q.ID, PoId: q.POID, TaskNo: q.TaskNo, PoNo: q.PONo, SupplierName: q.SupplierName, BatchNo: q.BatchNo, Status: q.Status, ExpectedDate: q.ExpectedDate, InspectionLocation: q.Location, ContactName: q.ContactName, ContactPhone: q.ContactPhone, Remark: q.Remark, RequestedByName: q.RequestedByName, RequestedAt: q.RequestedAt.Format(time.RFC3339), InspectorName: q.InspectorName, StartedAt: qualityTime(q.StartedAt), CompletedAt: qualityTime(q.CompletedAt), ProcurementHandlingStatus: q.ProcurementHandlingStatus, ProcurementHandlingAction: q.ProcurementHandlingAction, ProcurementHandlingNote: q.ProcurementHandlingNote, ProcurementHandledByName: q.ProcurementHandledByName, ProcurementHandledAt: qualityTime(q.ProcurementHandledAt)}
 	for _, l := range q.Lines {
 		out.Lines = append(out.Lines, &prv1.QualityInspectionTaskLine{Id: l.ID, PoItemId: l.POItemID, ProductName: l.ProductName, Spec: l.Spec, UomCode: l.UOM, OrderedQty: l.OrderedQty, RequestedQty: l.RequestedQty, QualifiedQty: l.QualifiedQty, UnresolvedQty: l.UnresolvedQty, FinalResult: l.FinalResult, IssueDescription: l.IssueDescription, HandlingSuggestion: l.HandlingSuggestion, ApprovedReleaseQty: l.ApprovedReleaseQty, ReleaseDecidedByName: l.ReleaseDecidedByName, ReleaseDecidedAt: qualityTime(l.ReleaseDecidedAt)})
 	}
@@ -129,4 +129,40 @@ func (h *OrderHandler) RegisterQualityInspectionFile(ctx context.Context, req *p
 		return nil, err
 	}
 	return &prv1.RegisterQualityInspectionFileResponse{Task: qualityTaskProto(q)}, nil
+}
+
+func (h *OrderHandler) GetOrderQualityInspections(ctx context.Context, req *prv1.GetOrderQualityInspectionsRequest) (*prv1.GetOrderQualityInspectionsResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetPoId()); err != nil {
+		return nil, err
+	}
+	rows, err := h.svc.ListOrderQualityTasks(ctx, grpcx.TenantID(ctx), req.GetPoId())
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.GetOrderQualityInspectionsResponse{}
+	for _, q := range rows {
+		out.Tasks = append(out.Tasks, qualityTaskProto(q))
+	}
+	return out, nil
+}
+func (h *OrderHandler) ListQualityProcurementTodos(ctx context.Context, req *prv1.ListQualityProcurementTodosRequest) (*prv1.ListQualityProcurementTodosResponse, error) {
+	rows, err := h.svc.ListQualityProcurementTodos(ctx, grpcx.TenantID(ctx), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.ListQualityProcurementTodosResponse{}
+	for _, q := range rows {
+		out.Tasks = append(out.Tasks, qualityTaskProto(q))
+	}
+	return out, nil
+}
+func (h *OrderHandler) RecordQualityProcurementHandling(ctx context.Context, req *prv1.RecordQualityProcurementHandlingRequest) (*prv1.RecordQualityProcurementHandlingResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetPoId()); err != nil {
+		return nil, err
+	}
+	q, err := h.svc.RecordQualityProcurementHandling(ctx, grpcx.TenantID(ctx), req.GetPoId(), req.GetTaskId(), req.GetAction(), req.GetResultNote(), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RecordQualityProcurementHandlingResponse{Task: qualityTaskProto(q)}, nil
 }

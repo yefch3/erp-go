@@ -75,19 +75,24 @@ type InquiryAttachment struct {
 	Name string `json:"name"`
 }
 type InquiryPrice struct {
-	ProductID string `json:"productId"`
-	Price     string `json:"price"`
-	Delivery  string `json:"delivery"`
-	Remark    string `json:"remark"`
+	ProductID    string `json:"productId"`
+	Price        string `json:"price"`
+	FactoryPrice string `json:"factoryPrice"`
+	FOBPrice     string `json:"fobPrice"`
+	Slitting     string `json:"slitting"`
+	Delivery     string `json:"delivery"`
+	Remark       string `json:"remark"`
 }
 type InquiryCharge struct {
-	Name     string `json:"name"`
-	Amount   string `json:"amount"`
-	Currency string `json:"currency"`
-	Unit     string `json:"unit"`
-	Quantity string `json:"quantity"`
-	Subtotal string `json:"subtotal"`
-	Remark   string `json:"remark"`
+	Name           string `json:"name"`
+	Amount         string `json:"amount"`
+	Currency       string `json:"currency"`
+	Unit           string `json:"unit"`
+	Quantity       string `json:"quantity"`
+	Subtotal       string `json:"subtotal"`
+	Remark         string `json:"remark"`
+	AllocationType string `json:"allocationType"`
+	ProductID      string `json:"productId"`
 }
 type InquiryQuoteBody struct {
 	Company         string              `json:"company"`
@@ -832,9 +837,6 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 		return apierr.Invalid("INQUIRY_COMPANY", "请选择或输入工厂/货代")
 	}
 	b.Incoterm = strings.ToUpper(strings.TrimSpace(b.Incoterm))
-	if submit && b.Incoterm == "" {
-		return apierr.Invalid("INQUIRY_INCOTERM", "请填写报价贸易条款")
-	}
 	allowed := map[string]bool{}
 	for _, p := range products {
 		allowed[p.ID] = true
@@ -859,12 +861,20 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 				return apierr.Invalid("INQUIRY_LINE", "产品不属于询盘或重复")
 			}
 			seen[l.ProductID] = true
-			if l.Price == "" && !submit {
+			if l.Price == "" && l.FactoryPrice == "" && l.FOBPrice == "" && !submit {
 				continue
 			}
-			p, e := decimal.NewFromString(l.Price)
-			if e != nil || p.IsNegative() {
-				return apierr.Invalid("INQUIRY_PRICE", "请填写有效单价")
+			for name, value := range map[string]string{"price": l.Price, "factoryPrice": l.FactoryPrice, "fobPrice": l.FOBPrice, "slitting": l.Slitting} {
+				if value == "" {
+					continue
+				}
+				p, e := decimal.NewFromString(value)
+				if e != nil || p.IsNegative() {
+					return apierr.Invalid("INQUIRY_PRICE", "请填写有效的工厂报价").WithMeta("field", name)
+				}
+			}
+			if submit && l.Price == "" && l.FactoryPrice == "" && l.FOBPrice == "" {
+				return apierr.Invalid("INQUIRY_PRICE", "请填写工厂报价")
 			}
 			if l.Delivery != "" && !validOptionalDate(l.Delivery) {
 				return apierr.Invalid("INQUIRY_DATE", "交货日期无效")
@@ -874,6 +884,17 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 		for _, id := range b.CargoIDs {
 			if !allowed[id] {
 				return apierr.Invalid("INQUIRY_CARGO", "产品不属于询盘")
+			}
+		}
+		if submit {
+			if len(b.Charges) == 0 {
+				return apierr.Invalid("INQUIRY_CHARGE", "请填写物流报价")
+			}
+			currency, unit := strings.ToUpper(strings.TrimSpace(b.Charges[0].Currency)), strings.TrimSpace(b.Charges[0].Unit)
+			for _, c := range b.Charges {
+				if strings.ToUpper(strings.TrimSpace(c.Currency)) != currency || strings.TrimSpace(c.Unit) != unit || unit == "" {
+					return apierr.Invalid("INQUIRY_QUOTE_UNIT", "请将物流费用折算为同一币种和计价单位后提交")
+				}
 			}
 		}
 		totals := map[string]decimal.Decimal{}
@@ -887,6 +908,16 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			q, qe := decimal.NewFromString(c.Quantity)
 			if c.Name == "" || len(c.Currency) != 3 || e != nil || qe != nil || a.IsNegative() || !q.IsPositive() {
 				return apierr.Invalid("INQUIRY_CHARGE", "请填写费用名称、币种、金额和数量")
+			}
+			c.AllocationType = strings.ToUpper(strings.TrimSpace(c.AllocationType))
+			if c.AllocationType == "" {
+				c.AllocationType = "FIXED"
+			}
+			if c.AllocationType != "DIRECT" && c.AllocationType != "PER_TON" && c.AllocationType != "FIXED" {
+				return apierr.Invalid("INQUIRY_CHARGE_ALLOCATION", "请选择产品专属、按吨或整票固定费用")
+			}
+			if c.AllocationType == "DIRECT" && !allowed[c.ProductID] {
+				return apierr.Invalid("INQUIRY_CHARGE_PRODUCT", "产品专属费用必须选择对应产品")
 			}
 			sub := a.Mul(q).Round(2)
 			c.Subtotal = sub.StringFixed(2)

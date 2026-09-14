@@ -27,6 +27,10 @@ func initialOffer(source OfferInquiry) OfferBody {
 		mt := ""
 		if strings.EqualFold(p.Unit, "MT") {
 			mt = "1"
+		} else if weight, e1 := decimal.NewFromString(strings.TrimSpace(p.Weight)); e1 == nil && weight.IsPositive() {
+			if qty, e2 := decimal.NewFromString(strings.TrimSpace(p.Quantity)); e2 == nil && qty.IsPositive() {
+				mt = weight.DivRound(qty, 8).String()
+			}
 		}
 		out.Lines = append(out.Lines, OfferLine{OfferProduct: p, Calculation: OfferCalculation{MTPerUnit: mt}})
 	}
@@ -94,6 +98,11 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	switch cmd.Action {
 	case "get":
 	case "pdf":
+		if view.Status != "CONFIRMED" {
+			if err := validateOfferPricing(view.Body, source); err != nil {
+				return "", err
+			}
+		}
 		if view.Revision == 0 {
 			return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
 		}
@@ -105,6 +114,9 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		return string(out), nil
 	case "confirm":
 		if view.Status != "CONFIRMED" {
+			if err := validateOfferPricing(view.Body, source); err != nil {
+				return "", err
+			}
 			if cmd.Revision != view.Revision || view.Revision == 0 {
 				return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后检查再确认")
 			}
@@ -124,24 +136,22 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		if cmd.Revision != view.Revision {
 			return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后再保存")
 		}
-		rates, ok := s.rates.(OfferRates)
-		if !ok {
-			return "", apierr.Internal("OFFER_RATES", "有效汇率服务不可用")
-		}
-		confirmed, err := rates.EffectiveRates(ctx)
-		if err != nil {
-			return "", err
-		}
 		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
+		if !calculate {
+			if err := validateOfferPricing(cmd.Body, source); err != nil {
+				return "", err
+			}
+		}
 		target := cmd.LineID
 		if cmd.Action == "calculate_all" {
 			target = "*"
 		}
-		body, err := prepareOffer(cmd.Body, source, confirmed, calculate, target)
+		body, err := prepareOffer(cmd.Body, source, nil, calculate, target)
 		if err != nil {
 			return "", err
 		}
 		if calculate {
+			body.PricingSnapshot = offerPricingSnapshot(body, source)
 			view.Body = body
 			break
 		}
@@ -179,6 +189,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		}
 		view.CanEdit = true
 	}
+	view.PricingStale = view.Status != "CONFIRMED" && offerPricingStale(view.Body, source)
 	out, err := json.Marshal(view)
 	return string(out), err
 }
@@ -255,7 +266,30 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 	if len(b.Lines) == 0 {
 		return b, apierr.Invalid("OFFER_LINES", "至少保留一项成交产品")
 	}
-	b.Rates = rates
+	fx, fxErr := decimal.NewFromString(strings.TrimSpace(b.QuoteFX))
+	if fxErr != nil || !fx.GreaterThan(decimal.RequireFromString("0.05")) || !b.QuoteFXConfirmed {
+		return b, apierr.Invalid("OFFER_QUOTE_FX_REQUIRED", "请手工确认本次报价使用的 USD/CNY 汇率")
+	}
+	b.QuoteFX = fx.StringFixed(8)
+	b.Rates = []OfferRate{{Base: "USD", Quote: "CNY", Value: b.QuoteFX, At: time.Now().UTC().Format(time.RFC3339Nano)}}
+	if b.LogisticsQuoteID != "" && b.Incoterm != "FOB" {
+		acceptedID := ""
+		for _, tr := range b.Transports {
+			if !tr.Accepted {
+				continue
+			}
+			if acceptedID != "" {
+				return b, apierr.Invalid("OFFER_ONE_SHIPMENT", "客户只能选定一个运输方案")
+			}
+			acceptedID = tr.QuoteID
+		}
+		if acceptedID == "" {
+			return b, apierr.Invalid("OFFER_CUSTOMER_TRANSPORT", "请先记录客户选定的物流方案，再计算报价")
+		}
+		if acceptedID != b.LogisticsQuoteID {
+			return b, apierr.Invalid("OFFER_CUSTOMER_TRANSPORT", "客户所选物流方案已变化，请按新方案重新计算")
+		}
+	}
 	seen := map[string]bool{}
 	qtyByID := map[string]decimal.Decimal{}
 	total := decimal.Zero
@@ -265,6 +299,14 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 			return b, apierr.Invalid("OFFER_PRODUCT", "请填写产品、单位，产品行标识不能重复")
 		}
 		seen[line.ID] = true
+		if line.Calculation.Formula > 0 && b.LogisticsQuoteID != "" {
+			if (line.Calculation.Formula == 5 && b.Incoterm != "FOB") || (line.Calculation.Formula != 5 && b.Incoterm != "CFR") {
+				return b, apierr.Invalid("OFFER_FORMULA_TERM", "贸易公式与贸易条件不一致")
+			}
+			if err := prepareLogisticsInputs(line, b, source, fx); err != nil {
+				return b, err
+			}
+		}
 		if line.FactoryQuoteID != "" {
 			found := false
 			for _, q := range source.Quotes {
@@ -272,8 +314,11 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 					var qb struct {
 						Currency string `json:"currency"`
 						Prices   []struct {
-							ProductID string `json:"productId"`
-							Price     string `json:"price"`
+							ProductID    string `json:"productId"`
+							Price        string `json:"price"`
+							FactoryPrice string `json:"factoryPrice"`
+							FOBPrice     string `json:"fobPrice"`
+							Slitting     string `json:"slitting"`
 						} `json:"prices"`
 					}
 					if err := json.Unmarshal(q.Body, &qb); err != nil {
@@ -282,54 +327,92 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 					for _, p := range qb.Prices {
 						if p.ProductID == line.ID {
 							found = true
-							line.Calculation.Factory = p.Price
+							selectedPrice := p.Price
+							if selectedPrice == "" {
+								selectedPrice = p.FactoryPrice
+							}
+							if selectedPrice == "" {
+								selectedPrice = p.FOBPrice
+							}
+							line.Calculation.Factory = selectedPrice
+							if b.LogisticsQuoteID == "" && line.Calculation.Formula >= 4 && p.Slitting != "" {
+								line.Calculation.Slitting = p.Slitting
+							}
 							if line.Calculation.Formula > 0 && (!calculate || target == "*" || line.ID == target) {
 								expected := "CNY"
 								if line.Calculation.Formula == 2 {
 									expected = "USD"
 								}
-								conversion, _, e := effectivePair(rates, qb.Currency, expected)
+								price, e := decimal.NewFromString(selectedPrice)
 								if e != nil {
 									return b, e
 								}
-								price, e := decimal.NewFromString(p.Price)
-								if e != nil {
-									return b, e
+								if !strings.EqualFold(qb.Currency, expected) {
+									if strings.EqualFold(qb.Currency, "CNY") && expected == "USD" {
+										price = price.Div(fx)
+									} else if strings.EqualFold(qb.Currency, "USD") && expected == "CNY" {
+										price = price.Mul(fx)
+									} else {
+										return b, apierr.Invalid("OFFER_FACTORY_CURRENCY", "公式仅支持人民币或美元工厂报价")
+									}
+								}
+								for _, original := range source.Body.Products {
+									if original.ID != line.ID || strings.EqualFold(original.Unit, line.Unit) {
+										continue
+									}
+									mt, e := decimal.NewFromString(line.Calculation.MTPerUnit)
+									if e != nil || !mt.IsPositive() {
+										return b, apierr.Invalid("OFFER_UNIT_WEIGHT", "请填写每个客户报价单位对应吨数")
+									}
+									if strings.EqualFold(original.Unit, "MT") {
+										price = price.Mul(mt)
+									} else {
+										weight, we := decimal.NewFromString(original.Weight)
+										qty, qe := decimal.NewFromString(original.Quantity)
+										if we != nil || qe != nil || !weight.IsPositive() || !qty.IsPositive() {
+											return b, apierr.Invalid("OFFER_UNIT_WEIGHT", "原工厂单位缺少重量换算依据")
+										}
+										price = price.Mul(mt).Div(weight.Div(qty))
+									}
 								}
 								// Currency conversion can produce a repeating decimal. Keep the
 								// internal value within the same eight-decimal precision accepted
 								// for user-entered calculation inputs.
-								line.Calculation.Factory = price.Mul(conversion).Round(8).String()
+								line.Calculation.Factory = price.Round(8).String()
 							}
 						}
 					}
 				}
 			}
 			if !found {
-				return b, apierr.Invalid("OFFER_SOURCE", "所选工厂报价不包含该产品，请刷新后选择")
+				return b, apierr.Invalid("OFFER_SOURCE", "采购价格来源不包含该产品，请刷新上游报价")
 			}
 		}
 		if line.Calculation.Formula > 0 && (!calculate || target == "*" || line.ID == target) {
 			rate := ""
 			if line.Calculation.Formula != 2 {
-				v, _, e := effectivePair(rates, "USD", "CNY")
-				if e != nil {
-					return b, e
-				}
-				rate = v.String()
+				rate = b.QuoteFX
 			}
 			computed, e := calculateOfferRaw(line.Calculation, rate)
 			if e != nil {
 				return b, e
 			}
-			conversion, _, e := effectivePair(rates, "USD", b.Currency)
-			if e != nil {
-				return b, e
+			if b.Currency != "USD" {
+				return b, apierr.Invalid("OFFER_FORMULA_CURRENCY", "五公式核价的报价币种请使用 USD")
 			}
-			line.CalculatedPrice = computed.Mul(conversion).StringFixed(2)
+			line.CalculatedPrice = computed.StringFixed(2)
 			if calculate && (target == "*" || line.ID == target) {
 				line.UnitPrice = line.CalculatedPrice
 			}
+		}
+		if !calculate && line.Calculation.Formula == 0 && strings.TrimSpace(line.UnitPrice) == "" {
+			q, e := decimal.NewFromString(line.Quantity)
+			if e != nil || !q.IsPositive() {
+				return b, apierr.Invalid("OFFER_PRICE_INPUT", "请填写有效产品数量")
+			}
+			qtyByID[line.ID] = q
+			line.Amount = ""
+			continue
 		}
 		amount, e := offerLineAmount(line.Quantity, line.UnitPrice)
 		if e != nil {
@@ -394,6 +477,11 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 	if total.GreaterThan(decimal.RequireFromString("9999999999999999.99")) {
 		return b, apierr.Invalid("OFFER_TOTAL_LIMIT", "报价总金额超出支持范围")
 	}
+	allocations, e := allocateOfferLogistics(b, source)
+	if e != nil {
+		return b, e
+	}
+	b.LogisticsAllocations = allocations
 	b.Total = total.StringFixed(2)
 	return b, nil
 }

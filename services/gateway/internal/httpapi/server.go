@@ -650,6 +650,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
 		// D5 出厂前质检是采购交接给独立质检部门的业务任务，不走审批流。
 		r.With(s.perm("quality:task:request")).Post("/api/purchase-orders/{id}/quality-inspections", s.applyQualityInspection)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/quality-inspections", s.getOrderQualityInspections)
+		r.With(s.perm("procurement:order:read")).Get("/api/quality/procurement-todos", s.listQualityProcurementTodos)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/quality-inspections/handling", s.recordQualityProcurementHandling)
 		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks", s.listQualityTasks)
 		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks/{id}", s.getQualityTask)
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/start", s.startQualityTask)

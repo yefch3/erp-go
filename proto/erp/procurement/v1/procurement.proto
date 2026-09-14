@@ -656,6 +656,11 @@ service PurchaseOrderService {
   rpc DecideQualityRelease(DecideQualityReleaseRequest) returns (DecideQualityReleaseResponse);
   rpc PresignQualityInspectionFile(PresignQualityInspectionFileRequest) returns (PresignQualityInspectionFileResponse);
   rpc RegisterQualityInspectionFile(RegisterQualityInspectionFileRequest) returns (RegisterQualityInspectionFileResponse);
+  // Procurement-facing read-only result and exception handling. These calls do
+  // not grant access to the Quality workspace.
+  rpc GetOrderQualityInspections(GetOrderQualityInspectionsRequest) returns (GetOrderQualityInspectionsResponse);
+  rpc ListQualityProcurementTodos(ListQualityProcurementTodosRequest) returns (ListQualityProcurementTodosResponse);
+  rpc RecordQualityProcurementHandling(RecordQualityProcurementHandlingRequest) returns (RecordQualityProcurementHandlingResponse);
 
   // Supplier invoices: the third leg of the three-way match. Lives on the
   // order service because an invoice is meaningless except against orders.
@@ -847,6 +852,11 @@ message QualityInspectionTask {
   repeated QualityInspectionTaskLine lines = 18;
   repeated QualityInspectionRound rounds = 19;
   repeated QualityInspectionFile files = 20;
+  string procurement_handling_status = 21;
+  string procurement_handling_action = 22;
+  string procurement_handling_note = 23;
+  string procurement_handled_by_name = 24;
+  string procurement_handled_at = 25;
 }
 
 message ApplyQualityInspectionLine { int64 po_item_id = 1; string qty = 2; }
@@ -907,6 +917,18 @@ message RegisterQualityInspectionFileRequest {
   bool supplemental = 9;
 }
 message RegisterQualityInspectionFileResponse { QualityInspectionTask task = 1; }
+
+message GetOrderQualityInspectionsRequest { int64 po_id = 1; }
+message GetOrderQualityInspectionsResponse { repeated QualityInspectionTask tasks = 1; }
+message ListQualityProcurementTodosRequest {}
+message ListQualityProcurementTodosResponse { repeated QualityInspectionTask tasks = 1; }
+message RecordQualityProcurementHandlingRequest {
+  int64 po_id = 1;
+  int64 task_id = 2;
+  string action = 3;
+  string result_note = 4;
+}
+message RecordQualityProcurementHandlingResponse { QualityInspectionTask task = 1; }
 
 message OrderImportRow {
   int32 row_no = 1;

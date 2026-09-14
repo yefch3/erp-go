@@ -134,7 +134,7 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:price", "procurement:sourcing:read",
 			"procurement:sourcing:send", "procurement:sourcing:write",
 			"product:product:read",
-			"quality:task:request", "quality:release:decide",
+			"quality:task:request",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
@@ -157,7 +157,7 @@ var presetRoles = []presetRole{
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",
-			"quality:task:request", "quality:release:decide",
+			"quality:task:request",
 		},
 		Scopes: []presetScope{
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},

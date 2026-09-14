@@ -775,25 +775,31 @@ type QualityInspectionRoundLine struct {
 }
 
 type QualityInspectionTask struct {
-	ID                 int64
-	TenantID           int64
-	PoID               int64
-	TaskNo             string
-	BatchNo            int32
-	Status             string
-	ExpectedDate       pgtype.Date
-	InspectionLocation string
-	ContactName        string
-	ContactPhone       string
-	Remark             string
-	RequestedBy        int64
-	RequestedByName    string
-	RequestedAt        pgtype.Timestamptz
-	InspectorID        int64
-	InspectorName      string
-	StartedAt          pgtype.Timestamptz
-	CompletedAt        pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ID                        int64
+	TenantID                  int64
+	PoID                      int64
+	TaskNo                    string
+	BatchNo                   int32
+	Status                    string
+	ExpectedDate              pgtype.Date
+	InspectionLocation        string
+	ContactName               string
+	ContactPhone              string
+	Remark                    string
+	RequestedBy               int64
+	RequestedByName           string
+	RequestedAt               pgtype.Timestamptz
+	InspectorID               int64
+	InspectorName             string
+	StartedAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	ProcurementHandlingStatus string
+	ProcurementHandlingAction string
+	ProcurementHandlingNote   string
+	ProcurementHandledBy      int64
+	ProcurementHandledByName  string
+	ProcurementHandledAt      pgtype.Timestamptz
 }
 
 type QualityInspectionTaskLine struct {

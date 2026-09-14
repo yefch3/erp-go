@@ -1,0 +1,122 @@
+[
+  {
+    "allocations": [
+      {
+        "productId": "109",
+        "product": "产品 A 钢板",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "110",
+        "product": "产品 B 钢卷",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "111",
+        "product": "产品 C 钢管",
+        "currency": "CNY",
+        "amount": "210.50"
+      }
+    ],
+    "price": "115.00",
+    "formula": 1
+  },
+  {
+    "allocations": [
+      {
+        "productId": "109",
+        "product": "产品 A 钢板",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "110",
+        "product": "产品 B 钢卷",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "111",
+        "product": "产品 C 钢管",
+        "currency": "CNY",
+        "amount": "210.50"
+      }
+    ],
+    "price": "114.29",
+    "formula": 2
+  },
+  {
+    "allocations": [
+      {
+        "productId": "109",
+        "product": "产品 A 钢板",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "110",
+        "product": "产品 B 钢卷",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "111",
+        "product": "产品 C 钢管",
+        "currency": "CNY",
+        "amount": "210.50"
+      }
+    ],
+    "price": "130.00",
+    "formula": 3
+  },
+  {
+    "allocations": [
+      {
+        "productId": "109",
+        "product": "产品 A 钢板",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "110",
+        "product": "产品 B 钢卷",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "111",
+        "product": "产品 C 钢管",
+        "currency": "CNY",
+        "amount": "210.50"
+      }
+    ],
+    "price": "135.00",
+    "formula": 4
+  },
+  {
+    "allocations": [
+      {
+        "productId": "109",
+        "product": "产品 A 钢板",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "110",
+        "product": "产品 B 钢卷",
+        "currency": "CNY",
+        "amount": "210.50"
+      },
+      {
+        "productId": "111",
+        "product": "产品 C 钢管",
+        "currency": "CNY",
+        "amount": "210.50"
+      }
+    ],
+    "price": "125.00",
+    "formula": 5
+  }
+]

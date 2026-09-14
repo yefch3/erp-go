@@ -51,28 +51,36 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	svc := New(pool, Deps{Files: qualityFiles{}})
 	buyer := Operator{ID: 77, Name: "Buyer"}
 	qc := Operator{ID: 88, Name: "QC"}
-	task, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Location: "Factory 9", Lines: []ApplyQualityLine{{POItemID: item, Qty: "6"}}}, buyer)
+	task, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Location: "Factory 9"}, buyer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != "WAITING" || task.BatchNo != 1 || len(task.Lines) != 1 || task.Lines[0].Spec != "Q235 / 2mm" {
+	if task.Status != "WAITING" || task.BatchNo != 1 || len(task.Lines) != 1 || task.Lines[0].Spec != "Q235 / 2mm" || task.Lines[0].RequestedQty != "10.0000" {
 		t.Fatalf("task=%#v", task)
 	}
-	if _, err = svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Lines: []ApplyQualityLine{{POItemID: item, Qty: "5"}}}, buyer); code(err) != "QUALITY_QTY_EXCEEDED" {
-		t.Fatalf("expected quantity guard, got %v", err)
+	duplicate, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po}, buyer)
+	if err != nil || duplicate.ID != task.ID {
+		t.Fatalf("repeat application should return the one existing task: task=%#v err=%v", duplicate, err)
 	}
 	// The purchase request is the handoff. Quality records the first round
 	// directly without a redundant accept/start transition.
-	task, err = svc.SubmitQualityRound(ctx, tenant, task.ID, SubmitQualityInput{Lines: []SubmitQualityLine{{TaskLineID: task.Lines[0].ID, Result: "PARTIAL", InspectedQty: "6", QualifiedQty: "4", UnqualifiedQty: "2", IssueDescription: "surface"}}}, qc)
+	task, err = svc.SubmitQualityRound(ctx, tenant, task.ID, SubmitQualityInput{Lines: []SubmitQualityLine{{TaskLineID: task.Lines[0].ID, Result: "PARTIAL", InspectedQty: "10", QualifiedQty: "8", UnqualifiedQty: "2", IssueDescription: "surface"}}}, qc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != "REINSPECTION" || task.Lines[0].QualifiedQty != "4.0000" || task.Lines[0].UnresolvedQty != "2.0000" {
+	if task.Status != "REINSPECTION" || task.ProcurementHandlingStatus != "PENDING" || task.Lines[0].QualifiedQty != "8.0000" || task.Lines[0].UnresolvedQty != "2.0000" {
 		t.Fatalf("partial=%#v", task)
 	}
-	task, err = svc.DecideQualityRelease(ctx, tenant, task.ID, []DecideQualityLine{{TaskLineID: task.Lines[0].ID, Qty: "3"}}, buyer)
-	if err != nil || task.Lines[0].ApprovedReleaseQty != "3.0000" {
-		t.Fatalf("release=%#v err=%v", task, err)
+	if _, err = svc.DecideQualityRelease(ctx, tenant, task.ID, []DecideQualityLine{{TaskLineID: task.Lines[0].ID, Qty: "3"}}, buyer); code(err) != "QUALITY_PARTIAL_SHIPMENT_DISABLED" {
+		t.Fatalf("partial release must be disabled, got %v", err)
+	}
+	todos, err := svc.ListQualityProcurementTodos(ctx, tenant, buyer)
+	if err != nil || len(todos) != 1 {
+		t.Fatalf("buyer todo=%#v err=%v", todos, err)
+	}
+	task, err = svc.RecordQualityProcurementHandling(ctx, tenant, po, task.ID, "REWORK", "工厂返工后复检", buyer)
+	if err != nil || task.ProcurementHandlingStatus != "COMPLETED" {
+		t.Fatalf("handling=%#v err=%v", task, err)
 	}
 	key, _, _, err := svc.PresignQualityFile(ctx, tenant, task.ID, "现场 照片.jpg")
 	if err != nil {
@@ -86,7 +94,7 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != "COMPLETED" || len(task.Rounds) != 2 || task.Lines[0].ApprovedReleaseQty != "6.0000" {
+	if task.Status != "COMPLETED" || len(task.Rounds) != 2 || task.Lines[0].ApprovedReleaseQty != "10.0000" {
 		t.Fatalf("completed=%#v", task)
 	}
 	if _, err = svc.RegisterQualityFile(ctx, tenant, task.ID, RegisterQualityFileInput{Category: "REPORT", Key: key + "-2", FileName: "late.pdf"}, qc); code(err) != "QUALITY_COMPLETED_IMMUTABLE" {

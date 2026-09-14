@@ -1,0 +1,42 @@
+{
+  "caseId": "92",
+  "caseNumber": "SC-20260914-000085",
+  "formulaResults": [
+    {
+      "formula": 1,
+      "calculatedPrice": "115.00"
+    },
+    {
+      "formula": 2,
+      "calculatedPrice": "115.00"
+    },
+    {
+      "formula": 3,
+      "calculatedPrice": "130.00"
+    },
+    {
+      "formula": 4,
+      "calculatedPrice": "135.00"
+    },
+    {
+      "formula": 5,
+      "calculatedPrice": "125.00"
+    }
+  ],
+  "allocationResults": {
+    "产品 A 钢板/CNY": "20.00",
+    "产品 A 钢板/EUR": "3.00",
+    "产品 A 钢板/USD": "0.33",
+    "产品 B 钢卷/EUR": "3.00",
+    "产品 B 钢卷/USD": "0.33",
+    "产品 C 钢管/EUR": "3.00",
+    "产品 C 钢管/USD": "0.34"
+  },
+  "sourceIds": {
+    "cny": "1",
+    "usd": "2",
+    "allocationLogistics": "4",
+    "formulaLogistics": "3"
+  },
+  "verifiedAt": "2026-09-13T18:08:46.7915313-04:00"
+}

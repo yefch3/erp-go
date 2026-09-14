@@ -10,8 +10,8 @@ export interface InquiryTemplateSnapshot {
 export interface Product { id:string; product:string; specification:string; quantity:string; unit:string; delivery:string; weight:string; volume:string; packaging:string; packageQuantity?:string; remark:string; customFields:Record<string,string> }
 export interface Attachment {key:string;name:string}
 export interface InquiryBody { title?:string;customerId?:string;customer:string;contactId?:string;contact:string;delivery:string;loadingPort:string;destinationPort:string;incoterm:string;remark:string;template?:InquiryTemplateSnapshot;products:Product[];attachments:Attachment[] }
-export interface Price {productId:string;price:string;delivery:string;remark:string}
-export interface Charge {name:string;amount:string;currency:string;unit:string;quantity:string;subtotal:string;remark:string}
+export interface Price {productId:string;price:string;factoryPrice?:string;fobPrice?:string;slitting?:string;delivery:string;remark:string}
+export interface Charge {name:string;amount:string;currency:string;unit:string;quantity:string;subtotal:string;remark:string;allocationType?:'DIRECT'|'PER_TON'|'FIXED';productId?:string}
 export interface QuoteBody {company:string;currency:string;delivery:string;validUntil:string;paymentTerms:string;incoterm:string;remark:string;prices:Price[];carrier:string;route:string;vessel:string;voyage:string;departure:string;arrival:string;transitDays:string;loadingPort:string;destinationPort:string;cargoIds:string[];charges:Charge[];totals:Record<string,string>;attachments:Attachment[]}
 export interface Quote {historical?:boolean;id:string;kind:string;version:number;body:QuoteBody;authorId:string;author:string;submittedAt:string;updatedBy:string;updatedAt:string;canEdit:boolean}
 export interface Inquiry {id:string;number:string;ownerId:string;owner:string;state:string;revision:number;submittedAt:string;body:InquiryBody;quotes:Quote[];procurementCount:number;logisticsCount:number;canEdit:boolean;sourceMailId:string;legacy:boolean}
