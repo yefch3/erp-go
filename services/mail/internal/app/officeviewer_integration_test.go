@@ -41,7 +41,7 @@ func TestOfficePreviewConfigSignsAViewOnlyConfig(t *testing.T) {
 	}
 	const secret = "test-docs-secret"
 	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{},
-		Office: NewOffice("https://erp.example/docs", secret)},
+		Office: NewOffice("https://erp.example/docs", secret, "http://mail:9011")},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	var mail int64
@@ -84,7 +84,7 @@ func TestOfficePreviewConfigSignsAViewOnlyConfig(t *testing.T) {
 		}
 	}
 
-	open, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: me, Name: "方晨"}, mail, xlsx, "zh")
+	open, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: me, Name: "方晨"}, mail, xlsx, "zh", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,8 +115,11 @@ func TestOfficePreviewConfigSignsAViewOnlyConfig(t *testing.T) {
 	if cfg.DocumentType != "cell" || cfg.Document.FileType != "xlsx" || cfg.Document.Title != "2026 报价单.xlsx" {
 		t.Errorf("文件描述不对：%+v", cfg)
 	}
-	if !strings.Contains(cfg.Document.URL, "att/quote") {
-		t.Errorf("文件地址该是签名下载地址：%q", cfg.Document.URL)
+	// 文件地址指向**我们自己的内网口**，不再是对象存储的签名地址：
+	// Document Server 回来找我们要，这样它那边的签名才能开着（见
+	// officeedit.go 开头）。
+	if !strings.HasPrefix(cfg.Document.URL, "http://mail:9011/office/file?t=") {
+		t.Errorf("文件地址该指向内网取件口：%q", cfg.Document.URL)
 	}
 	if cfg.EditorConfig.Mode != "view" || cfg.EditorConfig.Lang != "zh-CN" {
 		t.Errorf("该是只读、中文：%+v", cfg.EditorConfig)
@@ -148,17 +151,17 @@ func TestOfficePreviewConfigSignsAViewOnlyConfig(t *testing.T) {
 	}
 
 	// 不是自己的信：一律「不存在」，连附件存不存在都不说。
-	if _, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: colleague}, mail, xlsx, "zh"); err == nil {
+	if _, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: colleague}, mail, xlsx, "zh", false); err == nil {
 		t.Error("别人的信不该给配置")
 	}
 	// zip 不归在线 Office。
-	if _, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: me}, mail, zipped, "zh"); err == nil || !strings.Contains(err.Error(), "MAIL_PREVIEW_FILE_TYPE") {
+	if _, err := svc.OfficePreviewConfig(ctx, tenantID, Operator{ID: me}, mail, zipped, "zh", false); err == nil || !strings.Contains(err.Error(), "MAIL_PREVIEW_FILE_TYPE") {
 		t.Errorf("zip 该被拒：%v", err)
 	}
 	// 没配在线 Office：这一档整个不出现，配置也不给。
 	off := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if _, err := off.OfficePreviewConfig(ctx, tenantID, Operator{ID: me}, mail, xlsx, "zh"); err == nil || !strings.Contains(err.Error(), "MAIL_OFFICE_NOT_CONFIGURED") {
+	if _, err := off.OfficePreviewConfig(ctx, tenantID, Operator{ID: me}, mail, xlsx, "zh", false); err == nil || !strings.Contains(err.Error(), "MAIL_OFFICE_NOT_CONFIGURED") {
 		t.Errorf("没配时该说没配：%v", err)
 	}
 	got, err = off.GetInbound(ctx, tenantID, me, mail)

@@ -73,6 +73,11 @@ type Attachment struct {
 	// already shown, which is how a signature logo stops being listed beside
 	// the signed contract.
 	ContentID string
+	// 这个附件在浏览器里被改过几回。0 = 没人改过，看到的就是客户发来的那份。
+	//
+	// **FileKey / DownloadURL 永远指原件**，不跟着这个数走：下载给的是客户
+	// 发来的那一份，改过的那一版要明着要（在线打开就是最新版）。见迁移 00065。
+	Revision int32
 }
 
 // previewable decides what may be rendered inline.

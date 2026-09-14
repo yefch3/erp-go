@@ -2653,6 +2653,9 @@ const mailBus = new BroadcastChannel('erp-mail')
 mailBus.onmessage = (e: MessageEvent<{ type?: string; id?: string; gone?: boolean }>) => {
   if (e.data?.type !== 'mail-changed') return
   if (e.data.gone && openedInbound.value?.id === e.data.id) pushState({ mail: '' })
+  // 还在、而且正开着的就是它：连阅读区一起重拉。列表那一遍刷不出附件上的
+  // 「已改 · 第几版」——那个标记长在阅读区里，而附件是跟着这一封单独取的。
+  else if (!e.data.gone && e.data.id && openedInbound.value?.id === e.data.id) openDetail(e.data.id)
   void load({ quiet: true })
   refreshUnread()
 }

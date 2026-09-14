@@ -665,11 +665,51 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 RETURNING account_id, folder, imap_uid;
 
 -- name: ListInboundAttachments :many
-SELECT id, file_name, content_type, file_size, file_key, content_id
-FROM email_inbound_attachments
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND inbound_id = sqlc.arg(inbound_id)::bigint
-ORDER BY id;
+-- 附件，外加「有没有被改过」。
+--
+-- LATERAL 取最新那一版而不是 GROUP BY：一封信也就几个附件，每个附件的版本
+-- 走索引读一行就到头（见 00065 那条按 version DESC 的索引），而 GROUP BY 要
+-- 先把这封信的所有版本都扫出来。
+--
+-- 取回来的是**改过的最新版**，不是原件；原件那几列（file_key/file_size）
+-- 保持原样，永远指客户发来的那一份。两者都要在：一个给「在线打开」，一个给
+-- 「下载原件」。
+SELECT a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id,
+       coalesce(r.version, 0)::int    AS rev_version,
+       coalesce(r.file_key, '')::text AS rev_file_key,
+       coalesce(r.file_size, 0)::bigint AS rev_file_size,
+       coalesce(r.edited_by, 0)::bigint AS rev_edited_by,
+       r.edited_at                    AS rev_edited_at
+FROM email_inbound_attachments a
+LEFT JOIN LATERAL (
+    SELECT version, file_key, file_size, edited_by, edited_at
+    FROM mail_attachment_revisions
+    WHERE tenant_id = a.tenant_id AND attachment_id = a.id
+    ORDER BY version DESC
+    LIMIT 1
+) r ON TRUE
+WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND a.inbound_id = sqlc.arg(inbound_id)::bigint
+ORDER BY a.id;
+
+-- name: InsertAttachmentRevision :one
+-- 存一版改动。版本号在这条语句里算，不由调用方递——递的那一刻和写进去的
+-- 那一刻之间，别人可能已经存了一版。
+--
+-- 真撞上了（两个人几乎同时存同一个附件），(tenant_id, attachment_id, version)
+-- 那条唯一索引会把第二条顶回去，调用方重算再来一次。**这正是要的**：另一种
+-- 写法是第二个人的版本号和第一个人一样，然后一行覆盖另一行，谁都不知道。
+INSERT INTO mail_attachment_revisions
+    (tenant_id, attachment_id, inbound_id, version, file_key, file_size, edited_by)
+SELECT sqlc.arg(tenant_id)::bigint, a.id, a.inbound_id,
+       coalesce((SELECT max(version) FROM mail_attachment_revisions
+                 WHERE tenant_id = a.tenant_id AND attachment_id = a.id), 0) + 1,
+       sqlc.arg(file_key)::text, sqlc.arg(file_size)::bigint,
+       sqlc.arg(edited_by)::bigint
+FROM email_inbound_attachments a
+WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND a.id = sqlc.arg(attachment_id)::bigint
+RETURNING version;
 
 -- name: CountUnread :one
 -- The badge counts what the inbox proper shows: archived and trashed mail
@@ -1606,8 +1646,14 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 「是不是内嵌」的正确判断只有一个：**正文有没有真的引用那个 cid**。那件事
 -- 需要正文，所以留给 Go 里的 hideEmbedded 做——GetInbound 一直是这么做的，
 -- 这里当初不该另发明一个更粗的代理指标。
+--
+-- rev_version 是"这个附件在浏览器里被改过几回"（见迁移 00065），会话视图和
+-- 单封视图要显示同一个标记，所以两边都得取。发出去的那些附件没有这回事，
+-- 所以 UNION 的另一半写 0。
 SELECT 'IN'::text AS direction, i.id AS message_id,
-       a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id,
+       coalesce((SELECT max(version) FROM mail_attachment_revisions r
+                 WHERE r.tenant_id = a.tenant_id AND r.attachment_id = a.id), 0)::int AS rev_version
 FROM email_inbound i
 JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
@@ -1619,7 +1665,8 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.thread_key = sqlc.arg(thread_key)::text
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,
-       a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id,
+       0::int AS rev_version
 FROM email_messages m
 JOIN email_attachments a
   ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
