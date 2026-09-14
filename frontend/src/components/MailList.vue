@@ -26,14 +26,18 @@
       @dragstart="onDragStart(m, $event)"
       @dragend="onDragEnd"
     >
-      <!-- 头像和勾选框**共用一个位置**，照 Gmail。
-           这一列只有 280–400px 宽，左边每多一个控件，主题就少一截；而头像和
-           勾选框恰好可以合并：平时是头像（一列信里最快认出「谁」的东西），
-           鼠标压上来或者已经勾上时变成勾选框。多选是低频动作，不值得为它
-           长期占一格。
+      <!-- 勾选框。
+           这里从前还有一个彩色的首字母头像，和勾选框轮流占这一格：平时看
+           头像，鼠标压上来才变成勾选框。头像去掉了——这一列只有 280–400px
+           宽，而那个圆圈认人的本事，发件人那一行的名字本来就有；一整列圆圈
+           换来的是主题少一截。
+
+           头像一走，勾选框就不必再躲：它是这一格里唯一的东西，常驻反而让
+           「原来可以多选」看得见（从前要把鼠标压上去才发现）。
 
            投递记录不给勾，理由和它没有星标是同一个：邮件服务器上没有这封信
-           的正本，标记无处可写。它只显示头像。 -->
+           的正本，标记无处可写。那时这一格是空的——**空着也要占位**，不然
+           它那一行的主题会比上下两行往左窜一截。 -->
       <span class="face">
         <el-checkbox
           v-if="!isRecordOnly(m)"
@@ -43,9 +47,6 @@
           @click.stop
           @change="togglePick(m)"
         />
-        <span class="avatar" :style="{ background: avatarColor(m) }" aria-hidden="true">
-          {{ initial(m) }}
-        </span>
       </span>
 
       <!-- el-tooltip rather than a title attribute. The browser's own tooltip
@@ -435,31 +436,6 @@ function onDragEnd() {
   emit('dragend')
 }
 
-// 头像上那个字。
-//
-// 取显示名的第一个字，没有名字就取地址的第一个字母。中文取一个字就够认
-// （"腾"、"李"），英文取首字母并大写。
-//
-// 取不到就回一个圆点而不是空白：一个空的彩色圆圈看着像没加载完。
-function initial(m: MailRow): string {
-  const src = (aboutRecipient.value ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
-  const ch = [...src.trim()].find((c) => /[\p{L}\p{N}]/u.test(c))
-  return ch ? ch.toUpperCase() : '·'
-}
-
-// 头像底色。同一个地址永远同一个颜色——颜色在这里的用处正是「这一列里又是
-// 他」，随机就没有意义了。
-//
-// 用 oklch 而不是 hsl：hsl 里同一个亮度值在黄色和蓝色上看起来差一大截，
-// 一排头像会有几个亮得刺眼、几个暗得发糊。oklch 的亮度是感知亮度，固定
-// 62% 就是每一个都一样深，白字压在上面都读得清。
-function avatarColor(m: MailRow): string {
-  const key = (aboutRecipient.value ? (m.toEmail || m.toAll || '') : (m.fromEmail || '')).toLowerCase()
-  let h = 0
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360
-  return `oklch(62% 0.13 ${h})`
-}
-
 // Screen readers get the sentence the row is: who, about what, and whether it
 // still wants attention. Without it the row announces as an unlabelled button.
 function ariaFor(m: MailRow) {
@@ -550,47 +526,20 @@ function ariaFor(m: MailRow) {
   opacity: 0.45;
 }
 
-/* 头像和勾选框叠在同一格里，靠 grid 把两者放进同一个单元格——用绝对定位
-   的话这一格就撑不开，左边距离得另外写死一次。
-   32px 而不是 Foxmail 的 36：那一列最窄只有 280px，左边每省 4px 主题就多
-   4px。对齐第一行，不是整行居中：三行高的行里居中会让它飘到主题旁边。 */
+/* 勾选框那一格。**空着也要占位**：投递记录那几行没有勾选框，不占位的话
+   它们的主题会比上下两行往左窜一截。
+   对齐第一行而不是整行居中：三行高的行里居中会让它飘到主题旁边。 */
 .face {
   flex: none;
   display: grid;
-  width: 32px;
-  height: 32px;
-  margin-right: 2px;
-}
-.face > * {
-  grid-area: 1 / 1;
-  place-self: center;
-}
-.avatar {
-  display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  user-select: none;
-}
-/* 平时看头像，压上来或已经勾上时看勾选框。两者永远只有一个可见，所以这
-   一格的宽度不会变，行也不会在光标下重排。 */
-.pick {
-  display: none;
-}
-.row:hover .pick,
-.row:focus-within .pick,
-.row.picked .pick {
-  display: block;
-}
-.row:hover .avatar,
-.row:focus-within .avatar,
-.row.picked .avatar {
-  visibility: hidden;
+  /* 勾选框本身 14px，两边各留一点。头像在的时候这一格连外边距是 34px——
+     现在 20px，省下的 14px 全给主题。
+     不再单独留右边距：行本身有 6px 的 gap，再加一层就和星标离得太开。 */
+  width: 20px;
+  /* 和星标那一格同高（21px）：两者都该贴着第一行，高度不一样就会错开一点，
+     而一列里错开一点比错开很多更难看。 */
+  height: 21px;
 }
 /* Element Plus reserves room for a label this checkbox does not have. */
 .pick :deep(.el-checkbox__label) {
