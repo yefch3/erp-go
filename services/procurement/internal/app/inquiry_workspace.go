@@ -175,6 +175,16 @@ type InquiryResult struct {
 }
 
 func inquiryID(v string) int64 { n, _ := strconv.ParseInt(v, 10, 64); return n }
+func inquiryLookupID(v string) string {
+	v = strings.TrimSpace(v)
+	if strings.HasPrefix(v, "-") {
+		positive := strings.TrimPrefix(v, "-")
+		if inquiryID(positive) > 0 {
+			return positive
+		}
+	}
+	return v
+}
 func valueOr(value, fallback string) string {
 	if strings.TrimSpace(value) != "" {
 		return value
@@ -335,6 +345,14 @@ func (s *Service) prepareInquiryTemplate(ctx context.Context, tenant int64, body
 
 func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
 	in.View = strings.ToUpper(in.View)
+	// The retired inquiry page used negative route IDs to distinguish its
+	// synthetic detail links from newer records. Those links are still present
+	// in bookmarks and browser history. Normalize them only for read operations;
+	// every write continues to require the canonical positive ID returned by the
+	// current workspace.
+	if in.Action == "get" || in.Action == "download" || in.Action == "readFile" {
+		in.ID = inquiryLookupID(in.ID)
+	}
 	if in.View == "AUTO" && (in.Action == "download" || in.Action == "readFile") {
 		for _, v := range []string{"SALES", "PROCUREMENT", "LOGISTICS"} {
 			if s.inquiryAllowed(ctx, op, v, false) == nil {

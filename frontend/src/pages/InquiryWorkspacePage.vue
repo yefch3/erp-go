@@ -76,7 +76,7 @@ import {useAuthStore} from '../stores/auth'
 import type {InquiryTemplate} from '../lib/inquiryTemplates'
 import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
-import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type Product} from '../lib/inquiryWorkspace'
+import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type Product} from '../lib/inquiryWorkspace'
 const props=defineProps<{view:'SALES'|'QUOTATIONS'|'PROCUREMENT'|'LOGISTICS'}>()
 const {t}=useI18n()
 const view=computed(()=>props.view),route=useRoute(),router=useRouter(),auth=useAuthStore()
@@ -86,6 +86,7 @@ const department=computed(()=>view.value==='PROCUREMENT'||view.value==='LOGISTIC
 const canWrite=computed(()=>auth.can(view.value==='SALES'?'sales:inquiry:write':view.value==='PROCUREMENT'?'procurement:sourcing:write':'shipping:sourcing:write'))
 const offerStates=ref<Record<string,{status:string;confirmedAt:string}>>({})
 const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(20),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
+const refreshSuspended=ref(false),refreshErrorShown=ref(false)
 interface CustomerOption {value:string;id:string;code:string;name:string}
 interface ContactOption {value:string;id:string;name:string;department:string;title:string;email:string;isPrimary:boolean}
 const customerOptions=ref<CustomerOption[]>([]),contactOptions=ref<ContactOption[]>([])
@@ -130,11 +131,20 @@ async function loadList(){
  const r=await command('list',{page:page.value,size:size.value,keyword:keyword.value,state:state.value});if(request!==listRequest)return;items.value=r.items;total.value=r.total
 }
 
-async function reload(){if(item.value?.id){try{const r=await command('get',{id:item.value.id});item.value=normalizeInquiry(r.item)}catch(e){if(isAxiosError(e)&&[403,404].includes(e.response?.status||0)){item.value=null;preview.value=null;await router.replace({query:{}});await loadList()}else throw e}}else await loadList()}
+function showRefreshError(){if(refreshErrorShown.value)return;refreshErrorShown.value=true;ElMessage.error('询盘刷新失败，已暂停自动刷新；请稍后从“更多操作”中手动刷新')}
+async function reload(){
+ try{
+  if(item.value?.id){const r=await command('get',{id:item.value.id});item.value=normalizeInquiry(r.item)}else await loadList()
+  refreshSuspended.value=false;refreshErrorShown.value=false
+ }catch(e){
+  if(isAxiosError(e)&&[403,404].includes(e.response?.status||0)){item.value=null;preview.value=null;await router.replace({query:{}});await loadList();return}
+  refreshSuspended.value=true;showRefreshError()
+ }
+}
  function initialDetailTab(){return view.value==='SALES'||view.value==='QUOTATIONS'?'overview':'products'}
 function normalizeQuote(q:Quote){q.body.prices??=[];q.body.charges??=[];q.body.totals??={};q.body.incoterm??='';q.body.attachments??=[];return q}
 function normalizeInquiry(inquiry:Inquiry|undefined):Inquiry|null{if(!inquiry)return null;inquiry.body.title??='';inquiry.body.customerId??='';inquiry.body.contactId??='';inquiry.body.products??=[];inquiry.body.attachments??=[];inquiry.quotes??=[];inquiry.quotes.forEach(normalizeQuote);inquiry.body.products.forEach(product=>{product.customFields??={}});return inquiry}
-async function open(r:Inquiry){editor.value=null;detailTab.value=initialDetailTab();const out=await command('get',{id:r.id});item.value=normalizeInquiry(out.item);await router.replace({query:{...route.query,id:r.id}})}
+async function open(r:Inquiry){editor.value=null;detailTab.value=initialDetailTab();const out=await command('get',{id:r.id});item.value=normalizeInquiry(out.item);refreshSuspended.value=false;refreshErrorShown.value=false;await router.replace({query:{...route.query,id:r.id}})}
 async function back(){if(editor.value||editable.value){await ElMessageBox.confirm('返回列表？请先保存需要保留的修改。','提示')}item.value=null;editor.value=null;await router.replace({query:{}});await loadList()}
 function templateSnapshot(template:InquiryTemplate):InquiryTemplateSnapshot{return{id:template.id,templateCode:template.templateCode,version:template.version,name:template.name,fields:(template.fields||[]).map(field=>({...field})).sort((a,b)=>a.sortOrder-b.sortOrder)}}
 async function loadTemplates(){if(view.value!=='SALES')return;const data=await get<{templates:InquiryTemplate[]}>('/inquiry-templates');templates.value=data.templates||[]}
@@ -168,10 +178,10 @@ async function saveQuote(submit:boolean){if(!item.value||!editor.value)return;if
 async function download(key:string){if(!item.value)return;const r=await post<{url:string}>('/inquiry-workspace',{action:'download',view:view.value,id:item.value.id,fileKey:key});window.open(r.url,'_blank','noopener')}
 async function storeAttachment(file:File,quote:boolean){if(!item.value)return;if(file.size>8*1024*1024)throw new Error('文件不能超过 8MB');if(!item.value.id)await save(false);if(!item.value)return;const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});const r=await command('upload',{id:item.value.id,revision:item.value.revision,fileName:file.name,fileData:data});if(!r.attachment)throw new Error('附件上传没有返回文件信息');if(quote&&editor.value){editor.value.body.attachments??=[];editor.value.body.attachments.push(r.attachment)}else{item.value.body.attachments??=[];item.value.body.attachments.push(r.attachment)}}
 async function upload(e:Event,quote:boolean){const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file||!item.value)return;try{await storeAttachment(file,quote);ElMessage.success('附件已上传')}catch(error){ElMessage.error(error instanceof Error?error.message:'附件上传失败')}finally{input.value=''}}
-async function initial(){item.value=null;editor.value=null;detailTab.value=initialDetailTab();state.value='';page.value=1;const id=String(route.params.id||route.query.id||'');if(id){const r=await command('get',{id});item.value=normalizeInquiry(r.item)}else await loadList()}
-const stopLive=onLive(e=>{if(e.type==='requirement.changed'&&!editor.value&&!editable.value&&!busy.value)void reload().catch(()=>{})})
+async function initial(){item.value=null;editor.value=null;detailTab.value=initialDetailTab();state.value='';page.value=1;refreshSuspended.value=false;refreshErrorShown.value=false;const routeID=String(route.params.id||route.query.id||''),id=canonicalInquiryRouteID(routeID);if(id){if(id!==routeID&&route.query.id!==undefined)await router.replace({query:{...route.query,id}});const r=await command('get',{id});item.value=normalizeInquiry(r.item)}else await loadList()}
+const stopLive=onLive(e=>{if(e.type==='requirement.changed'&&!refreshSuspended.value&&!editor.value&&!editable.value&&!busy.value)void reload()})
 let timer:ReturnType<typeof setInterval>|undefined
-onMounted(()=>{void (async()=>{await loadTemplates();await initial()})();timer=setInterval(()=>{if(!editor.value&&!editable.value&&!busy.value)void reload().catch(()=>{})},5000)})
+onMounted(()=>{void (async()=>{try{await loadTemplates();await initial()}catch{refreshSuspended.value=true;showRefreshError()}})();timer=setInterval(()=>{if(!refreshSuspended.value&&!editor.value&&!editable.value&&!busy.value)void reload()},5000)})
 onUnmounted(()=>{stopLive();if(timer)clearInterval(timer)})
 watch(view,()=>void initial())
 </script>
