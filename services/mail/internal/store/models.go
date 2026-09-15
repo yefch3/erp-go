@@ -313,16 +313,17 @@ type MailBindingLog struct {
 }
 
 type MailExcelJob struct {
-	ID              int64
-	TenantID        int64
-	OwnerID         int64
-	InboundID       int64
-	AttachmentID    *int64
-	SelectedText    *string
-	Locale          string
-	Status          string
-	AttemptCount    int32
-	FileName        string
+	ID           int64
+	TenantID     int64
+	OwnerID      int64
+	InboundID    int64
+	AttachmentID *int64
+	SelectedText *string
+	Locale       string
+	Status       string
+	AttemptCount int32
+	FileName     string
+	// 仅当 file_key 为空时有值：对象存储写不进去时的退路，见迁移 00066
 	FileData        []byte
 	WorkbookJson    []byte
 	Model           string
@@ -335,6 +336,8 @@ type MailExcelJob struct {
 	TemplateColumns []byte
 	InputTokens     int64
 	OutputTokens    int64
+	// 转换结果在对象存储里的位置；空表示退回存在 file_data 里（对象存储写失败时）
+	FileKey string
 }
 
 type MailExcelQuota struct {

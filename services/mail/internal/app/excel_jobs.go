@@ -1,10 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,6 +83,38 @@ func (s *Service) StartExcelJob(
 	return excelJobFromRow(row)
 }
 
+// excelResultBytes 取这次转换出来的那份文件。
+//
+// 两个地方之一：对象存储（正常路径），或者库里那一列（对象存储当时写不进去
+// 的退路，见 storeExcelResult）。两处都空，就是已经被清理器收走了。
+//
+// **收走之后必须明说。** 不拦的话，Data 是空的、workbook_json 是 nil，人拿到
+// 一个 0 字节的 .xlsx——一个打不开的文件，比一句"过期了"难查得多。走到这儿
+// 的只可能是一个标签页开了两周还没关、又点了一次下载的人。
+func (s *Service) excelResultBytes(ctx context.Context, row store.MailExcelJob) ([]byte, error) {
+	if row.FileKey != "" {
+		if s.files == nil {
+			return nil, apierr.Invalid("MAIL_EXCEL_RESULT_UNREACHABLE", "文件存储未配置，取不到这次转换的结果")
+		}
+		data, err := s.readCapped(ctx, row.FileKey, MaxExcelResultBytes)
+		if err != nil {
+			// 对象不见了（被谁清了、桶被换了）和存储暂时不通，这里分不出来，
+			// 也不该在这里猜。说一句"取不到"，比给一个空文件强。
+			s.log.Warn("could not read an Excel result", "key", row.FileKey, "err", err)
+			return nil, apierr.Invalid("MAIL_EXCEL_RESULT_UNREACHABLE", "这次转换的结果暂时取不到，请稍后重试或重新转换")
+		}
+		return data, nil
+	}
+	if len(row.FileData) > 0 {
+		return row.FileData, nil
+	}
+	return nil, apierr.Invalid("MAIL_EXCEL_RESULT_EXPIRED", "这次转换的结果已经清理，请重新转换一次")
+}
+
+// MaxExcelResultBytes 是从对象存储读回一份结果的上限。和送去转换的上限
+// 同一个数量级：模型吐出来的表格比原件大得有限。
+const MaxExcelResultBytes = 25 << 20
+
 func (s *Service) validateExcelJobSource(
 	ctx context.Context, tenantID, ownerID, inboundID int64,
 	attachmentID *int64, selectedText *string,
@@ -137,7 +171,17 @@ func (s *Service) GetExcelJob(ctx context.Context, tenantID, ownerID, id int64) 
 	if err != nil {
 		return ExcelJob{}, err
 	}
-	return excelJobFromRow(row)
+	job, err := excelJobFromRow(row)
+	if err != nil {
+		return ExcelJob{}, err
+	}
+	if job.Status == "COMPLETED" {
+		// 文件本体不在这一行里：它在对象存储，要 ctx 才取得到。
+		if job.Result.Data, err = s.excelResultBytes(ctx, row); err != nil {
+			return ExcelJob{}, err
+		}
+	}
+	return job, nil
 }
 
 func excelJobFromRow(row store.MailExcelJob) (ExcelJob, error) {
@@ -156,16 +200,15 @@ func excelJobFromRow(row store.MailExcelJob) (ExcelJob, error) {
 		job.CompletedAt = row.CompletedAt.Time
 	}
 	if row.Status == "COMPLETED" {
-		// 结果已经被清掉了（见 SweepExcelJobPayloads）。**必须在这里明说**：
-		// 再往下走，Data 是空的、workbook_json 是 nil，人拿到的是一个 0 字节
-		// 的 .xlsx——一个打不开的文件，比一句「过期了」难查得多。
-		//
-		// 走到这儿的只可能是一个标签页开了两周还没关、又点了一次下载的人。
-		if len(row.FileData) == 0 {
+		// 结果被清理器收走之后 workbook_json 也是 nil。**先拦在这里**，
+		// 不然下面那句 Unmarshal 报的是"解不开"，而真相是"已经没有了"。
+		if len(row.WorkbookJson) == 0 {
 			return ExcelJob{}, apierr.Invalid("MAIL_EXCEL_RESULT_EXPIRED",
 				"这次转换的结果已经清理，请重新转换一次")
 		}
-		job.Result = ExcelResult{FileName: row.FileName, Data: row.FileData, Model: row.Model}
+		// Data 不在这里填：它可能在对象存储里，要 ctx 才取得到。
+		// 由调用方 GetExcelJob 补上（excelResultBytes）。
+		job.Result = ExcelResult{FileName: row.FileName, Model: row.Model}
 		if err := json.Unmarshal(row.WorkbookJson, &job.Result.Workbook); err != nil {
 			return ExcelJob{}, fmt.Errorf("decode excel job workbook: %w", err)
 		}
@@ -200,29 +243,27 @@ const (
 	excelSweepPerPass     = 500
 )
 
-// RunExcelPayloadSweeper 把交付完的转换结果从库里清掉，只留账。
+// RunExcelPayloadSweeper 把交付完的转换结果收走，**行留着**。
 //
-// 为什么需要它：file_data 是这个服务唯一一处真的把文件字节写进 PostgreSQL 的
-// 地方，而且只有失败的任务会被清（FailExcelJob）。成功的从来没人清——一份
-// 只增不减的二进制，躺在一张本来只该是账本的表里。
+// 收两处：对象存储里的那一份，以及退路上留在库里的那些字节（对象存储当时
+// 写不进去，见 storeExcelResult）。只收一处的话，另一处就成了新的只增不减。
 //
-// **不按租户拆。** 别处的查询都带 tenant_id，因为那些是在回答某个人的问题；
-// 这一条不回答任何人的问题，它是维护。按租户拆只会让它跑 N 遍、锁 N 次，
-// 而条件（早于某个时刻、还带着字节）本来就和租户无关。
+// **谁都够不着了才收。** 任务号只活在浏览器的 sessionStorage 里（标签页一关
+// 就没），而且没有任何界面列得出历史任务。过了窗口期，那份文件是任何人都
+// 取不回来的。
+//
+// 逐行处理而不是一条 UPDATE：对象存储里的那一份得由 Go 去删，而**一个删不掉
+// 不该连累一整批**——删不掉的那一行不清，下一趟再来。
+//
+// 不按租户拆：别处的查询都带 tenant_id，因为那些在回答某个人的问题；这一条
+// 不回答任何人的问题，它是维护。
 func (s *Service) RunExcelPayloadSweeper(ctx context.Context) {
 	s.log.Info("excel payload sweeper started",
 		"keep", excelPayloadRetention, "every", excelSweepEvery)
 	t := time.NewTicker(excelSweepEvery)
 	defer t.Stop()
 	for {
-		n, err := s.q.SweepExcelJobPayloads(ctx, store.SweepExcelJobPayloadsParams{
-			Cutoff:   pgtype.Timestamptz{Time: time.Now().Add(-excelPayloadRetention), Valid: true},
-			RowLimit: excelSweepPerPass,
-		})
-		switch {
-		case err != nil:
-			s.log.Error("could not sweep excel job payloads", "err", err)
-		case n > 0:
+		if n := s.sweepExcelPayloadsOnce(ctx); n > 0 {
 			s.log.Info("swept excel job payloads", "rows", n)
 		}
 		select {
@@ -232,6 +273,35 @@ func (s *Service) RunExcelPayloadSweeper(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// sweepExcelPayloadsOnce 收一批，返回真的收掉了几行。
+func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
+	rows, err := s.q.ListExpiredExcelPayloads(ctx, store.ListExpiredExcelPayloadsParams{
+		Cutoff:   pgtype.Timestamptz{Time: time.Now().Add(-excelPayloadRetention), Valid: true},
+		RowLimit: excelSweepPerPass,
+	})
+	if err != nil {
+		s.log.Error("could not list expired excel payloads", "err", err)
+		return 0
+	}
+	done := 0
+	for _, row := range rows {
+		// 先删对象、再清行。反过来的话，删对象失败就再也没有人知道那个 key
+		// 是什么了——一个谁都找不着、也谁都删不掉的对象。
+		if row.FileKey != "" && s.files != nil {
+			if err := s.files.Remove(ctx, row.FileKey); err != nil {
+				s.log.Warn("could not remove an expired excel result", "key", row.FileKey, "err", err)
+				continue
+			}
+		}
+		if _, err := s.q.ClearExcelJobPayload(ctx, row.ID); err != nil {
+			s.log.Error("could not clear an expired excel payload", "job", row.ID, "err", err)
+			continue
+		}
+		done++
+	}
+	return done
 }
 
 // RunExcelWorker drains the durable extraction queue. SKIP LOCKED in the
@@ -310,14 +380,83 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		s.log.Error("encode Excel job workbook", "job", row.ID, "err", err)
 		return
 	}
+	key, inline := s.storeExcelResult(ctx, row, result)
 	if _, err := s.q.CompleteExcelJob(ctx, store.CompleteExcelJobParams{
-		ID: row.ID, FileName: result.FileName, FileData: result.Data,
+		ID: row.ID, FileName: result.FileName, FileKey: key, FileData: inline,
 		WorkbookJson: workbook, Model: result.Model,
 	}); err != nil {
 		s.log.Error("persist completed Excel job", "job", row.ID, "err", err)
 		return
 	}
 	s.publishExcelJob(ctx, row)
+}
+
+// 上传重试：只重试**上传那一下**，不是重试整个任务。
+//
+// 这条区别是这一段的全部要点。任务级的重试（ClaimExcelJob 十五分钟后重新
+// 领取）会把模型那一次调用一起重跑——几十秒，而且**再花一次钱**。而此刻
+// 字节已经在手里了，要解决的只是"存哪去"。
+const (
+	excelUploadAttempts = 3
+	excelUploadBackoff  = 400 * time.Millisecond
+)
+
+// storeExcelResult 把结果放进对象存储，返回 (对象键, 退路字节)。
+//
+// 两个返回值永远只有一个有值：
+//
+//   - 传上去了 → (key, nil)
+//   - 传不上去 → ("", 字节)，**存进库里当退路**
+//
+// 为什么不是"传不上去就让任务失败"：模型那一次调用已经花了钱、等了几十秒，
+// 而手里的字节是好的。因为对象存储抖了一下就把它扔掉、让人重跑一遍，是拿
+// 用户的时间和我们的钱去换一个"干净"的失败。
+//
+// 为什么不是"排进死信队列等人来看"：队列里能放的是消息，而这里必须活下来的
+// 是**文件本身**。不带文件的死信条目救不了任何人——要拿到那份 Excel 还得重跑
+// 模型；带文件的死信条目就是又把字节写回了 Postgres（failed_events.payload 是
+// JSONB），正是这次要解决的事。而且那套死信是给 Kafka 事件用的：事件小、可
+// 重放、"等人来看"是可接受的时延。这里人正坐在屏幕前等这份表格。
+//
+// 退路上的字节和对象存储里的那一份由同一个清理器按同一个窗口收走，所以它
+// 不会变成新的只增不减。
+func (s *Service) storeExcelResult(ctx context.Context, row store.MailExcelJob, result ExcelResult) (string, []byte) {
+	if s.files == nil {
+		// 没配对象存储。不是错误，是这套部署本来就没有它——照旧存库里。
+		return "", result.Data
+	}
+	key := excelResultKey(row.TenantID, row.ID, result.FileName)
+	var last error
+	for attempt := 1; attempt <= excelUploadAttempts; attempt++ {
+		last = s.files.Put(ctx, key, bytes.NewReader(result.Data),
+			int64(len(result.Data)), excelContentType)
+		if last == nil {
+			return key, nil
+		}
+		s.log.Warn("could not upload an Excel result, retrying",
+			"job", row.ID, "attempt", attempt, "err", last)
+		select {
+		case <-ctx.Done():
+			return "", result.Data
+		case <-time.After(time.Duration(attempt) * excelUploadBackoff):
+		}
+	}
+	// 三次都没成。**大声说**：这不是正常路径，而且它意味着对象存储此刻是坏的
+	// ——别的功能（附件、原件）也正在受影响，只是那些地方没有退路。
+	s.log.Error("Excel result stays in the database: object storage would not take it",
+		"job", row.ID, "bytes", len(result.Data), "err", last)
+	return "", result.Data
+}
+
+const excelContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+// 对象键带任务号：同一个人对同一封信转两次是两份结果，不该互相覆盖。
+func excelResultKey(tenantID, jobID int64, fileName string) string {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext != ".xlsx" {
+		ext = ".xlsx"
+	}
+	return fmt.Sprintf("mail-excel/%d/%d%s", tenantID, jobID, ext)
 }
 
 func (s *Service) publishExcelJob(ctx context.Context, row store.MailExcelJob) {

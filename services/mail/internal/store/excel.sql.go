@@ -27,7 +27,7 @@ UPDATE mail_excel_jobs j SET
   error_code='', error_message='', updated_at=now()
 FROM candidate
 WHERE j.id=candidate.id
-RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns, j.input_tokens, j.output_tokens
+RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns, j.input_tokens, j.output_tokens, j.file_key
 `
 
 func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
@@ -56,8 +56,31 @@ func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
 		&i.TemplateColumns,
 		&i.InputTokens,
 		&i.OutputTokens,
+		&i.FileKey,
 	)
 	return i, err
+}
+
+const clearExcelJobPayload = `-- name: ClearExcelJobPayload :execrows
+UPDATE mail_excel_jobs
+SET file_key='', file_data=NULL, workbook_json=NULL, updated_at=now()
+WHERE id=$1::bigint
+`
+
+// 清掉这一行的结果，**行留着**。
+//
+// 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计跑了
+// 几次、花了多少 token。它要的几列（created_at / owner_id / status / *_tokens）
+// 一个字节的文件内容都不需要。删行等于把账烧了。
+//
+// 谁都够不着了才清：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），
+// 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
+func (q *Queries) ClearExcelJobPayload(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, clearExcelJobPayload, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const clearExcelQuota = `-- name: ClearExcelQuota :exec
@@ -73,23 +96,28 @@ func (q *Queries) ClearExcelQuota(ctx context.Context, tenantID int64) error {
 
 const completeExcelJob = `-- name: CompleteExcelJob :execrows
 UPDATE mail_excel_jobs SET
-  status='COMPLETED', file_name=$1, file_data=$2,
-  workbook_json=$3, model=$4,
+  status='COMPLETED', file_name=$1,
+  file_key=$2, file_data=$3,
+  workbook_json=$4, model=$5,
   error_code='', error_message='', completed_at=now(), updated_at=now()
-WHERE id=$5 AND status='PROCESSING'
+WHERE id=$6 AND status='PROCESSING'
 `
 
 type CompleteExcelJobParams struct {
 	FileName     string
+	FileKey      string
 	FileData     []byte
 	WorkbookJson []byte
 	Model        string
 	ID           int64
 }
 
+// file_key 和 file_data 永远只有一个有值：结果进了对象存储就记 key，
+// 写不进去才把字节留在库里当退路（见迁移 00066）。
 func (q *Queries) CompleteExcelJob(ctx context.Context, arg CompleteExcelJobParams) (int64, error) {
 	result, err := q.db.Exec(ctx, completeExcelJob,
 		arg.FileName,
+		arg.FileKey,
 		arg.FileData,
 		arg.WorkbookJson,
 		arg.Model,
@@ -138,7 +166,7 @@ INSERT INTO mail_excel_jobs (
   $4, $5, $6,
   $7::jsonb
 )
-RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens
+RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key
 `
 
 type CreateExcelJobParams struct {
@@ -185,6 +213,7 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		&i.TemplateColumns,
 		&i.InputTokens,
 		&i.OutputTokens,
+		&i.FileKey,
 	)
 	return i, err
 }
@@ -324,7 +353,7 @@ func (q *Queries) ExcelUsageByMonth(ctx context.Context, arg ExcelUsageByMonthPa
 
 const failExcelJob = `-- name: FailExcelJob :execrows
 UPDATE mail_excel_jobs SET
-  status='FAILED', file_data=NULL, workbook_json=NULL,
+  status='FAILED', file_key='', file_data=NULL, workbook_json=NULL,
   error_code=$1, error_message=$2,
   completed_at=now(), updated_at=now()
 WHERE id=$3 AND status='PROCESSING'
@@ -345,7 +374,7 @@ func (q *Queries) FailExcelJob(ctx context.Context, arg FailExcelJobParams) (int
 }
 
 const getExcelJob = `-- name: GetExcelJob :one
-SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens FROM mail_excel_jobs
+SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key FROM mail_excel_jobs
 WHERE tenant_id=$1 AND owner_id=$2 AND id=$3
 `
 
@@ -381,6 +410,7 @@ func (q *Queries) GetExcelJob(ctx context.Context, arg GetExcelJobParams) (MailE
 		&i.TemplateColumns,
 		&i.InputTokens,
 		&i.OutputTokens,
+		&i.FileKey,
 	)
 	return i, err
 }
@@ -421,6 +451,55 @@ func (q *Queries) ListExcelQuotas(ctx context.Context) ([]MailExcelQuota, error)
 			&i.UpdatedBy,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredExcelPayloads = `-- name: ListExpiredExcelPayloads :many
+SELECT id, file_key, (file_data IS NOT NULL)::boolean AS has_inline
+FROM mail_excel_jobs
+WHERE completed_at IS NOT NULL
+  AND completed_at < $1::timestamptz
+  AND (file_key <> '' OR file_data IS NOT NULL)
+ORDER BY id
+LIMIT $2::int
+`
+
+type ListExpiredExcelPayloadsParams struct {
+	Cutoff   pgtype.Timestamptz
+	RowLimit int32
+}
+
+type ListExpiredExcelPayloadsRow struct {
+	ID        int64
+	FileKey   string
+	HasInline bool
+}
+
+// 过了窗口期、还占着地方的结果。清理器先拿这一批，删掉对象存储里的那一份，
+// 再来清行（ClearExcelJobPayload）。
+//
+// 分两步而不是一条 UPDATE：对象存储里的那一份得由 Go 去删，而且**一个删不掉
+// 不该连累一整批**——所以逐行处理，删不掉的下一趟再试。
+//
+// 条件里那两个「还占着地方」缺一不可：file_key 非空是对象还在，file_data
+// 非空是退路上的字节还在（对象存储当时写不进去）。
+func (q *Queries) ListExpiredExcelPayloads(ctx context.Context, arg ListExpiredExcelPayloadsParams) ([]ListExpiredExcelPayloadsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredExcelPayloads, arg.Cutoff, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredExcelPayloadsRow
+	for rows.Next() {
+		var i ListExpiredExcelPayloadsRow
+		if err := rows.Scan(&i.ID, &i.FileKey, &i.HasInline); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -475,44 +554,4 @@ type SetExcelQuotaParams struct {
 func (q *Queries) SetExcelQuota(ctx context.Context, arg SetExcelQuotaParams) error {
 	_, err := q.db.Exec(ctx, setExcelQuota, arg.TenantID, arg.MonthlyRuns, arg.UpdatedBy)
 	return err
-}
-
-const sweepExcelJobPayloads = `-- name: SweepExcelJobPayloads :execrows
-UPDATE mail_excel_jobs SET file_data=NULL, workbook_json=NULL, updated_at=now()
-WHERE id IN (
-  SELECT id FROM mail_excel_jobs
-  WHERE file_data IS NOT NULL
-    AND completed_at IS NOT NULL
-    AND completed_at < $1::timestamptz
-  ORDER BY id
-  LIMIT $2::int
-)
-`
-
-type SweepExcelJobPayloadsParams struct {
-	Cutoff   pgtype.Timestamptz
-	RowLimit int32
-}
-
-// 把已经交付完的转换结果从库里清掉，**行留着**。
-//
-// file_data 是这个库里唯一一处真的存文件字节的地方（BYTEA，一份生成出来的
-// Excel）。别处的文件都只存对象存储的 key。它当初这么设计说得通——结果是
-// 一次性的，人点了下载就完了——只是从来没有人把它清掉，于是它只增不减。
-//
-// **谁都够不着它了才清。** 任务号存在浏览器的 sessionStorage 里，标签页一关
-// 就没了；没有任何界面列得出历史任务（这个文件里也没有对应的查询）。所以
-// 过了窗口期之后，那几百 KB 是任何人都取不回来的字节。
-//
-// 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计
-// 跑了几次、花了多少 token。删行等于把账烧了，而账里要的几列
-// （created_at / owner_id / status / *_tokens）一个字节的文件内容都不需要。
-//
-// 带 LIMIT：一次扫一批，不为一张可能很大的表拿一把长锁。
-func (q *Queries) SweepExcelJobPayloads(ctx context.Context, arg SweepExcelJobPayloadsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, sweepExcelJobPayloads, arg.Cutoff, arg.RowLimit)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }

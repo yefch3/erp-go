@@ -31,15 +31,18 @@ WHERE j.id=candidate.id
 RETURNING j.*;
 
 -- name: CompleteExcelJob :execrows
+-- file_key 和 file_data 永远只有一个有值：结果进了对象存储就记 key，
+-- 写不进去才把字节留在库里当退路（见迁移 00066）。
 UPDATE mail_excel_jobs SET
-  status='COMPLETED', file_name=sqlc.arg(file_name), file_data=sqlc.arg(file_data),
+  status='COMPLETED', file_name=sqlc.arg(file_name),
+  file_key=sqlc.arg(file_key), file_data=sqlc.arg(file_data),
   workbook_json=sqlc.arg(workbook_json), model=sqlc.arg(model),
   error_code='', error_message='', completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
 
 -- name: FailExcelJob :execrows
 UPDATE mail_excel_jobs SET
-  status='FAILED', file_data=NULL, workbook_json=NULL,
+  status='FAILED', file_key='', file_data=NULL, workbook_json=NULL,
   error_code=sqlc.arg(error_code), error_message=sqlc.arg(error_message),
   completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
@@ -139,28 +142,32 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 -- 用」，和「不限」正好相反。
 DELETE FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
 
--- name: SweepExcelJobPayloads :execrows
--- 把已经交付完的转换结果从库里清掉，**行留着**。
+-- name: ListExpiredExcelPayloads :many
+-- 过了窗口期、还占着地方的结果。清理器先拿这一批，删掉对象存储里的那一份，
+-- 再来清行（ClearExcelJobPayload）。
 --
--- file_data 是这个库里唯一一处真的存文件字节的地方（BYTEA，一份生成出来的
--- Excel）。别处的文件都只存对象存储的 key。它当初这么设计说得通——结果是
--- 一次性的，人点了下载就完了——只是从来没有人把它清掉，于是它只增不减。
+-- 分两步而不是一条 UPDATE：对象存储里的那一份得由 Go 去删，而且**一个删不掉
+-- 不该连累一整批**——所以逐行处理，删不掉的下一趟再试。
 --
--- **谁都够不着它了才清。** 任务号存在浏览器的 sessionStorage 里，标签页一关
--- 就没了；没有任何界面列得出历史任务（这个文件里也没有对应的查询）。所以
--- 过了窗口期之后，那几百 KB 是任何人都取不回来的字节。
+-- 条件里那两个「还占着地方」缺一不可：file_key 非空是对象还在，file_data
+-- 非空是退路上的字节还在（对象存储当时写不进去）。
+SELECT id, file_key, (file_data IS NOT NULL)::boolean AS has_inline
+FROM mail_excel_jobs
+WHERE completed_at IS NOT NULL
+  AND completed_at < sqlc.arg(cutoff)::timestamptz
+  AND (file_key <> '' OR file_data IS NOT NULL)
+ORDER BY id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ClearExcelJobPayload :execrows
+-- 清掉这一行的结果，**行留着**。
 --
--- 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计
--- 跑了几次、花了多少 token。删行等于把账烧了，而账里要的几列
--- （created_at / owner_id / status / *_tokens）一个字节的文件内容都不需要。
+-- 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计跑了
+-- 几次、花了多少 token。它要的几列（created_at / owner_id / status / *_tokens）
+-- 一个字节的文件内容都不需要。删行等于把账烧了。
 --
--- 带 LIMIT：一次扫一批，不为一张可能很大的表拿一把长锁。
-UPDATE mail_excel_jobs SET file_data=NULL, workbook_json=NULL, updated_at=now()
-WHERE id IN (
-  SELECT id FROM mail_excel_jobs
-  WHERE file_data IS NOT NULL
-    AND completed_at IS NOT NULL
-    AND completed_at < sqlc.arg(cutoff)::timestamptz
-  ORDER BY id
-  LIMIT sqlc.arg(row_limit)::int
-);
+-- 谁都够不着了才清：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），
+-- 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
+UPDATE mail_excel_jobs
+SET file_key='', file_data=NULL, workbook_json=NULL, updated_at=now()
+WHERE id=sqlc.arg(id)::bigint;
