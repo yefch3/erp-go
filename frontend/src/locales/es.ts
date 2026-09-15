@@ -2002,7 +2002,6 @@ export default {
     searchClear: 'Salir de la búsqueda',
     showDetails: 'Detalles',
     replyToMismatch: 'Atención: al responder se enviará a {addr}, distinta del remitente',
-    threadFiles: 'Archivos de esta conversación ({n})',
     hideDetails: 'Ocultar detalles',
     detail: {
       from: 'De',

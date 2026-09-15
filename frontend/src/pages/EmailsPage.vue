@@ -395,37 +395,9 @@
         <template v-if="threadItems.length > 1">
           <div class="thread-count">{{ t('emails.threadCount', { n: threadItems.length }) }}</div>
 
-          <!-- 整条会话的附件，汇总在最上面。
-               每封信下面已经有自己的附件了，这一条解决的是另一个问题：业务员
-               记得「客户发过一版装箱单」，却不记得在第几封信里。逐封展开去找
-               是最笨的办法，而这恰恰是 ERP 该比通用邮箱强的地方。
-               点一个文件就跳到它所在的那一封并展开。 -->
-          <details v-if="threadFiles.length" class="thread-files-strip" open>
-            <summary>{{ t('emails.threadFiles', { n: threadFiles.length }) }}</summary>
-            <div class="strip-rows">
-              <button
-                v-for="f in threadFiles"
-                :key="f.item.direction + f.item.id + ':' + f.file.id"
-                type="button"
-                class="strip-row"
-                @click="jumpToThreadItem(f.item)"
-              >
-                <el-icon><Paperclip /></el-icon>
-                <span class="fname ellipsis">{{ f.file.fileName }}</span>
-                <span class="sub">{{ humanSize(Number(f.file.fileSize)) }}</span>
-                <span class="grow" />
-                <!-- 谁发的、什么时候：这两样才是「哪一封」的答案。 -->
-                <span class="sub ellipsis strip-who">
-                  {{ isOwnMail(f.item) ? t('emails.threadOut') : f.item.who || f.item.counterparty }}
-                </span>
-                <span class="sub">{{ shortTime(f.item.at) }}</span>
-              </button>
-            </div>
-          </details>
           <div
             v-for="it in threadForDisplay"
             :key="it.direction + it.id"
-            :data-thread-item="threadItemKey(it)"
             class="thread-item"
             :class="{ out: isOwnMail(it) }"
           >
@@ -1474,7 +1446,6 @@ import {
   put,
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
-import { humanSize } from '../lib/humanSize'
 import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
@@ -1546,7 +1517,6 @@ import {
   Box,
   CircleClose,
   Download,
-  Paperclip,
   View,
   Clock,
   Delete,
@@ -3513,31 +3483,6 @@ const threadItems = ref<ThreadItem[]>([])
 // 要先想一遍「这里到底是正序还是倒序」。
 const threadForDisplay = computed(() => [...threadItems.value].reverse())
 
-// 整条会话的附件，摊平成一条。**跟着屏幕上的顺序走，不跟着数据的顺序走**
-// ——所以摊的是 threadForDisplay 而不是 threadItems，最新那封的附件排最前。
-//
-// 从前这里摊的是 threadItems（时间正序），注释还写着「文件的顺序就是对话的
-// 顺序」。那句话在会话改成倒序显示（#400）之后就不成立了：同一屏里，上面这
-// 条附件条最早的在前，底下的邮件最新的在前，两个方向。点一个文件是要跳到它
-// 所在的那一封去的，而人得先在两个相反的排法之间对一次位置。
-//
-// 一封信内部的几个附件不动：它们之间没有时间先后，原样就是发件人放的顺序。
-const threadFiles = computed(() =>
-  threadForDisplay.value.flatMap((item) =>
-    (item.attachments ?? []).map((file) => ({ item, file })),
-  ),
-)
-
-// 点汇总条里的文件：展开它所在的那一封并滚过去。不直接下载——使用者要找的
-// 通常不只是文件，还有当时的上下文（客户说了什么、要求改哪里）。
-function jumpToThreadItem(it: ThreadItem) {
-  expandedThread.value = new Set([...expandedThread.value, threadItemKey(it)])
-  nextTick(() => {
-    document
-      .querySelector(`[data-thread-item="${threadItemKey(it)}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
-}
 const expandedThread = ref<Set<string>>(new Set())
 
 // 两条腿的行号来自不同的表，收件的 7 不是发件的 7，所以键要带方向。
@@ -5559,46 +5504,6 @@ async function doUnsuppress(row: Suppression) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   cursor: default;
-}
-/* 汇总条：默认展开，但可以折起来。一条十六轮的往来可能挂着九个文件，
-   而有时使用者只是想读信。 */
-.thread-files-strip {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-lighter);
-  font-size: 13px;
-}
-.thread-files-strip summary {
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-}
-.strip-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 8px;
-}
-.strip-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.strip-row:hover {
-  background: var(--el-fill-color);
-}
-.strip-who {
-  max-width: 160px;
 }
 .thread-item {
   transition: box-shadow var(--mail-fast) var(--mail-ease);

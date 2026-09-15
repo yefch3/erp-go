@@ -1993,7 +1993,6 @@ export default {
     searchClear: '退出搜索',
     showDetails: '详情',
     replyToMismatch: '注意：点「回复」会发给 {addr}，与发件人地址不一致',
-    threadFiles: '本会话的附件（{n}）',
     hideDetails: '收起详情',
     detail: {
       from: '发件人',
