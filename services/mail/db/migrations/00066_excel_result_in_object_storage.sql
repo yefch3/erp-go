@@ -16,8 +16,8 @@
 -- 所以顺序反过来：**先只写库，而且一次事务写完；对象存储交给一个会重试到
 -- 成功的搬运工。**
 --
---   完成任务时：状态、workbook、字节，一条 UPDATE 落地。要么全成，要么全不
---               成——任务不会出现"标着完成、文件却取不到"的状态。
+--   完成任务时：状态、metadata、文件本身，一条 UPDATE 落地。要么全成，要么
+--               全不成——任务不会出现"标着完成、文件却取不到"的状态。
 --   搬运工：    把 file_data 传上去，成功之后一条 UPDATE 同时写上 file_key、
 --               清掉 file_data。这一条也是原子的。
 --   读的时候：  file_key 有就读对象，没有就读 file_data。**任何时刻至少有
@@ -50,6 +50,11 @@ COMMENT ON COLUMN mail_excel_jobs.file_key IS
     '结果在对象存储里的位置；空表示字节还在 file_data 里（搬运工还没搬成）';
 COMMENT ON COLUMN mail_excel_jobs.file_data IS
     '结果的字节。落库时先写这里，搬运工传上对象存储之后清空，见迁移 00066';
+-- 行数据不进库。文件里已经全有（公式格旁边连算好的值都存着），预览时从
+-- 文件里读回来；这里只留文件里**没有**的那几样。改动前完成的旧任务还带着
+-- rows / preview_rows，过了留存期和文件一起清。
+COMMENT ON COLUMN mail_excel_jobs.workbook_json IS
+    '只有 metadata：表名、说明、表头、每列类型和字段标识，不带行。行在 .xlsx 文件里';
 
 -- 搬运工要找的：还带着字节、还没有 key、到点可以再试的。
 CREATE INDEX mail_excel_jobs_upload_idx

@@ -1322,6 +1322,13 @@
           <template v-else>{{ t('emails.excelDirectNote') }}</template>
           <span v-if="excelResult.model && selectedExcelTemplate"> · {{ t('emails.excelTemplateUsed', { name: selectedExcelTemplate.name, version: selectedExcelTemplate.version }) }}</span>
         </div>
+        <el-alert
+          v-if="excelResult.previewError"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="excelResult.previewError"
+        />
         <el-tabs v-model="excelSheet">
           <el-tab-pane
             v-for="sheet in excelResult.sheets"
@@ -1465,6 +1472,7 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import { base64ToBytes, hydrateExcelResult, type ExcelResult } from '../lib/excelJobResult'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { printDocument } from '../lib/printDocument'
 import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
@@ -4268,26 +4276,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
 // 的地方。这里原本自己从 InboundMail 推了一个同名类型出来，两个 MailFile
 // 差在 contentType 是不是必填，于是传给组件的回调一直是对不上的。
 
-interface ExcelSheet {
-  name: string
-  summary: string
-  columns: string[]
-  // 每列的模板字段标识（新版 LLM 结果携带）；没有它时退回表头映射。
-  columnKeys?: string[]
-  rows: { cells: string[] }[]
-  totalRows: string
-}
-
-interface ExcelResult {
-  fileName: string
-  fileData: string
-  sheets: ExcelSheet[]
-  model: string
-  inquiryTemplateId?: string
-  inquiryTemplateCode?: string
-  inquiryTemplateVersion?: number
-}
-
 interface ExcelJob {
   id: string
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
@@ -4704,15 +4692,24 @@ async function refreshExcelJob(subject = '') {
       ElMessage.error(job.errorMessage || t('emails.excelFailed'))
       return
     }
-    job.result.inquiryTemplateId = job.inquiryTemplateId
-    job.result.inquiryTemplateCode = job.inquiryTemplateCode
-    job.result.inquiryTemplateVersion = job.inquiryTemplateVersion
-    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
-    excelResult.value = job.result
-    if (convertedExcelSource.value) {
-      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), job.result)
+    const delivered: ExcelResult = {
+      ...job.result,
+      inquiryTemplateId: job.inquiryTemplateId,
+      inquiryTemplateCode: job.inquiryTemplateCode,
+      inquiryTemplateVersion: job.inquiryTemplateVersion,
     }
-    excelSheet.value = job.result.sheets[0]?.name ?? ''
+    // 行数据不在响应里，在文件里：从 file_data 解出来。解不出来不是网络
+    // 问题，不能落到下面那个「继续轮询」的 catch 里——那会一直轮下去。
+    // 这时表格空着、说一句为什么，下载照常能用。
+    const result = await hydrateExcelResult(delivered).catch(
+      (): ExcelResult => ({ ...delivered, previewError: t('emails.excelPreviewUnreadable') }),
+    )
+    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
+    excelResult.value = result
+    if (convertedExcelSource.value) {
+      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), result)
+    }
+    excelSheet.value = result.sheets[0]?.name ?? ''
     excelOpen.value = true
     ElMessage.success(t('emails.excelReady'))
   } catch {
@@ -4827,10 +4824,7 @@ async function createSourcingCaseFromExcel() {
 function downloadExcel() {
   const result = excelResult.value
   if (!result) return
-  const raw = atob(result.fileData)
-  const bytes = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
-  const url = URL.createObjectURL(new Blob([bytes], {
+  const url = URL.createObjectURL(new Blob([base64ToBytes(result.fileData)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   }))
   const link = document.createElement('a')

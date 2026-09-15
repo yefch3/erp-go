@@ -1,36 +1,7 @@
-import { deflateRawSync, inflateRawSync } from 'node:zlib'
+import { deflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { excelSerialToText, isDirectTableFile, parseTableFile } from './attachmentExcel'
-
-// Every current browser accepts 'deflate-raw' here; the stripped Node build
-// running these tests does not. Back it with zlib so the deflate path is
-// still exercised end to end.
-try {
-  void new DecompressionStream('deflate-raw')
-} catch {
-  const Native = globalThis.DecompressionStream
-  globalThis.DecompressionStream = class {
-    constructor(format: string) {
-      if (format !== 'deflate-raw') return new Native(format as 'deflate') as TransformStream<Uint8Array, Uint8Array>
-      const chunks: Uint8Array[] = []
-      return new TransformStream({
-        transform(chunk, controller) {
-          chunks.push(chunk as Uint8Array)
-          void controller
-        },
-        flush(controller) {
-          const all = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0))
-          let at = 0
-          for (const chunk of chunks) {
-            all.set(chunk, at)
-            at += chunk.length
-          }
-          controller.enqueue(inflateRawSync(all))
-        },
-      }) as TransformStream<Uint8Array, Uint8Array>
-    }
-  } as typeof DecompressionStream
-}
+import './testsupport/deflateRaw'
 
 // ------------------------------------------------------------ zip builder
 // Builds the small stored/deflated zip subset the parser reads, so tests can

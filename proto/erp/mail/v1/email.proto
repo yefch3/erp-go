@@ -1756,6 +1756,11 @@ message ExcelSheetPreview {
   string summary = 2;
   repeated string columns = 3;
   message Row { repeated string cells = 1; }
+  // Empty for jobs completed since 2026-09-14, and total_rows is 0 then: the
+  // rows live only in ConvertInboundToExcelResponse.file_data, whose formula
+  // cells carry their computed value beside the formula, so the client reads
+  // the table straight out of the file. Older jobs still carry their rows
+  // here until the retention sweep clears them.
   repeated Row rows = 4;
   int64 total_rows = 5;
   // Parallel to columns: the template field key of each column, so the

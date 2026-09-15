@@ -380,7 +380,9 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		s.publishExcelJob(ctx, row)
 		return
 	}
-	workbook, err := json.Marshal(result.Workbook)
+	// 库里只留 metadata，行数据不落：它们已经在文件里了（withoutRows 说了
+	// 为什么，以及留下的那几样为什么非留不可）。
+	workbook, err := json.Marshal(result.Workbook.withoutRows())
 	if err != nil {
 		s.log.Error("encode Excel job workbook", "job", row.ID, "err", err)
 		return

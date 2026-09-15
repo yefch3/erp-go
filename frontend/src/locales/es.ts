@@ -1883,6 +1883,7 @@ export default {
     sourcingContactEmailAuto: 'Se completa al seleccionar el contacto',
     generatedBy: 'Generado por {model}. Verifique las cifras importantes antes de usarlo.',
     excelPreviewRows: 'Se muestran las primeras {shown} de {total} filas. El Excel descargado contiene todas.',
+    excelPreviewUnreadable: 'No se pudo leer la vista previa. El archivo está bien y se puede descargar.',
     close: 'Cerrar',
     allRecipients: 'todos los destinatarios',
     wrote: 'escribió:',

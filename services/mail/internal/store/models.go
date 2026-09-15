@@ -324,7 +324,8 @@ type MailExcelJob struct {
 	AttemptCount int32
 	FileName     string
 	// 结果的字节。落库时先写这里，搬运工传上对象存储之后清空，见迁移 00066
-	FileData        []byte
+	FileData []byte
+	// 只有 metadata：表名、说明、表头、每列类型和字段标识，不带行。行在 .xlsx 文件里
 	WorkbookJson    []byte
 	Model           string
 	ErrorCode       string

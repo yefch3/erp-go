@@ -101,13 +101,32 @@ type WorkbookSheet struct {
 	ColumnTypes []string `json:"column_types"`
 	// 与 Columns 平行的模板字段标识，采购转入按它而不是表头文字对齐。
 	ColumnKeys []string   `json:"column_keys,omitempty"`
-	Rows       [][]string `json:"rows"`
+	Rows       [][]string `json:"rows,omitempty"`
 	// 给人看的那一版：和 Rows 逐格对应，但公式换成算出来的数。文件里要
 	// 留活公式（在 Excel 里改数量总价要跟着动），页面上要显示结果——同一
 	// 份数据的两种用途，分开存比在渲染时猜哪个是公式可靠。
 	//
 	// 旧任务的缓存里没有这个字段，取不到时回落 Rows。
 	PreviewRows [][]string `json:"preview_rows,omitempty"`
+}
+
+// withoutRows 是 Workbook 落库的那一份：表名、说明、表头、每列的类型和
+// 字段标识，**一行数据都不带**。
+//
+// 行数据在 .xlsx 文件里已经全有了——公式格旁边连算好的值都存着（见
+// writeCell）——预览时浏览器从文件里读回来，库里不必再放一份。留下的这
+// 几样恰恰是文件里**没有**的：字段标识（转采购按它对齐，表头文字会改名、
+// 会重名）、模型写的那句说明、每列是文本还是数字。一张表几百字节；带行
+// 数据时是十几到一百 kB，而且 rows 和 preview_rows 还是同一张表的两个版本。
+//
+// 返回新值，不动原来的：原 Workbook 接着还要拿去生成文件。
+func (w Workbook) withoutRows() Workbook {
+	sheets := make([]WorkbookSheet, len(w.Sheets))
+	for i, s := range w.Sheets {
+		s.Rows, s.PreviewRows = nil, nil
+		sheets[i] = s
+	}
+	return Workbook{Title: w.Title, Sheets: sheets}
 }
 
 // InquiryColumn 是询盘模板的一列。列注册表在采购服务；网关在发起转换时

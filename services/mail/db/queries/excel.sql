@@ -31,7 +31,8 @@ WHERE j.id=candidate.id
 RETURNING j.*;
 
 -- name: CompleteExcelJob :execrows
--- 完成一次转换。**只写库，一条语句落地**——状态、workbook、字节一起。
+-- 完成一次转换。**只写库，一条语句落地**——状态、metadata、文件本身一起。
+-- workbook_json 只收 metadata，不收行（见 app.Workbook.withoutRows）。
 --
 -- 不在这里传对象存储：那是第二套系统，两次写之间没有事务，而这一刻正是最不
 -- 能出"一半"的时候（模型刚花完钱）。字节先落在 file_data 里，upload_next_try_at
