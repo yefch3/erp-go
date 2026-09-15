@@ -1472,7 +1472,13 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
-import { base64ToBytes, hydrateExcelResult, type ExcelResult } from '../lib/excelJobResult'
+import {
+  base64ToBytes,
+  excelPollAfterFailure,
+  hydrateExcelResult,
+  serverMessageOf,
+  type ExcelResult,
+} from '../lib/excelJobResult'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { printDocument } from '../lib/printDocument'
 import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
@@ -4337,6 +4343,8 @@ const excelResultCache = new Map<string, ExcelResult>()
 // Timeout 对象、浏览器的返回 number。这三处跑在浏览器里，number 才是它
 // 们真正的样子——推导反而会挑错那一版。
 let excelPollTimer: number | null = null
+// 连着几次没问到结果。新任务开始归零，问到一次归零。
+let excelPollFailures = 0
 
 function excelCacheKey(source: ExcelSource, templateId = selectedInquiryTemplateId.value): string {
   const sourceKey = source.kind === 'attachment'
@@ -4658,6 +4666,7 @@ function resumeExcelJob() {
   const id = sessionStorage.getItem('mailExcelJobId') ?? ''
   if (!id || excelJobId.value === id) return
   excelJobId.value = id
+  excelPollFailures = 0
   excelResult.value = null
   excelBusy.value = true
   excelOpen.value = true
@@ -4674,11 +4683,16 @@ async function refreshExcelJob(subject = '') {
   const id = excelJobId.value
   if (!id || (idFromEvent && idFromEvent !== id)) return
   try {
-    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, mailExcelRequest)
+    // quiet：问不到的那几次自己处理（见下面的 catch），不让每一次都弹红字。
+    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, {
+      ...mailExcelRequest,
+      quiet: true,
+    })
     // The poll timer and the SSE hint race to fetch the same job; only the
     // first response back may announce the terminal state, the later one
     // finds the id already settled and stays silent.
     if (excelJobId.value !== id) return
+    excelPollFailures = 0
     const job = response.job
     if (job.status === 'PENDING' || job.status === 'PROCESSING') {
       scheduleExcelJobPoll()
@@ -4712,10 +4726,23 @@ async function refreshExcelJob(subject = '') {
     excelSheet.value = result.sheets[0]?.name ?? ''
     excelOpen.value = true
     ElMessage.success(t('emails.excelReady'))
-  } catch {
-    // The SSE hint is best effort; keep polling through a brief network or
-    // gateway restart. An expired mailbox unlock is handled globally.
-    if (!locked.value) scheduleExcelJobPoll(3000)
+  } catch (err: unknown) {
+    // 网络抖一下、网关重启一下、对象存储暂时取不到文件——3 秒后再问，中间
+    // 不弹字。但只问约一分钟（excelPollAfterFailure）：改之前这里是无限问
+    // 下去、每 3 秒弹一次红字，直到对象存储恢复。到点停下、关弹窗，把服务
+    // 端那句话弹一次（比如「暂时取不到，请稍后重试或重新转换」）。
+    // 邮箱解锁过期由全局处理，这里只需要不再问。
+    if (locked.value) return
+    excelPollFailures += 1
+    if (excelPollAfterFailure(excelPollFailures) === 'retry') {
+      scheduleExcelJobPoll(3000)
+      return
+    }
+    excelBusy.value = false
+    excelJobId.value = ''
+    sessionStorage.removeItem('mailExcelJobId')
+    excelOpen.value = false
+    ElMessage.error(serverMessageOf(err) ?? t('emails.excelFailed'))
   }
 }
 

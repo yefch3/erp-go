@@ -31,6 +31,29 @@ export interface ExcelResult {
   previewError?: string
 }
 
+// 问任务结果失败了，接着问几次。
+//
+// 3 秒一次，20 次约一分钟。对象存储抖一下、网关重启一下，这一分钟里自己就
+// 好了，人只看到多转了几秒圈；抖到一分钟还没好，再问下去就是无限循环——
+// 改之前正是这样：转圈不停、每 3 秒弹一次红字，直到对象存储恢复为止。
+export const excelPollGiveUpAfter = 20
+
+export function excelPollAfterFailure(consecutiveFailures: number): 'retry' | 'stop' {
+  return consecutiveFailures < excelPollGiveUpAfter ? 'retry' : 'stop'
+}
+
+/**
+ * 服务端那句话。只认带 code 的信封（那是服务端写给人看的，比如「这次转换
+ * 的结果暂时取不到，请稍后重试或重新转换」）；网络错误的 message 是英文的
+ * 技术话，不给人看，返回 undefined 让调用方用自己的话。
+ */
+export function serverMessageOf(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined
+  const envelope = err as { code?: unknown; message?: unknown }
+  if (typeof envelope.code !== 'string' || typeof envelope.message !== 'string') return undefined
+  return envelope.message || undefined
+}
+
 export function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   const raw = atob(encoded)
   const bytes = new Uint8Array(raw.length)

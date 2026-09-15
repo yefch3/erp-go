@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { hydrateExcelResult, type ExcelResult } from './excelJobResult'
+import {
+  excelPollAfterFailure,
+  excelPollGiveUpAfter,
+  hydrateExcelResult,
+  serverMessageOf,
+  type ExcelResult,
+} from './excelJobResult'
 import './testsupport/deflateRaw'
 
 // 这份文件是邮件服务的 Go 代码真写出来的——services/mail/internal/app/
@@ -77,5 +83,24 @@ describe('hydrateExcelResult', () => {
 
   it('文件坏了是错，不是空表', async () => {
     await expect(hydrateExcelResult(delivered({ fileData: btoa('not a workbook') }))).rejects.toThrow()
+  })
+})
+
+describe('问任务结果失败之后', () => {
+  it('一分钟之内接着问，到点就停——不再无限转圈', () => {
+    expect(excelPollAfterFailure(0)).toBe('retry')
+    expect(excelPollAfterFailure(excelPollGiveUpAfter - 1)).toBe('retry')
+    expect(excelPollAfterFailure(excelPollGiveUpAfter)).toBe('stop')
+    // 3 秒一次，上限就是约一分钟。
+    expect(excelPollGiveUpAfter * 3).toBeGreaterThanOrEqual(60)
+    expect(excelPollGiveUpAfter * 3).toBeLessThanOrEqual(90)
+  })
+
+  it('弹给人看的是服务端那句话；网络错误的英文不算', () => {
+    expect(serverMessageOf({ success: false, code: 'MAIL_EXCEL_RESULT_UNREACHABLE', message: '暂时取不到' })).toBe('暂时取不到')
+    expect(serverMessageOf({ success: false, code: 'X', message: '' })).toBeUndefined()
+    expect(serverMessageOf(new Error('Network Error'))).toBeUndefined()
+    expect(serverMessageOf(undefined)).toBeUndefined()
+    expect(serverMessageOf('boom')).toBeUndefined()
   })
 })
