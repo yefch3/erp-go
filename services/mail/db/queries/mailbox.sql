@@ -1054,6 +1054,41 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.sent_message_id <> 0
   AND NOT i.is_bounce;
 
+-- name: ListSentCopyAttachments :many
+-- 「我发出」那几条在本地留底的那一份带的附件（配合 ListThreadSentCopies）。
+--
+-- **不按信箱限定**，这是和 ListThreadAttachments 唯一的区别，也是它单独存在的
+-- 全部理由：会话里「我发出」那一腿列的是**全部**（email_messages 上还没有
+-- account_id，见 ListThread 的说明），而收到的那一腿按信箱限定。一个人绑两个
+-- 箱、从 B 箱发出去的信出现在 A 箱的会话里时，它的留底在 B 箱——跟着按信箱
+-- 限定就永远对不上，那几条的预览和转 Excel 就全都没有。
+--
+-- 2026-09-15 实测：一条会话三封「我发出」，留底分别在 23 号和 80 号两个箱里，
+-- 于是只有一封有预览按钮，另外两封什么都没有。
+--
+-- 越权在 owner_id 上挡住：留底是同一个人另一个箱里的信，不是别人的。
+SELECT i.id AS inbound_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id,
+       coalesce(r.version, 0)::int      AS rev_version,
+       coalesce(r.file_key, '')::text   AS rev_file_key,
+       coalesce(r.file_size, 0)::bigint AS rev_file_size
+FROM email_inbound i
+JOIN email_inbound_attachments a
+  ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+LEFT JOIN LATERAL (
+    SELECT version, file_key, file_size
+    FROM mail_attachment_revisions
+    WHERE tenant_id = a.tenant_id AND attachment_id = a.id
+    ORDER BY version DESC
+    LIMIT 1
+) r ON true
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.owner_id = sqlc.arg(owner_id)::bigint
+  AND i.thread_key = sqlc.arg(thread_key)::text
+  AND i.sent_message_id <> 0
+  AND NOT i.is_bounce
+ORDER BY a.id;
+
 -- name: FindMessageByKeyAnyTenant :one
 -- The tracking pixel is fetched by a recipient's mail client, which carries
 -- no session and therefore no tenant. The key is a random UUID, so it is the

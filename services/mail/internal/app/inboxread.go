@@ -588,41 +588,68 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	// because the two legs number their rows in different tables and an
 	// inbound 7 is not an outbound 7.
 	files := map[string][]Attachment{}
+	// 「我发出」那几条在本地留底的那一份带的附件，按留底那封信的编号分。
+	//
+	// 单独取而不是从上面那张表里挑：那张表按信箱限定，而留底可能在这个人的
+	// **另一个箱**里（见 ListSentCopyAttachments）。
+	copyFiles := map[int64][]Attachment{}
 	// 我们自己发出去的那几条，正文里可能带着一条**当时**签发的存储地址：写信框
 	// 把阅读视图那段 HTML 抄进了引用（见 quotedimages.go）。那条地址早过期了，
 	// 回头看已发送就是一个裂开的图标。这张表按对象 key 给出刚签的一条。
 	freshImages := map[string]string{}
-	if fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
+
+	fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
 		TenantID: tenantID, OwnerID: ownerID, AccountID: accountID, ThreadKey: threadKey,
-	}); err == nil {
-		flat := make([]Attachment, 0, len(fs))
-		for _, f := range fs {
-			key, size := latestFile(f.FileKey, f.FileSize, f.RevVersion, f.RevFileKey, f.RevFileSize)
-			flat = append(flat, Attachment{
-				ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
-				FileSize: size, FileKey: key, ContentID: f.ContentID,
-				Revision: f.RevVersion,
-			})
-		}
-		// Signed once for the whole conversation, and here rather than at
-		// ingest: a URL minted when the mail arrived would have expired long
-		// before anybody opened the thread.
-		flat = s.signDownloads(ctx, flat)
-		// PreviewURL 而不是 DownloadURL：前者是「浏览器就地渲染」那一条，后者
-		// 带下载附件的处置头，塞进 <img> 只会让浏览器去下载一个文件。
-		for _, a := range flat {
-			if a.FileKey != "" && a.PreviewURL != "" {
-				freshImages[a.FileKey] = a.PreviewURL
-			}
-		}
-		for i, f := range fs {
-			k := f.Direction + ":" + strconv.FormatInt(f.MessageID, 10)
-			files[k] = append(files[k], flat[i])
-		}
-	} else {
+	})
+	if err != nil {
 		// The bodies are worth showing without the file list; a thread that
 		// refuses to open because one join failed is the worse outcome.
 		s.log.Warn("could not load thread attachments", "thread", threadKey, "err", err)
+		fs = nil
+	}
+	cs, err := s.q.ListSentCopyAttachments(ctx, store.ListSentCopyAttachmentsParams{
+		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+	})
+	if err != nil {
+		// 退回今天的样子：那几条只能下载。同上，不值得让整条会话打不开。
+		s.log.Warn("could not load the sent copies' attachments", "thread", threadKey, "err", err)
+		cs = nil
+	}
+
+	// 两批一起签。Signed once for the whole conversation, and here rather than
+	// at ingest: a URL minted when the mail arrived would have expired long
+	// before anybody opened the thread.
+	flat := make([]Attachment, 0, len(fs)+len(cs))
+	for _, f := range fs {
+		key, size := latestFile(f.FileKey, f.FileSize, f.RevVersion, f.RevFileKey, f.RevFileSize)
+		flat = append(flat, Attachment{
+			ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
+			FileSize: size, FileKey: key, ContentID: f.ContentID,
+			Revision: f.RevVersion,
+		})
+	}
+	for _, c := range cs {
+		key, size := latestFile(c.FileKey, c.FileSize, c.RevVersion, c.RevFileKey, c.RevFileSize)
+		flat = append(flat, Attachment{
+			ID: c.ID, FileName: c.FileName, ContentType: c.ContentType,
+			FileSize: size, FileKey: key, ContentID: c.ContentID,
+			Revision: c.RevVersion,
+		})
+	}
+	flat = s.signDownloads(ctx, flat)
+	// PreviewURL 而不是 DownloadURL：前者是「浏览器就地渲染」那一条，后者
+	// 带下载附件的处置头，塞进 <img> 只会让浏览器去下载一个文件。
+	for _, a := range flat {
+		if a.FileKey != "" && a.PreviewURL != "" {
+			freshImages[a.FileKey] = a.PreviewURL
+		}
+	}
+	for i, f := range fs {
+		k := f.Direction + ":" + strconv.FormatInt(f.MessageID, 10)
+		files[k] = append(files[k], flat[i])
+	}
+	for j, c := range cs {
+		copyFiles[c.InboundID] = append(copyFiles[c.InboundID], flat[len(fs)+j])
 	}
 
 	// 我们自己发出去的那几条，在本地「已发送」里留着的那一份是哪一行。
@@ -703,8 +730,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 			copy, ok := copies[r.ID]
 			// 附件也要有：对上了一份空的（同步回来的那封没存下附件）就不算数，
 			// 换过去只会让这一条的文件列表凭空消失。
-			local := hideEmbedded(
-				files["IN:"+strconv.FormatInt(copy.id, 10)], copy.body, embedded[copy.id])
+			local := hideEmbedded(copyFiles[copy.id], copy.body, embedded[copy.id])
 			if ok && len(local) > 0 {
 				v.LocalMailID = copy.id
 				v.Attachments = local
