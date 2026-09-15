@@ -193,27 +193,10 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 			s.writeGRPCError(w, e)
 			return
 		}
-		if req.GetSourceAttachmentId() > 0 {
-			found := false
-			for _, a := range source.GetMail().GetAttachments() {
-				found = found || a.GetId() == req.GetSourceAttachmentId()
-			}
-			if !found {
-				s.writeError(w, 404, "INQUIRY_MAIL_ATTACHMENT", "来源附件不存在")
-				return
-			}
-		}
-		req.ContactName = source.GetMail().GetFromName()
-		if len(source.GetMail().GetAttachments()) > 0 {
-			attachments, e := s.Emails.DownloadInboundAttachments(r.Context(), &mailv1.DownloadInboundAttachmentsRequest{InboundId: req.GetSourceMailId()})
-			if e != nil {
-				s.writeGRPCError(w, e)
-				return
-			}
-			req.SourceFileData = attachments.GetContent()
-			req.SourceFileName = attachments.GetFileName()
-			req.SourceContentType = "application/zip"
-		}
+		// 邮件只负责说明询盘从哪里来。产品明细已经由转换结果固化，采购侧
+		// 不再复制、保存或依赖原附件；需要核对原件时沿 source_mail_id 回到
+		// 邮箱即可。这样附件被归档、移动或清理也不会挡住转入询盘。
+		applyMailSource(req, source.GetMail())
 	}
 	if req.GetCustomerId() > 0 {
 		customer, e := s.resolveActiveCustomer(r.Context(), req.GetCustomerId())
@@ -238,6 +221,16 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+// applyMailSource keeps the durable provenance link while deliberately
+// discarding attachment material supplied by older or untrusted callers.
+func applyMailSource(req *prv1.CreateCaseRequest, mail *mailv1.InboundMail) {
+	req.ContactName = mail.GetFromName()
+	req.SourceAttachmentId = 0
+	req.SourceFileData = nil
+	req.SourceFileName = ""
+	req.SourceContentType = ""
 }
 
 func (s *Server) addSourcingLine(w http.ResponseWriter, r *http.Request) {
