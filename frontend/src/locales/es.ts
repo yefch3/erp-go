@@ -1804,7 +1804,6 @@ export default {
     bccLabel: 'CCO',
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
-    attachmentEdited: 'Editado · v{n}',
     downloadAll: 'Descargar todo ({n})',
     sortBar: {
       label: 'Ordenar',

@@ -1798,7 +1798,6 @@ export default {
     bccLabel: 'BCC',
     bccHint: 'People on BCC receive the mail; nobody on To or CC can see that they did.',
     previewFile: 'Preview',
-    attachmentEdited: 'Edited · v{n}',
     downloadAll: 'Download all ({n})',
     sortBar: {
       label: 'Sort',

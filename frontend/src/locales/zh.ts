@@ -1793,7 +1793,6 @@ export default {
     bccLabel: '密送',
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
-    attachmentEdited: '已改 · 第 {n} 版',
     downloadAll: '下载全部（{n}）',
     sortBar: {
       label: '排序',

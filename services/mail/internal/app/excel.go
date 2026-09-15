@@ -385,7 +385,10 @@ func (s *Service) ConvertInboundToExcel(
 		if !supportedTableSource(chosen.FileName, chosen.ContentType) {
 			return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_FILE_TYPE", "这个附件类型暂不支持转换为 Excel")
 		}
-		r, err := s.files.Get(ctx, chosen.FileKey)
+		// 在线改过的附件，转的是改过的那一版——人在编辑器里补完数据再点
+		// 「转 Excel」，转的当然该是他刚补完的。
+		sourceKey, _ := latestAttachmentObject(*chosen)
+		r, err := s.files.Get(ctx, sourceKey)
 		if err != nil {
 			return ExcelResult{}, apierr.Internal("MAIL_EXCEL_ATTACHMENT_READ", "读取附件失败，请重试").Wrap(err)
 		}

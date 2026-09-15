@@ -211,10 +211,26 @@ func (s *Service) ServeOfficeFile(ctx context.Context, req OfficeFileRequest) (O
 // latestAttachmentObject 说这个附件现在该打开哪一份：改过就是最新那一版，
 // 没改过就是原件。第二个返回值是版本号，0 = 原件。
 func latestAttachmentObject(a store.ListInboundAttachmentsRow) (string, int32) {
-	if a.RevVersion > 0 && a.RevFileKey != "" {
-		return a.RevFileKey, a.RevVersion
+	key, _ := latestFile(a.FileKey, a.FileSize, a.RevVersion, a.RevFileKey, a.RevFileSize)
+	if key == a.RevFileKey && a.RevVersion > 0 {
+		return key, a.RevVersion
 	}
-	return a.FileKey, 0
+	return key, 0
+}
+
+// latestFile 说这个附件现在该给人哪一份文件（键）和它多大：在线改过就是最新
+// 那一版，没改过就是客户发来的原件。
+//
+// **预览、下载、打包、转 Excel 走的都是它**——2026-09-15 起四条路给的是同一
+// 个文件。之前只有预览给改过的，下载和打包给原件，页面上靠一个「已改 · 第 N
+// 版」的标记提醒；产品负责人要把标记去掉，那就只能让四条路一致，不然一个人
+// 改完再下载，拿到的是没改过的，而且没有任何提示。原件没有丢：每一版都在
+// mail_attachment_revisions 里，附件行上的 file_key 也还是它。
+func latestFile(fileKey string, fileSize int64, revVersion int32, revKey string, revSize int64) (string, int64) {
+	if revVersion > 0 && revKey != "" {
+		return revKey, revSize
+	}
+	return fileKey, fileSize
 }
 
 // attachmentForOffice 取这个附件，**并且当场再问一次这封信现在归不归他**。
