@@ -181,7 +181,7 @@ func TestExcelUploadHealsWhenTheRowUpdateDidNotLand(t *testing.T) {
 	id := f.complete(t, content)
 
 	// 手工制造那个中间态：对象已经在桶里，而行还没记上。
-	key := excelResultKey(f.tid, id, "报价.xlsx")
+	key := excelResultKey(f.tid, id)
 	f.files.objects[key] = []byte(content)
 
 	// 人在这一刻取文件：读的是库里的字节，照常拿得到。

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -290,13 +289,13 @@ func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
 		// 先删对象、再清行。反过来的话，删对象失败就再也没有人回来收它了
 		// ——那一行已经标成"收过了"，下一趟不会再列出来。
 		//
-		// **不看这一行的列里写着什么，一律按租户+任务号算出键去删一次。**
-		// 这一句是专门为「对象写成功、行写失败」那种孤儿留的：它的 file_key
-		// 和 file_data 都是空的，看列的话永远收不到它。而对象键不依赖任何
-		// 存下来的字段，S3 的 DELETE 对不存在的键也是幂等的——从来没有过
-		// 对象的那些行，这一下什么都不会发生。
+		// **不看这一行的列里写着什么，一律按租户+任务号算一次键去删。**
+		// 不是因为有孤儿要捡（新的写入顺序下没有孤儿：对象只由搬运工创建，
+		// 而它只为已经存在的行干活），是因为这样这一段完全不依赖那两列的
+		// 状态——搬到一半、没搬、搬完了，收的动作都一样。S3 的 DELETE 对
+		// 不存在的键是幂等的，没有对象的那些行，这一下什么都不会发生。
 		if s.files != nil {
-			if err := s.files.Remove(ctx, excelResultKey(row.TenantID, row.ID, "")); err != nil {
+			if err := s.files.Remove(ctx, excelResultKey(row.TenantID, row.ID)); err != nil {
 				s.log.Warn("could not remove an expired excel result", "job", row.ID, "err", err)
 				continue
 			}
@@ -449,7 +448,7 @@ func (s *Service) uploadExcelResultsOnce(ctx context.Context) {
 		return
 	}
 	for _, row := range rows {
-		key := excelResultKey(row.TenantID, row.ID, row.FileName)
+		key := excelResultKey(row.TenantID, row.ID)
 		// 重传就是覆盖：键由租户和任务号算出来，不依赖任何存下来的字段。
 		// 所以上一趟"传成了、行没写成"留下的那一份，这一趟原地被盖掉。
 		if err := s.files.Put(ctx, key, bytes.NewReader(row.FileData),
@@ -494,13 +493,17 @@ func clampUploadError(err error) string {
 	return msg
 }
 
-// 对象键带任务号：同一个人对同一封信转两次是两份结果，不该互相覆盖。
-func excelResultKey(tenantID, jobID int64, fileName string) string {
-	ext := strings.ToLower(filepath.Ext(fileName))
-	if ext != ".xlsx" {
-		ext = ".xlsx"
-	}
-	return fmt.Sprintf("mail-excel/%d/%d%s", tenantID, jobID, ext)
+// 对象键：租户 + 任务号，**只由这两样算出来**。
+//
+// 带任务号，所以同一个人对同一封信转两次是两份结果，不会互相覆盖；而同一个
+// 任务重传多少次都是同一个键，所以重传是覆盖不是堆积。
+//
+// **刻意不收文件名。** 文件名是人看的（下载时的另存为名），而它会变——同一
+// 个任务重跑一次，模型可能给出不一样的名字。键要是掺了它，搬运工写进去的
+// 那个和清理器算出来的那个就会对不上，而症状是桶里悄悄留下一份谁也删不掉的
+// 东西。签名里干脆没有这个参数，就不会有人不小心把它加回去。
+func excelResultKey(tenantID, jobID int64) string {
+	return fmt.Sprintf("mail-excel/%d/%d.xlsx", tenantID, jobID)
 }
 
 func (s *Service) publishExcelJob(ctx context.Context, row store.MailExcelJob) {
