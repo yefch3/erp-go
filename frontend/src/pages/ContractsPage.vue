@@ -22,21 +22,21 @@
       </div>
 
       <el-table :data="contracts" v-loading="loading" class="contract-list-table">
-        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" width="190" show-overflow-tooltip><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
-        <el-table-column :label="t('contracts.externalContractNo')" width="160" show-overflow-tooltip><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
-        <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" min-width="190" show-overflow-tooltip><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.externalContractNo')" min-width="160" show-overflow-tooltip><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
+        <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" show-overflow-tooltip />
         <el-table-column :label="t('contracts.amount')" width="170" align="right" class-name="contract-list-amount" show-overflow-tooltip>
           <template #default="{ row }"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('contracts.owner')" width="130" show-overflow-tooltip>
+        <el-table-column :label="t('contracts.owner')" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="110">
+        <el-table-column :label="t('common.status')" min-width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('contracts.updatedAt')" width="180"><template #default="{row}"><span class="list-time">{{ formatListTime(row.updatedAt) }}</span></template></el-table-column>
+        <el-table-column :label="t('contracts.updatedAt')" min-width="190"><template #default="{row}"><span class="list-time">{{ formatListTime(row.updatedAt) }}</span></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="110" fixed="right" align="center"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
       </el-table>
 
