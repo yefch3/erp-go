@@ -162,6 +162,125 @@ func TestSentTurnHandsOutTheLocalCopysAttachments(t *testing.T) {
 	}
 }
 
+// 一个人绑了两个信箱，从 B 箱发出去的信出现在 A 箱的会话里：留底在 B 箱，
+// 照样要认。
+//
+// 会话里「我发出」那一腿列的是**全部**（email_messages 上还没有 account_id），
+// 而收到的那一腿按信箱限定。留底的附件当初是跟着收到的那一腿一起取的，于是
+// 一按信箱限定就漏掉了另一个箱里的留底——2026-09-15 生产上一条会话三封
+// 「我发出」，留底分别在 23 号和 80 号两个箱里，结果只有一封有预览按钮。
+func TestSentTurnFindsItsLocalCopyInTheOtherMailbox(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	const me = int64(7403)
+	// 两个信箱：读会话用的那个，和发信用的那个。
+	const readBox, sendBox = int64(23), int64(80)
+	threadKey := fmt.Sprintf("two-boxes-%d", tenantID)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound_attachments WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_attachments WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_messages WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_campaigns WHERE tenant_id=$1", tenantID)
+	})
+
+	files := &previewStore{objects: map[string][]byte{"mail/in/quote2.xlsx": []byte("另一个箱里的留底")}}
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// 我们在 A 箱里读的那封（对方发来的）。它决定会话按哪个信箱限定。
+	var opened int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, to_email, subject, body_html, received_at)
+		VALUES ($1, $2, $3, 'theirs@mid', $4, 'INBOX', 7403,
+		        'buyer@overseas.com', 'a@co.com', '询价', '<p>请报价</p>', now())
+		RETURNING id`, tenantID, readBox, me, threadKey).Scan(&opened); err != nil {
+		t.Fatal(err)
+	}
+
+	// 从 B 箱发出去的那一封：投递记录 + 留在 B 箱「已发送」里的那一份。
+	var campaignID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_campaigns
+		(tenant_id, campaign_no, subject_tpl, body_tpl, sender_id)
+		VALUES ($1, $2, '报价', '正文', $3) RETURNING id`,
+		tenantID, fmt.Sprintf("C-TWOBOX-%d", tenantID), me).Scan(&campaignID); err != nil {
+		t.Fatal(err)
+	}
+	messageKey := "99999999-8888-7777-6666-555555555555"
+	var sentID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_messages
+		(tenant_id, campaign_id, message_key, sender_id, sender_name, to_email, subject,
+		 body, body_format, from_email, status, thread_key, sent_at)
+		VALUES ($1, $2, $3::uuid, $4, 'CEO', 'buyer@overseas.com', 'Re: 询价',
+		        '<p>报价见附件</p>', 'HTML', 'b@co.com', 'ACCEPTED', $5, now())
+		RETURNING id`, tenantID, campaignID, messageKey, me, threadKey).Scan(&sentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO email_attachments
+		(tenant_id, campaign_id, file_name, file_key, file_size, content_type)
+		VALUES ($1, $2, '报价.xlsx', 'mail/out/quote2.xlsx', 7,
+		        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')`,
+		tenantID, campaignID); err != nil {
+		t.Fatal(err)
+	}
+	var copyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, to_email, subject, body_html, sent_message_id, received_at)
+		VALUES ($1, $2, $3, $4, $5, 'SENT', 7404, 'b@co.com', 'buyer@overseas.com',
+		        'Re: 询价', '<p>报价见附件</p>', $6, now())
+		RETURNING id`, tenantID, sendBox, me, messageKey+"@co.com", threadKey, sentID).Scan(&copyID); err != nil {
+		t.Fatal(err)
+	}
+	var inAttID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound_attachments
+		(tenant_id, inbound_id, file_name, content_type, file_size, file_key, content_id)
+		VALUES ($1, $2, '报价.xlsx',
+		        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		        33, 'mail/in/quote2.xlsx', '')
+		RETURNING id`, tenantID, copyID).Scan(&inAttID); err != nil {
+		t.Fatal(err)
+	}
+
+	// 从 A 箱那封点进会话——会话因此按 A 箱限定，而留底在 B 箱。
+	items, err := svc.GetMailThread(ctx, tenantID, me, opened, threadKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out *ThreadItem
+	for i := range items {
+		if items[i].Direction == "OUT" {
+			out = &items[i]
+		}
+	}
+	if out == nil {
+		t.Fatalf("会话里该有「我发出」那一条：%+v", items)
+	}
+	if out.LocalMailID != copyID {
+		t.Fatalf("留底在另一个箱里也该认出来：想要 %d，得到 %d", copyID, out.LocalMailID)
+	}
+	if len(out.Attachments) != 1 || out.Attachments[0].ID != inAttID {
+		t.Fatalf("附件该用留底那一份的编号 %d：%+v", inAttID, out.Attachments)
+	}
+	if out.Attachments[0].FileKey != "mail/in/quote2.xlsx" {
+		t.Fatalf("该给留底那一份的文件：%+v", out.Attachments[0])
+	}
+}
+
 // ---- 对不上本地那一份时：退回老样子，只能下载 ----
 //
 // 信箱不留已发送，或者还没同步回来。那时不能给编号——给了界面就会显示一颗

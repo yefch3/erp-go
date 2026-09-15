@@ -2567,6 +2567,92 @@ func (q *Queries) ListRecentUIDs(ctx context.Context, arg ListRecentUIDsParams) 
 	return items, nil
 }
 
+const listSentCopyAttachments = `-- name: ListSentCopyAttachments :many
+SELECT i.id AS inbound_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id,
+       coalesce(r.version, 0)::int      AS rev_version,
+       coalesce(r.file_key, '')::text   AS rev_file_key,
+       coalesce(r.file_size, 0)::bigint AS rev_file_size
+FROM email_inbound i
+JOIN email_inbound_attachments a
+  ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+LEFT JOIN LATERAL (
+    SELECT version, file_key, file_size
+    FROM mail_attachment_revisions
+    WHERE tenant_id = a.tenant_id AND attachment_id = a.id
+    ORDER BY version DESC
+    LIMIT 1
+) r ON true
+WHERE i.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
+  AND i.sent_message_id <> 0
+  AND NOT i.is_bounce
+ORDER BY a.id
+`
+
+type ListSentCopyAttachmentsParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListSentCopyAttachmentsRow struct {
+	InboundID   int64
+	ID          int64
+	FileName    string
+	ContentType string
+	FileSize    int64
+	FileKey     string
+	ContentID   string
+	RevVersion  int32
+	RevFileKey  string
+	RevFileSize int64
+}
+
+// 「我发出」那几条在本地留底的那一份带的附件（配合 ListThreadSentCopies）。
+//
+// **不按信箱限定**，这是和 ListThreadAttachments 唯一的区别，也是它单独存在的
+// 全部理由：会话里「我发出」那一腿列的是**全部**（email_messages 上还没有
+// account_id，见 ListThread 的说明），而收到的那一腿按信箱限定。一个人绑两个
+// 箱、从 B 箱发出去的信出现在 A 箱的会话里时，它的留底在 B 箱——跟着按信箱
+// 限定就永远对不上，那几条的预览和转 Excel 就全都没有。
+//
+// 2026-09-15 实测：一条会话三封「我发出」，留底分别在 23 号和 80 号两个箱里，
+// 于是只有一封有预览按钮，另外两封什么都没有。
+//
+// 越权在 owner_id 上挡住：留底是同一个人另一个箱里的信，不是别人的。
+func (q *Queries) ListSentCopyAttachments(ctx context.Context, arg ListSentCopyAttachmentsParams) ([]ListSentCopyAttachmentsRow, error) {
+	rows, err := q.db.Query(ctx, listSentCopyAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSentCopyAttachmentsRow
+	for rows.Next() {
+		var i ListSentCopyAttachmentsRow
+		if err := rows.Scan(
+			&i.InboundID,
+			&i.ID,
+			&i.FileName,
+			&i.ContentType,
+			&i.FileSize,
+			&i.FileKey,
+			&i.ContentID,
+			&i.RevVersion,
+			&i.RevFileKey,
+			&i.RevFileSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSentUnified = `-- name: ListSentUnified :many
 
 
