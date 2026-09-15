@@ -84,4 +84,26 @@ describe('三语言词条', () => {
       expect(extra, `${lang} 多这些：${extra.join(', ')}`).toEqual([])
     })
   }
+
+  it('已完成国际化的页面模板不再写死中文文案', () => {
+    const localizedTemplates = [
+      'App.vue',
+      'components/InquiryTodos.vue',
+      'components/InquiryProducts.vue',
+      'components/ShippingArrivalNotifications.vue',
+      'pages/FxPage.vue',
+      'pages/InquiryWorkspacePage.vue',
+      'pages/WarehouseArrivalsPage.vue',
+      'pages/WarehouseImportsPage.vue',
+      'pages/WarehouseReceiptsPage.vue',
+      'pages/WarehouseSettingsPage.vue',
+      'pages/WarehouseWorkbenchPage.vue',
+    ]
+    const remaining = localizedTemplates.flatMap((file) => {
+      const source = readFileSync(join(SRC, file), 'utf8')
+      const template = source.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? ''
+      return /[\u3400-\u9fff]/.test(template) ? [file] : []
+    })
+    expect(remaining, `这些已国际化页面又出现了写死中文：${remaining.join(', ')}`).toEqual([])
+  })
 })

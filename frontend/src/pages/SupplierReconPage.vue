@@ -1,12 +1,12 @@
 <template>
   <div class="page">
-    <WorkflowPageHeader :title="isReimbursement ? '出差报销' : t('supplierRecon.title')" :description="isReimbursement ? '提交出差凭证，跟踪部门确认、财务审批和付款。' : t('supplierRecon.subtitle')">
+    <WorkflowPageHeader :title="isReimbursement ? t('supplierRecon.travelTitle') : t('supplierRecon.title')" :description="isReimbursement ? t('supplierRecon.travelSubtitle') : t('supplierRecon.subtitle')">
       <template #actions><el-button v-if="!isReimbursement && canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
     </WorkflowPageHeader>
 
     <el-radio-group v-if="canReadRecon" :model-value="isReimbursement ? 'travel' : 'payables'" class="module-tabs" @update:model-value="switchSection">
-      <el-radio-button value="payables">供应商付款</el-radio-button>
-      <el-radio-button value="travel">出差报销</el-radio-button>
+      <el-radio-button value="payables">{{ t('supplierRecon.supplierPaymentsTab') }}</el-radio-button>
+      <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
     </el-radio-group>
     <TravelReimbursementPanel v-if="isReimbursement" />
     <div v-show="!isReimbursement" class="legacy-recon">

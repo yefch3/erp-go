@@ -9,35 +9,35 @@
   >
     <template #reference>
       <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
-        <el-button class="bell" text circle aria-label="运输提醒">
+        <el-button class="bell" text circle :aria-label="t('shippingReminders.title')">
           <el-icon :size="20"><Bell /></el-icon>
         </el-button>
       </el-badge>
     </template>
 
     <div class="heading">
-      <strong>运输提醒</strong>
+      <strong>{{ t('shippingReminders.title') }}</strong>
       <div class="heading-actions">
         <el-button link type="danger" size="small" :loading="cleaning" @click="cleanupExpiredReminders">
-          清理过期
+          {{ t('shippingReminders.cleanup') }}
         </el-button>
         <el-switch
           v-model="popupEnabled"
-          active-text="弹窗开启"
-          inactive-text="弹窗关闭"
+          :active-text="t('shippingReminders.popupOn')"
+          :inactive-text="t('shippingReminders.popupOff')"
           active-color="#22c55e"
           style="--el-switch-on-color: #22c55e"
           @change="setPopupEnabled"
         />
-        <span>{{ unreadCount }} 条未读</span>
+        <span>{{ t('shippingReminders.unread', { count: unreadCount }) }}</span>
       </div>
     </div>
     <div v-if="loadFailed" class="load-error">
-      <span>运输提醒暂时无法读取，现有提醒已保留。</span>
-      <el-button link type="primary" size="small" :loading="loading" @click="load(false)">重新加载</el-button>
+      <span>{{ t('shippingReminders.loadFailed') }}</span>
+      <el-button link type="primary" size="small" :loading="loading" @click="load(false)">{{ t('shippingReminders.reload') }}</el-button>
     </div>
     <el-scrollbar max-height="420px">
-      <el-empty v-if="!loading && reminders.length === 0" description="暂无运输提醒" :image-size="72" />
+      <el-empty v-if="!loading && reminders.length === 0" :description="t('shippingReminders.empty')" :image-size="72" />
       <div
         v-for="item in reminders"
         :key="item.id"
@@ -47,13 +47,13 @@
         <button class="notice-open" type="button" @click="openReminder(item)">
           <span v-if="!item.readAt" class="dot" />
           <span class="notice-copy">
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.content }}</span>
+            <strong>{{ reminderTitle(item) }}</strong>
+            <span>{{ reminderContent(item) }}</span>
             <small>{{ formatTime(item.sentAt) }}</small>
           </span>
         </button>
         <div class="notice-toggle" @click.stop>
-          <span>本条弹窗</span>
+          <span>{{ t('shippingReminders.itemPopup') }}</span>
           <el-switch
             :model-value="isItemPopupEnabled(item)"
             active-color="#22c55e"
@@ -71,12 +71,14 @@ import { h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification, ElSwitch } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { del, get, post, quietErrors } from '../api'
 import { onLive } from '../live'
 import type { ShippingArrivalReminder } from '../shipping'
 import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
 
 const router = useRouter()
+const { t, locale } = useI18n()
 const open = ref(false)
 const loading = ref(false)
 const loadFailed = ref(false)
@@ -129,9 +131,9 @@ function showAutomaticPopups(items: ShippingArrivalReminder[]) {
       pendingPopups.delete(popupKey)
       if (!popupEnabled.value || !isItemPopupEnabled(item) || activePopups.has(popupKey)) return
       const notice = ElNotification({
-        title: item.title || '运输提醒',
+        title: reminderTitle(item),
         message: h('div', [
-          h('p', { style: 'margin: 0 0 12px; line-height: 1.6;' }, item.content),
+          h('p', { style: 'margin: 0 0 12px; line-height: 1.6;' }, reminderContent(item)),
           h('div', { style: 'display: flex; gap: 8px;' }, [
             h(
               'button',
@@ -144,10 +146,10 @@ function showAutomaticPopups(items: ShippingArrivalReminder[]) {
                   void openReminder(item)
                 },
               },
-              '查看详情',
+              t('shippingReminders.details'),
             ),
             h('div', { style: 'display: flex; align-items: center; gap: 6px;', onClick: (event: MouseEvent) => event.stopPropagation() }, [
-              h('span', { style: 'color: #606266;' }, '本条弹窗'),
+              h('span', { style: 'color: #606266;' }, t('shippingReminders.itemPopup')),
               h(ElSwitch, {
                 modelValue: isItemPopupEnabled(item),
                 activeColor: '#22c55e',
@@ -167,6 +169,33 @@ function showAutomaticPopups(items: ShippingArrivalReminder[]) {
       activePopups.set(popupKey, notice)
     }, index * 180)
   })
+}
+
+function reminderTitle(item: ShippingArrivalReminder) {
+  const title = item.title?.trim()
+  let match = title?.match(/^船期预计\s*(\d+)\s*天后(到港|开船)$/)
+  if (match) return t(match[2] === '开船' ? 'shippingReminders.departureInDays' : 'shippingReminders.arrivalInDays', { days: match[1] })
+  match = title?.match(/^船期预计今天(到港|开船)$/)
+  if (match) return t(match[1] === '开船' ? 'shippingReminders.departureToday' : 'shippingReminders.arrivalToday')
+  match = title?.match(/^船期预计已逾期\s*(\d+)\s*天$/)
+  if (match) return t('shippingReminders.overdueDays', { days: match[1] })
+  if (title === '船期即将到港') return t('shippingReminders.arrivalSoon')
+  if (title === '船期即将开船') return t('shippingReminders.departureSoon')
+  return title || t('shippingReminders.title')
+}
+
+function reminderContent(item: ShippingArrivalReminder) {
+  const labels: Record<string, string> = {
+    船期编号: 'scheduleNo', 合同编号: 'contractNo', 客户: 'customer', '船名/航次': 'vesselVoyage',
+    港口: 'port', 目的港: 'destinationPort', '最新 ETA': 'latestEta', '预计到港（ETA）': 'expectedArrival', '预计离港（ETD）': 'expectedDeparture',
+  }
+  return (item.content || '').split('；').map((part) => {
+    const separator = part.indexOf('：')
+    if (separator < 0) return part
+    const label = part.slice(0, separator).trim()
+    const key = labels[label]
+    return key ? `${t(`shippingReminders.fields.${key}`)}: ${part.slice(separator + 1).trim()}` : part
+  }).join('; ')
 }
 
 function isItemPopupEnabled(item: ShippingArrivalReminder) {
@@ -202,15 +231,15 @@ function setPopupEnabled(value: string | number | boolean) {
 // 清理只删除当前员工已经过期的通知，不会删除对应船期。
 async function cleanupExpiredReminders() {
   await ElMessageBox.confirm(
-    '将删除对应港口日期已过期，或船期已到港、已完成、已取消的运输提醒。船期数据不会被删除。',
-    '清理过期提醒',
-    { confirmButtonText: '确认清理', cancelButtonText: '取消', type: 'warning' },
+    t('shippingReminders.cleanupMessage'),
+    t('shippingReminders.cleanupTitle'),
+    { confirmButtonText: t('shippingReminders.confirmCleanup'), cancelButtonText: t('shippingReminders.cancel'), type: 'warning' },
   )
   cleaning.value = true
   try {
     const data = await del<{ deletedCount: string }>('/shipping/reminders/expired')
     await load(false)
-    ElMessage.success(`已清理 ${Number(data.deletedCount ?? 0)} 条过期提醒`)
+    ElMessage.success(t('shippingReminders.cleaned', { count: Number(data.deletedCount ?? 0) }))
   } finally {
     cleaning.value = false
   }
@@ -229,7 +258,7 @@ async function openReminder(item: ShippingArrivalReminder) {
 }
 
 function formatTime(value: string) {
-  return value ? new Date(value).toLocaleString() : '—'
+  return value ? new Date(value).toLocaleString(locale.value) : '—'
 }
 
 let unsubscribe: (() => void) | undefined

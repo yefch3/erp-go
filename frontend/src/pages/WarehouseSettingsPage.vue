@@ -1,19 +1,19 @@
 <template>
   <div class="page">
-    <header class="hero"><div><p class="eyebrow">BUSINESS SETTINGS</p><h1>业务设置</h1><p>设置采购货物默认如何交付；只影响新业务，不删除历史单据、仓库档案或库存记录。</p></div><el-button @click="router.push('/warehouses')">返回工作台</el-button></header>
+    <header class="hero"><div><p class="eyebrow">{{ t('warehouse.settings.eyebrow') }}</p><h1>{{ t('warehouse.settings.title') }}</h1><p>{{ t('warehouse.settings.subtitle') }}</p></div><el-button @click="router.push('/warehouses')">{{ t('warehouse.backWorkbench') }}</el-button></header>
     <el-card shadow="never" v-loading="loading">
-      <h2>采购交付策略</h2>
+      <h2>{{ t('warehouse.settings.deliveryPolicy') }}</h2>
       <div class="mode-grid">
         <label v-for="item in modes" :key="item.value" :class="['mode',settings.usageMode===item.value&&'active']"><el-radio v-model="settings.usageMode" :value="item.value"><strong>{{ item.title }}</strong></el-radio><p>{{ item.description }}</p></label>
       </div>
       <el-divider/>
       <div v-if="settings.usageMode==='USE_WAREHOUSE'" class="warehouse-default">
-        <div><strong>默认仓库</strong><p>统一经过仓库时，新采购默认进入该仓库；具体单据后续仍可按权限调整。</p></div>
-        <el-select v-model="settings.defaultWarehouseId" clearable placeholder="请选择启用中的仓库"><el-option v-for="warehouse in activeWarehouses" :key="warehouse.id" :label="`${warehouse.code} · ${warehouse.name}`" :value="warehouse.id"/></el-select>
-        <el-alert v-if="activeWarehouses.length===0" type="warning" :closable="false" title="目前没有启用中的仓库，请先维护并启用仓库档案。"/>
+        <div><strong>{{ t('warehouse.settings.defaultWarehouse') }}</strong><p>{{ t('warehouse.settings.defaultHint') }}</p></div>
+        <el-select v-model="settings.defaultWarehouseId" clearable :placeholder="t('warehouse.settings.selectWarehouse')"><el-option v-for="warehouse in activeWarehouses" :key="warehouse.id" :label="`${warehouse.code} · ${warehouse.name}`" :value="warehouse.id"/></el-select>
+        <el-alert v-if="activeWarehouses.length===0" type="warning" :closable="false" :title="t('warehouse.settings.noActiveWarehouse')"/>
       </div>
-      <el-alert type="info" :closable="false" title="系统会自动匹配直送和库存能力，无需额外开关；每次保存均保留历史记录。"/>
-      <div class="footer"><el-button type="primary" :loading="saving" @click="save">保存设置</el-button></div>
+      <el-alert type="info" :closable="false" :title="t('warehouse.settings.automaticCapabilities')"/>
+      <div class="footer"><el-button type="primary" :loading="saving" @click="save">{{ t('warehouse.settings.save') }}</el-button></div>
     </el-card>
   </div>
 </template>
@@ -22,20 +22,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { get, put } from '../api'
 interface Warehouse { id:string; code:string; name:string; status:string }
-const router=useRouter(), loading=ref(false), saving=ref(false), warehouses=ref<Warehouse[]>([])
+const router=useRouter(), { t }=useI18n(), loading=ref(false), saving=ref(false), warehouses=ref<Warehouse[]>([])
 const settings=reactive({usageMode:'USE_WAREHOUSE',allowDirectDelivery:true,allowInventory:true,defaultWarehouseId:'0'})
-const modes=[
-  {value:'NO_WAREHOUSE',title:'默认直接交付',description:'新采购默认发往港口、客户或指定地点，不形成公司库存。'},
-  {value:'USE_WAREHOUSE',title:'统一经过仓库',description:'新采购默认先进入指定仓库，再由仓库完成库存和后续发货。'},
-  {value:'SELECT_PER_ORDER',title:'按订单选择',description:'创建采购单时，逐单选择直接交付或先入库再发货。'},
-]
+const modes=computed(()=>['NO_WAREHOUSE','USE_WAREHOUSE','SELECT_PER_ORDER'].map(value=>({value,title:t(`warehouse.workbench.modes.${value}`),description:t(`warehouse.settings.modeDescriptions.${value}`)})))
 const activeWarehouses=computed(()=>warehouses.value.filter(x=>x.status==='ACTIVE'))
 async function load(){loading.value=true;try{const [w,s]=await Promise.all([get<{warehouses:Warehouse[]}>('/warehouses',{include_inactive:true}),get<{settings:typeof settings}>('/warehouse-settings')]);warehouses.value=w.warehouses??[];Object.assign(settings,s.settings??{})}finally{loading.value=false}}
 async function save(){
   if(settings.usageMode==='USE_WAREHOUSE' && (!settings.defaultWarehouseId || settings.defaultWarehouseId==='0')){
-    ElMessage.warning('统一经过仓库时，请先选择默认仓库')
+    ElMessage.warning(t('warehouse.settings.defaultRequired'))
     return
   }
   saving.value=true
@@ -46,7 +43,7 @@ async function save(){
       allowInventory:settings.usageMode!=='NO_WAREHOUSE',
       defaultWarehouseId:settings.usageMode==='USE_WAREHOUSE'?settings.defaultWarehouseId:'0',
     })
-    ElMessage.success('业务设置已保存')
+    ElMessage.success(t('warehouse.settings.saved'))
   }finally{saving.value=false}
 }
 onMounted(load)

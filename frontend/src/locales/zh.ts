@@ -55,6 +55,7 @@ export default {
   menu: {
     collapseNav: '收起菜单',
     expandNav: '展开菜单',
+    toggleNav: '展开或收起导航', navigation: '导航',
     stockAndGoods: '产品与仓储',
     sales: '销售',
     logistics: '物流',
@@ -102,7 +103,7 @@ export default {
   },
   supplierRecon: {
     eyebrow: 'OUTGOING PAYMENTS', title: '出账',
-    subtitle: '查看和登记付给供应商的钱', pendingHint: '还没有人确认完成的采购单', doneHint: '有人确认过「这张单的账完了」', unpaidHint: '待核销里一笔钱都还没记的（取样前 200 张）',
+    subtitle: '查看和登记付给供应商的钱', supplierPaymentsTab: '供应商付款', travelTab: '出差报销', travelTitle: '出差报销', travelSubtitle: '提交出差凭证，跟踪部门确认、财务审批和付款。', pendingHint: '还没有人确认完成的采购单', doneHint: '有人确认过「这张单的账完了」', unpaidHint: '待核销里一笔钱都还没记的（取样前 200 张）',
     businessType:'业务类型',businessTypes:{ALL:'全部业务',PROCUREMENT:'采购付款',LOGISTICS:'物流付款',MANUAL:'手工记录'},exportContract:'外销合同',
     addManual: '添加付款', manualSupplier: '供应商', manualOrder: '合同号 / 采购单号', manualTotal: '合同 / 采购单金额', manualPickOrEnter: '选择已有数据或直接输入', manualCurrencyHint: '选择或输入', manualPaid: '已付金额', manualDate: '付款日期', manualDueDate: '应付到期日', manualRequired: '请填写供应商、单号和金额', manualSaved: '付款已添加',
     moreActions: '更多操作', viewDetails: '查看详情', detailTitle: '付款详情', detailHistory: '付款记录', detailStatus: '当前状态', editManual: '编辑资料', editManualHint: '只能编辑手工添加的基本资料；金额错误请冲销后重新登记。', editManualSaved: '付款资料已更新',
@@ -244,7 +245,10 @@ export default {
     number: '询盘编号', customer: '客户', owner: '负责销售', productCount: '产品项数', totalQuantity: '总需求数量', weightVolume: '总重量 / 总体积', delivery: '交货要求', loadingPort: '装货港', destinationPort: '目的港', incoterm: '贸易条件', submittedFactoryQuotes: '已提交工厂报价', submittedLogisticsQuotes: '已提交物流报价', submittedAt: '提交时间',
     statuses: { waiting: '待报价', quoted: '已报价', hasQuote: '已有报价', unsubmitted: '未提交', inquiring: '询价中', withdrawn: '已撤回', confirmed: '客户已确认' },
     actions: { open: '打开详情 →', factoryNew: '录入工厂报价', factoryContinue: '查看 / 继续报价', logisticsNew: '录入物流报价', logisticsContinue: '查看 / 继续报价' },
+    systemTemplates: { default: '系统标准询盘模板', steelDetailed: '钢材详细尺寸模板' },
     detail: { inquiryNo: '询盘编号', creating: '正在新建', newInquiry: '新建客户询盘', owner: '负责销售：{name}', products: '{count} 项产品', quotes: '{count} 份报价', submit: '提交询价', resubmit: '重新提交询价', addFactoryQuote: '添加工厂报价', addLogisticsQuote: '添加货代报价', more: '更多操作', back: '返回列表', reload: '刷新最新数据', saveDraft: '保存草稿', withdraw: '撤回询价', overview: '概览与附件', productRequirements: '产品需求 ({count})', submittedQuotes: '已提交报价 ({count})', customerOffer: '给客户的报价', customerDelivery: '客户与交付信息', customerDeliveryHint: '可从客户资料中选择，也可直接输入临时客户或联系人。', contact: '联系人', customerSearch: '搜索客户编码或名称，也可直接输入', contactSearch: '选择客户联系人，也可直接输入', remark: '备注', attachments: '客户附件', attachmentCount: '共 {count} 个原始文件', noAttachments: '暂无附件', attachmentEmpty: '客户原始文件会显示在这里', requirementsTitle: '产品需求', requirementsHint: '表格列按询盘选用的模板显示；保存后固定为当时的模板版本。', selectTemplate: '选择模板', historical: '（历史版本）', addProduct: '添加产品', viewRequirements: '查看客户产品需求' },
+    quotes: { comparison: '报价对比', factoryQuote: '工厂报价', shippingQuote: '货代报价', listHint: '一行一份报价；提交后供销售选择并按公司公式计算。', count: '{count} 份报价', empty: '暂无报价', quotingParty: '报价方', type: '类型', factory: '工厂', forwarder: '货代', content: '报价内容', author: '报价人 / 修改人', updatedBy: '修改：{name}', edit: '修改', viewFull: '查看完整报价', historical: '历史版本', submitted: '已提交', saved: '已保存', waiting: '等待报价', productCoverage: '{quoted}/{total} 项 · {currency}', deliverySummary: '交期：{delivery}', byProduct: '按产品', shippingSummary: '{carrier} · {route}', carrierMissing: '船公司未填', routeMissing: '方案未填', editorHint: '填写报价、币种和计价单位，贸易条件由销售确定。', originalQuote: '原始报价', factorySupplier: '工厂或供应商', selectOrType: '选择已有数据或直接输入', currency: '报价币种', unifiedDelivery: '统一预计交货日期', forwarderName: '货代名称', pricingUnit: '计价单位', pricingUnitExample: '例如 MT、件、整票', departure: '预计开船日期', arrival: '预计到港日期', carrier: '实际船公司', vessel: '船名', voyage: '航次', transitDays: '预计航程', route: '方案名称', factoryOrForwarder: '工厂 / 货代', validUntil: '报价有效期', paymentTerms: '付款方式', chargeName: '费用名称', amount: '金额', moreInfo: '更多信息', contractedForwarder: '签约货代公司', optionalFormal: '按正式需求需要时填写', routeHint: '按正式需求需要区分多方案时填写', attachments: '报价附件', submitQuote: '提交报价', backToInquiry: '返回询盘详情', fullQuote: '完整报价', factoryPrice: '工厂价', deliveryDate: '交货日期', applicableCargo: '适用货物', wholeShipment: '整批', totalCharges: '{currency} 费用合计：{total}', searchProducts: '搜索产品或规格', allProducts: '全部产品', unquotedProducts: '未报价产品', quotedProducts: '已报价产品', quotedProgress: '已报价 {quoted} / {total} 项', requiredQuantity: '需求数量', factoryPriceHint: '每个产品填写一个工厂单价，计价单位与本行产品单位一致。', applicableCargoHint: '适用货物（不勾选时按整批）', charges: '费用构成', chargesHint: '各项费用请先折算为上方币种及同一计价单位，合计为一份物流报价。', directProduct: '产品专属', perTon: '按吨', fixedShipment: '整票固定', addCharge: '添加费用' },
+    messages: { refreshFailed: '询盘刷新失败，已暂停自动刷新；请稍后从“更多操作”中手动刷新。', notice: '提示', backConfirm: '返回列表？请先保存需要保留的修改。', currentSales: '当前销售', saved: '已保存', submitted: '已提交询价', withdrawConfirm: '确定撤回吗？采购和物流已经填写的报价将被清除，重新提交后需要重新报价。', withdrawn: '已撤回询价', primaryContact: '主要联系人', invalidImportFile: '请选择 .xlsx 或 .csv 标准询盘文件', fileTooLarge: '文件不能超过 8MB', defaultImportTitle: '客户询盘', customerRequired: '请选择客户', contactRequired: '请选择客户联系人', importFileRequired: '请选择标准询盘文件', noReadableSheet: '文件中没有可读取的工作表', customerChanged: '客户或联系人已变化，请重新选择', imported: '已导入 {count} 条产品，请在提交询价前复核', importFailed: '标准询盘导入失败', quoteSubmitted: '报价已提交，销售可以查看并计算', quoteSaved: '报价已保存', attachmentMissing: '附件上传没有返回文件信息', attachmentUploaded: '附件已上传', attachmentFailed: '附件上传失败' },
   },
   financeNav: {
     fx: '汇率',
@@ -1561,6 +1565,8 @@ export default {
     docResult: '单据结果',
     emptyHandled: '暂无已处理记录',
     task: { APPROVED: '通过', REJECTED: '驳回', RETURNED: '退回', SKIPPED: '已跳过', CANCELLED: '已取消', PENDING: '待处理' },
+    inquiryTitle: '询盘与报价', inquiryHandledTitle: '询盘与报价处理记录', inquiryHint: '需要你处理的客户询盘、采购报价和物流报价。', inquiryHandledHint: '查看询盘、报价与合同流程中已经完成的业务动作。', inquirySearch: '搜索编号、客户或事项', inquiryAllTypes: '全部询盘类型', inquiryEmpty: '暂无符合条件的询盘记录', completedAt: '完成时间', completed: '已完成', view: '查看', customerUnset: '未填写客户', inquiryUnavailable: '询盘待办暂时无法读取，请刷新重试',
+    inquiryTasks: { procurementWaiting: '新询盘待工厂报价', logisticsWaiting: '新询盘待货代报价', salesUnsubmitted: '客户询盘待提交', salesWithdrawn: '客户询盘待重新提交', quotationPending: '客户报价待处理', quotationConfirmed: '客户报价已确认', procurementQuoted: '工厂报价已提交', logisticsQuoted: '货代报价已提交', salesSubmitted: '客户询盘已提交', contractDraft: '外销合同待提交或退回修改', contractSigning: '外销合同待签署上传并开始执行' },
     doc: { RUNNING: '审批中', APPROVED: '已通过', REJECTED: '已驳回', RETURNED: '已退回', CANCELLED: '已取消' },
     commentOptional: '审批意见（选填）',
     commentRequired: '请填写理由',
@@ -1594,6 +1600,33 @@ export default {
     row: '行号', moreRows: '另有 {count} 行未在预览表显示', toCreate: '新增', toUpdate: '更新', toSkip: '跳过', errors: '错误', errorMessage: '错误说明',
     previewImport: '预检', confirmImport: '确认导入', importColumnsInvalid: 'CSV 表头不正确，请使用下载的模板', imported: '导入完成：新增 {create}，更新 {update}，跳过 {skip}',
   },
+  warehouse: {
+    backWorkbench: '返回仓库工作台', query: '查询', statusActive: '启用', statusInactive: '停用', locationUnset: '未填写地点',
+    workbench: {
+      eyebrow: '仓库管理', title: '仓库管理', subtitle: '统一管理公司仓、港口仓与第三方仓库；是否经过仓库由公司模式决定。', settings: '业务设置', maintainProfiles: '维护仓库档案',
+      currentMode: '当前公司模式', modes: { NO_WAREHOUSE: '默认直接交付', USE_WAREHOUSE: '统一经过仓库', SELECT_PER_ORDER: '按订单选择' },
+      modeDescriptions: { NO_WAREHOUSE: '新采购默认直接发往港口、客户或指定地点。', USE_WAREHOUSE: '新采购统一进入默认仓库，再按收货、库存和出库流程交付。', SELECT_PER_ORDER: '经办人在每张采购单上选择直接交付或先入仓再发货。' },
+      enabled: '启用仓库', own: '公司自有仓', port: '港口仓库', thirdParty: '第三方仓库', arrivalAndReceipt: '到货与收货', pendingOrders: '待到货采购单', pendingHint: '登记直送签收或仓库分批收货。',
+      records: '业务记录', receiptRecords: '查看收货记录', receiptHint: '按收货单查看时间、数量、地点和登记人。', openingStock: '期初库存', importCenter: '导入中心', importHint: '下载版本模板，上传后先预检，确认无误才写入库存流水。', startImport: '开始导入 →',
+      profileOverview: '仓库档案概览', profileHint: '联系人、负责人、地址和记账方式集中维护。', viewAll: '查看全部 →', noProfiles: '尚未建立仓库档案', createFirst: '建立第一个仓库',
+    },
+    settings: {
+      eyebrow: '业务设置', title: '业务设置', subtitle: '设置采购货物默认如何交付；只影响新业务，不删除历史单据、仓库档案或库存记录。', deliveryPolicy: '采购交付策略', defaultWarehouse: '默认仓库', defaultHint: '统一经过仓库时，新采购默认进入该仓库；具体单据后续仍可按权限调整。', selectWarehouse: '请选择启用中的仓库', noActiveWarehouse: '目前没有启用中的仓库，请先维护并启用仓库档案。', automaticCapabilities: '系统会自动匹配直送和库存能力，无需额外开关；每次保存均保留历史记录。', save: '保存设置', saved: '业务设置已保存', defaultRequired: '统一经过仓库时，请先选择默认仓库',
+      modeDescriptions: { NO_WAREHOUSE: '新采购默认发往港口、客户或指定地点，不形成公司库存。', USE_WAREHOUSE: '新采购默认先进入指定仓库，再由仓库完成库存和后续发货。', SELECT_PER_ORDER: '创建采购单时，逐单选择直接交付或先入库再发货。' },
+    },
+    arrivals: {
+      eyebrow: '到货交付', title: '待到货', subtitle: '承接已下单采购，直送只登记签收，进入仓库才形成库存。', search: '搜索采购单号或供应商', allRoutes: '全部交付路线', direct: '直接交付', toWarehouse: '进入仓库', expectedDate: '要求到货日期', purchaseOrder: '采购单', buyerUnset: '未指定采购员', supplier: '供应商', route: '交付路线', progress: '到货进度', receivedProgress: '已收 {received} / {total}', status: '状态', partial: '部分到货', pending: '待到货', actions: '操作', register: '登记收货', empty: '当前没有待到货采购单', dialogTitle: '收货登记 · {no}', directNotice: '本单为直接交付：确认后只回写采购到货进度，不增加公司库存。', warehouseNotice: '本单进入仓库：确认后会向所选实体仓库发送库存入账事件。', destination: '交付地点', actualWarehouse: '实际收货仓', selectPhysicalWarehouse: '请选择同步库存的启用仓库', remark: '收货备注', remarkPlaceholder: '可填写签收人、单据号或本批说明', product: '产品', ordered: '订购', received: '已收', currentReceipt: '本次收货', cancel: '取消', confirm: '确认登记', warehousePending: '待指定仓库', port: '港口', specifiedLocation: '指定地点', requireQuantity: '请至少填写一项本次收货数量', quantityExceeded: '“{product}”本次收货不能超过剩余数量', requireWarehouse: '请选择实际收货仓库', success: '收货登记成功：{no}',
+    },
+    receipts: {
+      eyebrow: '收货记录', title: '收货记录', subtitle: '查看采购分批收货与直送签收记录；这里展示业务凭证，不重复登记库存。', arrivals: '待到货', search: '搜索收货单、采购单或供应商', allTypes: '全部类型', direct: '直接交付', warehouse: '仓库收货', receiptNo: '收货单号', purchaseOrder: '采购单', supplier: '供应商', typeLocation: '类型 / 地点', quantity: '本次数量', operator: '登记人', remark: '备注', empty: '还没有收货记录', warehouseNumber: '仓库 #{id}', port: '港口', specifiedLocation: '指定地点',
+    },
+    imports: { eyebrow: '仓库导入', title: '导入中心', subtitle: '期初库存必须先预检；确认后才增加库存并生成可追溯流水。', downloadTemplate: '下载当前模板', warningTitle: '期初库存只用于尚未产生库存流水的仓库', warningBody: '已确认批次不能撤销或覆盖；发现错误时必须通过后续库存调整纠正。', uploadPreview: '上传并预检', uploadHint: '仅接受系统下载的当前版本 .xlsx 模板，最多 1000 行。', externalBatch: '外部批次号', externalPlaceholder: '建议填写盘点批次号，用于防止重复入账', file: '期初库存文件', chooseExcel: '选择 Excel', noFile: '尚未选择文件', startPreview: '开始预检', previewResult: '预检结果 · {no}', total: '总行数', valid: '有效', warning: '警告', error: '错误', duplicate: '重复', row: '行', warehouse: '仓库', productSku: '产品 / SKU', quantity: '数量', unitCost: '单位成本', result: '结果', issues: '问题', downloadErrors: '下载错误报告', discardPreview: '放弃本次预检', confirmPosting: '确认期初库存入账', history: '导入记录', historyHint: '所有预检、失败、确认和放弃批次都会保留。', refresh: '刷新', batch: '批次', noExternalBatch: '无外部批次号', operatorTime: '操作人 / 时间', actions: '操作', downloadReport: '下载报告', emptyHistory: '暂无导入记录', count: '共 {count} 条', previewPassed: '预检通过，可以确认入账', previewFailed: '预检完成，请先处理错误行', confirmMessage: '确认后会立即增加库存并写入期初流水，且不能撤销。是否继续？', confirmTitle: '确认期初库存', confirmButton: '确认入账', posted: '期初库存已入账', discardMessage: '放弃后不会产生任何库存变化。', discardTitle: '放弃预检', discarded: '本次预检已放弃', status: { PREVIEW: '待确认', INVALID: '预检未通过', CONFIRMED: '已入账', CANCELLED: '已放弃' }, verdict: { VALID: '有效', WARNING: '警告', ERROR: '错误', DUPLICATE: '重复' } },
+  },
+  inquiryProducts: {
+    search: '搜索任一产品字段', items: '项产品', totalDemand: '总需求', totalWeight: '总重量', totalVolume: '总体积', compact: '精简视图', allFields: '全部字段', empty: '暂无产品', select: '选择', expandTip: '点击每行左侧箭头查看该产品的全部字段',
+    fields: { product: '产品', specification: '规格', quantity: '数量', quantity_unit: '数量计量单位（MT/PCS 等）', unit: '单位', delivery: '交期', weight: '重量', volume: '体积', packaging: '包装', package_quantity: '包装数量', remarks: '备注', remark: '备注', material: '材质/标准', material_standard: '材质/标准', grade: '牌号/等级', thickness: '厚度(mm)', wall_thickness: '壁厚(mm)', width: '宽度(mm)', height: '高度(mm)', diameter: '直径(mm)', 'custom.thickness_mm': '厚度(mm)', 'custom.wall_thickness_mm': '壁厚(mm)', 'custom.width_mm': '宽度(mm)', 'custom.height_mm': '高度(mm)', 'custom.diameter_mm': '直径(mm)', 'custom.leg1_mm': '边长1(mm)', 'custom.leg2_mm': '边长2(mm)', 'custom.height_or_leg2': '高度/边长2(mm)', length_or_form: '长度(mm)', surface_requirement: '表面要求', coating: '涂层/镀层', tolerance: '公差', coil_weight: '卷重(MT)', coil_id: '卷内径(mm)', payment_terms: '付款条件', incoterm: '贸易术语', port: '港口', custom: { thickness_mm: '厚度(mm)', wall_thickness_mm: '壁厚(mm)', width_mm: '宽度(mm)', height_mm: '高度(mm)', diameter_mm: '直径(mm)', leg1_mm: '边长1(mm)', leg2_mm: '边长2(mm)', height_or_leg2: '高度/边长2(mm)' } },
+  },
+  shippingReminders: { title: '运输提醒', cleanup: '清理过期', popupOn: '弹窗开启', popupOff: '弹窗关闭', unread: '{count} 条未读', loadFailed: '运输提醒暂时无法读取，现有提醒已保留。', reload: '重新加载', empty: '暂无运输提醒', itemPopup: '本条弹窗', details: '查看详情', cleanupMessage: '将删除对应港口日期已过期，或船期已到港、已完成、已取消的运输提醒。船期数据不会被删除。', cleanupTitle: '清理过期提醒', confirmCleanup: '确认清理', cancel: '取消', cleaned: '已清理 {count} 条过期提醒', arrivalInDays: '船期预计 {days} 天后到港', departureInDays: '船期预计 {days} 天后开船', arrivalToday: '船期预计今天到港', departureToday: '船期预计今天开船', overdueDays: '船期预计已逾期 {days} 天', arrivalSoon: '船期即将到港', departureSoon: '船期即将开船', fields: { scheduleNo: '船期编号', contractNo: '合同编号', customer: '客户', vesselVoyage: '船名/航次', port: '港口', destinationPort: '目的港', latestEta: '最新 ETA', expectedArrival: '预计到港（ETA）', expectedDeparture: '预计离港（ETD）' } },
   customers: {
     subtitle: '按国家管理客户档案、联系人和内部负责人',
     bulkImport: '批量导入',
@@ -1673,6 +1706,7 @@ export default {
     chartHigh: '最高',
     chartThin: '这个区间还没有足够的数据画出走势（至少需要两个交易日）',
     chartAria: '{currency} 对美元汇率走势，共 {n} 个数据点',
+    referenceTitle: '汇率参考', referenceDescription: '独立查看市场参考汇率；这些数值不会写入报价、合同、收付款或计算公式。', watch: '关注币种', syncNow: '立即同步', cacheNotice: '外部汇率暂不可用，当前显示最近一次成功同步的缓存。', source: '来源', lastSuccess: '最近成功', lastAttempt: '最近尝试', perUsd: '1 USD 可兑换', noData: '暂无数据', trend30Aria: '{currency} 近30日走势', accumulating: '历史数据积累中', rateDate: '汇率日期', fetched: '抓取', usage: '使用说明', usageDescription: '此页面仅供员工在需要时查看。外部服务每小时尝试更新一次，周末和公共假期可能沿用最近工作日的 ECB 参考值。', currencyPlaceholder: '输入三位币种代码', watchHint: '可关注 1–12 个币种；USD 是基础币种，无需加入。', cancel: '取消', save: '保存', syncStates: { READY: '同步正常', DEGRADED: '缓存模式', STARTING: '正在初始化' }, syncComplete: '同步完成', watchInvalid: '请选择 1 至 12 个三位币种代码',
   },
   shipments: {
     title: '出运单',
