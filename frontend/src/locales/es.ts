@@ -2381,6 +2381,8 @@ export default {
   sheetWindow: {
     failed: 'No se puede abrir esta hoja de cálculo',
     failedHint: 'El archivo puede estar dañado o estar en el antiguo formato .xls que este lector no entiende. Descárgalo y ábrelo en Excel.',
+    notHere: 'Ese adjunto no está en este correo',
+    notHereHint: 'El identificador del adjunto en la dirección no pertenece a este correo. Vuelve atrás y abre la vista previa otra vez; avísanos si sigue pasando.',
     tooBig: 'Esta hoja de cálculo es demasiado grande',
     tooBigHint: 'Demasiado grande para dibujarla en el navegador: descárgala y ábrela en Excel.',
     truncated: 'Se muestran las primeras {shown} filas de {total}: descarga el archivo para verlo completo.',

@@ -534,6 +534,12 @@ type ThreadItem struct {
 	Cc string
 	// 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了。
 	Attachments []Attachment
+	// 只有「我发出」那一腿有，而且只在本地「已发送」里留着那一份时才有：
+	// 那一份在 email_inbound 里的编号。上面 Attachments 的编号属于它。
+	//
+	// 预览、在线编辑、转 Excel 三条路都要「这个附件属于哪封信」，而它们只认
+	// 收件那张表。0 = 没对上，那三条路对这一条走不通（下载照常）。
+	LocalMailID int64
 }
 
 // accountOfMessage 问「这封信在哪个信箱」，答不上来就返回 nil = 不限定。
@@ -619,6 +625,25 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 		s.log.Warn("could not load thread attachments", "thread", threadKey, "err", err)
 	}
 
+	// 我们自己发出去的那几条，在本地「已发送」里留着的那一份是哪一行。
+	// 见 ListThreadSentCopies：附件的预览、在线编辑、转 Excel 都按那一份走，
+	// 因为发件附件和收件附件是两套编号，而那三条路只认收件那一套。
+	type sentCopy struct {
+		id   int64
+		body string
+	}
+	copies := map[int64]sentCopy{}
+	if cs, err := s.q.ListThreadSentCopies(ctx, store.ListThreadSentCopiesParams{
+		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+	}); err == nil {
+		for _, c := range cs {
+			copies[c.SentMessageID] = sentCopy{id: c.ID, body: c.BodyHtml}
+		}
+	} else {
+		// 对不上就退回今天的样子：能下载，不能预览、不能转。比整条会话打不开好。
+		s.log.Warn("could not load the thread's sent copies", "thread", threadKey, "err", err)
+	}
+
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body, quoted := r.Body, ""
@@ -657,21 +682,37 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 				files[r.Direction+":"+strconv.FormatInt(r.ID, 10)],
 				r.Body, embedded[r.ID]),
 		}
-		// 会话里「我们发出去的」那些附件是发件附件，不在 email_inbound_attachments
-		// 里，而在线 Office 那条路（OfficePreviewConfig）按定义只在那张表里找。
-		// 留着标记只会让界面上多一个点了必然失败的按钮，所以在这里摘掉——
-		// 下载不受影响，那条路对两个方向都是通的。
+		// 会话里「我们发出去的」那一条：附件改用本地「已发送」里那一份的，
+		// 编号也一起给出去（LocalMailID）。
 		//
-		// 从前这里摘的是 "convert"。那一档随 Gotenberg 退役了，而**接替它的
-		// "office" 当时没跟着补进来**——于是我们自己发出去的 Word 附件上，
-		// 预览按钮点了必然 404。2026-09-14 一并修掉。
+		// 这三条路——在线 Office、浏览器画表格、转 Excel——按定义只在
+		// email_inbound_attachments 里找，而发件附件不在那张表里。给了本地那
+		// 一份，三条路就都通了：**同一个文件，不再是上面不能转、下面能转**。
 		//
-		// "direct"（图片、PDF）不摘：那一档的地址在上一步就签好了，不需要
-		// 回头按收件箱的 id 再找一次，两个方向都打得开。
+		// 从前这里是把 office 标记摘掉，让按钮干脆别出现（2026-09-14）。表格
+		// 那一档摘不掉——它由浏览器按扩展名自己判断，服务端说了不算——于是
+		// 发出去的 .xlsx 上预览按钮还在，点了却去收件那边找一个发件编号，
+		// 报「这个表格打不开，可能是文件损坏」，而文件好好的（2026-09-15 实测）。
+		//
+		// 对不上本地那一份时（信箱不留已发送、或者还没同步回来）仍然按老办法
+		// 摘掉 office 标记，并且不给 LocalMailID——前端据此不显示预览按钮。
+		// 下载两种情况都不受影响。
+		//
+		// "direct"（图片、PDF）从来不用管：那一档的地址在上一步就签好了。
 		if r.Direction != "IN" {
-			for i := range v.Attachments {
-				if v.Attachments[i].PreviewKind == PreviewOffice {
-					v.Attachments[i].PreviewKind = ""
+			copy, ok := copies[r.ID]
+			// 附件也要有：对上了一份空的（同步回来的那封没存下附件）就不算数，
+			// 换过去只会让这一条的文件列表凭空消失。
+			local := hideEmbedded(
+				files["IN:"+strconv.FormatInt(copy.id, 10)], copy.body, embedded[copy.id])
+			if ok && len(local) > 0 {
+				v.LocalMailID = copy.id
+				v.Attachments = local
+			} else {
+				for i := range v.Attachments {
+					if v.Attachments[i].PreviewKind == PreviewOffice {
+						v.Attachments[i].PreviewKind = ""
+					}
 				}
 			}
 		}

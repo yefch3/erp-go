@@ -22,7 +22,7 @@
       <!-- 带字、带底色，不是两个灰图标。原来那两个灰图标和文件名、大小混在
            一起，用的人说找不到；绿的是看、蓝的是拿，隔着半个屏幕也分得清。 -->
       <el-tooltip
-        v-if="canPreview(a)"
+        v-if="canPreview(a, mailId ?? '')"
         :content="t('emails.previewFile')"
         placement="top"
         :show-after="0"
@@ -75,8 +75,11 @@ export interface MailFile {
 defineProps<{
   files: MailFile[]
   // 这些附件属于哪封信。会话视图里一屏有好几封，各是各的号——用当前打开的
-  // 那一封去请求，转出来的会是别人的附件。空表示这一组不支持转换预览
-  // （我们自己发出去的那些）。
+  // 那一封去请求，找到的会是别人的附件，或者干脆找不到。
+  //
+  // 「我发出」的那几条：附件在发件那张表里，编号和收件那套各走各的，所以
+  // 这里给的是本地「已发送」里留着那一份的号（服务端的 local_mail_id）。
+  // 空 = 没对上，那时预览和转 Excel 都不该出现，只能下载。
   mailId?: string
 }>()
 // 转 Excel 的两个事件都带 mailId：会话视图里一屏有好几封，各带各的附件，
