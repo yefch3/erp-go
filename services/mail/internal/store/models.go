@@ -313,17 +313,19 @@ type MailBindingLog struct {
 }
 
 type MailExcelJob struct {
-	ID              int64
-	TenantID        int64
-	OwnerID         int64
-	InboundID       int64
-	AttachmentID    *int64
-	SelectedText    *string
-	Locale          string
-	Status          string
-	AttemptCount    int32
-	FileName        string
-	FileData        []byte
+	ID           int64
+	TenantID     int64
+	OwnerID      int64
+	InboundID    int64
+	AttachmentID *int64
+	SelectedText *string
+	Locale       string
+	Status       string
+	AttemptCount int32
+	FileName     string
+	// 旧列。2026-09-15 起不再写；改动前完成的任务的文件本身还在这里，留存期一到清空。下一版删列
+	FileData []byte
+	// 只有 metadata：表名、说明、表头、每列类型和字段标识，不带行。行在 .xlsx 文件里
 	WorkbookJson    []byte
 	Model           string
 	ErrorCode       string
@@ -335,6 +337,9 @@ type MailExcelJob struct {
 	TemplateColumns []byte
 	InputTokens     int64
 	OutputTokens    int64
+	// 文件本身在对象存储里的位置；空表示还没完成，或者已经被清理器收走
+	FileKey          string
+	PayloadClearedAt pgtype.Timestamptz
 }
 
 type MailExcelQuota struct {

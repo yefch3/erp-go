@@ -3,7 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+
+	"github.com/sgao19/erp-go/pkg/blobstore"
 )
 
 // 一份放在内存里的对象存储，几个集成测试共用。
@@ -11,6 +14,9 @@ import (
 // 从前它长在 officepreview_integration_test.go 里。那个文件随「转成 PDF 再看」
 // 那条路一起退役了（2026-09-14），而打包下载、在线 Office 取件这几条还要它，
 // 所以搬到这里——共用的替身不该寄居在某一个用例的文件里。
+//
+// 没有的键报 blobstore.ErrNotFound，和真的存储一样：有人靠这个区分「没有」
+// 和「存储不通」（recoverExcelResult）。
 type previewStore struct {
 	Files
 	objects map[string][]byte
@@ -19,7 +25,7 @@ type previewStore struct {
 func (f *previewStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	b, ok := f.objects[key]
 	if !ok {
-		return nil, io.ErrUnexpectedEOF
+		return nil, fmt.Errorf("fake get %s: %w", key, blobstore.ErrNotFound)
 	}
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
@@ -27,7 +33,7 @@ func (f *previewStore) Get(_ context.Context, key string) (io.ReadCloser, error)
 func (f *previewStore) Stat(_ context.Context, key string) (int64, string, error) {
 	b, ok := f.objects[key]
 	if !ok {
-		return 0, "", io.ErrUnexpectedEOF
+		return 0, "", fmt.Errorf("fake stat %s: %w", key, blobstore.ErrNotFound)
 	}
 	return int64(len(b)), "application/octet-stream", nil
 }

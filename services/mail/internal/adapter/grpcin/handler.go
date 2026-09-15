@@ -1052,11 +1052,15 @@ func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelRes
 			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
 			TotalRows: int64(len(sheet.Rows)), ColumnKeys: sheet.ColumnKeys,
 		}
-		// 给人看的那一版：总价列是算出来的数，不是「=S2*T2」。
+		// 行数据通常不在这里。2026-09-14 起 workbook_json 只存 metadata
+		// （见 app.Workbook.withoutRows），行由浏览器从 file_data 里解出来
+		// ——文件的公式格旁边存着算好的值，读出来就是人要看的那个数。
+		// 那种任务走到这儿 rows 是空的、total_rows 是 0。
 		//
-		// 旧任务的缓存里没有这一份（workbook_json 是修复前存下的），回落到
-		// 原始行——但原始行里恰恰躺着那串算式。所以回落之后还要再擦一道：
-		// 算式是给 Excel 的，任何时候都不该出现在人眼前。
+		// 下面这段只对改动之前完成、还没过留存期的旧任务有事做。给人看的
+		// 那一版：总价列是算出来的数，不是「=S2*T2」。更早的任务连这一份也
+		// 没有，回落到原始行——但原始行里恰恰躺着那串算式。所以回落之后
+		// 还要再擦一道：算式是给 Excel 的，任何时候都不该出现在人眼前。
 		rows := sheet.PreviewRows
 		if len(rows) != len(sheet.Rows) {
 			rows = stripFormulaCells(sheet.Rows)

@@ -1873,6 +1873,7 @@ export default {
     sourcingContactEmailAuto: '选择联系人后自动带出',
     generatedBy: '由 {model} 生成，请在使用前核对关键数字。',
     excelPreviewRows: '预览前 {shown} 行，共 {total} 行；下载的 Excel 包含全部行。',
+    excelPreviewUnreadable: '预览读不出来，文件本身没问题，可以直接下载。',
     close: '关闭',
     allRecipients: '全部收件人',
     wrote: '写道：',

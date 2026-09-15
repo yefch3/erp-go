@@ -11453,10 +11453,15 @@ func (x *CancelScheduledResponse) GetDraftId() int64 {
 }
 
 type ExcelSheetPreview struct {
-	state     protoimpl.MessageState   `protogen:"open.v1"`
-	Name      string                   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Summary   string                   `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
-	Columns   []string                 `protobuf:"bytes,3,rep,name=columns,proto3" json:"columns,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Summary string                 `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	Columns []string               `protobuf:"bytes,3,rep,name=columns,proto3" json:"columns,omitempty"`
+	// Empty for jobs completed since 2026-09-14, and total_rows is 0 then: the
+	// rows live only in ConvertInboundToExcelResponse.file_data, whose formula
+	// cells carry their computed value beside the formula, so the client reads
+	// the table straight out of the file. Older jobs still carry their rows
+	// here until the retention sweep clears them.
 	Rows      []*ExcelSheetPreview_Row `protobuf:"bytes,4,rep,name=rows,proto3" json:"rows,omitempty"`
 	TotalRows int64                    `protobuf:"varint,5,opt,name=total_rows,json=totalRows,proto3" json:"total_rows,omitempty"`
 	// Parallel to columns: the template field key of each column, so the

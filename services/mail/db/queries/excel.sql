@@ -31,15 +31,21 @@ WHERE j.id=candidate.id
 RETURNING j.*;
 
 -- name: CompleteExcelJob :execrows
+-- 完成一次转换：第 3 步，也是最后一步（顺序见 app.processExcelJob）。走到
+-- 这里时文件本身和 metadata 都已经在对象存储里了；这一条只写 key 和 metadata。
+--
+-- 文件本身不进库：file_data 这一列 2026-09-15 起不再写（下一版删列）。
+-- workbook_json 只收 metadata，不收行（见 app.Workbook.withoutRows）。
 UPDATE mail_excel_jobs SET
-  status='COMPLETED', file_name=sqlc.arg(file_name), file_data=sqlc.arg(file_data),
+  status='COMPLETED', file_name=sqlc.arg(file_name), file_key=sqlc.arg(file_key),
   workbook_json=sqlc.arg(workbook_json), model=sqlc.arg(model),
   error_code='', error_message='', completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
 
 -- name: FailExcelJob :execrows
+-- 失败是终态，不自动重来：再转一次要花模型的钱，那得由人决定。
 UPDATE mail_excel_jobs SET
-  status='FAILED', file_data=NULL, workbook_json=NULL,
+  status='FAILED', file_key='', workbook_json=NULL,
   error_code=sqlc.arg(error_code), error_message=sqlc.arg(error_message),
   completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
@@ -138,3 +144,41 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 -- 删掉这一行就是恢复不限。不是把 monthly_runs 改成 0——0 是「一次都不许
 -- 用」，和「不限」正好相反。
 DELETE FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
+
+-- name: ListExpiredExcelPayloads :many
+-- 过了窗口期、还没收过的任务。清理器拿这一批，先删对象存储里的两份（文件
+-- 本身和 metadata），再清行。
+--
+-- **判据是 payload_cleared_at，不是「列里还有没有东西」。** 后者听起来更直接，
+-- 但它恰好漏掉最该收的那一种：文件传上去了、任务最后却失败了（比如 metadata
+-- 那份没传成）——那一行的 file_key 是空的，而文件还在桶里躺着。
+--
+-- 所以这里不挑，凡是结束了又没收过的都拿出来，让 Go 按「租户/任务号」算出
+-- 两个键去删一次。算得出来是因为那两个键本来就不依赖任何存下来的字段，而 S3
+-- 的 DELETE 对不存在的键是幂等的——没有对象的那些，这一下什么都不会发生。
+--
+-- 分两步而不是一条 UPDATE：对象得由 Go 去删，而且**一个删不掉不该连累
+-- 一整批**——所以逐行处理，删不掉的那一行不清，下一趟再试。
+SELECT id, tenant_id
+FROM mail_excel_jobs
+WHERE completed_at IS NOT NULL
+  AND completed_at < sqlc.arg(cutoff)::timestamptz
+  AND payload_cleared_at IS NULL
+ORDER BY id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ClearExcelJobPayload :execrows
+-- 清掉这一行的结果，**行留着**。
+--
+-- 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计跑了
+-- 几次、花了多少 token。它要的几列（created_at / owner_id / status / *_tokens）
+-- 一个字节的文件内容都不需要。删行等于把账烧了。
+--
+-- 谁都够不着了才清：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），
+-- 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
+--
+-- file_data=NULL 是给改动前完成的旧任务的：它们的文件本身还在这一列里。
+UPDATE mail_excel_jobs
+SET file_key='', file_data=NULL, workbook_json=NULL,
+    payload_cleared_at=now(), updated_at=now()
+WHERE id=sqlc.arg(id)::bigint;

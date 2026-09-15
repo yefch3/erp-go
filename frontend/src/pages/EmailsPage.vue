@@ -1322,6 +1322,13 @@
           <template v-else>{{ t('emails.excelDirectNote') }}</template>
           <span v-if="excelResult.model && selectedExcelTemplate"> · {{ t('emails.excelTemplateUsed', { name: selectedExcelTemplate.name, version: selectedExcelTemplate.version }) }}</span>
         </div>
+        <el-alert
+          v-if="excelResult.previewError"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="excelResult.previewError"
+        />
         <el-tabs v-model="excelSheet">
           <el-tab-pane
             v-for="sheet in excelResult.sheets"
@@ -1465,6 +1472,13 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import {
+  base64ToBytes,
+  excelPollAfterFailure,
+  hydrateExcelResult,
+  serverMessageOf,
+  type ExcelResult,
+} from '../lib/excelJobResult'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { printDocument } from '../lib/printDocument'
 import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
@@ -4268,26 +4282,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
 // 的地方。这里原本自己从 InboundMail 推了一个同名类型出来，两个 MailFile
 // 差在 contentType 是不是必填，于是传给组件的回调一直是对不上的。
 
-interface ExcelSheet {
-  name: string
-  summary: string
-  columns: string[]
-  // 每列的模板字段标识（新版 LLM 结果携带）；没有它时退回表头映射。
-  columnKeys?: string[]
-  rows: { cells: string[] }[]
-  totalRows: string
-}
-
-interface ExcelResult {
-  fileName: string
-  fileData: string
-  sheets: ExcelSheet[]
-  model: string
-  inquiryTemplateId?: string
-  inquiryTemplateCode?: string
-  inquiryTemplateVersion?: number
-}
-
 interface ExcelJob {
   id: string
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
@@ -4349,6 +4343,8 @@ const excelResultCache = new Map<string, ExcelResult>()
 // Timeout 对象、浏览器的返回 number。这三处跑在浏览器里，number 才是它
 // 们真正的样子——推导反而会挑错那一版。
 let excelPollTimer: number | null = null
+// 连着几次没问到结果。新任务开始归零，问到一次归零。
+let excelPollFailures = 0
 
 function excelCacheKey(source: ExcelSource, templateId = selectedInquiryTemplateId.value): string {
   const sourceKey = source.kind === 'attachment'
@@ -4670,6 +4666,7 @@ function resumeExcelJob() {
   const id = sessionStorage.getItem('mailExcelJobId') ?? ''
   if (!id || excelJobId.value === id) return
   excelJobId.value = id
+  excelPollFailures = 0
   excelResult.value = null
   excelBusy.value = true
   excelOpen.value = true
@@ -4686,11 +4683,16 @@ async function refreshExcelJob(subject = '') {
   const id = excelJobId.value
   if (!id || (idFromEvent && idFromEvent !== id)) return
   try {
-    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, mailExcelRequest)
+    // quiet：问不到的那几次自己处理（见下面的 catch），不让每一次都弹红字。
+    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, {
+      ...mailExcelRequest,
+      quiet: true,
+    })
     // The poll timer and the SSE hint race to fetch the same job; only the
     // first response back may announce the terminal state, the later one
     // finds the id already settled and stays silent.
     if (excelJobId.value !== id) return
+    excelPollFailures = 0
     const job = response.job
     if (job.status === 'PENDING' || job.status === 'PROCESSING') {
       scheduleExcelJobPoll()
@@ -4704,21 +4706,43 @@ async function refreshExcelJob(subject = '') {
       ElMessage.error(job.errorMessage || t('emails.excelFailed'))
       return
     }
-    job.result.inquiryTemplateId = job.inquiryTemplateId
-    job.result.inquiryTemplateCode = job.inquiryTemplateCode
-    job.result.inquiryTemplateVersion = job.inquiryTemplateVersion
-    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
-    excelResult.value = job.result
-    if (convertedExcelSource.value) {
-      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), job.result)
+    const delivered: ExcelResult = {
+      ...job.result,
+      inquiryTemplateId: job.inquiryTemplateId,
+      inquiryTemplateCode: job.inquiryTemplateCode,
+      inquiryTemplateVersion: job.inquiryTemplateVersion,
     }
-    excelSheet.value = job.result.sheets[0]?.name ?? ''
+    // 行数据不在响应里，在文件里：从 file_data 解出来。解不出来不是网络
+    // 问题，不能落到下面那个「继续轮询」的 catch 里——那会一直轮下去。
+    // 这时表格空着、说一句为什么，下载照常能用。
+    const result = await hydrateExcelResult(delivered).catch(
+      (): ExcelResult => ({ ...delivered, previewError: t('emails.excelPreviewUnreadable') }),
+    )
+    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
+    excelResult.value = result
+    if (convertedExcelSource.value) {
+      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), result)
+    }
+    excelSheet.value = result.sheets[0]?.name ?? ''
     excelOpen.value = true
     ElMessage.success(t('emails.excelReady'))
-  } catch {
-    // The SSE hint is best effort; keep polling through a brief network or
-    // gateway restart. An expired mailbox unlock is handled globally.
-    if (!locked.value) scheduleExcelJobPoll(3000)
+  } catch (err: unknown) {
+    // 网络抖一下、网关重启一下、对象存储暂时取不到文件——3 秒后再问，中间
+    // 不弹字。但只问约一分钟（excelPollAfterFailure）：改之前这里是无限问
+    // 下去、每 3 秒弹一次红字，直到对象存储恢复。到点停下、关弹窗，把服务
+    // 端那句话弹一次（比如「暂时取不到，请稍后重试或重新转换」）。
+    // 邮箱解锁过期由全局处理，这里只需要不再问。
+    if (locked.value) return
+    excelPollFailures += 1
+    if (excelPollAfterFailure(excelPollFailures) === 'retry') {
+      scheduleExcelJobPoll(3000)
+      return
+    }
+    excelBusy.value = false
+    excelJobId.value = ''
+    sessionStorage.removeItem('mailExcelJobId')
+    excelOpen.value = false
+    ElMessage.error(serverMessageOf(err) ?? t('emails.excelFailed'))
   }
 }
 
@@ -4827,10 +4851,7 @@ async function createSourcingCaseFromExcel() {
 function downloadExcel() {
   const result = excelResult.value
   if (!result) return
-  const raw = atob(result.fileData)
-  const bytes = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
-  const url = URL.createObjectURL(new Blob([bytes], {
+  const url = URL.createObjectURL(new Blob([base64ToBytes(result.fileData)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   }))
   const link = document.createElement('a')
