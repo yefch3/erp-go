@@ -1,58 +1,72 @@
 -- +goose Up
 -- 转换出来的 Excel 搬去对象存储，库里只留一个 key。
 --
--- file_data 是这个服务唯一一处真的把文件字节写进 PostgreSQL 的地方；别处的
--- 文件（附件、原始邮件、内嵌图片、在线改过的版本）都只存 key。这一列是当初
--- 图省事留下的例外，代价不在于难看：库里的二进制要进每一次备份、每一条 WAL，
--- 每一次 vacuum 都要绕过它，而一个 key 是六十个字节。
+-- file_data 是这个服务唯一一处真的把文件字节长期留在 PostgreSQL 的地方；别处
+-- 的文件（附件、原始邮件、内嵌图片、在线改过的版本）都只存 key。代价不在于
+-- 难看：库里的二进制要进每一次备份、每一条 WAL，每一次 vacuum 都要绕过它，
+-- 而一个 key 是六十个字节。还有一条更实在的——这份字节今天要走"库 → 邮件
+-- 服务 → gRPC → 网关 → 浏览器"整条路，占的是网关那条 gRPC 通道的预算，而那
+-- 个上限已经被附件打包下载逼到 48 MB 了。
 --
--- 还有一条更实在的：这份字节今天要走「库 → 邮件服务 → gRPC → 网关 → 浏览器」
--- 整条路，占的是网关那条 gRPC 通道的预算——那个上限已经被附件打包下载逼到
--- 48 MB 了。搬去对象存储之后它可以不经过我们的服务。
+-- ---- 落库和写对象存储，是两次写，中间没有事务 ----
 --
--- **file_data 不删**，而且不是为了兼容旧行。它换了一个角色：**对象存储写不
--- 进去时的退路**。
+-- 这件事没法回避：PostgreSQL 和对象存储是两套系统。回避不了，就不能把"两边
+-- 都成了"当成正常路径来写代码——总有一次会只成一半。
 --
--- 为什么需要退路：模型那一次调用是花了钱、等了几十秒的，而任务级的重试
--- （ClaimExcelJob 十五分钟后重新领取）会把那次调用一起重跑，也就是再花一次钱。
--- 所以上传失败时正确的做法不是让任务失败，是把手里已经有的字节先存下来——
--- 存在这一列里，人照常从原来的下载路径拿到文件，什么都没丢。
+-- 所以顺序反过来：**先只写库，而且一次事务写完；对象存储交给一个会重试到
+-- 成功的搬运工。**
 --
--- 这条退路上的字节由 RunExcelPayloadSweeper 按同一个窗口收走，和 file_key
--- 指向的对象一起。
--- ---- 两次写，不是一个事务 ----
+--   完成任务时：状态、workbook、字节，一条 UPDATE 落地。要么全成，要么全不
+--               成——任务不会出现"标着完成、文件却取不到"的状态。
+--   搬运工：    把 file_data 传上去，成功之后一条 UPDATE 同时写上 file_key、
+--               清掉 file_data。这一条也是原子的。
+--   读的时候：  file_key 有就读对象，没有就读 file_data。**任何时刻至少有
+--               一处是全的**，所以人永远取得到。
 --
--- 对象存储和 PostgreSQL 是两套东西，中间没有事务可言。所以这里不追求原子，
--- 追求的是**每一种失败都停在一个安全的状态上**：
+-- 这样四种失败分别停在哪，全都是安全的：
 --
---   · 对象写失败 → 字节退回 file_data，行说"我是内联的"，人照常拿得到；
---   · 对象写成功、行写失败 → 对象成了孤儿：没有任何一行指着它。
+--   · 落库失败      → 任务没完成，十五分钟后重跑（这是既有行为）。
+--   · 传对象失败    → 字节还在库里，人照常拿得到；搬运工退避后再试。
+--   · 传成功、清行失败 → 对象在，字节也在，读的仍然是字节。下一趟重传同一个
+--                     键（键 = 租户 + 任务号，确定的，覆盖而不是堆积）再清一次。
+--   · 一直传不上去  → 字节就一直留在库里。这是**降级，不是丢失**：最坏的
+--                     结果是这一份没搬成，而不是人拿不到文件。
 --
--- 第二种是这次要专门堵的。堵法不是加事务（加不了），是**让对象键可以从行
--- 本身算出来**：mail-excel/<租户>/<任务号>.xlsx，不依赖任何存下来的字段。
--- 于是清理的时候，不管这一行的列里写着什么，都能算出"它可能有一个对象"
--- 并去删一次（S3 的 DELETE 对不存在的键是幂等的）。
+-- 没有"孤儿对象"这种状态：对象只由搬运工创建，而搬运工只为已经存在的行干活。
 ALTER TABLE mail_excel_jobs
+    -- 结果在对象存储里的位置。空 = 还在 file_data 里（还没搬，或者搬不动）。
     ADD COLUMN file_key VARCHAR(512) NOT NULL DEFAULT '',
-    -- 这一行的结果收干净了没有。
+    -- 搬运工的重试状态，和 mail_flag_ops 一套写法。
+    ADD COLUMN upload_attempts INT NOT NULL DEFAULT 0,
+    ADD COLUMN upload_next_try_at TIMESTAMPTZ,
+    ADD COLUMN upload_last_error TEXT NOT NULL DEFAULT '',
+    -- 结果收干净了没有（过了留存期）。
     --
-    -- 不能用"file_key 空且 file_data 空"当收干净的判据——那正是孤儿的样子。
-    -- 需要一个独立的标记，清理器才既能扫到孤儿，又不会每一趟都重扫同一批。
+    -- 需要独立的标记而不是"两列都空"：那个判据分不出"收过了"和"从来没成功
+    -- 过"，而后者不该被当成收完了。
     ADD COLUMN payload_cleared_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN mail_excel_jobs.file_key IS
-    '转换结果在对象存储里的位置；空表示退回存在 file_data 里（对象存储写失败时）';
+    '结果在对象存储里的位置；空表示字节还在 file_data 里（搬运工还没搬成）';
 COMMENT ON COLUMN mail_excel_jobs.file_data IS
-    '仅当 file_key 为空时有值：对象存储写不进去时的退路，见迁移 00066';
+    '结果的字节。落库时先写这里，搬运工传上对象存储之后清空，见迁移 00066';
 
--- 清理器按「结束了、还没收过」找行。**不看 file_key / file_data**，理由见
--- 上面那段：孤儿的那两列恰好都是空的。
+-- 搬运工要找的：还带着字节、还没有 key、到点可以再试的。
+CREATE INDEX mail_excel_jobs_upload_idx
+    ON mail_excel_jobs (upload_next_try_at, id)
+    WHERE file_data IS NOT NULL AND file_key = '';
+
+-- 留存期清理要找的：结束了、还没收过的。
 CREATE INDEX mail_excel_jobs_payload_idx
     ON mail_excel_jobs (completed_at)
     WHERE completed_at IS NOT NULL AND payload_cleared_at IS NULL;
 
 -- +goose Down
 DROP INDEX IF EXISTS mail_excel_jobs_payload_idx;
+DROP INDEX IF EXISTS mail_excel_jobs_upload_idx;
 ALTER TABLE mail_excel_jobs
     DROP COLUMN IF EXISTS payload_cleared_at,
+    DROP COLUMN IF EXISTS upload_last_error,
+    DROP COLUMN IF EXISTS upload_next_try_at,
+    DROP COLUMN IF EXISTS upload_attempts,
     DROP COLUMN IF EXISTS file_key;

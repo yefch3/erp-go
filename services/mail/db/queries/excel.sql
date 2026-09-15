@@ -31,18 +31,54 @@ WHERE j.id=candidate.id
 RETURNING j.*;
 
 -- name: CompleteExcelJob :execrows
--- file_key 和 file_data 永远只有一个有值：结果进了对象存储就记 key，
--- 写不进去才把字节留在库里当退路（见迁移 00066）。
+-- 完成一次转换。**只写库，一条语句落地**——状态、workbook、字节一起。
+--
+-- 不在这里传对象存储：那是第二套系统，两次写之间没有事务，而这一刻正是最不
+-- 能出"一半"的时候（模型刚花完钱）。字节先落在 file_data 里，upload_next_try_at
+-- 置为现在就等于排进了搬运队列，剩下的交给搬运工重试到成功（见迁移 00066）。
 UPDATE mail_excel_jobs SET
-  status='COMPLETED', file_name=sqlc.arg(file_name),
-  file_key=sqlc.arg(file_key), file_data=sqlc.arg(file_data),
+  status='COMPLETED', file_name=sqlc.arg(file_name), file_data=sqlc.arg(file_data),
   workbook_json=sqlc.arg(workbook_json), model=sqlc.arg(model),
+  file_key='', upload_attempts=0, upload_next_try_at=now(), upload_last_error='',
   error_code='', error_message='', completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
+
+-- name: ClaimExcelUpload :many
+-- 搬运工要搬的那一批：字节还在库里、还没搬上去、到点可以再试的。
+--
+-- 不用 FOR UPDATE SKIP LOCKED：搬这件事是幂等的（键是确定的，重传就是覆盖），
+-- 两个副本同时搬同一份的后果只是多传一次，而锁的代价是一直持着事务在传文件。
+SELECT id, tenant_id, file_name, file_data, upload_attempts
+FROM mail_excel_jobs
+WHERE file_data IS NOT NULL AND file_key = ''
+  AND (upload_next_try_at IS NULL OR upload_next_try_at <= now())
+ORDER BY upload_next_try_at, id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: MarkExcelUploaded :execrows
+-- 传上去了：记下 key，同一条语句里把字节清掉。
+--
+-- **必须是同一条。** 分两条的话中间那一刻两处都有，而更糟的是先清字节、
+-- 后写 key 失败——那时两处都没有，人拿不到文件。
+UPDATE mail_excel_jobs
+SET file_key=sqlc.arg(file_key), file_data=NULL,
+    upload_last_error='', upload_next_try_at=NULL, updated_at=now()
+WHERE id=sqlc.arg(id)::bigint AND file_key='';
+
+-- name: DelayExcelUpload :execrows
+-- 这一趟没传上去：记一笔，退避之后再来。**字节一个都不动**——它现在是人
+-- 唯一能取到这份文件的地方。
+UPDATE mail_excel_jobs
+SET upload_attempts=upload_attempts+1,
+    upload_last_error=sqlc.arg(last_error),
+    upload_next_try_at=now() + sqlc.arg(retry_in)::interval,
+    updated_at=now()
+WHERE id=sqlc.arg(id)::bigint;
 
 -- name: FailExcelJob :execrows
 UPDATE mail_excel_jobs SET
   status='FAILED', file_key='', file_data=NULL, workbook_json=NULL,
+  upload_next_try_at=NULL,
   error_code=sqlc.arg(error_code), error_message=sqlc.arg(error_message),
   completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
@@ -174,5 +210,5 @@ LIMIT sqlc.arg(row_limit)::int;
 -- 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
 UPDATE mail_excel_jobs
 SET file_key='', file_data=NULL, workbook_json=NULL,
-    payload_cleared_at=now(), updated_at=now()
+    upload_next_try_at=NULL, payload_cleared_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id)::bigint;

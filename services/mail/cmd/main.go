@@ -256,6 +256,9 @@ func run(log *slog.Logger) error {
 	// 那个在没配 OpenAI 时直接返回，而清理该照跑——功能关掉之后，先前留下的
 	// 那些字节更该被收走。
 	go svc.RunExcelPayloadSweeper(ctx)
+	// 把落在库里的转换结果搬去对象存储，重试到成功。和 worker 分开起，
+	// 理由同上——没配 OpenAI 的部署里，先前留下的结果照样该被搬走。
+	go svc.RunExcelUploader(ctx)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	mailv1.RegisterEmailServiceServer(srv, grpcin.New(svc))

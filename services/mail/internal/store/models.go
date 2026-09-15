@@ -323,7 +323,7 @@ type MailExcelJob struct {
 	Status       string
 	AttemptCount int32
 	FileName     string
-	// 仅当 file_key 为空时有值：对象存储写不进去时的退路，见迁移 00066
+	// 结果的字节。落库时先写这里，搬运工传上对象存储之后清空，见迁移 00066
 	FileData        []byte
 	WorkbookJson    []byte
 	Model           string
@@ -336,8 +336,11 @@ type MailExcelJob struct {
 	TemplateColumns []byte
 	InputTokens     int64
 	OutputTokens    int64
-	// 转换结果在对象存储里的位置；空表示退回存在 file_data 里（对象存储写失败时）
+	// 结果在对象存储里的位置；空表示字节还在 file_data 里（搬运工还没搬成）
 	FileKey          string
+	UploadAttempts   int32
+	UploadNextTryAt  pgtype.Timestamptz
+	UploadLastError  string
 	PayloadClearedAt pgtype.Timestamptz
 }
 

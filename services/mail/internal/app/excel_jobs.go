@@ -386,9 +386,10 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		s.log.Error("encode Excel job workbook", "job", row.ID, "err", err)
 		return
 	}
-	key, inline := s.storeExcelResult(ctx, row, result)
+	// 只写库，一条语句落地。对象存储交给搬运工（RunExcelUploader）——
+	// 这一刻是最不能出"一半"的时候，模型刚花完钱。
 	if _, err := s.q.CompleteExcelJob(ctx, store.CompleteExcelJobParams{
-		ID: row.ID, FileName: result.FileName, FileKey: key, FileData: inline,
+		ID: row.ID, FileName: result.FileName, FileData: result.Data,
 		WorkbookJson: workbook, Model: result.Model,
 	}); err != nil {
 		s.log.Error("persist completed Excel job", "job", row.ID, "err", err)
@@ -397,64 +398,101 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 	s.publishExcelJob(ctx, row)
 }
 
-// 上传重试：只重试**上传那一下**，不是重试整个任务。
+// 搬运工：把落在库里的结果传去对象存储，然后把字节清掉。
 //
-// 这条区别是这一段的全部要点。任务级的重试（ClaimExcelJob 十五分钟后重新
-// 领取）会把模型那一次调用一起重跑——几十秒，而且**再花一次钱**。而此刻
-// 字节已经在手里了，要解决的只是"存哪去"。
+// **为什么是一个队列，而不是在完成任务时顺手传一下。**
+//
+// PostgreSQL 和对象存储之间没有事务。顺手传的写法必然有一刻是"一半"：传成了
+// 行没写成、或者行写成了传失败。那一刻无论落在哪边，都得有人事后来打扫——
+// 而打扫的代价是，"不一致"变成了一种要靠另一段代码兜住的常态。
+//
+// 换个顺序就没有这一刻了：**完成任务时只写库，一条语句落地**（状态、workbook、
+// 字节一起，要么全成要么全不成）；对象存储是之后的事，由这里重试到成功。
+// 中间任何时刻，file_data 和 file_key 至少有一处是全的，所以人永远取得到。
+//
+// 传不上去不是失败，是降级：字节就一直留在库里，人照常拿得到，只是这一份
+// 没搬成。这比"让任务失败、请重新转换"好得多——模型那一次调用花了钱。
+//
+// 不设重试上限：上限的意义是"别再浪费了"，而这里每一次重试只是一个 PUT，
+// 不花钱。真正一直传不上去的时候，该有人去看对象存储，而不是让字节被放弃。
 const (
-	excelUploadAttempts = 3
-	excelUploadBackoff  = 400 * time.Millisecond
+	excelUploadBatch     = 20
+	excelUploadEvery     = 30 * time.Second
+	excelUploadRetryBase = 1 * time.Minute
+	excelUploadRetryMax  = 30 * time.Minute
+	excelContentType     = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-// storeExcelResult 把结果放进对象存储，返回 (对象键, 退路字节)。
-//
-// 两个返回值永远只有一个有值：
-//
-//   - 传上去了 → (key, nil)
-//   - 传不上去 → ("", 字节)，**存进库里当退路**
-//
-// 为什么不是"传不上去就让任务失败"：模型那一次调用已经花了钱、等了几十秒，
-// 而手里的字节是好的。因为对象存储抖了一下就把它扔掉、让人重跑一遍，是拿
-// 用户的时间和我们的钱去换一个"干净"的失败。
-//
-// 为什么不是"排进死信队列等人来看"：队列里能放的是消息，而这里必须活下来的
-// 是**文件本身**。不带文件的死信条目救不了任何人——要拿到那份 Excel 还得重跑
-// 模型；带文件的死信条目就是又把字节写回了 Postgres（failed_events.payload 是
-// JSONB），正是这次要解决的事。而且那套死信是给 Kafka 事件用的：事件小、可
-// 重放、"等人来看"是可接受的时延。这里人正坐在屏幕前等这份表格。
-//
-// 退路上的字节和对象存储里的那一份由同一个清理器按同一个窗口收走，所以它
-// 不会变成新的只增不减。
-func (s *Service) storeExcelResult(ctx context.Context, row store.MailExcelJob, result ExcelResult) (string, []byte) {
+func (s *Service) RunExcelUploader(ctx context.Context) {
 	if s.files == nil {
-		// 没配对象存储。不是错误，是这套部署本来就没有它——照旧存库里。
-		return "", result.Data
+		// 没配对象存储：结果就留在库里，和从前一样。不是错误。
+		return
 	}
-	key := excelResultKey(row.TenantID, row.ID, result.FileName)
-	var last error
-	for attempt := 1; attempt <= excelUploadAttempts; attempt++ {
-		last = s.files.Put(ctx, key, bytes.NewReader(result.Data),
-			int64(len(result.Data)), excelContentType)
-		if last == nil {
-			return key, nil
-		}
-		s.log.Warn("could not upload an Excel result, retrying",
-			"job", row.ID, "attempt", attempt, "err", last)
+	s.log.Info("excel result uploader started", "every", excelUploadEvery)
+	t := time.NewTicker(excelUploadEvery)
+	defer t.Stop()
+	for {
+		s.uploadExcelResultsOnce(ctx)
 		select {
 		case <-ctx.Done():
-			return "", result.Data
-		case <-time.After(time.Duration(attempt) * excelUploadBackoff):
+			s.log.Info("excel result uploader stopped")
+			return
+		case <-t.C:
 		}
 	}
-	// 三次都没成。**大声说**：这不是正常路径，而且它意味着对象存储此刻是坏的
-	// ——别的功能（附件、原件）也正在受影响，只是那些地方没有退路。
-	s.log.Error("Excel result stays in the database: object storage would not take it",
-		"job", row.ID, "bytes", len(result.Data), "err", last)
-	return "", result.Data
 }
 
-const excelContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+func (s *Service) uploadExcelResultsOnce(ctx context.Context) {
+	rows, err := s.q.ClaimExcelUpload(ctx, excelUploadBatch)
+	if err != nil {
+		s.log.Error("could not claim excel uploads", "err", err)
+		return
+	}
+	for _, row := range rows {
+		key := excelResultKey(row.TenantID, row.ID, row.FileName)
+		// 重传就是覆盖：键由租户和任务号算出来，不依赖任何存下来的字段。
+		// 所以上一趟"传成了、行没写成"留下的那一份，这一趟原地被盖掉。
+		if err := s.files.Put(ctx, key, bytes.NewReader(row.FileData),
+			int64(len(row.FileData)), excelContentType); err != nil {
+			s.delayExcelUpload(ctx, row.ID, row.UploadAttempts, err)
+			continue
+		}
+		// 写 key 和清字节是同一条语句。分两条的话，先清后写一旦失败，
+		// 两处都没有——人就拿不到这份文件了。
+		if _, err := s.q.MarkExcelUploaded(ctx, store.MarkExcelUploadedParams{
+			ID: row.ID, FileKey: key,
+		}); err != nil {
+			// 对象已经在那儿了，字节也还在。下一趟重传同一个键再清一次。
+			s.delayExcelUpload(ctx, row.ID, row.UploadAttempts, err)
+		}
+	}
+}
+
+func (s *Service) delayExcelUpload(ctx context.Context, id int64, attempts int32, cause error) {
+	wait := time.Duration(attempts+1) * excelUploadRetryBase
+	if wait > excelUploadRetryMax {
+		wait = excelUploadRetryMax
+	}
+	s.log.Warn("could not move an Excel result to object storage; it stays in the database",
+		"job", id, "attempts", attempts+1, "retry_in", wait, "err", cause)
+	if _, err := s.q.DelayExcelUpload(ctx, store.DelayExcelUploadParams{
+		ID: id, LastError: clampUploadError(cause), RetryIn: pgtype.Interval{
+			Microseconds: int64(wait / time.Microsecond), Valid: true,
+		},
+	}); err != nil {
+		s.log.Error("could not record an excel upload failure", "job", id, "err", err)
+	}
+}
+
+// 错误消息进库，掐短：对象存储的错误里可能带着整条请求。
+func clampUploadError(err error) string {
+	const max = 500
+	msg := err.Error()
+	if len(msg) > max {
+		return msg[:max]
+	}
+	return msg
+}
 
 // 对象键带任务号：同一个人对同一封信转两次是两份结果，不该互相覆盖。
 func excelResultKey(tenantID, jobID int64, fileName string) string {
