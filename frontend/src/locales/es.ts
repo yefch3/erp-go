@@ -1349,7 +1349,7 @@ export default {
     deliveryHint: 'Obligatoria antes de enviar a aprobación; la cotización no la incluye',
     receivableDue: 'Vencimiento a cobrar', receivableDueHint: 'Cuándo debe cobrarse este contrato (opcional)',
     notSet: 'Sin definir',
-    terms: 'Condiciones',
+    terms: 'Notas del contrato',
     items: 'Líneas',
     product: 'Producto',
     spec: 'Especificación',

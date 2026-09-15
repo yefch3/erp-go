@@ -1340,7 +1340,7 @@ export default {
     deliveryHint: 'Required before submitting; the quotation does not carry one',
     receivableDue: 'Receivable due', receivableDueHint: 'When this contract has to be paid (optional)',
     notSet: 'Not set',
-    terms: 'Terms',
+    terms: 'Contract notes',
     items: 'Lines',
     product: 'Product',
     spec: 'Spec',

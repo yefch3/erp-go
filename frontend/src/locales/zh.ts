@@ -1339,7 +1339,7 @@ export default {
     deliveryHint: '提交审批前必填；报价单上没有这个信息，需要在这里补',
     receivableDue: '应收到期日', receivableDueHint: '这份合同的钱什么时候该收（可留空，之后在客户对账页补）',
     notSet: '未填写',
-    terms: '合同条款',
+    terms: '合同备注',
     items: '合同明细',
     product: '产品',
     spec: '规格',
