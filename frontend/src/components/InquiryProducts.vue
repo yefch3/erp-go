@@ -1,27 +1,29 @@
 <template>
   <div class="product-toolbar">
-    <el-input v-model="search" placeholder="搜索任一产品字段" clearable @input="page=1" />
-    <div class="product-summary"><span><b>{{ products.length }}</b> 项产品</span><span>总需求 <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>总重量 {{ productTotal(products,'weight') }}</span><span>总体积 {{ productTotal(products,'volume') }}</span></div>
-    <el-button-group v-if="!editable" class="view-switch"><el-button :type="mode==='compact'?'primary':'default'" @click="mode='compact'">精简视图</el-button><el-button :type="mode==='all'?'primary':'default'" @click="mode='all'">全部字段</el-button></el-button-group>
+    <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
+    <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
+    <el-button-group v-if="!editable" class="view-switch"><el-button :type="mode==='compact'?'primary':'default'" @click="mode='compact'">{{ t('inquiryProducts.compact') }}</el-button><el-button :type="mode==='all'?'primary':'default'" @click="mode='all'">{{ t('inquiryProducts.allFields') }}</el-button></el-button-group>
   </div>
-  <el-table :data="visible" row-key="id" :max-height="520" empty-text="暂无产品">
-    <el-table-column v-if="mode==='compact'" type="expand" width="46"><template #default="{row}"><div class="product-detail-grid"><div v-for="field in detailFields" :key="field.fieldKey" class="detail-field"><span>{{field.displayName}}</span><strong>{{value(row,field.fieldKey)||'—'}}</strong></div></div></template></el-table-column>
+  <el-table :data="visible" row-key="id" :max-height="520" :empty-text="t('inquiryProducts.empty')">
+    <el-table-column v-if="mode==='compact'" type="expand" width="46"><template #default="{row}"><div class="product-detail-grid"><div v-for="field in detailFields" :key="field.fieldKey" class="detail-field"><span>{{fieldLabel(field)}}</span><strong>{{value(row,field.fieldKey)||'—'}}</strong></div></div></template></el-table-column>
     <el-table-column type="index" label="#" width="52" :index="indexNumber" fixed="left" />
-    <el-table-column v-if="cargoIds" label="选择" width="65"><template #default="{row}"><el-checkbox :model-value="cargoIds.includes(row.id)" @change="choose(row.id,!!$event)" /></template></el-table-column>
+    <el-table-column v-if="cargoIds" :label="t('inquiryProducts.select')" width="65"><template #default="{row}"><el-checkbox :model-value="cargoIds.includes(row.id)" @change="choose(row.id,!!$event)" /></template></el-table-column>
     <el-table-column v-for="field in tableFields" :key="field.fieldKey" :min-width="fieldWidth(field)" :width="field.fieldKey==='product'?productColumnWidth:undefined" :fixed="field.fieldKey==='product'?'left':undefined" show-overflow-tooltip>
-      <template #header><span>{{field.displayName}}</span><span v-if="field.isRequired" class="required-mark"> *</span></template>
-      <template #default="{row}"><el-input v-if="editable&&field.fieldKey==='product'" class="product-name-input" :model-value="value(row,field.fieldKey)" type="textarea" :autosize="{minRows:1}" :aria-label="field.displayName" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><el-date-picker v-else-if="editable&&field.dataType==='DATE'" :model-value="value(row,field.fieldKey)" value-format="YYYY-MM-DD" type="date" @update:model-value="setValue(row,field.fieldKey,String($event||''))"/><el-input v-else-if="editable" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':'text'" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><span v-else class="cell-value" :class="{'product-name-value':field.fieldKey==='product'}">{{value(row,field.fieldKey)||'—'}}</span></template>
+      <template #header><span>{{fieldLabel(field)}}</span><span v-if="field.isRequired" class="required-mark"> *</span></template>
+      <template #default="{row}"><el-input v-if="editable&&field.fieldKey==='product'" class="product-name-input" :model-value="value(row,field.fieldKey)" type="textarea" :autosize="{minRows:1}" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><el-date-picker v-else-if="editable&&field.dataType==='DATE'" :model-value="value(row,field.fieldKey)" value-format="YYYY-MM-DD" type="date" @update:model-value="setValue(row,field.fieldKey,String($event||''))"/><el-input v-else-if="editable" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':'text'" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><span v-else class="cell-value" :class="{'product-name-value':field.fieldKey==='product'}">{{value(row,field.fieldKey)||'—'}}</span></template>
     </el-table-column>
-    <el-table-column v-if="editable" label="操作" width="75" fixed="right"><template #default="{row}"><el-button link type="danger" @click="$emit('remove',products.indexOf(row))">移除</el-button></template></el-table-column>
+    <el-table-column v-if="editable" :label="t('common.actions')" width="75" fixed="right"><template #default="{row}"><el-button link type="danger" @click="$emit('remove',products.indexOf(row))">{{ t('common.remove') }}</el-button></template></el-table-column>
   </el-table>
-  <div class="table-footer"><span v-if="mode==='compact'" class="expand-tip">点击每行左侧箭头查看该产品的全部字段</span><el-pagination v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="filtered.length" layout="total, sizes, prev, pager, next"/></div>
+  <div class="table-footer"><span v-if="mode==='compact'" class="expand-tip">{{ t('inquiryProducts.expandTip') }}</span><el-pagination v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="filtered.length" layout="total, sizes, prev, pager, next"/></div>
 </template>
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
+import {useI18n} from 'vue-i18n'
 import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
 const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[]}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
+const {t,te}=useI18n()
 const search=ref(''),page=ref(1),size=ref(20),mode=ref<'compact'|'all'>(props.editable?'all':'compact')
 const fallbackFields:TemplateField[]=[
  {fieldKey:'product',displayName:'产品',sortOrder:1,isRequired:true,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:true},
@@ -59,6 +61,7 @@ function choose(id:string,yes:boolean){const ids=props.cargoIds||[];emit('update
 function value(product:Product,key:string){return productTemplateValue(product,key)}
 function setValue(product:Product,key:string,value:string){setProductTemplateValue(product,key,value)}
 function fieldWidth(field:TemplateField){return field.dataType==='DATE'?170:Math.max(110,Math.min(240,field.displayName.length*18+54))}
+function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
 function indexNumber(index:number){return(page.value-1)*size.value+index+1}
 </script>
 <style scoped>

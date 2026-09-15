@@ -7,8 +7,8 @@
         <button
           type="button"
           class="side-collapse-toggle"
-          :title="sidebarCollapsed ? '展开导航' : '收起导航'"
-          :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'"
+          :title="sidebarCollapsed ? t('menu.expandNav') : t('menu.collapseNav')"
+          :aria-label="sidebarCollapsed ? t('menu.expandNav') : t('menu.collapseNav')"
           :aria-expanded="!sidebarCollapsed"
           @click="toggleSidebar"
         >
@@ -396,7 +396,7 @@
     </el-aside>
     <el-container class="pane-col">
       <el-header class="topbar" :class="{ 'topbar--empty': !hasTopbarTools }">
-        <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" aria-label="展开或收起导航" @click="navigationOpen = !navigationOpen">☰ 导航</button>
+        <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" :aria-label="t('menu.toggleNav')" @click="navigationOpen = !navigationOpen">☰ {{ t('menu.navigation') }}</button>
         <div class="topbar-right">
           <ShippingArrivalNotifications
             v-if="auth.can('shipping:schedule:read')"
