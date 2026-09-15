@@ -10,8 +10,8 @@
       class="file"
       :class="{ dead: !a.downloadUrl }"
       :title="hint(a)"
-      @contextmenu="emit('excelMenu', $event, a)"
-      @mouseenter="emit('excelHover', $event, a)"
+      @contextmenu="emit('excelMenu', $event, a, mailId ?? '')"
+      @mouseenter="emit('excelHover', $event, a, mailId ?? '')"
       @mouseleave="emit('excelLeave')"
     >
       <el-icon><Paperclip /></el-icon>
@@ -79,10 +79,13 @@ defineProps<{
   // （我们自己发出去的那些）。
   mailId?: string
 }>()
+// 转 Excel 的两个事件都带 mailId：会话视图里一屏有好几封，各带各的附件，
+// 页面那头必须知道点的是哪一封的——用「当前打开的那封」去请求，服务器在
+// 那封里找不到这个附件，回的是「附件不存在或未保存」（2026-09-15 真发生过）。
 const emit = defineEmits<{
   preview: [file: MailFile, mailId: string]
-  excelMenu: [event: MouseEvent, file: MailFile]
-  excelHover: [event: MouseEvent, file: MailFile]
+  excelMenu: [event: MouseEvent, file: MailFile, mailId: string]
+  excelHover: [event: MouseEvent, file: MailFile, mailId: string]
   excelLeave: []
 }>()
 const { t } = useI18n()
