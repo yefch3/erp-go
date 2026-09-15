@@ -460,8 +460,10 @@
                 v-if="it.attachments?.length"
                 :files="it.attachments"
                 :mail-id="threadAttachmentMailId(it)"
+                :bundling="bundlingId === threadAttachmentMailId(it)"
                 class="thread-files"
                 @preview="openPreview"
+                @download-all="downloadAllAttachments"
                 @excel-menu="openAttachmentExcelMenu"
                 @excel-hover="hoverAttachmentExcelMenu"
                 @excel-leave="scheduleExcelMenuHide"
@@ -484,26 +486,23 @@
           />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
-        <template v-if="openedInbound.attachments?.length">
+        <!-- 只在「这封信自己单独一封」时列在这里。
+             会话里每一封的附件已经跟在它自己那一条下面了，底下再来一块只会
+             让人问「这两个是不是同一个文件」——而它确实只是其中一封的，不是
+             整条会话的汇总（2026-09-15 被问到，所以去掉）。
+             代价：会话里没有「下载全部」了，单封仍然有。 -->
+        <template v-if="threadItems.length <= 1 && openedInbound.attachments?.length">
           <el-divider />
           <div class="att-head">
             <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-            <!-- 两个以上才给这颗按钮：只有一个附件时它和旁边的「下载」是
-                 同一件事，多一颗只会让人挑。 -->
-            <el-button
-              v-if="openedInbound.attachments.length > 1"
-              size="small"
-              plain
-              :loading="bundling"
-              @click="downloadAllAttachments"
-            >
-              {{ t('emails.downloadAll', { n: openedInbound.attachments.length }) }}
-            </el-button>
           </div>
+          <!-- 「下载全部」那颗在组件里，跟着这一封走。 -->
           <MailAttachments
             :files="openedInbound.attachments"
             :mail-id="String(openedInbound.id)"
+            :bundling="bundlingId === String(openedInbound.id)"
             @preview="openPreview"
+            @download-all="downloadAllAttachments"
             @excel-menu="openAttachmentExcelMenu"
             @excel-hover="hoverAttachmentExcelMenu"
             @excel-leave="scheduleExcelMenuHide"
@@ -4875,20 +4874,25 @@ function downloadExcel() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-const bundling = ref(false)
+// 哪一封的包正在打。会话里每一封各有一颗「下载全部」，所以记的是信的编号
+// 而不是一个是非——不然点了其中一颗，所有按钮一起转圈。
+const bundlingId = ref('')
 
 /** 把这封信的附件打成一个压缩包下载。 */
-async function downloadAllAttachments() {
-  const id = openedInbound.value?.id
-  if (!id || bundling.value) return
-  bundling.value = true
+// 把某一封信的附件打成 zip 拿走。
+//
+// **按信取，不是按当前打开的那封。** 会话里每一封各有各的一颗按钮，点哪一颗
+// 打哪一封的包；转圈的也只是那一颗（bundlingId）。
+async function downloadAllAttachments(mailId: string) {
+  if (!mailId || bundlingId.value) return
+  bundlingId.value = mailId
   try {
-    const file = await download(`/inbound-mails/${id}/attachments/download`)
+    const file = await download(`/inbound-mails/${mailId}/attachments/download`)
     saveBlob(file.blob, file.fileName)
   } catch {
     // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
   } finally {
-    bundling.value = false
+    bundlingId.value = ''
   }
 }
 

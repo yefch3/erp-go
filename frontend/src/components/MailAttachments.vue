@@ -46,6 +46,25 @@
         </a>
       </el-tooltip>
     </div>
+
+    <!-- 这一封的附件打成一个 zip 拿走。**跟着这一封**，所以会话里每一封各有
+         各的一颗：对方发来三个、我们回了两个，就是三个的那一颗和两个的那一颗。
+         从前这颗只在阅读区最底下有一颗，打的是「打开的那封」的包，在会话里
+         说不清它算谁的（2026-09-15 去掉了那一块）。
+
+         两个以上才给：只有一个附件时它和旁边那颗「下载」是同一件事。
+         mailId 为空时不给：打包按信取文件，没有信的编号就取不了——会话里
+         「我发出」而本地又没留底的那几条就是这种。 -->
+    <button
+      v-if="canBundleAttachments(files.length, mailId ?? '')"
+      type="button"
+      class="bundle"
+      :disabled="bundling"
+      @click="emit('downloadAll', mailId ?? '')"
+    >
+      <el-icon><Download /></el-icon>
+      <span>{{ t('emails.downloadAll', { n: files.length }) }}</span>
+    </button>
   </div>
 </template>
 
@@ -54,6 +73,7 @@ import { Download, Paperclip, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { humanSize } from '../lib/humanSize'
 import { canPreview } from '../lib/attachmentPreview'
+import { canBundleAttachments } from '../lib/attachmentBundle'
 import { attachmentHintKey } from '../lib/attachmentHint'
 
 export interface MailFile {
@@ -81,6 +101,8 @@ defineProps<{
   // 这里给的是本地「已发送」里留着那一份的号（服务端的 local_mail_id）。
   // 空 = 没对上，那时预览和转 Excel 都不该出现，只能下载。
   mailId?: string
+  // 这一封的包正在打。多封信各有各的按钮，所以转圈的是哪一颗由调用方说了算。
+  bundling?: boolean
 }>()
 // 转 Excel 的两个事件都带 mailId：会话视图里一屏有好几封，各带各的附件，
 // 页面那头必须知道点的是哪一封的——用「当前打开的那封」去请求，服务器在
@@ -90,6 +112,9 @@ const emit = defineEmits<{
   excelMenu: [event: MouseEvent, file: MailFile, mailId: string]
   excelHover: [event: MouseEvent, file: MailFile, mailId: string]
   excelLeave: []
+  // 把这一封的附件打成 zip。带上是哪一封——组件不碰网络，取文件这件事留在
+  // 页面那头（两个页面各自有自己的保存方式）。
+  downloadAll: [mailId: string]
 }>()
 const { t } = useI18n()
 
@@ -145,6 +170,36 @@ function hint(a: MailFile) {
   cursor: pointer;
   text-decoration: none;
   transition: filter 0.15s ease, transform 0.15s ease;
+}
+/* 打包那一颗：描边不填色。它和每个文件旁边那颗蓝的「下载」是两件事，
+   颜色上就该分得开——一屏里三颗蓝按钮，人会以为点哪个都一样。 */
+.bundle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 11px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.bundle:hover:not(:disabled) {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+.bundle:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.bundle:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 2px;
 }
 .fbtn.preview {
   background: var(--el-color-success);
