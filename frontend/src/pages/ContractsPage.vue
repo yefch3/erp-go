@@ -50,7 +50,14 @@
       />
     </el-card>
 
-    <el-dialog v-model="supplementOpen" title="补充合同信息" width="min(520px,94vw)"><el-form label-position="top"><el-form-item label="原合同号"><el-input v-model="supplementForm.externalContractNo"/></el-form-item><el-form-item label="应收日期"><el-date-picker v-model="supplementForm.due" type="date" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="supplementOpen=false">取消</el-button><el-button type="primary" @click="saveSupplement">保存</el-button></template></el-dialog>
+    <el-dialog v-model="supplementOpen" :title="t('contracts.editExisting')" width="min(520px,94vw)">
+      <el-alert :title="t('contracts.editExistingHint')" type="info" :closable="false" class="alert" />
+      <el-form label-position="top">
+        <el-form-item label="原合同号"><el-input v-model="supplementForm.externalContractNo" /></el-form-item>
+        <el-form-item label="应收到账日"><el-date-picker v-model="supplementForm.due" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="supplementOpen=false">取消</el-button><el-button type="primary" @click="saveSupplement">保存</el-button></template>
+    </el-dialog>
     <!-- A signed contract that existed before it reached this ERP. -->
     <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="min(1180px,94vw)" top="4vh">
       <el-alert :title="t('contracts.directHint')" type="info" :closable="false" show-icon class="alert" />
@@ -234,38 +241,75 @@
 
     <!-- Fast correction for a signed contract imported from outside ERP.
          Financial lines and execution openings intentionally stay read-only. -->
-    <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="min(820px,94vw)">
+    <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="min(860px,94vw)" class="contract-basic-edit-dialog">
       <el-alert :title="t('contracts.editExistingHint')" type="info" :closable="false" show-icon class="alert" />
-      <el-form label-width="125px">
-        <el-form-item :label="t('contracts.externalContractNo')">
-          <el-input v-model="existingEditForm.externalContractNo" clearable :placeholder="t('contracts.externalContractNoHint')" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.contractDates')" required>
-          <el-date-picker v-model="existingEditForm.signedDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.signedDate')" style="width: 200px" />
-          <el-date-picker v-model="existingEditForm.effectiveDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.effectiveDate')" style="width: 200px; margin-left: 12px" />
-          <el-date-picker v-model="existingEditForm.deliveryDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('contracts.deliveryDate')" style="width: 200px; margin-left: 12px" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.receivableDue')">
-          <el-date-picker v-model="existingEditForm.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 200px" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.commercialTerms')">
-          <el-select v-model="existingEditForm.incoterm" filterable allow-create default-first-option style="width: 180px">
-            <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
-          </el-select>
-          <el-select v-model="existingEditForm.paymentMethod" filterable allow-create default-first-option clearable style="width: 260px; margin-left: 12px">
-            <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.ports')">
-          <el-select v-model="existingEditForm.portOfLoading" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width: 290px" :placeholder="t('contracts.pickOrEnterPol')">
-            <el-option v-for="p in contractPorts" :key="`edit-pol-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
-          </el-select>
-          <el-select v-model="existingEditForm.portOfDischarge" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width: 290px; margin-left: 12px" :placeholder="t('contracts.pickOrEnterPod')">
-            <el-option v-for="p in contractPorts" :key="`edit-pod-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
-          </el-select>
-        </el-form-item>
+      <el-form label-position="top" class="basic-edit-form">
+        <div class="edit-form-section">
+          <div class="edit-form-title">合同信息</div>
+          <div class="edit-form-grid">
+            <el-form-item :label="t('contracts.externalContractNo')">
+              <el-input v-model="existingEditForm.externalContractNo" clearable :placeholder="t('contracts.externalContractNoHint')" />
+            </el-form-item>
+            <el-form-item label="应收到账日">
+              <el-date-picker v-model="existingEditForm.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.signedDate')" required>
+              <el-date-picker v-model="existingEditForm.signedDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.signedDate')" style="width:100%" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.effectiveDate')" required>
+              <el-date-picker v-model="existingEditForm.effectiveDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.effectiveDate')" style="width:100%" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.deliveryDate')">
+              <el-date-picker v-model="existingEditForm.deliveryDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('contracts.deliveryDate')" style="width:100%" />
+            </el-form-item>
+          </div>
+        </div>
+
+        <div class="edit-form-section">
+          <div class="edit-form-title">签约双方</div>
+          <div class="edit-form-grid">
+            <el-form-item :label="t('contracts.buyer')">
+              <el-input v-model="existingEditForm.buyerName" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.seller')">
+              <el-input v-model="existingEditForm.sellerName" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.buyerAddress')">
+              <el-input v-model="existingEditForm.buyerAddress" />
+            </el-form-item>
+            <el-form-item :label="t('contracts.sellerAddress')">
+              <el-input v-model="existingEditForm.sellerAddress" />
+            </el-form-item>
+          </div>
+        </div>
+
+        <div class="edit-form-section">
+          <div class="edit-form-title">交付与付款</div>
+          <div class="edit-form-grid">
+            <el-form-item :label="t('contracts.incoterm')">
+              <el-select v-model="existingEditForm.incoterm" filterable allow-create default-first-option style="width:100%">
+                <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('contracts.paymentMethod')">
+              <el-select v-model="existingEditForm.paymentMethod" filterable allow-create default-first-option clearable style="width:100%">
+                <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('contracts.portOfLoading')">
+              <el-select v-model="existingEditForm.portOfLoading" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width:100%" :placeholder="t('contracts.pickOrEnterPol')">
+                <el-option v-for="p in contractPorts" :key="`edit-pol-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('contracts.portOfDischarge')">
+              <el-select v-model="existingEditForm.portOfDischarge" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width:100%" :placeholder="t('contracts.pickOrEnterPod')">
+                <el-option v-for="p in contractPorts" :key="`edit-pod-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+              </el-select>
+            </el-form-item>
+          </div>
+        </div>
         <el-form-item :label="t('contracts.terms')">
-          <el-input v-model="existingEditForm.terms" type="textarea" :rows="3" />
+          <el-input v-model="existingEditForm.terms" type="textarea" :rows="4" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -277,10 +321,11 @@
 
 
     <!-- Detail: terms, lines, version history -->
-    <el-drawer v-model="detailOpen" size="min(1040px,100vw)" :title="detail?.contract.contractNo ?? ''">
+    <el-drawer v-model="detailOpen" size="min(1040px,100vw)">
+      <template #header><span class="contract-drawer-title">{{ detail?.contract.contractNo ?? '' }}</span></template>
       <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
         <div class="detail-head">
-          <div>
+          <div class="detail-statuses">
             <el-tag :type="statusType(detail.contract.status)">
               {{ contractStatusLabel(detail.contract.status) }}
             </el-tag>
@@ -295,7 +340,7 @@
               {{ t('ownership.transfer') }}
             </el-button>
             <template v-if="canWrite && isMine">
-            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">补充信息</el-button></template>
+            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button size="small" type="primary" plain @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">{{ t('contracts.modifyInfo') }}</el-button></template>
             <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
             <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
               {{ '提交上级确认' }}
@@ -318,6 +363,11 @@
           </div>
         </div>
 
+        <section class="basic-info-panel">
+          <div class="basic-info-heading">
+            <span class="basic-info-title">合同基本信息</span>
+            <span class="basic-info-hint">签约、交付与执行资料</span>
+          </div>
         <el-descriptions :column="2" border size="small" class="desc">
           <el-descriptions-item label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
           <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
@@ -343,9 +393,6 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.owner')">{{ detail.contract.salesEmployee || '—' }}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" :label="t('contracts.externalContractNo')">
-            {{ detail.contract.externalContractNo || '—' }}
-          </el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" :label="t('contracts.contractSource')">
             <el-tag size="small" type="warning" effect="plain">{{ t('contracts.existingContract') }}</el-tag>
           </el-descriptions-item>
@@ -366,6 +413,7 @@
             {{ detail.version.changeReason }}
           </el-descriptions-item>
         </el-descriptions>
+        </section>
 
         <details class="detail-section" open>
           <summary class="detail-section-summary">
@@ -1952,25 +2000,47 @@ onUnmounted(stopListening)
 </script>
 
 <style scoped>
+.contract-drawer-title{
+  color:#183f54;
+  font-size:20px;
+  font-weight:600;
+  letter-spacing:.1px;
+}
 .contract-detail{
-  --detail-title:#173f54;
-  --detail-text:#2d4554;
-  --detail-muted:#718391;
+  --detail-title:#183f54;
+  --detail-text:#294655;
+  --detail-muted:#728795;
+  --detail-border:#dce7ed;
+  --detail-soft:#f6fafc;
   color:var(--detail-text);
   font-size:14px;
   line-height:1.55;
 }
+.contract-detail :deep(.el-descriptions__body){
+  overflow:hidden;
+  border-radius:9px;
+}
+.basic-info-panel{margin-bottom:12px;padding:16px;border:1px solid var(--detail-border);border-radius:10px;background:#fff}
+.basic-info-heading{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.basic-info-title{color:var(--detail-title);font-size:16px;font-weight:600}
+.basic-info-hint{color:var(--detail-muted);font-size:12px;font-weight:400}
+.contract-detail :deep(.el-descriptions__table){
+  border-color:var(--detail-border);
+}
 .contract-detail :deep(.el-descriptions__label.el-descriptions__cell){
   width:132px;
-  background:#f5f8fa;
-  color:#526876;
-  font-size:13px;
-  font-weight:500;
-}
-.contract-detail :deep(.el-descriptions__content.el-descriptions__cell){
-  color:var(--detail-text);
+  padding:10px 12px;
+  background:#f4f8fa;
+  color:#607785;
   font-size:14px;
   font-weight:400;
+}
+.contract-detail :deep(.el-descriptions__content.el-descriptions__cell){
+  padding:10px 14px;
+  color:var(--detail-text);
+  font-size:15px;
+  font-weight:500;
+  line-height:1.55;
 }
 .contract-detail :deep(.el-table th.el-table__cell){
   background:#f6f9fb;
@@ -2000,14 +2070,14 @@ onUnmounted(stopListening)
   -webkit-box-orient:vertical;
   overflow:hidden;
 }
-.detail-section{margin:14px 0;border:1px solid #dce7ee;border-radius:10px;background:#fff;overflow:hidden}
-.detail-section-summary{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 16px;cursor:pointer;list-style:none;background:#f7fafb;transition:background-color .18s ease}
+.detail-section{margin:12px 0;border:1px solid var(--detail-border);border-radius:10px;background:#fff;overflow:hidden}
+.detail-section-summary{display:flex;align-items:center;gap:12px;min-height:54px;padding:0 17px;cursor:pointer;list-style:none;background:var(--detail-soft);transition:background-color .18s ease}
 .detail-section-summary::-webkit-details-marker{display:none}
 .detail-section-summary::before{content:'›';flex:0 0 auto;color:#6d8593;font-size:20px;line-height:1;transform:rotate(0);transition:transform .18s ease}
 .detail-section[open]>.detail-section-summary::before{transform:rotate(90deg)}
-.detail-section-summary:hover{background:#f1f7f9}
-.section-summary-title{color:var(--detail-title);font-size:15px;font-weight:600}
-.section-summary-meta{margin-left:auto;color:var(--detail-muted);font-size:12px;font-weight:400;text-align:right}
+.detail-section-summary:hover{background:#eef6f9}
+.section-summary-title{color:var(--detail-title);font-size:16px;font-weight:600}
+.section-summary-meta{margin-left:auto;color:var(--detail-muted);font-size:13px;font-weight:400;text-align:right}
 .detail-section-body{padding:14px 16px 16px;border-top:1px solid #e8eef2}
 .approval-panel{margin-top:14px}
 .approval-body{padding-top:6px;padding-bottom:8px}
@@ -2030,8 +2100,20 @@ onUnmounted(stopListening)
 .approval-comment{display:grid;grid-template-columns:60px minmax(0,1fr);gap:8px;margin:7px 0 0;padding:8px 10px;background:#fff7f3;color:#7e4331;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 .approval-comment span{color:#a56a58;font-size:12px}
 .cargo-summary{display:block;max-height:76px;overflow:auto;line-height:1.6}
-.detail-head{padding:16px;border:1px solid #dce7ee;border-radius:10px;background:#f3f8fb}
+.detail-head{padding:16px 18px;border:1px solid var(--detail-border);border-radius:10px;background:#f3f8fa}
+.detail-statuses{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.detail-statuses .version-chip,.detail-statuses .in-force{margin-left:0}
+.detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.detail-actions :deep(.el-button+.el-button){margin-left:0}
+.detail-actions :deep(.el-button){min-height:34px;padding:7px 14px;font-size:14px}
+.basic-edit-form{max-height:min(68vh,680px);padding-right:4px;overflow:auto}
+.edit-form-section{margin-bottom:18px;padding:15px 16px 2px;border:1px solid #e1e9ee;border-radius:9px;background:#fafcfd}
+.edit-form-title{margin-bottom:13px;color:#274b5d;font-size:15px;font-weight:600}
+.edit-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px}
+.basic-edit-form :deep(.el-form-item__label){color:#5c7180;font-size:13px;font-weight:500}
+.basic-edit-form :deep(.el-form-item){margin-bottom:16px}
 @media(max-width:600px){.detail-section-summary{align-items:flex-start;flex-wrap:wrap;gap:6px;padding:10px 12px}.section-summary-meta{width:100%;margin-left:30px;text-align:left}.detail-section-body{padding:10px 12px}.round-head,.round-submission{align-items:flex-start;flex-direction:column}.round-head{gap:6px}.approval-entry-head time{width:100%;margin-left:0}.approval-comment{grid-template-columns:1fr}}
+@media(max-width:720px){.edit-form-grid{grid-template-columns:1fr}.contract-drawer-title{font-size:18px}.contract-detail :deep(.el-descriptions__label.el-descriptions__cell){width:104px}.contract-detail :deep(.el-descriptions__content.el-descriptions__cell){font-size:14px}}
 .recv {
   display: flex;
   gap: 22px;
@@ -2100,7 +2182,7 @@ onUnmounted(stopListening)
   color: var(--el-color-success);
 }
 .desc {
-  margin-bottom: 8px;
+  margin-bottom:0;
 }
 .terms {
   white-space: pre-wrap;
