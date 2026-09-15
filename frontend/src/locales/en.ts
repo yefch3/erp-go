@@ -1996,7 +1996,6 @@ export default {
     searchClear: 'Leave search',
     showDetails: 'Details',
     replyToMismatch: 'Note: replying goes to {addr}, not the sender’s address',
-    threadFiles: 'Files in this conversation ({n})',
     hideDetails: 'Hide details',
     detail: {
       from: 'From',
