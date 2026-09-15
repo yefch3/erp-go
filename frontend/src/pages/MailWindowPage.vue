@@ -169,22 +169,14 @@
         <el-divider />
         <div class="att-head">
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          <!-- 打成一个 zip 拿走。两个以上才给这颗：只有一个附件时它和旁边的
-               「下载」是同一件事，多一颗只会让人挑。和主窗口阅读区同一条规矩。 -->
-          <el-button
-            v-if="mail.attachments.length > 1"
-            size="small"
-            plain
-            :loading="bundling"
-            @click="downloadAll"
-          >
-            {{ t('emails.downloadAll', { n: mail.attachments.length }) }}
-          </el-button>
         </div>
+        <!-- 「下载全部」那颗在组件里，跟着这一封走。和主窗口同一条规矩。 -->
         <MailAttachments
           :files="mail.attachments"
           :mail-id="String(mail.id)"
+          :bundling="bundling"
           @preview="openPreview"
+          @download-all="downloadAll"
         />
       </template>
     </template>
