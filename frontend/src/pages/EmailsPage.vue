@@ -484,7 +484,12 @@
           />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
-        <template v-if="openedInbound.attachments?.length">
+        <!-- 只在「这封信自己单独一封」时列在这里。
+             会话里每一封的附件已经跟在它自己那一条下面了，底下再来一块只会
+             让人问「这两个是不是同一个文件」——而它确实只是其中一封的，不是
+             整条会话的汇总（2026-09-15 被问到，所以去掉）。
+             代价：会话里没有「下载全部」了，单封仍然有。 -->
+        <template v-if="threadItems.length <= 1 && openedInbound.attachments?.length">
           <el-divider />
           <div class="att-head">
             <h4 class="side-title">{{ t('emails.attachments') }}</h4>
