@@ -1329,7 +1329,7 @@ export default {
     detail: '详情',
     buyer: '买方',
     buyerAddress: '买方地址',
-    seller: '卖方',
+    seller: '卖方（己方）',
     sellerAddress: '卖方地址',
     incoterm: '贸易术语',
     paymentMethod: '付款方式',
