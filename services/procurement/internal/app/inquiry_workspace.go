@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
+	"github.com/sgao19/erp-go/services/procurement/internal/store"
 
 	"github.com/shopspring/decimal"
 )
@@ -143,6 +144,9 @@ type InquiryView struct {
 	ProcurementCount int                `json:"procurementCount"`
 	LogisticsCount   int                `json:"logisticsCount"`
 	CanEdit          bool               `json:"canEdit"`
+	ReadOnlyReason   string             `json:"readOnlyReason,omitempty"`
+	CanWithdraw      bool               `json:"canWithdraw"`
+	WithdrawReason   string             `json:"withdrawReason,omitempty"`
 	SourceMailID     string             `json:"sourceMailId"`
 	Legacy           bool               `json:"legacy"`
 }
@@ -423,7 +427,22 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	} else if v.State != "INQUIRING" {
 		return nil, apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
 	}
-	v.CanEdit = owner == op.ID && view == "SALES" && s.inquiryAllowed(ctx, op, view, true) == nil
+	// SALES visibility was checked above. Managers use the same write permission
+	// as salespeople, within the employee range supplied by IAM.
+	v.CanEdit = view == "SALES" && s.inquiryAllowed(ctx, op, view, true) == nil
+	if view == "SALES" && !v.CanEdit {
+		v.ReadOnlyReason = "当前账号没有询盘编辑权限"
+	}
+	if view == "SALES" && v.CanEdit && v.State == "INQUIRING" {
+		var confirmed bool
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sourcing_customer_selections WHERE tenant_id=$1 AND case_id=$2 AND status='CUSTOMER_CONFIRMED')`, tenant, id).Scan(&confirmed); err != nil {
+			return nil, err
+		}
+		v.CanWithdraw = !confirmed
+		if confirmed {
+			v.WithdrawReason = "客户已确认，不能直接撤回，请走后续业务变更流程"
+		}
+	}
 	v.Legacy = len(raw) == 0
 	if len(raw) > 0 {
 		if err = json.Unmarshal(raw, &v.Body); err != nil {
@@ -659,8 +678,8 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 			if err := tx.QueryRow(ctx, `SELECT owner_id,inquiry_revision,status,handoff_status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, id).Scan(&owner, &revision, &state, &handoff); err != nil {
 				return err
 			}
-			if owner != op.ID {
-				return apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以编辑")
+			if err := s.authorizeInquiryOwner(ctx, op, owner); err != nil {
+				return err
 			}
 			if revision != in.Revision || state != "INTAKE_PENDING" {
 				return apierr.Conflict("INQUIRY_CHANGED", "询盘已变化，请刷新后重试")
@@ -713,7 +732,10 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE sourcing_cases SET inquiry_body=$3,customer_id=$4,customer_name=$5,contact_id=$6,contact_name=$7,title=$8,inquiry_template_id=$9,inquiry_template_code=$10,inquiry_template_version=$11,inquiry_revision=inquiry_revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, raw, inquiryID(in.Body.CustomerID), in.Body.Customer, inquiryID(in.Body.ContactID), in.Body.Contact, valueOr(strings.TrimSpace(in.Body.Title), "客户询盘"), inquiryID(in.Body.Template.ID), in.Body.Template.TemplateCode, in.Body.Template.Version)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.recordInquiryAction(ctx, tx, tenant, id, op, "save")
 	})
 	if err != nil {
 		return InquiryResult{}, err
@@ -750,8 +772,8 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 		if e := tx.QueryRow(ctx, `SELECT owner_id,inquiry_revision,status,handoff_status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, id).Scan(&owner, &revision, &state, &handoff); e != nil {
 			return e
 		}
-		if owner != op.ID {
-			return apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以处理")
+		if err := s.authorizeInquiryOwner(ctx, op, owner); err != nil {
+			return err
 		}
 		if revision != in.Revision {
 			return apierr.Conflict("INQUIRY_CHANGED", "询盘已变化，请刷新后重试")
@@ -772,7 +794,10 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 				return e
 			}
 			_, e := tx.Exec(ctx, `UPDATE sourcing_lines SET decision='CONFIRMED' WHERE tenant_id=$1 AND case_id=$2`, tenant, id)
-			return e
+			if e != nil {
+				return e
+			}
+			return s.recordInquiryAction(ctx, tx, tenant, id, op, "submit")
 		}
 		if state == "INTAKE_PENDING" || state == "CANCELLED" {
 			return apierr.Conflict("INQUIRY_CHANGED", "当前询盘不能撤回")
@@ -808,7 +833,10 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 			}
 		}
 		_, e := tx.Exec(ctx, `UPDATE sourcing_cases SET status='INTAKE_PENDING',handoff_status='SALES_WITHDRAWN',inquiry_revision=inquiry_revision+1,inquiry_submitted_at=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id)
-		return e
+		if e != nil {
+			return e
+		}
+		return s.recordInquiryAction(ctx, tx, tenant, id, op, "withdraw")
 	})
 	if err != nil {
 		if remoteAvailabilityChanged {
@@ -819,6 +847,30 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 	s.nudge(ctx, tenant)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
+}
+
+// Called with the case row locked so authorization uses its current owner.
+func (s *Service) authorizeInquiryOwner(ctx context.Context, op Operator, owner int64) error {
+	if err := s.inquiryAllowed(ctx, op, "SALES", true); err != nil {
+		return err
+	}
+	visible, err := s.visibleSourcingTo(ctx, op)
+	if err != nil {
+		return err
+	}
+	if !allowedSourcingOwner(visible, owner) {
+		return apierr.NotFound("SC_CASE_NOT_FOUND", "询盘不存在")
+	}
+	return nil
+}
+
+func (s *Service) recordInquiryAction(ctx context.Context, tx pgx.Tx, tenant, id int64, op Operator, action string) error {
+	summary := map[string]string{"save": "保存询盘", "submit": "提交询价", "withdraw": "撤回询价"}[action]
+	return s.q.WithTx(tx).CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
+		TenantID: tenant, CaseID: id, Section: "INQUIRY", Action: strings.ToUpper(action),
+		Summary: summary, BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`),
+		OperatorID: op.ID, OperatorName: op.Name,
+	})
 }
 
 // A document-service fence is changed before the local transaction so a

@@ -11,8 +11,9 @@
   <template v-else>
    <section class="detail-hero">
      <div><span class="detail-kicker">{{t(item.number?'inquiryWorkspace.detail.inquiryNo':'inquiryWorkspace.detail.creating')}}</span><h3>{{item.number||t('inquiryWorkspace.detail.newInquiry')}}</h3><div v-if="item.body.title" class="detail-title">{{item.body.title}}</div><div class="detail-meta"><el-tag :type="item.state==='INQUIRING'?'success':item.state==='WITHDRAWN'?'info':'warning'">{{stateLabel(item)}}</el-tag><span>{{t('inquiryWorkspace.detail.owner',{name:item.owner})}}</span><span>{{t('inquiryWorkspace.detail.products',{count:item.body.products.length})}}</span><span v-if="view!=='SALES'">{{t('inquiryWorkspace.detail.quotes',{count:item.quotes?.length||0})}}</span></div></div>
-     <div class="detail-actions"><el-button v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'&&auth.can('sales:inquiry:submit')" type="primary" @click="submit">{{item.state==='WITHDRAWN'?t('inquiryWorkspace.detail.resubmit'):t('inquiryWorkspace.detail.submit')}}</el-button><el-button v-if="department&&canWrite&&!editor" type="primary" @click="editQuote()">{{t(view==='PROCUREMENT'?'inquiryWorkspace.detail.addFactoryQuote':'inquiryWorkspace.detail.addLogisticsQuote')}}</el-button><el-dropdown trigger="click" @command="handleMore"><el-button class="more-actions">{{t('inquiryWorkspace.detail.more')}} <span class="more-arrow">⌄</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="back">{{t('inquiryWorkspace.detail.back')}}</el-dropdown-item><el-dropdown-item command="reload">{{t('inquiryWorkspace.detail.reload')}}</el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'" divided command="save">{{t('inquiryWorkspace.detail.saveDraft')}}</el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state==='INQUIRING'" divided command="withdraw">{{t('inquiryWorkspace.detail.withdraw')}}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+     <div class="detail-actions"><el-button v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'&&auth.can('sales:inquiry:submit')" type="primary" @click="submit">{{item.state==='WITHDRAWN'?t('inquiryWorkspace.detail.resubmit'):t('inquiryWorkspace.detail.submit')}}</el-button><el-button v-if="department&&canWrite&&!editor" type="primary" @click="editQuote()">{{t(view==='PROCUREMENT'?'inquiryWorkspace.detail.addFactoryQuote':'inquiryWorkspace.detail.addLogisticsQuote')}}</el-button><el-dropdown trigger="click" placement="bottom-end" popper-class="inquiry-action-menu" @visible-change="moreOpen=$event" @command="handleMore"><el-button class="more-actions" :class="{'is-open':moreOpen}">{{t('inquiryWorkspace.detail.more')}}<span class="more-arrow" aria-hidden="true">▼</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="back"><el-icon><Back/></el-icon><span>{{t('inquiryWorkspace.detail.back')}}</span></el-dropdown-item><el-dropdown-item command="reload"><el-icon><Refresh/></el-icon><span>{{t('inquiryWorkspace.detail.reload')}}</span></el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'" class="menu-action-save" command="save"><el-icon><DocumentChecked/></el-icon><span>{{t('inquiryWorkspace.detail.saveDraft')}}</span></el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state==='INQUIRING'" class="menu-action-withdraw" divided :disabled="!item.canWithdraw" command="withdraw"><el-icon><RefreshLeft/></el-icon><span>{{t('inquiryWorkspace.detail.withdraw')}}</span></el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
     </section>
+    <el-alert v-if="view==='SALES'&&(item.readOnlyReason||item.withdrawReason)" :title="item.readOnlyReason||item.withdrawReason" type="info" :closable="false" show-icon/>
     <el-tabs v-model="detailTab" class="detail-tabs">
      <el-tab-pane :label="t('inquiryWorkspace.detail.overview')" name="overview">
      <div class="overview-grid">
@@ -66,6 +67,7 @@ import {computed,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
+import {Back,DocumentChecked,Refresh,RefreshLeft} from '@element-plus/icons-vue'
 import {get,post} from '../api'
 import {isAxiosError} from 'axios'
 import InquiryProducts from '../components/InquiryProducts.vue'
@@ -87,6 +89,7 @@ const canWrite=computed(()=>auth.can(view.value==='SALES'?'sales:inquiry:write':
 const offerStates=ref<Record<string,{status:string;confirmedAt:string}>>({})
 const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(20),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
 const refreshSuspended=ref(false),refreshErrorShown=ref(false)
+const moreOpen=ref(false)
 interface CustomerOption {value:string;id:string;code:string;name:string}
 interface ContactOption {value:string;id:string;name:string;department:string;title:string;email:string;isPrimary:boolean}
 const customerOptions=ref<CustomerOption[]>([]),contactOptions=ref<ContactOption[]>([])
@@ -152,9 +155,35 @@ function create(){const body=blankBody(),template=activeTemplates.value.find(row
 function changeTemplate(id:string){if(!item.value)return;const template=activeTemplates.value.find(row=>row.id===id);if(!template)return;item.value.body.template=templateSnapshot(template);item.value.body.products.forEach(product=>applyTemplateDefaults(product,item.value!.body.template!.fields))}
 function addProduct(){if(!item.value)return;const product=blankProduct();applyTemplateDefaults(product,item.value.body.template?.fields||[]);item.value.body.products.push(product)}
 async function save(notify=true){if(!item.value)return;busy.value=true;try{const r=await command('save',{id:item.value.id,revision:item.value.revision,body:item.value.body});item.value=normalizeInquiry(r.item);if(notify)ElMessage.success('已保存')}finally{busy.value=false}}
-async function submit(){await save();if(!item.value)return;busy.value=true;try{const r=await command('submit',{id:item.value.id,revision:item.value.revision});item.value=normalizeInquiry(r.item);ElMessage.success('已提交询价')}finally{busy.value=false}}
-async function withdraw(){if(!item.value)return;await ElMessageBox.confirm('确定撤回吗？采购和物流已经填写的报价将被清除，重新提交后需要重新报价。','撤回询价',{type:'warning'});const r=await command('withdraw',{id:item.value.id,revision:item.value.revision});item.value=normalizeInquiry(r.item)}
-async function handleMore(commandName:string){if(commandName==='back')await back();else if(commandName==='reload')await reload();else if(commandName==='save')await save();else if(commandName==='withdraw')await withdraw()}
+async function submit(){
+ if(busy.value)return
+ try{
+  await save(false)
+  if(!item.value)return
+  busy.value=true
+  const r=await command('submit',{id:item.value.id,revision:item.value.revision})
+  item.value=normalizeInquiry(r.item)
+  ElMessage.success('已提交询价')
+ }catch{
+  // The API interceptor displays the server error. Saving alone is not submission.
+ }finally{busy.value=false}
+}
+async function withdraw(){
+ if(!item.value||busy.value)return
+ try{
+  await ElMessageBox.confirm('确定撤回吗？采购和物流已经填写的报价将被清除，重新提交后需要重新报价。','撤回询价',{type:'warning'})
+  busy.value=true
+  const r=await command('withdraw',{id:item.value.id,revision:item.value.revision})
+  item.value=normalizeInquiry(r.item)
+  ElMessage.success('已撤回询价')
+ }catch{
+  // Cancellation needs no toast; request failures are shown by the API interceptor.
+ }finally{busy.value=false}
+}
+async function handleMore(commandName:string){
+ try{if(commandName==='back')await back();else if(commandName==='reload')await reload();else if(commandName==='save')await save();else if(commandName==='withdraw')await withdraw()}
+ catch{ /* Dialog cancellation or an error already displayed by the API interceptor. */ }
+}
 async function loadCustomerOptions(){const data=await get<{customers:{id:string;code:string;name:string}[]}>('/sourcing-customer-options',{page_size:500});customerOptions.value=(data.customers||[]).map(option=>({...option,value:option.name}))}
 async function customerSuggestions(query:string,done:(items:CustomerOption[])=>void){try{if(!customerOptions.value.length)await loadCustomerOptions();const needle=query.trim().toLowerCase();done(customerOptions.value.filter(option=>!needle||`${option.code} ${option.name}`.toLowerCase().includes(needle)).slice(0,50))}catch{done([])}}
 async function loadContactOptions(customerId:string){if(!customerId){contactOptions.value=[];return}const data=await get<{contacts:Omit<ContactOption,'value'>[]}>(`/sourcing-customer-options/${customerId}/contacts`);contactOptions.value=(data.contacts||[]).map(option=>({...option,value:option.name}))}
@@ -222,8 +251,25 @@ watch(view,()=>void initial())
 .detail-meta { display:flex; align-items:center; gap:12px; margin-top:10px; color:#dceef3; font-size:13px; }
 .detail-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .detail-actions :deep(.el-button:not(.el-button--primary)) { color:#17455f; border-color:#fff; background:#fff; }
-.more-actions { min-width:112px; font-weight:700; box-shadow:0 4px 14px rgba(4,36,54,.18); }
-.more-arrow { margin-left:8px; color:#176b87; font-size:17px; }
+.more-actions { min-width:126px; font-weight:700; box-shadow:0 4px 14px rgba(4,36,54,.18); }
+.more-actions.is-open { color:#116f98; border-color:#a8ddf4; background:#f1faff; }
+.more-arrow { margin-left:10px; color:#176b87; font-size:10px; line-height:1; transition:transform .18s ease; }
+.more-actions.is-open .more-arrow { transform:rotate(180deg); }
+:global(.inquiry-action-menu.el-popper) { box-sizing:border-box; overflow:hidden; width:160px; min-width:160px; padding:6px; border:1px solid #d9e8ef; border-radius:10px; box-shadow:0 12px 30px rgba(20,63,90,.16); }
+:global(.inquiry-action-menu .el-dropdown-menu) { padding:0; }
+:global(.inquiry-action-menu .el-dropdown-menu__item) { height:40px; gap:10px; margin:2px 0; padding:0 12px; color:#334b5c; border-radius:7px; font-size:14px; }
+:global(.inquiry-action-menu .el-dropdown-menu__item .el-icon) { width:18px; margin:0; color:#718696; font-size:16px; }
+:global(.inquiry-action-menu .el-dropdown-menu__item:not(.is-disabled):focus),
+:global(.inquiry-action-menu .el-dropdown-menu__item:not(.is-disabled):hover) { color:#0e79a8; background:#edf8fd; }
+:global(.inquiry-action-menu .el-dropdown-menu__item:not(.is-disabled):hover .el-icon) { color:#159fdc; }
+:global(.inquiry-action-menu .el-dropdown-menu__item.el-dropdown-menu__item--divided) { margin-top:7px; }
+:global(.inquiry-action-menu .el-dropdown-menu__item.el-dropdown-menu__item--divided::before) { left:-6px; right:-6px; height:1px; background:#e7eef2; }
+:global(.inquiry-action-menu .menu-action-save) { color:#217652; }
+:global(.inquiry-action-menu .menu-action-save .el-icon) { color:#2d966c; }
+:global(.inquiry-action-menu .menu-action-save:not(.is-disabled):hover) { color:#176344; background:#edf8f2; }
+:global(.inquiry-action-menu .menu-action-withdraw) { color:#bd542f; }
+:global(.inquiry-action-menu .menu-action-withdraw .el-icon) { color:#d66a42; }
+:global(.inquiry-action-menu .menu-action-withdraw:not(.is-disabled):hover) { color:#a84225; background:#fff2ed; }
 .business-card { margin-bottom:16px; padding:20px 22px; background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:0 5px 18px rgba(31,65,91,.04); }
 .section-title { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:17px; }
 .section-title h3 { margin:0; font-size:16px; color:var(--ink); }
