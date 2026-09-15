@@ -53,7 +53,13 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	}
 	if inst.BizType == "CONTRACT" {
 		if actorID == inst.SubmitterID {
-			return store.ApprovalInstance{}, nil, apierr.Permission("AP_CONTRACT_SELF", "合同需要上级负责人确认，不能本人审批")
+			allowed, err := s.canContractSelfConfirm(ctx, actorID)
+			if err != nil {
+				return store.ApprovalInstance{}, nil, err
+			}
+			if !allowed {
+				return store.ApprovalInstance{}, nil, apierr.Permission("AP_CONTRACT_SELF", "普通销售提交的合同需要上级负责人确认，不能本人审批")
+			}
 		}
 		if action == ActionReject {
 			action = ActionReturn
