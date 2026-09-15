@@ -10,7 +10,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
-type inquiryManagerAccess struct{ d1Access }
+type inquiryManagerAccess struct{}
 
 func (inquiryManagerAccess) VisibleEmployees(_ context.Context, id int64, _ string) (Visibility, error) {
 	switch id {
