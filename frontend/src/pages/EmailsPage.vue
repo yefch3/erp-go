@@ -1472,6 +1472,7 @@ import {
   type SortField,
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import { attachmentExcelSource } from '../lib/attachmentExcelSource'
 import {
   base64ToBytes,
   excelPollAfterFailure,
@@ -4379,18 +4380,19 @@ let excelHideTimer: number | null = null
 
 // Hover opens the same bubble right-click opens; the brief delay keeps a
 // mouse crossing the attachments row from flashing it on every card.
-function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
-  if (!openedInbound.value) return
-  const mailId = openedInbound.value.id
+// mailId 是附件自己所属的那封信（组件传来的），不是当前打开的那封——见
+// lib/attachmentExcelSource 里那段为什么。
+function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile, mailId: string) {
+  const source = attachmentExcelSource(mailId, file.id)
+  if (!source) return
   const current = excelMenu.source
   if (excelMenu.open && current?.kind === 'attachment' && current.attachmentId === file.id) return
   if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
   const card = event.currentTarget as HTMLElement
   excelHoverTimer = window.setTimeout(() => {
     const rect = card.getBoundingClientRect()
-    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 6, {
-      kind: 'attachment', mailId, attachmentId: file.id,
-    }, file.stored ? '' : 'emails.attachmentNotStored')
+    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 6, source,
+      file.stored ? '' : 'emails.attachmentNotStored')
   }, 250)
 }
 
@@ -4487,12 +4489,12 @@ function onPlainTextMouseUp() {
   }, 0)
 }
 
-function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
-  if (!openedInbound.value) return
+function openAttachmentExcelMenu(event: MouseEvent, file: MailFile, mailId: string) {
+  const source = attachmentExcelSource(mailId, file.id)
+  if (!source) return
   event.preventDefault()
-  positionExcelMenu(event.clientX, event.clientY, {
-    kind: 'attachment', mailId: openedInbound.value.id, attachmentId: file.id,
-  }, file.stored ? '' : 'emails.attachmentNotStored')
+  positionExcelMenu(event.clientX, event.clientY, source,
+    file.stored ? '' : 'emails.attachmentNotStored')
 }
 
 function closeExcelMenu() {
