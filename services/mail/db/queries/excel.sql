@@ -31,55 +31,21 @@ WHERE j.id=candidate.id
 RETURNING j.*;
 
 -- name: CompleteExcelJob :execrows
--- 完成一次转换。**只写库，一条语句落地**——状态、metadata、文件本身一起。
--- workbook_json 只收 metadata，不收行（见 app.Workbook.withoutRows）。
+-- 完成一次转换：第 3 步，也是最后一步（顺序见 app.processExcelJob）。走到
+-- 这里时文件本身和 metadata 都已经在对象存储里了；这一条只写 key 和 metadata。
 --
--- 不在这里传对象存储：那是第二套系统，两次写之间没有事务，而这一刻正是最不
--- 能出"一半"的时候（模型刚花完钱）。字节先落在 file_data 里，upload_next_try_at
--- 置为现在就等于排进了搬运队列，剩下的交给搬运工重试到成功（见迁移 00066）。
+-- 文件本身不进库：file_data 这一列 2026-09-15 起不再写（下一版删列）。
+-- workbook_json 只收 metadata，不收行（见 app.Workbook.withoutRows）。
 UPDATE mail_excel_jobs SET
-  status='COMPLETED', file_name=sqlc.arg(file_name), file_data=sqlc.arg(file_data),
+  status='COMPLETED', file_name=sqlc.arg(file_name), file_key=sqlc.arg(file_key),
   workbook_json=sqlc.arg(workbook_json), model=sqlc.arg(model),
-  file_key='', upload_attempts=0, upload_next_try_at=now(), upload_last_error='',
   error_code='', error_message='', completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
 
--- name: ClaimExcelUpload :many
--- 搬运工要搬的那一批：字节还在库里、还没搬上去、到点可以再试的。
---
--- 不用 FOR UPDATE SKIP LOCKED：搬这件事是幂等的（键是确定的，重传就是覆盖），
--- 两个副本同时搬同一份的后果只是多传一次，而锁的代价是一直持着事务在传文件。
-SELECT id, tenant_id, file_name, file_data, upload_attempts
-FROM mail_excel_jobs
-WHERE file_data IS NOT NULL AND file_key = ''
-  AND (upload_next_try_at IS NULL OR upload_next_try_at <= now())
-ORDER BY upload_next_try_at, id
-LIMIT sqlc.arg(row_limit)::int;
-
--- name: MarkExcelUploaded :execrows
--- 传上去了：记下 key，同一条语句里把字节清掉。
---
--- **必须是同一条。** 分两条的话中间那一刻两处都有，而更糟的是先清字节、
--- 后写 key 失败——那时两处都没有，人拿不到文件。
-UPDATE mail_excel_jobs
-SET file_key=sqlc.arg(file_key), file_data=NULL,
-    upload_last_error='', upload_next_try_at=NULL, updated_at=now()
-WHERE id=sqlc.arg(id)::bigint AND file_key='';
-
--- name: DelayExcelUpload :execrows
--- 这一趟没传上去：记一笔，退避之后再来。**字节一个都不动**——它现在是人
--- 唯一能取到这份文件的地方。
-UPDATE mail_excel_jobs
-SET upload_attempts=upload_attempts+1,
-    upload_last_error=sqlc.arg(last_error),
-    upload_next_try_at=now() + sqlc.arg(retry_in)::interval,
-    updated_at=now()
-WHERE id=sqlc.arg(id)::bigint;
-
 -- name: FailExcelJob :execrows
+-- 失败是终态，不自动重来：再转一次要花模型的钱，那得由人决定。
 UPDATE mail_excel_jobs SET
-  status='FAILED', file_key='', file_data=NULL, workbook_json=NULL,
-  upload_next_try_at=NULL,
+  status='FAILED', file_key='', workbook_json=NULL,
   error_code=sqlc.arg(error_code), error_message=sqlc.arg(error_message),
   completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
@@ -180,14 +146,15 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 DELETE FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
 
 -- name: ListExpiredExcelPayloads :many
--- 过了窗口期、还没收过的任务。清理器拿这一批，先删对象存储里那一份，再清行。
+-- 过了窗口期、还没收过的任务。清理器拿这一批，先删对象存储里的两份（文件
+-- 本身和 metadata），再清行。
 --
 -- **判据是 payload_cleared_at，不是「列里还有没有东西」。** 后者听起来更直接，
--- 但它恰好漏掉最该收的那一种：对象写成功、行写失败之后留下的**孤儿**——
--- 那一行的 file_key 和 file_data 都是空的，而对象还在桶里躺着。
+-- 但它恰好漏掉最该收的那一种：文件传上去了、任务最后却失败了（比如 metadata
+-- 那份没传成）——那一行的 file_key 是空的，而文件还在桶里躺着。
 --
 -- 所以这里不挑，凡是结束了又没收过的都拿出来，让 Go 按「租户/任务号」算出
--- 对象键去删一次。算得出来是因为那个键本来就不依赖任何存下来的字段，而 S3
+-- 两个键去删一次。算得出来是因为那两个键本来就不依赖任何存下来的字段，而 S3
 -- 的 DELETE 对不存在的键是幂等的——没有对象的那些，这一下什么都不会发生。
 --
 -- 分两步而不是一条 UPDATE：对象得由 Go 去删，而且**一个删不掉不该连累
@@ -209,7 +176,9 @@ LIMIT sqlc.arg(row_limit)::int;
 --
 -- 谁都够不着了才清：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），
 -- 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
+--
+-- file_data=NULL 是给改动前完成的旧任务的：它们的文件本身还在这一列里。
 UPDATE mail_excel_jobs
 SET file_key='', file_data=NULL, workbook_json=NULL,
-    upload_next_try_at=NULL, payload_cleared_at=now(), updated_at=now()
+    payload_cleared_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id)::bigint;

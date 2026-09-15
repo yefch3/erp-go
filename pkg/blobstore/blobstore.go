@@ -5,6 +5,7 @@ package blobstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -198,9 +199,18 @@ func (s *Store) Remove(ctx context.Context, key string) error {
 // Needed whenever an upload went straight to storage through a presigned URL:
 // the size the client reports afterwards is a claim, not a fact, so any cap
 // enforced on it is advisory. Reading the object's real size closes that.
+// ErrNotFound 是 Stat 对「没有这个键」的回答，和「存储不通」分开：有人要靠
+// 这个区别决定接下来做不做一件花钱的事（mail 服务恢复转换结果时，没有就
+// 重跑模型，不通就等）。Get 给不了这个区别——对象是懒取的，键不存在要到
+// 第一次 Read 才知道。
+var ErrNotFound = errors.New("blobstore: object not found")
+
 func (s *Store) Stat(ctx context.Context, key string) (int64, string, error) {
 	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
+		if resp := minio.ToErrorResponse(err); resp.Code == "NoSuchKey" || resp.StatusCode == 404 {
+			return 0, "", fmt.Errorf("blobstore: stat %s: %w", key, ErrNotFound)
+		}
 		return 0, "", fmt.Errorf("blobstore: stat %s: %w", key, err)
 	}
 	return info.Size, info.ContentType, nil

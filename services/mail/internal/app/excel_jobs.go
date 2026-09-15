@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
@@ -84,8 +85,9 @@ func (s *Service) StartExcelJob(
 
 // excelResultBytes 取这次转换出来的那份文件。
 //
-// 两个地方之一：对象存储（正常路径），或者库里那一列（对象存储当时写不进去
-// 的退路，见 storeExcelResult）。两处都空，就是已经被清理器收走了。
+// 两个地方之一：对象存储（2026-09-15 起唯一的写入处），或者库里那一列（改动
+// 前完成的旧任务的文件本身还在那里，留存期一到清空）。两处都空，就是已经被
+// 清理器收走了。
 //
 // **收走之后必须明说。** 不拦的话，Data 是空的、workbook_json 是 nil，人拿到
 // 一个 0 字节的 .xlsx——一个打不开的文件，比一句"过期了"难查得多。走到这儿
@@ -244,8 +246,9 @@ const (
 
 // RunExcelPayloadSweeper 把交付完的转换结果收走，**行留着**。
 //
-// 收两处：对象存储里的那一份，以及退路上留在库里的那些字节（对象存储当时
-// 写不进去，见 storeExcelResult）。只收一处的话，另一处就成了新的只增不减。
+// 收两处：对象存储里的那两份（文件本身和 metadata），以及改动前完成的旧任务
+// 留在库里的文件本身（file_data，2026-09-15 起不再写）。只收一处的话，另一处
+// 就成了新的只增不减。
 //
 // **谁都够不着了才收。** 任务号只活在浏览器的 sessionStorage 里（标签页一关
 // 就没），而且没有任何界面列得出历史任务。过了窗口期，那份文件是任何人都
@@ -289,16 +292,13 @@ func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
 		// 先删对象、再清行。反过来的话，删对象失败就再也没有人回来收它了
 		// ——那一行已经标成"收过了"，下一趟不会再列出来。
 		//
-		// **不看这一行的列里写着什么，一律按租户+任务号算一次键去删。**
-		// 不是因为有孤儿要捡（新的写入顺序下没有孤儿：对象只由搬运工创建，
-		// 而它只为已经存在的行干活），是因为这样这一段完全不依赖那两列的
-		// 状态——搬到一半、没搬、搬完了，收的动作都一样。S3 的 DELETE 对
-		// 不存在的键是幂等的，没有对象的那些行，这一下什么都不会发生。
-		if s.files != nil {
-			if err := s.files.Remove(ctx, excelResultKey(row.TenantID, row.ID)); err != nil {
-				s.log.Warn("could not remove an expired excel result", "job", row.ID, "err", err)
-				continue
-			}
+		// **不看这一行的列里写着什么，一律按租户+任务号算出两个键去删。**
+		// 这样这一段完全不依赖行的状态——成功的、失败的（文件传上去了但
+		// metadata 没传成的那种也在内）、旧的，收的动作都一样。S3 的 DELETE
+		// 对不存在的键是幂等的，没有对象的那些行，这一下什么都不会发生。
+		if err := s.removeExcelObjects(ctx, row.TenantID, row.ID); err != nil {
+			s.log.Warn("could not remove an expired excel result", "job", row.ID, "err", err)
+			continue
 		}
 		if _, err := s.q.ClearExcelJobPayload(ctx, row.ID); err != nil {
 			s.log.Error("could not clear an expired excel payload", "job", row.ID, "err", err)
@@ -345,7 +345,64 @@ func (s *Service) drainExcelJobs(ctx context.Context) error {
 	}
 }
 
+// 结果怎么落地——顺序是关键（2026-09-15 定的；之前两版都把文件本身写进
+// 过库，一版还会在写库失败时重跑模型，两条都是产品负责人明确不要的）：
+//
+//  1. **文件本身 → 对象存储**（mail-excel/<租户>/<任务号>.xlsx）
+//  2. **一小份 metadata → 对象存储**（同名 .json：文件名、模型、表的说明和
+//     字段标识——就是第 3 步要写进库的那几样）
+//  3. **状态 + file_key + metadata → 库**，一条 UPDATE
+//
+// 文件本身**从不进库**。库里只有 metadata，行数据在文件里（见 withoutRows）。
+//
+// 每一步失败了怎么办：
+//
+//   - 第 1、2 步写不进去：进程里退避重试几次（excelWriteAttempts）；还不行
+//     就把任务标成 FAILED（MAIL_EXCEL_STORAGE_UNAVAILABLE），说清原因，由人
+//     决定什么时候再转。文件此刻只在内存里，而它不许进库——所以没有第二个
+//     地方可放；对象存储连着半分钟都写不进去，本来就是该有人看一眼的事故。
+//   - 第 3 步写不进去：进程里退避重试几次；还不行就让任务留在「处理中」，
+//     15 分钟后被重新领走（ClaimExcelJob）。领走时**先看对象存储里有没有第 2
+//     步那份 metadata**（recoverExcelResult）：有，说明文件早就在了，直接做
+//     第 3 步——**模型一次都不多跑**。进程半路被杀（部署）也走这条路。
+//   - 领走时对象存储不通：什么都不做，等下一次领。这时跑模型只会白花钱——
+//     跑完也存不进去。
+//
+// 第 2 步排在第 1 步之后，所以 metadata 在 ⇒ 文件在；恢复时只用看 metadata。
+// 反过来（文件在、metadata 不在）是第 2 步失败留下的，恢复时当作没有，重跑
+// 之后同一个键覆盖掉；就算任务最后失败了，清理器也按算出来的键把两份都删。
 func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
+	result, recovered, err := s.recoverExcelResult(ctx, row)
+	if err != nil {
+		s.log.Warn("object storage unreachable; leaving the Excel job for the next claim",
+			"job", row.ID, "err", err)
+		return
+	}
+	if !recovered {
+		var ok bool
+		if result, ok = s.convertExcelJob(ctx, row); !ok {
+			return
+		}
+		if err := s.putExcelResult(ctx, row, result); err != nil {
+			s.log.Error("could not store an Excel result; failing the job", "job", row.ID, "err", err)
+			s.failExcelJob(ctx, row, "MAIL_EXCEL_STORAGE_UNAVAILABLE",
+				"文件存储暂时不可用，这次转换的结果没能保存，请稍后重新转换")
+			return
+		}
+	}
+	if err := s.completeExcelJob(ctx, row, result); err != nil {
+		// 文件和 metadata 都已经在对象存储里了。任务留在「处理中」，下一次
+		// 领走时从那里恢复，不再跑模型。
+		s.log.Error("could not record a completed Excel job; it will be recovered from object storage",
+			"job", row.ID, "err", err)
+		return
+	}
+	s.publishExcelJob(ctx, row)
+}
+
+// convertExcelJob 跑模型。返回 false 表示任务已经标成失败（或者连失败都标
+// 不上，那时日志里有）。
+func (s *Service) convertExcelJob(ctx context.Context, row store.MailExcelJob) (ExcelResult, bool) {
 	snapshot, decodeErr := decodeInquiryTemplateSnapshot(row.TemplateColumns)
 	columns := snapshot.Columns
 	if decodeErr != nil {
@@ -356,8 +413,8 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		ctx, row.TenantID, row.OwnerID, row.InboundID,
 		row.AttachmentID, row.SelectedText, row.Locale, columns,
 	)
-	// 先记账，再管状态。成败都要记——模型答了钱就花了，重试几遍就花几遍。
-	// 记账失败不该拖垮任务本身：账少记一笔比活干不成轻。
+	// 先记账，再管状态。成败都要记——模型答了钱就花了。记账失败不该拖垮
+	// 任务本身：账少记一笔比活干不成轻。
 	if result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0 {
 		if _, usageErr := s.q.RecordExcelJobUsage(ctx, store.RecordExcelJobUsageParams{
 			ID: row.ID, InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens,
@@ -371,129 +428,154 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		if errors.As(err, &business) {
 			code, message = business.Code, business.Msg
 		}
-		if _, saveErr := s.q.FailExcelJob(ctx, store.FailExcelJobParams{
-			ID: row.ID, ErrorCode: code, ErrorMessage: message,
-		}); saveErr != nil {
-			s.log.Error("persist failed Excel job", "job", row.ID, "err", saveErr)
-			return
-		}
-		s.publishExcelJob(ctx, row)
-		return
+		s.failExcelJob(ctx, row, code, message)
+		return ExcelResult{}, false
 	}
-	// 库里只留 metadata，行数据不落：它们已经在文件里了（withoutRows 说了
-	// 为什么，以及留下的那几样为什么非留不可）。
-	workbook, err := json.Marshal(result.Workbook.withoutRows())
-	if err != nil {
-		s.log.Error("encode Excel job workbook", "job", row.ID, "err", err)
-		return
-	}
-	// 只写库，一条语句落地。对象存储交给搬运工（RunExcelUploader）——
-	// 这一刻是最不能出"一半"的时候，模型刚花完钱。
-	if _, err := s.q.CompleteExcelJob(ctx, store.CompleteExcelJobParams{
-		ID: row.ID, FileName: result.FileName, FileData: result.Data,
-		WorkbookJson: workbook, Model: result.Model,
+	return result, true
+}
+
+func (s *Service) failExcelJob(ctx context.Context, row store.MailExcelJob, code, message string) {
+	if _, err := s.q.FailExcelJob(ctx, store.FailExcelJobParams{
+		ID: row.ID, ErrorCode: code, ErrorMessage: message,
 	}); err != nil {
-		s.log.Error("persist completed Excel job", "job", row.ID, "err", err)
+		s.log.Error("persist failed Excel job", "job", row.ID, "err", err)
 		return
 	}
 	s.publishExcelJob(ctx, row)
 }
 
-// 搬运工：把落在库里的结果传去对象存储，然后把字节清掉。
-//
-// **为什么是一个队列，而不是在完成任务时顺手传一下。**
-//
-// PostgreSQL 和对象存储之间没有事务。顺手传的写法必然有一刻是"一半"：传成了
-// 行没写成、或者行写成了传失败。那一刻无论落在哪边，都得有人事后来打扫——
-// 而打扫的代价是，"不一致"变成了一种要靠另一段代码兜住的常态。
-//
-// 换个顺序就没有这一刻了：**完成任务时只写库，一条语句落地**（状态、workbook、
-// 字节一起，要么全成要么全不成）；对象存储是之后的事，由这里重试到成功。
-// 中间任何时刻，file_data 和 file_key 至少有一处是全的，所以人永远取得到。
-//
-// 传不上去不是失败，是降级：字节就一直留在库里，人照常拿得到，只是这一份
-// 没搬成。这比"让任务失败、请重新转换"好得多——模型那一次调用花了钱。
-//
-// 不设重试上限：上限的意义是"别再浪费了"，而这里每一次重试只是一个 PUT，
-// 不花钱。真正一直传不上去的时候，该有人去看对象存储，而不是让字节被放弃。
-const (
-	excelUploadBatch     = 20
-	excelUploadEvery     = 30 * time.Second
-	excelUploadRetryBase = 1 * time.Minute
-	excelUploadRetryMax  = 30 * time.Minute
-	excelContentType     = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+// excelResultSidecar 是和文件本身放在一起的那份 metadata——第 3 步要写进
+// 库的东西，一个不多一个不少。恢复时靠它把任务收尾，不用再问模型。
+type excelResultSidecar struct {
+	FileName string   `json:"file_name"`
+	Model    string   `json:"model"`
+	Workbook Workbook `json:"workbook"`
+}
+
+// 一次写（对象存储或库）连着失败时，在进程里等多久再放弃：2、4、8、16 秒，
+// 一共半分钟出头。抖一下够它缓过来；半分钟都不行的，等下去只是占着 worker。
+// 是变量不是常量：测试里不等。
+var (
+	excelWriteAttempts  = 5
+	excelWriteRetryBase = 2 * time.Second
 )
 
-func (s *Service) RunExcelUploader(ctx context.Context) {
+// retryBriefly 把一个会失败的写操作重试几次，退避翻倍。
+func retryBriefly(ctx context.Context, op func() error) error {
+	var err error
+	for attempt := 0; attempt < excelWriteAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(excelWriteRetryBase << (attempt - 1)):
+			}
+		}
+		if err = op(); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+// putExcelResult 是第 1、2 步：文件本身，然后 metadata，都进对象存储。
+func (s *Service) putExcelResult(ctx context.Context, row store.MailExcelJob, result ExcelResult) error {
 	if s.files == nil {
-		// 没配对象存储：结果就留在库里，和从前一样。不是错误。
-		return
+		return errors.New("object storage not configured")
 	}
-	s.log.Info("excel result uploader started", "every", excelUploadEvery)
-	t := time.NewTicker(excelUploadEvery)
-	defer t.Stop()
-	for {
-		s.uploadExcelResultsOnce(ctx)
-		select {
-		case <-ctx.Done():
-			s.log.Info("excel result uploader stopped")
-			return
-		case <-t.C:
-		}
-	}
-}
-
-func (s *Service) uploadExcelResultsOnce(ctx context.Context) {
-	rows, err := s.q.ClaimExcelUpload(ctx, excelUploadBatch)
+	sidecar, err := json.Marshal(excelResultSidecar{
+		FileName: result.FileName, Model: result.Model, Workbook: result.Workbook.withoutRows(),
+	})
 	if err != nil {
-		s.log.Error("could not claim excel uploads", "err", err)
-		return
+		return fmt.Errorf("encode excel result metadata: %w", err)
 	}
-	for _, row := range rows {
-		key := excelResultKey(row.TenantID, row.ID)
-		// 重传就是覆盖：键由租户和任务号算出来，不依赖任何存下来的字段。
-		// 所以上一趟"传成了、行没写成"留下的那一份，这一趟原地被盖掉。
-		if err := s.files.Put(ctx, key, bytes.NewReader(row.FileData),
-			int64(len(row.FileData)), excelContentType); err != nil {
-			s.delayExcelUpload(ctx, row.ID, row.UploadAttempts, err)
-			continue
-		}
-		// 写 key 和清字节是同一条语句。分两条的话，先清后写一旦失败，
-		// 两处都没有——人就拿不到这份文件了。
-		if _, err := s.q.MarkExcelUploaded(ctx, store.MarkExcelUploadedParams{
-			ID: row.ID, FileKey: key,
-		}); err != nil {
-			// 对象已经在那儿了，字节也还在。下一趟重传同一个键再清一次。
-			s.delayExcelUpload(ctx, row.ID, row.UploadAttempts, err)
-		}
-	}
-}
-
-func (s *Service) delayExcelUpload(ctx context.Context, id int64, attempts int32, cause error) {
-	wait := time.Duration(attempts+1) * excelUploadRetryBase
-	if wait > excelUploadRetryMax {
-		wait = excelUploadRetryMax
-	}
-	s.log.Warn("could not move an Excel result to object storage; it stays in the database",
-		"job", id, "attempts", attempts+1, "retry_in", wait, "err", cause)
-	if _, err := s.q.DelayExcelUpload(ctx, store.DelayExcelUploadParams{
-		ID: id, LastError: clampUploadError(cause), RetryIn: pgtype.Interval{
-			Microseconds: int64(wait / time.Microsecond), Valid: true,
-		},
+	fileKey := excelResultKey(row.TenantID, row.ID)
+	if err := retryBriefly(ctx, func() error {
+		return s.files.Put(ctx, fileKey, bytes.NewReader(result.Data), int64(len(result.Data)), excelContentType)
 	}); err != nil {
-		s.log.Error("could not record an excel upload failure", "job", id, "err", err)
+		return fmt.Errorf("store excel result file: %w", err)
 	}
+	metaKey := excelResultMetaKey(row.TenantID, row.ID)
+	if err := retryBriefly(ctx, func() error {
+		return s.files.Put(ctx, metaKey, bytes.NewReader(sidecar), int64(len(sidecar)), "application/json")
+	}); err != nil {
+		return fmt.Errorf("store excel result metadata: %w", err)
+	}
+	return nil
 }
 
-// 错误消息进库，掐短：对象存储的错误里可能带着整条请求。
-func clampUploadError(err error) string {
-	const max = 500
-	msg := err.Error()
-	if len(msg) > max {
-		return msg[:max]
+// metadata 那份对象的上限。几百字节的东西，给 1 MB 已经是天花板。
+const maxExcelSidecarBytes = 1 << 20
+
+// recoverExcelResult 看对象存储里有没有这个任务上一次跑完留下的 metadata。
+//
+//   - 有 ⇒ 文件也在（写的顺序保证的）。返回 true，不用再跑模型。
+//   - 没有 ⇒ 返回 false，正常跑。
+//   - 对象存储不通 ⇒ 返回错误。分不清有没有，这时什么都不该做。
+func (s *Service) recoverExcelResult(ctx context.Context, row store.MailExcelJob) (ExcelResult, bool, error) {
+	if s.files == nil {
+		return ExcelResult{}, false, nil
 	}
-	return msg
+	metaKey := excelResultMetaKey(row.TenantID, row.ID)
+	if _, _, err := s.files.Stat(ctx, metaKey); err != nil {
+		if errors.Is(err, blobstore.ErrNotFound) {
+			return ExcelResult{}, false, nil
+		}
+		return ExcelResult{}, false, err
+	}
+	raw, err := s.readCapped(ctx, metaKey, maxExcelSidecarBytes)
+	if err != nil {
+		return ExcelResult{}, false, err
+	}
+	var sidecar excelResultSidecar
+	if err := json.Unmarshal(raw, &sidecar); err != nil {
+		// 不是我们写的东西。当作没有；重跑之后同一个键覆盖掉。
+		s.log.Warn("unreadable excel result metadata in object storage; converting again",
+			"job", row.ID, "err", err)
+		return ExcelResult{}, false, nil
+	}
+	s.log.Info("recovered an Excel result from object storage; the model is not run again", "job", row.ID)
+	return ExcelResult{FileName: sidecar.FileName, Model: sidecar.Model, Workbook: sidecar.Workbook}, true, nil
 }
+
+// completeExcelJob 是第 3 步：库里写一行。只有 key 和 metadata，没有文件本身。
+func (s *Service) completeExcelJob(ctx context.Context, row store.MailExcelJob, result ExcelResult) error {
+	workbook, err := json.Marshal(result.Workbook.withoutRows())
+	if err != nil {
+		return fmt.Errorf("encode excel job workbook: %w", err)
+	}
+	return retryBriefly(ctx, func() error {
+		n, err := s.q.CompleteExcelJob(ctx, store.CompleteExcelJobParams{
+			ID: row.ID, FileName: result.FileName, FileKey: excelResultKey(row.TenantID, row.ID),
+			WorkbookJson: workbook, Model: result.Model,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// 已经不是「处理中」了——别的副本抢先收了尾，或者标了失败。
+			// 不算错，也没什么可重试的。
+			s.log.Warn("Excel job was no longer processing when its result was recorded", "job", row.ID)
+		}
+		return nil
+	})
+}
+
+// removeExcelObjects 删文件本身和 metadata 两份。S3 的 DELETE 对不存在的键
+// 幂等，所以没传成、传了一半、早就删过的，都一样处理。
+func (s *Service) removeExcelObjects(ctx context.Context, tenantID, jobID int64) error {
+	if s.files == nil {
+		return nil
+	}
+	for _, key := range []string{excelResultKey(tenantID, jobID), excelResultMetaKey(tenantID, jobID)} {
+		if err := s.files.Remove(ctx, key); err != nil {
+			return fmt.Errorf("remove %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+const excelContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 // 对象键：租户 + 任务号，**只由这两样算出来**。
 //
@@ -501,11 +583,15 @@ func clampUploadError(err error) string {
 // 任务重传多少次都是同一个键，所以重传是覆盖不是堆积。
 //
 // **刻意不收文件名。** 文件名是人看的（下载时的另存为名），而它会变——同一
-// 个任务重跑一次，模型可能给出不一样的名字。键要是掺了它，搬运工写进去的
-// 那个和清理器算出来的那个就会对不上，而症状是桶里悄悄留下一份谁也删不掉的
-// 东西。签名里干脆没有这个参数，就不会有人不小心把它加回去。
+// 个任务重跑一次，模型可能给出不一样的名字。键要是掺了它，写进去的那个和
+// 清理器算出来的那个就会对不上，而症状是桶里悄悄留下一份谁也删不掉的文件。
 func excelResultKey(tenantID, jobID int64) string {
 	return fmt.Sprintf("mail-excel/%d/%d.xlsx", tenantID, jobID)
+}
+
+// metadata 和文件本身并排放，同名不同后缀。清理器按同样的算法算出两个键。
+func excelResultMetaKey(tenantID, jobID int64) string {
+	return fmt.Sprintf("mail-excel/%d/%d.json", tenantID, jobID)
 }
 
 func (s *Service) publishExcelJob(ctx context.Context, row store.MailExcelJob) {

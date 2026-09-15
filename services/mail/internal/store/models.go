@@ -323,7 +323,7 @@ type MailExcelJob struct {
 	Status       string
 	AttemptCount int32
 	FileName     string
-	// 结果的字节。落库时先写这里，搬运工传上对象存储之后清空，见迁移 00066
+	// 旧列。2026-09-15 起不再写；改动前完成的任务的文件本身还在这里，留存期一到清空。下一版删列
 	FileData []byte
 	// 只有 metadata：表名、说明、表头、每列类型和字段标识，不带行。行在 .xlsx 文件里
 	WorkbookJson    []byte
@@ -337,11 +337,8 @@ type MailExcelJob struct {
 	TemplateColumns []byte
 	InputTokens     int64
 	OutputTokens    int64
-	// 结果在对象存储里的位置；空表示字节还在 file_data 里（搬运工还没搬成）
+	// 文件本身在对象存储里的位置；空表示还没完成，或者已经被清理器收走
 	FileKey          string
-	UploadAttempts   int32
-	UploadNextTryAt  pgtype.Timestamptz
-	UploadLastError  string
 	PayloadClearedAt pgtype.Timestamptz
 }
 
