@@ -31,8 +31,9 @@ import (
 // PreviewOffice 是 PreviewKind 的第三档：在线 Office 里打开。
 const PreviewOffice = "office"
 
-// Office 是 Document Server 的接入信息。为 nil 就是没配：办公文档退回"转成
-// PDF"那条老路（还配着 Gotenberg 的话），表格退回浏览器自己画的那一页。
+// Office 是 Document Server 的接入信息。**为 nil 就是没配：办公文档没有预览，
+// 只能下载**——转成 PDF 那条老路 2026-09-14 退役了，没有第二条路。表格
+// （.xlsx/.csv/.tsv）仍然退回浏览器自己画的那一页，那条不经过服务器。
 type Office struct {
 	// 浏览器从哪儿加载编辑器。生产上是前门 nginx 转发的 /docs，本地是 Vite
 	// 代理的同一个路径。

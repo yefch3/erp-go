@@ -340,10 +340,6 @@ services:
       # Google OAuth application credentials, from deploy/.env (gitignored).
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
-      # Word / Excel / PPT 附件转成 PDF 才能在页面上预览。留空就关掉预览：
-      # 那些附件照样列得出来、下载得下来，只是预览按钮说没配。
-      GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
-      GOTENBERG_TIMEOUT: ${GOTENBERG_TIMEOUT:-60s}
       # 在线 Office（下面那个 docs 容器）。DOCS_URL 是浏览器加载编辑器的地址：
       # 本地走 Vite 代理的 /docs，生产走前门 nginx 转发的同一个路径。密钥必须
       # 和 docs 容器的 JWT_SECRET 一致；本地给个开发用的默认值，生产从 .env 来。
@@ -361,7 +357,7 @@ services:
       - "127.0.0.1:9010:9010"
     expose:
       - "9011"
-    networks: [infra, convert]
+    networks: [infra]
     depends_on: [masterdata, iam]
     restart: unless-stopped
 
@@ -409,23 +405,6 @@ services:
     depends_on: [iam, masterdata, fx, approval, product, export, shipping, mail]
     restart: unless-stopped
 
-  # 把 Word / Excel / PPT 转成 PDF，好让人在页面上扫一眼再决定要不要下载。
-  #
-  # 里面是 LibreOffice —— 一个几百万行、历年出过远程执行漏洞的桌面软件，
-  # 而喂给它的是客户发来的、谁都没检查过的文件。所以：
-  #
-  #   * **只在 convert 这一张网上，而 convert 是 internal 的。** 它连不上
-  #     公网，也连不上宿主机的元数据地址（169.254.169.254）。一份构造过的
-  #     文档能让 LibreOffice 去取「链接的图片」，那就是一次 SSRF；这张网
-  #     就是为了让那次请求无处可去。mail 同时在两张网上，所以调得到它。
-  #   * 不发布任何端口。除了 mail，没有别的东西需要找到它。
-  #
-  # 镜像 2.4 GB（自带 LibreOffice 和 Noto CJK 字体，中文不会变方块），空闲
-  # 内存约 10 MB，转一个文件几百毫秒。
-  gotenberg:
-    image: gotenberg/gotenberg:8
-    networks: [convert]
-    restart: unless-stopped
 
   # 在线 Office：OnlyOffice Document Server。附件的「预览」在浏览器里开成一个
   # 完整的 Excel / Word / PPT——能翻、能搜、能选、能复制，不再转成 PDF。
@@ -435,8 +414,8 @@ services:
   #   · JWT 必须开，密钥和邮件服务的 DOCS_JWT_SECRET 同一把。它给自己发出的
   #     每个请求签名，邮件服务两头都验——**这正是"附件能被改"的前提**：不验
   #     签名的回调，等于谁都能往附件里塞一版。
-  #   · 它在 infra 网上而不是 convert 网上：convert 不通外网，而它要够得着
-  #     mail，也要能被前门转发进来。
+  #   · 它在 infra 网上：既要够得着 mail（取文件、回存改动），也要能被前门
+  #     转发进来。
   # 镜像约 3 GB，常驻约 2 GB 内存（里面自带 nginx、node、postgres、rabbitmq）。
   # 只绑 127.0.0.1：外面进来的路是前门 nginx 的 /docs/。
   #
@@ -481,7 +460,3 @@ networks:
   infra:
     external: true
     name: erp-go-infra_default
-  # 转换器专用，而且不通外网（internal: true 就是这个意思：Docker 不给这张
-  # 网加默认路由）。见 gotenberg 那一段为什么必须这样。
-  convert:
-    internal: true

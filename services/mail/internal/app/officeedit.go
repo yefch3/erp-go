@@ -73,7 +73,7 @@ const (
 	officeSaveTokenTTL  = 24 * time.Hour
 )
 
-// MaxOfficeSaveBytes 是存回来的上限。比 MaxConvertBytes 宽一档：一份表格改完
+// MaxOfficeSaveBytes 是存回来的上限。比从前送去转 PDF 那道 25 MB 宽一档：一份表格改完
 // 通常比原来大（多了样式、多了行），卡在原尺寸上会让"改完存不回去"这种最难
 // 解释的失败变常见。
 const MaxOfficeSaveBytes = 50 << 20 // 50 MB

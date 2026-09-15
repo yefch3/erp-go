@@ -97,7 +97,7 @@ interface Attachment {
 //
 // 上限是这一页的力气，不是格式的限制：一份 25 MB 的 xlsx 解开是几百兆的 XML，
 // 拆完之前这个标签页就没气了——而卡死之前人连「太大了，下载吧」这句话都看不到。
-// 和服务器那边送去转换的上限（MaxConvertBytes）取同一个数。
+// 和从前服务器那道转换上限取同一个数（25 MB）。
 const MAX_BYTES = 25 << 20
 
 const route = useRoute()

@@ -957,14 +957,18 @@ func (h *Handler) CleanPastedTable(_ context.Context, req *mailv1.CleanPastedTab
 	return &mailv1.CleanPastedTableResponse{Table: app.CleanPastedTable(req.GetHtml())}, nil
 }
 
-func (h *Handler) PreviewInboundAttachment(ctx context.Context, req *mailv1.PreviewInboundAttachmentRequest) (*mailv1.PreviewInboundAttachmentResponse, error) {
-	op := operator(ctx)
-	url, err := h.svc.PreviewInboundAttachment(ctx, grpcx.TenantID(ctx), op.ID,
-		req.GetInboundId(), req.GetAttachmentId())
-	if err != nil {
-		return nil, err
-	}
-	return &mailv1.PreviewInboundAttachmentResponse{PreviewUrl: url}, nil
+// PreviewInboundAttachment 已退役：办公文档在在线 Office 里直接打开，不再先
+// 转成 PDF（2026-09-14）。
+//
+// **方法留着、只是不再干活**，因为 proto 用的是 FILE 档的兼容检查——从那份
+// 文件里删掉一个 rpc 是破坏性变更，按仓库的两版规矩，这一版停服务、下一版
+// 再把它从 proto 里拿掉。
+//
+// 回一句明确的错，不是悄悄回空地址：真有谁还在调它，该当场看见，而不是
+// 拿到一个点不开的链接。今天没有调用方——网关那条路由已经撤了。
+func (h *Handler) PreviewInboundAttachment(context.Context, *mailv1.PreviewInboundAttachmentRequest) (*mailv1.PreviewInboundAttachmentResponse, error) {
+	return nil, apierr.Invalid("MAIL_PREVIEW_RETIRED",
+		"这条预览方式已停用：办公文档现在直接在在线 Office 里打开")
 }
 
 func (h *Handler) DownloadInboundAttachments(ctx context.Context, req *mailv1.DownloadInboundAttachmentsRequest) (*mailv1.DownloadInboundAttachmentsResponse, error) {

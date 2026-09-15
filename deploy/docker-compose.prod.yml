@@ -146,9 +146,6 @@ services:
       # 空 = 在线 Office 整个关掉，见 app.NewOffice。
       OFFICE_INTERNAL_URL: ${OFFICE_INTERNAL_URL:-http://mail:9011}
 
-  # 转换器在生产上用的是同一个公开镜像，不跟着 ERP_SHA 走：它不是我们的代码。
-  gotenberg:
-    image: gotenberg/gotenberg:8
   gateway:
     image: ghcr.io/yefch3/erp-go/gateway:${ERP_SHA}
     environment:

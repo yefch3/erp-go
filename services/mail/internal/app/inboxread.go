@@ -656,12 +656,19 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 				r.Body, embedded[r.ID]),
 		}
 		// 会话里「我们发出去的」那些附件是发件附件，不在 email_inbound_attachments
-		// 里，PreviewInboundAttachment 按定义找不到它们。留着 "convert" 标记
-		// 只会让界面上多一个点了必然失败的按钮，所以在这里摘掉——下载不受
-		// 影响，那条路对两个方向都是通的。
+		// 里，而在线 Office 那条路（OfficePreviewConfig）按定义只在那张表里找。
+		// 留着标记只会让界面上多一个点了必然失败的按钮，所以在这里摘掉——
+		// 下载不受影响，那条路对两个方向都是通的。
+		//
+		// 从前这里摘的是 "convert"。那一档随 Gotenberg 退役了，而**接替它的
+		// "office" 当时没跟着补进来**——于是我们自己发出去的 Word 附件上，
+		// 预览按钮点了必然 404。2026-09-14 一并修掉。
+		//
+		// "direct"（图片、PDF）不摘：那一档的地址在上一步就签好了，不需要
+		// 回头按收件箱的 id 再找一次，两个方向都打得开。
 		if r.Direction != "IN" {
 			for i := range v.Attachments {
-				if v.Attachments[i].PreviewKind == PreviewConvert {
+				if v.Attachments[i].PreviewKind == PreviewOffice {
 					v.Attachments[i].PreviewKind = ""
 				}
 			}

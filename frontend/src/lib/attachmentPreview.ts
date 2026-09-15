@@ -1,15 +1,18 @@
 /**
- * 附件能不能预览、要不要先转一趟。
+ * 附件能不能预览、点了之后去哪儿。
  *
  * 后端在附件上标了 previewKind：
  *   ""        只能下载
  *   "direct"  previewUrl 已经能用（图片、PDF）
- *   "convert" 是办公文档，要先请服务器转成 PDF 才有地址
+ *   "office"  在线 Office 里打开（配了 OnlyOffice 时，Word/Excel/PPT 都是这档）
+ *
+ * 从前还有 "convert"：先请服务器转成 PDF 再看。2026-09-14 连同 Gotenberg
+ * 一起退役，服务端不再发这个值——收到了也**不给按钮**，那条接口已经撤了。
  *
  * 前端自己还多认一档：**表格**（.xlsx/.csv/.tsv）。它们不走服务器——浏览器
  * 自己就读得动，在新标签页里直接画成表（见 pages/SheetWindowPage.vue）。
- * 所以 .csv 现在也有预览按钮了，尽管后端从来没给过它 previewKind：后端那
- * 一档说的是「要不要转 PDF」，而表格不转。
+ * 服务端配了在线 Office 的话表格也归 office，所以这一档实际只剩 .tsv 和
+ * 没有扩展名但内容类型是表格的那些。
  *
  * 抽出来是因为「显不显示预览按钮」和「点了之后做什么」是同一个判断的两半，
  * 分散在模板和函数里迟早会对不上——按钮出现了但点了没反应，是最难查的那种。
@@ -18,10 +21,12 @@
 import { isDirectTableFile } from './attachmentExcel'
 
 export const PREVIEW_DIRECT = 'direct'
-export const PREVIEW_CONVERT = 'convert'
 // 在线 Office 里打开：服务端配了 OnlyOffice 时，办公文档（连表格一起）都是
-// 这一档。优先于下面两种：一个完整的在线 Excel 比浏览器自己画的表强，比转成
-// PDF 更强。
+// 这一档。优先于浏览器自己画表格那一档——一个完整的在线 Excel 比自己画的强。
+//
+// 从前还有第三档 'convert'：先在服务器上转成 PDF 再看。2026-09-14 连同
+// Gotenberg 一起退役——它认的扩展名是在线 Office 认的子集，而判断顺序是先问
+// Office，所以在配了 Office 的部署里那一档根本走不到。
 export const PREVIEW_OFFICE = 'office'
 
 /** 在在线 Office 里开。 */
@@ -43,20 +48,5 @@ export function isSheetPreview(file: PreviewableFile): boolean {
 
 /** 要不要显示「预览」按钮。 */
 export function canPreview(file: PreviewableFile): boolean {
-  return (
-    isOfficePreview(file) || isSheetPreview(file) || Boolean(file.previewUrl) || file.previewKind === PREVIEW_CONVERT
-  )
-}
-
-/**
- * 点下去要不要先请服务器转一趟。
- *
- * 表格永远不用：那条路整个绕开了服务器。
- *
- * 其余的转过一次之后 previewUrl 就填上了，再点就直接开——所以这里同时看两个
- * 字段，不然同一份合同每次点开都要再问一次服务器。
- */
-export function needsConversion(file: PreviewableFile): boolean {
-  if (isOfficePreview(file) || isSheetPreview(file)) return false
-  return file.previewKind === PREVIEW_CONVERT && !file.previewUrl
+  return isOfficePreview(file) || isSheetPreview(file) || Boolean(file.previewUrl)
 }

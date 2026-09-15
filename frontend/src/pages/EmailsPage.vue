@@ -487,7 +487,6 @@
               <MailAttachments
                 v-if="it.attachments?.length"
                 :files="it.attachments"
-                :converting="convertingAttachment"
                 :mail-id="it.direction === 'IN' ? String(it.id) : ''"
                 class="thread-files"
                 @preview="openPreview"
@@ -531,7 +530,6 @@
           </div>
           <MailAttachments
             :files="openedInbound.attachments"
-            :converting="convertingAttachment"
             :mail-id="String(openedInbound.id)"
             @preview="openPreview"
             @excel-menu="openAttachmentExcelMenu"
@@ -1477,7 +1475,7 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
-import { isOfficePreview, isSheetPreview, needsConversion } from '../lib/attachmentPreview'
+import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
@@ -3439,7 +3437,6 @@ async function openDetail(id: string) {
     }
     loadThread(d.mail)
     // 后台把办公文档先转好。不 await：正文和会话该立刻显示，预热是顺带的。
-    void warmAttachmentPreviews(openedInbound.value)
   } catch {
     // A dead link — deleted mail, somebody else's id — falls back to the
     // list rather than a blank page.
@@ -4898,7 +4895,6 @@ function downloadExcel() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-const convertingAttachment = ref('')
 const bundling = ref(false)
 
 /** 把这封信的附件打成一个压缩包下载。 */
@@ -4916,44 +4912,6 @@ async function downloadAllAttachments() {
   }
 }
 
-/**
- * 打开一封信之后，悄悄把要转换的附件先转好。
- *
- * 转换本身在服务器上只要 0.3 秒左右，但一次完整的往返（读原件、转换、写回
- * 对象存储、签地址）实测 1 到 1.8 秒——挂在「预览」这颗按钮上，人是等得到的。
- * 而人打开一封信到点开附件之间，通常有好几秒在读正文。这段时间白白空着。
- *
- * 所以在这里预热：转好的地址写回附件对象，等真点下去时 needsConversion 已经
- * 是 false，弹窗直接开。没点的那些就当白转了一次——服务器那边有缓存，下次
- * 谁点都是秒开，不算浪费。
- *
- * **一个一个来，不并发**：一封信可能带四十个附件，四十个请求同时压给转换器
- * 只会让每一个都变慢。也不抢在用户手动点的前面——那一次有人在等。
- */
-async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile[] } | null) {
-  if (!mail?.attachments?.length) return
-  const opened = mail.id
-  for (const a of mail.attachments) {
-    // 用户已经自己点了某个附件，把转换器让给他。
-    if (convertingAttachment.value) return
-    // 翻到别的信上去了，这封就不用预热了。
-    if (openedInbound.value?.id !== opened) return
-    // 表格不用预热：它根本不走服务器。needsConversion 已经替表格答了 false，
-    // 这里不必再写一遍。
-    if (!needsConversion(a)) continue
-    try {
-      const resp = await post<{ previewUrl?: string }>(
-        `/inbound-mails/${opened}/attachments/${a.id}/preview`,
-        undefined,
-        // 预热失败不该在页面上弹一句话——没人请求过它。
-        quietErrors,
-      )
-      if (resp?.previewUrl) a.previewUrl = resp.previewUrl
-    } catch {
-      // 转不了的（坏文件、太大）等用户真点的时候再如实报错。
-    }
-  }
-}
 
 /**
  * 打开预览。**一律新开一个标签页**，不再在页面里弹对话框。
@@ -4965,16 +4923,16 @@ async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile
  *   从前它和 Word 一样送去 LibreOffice 转 PDF，那条路慢（几秒）、宽表被切成
  *   好几页、而且 PDF 里的单元格选不中也搜不了。
  * · 图片和 PDF → 直接开那个地址，交给浏览器自带的看图/看 PDF。
- * · Word / PPT（还有读不了的老 .xls）→ 只能先请服务器转成 PDF，再开新页。
- *   浏览器里没有第二种办法把 .docx 画出来。
+ *
+ * 从前还有第四条：Word / PPT 先请服务器转成 PDF 再开。那条和 Gotenberg 一起
+ * 退役了（2026-09-14）——在线 Office 接管之后它走不到了。
  *
  * 新标签页而不是对话框：一个 1000px 宽的对话框里看一份 A4 合同，等于隔着
  * 门缝看；而标签页是整块屏幕，还能拖到第二个显示器上、能打印、能搜。
  *
- * 弹窗拦截器不会拦：这是点击直接触发的。要等服务器转换的那一条先把空白页
- * 开出来再去转，否则 await 之后再 open 就不算「人点的」了，会被拦。
+ * 弹窗拦截器不会拦：这是点击直接触发的。
  */
-async function openPreview(a: MailFile, mailID: string) {
+function openPreview(a: MailFile, mailID: string) {
   // 在线 Office 优先：配了 OnlyOffice 的话 Word / Excel / PPT 都在它里面开。
   if (isOfficePreview(a)) {
     const id = mailID || openedInbound.value?.id || ''
@@ -4989,31 +4947,7 @@ async function openPreview(a: MailFile, mailID: string) {
     window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()
     return
   }
-  if (!needsConversion(a)) {
-    if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
-    return
-  }
-  if (convertingAttachment.value) return
-  if (!mailID) return
-  // 先占住标签页（此刻还在这次点击的手势里），转好了再把地址填进去。
-  const tab = window.open('', `preview-${a.id}`)
-  convertingAttachment.value = a.id
-  try {
-    const resp = await post<{ previewUrl?: string }>(
-      `/inbound-mails/${mailID}/attachments/${a.id}/preview`,
-    )
-    if (!resp?.previewUrl) throw new Error('no url')
-    a.previewUrl = resp.previewUrl
-    if (tab) tab.location.replace(resp.previewUrl)
-    else window.open(resp.previewUrl, '_blank', 'noopener')
-  } catch {
-    // 具体原因（类型不支持、文件太大、转换失败）后端已经用消息说了，
-    // 拦截器会弹出来；这里不再叠一层。开着的空白页得收回去，留着一个
-    // 白页子比什么都没发生更糟。
-    tab?.close()
-  } finally {
-    convertingAttachment.value = ''
-  }
+  if (a.previewUrl) window.open(a.previewUrl, '_blank', 'noopener')
 }
 
 // Why an attachment cannot be downloaded, said accurately.
