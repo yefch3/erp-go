@@ -287,11 +287,17 @@ func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
 	}
 	done := 0
 	for _, row := range rows {
-		// 先删对象、再清行。反过来的话，删对象失败就再也没有人知道那个 key
-		// 是什么了——一个谁都找不着、也谁都删不掉的对象。
-		if row.FileKey != "" && s.files != nil {
-			if err := s.files.Remove(ctx, row.FileKey); err != nil {
-				s.log.Warn("could not remove an expired excel result", "key", row.FileKey, "err", err)
+		// 先删对象、再清行。反过来的话，删对象失败就再也没有人回来收它了
+		// ——那一行已经标成"收过了"，下一趟不会再列出来。
+		//
+		// **不看这一行的列里写着什么，一律按租户+任务号算出键去删一次。**
+		// 这一句是专门为「对象写成功、行写失败」那种孤儿留的：它的 file_key
+		// 和 file_data 都是空的，看列的话永远收不到它。而对象键不依赖任何
+		// 存下来的字段，S3 的 DELETE 对不存在的键也是幂等的——从来没有过
+		// 对象的那些行，这一下什么都不会发生。
+		if s.files != nil {
+			if err := s.files.Remove(ctx, excelResultKey(row.TenantID, row.ID, "")); err != nil {
+				s.log.Warn("could not remove an expired excel result", "job", row.ID, "err", err)
 				continue
 			}
 		}

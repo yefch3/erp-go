@@ -143,19 +143,23 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 DELETE FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
 
 -- name: ListExpiredExcelPayloads :many
--- 过了窗口期、还占着地方的结果。清理器先拿这一批，删掉对象存储里的那一份，
--- 再来清行（ClearExcelJobPayload）。
+-- 过了窗口期、还没收过的任务。清理器拿这一批，先删对象存储里那一份，再清行。
 --
--- 分两步而不是一条 UPDATE：对象存储里的那一份得由 Go 去删，而且**一个删不掉
--- 不该连累一整批**——所以逐行处理，删不掉的下一趟再试。
+-- **判据是 payload_cleared_at，不是「列里还有没有东西」。** 后者听起来更直接，
+-- 但它恰好漏掉最该收的那一种：对象写成功、行写失败之后留下的**孤儿**——
+-- 那一行的 file_key 和 file_data 都是空的，而对象还在桶里躺着。
 --
--- 条件里那两个「还占着地方」缺一不可：file_key 非空是对象还在，file_data
--- 非空是退路上的字节还在（对象存储当时写不进去）。
-SELECT id, file_key, (file_data IS NOT NULL)::boolean AS has_inline
+-- 所以这里不挑，凡是结束了又没收过的都拿出来，让 Go 按「租户/任务号」算出
+-- 对象键去删一次。算得出来是因为那个键本来就不依赖任何存下来的字段，而 S3
+-- 的 DELETE 对不存在的键是幂等的——没有对象的那些，这一下什么都不会发生。
+--
+-- 分两步而不是一条 UPDATE：对象得由 Go 去删，而且**一个删不掉不该连累
+-- 一整批**——所以逐行处理，删不掉的那一行不清，下一趟再试。
+SELECT id, tenant_id
 FROM mail_excel_jobs
 WHERE completed_at IS NOT NULL
   AND completed_at < sqlc.arg(cutoff)::timestamptz
-  AND (file_key <> '' OR file_data IS NOT NULL)
+  AND payload_cleared_at IS NULL
 ORDER BY id
 LIMIT sqlc.arg(row_limit)::int;
 
@@ -169,5 +173,6 @@ LIMIT sqlc.arg(row_limit)::int;
 -- 谁都够不着了才清：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），
 -- 而且没有任何界面列得出历史任务——这个文件里也没有对应的查询。
 UPDATE mail_excel_jobs
-SET file_key='', file_data=NULL, workbook_json=NULL, updated_at=now()
+SET file_key='', file_data=NULL, workbook_json=NULL,
+    payload_cleared_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id)::bigint;

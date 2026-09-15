@@ -20,20 +20,39 @@
 --
 -- 这条退路上的字节由 RunExcelPayloadSweeper 按同一个窗口收走，和 file_key
 -- 指向的对象一起。
+-- ---- 两次写，不是一个事务 ----
+--
+-- 对象存储和 PostgreSQL 是两套东西，中间没有事务可言。所以这里不追求原子，
+-- 追求的是**每一种失败都停在一个安全的状态上**：
+--
+--   · 对象写失败 → 字节退回 file_data，行说"我是内联的"，人照常拿得到；
+--   · 对象写成功、行写失败 → 对象成了孤儿：没有任何一行指着它。
+--
+-- 第二种是这次要专门堵的。堵法不是加事务（加不了），是**让对象键可以从行
+-- 本身算出来**：mail-excel/<租户>/<任务号>.xlsx，不依赖任何存下来的字段。
+-- 于是清理的时候，不管这一行的列里写着什么，都能算出"它可能有一个对象"
+-- 并去删一次（S3 的 DELETE 对不存在的键是幂等的）。
 ALTER TABLE mail_excel_jobs
-    ADD COLUMN file_key VARCHAR(512) NOT NULL DEFAULT '';
+    ADD COLUMN file_key VARCHAR(512) NOT NULL DEFAULT '',
+    -- 这一行的结果收干净了没有。
+    --
+    -- 不能用"file_key 空且 file_data 空"当收干净的判据——那正是孤儿的样子。
+    -- 需要一个独立的标记，清理器才既能扫到孤儿，又不会每一趟都重扫同一批。
+    ADD COLUMN payload_cleared_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN mail_excel_jobs.file_key IS
     '转换结果在对象存储里的位置；空表示退回存在 file_data 里（对象存储写失败时）';
 COMMENT ON COLUMN mail_excel_jobs.file_data IS
     '仅当 file_key 为空时有值：对象存储写不进去时的退路，见迁移 00066';
 
--- 清理器要按「还占着地方」找行：file_key 非空（对象还在）或 file_data 非空
--- （退路上的字节还在）。跟着 completed_at 走。
+-- 清理器按「结束了、还没收过」找行。**不看 file_key / file_data**，理由见
+-- 上面那段：孤儿的那两列恰好都是空的。
 CREATE INDEX mail_excel_jobs_payload_idx
     ON mail_excel_jobs (completed_at)
-    WHERE completed_at IS NOT NULL AND (file_key <> '' OR file_data IS NOT NULL);
+    WHERE completed_at IS NOT NULL AND payload_cleared_at IS NULL;
 
 -- +goose Down
 DROP INDEX IF EXISTS mail_excel_jobs_payload_idx;
-ALTER TABLE mail_excel_jobs DROP COLUMN IF EXISTS file_key;
+ALTER TABLE mail_excel_jobs
+    DROP COLUMN IF EXISTS payload_cleared_at,
+    DROP COLUMN IF EXISTS file_key;

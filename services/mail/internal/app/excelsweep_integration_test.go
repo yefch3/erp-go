@@ -173,3 +173,63 @@ func TestExcelResultLivesInObjectStorageAndIsSweptFromBothPlaces(t *testing.T) {
 		t.Fatalf("第二遍不该再收到东西：%d", n)
 	}
 }
+
+// **孤儿**：对象传上去了，但那一行没写成。
+//
+// 这是两次写之间唯一会漏东西的缝：对象存储和 PostgreSQL 之间没有事务，所以
+// 「传完了、还没记上」这一刻是真实存在的。此刻进程崩了、或者那次 UPDATE 失败
+// 了，桶里就留下一个**没有任何一行指着它**的对象。
+//
+// 它之所以危险，是因为最直觉的清理判据（「这一行的 file_key 还有值吗」）恰好
+// 对它失效——孤儿的那两列都是空的。只看列的清理器会把它漏一辈子。
+//
+// 堵法不是加事务（加不了），是让对象键能从行本身算出来：租户 + 任务号。
+func TestSweeperCollectsAnOrphanObjectWhoseRowNeverRecordedIt(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM mail_excel_jobs WHERE tenant_id=$1", tenantID) }()
+
+	files := &moodyStore{previewStore: previewStore{objects: map[string][]byte{}}}
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// 一行：结束了（最后落成 FAILED），**列里什么都没有**——正是行写失败之后
+	// 那一行最终会呈现的样子。
+	var id int64
+	if err := pool.QueryRow(ctx, `INSERT INTO mail_excel_jobs
+		(tenant_id, owner_id, inbound_id, selected_text, status, completed_at)
+		VALUES ($1, 9, 7, '一段表格', 'FAILED', now() - interval '30 days')
+		RETURNING id`, tenantID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	// 而桶里躺着它当时传上去的那一份。
+	key := excelResultKey(tenantID, id, "")
+	files.objects[key] = []byte("孤儿")
+
+	svc.sweepExcelPayloadsOnce(ctx)
+
+	if _, still := files.objects[key]; still {
+		t.Fatal("孤儿对象没被收走——清理器只看了列，没按任务号算键")
+	}
+	var cleared bool
+	if err := pool.QueryRow(ctx,
+		"SELECT payload_cleared_at IS NOT NULL FROM mail_excel_jobs WHERE id=$1", id).Scan(&cleared); err != nil {
+		t.Fatal(err)
+	}
+	if !cleared {
+		t.Fatal("收过之后该打上标记，否则下一趟还会重扫同一批")
+	}
+}

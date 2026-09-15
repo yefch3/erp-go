@@ -337,7 +337,8 @@ type MailExcelJob struct {
 	InputTokens     int64
 	OutputTokens    int64
 	// 转换结果在对象存储里的位置；空表示退回存在 file_data 里（对象存储写失败时）
-	FileKey string
+	FileKey          string
+	PayloadClearedAt pgtype.Timestamptz
 }
 
 type MailExcelQuota struct {

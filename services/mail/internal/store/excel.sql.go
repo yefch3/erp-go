@@ -27,7 +27,7 @@ UPDATE mail_excel_jobs j SET
   error_code='', error_message='', updated_at=now()
 FROM candidate
 WHERE j.id=candidate.id
-RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns, j.input_tokens, j.output_tokens, j.file_key
+RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns, j.input_tokens, j.output_tokens, j.file_key, j.payload_cleared_at
 `
 
 func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
@@ -57,13 +57,15 @@ func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
 		&i.InputTokens,
 		&i.OutputTokens,
 		&i.FileKey,
+		&i.PayloadClearedAt,
 	)
 	return i, err
 }
 
 const clearExcelJobPayload = `-- name: ClearExcelJobPayload :execrows
 UPDATE mail_excel_jobs
-SET file_key='', file_data=NULL, workbook_json=NULL, updated_at=now()
+SET file_key='', file_data=NULL, workbook_json=NULL,
+    payload_cleared_at=now(), updated_at=now()
 WHERE id=$1::bigint
 `
 
@@ -166,7 +168,7 @@ INSERT INTO mail_excel_jobs (
   $4, $5, $6,
   $7::jsonb
 )
-RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key
+RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key, payload_cleared_at
 `
 
 type CreateExcelJobParams struct {
@@ -214,6 +216,7 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		&i.InputTokens,
 		&i.OutputTokens,
 		&i.FileKey,
+		&i.PayloadClearedAt,
 	)
 	return i, err
 }
@@ -374,7 +377,7 @@ func (q *Queries) FailExcelJob(ctx context.Context, arg FailExcelJobParams) (int
 }
 
 const getExcelJob = `-- name: GetExcelJob :one
-SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key FROM mail_excel_jobs
+SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens, file_key, payload_cleared_at FROM mail_excel_jobs
 WHERE tenant_id=$1 AND owner_id=$2 AND id=$3
 `
 
@@ -411,6 +414,7 @@ func (q *Queries) GetExcelJob(ctx context.Context, arg GetExcelJobParams) (MailE
 		&i.InputTokens,
 		&i.OutputTokens,
 		&i.FileKey,
+		&i.PayloadClearedAt,
 	)
 	return i, err
 }
@@ -462,11 +466,11 @@ func (q *Queries) ListExcelQuotas(ctx context.Context) ([]MailExcelQuota, error)
 }
 
 const listExpiredExcelPayloads = `-- name: ListExpiredExcelPayloads :many
-SELECT id, file_key, (file_data IS NOT NULL)::boolean AS has_inline
+SELECT id, tenant_id
 FROM mail_excel_jobs
 WHERE completed_at IS NOT NULL
   AND completed_at < $1::timestamptz
-  AND (file_key <> '' OR file_data IS NOT NULL)
+  AND payload_cleared_at IS NULL
 ORDER BY id
 LIMIT $2::int
 `
@@ -477,19 +481,22 @@ type ListExpiredExcelPayloadsParams struct {
 }
 
 type ListExpiredExcelPayloadsRow struct {
-	ID        int64
-	FileKey   string
-	HasInline bool
+	ID       int64
+	TenantID int64
 }
 
-// 过了窗口期、还占着地方的结果。清理器先拿这一批，删掉对象存储里的那一份，
-// 再来清行（ClearExcelJobPayload）。
+// 过了窗口期、还没收过的任务。清理器拿这一批，先删对象存储里那一份，再清行。
 //
-// 分两步而不是一条 UPDATE：对象存储里的那一份得由 Go 去删，而且**一个删不掉
-// 不该连累一整批**——所以逐行处理，删不掉的下一趟再试。
+// **判据是 payload_cleared_at，不是「列里还有没有东西」。** 后者听起来更直接，
+// 但它恰好漏掉最该收的那一种：对象写成功、行写失败之后留下的**孤儿**——
+// 那一行的 file_key 和 file_data 都是空的，而对象还在桶里躺着。
 //
-// 条件里那两个「还占着地方」缺一不可：file_key 非空是对象还在，file_data
-// 非空是退路上的字节还在（对象存储当时写不进去）。
+// 所以这里不挑，凡是结束了又没收过的都拿出来，让 Go 按「租户/任务号」算出
+// 对象键去删一次。算得出来是因为那个键本来就不依赖任何存下来的字段，而 S3
+// 的 DELETE 对不存在的键是幂等的——没有对象的那些，这一下什么都不会发生。
+//
+// 分两步而不是一条 UPDATE：对象得由 Go 去删，而且**一个删不掉不该连累
+// 一整批**——所以逐行处理，删不掉的那一行不清，下一趟再试。
 func (q *Queries) ListExpiredExcelPayloads(ctx context.Context, arg ListExpiredExcelPayloadsParams) ([]ListExpiredExcelPayloadsRow, error) {
 	rows, err := q.db.Query(ctx, listExpiredExcelPayloads, arg.Cutoff, arg.RowLimit)
 	if err != nil {
@@ -499,7 +506,7 @@ func (q *Queries) ListExpiredExcelPayloads(ctx context.Context, arg ListExpiredE
 	var items []ListExpiredExcelPayloadsRow
 	for rows.Next() {
 		var i ListExpiredExcelPayloadsRow
-		if err := rows.Scan(&i.ID, &i.FileKey, &i.HasInline); err != nil {
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
