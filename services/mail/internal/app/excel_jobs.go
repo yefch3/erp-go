@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/livefeed"
@@ -155,6 +156,15 @@ func excelJobFromRow(row store.MailExcelJob) (ExcelJob, error) {
 		job.CompletedAt = row.CompletedAt.Time
 	}
 	if row.Status == "COMPLETED" {
+		// 结果已经被清掉了（见 SweepExcelJobPayloads）。**必须在这里明说**：
+		// 再往下走，Data 是空的、workbook_json 是 nil，人拿到的是一个 0 字节
+		// 的 .xlsx——一个打不开的文件，比一句「过期了」难查得多。
+		//
+		// 走到这儿的只可能是一个标签页开了两周还没关、又点了一次下载的人。
+		if len(row.FileData) == 0 {
+			return ExcelJob{}, apierr.Invalid("MAIL_EXCEL_RESULT_EXPIRED",
+				"这次转换的结果已经清理，请重新转换一次")
+		}
 		job.Result = ExcelResult{FileName: row.FileName, Data: row.FileData, Model: row.Model}
 		if err := json.Unmarshal(row.WorkbookJson, &job.Result.Workbook); err != nil {
 			return ExcelJob{}, fmt.Errorf("decode excel job workbook: %w", err)
@@ -176,6 +186,52 @@ func decodeInquiryTemplateSnapshot(data []byte) (inquiryTemplateSnapshot, error)
 	}
 	snapshot.Columns = legacy
 	return snapshot, nil
+}
+
+// 转换结果在库里留多久。
+//
+// 十四天：任务号只活在浏览器的 sessionStorage 里（标签页一关就没），而且
+// 没有任何界面列得出历史任务——所以真正够得着这份结果的窗口，短得多。
+// 十四天是给「一个标签页开了两周」留的余量，不是给「以后可能想回看」留的：
+// 那件事这套东西本来就不支持。
+const (
+	excelPayloadRetention = 14 * 24 * time.Hour
+	excelSweepEvery       = 6 * time.Hour
+	excelSweepPerPass     = 500
+)
+
+// RunExcelPayloadSweeper 把交付完的转换结果从库里清掉，只留账。
+//
+// 为什么需要它：file_data 是这个服务唯一一处真的把文件字节写进 PostgreSQL 的
+// 地方，而且只有失败的任务会被清（FailExcelJob）。成功的从来没人清——一份
+// 只增不减的二进制，躺在一张本来只该是账本的表里。
+//
+// **不按租户拆。** 别处的查询都带 tenant_id，因为那些是在回答某个人的问题；
+// 这一条不回答任何人的问题，它是维护。按租户拆只会让它跑 N 遍、锁 N 次，
+// 而条件（早于某个时刻、还带着字节）本来就和租户无关。
+func (s *Service) RunExcelPayloadSweeper(ctx context.Context) {
+	s.log.Info("excel payload sweeper started",
+		"keep", excelPayloadRetention, "every", excelSweepEvery)
+	t := time.NewTicker(excelSweepEvery)
+	defer t.Stop()
+	for {
+		n, err := s.q.SweepExcelJobPayloads(ctx, store.SweepExcelJobPayloadsParams{
+			Cutoff:   pgtype.Timestamptz{Time: time.Now().Add(-excelPayloadRetention), Valid: true},
+			RowLimit: excelSweepPerPass,
+		})
+		switch {
+		case err != nil:
+			s.log.Error("could not sweep excel job payloads", "err", err)
+		case n > 0:
+			s.log.Info("swept excel job payloads", "rows", n)
+		}
+		select {
+		case <-ctx.Done():
+			s.log.Info("excel payload sweeper stopped")
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // RunExcelWorker drains the durable extraction queue. SKIP LOCKED in the

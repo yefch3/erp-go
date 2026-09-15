@@ -7,6 +7,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const claimExcelJob = `-- name: ClaimExcelJob :one
@@ -473,4 +475,44 @@ type SetExcelQuotaParams struct {
 func (q *Queries) SetExcelQuota(ctx context.Context, arg SetExcelQuotaParams) error {
 	_, err := q.db.Exec(ctx, setExcelQuota, arg.TenantID, arg.MonthlyRuns, arg.UpdatedBy)
 	return err
+}
+
+const sweepExcelJobPayloads = `-- name: SweepExcelJobPayloads :execrows
+UPDATE mail_excel_jobs SET file_data=NULL, workbook_json=NULL, updated_at=now()
+WHERE id IN (
+  SELECT id FROM mail_excel_jobs
+  WHERE file_data IS NOT NULL
+    AND completed_at IS NOT NULL
+    AND completed_at < $1::timestamptz
+  ORDER BY id
+  LIMIT $2::int
+)
+`
+
+type SweepExcelJobPayloadsParams struct {
+	Cutoff   pgtype.Timestamptz
+	RowLimit int32
+}
+
+// 把已经交付完的转换结果从库里清掉，**行留着**。
+//
+// file_data 是这个库里唯一一处真的存文件字节的地方（BYTEA，一份生成出来的
+// Excel）。别处的文件都只存对象存储的 key。它当初这么设计说得通——结果是
+// 一次性的，人点了下载就完了——只是从来没有人把它清掉，于是它只增不减。
+//
+// **谁都够不着它了才清。** 任务号存在浏览器的 sessionStorage 里，标签页一关
+// 就没了；没有任何界面列得出历史任务（这个文件里也没有对应的查询）。所以
+// 过了窗口期之后，那几百 KB 是任何人都取不回来的字节。
+//
+// 行不能删：用量账（ExcelUsageByMonth）数的就是这张表的行，按月按人统计
+// 跑了几次、花了多少 token。删行等于把账烧了，而账里要的几列
+// （created_at / owner_id / status / *_tokens）一个字节的文件内容都不需要。
+//
+// 带 LIMIT：一次扫一批，不为一张可能很大的表拿一把长锁。
+func (q *Queries) SweepExcelJobPayloads(ctx context.Context, arg SweepExcelJobPayloadsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, sweepExcelJobPayloads, arg.Cutoff, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
