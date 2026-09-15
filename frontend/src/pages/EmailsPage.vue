@@ -459,7 +459,7 @@
               <MailAttachments
                 v-if="it.attachments?.length"
                 :files="it.attachments"
-                :mail-id="it.direction === 'IN' ? String(it.id) : ''"
+                :mail-id="threadAttachmentMailId(it)"
                 class="thread-files"
                 @preview="openPreview"
                 @excel-menu="openAttachmentExcelMenu"
@@ -3488,8 +3488,20 @@ interface ThreadItem {
     previewKind?: string
     stored?: boolean
   }[]
+  // 只有「我发出」那一条有：这封信在本地「已发送」里留着的那一份的编号。
+  // 上面 attachments 的编号属于它——发件附件和收件附件是两套编号，而预览、
+  // 在线编辑、转 Excel 只认收件那一套。空/0 = 没对上，那三条路走不通。
+  localMailId?: string
 }
 const threadItems = ref<ThreadItem[]>([])
+
+// 这一条的附件属于哪封信。收到的那条就是它自己；我发出的那条是本地「已发送」
+// 里留着的那一份，没对上就是空——空的话预览按钮不出现、右键也没有转 Excel。
+function threadAttachmentMailId(it: ThreadItem): string {
+  if (it.direction === 'IN') return String(it.id)
+  const local = String(it.localMailId ?? '')
+  return local && local !== '0' ? local : ''
+}
 // 界面上最新的排最前。
 //
 // **只翻显示，不翻数据。** threadItems 保持服务端给的时间正序，因为「最新的
@@ -4903,13 +4915,16 @@ async function downloadAllAttachments() {
 function openPreview(a: MailFile, mailID: string) {
   // 在线 Office 优先：配了 OnlyOffice 的话 Word / Excel / PPT 都在它里面开。
   if (isOfficePreview(a)) {
-    const id = mailID || openedInbound.value?.id || ''
+    // 同下面那一档：没有归属就不开，别拿打开的那封去猜。
+    const id = mailID
     if (!id) return
     window.open(router.resolve({ path: `/mail/${id}/office/${a.id}` }).href, `office-${a.id}`)?.focus()
     return
   }
   if (isSheetPreview(a)) {
-    const id = mailID || openedInbound.value?.id || ''
+    // 不猜。会话里「我发出」那几条的附件属于另一封信，拿当前打开的那封去开，
+    // 新标签页里必然找不到——报出来的还是「文件可能损坏」。
+    const id = mailID
     if (!id) return
     // focus 的理由同 openMailWindow：名字占着的那个标签页不会自己跑到前面来。
     window.open(router.resolve({ path: `/mail/${id}/sheet/${a.id}` }).href, `sheet-${a.id}`)?.focus()

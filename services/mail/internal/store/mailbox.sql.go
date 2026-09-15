@@ -3284,6 +3284,66 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 	return items, nil
 }
 
+const listThreadSentCopies = `-- name: ListThreadSentCopies :many
+SELECT i.sent_message_id, i.id, i.body_html
+FROM email_inbound i
+WHERE i.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
+  AND i.sent_message_id <> 0
+  AND NOT i.is_bounce
+`
+
+type ListThreadSentCopiesParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListThreadSentCopiesRow struct {
+	SentMessageID int64
+	ID            int64
+	BodyHtml      string
+}
+
+// 这条会话里，我们自己发出去的每一封在本地信箱里留着的那一份。
+//
+// 为什么需要它：会话里「我发出」的那几条来自 email_messages（投递记录），它们
+// 的附件在 email_attachments 里，**和收到的附件是两套各自独立的编号**。而预览、
+// 在线编辑、转 Excel 这三条路按定义只认收件那张表的编号——于是发出去的 Excel
+// 点预览，页面拿着一个发件编号去收件那边找，找不到，报的还是「文件可能损坏」
+// （2026-09-15 实测）。
+//
+// 同一封信其实在本地是有一份的：邮件服务商把我们发出去的信存进「已发送」，
+// 同步回来就是 email_inbound 的一行，附件也在收件那张表里。ListThread 故意
+// 不列它（列了就是同一封信出现两遍），但它一直在。
+//
+// 所以这里按 sent_message_id 把投递记录和那一份对上，让上面三条路都走那一份。
+// body_html 一起取：附件里哪些是正文内嵌的图，得拿**那一份的正文**去判断，
+// 投递记录的正文不一定带着同样的 cid 引用。
+//
+// 不按信箱限定：sent_message_id 上有唯一索引（见迁移 00020），一条投递记录
+// 在一家公司里最多对上一份，限定只会在会话跨信箱时白白丢掉这个对应。
+func (q *Queries) ListThreadSentCopies(ctx context.Context, arg ListThreadSentCopiesParams) ([]ListThreadSentCopiesRow, error) {
+	rows, err := q.db.Query(ctx, listThreadSentCopies, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadSentCopiesRow
+	for rows.Next() {
+		var i ListThreadSentCopiesRow
+		if err := rows.Scan(&i.SentMessageID, &i.ID, &i.BodyHtml); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listThreadsByView = `-- name: ListThreadsByView :many
 SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
        (NOT t.any_unread)::boolean     AS is_read,

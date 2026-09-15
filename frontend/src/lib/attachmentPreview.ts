@@ -46,7 +46,27 @@ export function isSheetPreview(file: PreviewableFile): boolean {
   return isDirectTableFile(file.fileName ?? '', file.contentType ?? '')
 }
 
-/** 要不要显示「预览」按钮。 */
-export function canPreview(file: PreviewableFile): boolean {
-  return isOfficePreview(file) || isSheetPreview(file) || Boolean(file.previewUrl)
+/**
+ * 这一档预览要不要知道「附件属于哪封信」。
+ *
+ * 在线 Office 和浏览器画表格都要：它们开的是 /mail/<信>/office|sheet/<附件>，
+ * 服务端按那封信去找这个附件。图片和 PDF 不要——地址早签好了。
+ */
+export function previewNeedsOwningMail(file: PreviewableFile): boolean {
+  return isOfficePreview(file) || isSheetPreview(file)
+}
+
+/**
+ * 要不要显示「预览」按钮。
+ *
+ * mailID 是这个附件**自己所属的那封信**，没有就传空。要它是因为上面那两档
+ * 离了它开不出来：会话里「我发出」的那几条，附件用的是另一套编号，拿当前
+ * 打开的那封信去找必然找不到——2026-09-15 一个发出去的 .xlsx 点预览，得到
+ * 的是「这个表格打不开，可能是文件损坏」，而文件好好的。
+ *
+ * 宁可不显示按钮，也不要显示一个点了必然报错的按钮。
+ */
+export function canPreview(file: PreviewableFile, mailID = ''): boolean {
+  if (previewNeedsOwningMail(file)) return Boolean(mailID)
+  return Boolean(file.previewUrl)
 }

@@ -37,8 +37,8 @@
     <el-result
       v-else-if="failed"
       icon="warning"
-      :title="tooBig ? t('sheetWindow.tooBig') : t('sheetWindow.failed')"
-      :sub-title="tooBig ? t('sheetWindow.tooBigHint') : t('sheetWindow.failedHint')"
+      :title="t(`sheetWindow.${failureKey}`)"
+      :sub-title="t(`sheetWindow.${failureKey}Hint`)"
     >
       <template #extra>
         <a v-if="downloadUrl" class="el-button el-button--primary" :href="downloadUrl" :download="fileName">
@@ -110,6 +110,14 @@ const downloadUrl = ref('')
 const loading = ref(true)
 const failed = ref(false)
 const tooBig = ref(false)
+// 这封信里根本没有这个附件。**和「读不出来」分开说**：从前两种都报「可能是
+// 文件损坏」，而 2026-09-15 那次真相是页面找错了信——文件好好的，人却被告知
+// 自己的文件坏了。一句这么肯定的话，得先配得上。
+const notHere = ref(false)
+const failureKey = computed(() => {
+  if (tooBig.value) return 'tooBig'
+  return notHere.value ? 'notHere' : 'failed'
+})
 
 const sheet = computed(() => book.value?.sheets.find((s) => s.name === active.value) ?? null)
 
@@ -121,7 +129,11 @@ onMounted(async () => {
       `/inbound-mails/${mailId}`,
     )
     const file = d.mail.attachments?.find((a) => String(a.id) === attId)
-    if (!file?.downloadUrl) throw new Error('no such attachment')
+    if (!file) {
+      notHere.value = true
+      throw new Error('no such attachment on this mail')
+    }
+    if (!file.downloadUrl) throw new Error('attachment has no download url')
     fileName.value = file.fileName
     downloadUrl.value = file.downloadUrl
     document.title = file.fileName
@@ -143,7 +155,8 @@ onMounted(async () => {
     active.value = parsed.sheets[0]?.name ?? ''
   } catch {
     // 读不出来（信没了、附件没存、文件是坏的、或者是这个读法认不了的老 .xls）。
-    // 这一页给不了内容，但下载那条路一直是通的，所以出口给在这儿。
+    // 「这封信里没有这个附件」那一种在上面单独标了 notHere——原因不一样，
+    // 话就不该一样。这一页给不了内容，但下载那条路一直是通的，出口给在这儿。
     failed.value = true
   } finally {
     loading.value = false

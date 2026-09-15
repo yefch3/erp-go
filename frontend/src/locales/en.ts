@@ -2375,6 +2375,8 @@ export default {
   sheetWindow: {
     failed: 'This spreadsheet will not open',
     failedHint: 'The file may be damaged, or in the older .xls format this reader does not understand. Download it and open it in Excel.',
+    notHere: 'That attachment is not on this mail',
+    notHereHint: 'The attachment id in the address does not belong to this mail. Go back and open the preview again; tell us if it keeps happening.',
     tooBig: 'This spreadsheet is too large',
     tooBigHint: 'Too large to render in the browser — download it and open it in Excel.',
     truncated: 'Showing the first {shown} rows of {total} — download the file to see all of it.',

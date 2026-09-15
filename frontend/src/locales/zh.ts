@@ -2373,6 +2373,8 @@ export default {
   sheetWindow: {
     failed: '这个表格打不开',
     failedHint: '可能是文件损坏，或者是这个读法认不了的老格式（.xls）。下载下来用 Excel 打开吧。',
+    notHere: '这封信里没有这个附件',
+    notHereHint: '地址里的附件编号不属于这封信。回邮件页重新点一次预览；还是这样就告诉我们。',
     tooBig: '这个表格太大了',
     tooBigHint: '在浏览器里画不动这么大的表——下载下来用 Excel 打开吧。',
     truncated: '只画了前 {shown} 行，整张表共 {total} 行——要看全的请下载原文件。',

@@ -4,13 +4,13 @@ import { canPreview, isOfficePreview, isSheetPreview } from './attachmentPreview
 describe('附件能不能预览、在哪儿预览', () => {
   it('图片和 PDF：地址已经填好了，直接开', () => {
     const f = { previewUrl: 'https://files/x.png', previewKind: 'direct' }
-    expect(canPreview(f)).toBe(true)
+    expect(canPreview(f, '42')).toBe(true)
     expect(isOfficePreview(f)).toBe(false)
   })
 
   it('zip 这些：没有预览按钮', () => {
     for (const f of [{}, { previewKind: '' }, { previewKind: undefined }, { fileName: 'a.zip' }]) {
-      expect(canPreview(f)).toBe(false)
+      expect(canPreview(f, '42')).toBe(false)
     }
   })
 
@@ -21,7 +21,7 @@ describe('附件能不能预览、在哪儿预览', () => {
       { fileName: '无扩展名', contentType: 'text/csv' },
     ]) {
       expect(isSheetPreview(f)).toBe(true)
-      expect(canPreview(f)).toBe(true)
+      expect(canPreview(f, '42')).toBe(true)
     }
   })
 
@@ -32,7 +32,7 @@ describe('附件能不能预览、在哪儿预览', () => {
       { fileName: 'old.xls', previewKind: 'office' },
     ]) {
       expect(isOfficePreview(f)).toBe(true)
-      expect(canPreview(f)).toBe(true)
+      expect(canPreview(f, '42')).toBe(true)
     }
   })
 
@@ -44,12 +44,28 @@ describe('附件能不能预览、在哪儿预览', () => {
   it('退役了的 convert：认不出来，所以不给按钮', () => {
     const f = { fileName: '合同.docx', previewKind: 'convert' }
     expect(isOfficePreview(f)).toBe(false)
-    expect(canPreview(f)).toBe(false)
+    expect(canPreview(f, '42')).toBe(false)
+  })
+
+  // 会话里「我发出」的那几条：附件用的是另一套编号，只有本地「已发送」里
+  // 留着那一份时才知道该去哪封信里找。不知道就不给按钮——2026-09-15 之前
+  // 给了，点下去是「这个表格打不开，可能是文件损坏」，而文件好好的。
+  it('不知道附件属于哪封信：要开新页面的那两档不给按钮', () => {
+    const sheet = { fileName: '装箱单.xlsx' }
+    const office = { fileName: '合同.docx', previewKind: 'office' }
+    expect(canPreview(sheet, '')).toBe(false)
+    expect(canPreview(office, '')).toBe(false)
+    expect(canPreview(sheet, '38240')).toBe(true)
+    expect(canPreview(office, '38240')).toBe(true)
+  })
+
+  it('图片和 PDF 不受影响：地址早签好了，不用知道属于哪封信', () => {
+    expect(canPreview({ previewUrl: 'https://files/x.png', previewKind: 'direct' }, '')).toBe(true)
   })
 
   // 后端加了新的 kind 而前端还没跟上时，宁可不显示按钮，也不要显示一个
   // 点了没反应的按钮。
   it('不认识的 kind 当成不能预览', () => {
-    expect(canPreview({ previewKind: 'something-new' })).toBe(false)
+    expect(canPreview({ previewKind: 'something-new' }, '42')).toBe(false)
   })
 })
