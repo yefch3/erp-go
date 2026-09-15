@@ -72,8 +72,15 @@ type excelFixture struct {
 	pool  *pgxpool.Pool
 	files *moodyStore
 	model *countingExtractor
+	logs  *bytes.Buffer // 服务写的 JSON 日志：告警靠里面的 event 字段
 	tid   int64
 	mail  int64
+}
+
+// loggedEvent 是「CloudWatch 上那条告警会不会响」：指标过滤器匹配的就是
+// 这个字段（deploy/aws/05-alerts.sh）。
+func (f *excelFixture) loggedEvent(event string) bool {
+	return strings.Contains(f.logs.String(), `"event":"`+event+`"`)
 }
 
 const excelTestOwner = int64(5301)
@@ -106,8 +113,9 @@ func newExcelFixture(t *testing.T) *excelFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	logs := &bytes.Buffer{}
 	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}, Tables: model},
-		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		slog.New(slog.NewJSONHandler(io.MultiWriter(logs, os.Stderr), nil)))
 
 	// 一封正文里有那段文字的邮件：转换会验证选中的文字属于这封信。
 	var mail int64
@@ -119,7 +127,7 @@ func newExcelFixture(t *testing.T) *excelFixture {
 		RETURNING id`, tid, excelTestOwner).Scan(&mail); err != nil {
 		t.Fatal(err)
 	}
-	return &excelFixture{svc: svc, pool: pool, files: files, model: model, tid: tid, mail: mail}
+	return &excelFixture{svc: svc, pool: pool, files: files, model: model, logs: logs, tid: tid, mail: mail}
 }
 
 // 一个刚被领走、还没问模型的任务。返回从库里读回来的整行——worker 手里的
@@ -238,6 +246,9 @@ func TestStorageOutageFailsTheJobAndKeepsTheFileOutOfTheDatabase(t *testing.T) {
 	if len(f.files.objects) != 0 {
 		t.Fatalf("桶里不该有东西：%d", len(f.files.objects))
 	}
+	if !f.loggedEvent(excelEventStorageUnavailable) {
+		t.Fatalf("告警靠的那条日志没打：\n%s", f.logs.String())
+	}
 }
 
 // 文件和 metadata 都传上去了、库那一步没写成（或者进程在那一刻被杀）：任务
@@ -275,6 +286,9 @@ func TestRecoveryFinishesTheJobWithoutAskingTheModelAgain(t *testing.T) {
 		job.Result.Workbook.Sheets[0].Summary != "三条询盘，一条带单价" {
 		t.Fatalf("恢复出来的不是上次那份：%+v", job.Result)
 	}
+	if !f.loggedEvent(excelEventResultRecovered) {
+		t.Fatalf("恢复了一次该留下记号：\n%s", f.logs.String())
+	}
 }
 
 // 领走时对象存储不通：分不清有没有上次的结果，什么都不做。这时跑模型只会
@@ -293,6 +307,9 @@ func TestUnreachableStorageAtClaimSpendsNothing(t *testing.T) {
 	}
 	if f.files.puts != 0 {
 		t.Fatalf("不该传任何东西：%d 次", f.files.puts)
+	}
+	if !f.loggedEvent(excelEventStorageUnreachable) {
+		t.Fatalf("告警靠的那条日志没打：\n%s", f.logs.String())
 	}
 }
 

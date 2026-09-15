@@ -25,8 +25,31 @@
 # MINIO_USE_SSL is the string "true", not "1" — the services compare
 # literally against "true".
 
+# 日志直接送 CloudWatch：日志组 /erp/app，一个服务一条流。机器的 IAM 角色
+# 自带 CloudWatchAgentServerPolicy，Docker 守护进程拿它就能写。
+#
+# mode: non-blocking——CloudWatch 那边卡住时，日志在本地缓冲区里丢，服务不停。
+# 默认的 blocking 是服务的每一行日志都要等 CloudWatch 应答，那等于把一个监控
+# 组件放进了每个请求的关键路径。Docker 20.10 起本地照样留一份副本（dual
+# logging），所以机器上 docker logs 照常能用。
+#
+# 指标过滤器和告警在 deploy/aws/05-alerts.sh；说明见 docs/MONITORING.md 第四层。
+x-awslogs: &awslogs
+  driver: awslogs
+  options: &awslogs-options
+    awslogs-region: us-west-2
+    awslogs-group: /erp/app
+    awslogs-create-group: "true"
+    mode: non-blocking
+    max-buffer-size: 4m
+
 services:
   iam:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: iam
     image: ghcr.io/yefch3/erp-go/iam:${ERP_SHA:?production runs pinned images — pass ERP_SHA=<git-sha>}
     environment:
       DB_DSN: ${IAM_DB_DSN:?set in deploy/.env}
@@ -38,6 +61,11 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       MINIO_USE_SSL: ${MINIO_USE_SSL}
   masterdata:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: masterdata
     image: ghcr.io/yefch3/erp-go/masterdata:${ERP_SHA}
     environment:
       DB_DSN: ${MASTERDATA_DB_DSN:?set in deploy/.env}
@@ -50,10 +78,20 @@ services:
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
   fx:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: fx
     image: ghcr.io/yefch3/erp-go/fx:${ERP_SHA}
     environment:
       DB_DSN: ${FX_DB_DSN:?set in deploy/.env}
   product:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: product
     image: ghcr.io/yefch3/erp-go/product:${ERP_SHA}
     environment:
       DB_DSN: ${PRODUCT_DB_DSN:?set in deploy/.env}
@@ -65,10 +103,20 @@ services:
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
   approval:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: approval
     image: ghcr.io/yefch3/erp-go/approval:${ERP_SHA}
     environment:
       DB_DSN: ${APPROVAL_DB_DSN:?set in deploy/.env}
   export:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: export
     image: ghcr.io/yefch3/erp-go/export:${ERP_SHA}
     environment:
       DB_DSN: ${EXPORT_DB_DSN:?set in deploy/.env}
@@ -80,10 +128,20 @@ services:
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
   inventory:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: inventory
     image: ghcr.io/yefch3/erp-go/inventory:${ERP_SHA}
     environment:
       DB_DSN: ${INVENTORY_DB_DSN:?set in deploy/.env}
   procurement:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: procurement
     image: ghcr.io/yefch3/erp-go/procurement:${ERP_SHA}
     environment:
       DB_DSN: ${PROCUREMENT_DB_DSN:?set in deploy/.env}
@@ -96,6 +154,11 @@ services:
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
   shipping:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: shipping
     image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
     environment:
       DB_DSN: ${SHIPPING_DB_DSN:?set in deploy/.env}
@@ -122,6 +185,11 @@ services:
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
   mail:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: mail
     image: ghcr.io/yefch3/erp-go/mail:${ERP_SHA}
     environment:
       DB_DSN: ${MAIL_DB_DSN:?set in deploy/.env}
@@ -147,6 +215,11 @@ services:
       OFFICE_INTERNAL_URL: ${OFFICE_INTERNAL_URL:-http://mail:9011}
 
   gateway:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: gateway
     image: ghcr.io/yefch3/erp-go/gateway:${ERP_SHA}
     environment:
       # /api/healthz reports this back, so a deploy can confirm the swap
@@ -171,12 +244,22 @@ services:
   # gateway). Loopback-only like everything else. 8082 because 8081 already
   # belongs to pixel-proxy in the base file.
   frontend:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: frontend
     image: ghcr.io/yefch3/erp-go/frontend:${ERP_SHA}
     restart: unless-stopped
     networks: [infra]
     ports:
       - "127.0.0.1:8082:80"
   docs:
+    logging:
+      <<: *awslogs
+      options:
+        <<: *awslogs-options
+        awslogs-stream: docs
     # 同一份镜像，密钥从 .env 来，**必填**：这台容器会主动出去取文件，而它在
     # infra 网上、前门一转发就对着公网。空密钥意味着什么由它的启动脚本决定
     # （可能是一把随机的，也可能是一把默认的），而"可能"不该是一道门锁的状态。

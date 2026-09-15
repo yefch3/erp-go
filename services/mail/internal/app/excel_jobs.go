@@ -101,7 +101,8 @@ func (s *Service) excelResultBytes(ctx context.Context, row store.MailExcelJob) 
 		if err != nil {
 			// 对象不见了（被谁清了、桶被换了）和存储暂时不通，这里分不出来，
 			// 也不该在这里猜。说一句"取不到"，比给一个空文件强。
-			s.log.Warn("could not read an Excel result", "key", row.FileKey, "err", err)
+			s.log.Warn("could not read an Excel result",
+				"event", excelEventResultUnreachable, "key", row.FileKey, "err", err)
 			return nil, apierr.Invalid("MAIL_EXCEL_RESULT_UNREACHABLE", "这次转换的结果暂时取不到，请稍后重试或重新转换")
 		}
 		return data, nil
@@ -297,7 +298,8 @@ func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
 		// metadata 没传成的那种也在内）、旧的，收的动作都一样。S3 的 DELETE
 		// 对不存在的键是幂等的，没有对象的那些行，这一下什么都不会发生。
 		if err := s.removeExcelObjects(ctx, row.TenantID, row.ID); err != nil {
-			s.log.Warn("could not remove an expired excel result", "job", row.ID, "err", err)
+			s.log.Warn("could not remove an expired excel result",
+				"event", excelEventSweepRemoveFailed, "job", row.ID, "err", err)
 			continue
 		}
 		if _, err := s.q.ClearExcelJobPayload(ctx, row.ID); err != nil {
@@ -371,11 +373,23 @@ func (s *Service) drainExcelJobs(ctx context.Context) error {
 // 第 2 步排在第 1 步之后，所以 metadata 在 ⇒ 文件在；恢复时只用看 metadata。
 // 反过来（文件在、metadata 不在）是第 2 步失败留下的，恢复时当作没有，重跑
 // 之后同一个键覆盖掉；就算任务最后失败了，清理器也按算出来的键把两份都删。
+// 这几条日志各带一个固定的 event 字段——CloudWatch 上的指标过滤器按它匹配
+// （deploy/aws/05-alerts.sh），不按那句话的文字。文字随便改，event 不能改：
+// 改了告警就静默失效。TestAlertScriptKnowsEveryExcelEvent 钉着两边一致。
+const (
+	excelEventStorageUnreachable = "excel_storage_unreachable" // 领任务时对象存储不通，什么都没做
+	excelEventStorageUnavailable = "excel_storage_unavailable" // 结果传不上对象存储，任务标失败
+	excelEventRowWriteFailed     = "excel_row_write_failed"    // 传上去了，库那一行没写成，等恢复
+	excelEventResultRecovered    = "excel_result_recovered"    // 恢复路径走了一次，模型没跑
+	excelEventResultUnreachable  = "excel_result_unreachable"  // 预览/下载时从对象存储取不到
+	excelEventSweepRemoveFailed  = "excel_sweep_remove_failed" // 清理器删不掉对象
+)
+
 func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 	result, recovered, err := s.recoverExcelResult(ctx, row)
 	if err != nil {
 		s.log.Warn("object storage unreachable; leaving the Excel job for the next claim",
-			"job", row.ID, "err", err)
+			"event", excelEventStorageUnreachable, "job", row.ID, "err", err)
 		return
 	}
 	if !recovered {
@@ -384,7 +398,8 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 			return
 		}
 		if err := s.putExcelResult(ctx, row, result); err != nil {
-			s.log.Error("could not store an Excel result; failing the job", "job", row.ID, "err", err)
+			s.log.Error("could not store an Excel result; failing the job",
+				"event", excelEventStorageUnavailable, "job", row.ID, "err", err)
 			s.failExcelJob(ctx, row, "MAIL_EXCEL_STORAGE_UNAVAILABLE",
 				"文件存储暂时不可用，这次转换的结果没能保存，请稍后重新转换")
 			return
@@ -394,7 +409,7 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		// 文件和 metadata 都已经在对象存储里了。任务留在「处理中」，下一次
 		// 领走时从那里恢复，不再跑模型。
 		s.log.Error("could not record a completed Excel job; it will be recovered from object storage",
-			"job", row.ID, "err", err)
+			"event", excelEventRowWriteFailed, "job", row.ID, "err", err)
 		return
 	}
 	s.publishExcelJob(ctx, row)
@@ -534,7 +549,8 @@ func (s *Service) recoverExcelResult(ctx context.Context, row store.MailExcelJob
 			"job", row.ID, "err", err)
 		return ExcelResult{}, false, nil
 	}
-	s.log.Info("recovered an Excel result from object storage; the model is not run again", "job", row.ID)
+	s.log.Info("recovered an Excel result from object storage; the model is not run again",
+		"event", excelEventResultRecovered, "job", row.ID)
 	return ExcelResult{FileName: sidecar.FileName, Model: sidecar.Model, Workbook: sidecar.Workbook}, true, nil
 }
 

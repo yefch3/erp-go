@@ -82,7 +82,7 @@ Agent（经 SSM 一条命令分发），补两条线：
 | 不做 | 触发条件（到了再做） |
 |---|---|
 | Prometheus + Grafana | **变成分布式系统时**——即触发 [K8S-PATH.md](./K8S-PATH.md) 第一节任意两条的那天，监控帝国随集群一起上 |
-| 日志中心（Loki/ELK） | 同上，或排障时"到底在哪台机"成为日常问题时 |
+| 日志中心（Loki/ELK） | 同上，或排障时"到底在哪台机"成为日常问题时。单机阶段 CloudWatch Logs 就是日志中心（第四层） |
 | APM 链路追踪 | 服务间调用排障成为瓶颈时；目前 trace_id 已贯穿日志，够用 |
 
 ## 执行清单
@@ -94,6 +94,7 @@ Agent（经 SSM 一条命令分发），补两条线：
 - [x] CloudWatch 告警 5 条（上表 1–5）——原计划 6 条，账单那条建不成，已删
 - [x] SSM 分发 CloudWatch Agent + 告警 2 条（上表 7–8）
 - [x] 面板 `erp-prod`：四张曲线 + 磁盘内存 + 告警总览，每张图都画了告警线
+- [x] 2026-09-15：应用日志进 CloudWatch（`/erp/app`）+ 告警 16 条（第四层），`deploy/aws/05-alerts.sh`
 - [ ] UptimeRobot 注册 + healthz 拨测（需要账号，操作人：fangchen）
 - [ ] audit-mail 进 cron（每日）+ docker image prune 进 cron（每周）
 - [ ] 一周后回看各指标真实水位，校准告警线
@@ -119,22 +120,54 @@ Agent（经 SSM 一条命令分发），补两条线：
 `db.t4g.medium` + 100 GB EBS，8 月实际消耗 46 美元（8/1–8/25）。按现在的
 负载，机器规格明显偏大——但等 300 人上来再看，现在动没意义。
 
-## 还没有覆盖的一块：应用层
+## 第四层：应用日志（2026-09-15 配置）
 
-上面七条看的全是**机器**。业务错误、异常日志、队列积压，这一层现在**没有任何
-自动化**——办法是人去 `docker logs` 里翻。
+上面七条看的全是**机器**。应用自己报的错——业务失败、异常日志——之前没有任何
+自动化，办法是人登上机器去 `docker logs` 里翻。这不是理论缺口：2026-08-24
+发现邮件服务每两分钟打一簇 `i/o timeout`，持续了很久没人察觉——**日志里一直
+有，但没人看**（修复见 `services/mail/internal/adapter/mailfetch/pool.go` 的
+`idleWindow`）。
 
-这不是理论缺口。2026-08-24 发现邮件服务每两分钟打一簇 `i/o timeout`，
-metronomically，持续了很久没人察觉——**日志里一直有，但没人看**。修复见
-`services/mail/internal/adapter/mailfetch/pool.go` 的 `idleWindow`。
+现在的做法，不加新组件：
 
-便宜的补法是每日 cron 数一遍各服务的 ERROR/WARN 条数，比昨天多就发邮件。
-服务本来就在输出结构化日志（带 level、service、duration_ms、trace_id），
-已经是指标形状的数据，不需要新组件。**排在 UptimeRobot 之后、Prometheus 之前。**
+1. **日志直接送 CloudWatch。** `deploy/docker-compose.prod.yml` 里每个服务的
+   日志驱动是 `awslogs`，写进日志组 **`/erp/app`**，一个服务一条流，留 30 天。
+   机器的 IAM 角色本来就有 `CloudWatchAgentServerPolicy`，够用。驱动设成
+   `non-blocking`：CloudWatch 卡住时丢日志，不拖住服务；机器上 `docker logs`
+   照常能用（Docker 20.10 起本地留副本）。
+2. **从日志里数出指标。** 服务打的本来就是 JSON（`level`、`service`、`msg`、
+   `event`），CloudWatch 的指标过滤器直接按字段匹配，不解析文本。
+3. **告警**，都发到 `erp-alerts`，和上面七条同一个邮箱。
 
-同一个 cron 里顺带跑 `make audit-mail`（邮件数据完整性审计，✗ 数量 >0 时告警）
-——它早就写好了，只是从来没被定时跑过，属于同一类问题：**能发现问题的东西
-存在，但没有人或机器去按它。**
+| 告警 | 什么时候响 |
+|---|---|
+| `erp-<服务>-errors`，11 条（每个 Go 服务一条） | 5 分钟内出现任何一条 `level=ERROR` |
+| `erp-mail-excel_storage_unavailable` | 转换结果传不上对象存储，任务已标失败 |
+| `erp-mail-excel_storage_unreachable` | 领转换任务时对象存储不通 |
+| `erp-mail-excel_row_write_failed` | 结果传上去了、库里那一行没写成（会自动恢复，但连着出现说明数据库有问题） |
+| `erp-mail-excel_result_unreachable` | 预览或下载时从对象存储取不到结果 |
+| `erp-mail-excel_sweep_remove_failed` | 清理器删不掉过期的结果 |
+
+后五条按日志里**固定的 `event` 字段**匹配，不按那句话的文字——文字随便改，
+`event` 不能改，改了告警就静默失效。字段名定在
+`services/mail/internal/app/excel_jobs.go`，`TestAlertScriptKnowsEveryExcelEvent`
+钉着代码和脚本两边一致。「恢复成功」（`excel_result_recovered`）只记数不告警：
+它是好消息，模型没重跑。
+
+告警线全是「≥1 次」：这些事一次都不该发生。没数据当正常——完全没日志是服务
+全停了，那归机器那几条管。全部定义在 `deploy/aws/05-alerts.sh`，幂等，改了重跑。
+
+看日志不用登机器了：
+
+```bash
+aws logs tail /erp/app --follow --filter-pattern '{ $.service = "mail" }' --profile erp --region us-west-2
+```
+
+要给别的失败点加告警：代码里那条日志加一个固定的 `event` 字段，脚本里加一行
+`excel <event> "<说明>"`（或者照 `filter`/`alarm` 两个函数写），重跑脚本。
+
+**还没做的**：`make audit-mail`（邮件数据完整性审计，✗ 数量 >0 时告警）早就写好
+了，只是从来没被定时跑过——**能发现问题的东西存在，但没有人或机器去按它。**
 
 ## 另一块：依赖容器停了，七条告警一条都不响
 
