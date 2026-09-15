@@ -1,5 +1,13 @@
 import {describe,it,expect} from 'vitest'
-import {applyTemplateDefaults,blankProduct,pastePrices,productTemplateValue,setProductTemplateValue} from './inquiryWorkspace'
+import {applyTemplateDefaults,blankProduct,canonicalInquiryRouteID,pastePrices,productTemplateValue,setProductTemplateValue} from './inquiryWorkspace'
+
+it('converts retired negative inquiry links to canonical record IDs',()=>{
+ expect(canonicalInquiryRouteID('-7')).toBe('7')
+ expect(canonicalInquiryRouteID(' -42 ')).toBe('42')
+ expect(canonicalInquiryRouteID('7')).toBe('7')
+ expect(canonicalInquiryRouteID('-0')).toBe('-0')
+ expect(canonicalInquiryRouteID('mail-7')).toBe('mail-7')
+})
 describe('inquiry quote Excel paste',()=>{
  it('preserves existing values and maps past a page boundary using stable product IDs',()=>{
  const products=Array.from({length:126},(_,i)=>({...blankProduct(),id:String(i+1)}))

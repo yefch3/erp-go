@@ -2,6 +2,16 @@ package app
 
 import "testing"
 
+func TestInquiryLookupIDAcceptsRetiredReadLinks(t *testing.T) {
+	for input, want := range map[string]string{
+		"7": "7", "-7": "7", " -7 ": "7", "0": "0", "-0": "-0", "bad": "bad",
+	} {
+		if got := inquiryLookupID(input); got != want {
+			t.Fatalf("inquiryLookupID(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestInquiryTemplateRequiredAndTypedFields(t *testing.T) {
 	body := InquiryBody{
 		Customer: "客户 A",

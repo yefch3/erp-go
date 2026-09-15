@@ -16,6 +16,10 @@ export interface QuoteBody {company:string;currency:string;delivery:string;valid
 export interface Quote {historical?:boolean;id:string;kind:string;version:number;body:QuoteBody;authorId:string;author:string;submittedAt:string;updatedBy:string;updatedAt:string;canEdit:boolean}
 export interface Inquiry {id:string;number:string;ownerId:string;owner:string;state:string;revision:number;submittedAt:string;body:InquiryBody;quotes:Quote[];procurementCount:number;logisticsCount:number;canEdit:boolean;sourceMailId:string;legacy:boolean}
 export interface Result {items:Inquiry[];total:number;item?:Inquiry;attachment?:Attachment;url?:string}
+export function canonicalInquiryRouteID(value:string):string {
+ const trimmed=value.trim()
+ return /^-[1-9]\d*$/.test(trimmed)?trimmed.slice(1):trimmed
+}
 export const blankProduct=():Product=>({id:'',product:'',specification:'',quantity:'',unit:'',delivery:'',weight:'',volume:'',packaging:'',remark:'',customFields:{}})
 export const blankBody=():InquiryBody=>({title:'',customerId:'',customer:'',contactId:'',contact:'',delivery:'',loadingPort:'',destinationPort:'',incoterm:'',remark:'',products:[blankProduct()],attachments:[]})
 export const blankQuote=():QuoteBody=>({company:'',currency:'USD',delivery:'',validUntil:'',paymentTerms:'',incoterm:'',remark:'',prices:[],carrier:'',route:'',vessel:'',voyage:'',departure:'',arrival:'',transitDays:'',loadingPort:'',destinationPort:'',cargoIds:[],charges:[],totals:{},attachments:[]})
