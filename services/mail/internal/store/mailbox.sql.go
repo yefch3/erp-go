@@ -1987,9 +1987,9 @@ type ListInboundAttachmentsRow struct {
 // 走索引读一行就到头（见 00065 那条按 version DESC 的索引），而 GROUP BY 要
 // 先把这封信的所有版本都扫出来。
 //
-// 取回来的是**改过的最新版**，不是原件；原件那几列（file_key/file_size）
-// 保持原样，永远指客户发来的那一份。两者都要在：一个给「在线打开」，一个给
-// 「下载原件」。
+// rev_* 是**改过的最新版**；原件那几列（file_key/file_size）保持原样，永远指
+// 客户发来的那一份。给人的那一份由 Go 里的 latestFile 挑：改过就是 rev_*，
+// 预览、下载、打包、转 Excel 四条路一致（2026-09-15 起；之前下载给原件）。
 func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAttachmentsParams) ([]ListInboundAttachmentsRow, error) {
 	rows, err := q.db.Query(ctx, listInboundAttachments, arg.TenantID, arg.InboundID)
 	if err != nil {
@@ -3108,11 +3108,19 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 const listThreadAttachments = `-- name: ListThreadAttachments :many
 SELECT 'IN'::text AS direction, i.id AS message_id,
        a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id,
-       coalesce((SELECT max(version) FROM mail_attachment_revisions r
-                 WHERE r.tenant_id = a.tenant_id AND r.attachment_id = a.id), 0)::int AS rev_version
+       coalesce(r.version, 0)::int      AS rev_version,
+       coalesce(r.file_key, '')::text   AS rev_file_key,
+       coalesce(r.file_size, 0)::bigint AS rev_file_size
 FROM email_inbound i
 JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+LEFT JOIN LATERAL (
+    SELECT version, file_key, file_size
+    FROM mail_attachment_revisions
+    WHERE tenant_id = a.tenant_id AND attachment_id = a.id
+    ORDER BY version DESC
+    LIMIT 1
+) r ON true
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
   -- 和 ListThread 同一个口径：附件跟着信走，信按信箱分。
@@ -3122,7 +3130,7 @@ WHERE i.tenant_id = $1::bigint
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,
        a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id,
-       0::int AS rev_version
+       0::int AS rev_version, ''::text AS rev_file_key, 0::bigint AS rev_file_size
 FROM email_messages m
 JOIN email_attachments a
   ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
@@ -3149,6 +3157,8 @@ type ListThreadAttachmentsRow struct {
 	FileKey     string
 	ContentID   string
 	RevVersion  int32
+	RevFileKey  string
+	RevFileSize int64
 }
 
 // 整条会话的附件，一次取回，两个方向。
@@ -3166,9 +3176,9 @@ type ListThreadAttachmentsRow struct {
 // 需要正文，所以留给 Go 里的 hideEmbedded 做——GetInbound 一直是这么做的，
 // 这里当初不该另发明一个更粗的代理指标。
 //
-// rev_version 是"这个附件在浏览器里被改过几回"（见迁移 00065），会话视图和
-// 单封视图要显示同一个标记，所以两边都得取。发出去的那些附件没有这回事，
-// 所以 UNION 的另一半写 0。
+// rev_* 是"这个附件在浏览器里被改过的最新那一版"（见迁移 00065）：改过的话，
+// 会话视图给人的下载和打包用的是它，不是原件——和单封视图一个口径（见
+// ListInboundAttachments）。发出去的那些附件没有这回事，UNION 的另一半写空。
 func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
 	rows, err := q.db.Query(ctx, listThreadAttachments,
 		arg.TenantID,
@@ -3193,6 +3203,8 @@ func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttac
 			&i.FileKey,
 			&i.ContentID,
 			&i.RevVersion,
+			&i.RevFileKey,
+			&i.RevFileSize,
 		); err != nil {
 			return nil, err
 		}

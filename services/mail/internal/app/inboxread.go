@@ -491,9 +491,10 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	})
 	if err == nil {
 		for _, a := range atts {
+			key, size := latestFile(a.FileKey, a.FileSize, a.RevVersion, a.RevFileKey, a.RevFileSize)
 			v.Attachments = append(v.Attachments, Attachment{
 				ID: a.ID, FileName: a.FileName, ContentType: a.ContentType,
-				FileSize: a.FileSize, FileKey: a.FileKey, ContentID: a.ContentID,
+				FileSize: size, FileKey: key, ContentID: a.ContentID,
 				Revision: a.RevVersion,
 			})
 		}
@@ -590,9 +591,10 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	}); err == nil {
 		flat := make([]Attachment, 0, len(fs))
 		for _, f := range fs {
+			key, size := latestFile(f.FileKey, f.FileSize, f.RevVersion, f.RevFileKey, f.RevFileSize)
 			flat = append(flat, Attachment{
 				ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
-				FileSize: f.FileSize, FileKey: f.FileKey, ContentID: f.ContentID,
+				FileSize: size, FileKey: key, ContentID: f.ContentID,
 				Revision: f.RevVersion,
 			})
 		}

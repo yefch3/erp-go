@@ -17,12 +17,6 @@
       <el-icon><Paperclip /></el-icon>
       <span class="fname ellipsis">{{ a.fileName }}</span>
       <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
-      <!-- 在线改过。标出来是因为「下载」拿到的仍然是客户发来的原件——不说
-           的话，一个人改完再下载，会以为自己的改动丢了。点「预览」打开的
-           才是最新那一版。 -->
-      <el-tag v-if="Number(a.revision) > 0" size="small" type="warning" effect="plain" class="rev">
-        {{ t('emails.attachmentEdited', { n: a.revision }) }}
-      </el-tag>
       <!-- 看和拿是两件事，所以是两个按钮。预览只对真能显示的东西出现；
            .pptx 或 .zip 的全部交互就是下载。 -->
       <!-- 带字、带底色，不是两个灰图标。原来那两个灰图标和文件名、大小混在
@@ -72,7 +66,9 @@ export interface MailFile {
   // ""/"direct"/"convert"/"office"。见 lib/attachmentPreview。
   previewKind?: string
   stored?: boolean
-  // 在浏览器里被改过几回。0 / 不给 = 没人改过。downloadUrl 永远是原件。
+  // 在浏览器里被改过几回。0 / 不给 = 没人改过。改过的话预览、下载、打包
+  // 给的都是最新那一版（2026-09-15 起；之前下载给原件，页面上靠一个「已改」
+  // 标记提醒，标记去掉了，行为也统一了）。
   revision?: number | string
 }
 
@@ -103,9 +99,6 @@ function hint(a: MailFile) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-.rev {
-  flex: none;
 }
 .file {
   display: flex;

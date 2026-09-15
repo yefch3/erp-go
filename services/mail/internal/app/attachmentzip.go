@@ -65,9 +65,11 @@ func (s *Service) ZipInboundAttachments(
 	// 页面上看得见的文件会从包里消失，而且不响。
 	all := make([]Attachment, 0, len(atts))
 	for _, a := range atts {
+		// 在线改过的，包里装的也是改过的那一版——和页面上的下载按钮一致。
+		key, size := latestFile(a.FileKey, a.FileSize, a.RevVersion, a.RevFileKey, a.RevFileSize)
 		all = append(all, Attachment{
 			ID: a.ID, FileName: a.FileName, ContentType: a.ContentType,
-			FileSize: a.FileSize, FileKey: a.FileKey, ContentID: a.ContentID,
+			FileSize: size, FileKey: key, ContentID: a.ContentID,
 		})
 	}
 	listed := make([]Attachment, 0, len(all))
