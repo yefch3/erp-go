@@ -1472,6 +1472,7 @@ import {
 } from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { attachmentExcelSource } from '../lib/attachmentExcelSource'
+import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import {
   base64ToBytes,
   excelPollAfterFailure,
@@ -4337,6 +4338,9 @@ const excelJobId = ref('')
 const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
+// 转询盘是一次创建动作。请求成功但响应丢失时，重试继续使用同一个键，
+// 网关会重放第一次的结果，不会再开一张重复询盘。
+const sourcingTransferIdem = newIdempotencySession()
 const sourcingOpen = ref(false)
 const sourcingContactsLoading = ref(false)
 const sourcingContacts = ref<SourcingCustomerContact[]>([])
@@ -4846,12 +4850,12 @@ async function createSourcingCaseFromExcel() {
       customerName: sourcingForm.customerName,
       contactId: sourcingForm.contactId,
       sourceMailId: source.mailId,
-      sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
       inquiryTemplateId: result.inquiryTemplateId || '0',
       inquiryTemplateCode: result.inquiryTemplateCode || '',
       inquiryTemplateVersion: result.inquiryTemplateVersion || 0,
       lines,
-    })
+    }, withIdempotency(sourcingTransferIdem))
+    sourcingTransferIdem.reset()
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
     sourcingOpen.value = false
     excelOpen.value = false
