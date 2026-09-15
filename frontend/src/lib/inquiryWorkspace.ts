@@ -14,7 +14,7 @@ export interface Price {productId:string;price:string;factoryPrice?:string;fobPr
 export interface Charge {name:string;amount:string;currency:string;unit:string;quantity:string;subtotal:string;remark:string;allocationType?:'DIRECT'|'PER_TON'|'FIXED';productId?:string}
 export interface QuoteBody {company:string;currency:string;delivery:string;validUntil:string;paymentTerms:string;incoterm:string;remark:string;prices:Price[];carrier:string;route:string;vessel:string;voyage:string;departure:string;arrival:string;transitDays:string;loadingPort:string;destinationPort:string;cargoIds:string[];charges:Charge[];totals:Record<string,string>;attachments:Attachment[]}
 export interface Quote {historical?:boolean;id:string;kind:string;version:number;body:QuoteBody;authorId:string;author:string;submittedAt:string;updatedBy:string;updatedAt:string;canEdit:boolean}
-export interface Inquiry {id:string;number:string;ownerId:string;owner:string;state:string;revision:number;submittedAt:string;body:InquiryBody;quotes:Quote[];procurementCount:number;logisticsCount:number;canEdit:boolean;sourceMailId:string;legacy:boolean}
+export interface Inquiry {id:string;number:string;ownerId:string;owner:string;state:string;revision:number;submittedAt:string;body:InquiryBody;quotes:Quote[];procurementCount:number;logisticsCount:number;canEdit:boolean;readOnlyReason?:string;canWithdraw?:boolean;withdrawReason?:string;sourceMailId:string;legacy:boolean}
 export interface Result {items:Inquiry[];total:number;item?:Inquiry;attachment?:Attachment;url?:string}
 export function canonicalInquiryRouteID(value:string):string {
  const trimmed=value.trim()
