@@ -21,23 +21,23 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table :data="contracts" v-loading="loading">
-        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
-        <el-table-column :label="t('contracts.externalContractNo')" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
-        <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" />
-        <el-table-column :label="t('contracts.amount')" width="140" align="right">
-          <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
+      <el-table :data="contracts" v-loading="loading" class="contract-list-table">
+        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" width="190" show-overflow-tooltip><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.externalContractNo')" width="160" show-overflow-tooltip><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
+        <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="180" show-overflow-tooltip />
+        <el-table-column :label="t('contracts.amount')" width="170" align="right" class-name="contract-list-amount" show-overflow-tooltip>
+          <template #default="{ row }"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('contracts.owner')" width="90">
+        <el-table-column :label="t('contracts.owner')" width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="100">
+        <el-table-column :label="t('common.status')" width="110">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('contracts.updatedAt')" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
-        <el-table-column :label="t('common.actions')" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.updatedAt')" width="180"><template #default="{row}"><span class="list-time">{{ formatListTime(row.updatedAt) }}</span></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="110" fixed="right" align="center"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination
@@ -1961,6 +1961,21 @@ function formatTime(iso: string): string {
   return iso ? iso.replace('T', ' ').slice(0, 16) : ''
 }
 
+function formatListAmount(value: string): string {
+  // Group the decimal string directly so large contract amounts keep their precision.
+  const match = /^(\-?)(\d+)(?:\.(\d+))?$/.exec(value)
+  if (!match) return value || '—'
+  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${(match[3] || '').padEnd(2, '0')}`
+}
+
+function formatListTime(value: string): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 onMounted(async () => {
   await loadContractOwners()
   load()
@@ -2134,9 +2149,19 @@ onUnmounted(stopListening)
 .contracts-page :deep(.el-table td.el-table__cell) { padding:13px 0; border-bottom-color:#e7eff3; color:#141817; }
 .filters {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
   margin-bottom: 14px;
 }
+.filters > :deep(.el-input),.filters > :deep(.el-select){max-width:100%}
+.contract-list-table :deep(.cell){white-space:nowrap;line-height:24px;padding-left:14px;padding-right:14px}
+.contract-list-table :deep(td.el-table__cell){height:56px;box-sizing:border-box;padding:12px 0}
+.contract-list-table :deep(.contract-list-amount .cell){padding-right:24px}
+.contract-list-table :deep(.el-tag){min-width:56px;height:24px;font-size:12px}
+.list-number,.list-time{font-variant-numeric:tabular-nums}
+.list-currency{margin-left:4px;color:#687c89;font-size:12px}
+.list-time{color:#607582;font-size:13px}
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
