@@ -635,6 +635,15 @@ export default {
     done: '{n} empleados importados',
   },
   employees: {
+    companyMailbox: 'Buzón de la empresa',
+    companyMailboxNone: 'Sin configurar',
+    companyMailboxAssign: 'Configurar buzón de la empresa',
+    companyMailboxReplace: 'Cambiar buzón de la empresa',
+    companyMailboxVerified: 'Verificado · {at}',
+    companyMailboxNeedsReauth: 'La contraseña ya no funciona: configúralo de nuevo',
+    companyMailboxAssigned: 'Buzón de la empresa asignado: {email}',
+    companyMailboxDialogTitle: 'Configurar buzón de la empresa',
+    companyMailboxDialogHint: 'Es un buzón de la empresa asignado a este empleado. La contraseña la introduces tú aquí y el sistema inicia sesión una vez para verificarla. El empleado no puede cambiarla ni desvincular el buzón, y se abre solo al entrar en el ERP. Si ya tenía uno, se retira (su historial de correo se conserva).',
     edit: 'Editar empleado', englishName: 'Nombre inglés', hireDate: 'Fecha de alta', leaveDate: 'Fecha de baja', remark: 'Notas',
     allManagers: 'Todos los responsables', allRoles: 'Todos los roles', employmentStatus: 'Situación laboral', accountStatus: 'Cuenta',
     accountUnopened: 'Sin cuenta', changes: 'Historial de cambios', operator: 'Operador', noChanges: 'Sin cambios', updated: 'Empleado actualizado',
@@ -2221,6 +2230,8 @@ export default {
     unsuppressedN: '{n} direcciones quitadas',
   },
   mailGate: {
+    companyMailbox: 'Buzón de la empresa',
+    companyMailboxHint: 'Asignado por un administrador: no se puede desvincular ni cambiar su contraseña aquí; se abre al iniciar sesión en el ERP',
     forMailbox: 'Buzón: {email}',
     title: 'Iniciar sesión en su buzón',
     explain:

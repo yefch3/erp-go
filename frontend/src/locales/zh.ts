@@ -627,6 +627,15 @@ export default {
     done: '已导入 {n} 人',
   },
   employees: {
+    companyMailbox: '主邮箱',
+    companyMailboxNone: '还没配置',
+    companyMailboxAssign: '配置主邮箱',
+    companyMailboxReplace: '更换主邮箱',
+    companyMailboxVerified: '已验证 · {at}',
+    companyMailboxNeedsReauth: '密码已失效，请重新配置',
+    companyMailboxAssigned: '主邮箱已分配：{email}',
+    companyMailboxDialogTitle: '配置主邮箱',
+    companyMailboxDialogHint: '这是公司的邮箱，分给这位员工使用。密码由你在这里输入，系统会先真的登录一次验证；员工不能改密码、不能解绑，登录 ERP 后自动开着。已经有一个的话，旧的会被收回（历史邮件保留）。',
     edit: '编辑员工', englishName: '英文名', hireDate: '入职日期', leaveDate: '离职日期', remark: '备注',
     allManagers: '全部直属上级', allRoles: '全部角色', employmentStatus: '在职状态', accountStatus: '账号状态',
     accountUnopened: '无账号', changes: '变更记录', operator: '操作人', noChanges: '暂无变更记录', updated: '员工资料已更新',
@@ -2214,6 +2223,8 @@ export default {
     unsuppressedN: '已移出 {n} 个地址',
   },
   mailGate: {
+    companyMailbox: '主邮箱',
+    companyMailboxHint: '公司分配的主邮箱，由管理员管理：不能解绑、不能改密码，登录 ERP 就开着',
     forMailbox: '邮箱：{email}',
     title: '登录邮箱',
     explain:

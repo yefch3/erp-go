@@ -68,6 +68,13 @@
           <!-- 已解绑：还在树里，因为历史邮件的入口就是这一行。标出来是为了
                人点进去看到「不能写信」时知道为什么。 -->
           <span v-if="b.unboundAt" class="mbox-tag mbox-off">{{ t('mailGate.unbound') }}</span>
+          <!-- 主邮箱的标记压过「默认」：它分配下来就是默认的，再挂一个是重复；
+               而「这是公司的、由管理员管」才是人需要知道的那一句。 -->
+          <span
+            v-else-if="b.kind === 'COMPANY'"
+            class="mbox-tag mbox-company"
+            :title="t('mailGate.companyMailboxHint')"
+          >{{ t('mailGate.companyMailbox') }}</span>
           <span v-else-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
         </button>
         <!-- 两个动作各占一格，**没有那个动作时留空格而不是不占位**。
@@ -79,8 +86,10 @@
         <span class="mbox-actions">
           <!-- 解绑。**说清楚它不删邮件**——不说的话，一个只是想换邮箱的人会
                因为怕丢记录而不敢点，然后一直留着一个不用的箱。 -->
+          <!-- 主邮箱没有这颗：它是公司的，收回由管理员做（服务端也拒，这里
+               只是别让人点一个必然报错的按钮）。 -->
           <el-popconfirm
-            v-if="!b.unboundAt"
+            v-if="!b.unboundAt && b.kind !== 'COMPANY'"
             :title="t('mailGate.unbindConfirm', { email: b.email })"
             width="280"
             @confirm="unbind(b)"
@@ -306,6 +315,11 @@ export interface Mailbox {
   unread: number
   /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
   unboundAt: string
+  /**
+   * 这个箱归谁：PERSONAL = 自己绑的；COMPANY = 管理员分配的主邮箱——没有
+   * 「解绑」，改不了密码，登录 ERP 就开着。不给的老服务端按 PERSONAL 看。
+   */
+  kind?: string
   /**
    * 发完信我们要不要自己往这个箱的已发送里留一份。
    *
@@ -713,6 +727,10 @@ defineExpose({ reload: load })
 /* 已解绑：比「默认」那个标签更灰，因为它说的是「这一行不能做事了」。 */
 .mbox-off {
   color: var(--el-text-color-placeholder);
+}
+/* 主邮箱：比「默认」深一点——它说的是「这是公司的」，不是一个随手能改的偏好。 */
+.mbox-company {
+  color: var(--el-color-primary);
 }
 /* 数字，不是一个红点：红点只说「有东西」，而这里要回答的是「值不值得现在
    切过去」——3 封和 40 封是两个决定。min-width 让一位数和两位数的行宽一样，

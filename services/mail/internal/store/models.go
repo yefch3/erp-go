@@ -285,6 +285,8 @@ type MailAccount struct {
 	PushMode string
 	// 上一次判断出 push_mode 的时刻。过了冷静期会重新试 IDLE。
 	PushCheckedAt pgtype.Timestamptz
+	// PERSONAL=员工自己绑的；COMPANY=管理员分配的主邮箱，员工不能改密码、不能解绑，登录即开
+	Kind string
 }
 
 // 收件箱附件在线编辑后的版本；原件在 email_inbound_attachments 上，永不覆盖
@@ -310,6 +312,8 @@ type MailBindingLog struct {
 	Action     string
 	Detail     string
 	CreatedAt  pgtype.Timestamptz
+	// 操作人。0=员工自己；非 0=替他操作的管理员（分配/收回主邮箱）
+	ActorID int64
 }
 
 type MailExcelJob struct {

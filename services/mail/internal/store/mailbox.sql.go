@@ -874,6 +874,55 @@ func (q *Queries) FindMessageByKeyAnyTenant(ctx context.Context, messageKey stri
 	return i, err
 }
 
+const getCompanyMailboxForEmployee = `-- name: GetCompanyMailboxForEmployee :one
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, created_at
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND employee_id = $2::bigint
+  AND kind = 'COMPANY'
+  AND unbound_at IS NULL
+`
+
+type GetCompanyMailboxForEmployeeParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+type GetCompanyMailboxForEmployeeRow struct {
+	ID         int64
+	Email      string
+	Username   string
+	AuthKind   string
+	VerifiedAt pgtype.Timestamptz
+	LastError  string
+	AuthFailed bool
+	IsActive   bool
+	CreatedAt  pgtype.Timestamptz
+}
+
+// 这个人现在拿着的主邮箱（00067）。最多一行——部分唯一索引
+// mail_accounts_one_company_mailbox_per_employee 保证；没有就是 ErrNoRows。
+//
+// 两处用：管理员在员工详情页看「他配的是哪个」；员工登录 ERP 时网关问
+// 「他有主邮箱吗」，有就直接发一把开锁令牌，不问密码。
+// created_at 当「分配时间」看：一行只在分配时才生出来。
+func (q *Queries) GetCompanyMailboxForEmployee(ctx context.Context, arg GetCompanyMailboxForEmployeeParams) (GetCompanyMailboxForEmployeeRow, error) {
+	row := q.db.QueryRow(ctx, getCompanyMailboxForEmployee, arg.TenantID, arg.EmployeeID)
+	var i GetCompanyMailboxForEmployeeRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Username,
+		&i.AuthKind,
+		&i.VerifiedAt,
+		&i.LastError,
+		&i.AuthFailed,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getInbound = `-- name: GetInbound :one
 SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
@@ -1108,7 +1157,7 @@ func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurge
 
 const getMailAccountByEmail = `-- name: GetMailAccountByEmail :one
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
-       is_active, is_default, updated_at,
+       is_active, is_default, kind, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
@@ -1132,6 +1181,7 @@ type GetMailAccountByEmailRow struct {
 	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
+	Kind         string
 	UpdatedAt    pgtype.Timestamptz
 	Domain       string
 	SmtpHost     string
@@ -1171,6 +1221,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
+		&i.Kind,
 		&i.UpdatedAt,
 		&i.Domain,
 		&i.SmtpHost,
@@ -1185,7 +1236,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 
 const getMailAccountByID = `-- name: GetMailAccountByID :one
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
-       is_active, is_default, unbound_at, updated_at,
+       is_active, is_default, kind, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
@@ -1209,6 +1260,7 @@ type GetMailAccountByIDRow struct {
 	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
+	Kind         string
 	UnboundAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	Domain       string
@@ -1242,6 +1294,7 @@ func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByID
 		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
+		&i.Kind,
 		&i.UnboundAt,
 		&i.UpdatedAt,
 		&i.Domain,
@@ -2231,7 +2284,7 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 
 const listMailAccountsForEmployee = `-- name: ListMailAccountsForEmployee :many
 SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
-       is_default, domain, smtp_host, smtp_port, smtp_security,
+       is_default, kind, domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
@@ -2255,6 +2308,7 @@ type ListMailAccountsForEmployeeRow struct {
 	IsActive     bool
 	UpdatedAt    pgtype.Timestamptz
 	IsDefault    bool
+	Kind         string
 	Domain       string
 	SmtpHost     string
 	SmtpPort     int32
@@ -2295,6 +2349,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.IsActive,
 			&i.UpdatedAt,
 			&i.IsDefault,
+			&i.Kind,
 			&i.Domain,
 			&i.SmtpHost,
 			&i.SmtpPort,
@@ -4203,17 +4258,18 @@ func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int
 
 const recordMailBinding = `-- name: RecordMailBinding :exec
 INSERT INTO mail_binding_log (
-    tenant_id, employee_id, account_id, email, provider, action, detail
+    tenant_id, employee_id, actor_id, account_id, email, provider, action, detail
 ) VALUES (
-    $1::bigint, $2::bigint,
-    $3::bigint, $4::text,
-    $5::text, $6::text, $7::text
+    $1::bigint, $2::bigint, $3::bigint,
+    $4::bigint, $5::text,
+    $6::text, $7::text, $8::text
 )
 `
 
 type RecordMailBindingParams struct {
 	TenantID   int64
 	EmployeeID int64
+	ActorID    int64
 	AccountID  *int64
 	Email      string
 	Provider   string
@@ -4225,10 +4281,14 @@ type RecordMailBindingParams struct {
 // 有一个不言自明的答案。
 //
 // 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+//
+// actor_id 是谁动的手（00067）：员工自己操作时和 employee_id 是同一个人，
+// 管理员替员工分配主邮箱时是管理员。
 func (q *Queries) RecordMailBinding(ctx context.Context, arg RecordMailBindingParams) error {
 	_, err := q.db.Exec(ctx, recordMailBinding,
 		arg.TenantID,
 		arg.EmployeeID,
+		arg.ActorID,
 		arg.AccountID,
 		arg.Email,
 		arg.Provider,
@@ -5338,7 +5398,7 @@ func (q *Queries) UpsertHostFolder(ctx context.Context, arg UpsertHostFolderPara
 
 const upsertMailAccountShell = `-- name: UpsertMailAccountShell :one
 INSERT INTO mail_accounts (
-    tenant_id, employee_id, email, username, secret_enc, key_version, is_default,
+    tenant_id, employee_id, email, username, secret_enc, key_version, is_default, kind,
     domain, smtp_host, smtp_port, smtp_security,
     imap_host, imap_port, imap_security, hourly_quota, daily_quota, updated_at
 )
@@ -5350,6 +5410,9 @@ SELECT
          WHERE d.tenant_id = $1::bigint
            AND d.employee_id = $2::bigint
     ),
+    -- 空当 PERSONAL：sqlc 的必填参数少填一个只是零值、不报编译错误（有先例），
+    -- 而 CHECK 会把空串当场打回。把默认写在这里，比指望每个调用方都记得填稳。
+    coalesce(nullif($5::text, ''), 'PERSONAL'),
     coalesce(h.domain, ''), coalesce(h.smtp_host, ''),
     coalesce(h.smtp_port, 465), coalesce(h.smtp_security, 'SSL'),
     coalesce(h.imap_host, ''),
@@ -5360,6 +5423,7 @@ FROM (SELECT 1) AS seed
 LEFT JOIN mail_hosts h ON h.tenant_id = $1::bigint
 ON CONFLICT (tenant_id, email) DO UPDATE SET
     username = excluded.username,
+    kind = CASE WHEN excluded.kind = 'COMPANY' THEN 'COMPANY' ELSE mail_accounts.kind END,
     updated_at = now()
 WHERE mail_accounts.employee_id = excluded.employee_id
 RETURNING id
@@ -5370,6 +5434,7 @@ type UpsertMailAccountShellParams struct {
 	EmployeeID int64
 	Email      string
 	Username   string
+	Kind       string
 }
 
 // Creates or updates everything except the secret, and returns the id.
@@ -5400,6 +5465,10 @@ type UpsertMailAccountShellParams struct {
 //
 // mail_hosts 从此就是它注释里写的那个角色：**新建信箱时的默认值模板**，
 // 不是发信的事实来源。员工自己挑服务商之后，这里种下的值会被覆盖。
+//
+// **kind 只升不降。** 管理员把一个员工自己早就绑着的地址分配成主邮箱，那一行
+// 从 PERSONAL 变成 COMPANY；反过来员工重新填一次授权码不会把主邮箱降回
+// PERSONAL——员工那条路在服务层就被拒了（见 VerifyMailSecret），这里再守一道。
 // **WHERE 那一行是安全边界，不是优化。** 没有它，DO UPDATE 会把
 // employee_id 改成新来的那个人——也就是说，B 只要知道 A 的邮箱地址，
 // 填一次就能把 A 的信箱连同已同步的全部邮件划到自己名下，一声不吭。
@@ -5412,6 +5481,7 @@ func (q *Queries) UpsertMailAccountShell(ctx context.Context, arg UpsertMailAcco
 		arg.EmployeeID,
 		arg.Email,
 		arg.Username,
+		arg.Kind,
 	)
 	var id int64
 	err := row.Scan(&id)

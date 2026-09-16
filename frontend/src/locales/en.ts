@@ -626,6 +626,15 @@ export default {
     done: 'Imported {n} employees',
   },
   employees: {
+    companyMailbox: 'Company mailbox',
+    companyMailboxNone: 'Not set up yet',
+    companyMailboxAssign: 'Set up company mailbox',
+    companyMailboxReplace: 'Replace company mailbox',
+    companyMailboxVerified: 'Verified · {at}',
+    companyMailboxNeedsReauth: 'Password no longer works — set it up again',
+    companyMailboxAssigned: 'Company mailbox assigned: {email}',
+    companyMailboxDialogTitle: 'Set up company mailbox',
+    companyMailboxDialogHint: 'This is a company-owned mailbox assigned to this employee. You enter the password here and the system signs in once to verify it. The employee cannot change the password or unbind it, and it opens automatically when they sign in to the ERP. If one is already assigned, it is released (its mail history is kept).',
     edit: 'Edit employee', englishName: 'English name', hireDate: 'Hire date', leaveDate: 'Leave date', remark: 'Remark',
     allManagers: 'All managers', allRoles: 'All roles', employmentStatus: 'Employment', accountStatus: 'Account',
     accountUnopened: 'No account', changes: 'Change history', operator: 'Operator', noChanges: 'No changes yet', updated: 'Employee updated',
@@ -2215,6 +2224,8 @@ export default {
     unsuppressedN: '{n} addresses removed',
   },
   mailGate: {
+    companyMailbox: 'Company mailbox',
+    companyMailboxHint: 'Assigned by an administrator: cannot be unbound or have its password changed here; opens as soon as you sign in to the ERP',
     forMailbox: 'Mailbox: {email}',
     title: 'Sign in to your mailbox',
     explain:

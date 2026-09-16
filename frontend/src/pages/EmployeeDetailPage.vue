@@ -89,6 +89,25 @@
             <el-descriptions :column="columns" border>
               <el-descriptions-item :label="t('employees.username')">{{ employee.username || t('employees.noAccount') }}</el-descriptions-item>
               <el-descriptions-item :label="t('employees.activation')">{{ activationText(employee) }}</el-descriptions-item>
+              <!-- 主邮箱（mail 00067）：公司的邮箱，分给这个人用。密码由管理员在这里
+                   输入，员工不能改、不能解绑，登录 ERP 后自动开着。 -->
+              <el-descriptions-item :label="t('employees.companyMailbox')" :span="columns">
+                <el-space wrap>
+                  <template v-if="companyMailbox">
+                    <span>{{ companyMailbox.email }}</span>
+                    <el-tag v-if="companyMailbox.needsReauth" type="danger" size="small">
+                      {{ t('employees.companyMailboxNeedsReauth') }}
+                    </el-tag>
+                    <el-tag v-else-if="companyMailbox.verifiedAt" type="success" size="small">
+                      {{ t('employees.companyMailboxVerified', { at: companyMailbox.verifiedAt }) }}
+                    </el-tag>
+                  </template>
+                  <span v-else class="muted">{{ t('employees.companyMailboxNone') }}</span>
+                  <el-button v-if="canWrite" size="small" @click="assigning = true">
+                    {{ companyMailbox ? t('employees.companyMailboxReplace') : t('employees.companyMailboxAssign') }}
+                  </el-button>
+                </el-space>
+              </el-descriptions-item>
               <el-descriptions-item :label="t('employees.roles')" :span="columns">
                 <el-space wrap>
                   <el-tag v-for="role in roleNames" :key="role" type="info">{{ role }}</el-tag>
@@ -96,6 +115,22 @@
                 </el-space>
               </el-descriptions-item>
             </el-descriptions>
+            <!-- 和员工自己绑邮箱是同一份表单（地址、服务商、密码、「其他」的主机），
+                 只是提交到替员工分配的那条路。 -->
+            <el-dialog
+              v-model="assigning"
+              :title="t('employees.companyMailboxDialogTitle')"
+              width="min(440px, 94vw)"
+              append-to-body
+            >
+              <p class="company-mailbox-hint">{{ t('employees.companyMailboxDialogHint') }}</p>
+              <MailboxCredentialsForm
+                :submit-to="`/employees/${employeeID}/company-mailbox`"
+                :initial-email="companyMailbox?.email || employee.email || ''"
+                :submit-label="t('employees.companyMailboxAssign')"
+                @bound="onCompanyMailboxBound"
+              />
+            </el-dialog>
           </el-tab-pane>
 
           <el-tab-pane :label="t('employees.changes')" name="changes">
@@ -132,8 +167,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { InfoFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
+import MailboxCredentialsForm from '../components/MailboxCredentialsForm.vue'
+import type { VerifyResponse } from '../lib/mailUnlock'
 
 const { t } = useI18n()
 const common = (k: string) => t(`common.${k}`)
@@ -185,6 +223,43 @@ const viewportWidth = ref(window.innerWidth)
 const columns = computed(() => (viewportWidth.value < 620 ? 1 : 2))
 
 const employeeID = computed(() => String(route.params.id ?? ''))
+
+// ---- 主邮箱（mail 00067） ----
+// 网关 GET /employees/{id}/company-mailbox 回的那一份。没有就是 null。
+interface CompanyMailbox {
+  accountId: string
+  email: string
+  verifiedAt?: string
+  lastError?: string
+  /** 密码失效了（被改、被服务商锁）。要管理员重新配——员工自己配不了。 */
+  needsReauth?: boolean
+  isActive?: boolean
+  assignedAt?: string
+}
+const companyMailbox = ref<CompanyMailbox | null>(null)
+const assigning = ref(false)
+
+async function loadCompanyMailbox() {
+  companyMailbox.value = null
+  if (!employeeID.value) return
+  try {
+    const d = await get<{ mailbox?: CompanyMailbox | null }>(
+      `/employees/${employeeID.value}/company-mailbox`,
+      undefined,
+      quietErrors,
+    )
+    companyMailbox.value = d.mailbox ?? null
+  } catch {
+    // 邮件服务没起、或者没权限：这一格空着，不挡整页。
+  }
+}
+watch(employeeID, loadCompanyMailbox, { immediate: true })
+
+function onCompanyMailboxBound(d: VerifyResponse) {
+  assigning.value = false
+  ElMessage.success(t('employees.companyMailboxAssigned', { email: d.email ?? '' }))
+  void loadCompanyMailbox()
+}
 
 async function load() {
   const id = employeeID.value
@@ -329,5 +404,16 @@ function onResize() {
   white-space: pre-wrap;
   word-break: break-all;
   font-size: 12px;
+}
+
+/* 主邮箱那一格。 */
+.muted {
+  color: var(--el-text-color-secondary);
+}
+.company-mailbox-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 </style>

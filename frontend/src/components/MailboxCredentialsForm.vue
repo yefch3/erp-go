@@ -85,6 +85,13 @@ const props = defineProps<{
   /** 预填的地址。第一次登录时是这个人的公司邮箱，加信箱时是空的。 */
   initialEmail?: string
   submitLabel?: string
+  /**
+   * 往哪儿提交。默认是员工自己绑箱的那条路（/mailbox/verify）；管理员在员工
+   * 详情页替员工分配主邮箱时换成 /employees/<id>/company-mailbox——表单一模一样
+   * （地址、服务商、密码、「其他」的主机），只是收件人不同。两处各写一份表单，
+   * 改了一处忘了另一处，是这类界面最常见的死法。
+   */
+  submitTo?: string
 }>()
 const emit = defineEmits<{ bound: [VerifyResponse] }>()
 
@@ -169,7 +176,7 @@ async function submit() {
     // quietErrors：授权码错是这里意料之中的答案，显示在字段旁边，不要再
     // 弹一个浮层把同一句话说第二遍。
     const resp = await http.post(
-      '/mailbox/verify',
+      props.submitTo ?? '/mailbox/verify',
       {
         email: addr,
         secret: secret.value,

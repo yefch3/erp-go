@@ -145,9 +145,16 @@ func (s *Service) VerifyMailSecret(
 		return BindResult{}, apierr.Invalid("MAIL_ADDRESS_INVALID", "邮箱地址格式不对")
 	}
 
+	// 主邮箱（00067）的密码由管理员管：员工自己填一次授权码，哪怕填对了也
+	// 不能改。这里拒，比在落库那一步靠 kind 只升不降兜着要早，也说得清。
+	if prev, err := s.q.GetMailAccountByEmail(ctx, store.GetMailAccountByEmailParams{
+		TenantID: tenantID, Email: email,
+	}); err == nil && prev.Kind == mailKindCompany {
+		return BindResult{}, errCompanyMailboxManaged
+	}
 	hosts, err := s.resolveHosts(ctx, tenantID, email, in)
 	if err != nil {
-		s.recordBinding(ctx, tenantID, employeeID, 0, email, in.Provider,
+		s.recordBinding(ctx, tenantID, employeeID, employeeID, 0, email, in.Provider,
 			bindActionFailed, err.Error())
 		return BindResult{}, err
 	}
@@ -155,7 +162,8 @@ func (s *Service) VerifyMailSecret(
 	if s.mailbox == nil {
 		// 没有真的邮件通道（开发环境的假 provider）：没什么可验的，照存，
 		// 门也开。这条分支是有意留的——本地开发不该被迫连真的邮件服务器。
-		res, err := s.storeBinding(ctx, tenantID, employeeID, email, "", secret, hosts, in.Provider)
+		res, err := s.storeBinding(ctx, tenantID, employeeID, email, "", secret, hosts, in.Provider,
+			mailKindPersonal, employeeID, "")
 		if err != nil {
 			return BindResult{}, err
 		}
@@ -180,20 +188,26 @@ func (s *Service) VerifyMailSecret(
 		IMAPPort:     int(hosts.IMAPPort),
 		IMAPSecurity: hosts.IMAPSecurity,
 	}); err != nil {
-		s.recordBinding(ctx, tenantID, employeeID, 0, email, in.Provider,
+		s.recordBinding(ctx, tenantID, employeeID, employeeID, 0, email, in.Provider,
 			bindActionFailed, err.Error())
 		return BindResult{}, hostRejected{err}
 	}
 
 	// 活着证明过了，现在才允许落库。顺序不能反：先存后验的话，一次输错的
 	// 授权码会把本来能用的凭据覆盖掉，或者把一个 Google 绑定毁掉。
-	return s.storeBinding(ctx, tenantID, employeeID, email, username, secret, hosts, in.Provider)
+	return s.storeBinding(ctx, tenantID, employeeID, email, username, secret, hosts, in.Provider,
+		mailKindPersonal, employeeID, "")
 }
 
 // storeBinding 把验过的这一对写进库：行、主机、密文、绿勾、留痕。
+//
+// kind 是这个箱归谁（PERSONAL / COMPANY，见 00067）；actorID 是谁动的手；
+// action 是留痕里写什么，空表示按「新绑 / 重绑」自己判。员工自己绑的三个
+// 都取默认，管理员分配主邮箱时三个都不一样——同一套存法，不同的标签。
 func (s *Service) storeBinding(
 	ctx context.Context, tenantID, employeeID int64,
 	email, username, secret string, hosts MailProvider, provider string,
+	kind string, actorID int64, action string,
 ) (BindResult, error) {
 	if s.secrets == nil {
 		return BindResult{}, ErrNoKey
@@ -215,6 +229,7 @@ func (s *Service) storeBinding(
 		// 属于别人的地址整句既不插也不更，RETURNING 空手而归。
 		newID, err := q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
 			TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: username,
+			Kind: kind,
 		})
 		if err != nil {
 			return translateMailboxTaken(err)
@@ -246,16 +261,18 @@ func (s *Service) storeBinding(
 		// 留痕在事务**外面**：事务回滚了，而"有人试过、失败了"这件事必须
 		// 留下来。写在里面的话，失败的那一批痕迹会跟着一起回滚——恰好是
 		// 最该留的那种。
-		s.recordBinding(ctx, tenantID, employeeID, 0, email, provider,
+		s.recordBinding(ctx, tenantID, employeeID, actorID, 0, email, provider,
 			bindActionFailed, err.Error())
 		return BindResult{}, err
 	}
 
-	action := bindActionBind
-	if beforeErr == nil && before.ID == id {
-		action = bindActionRebind
+	if action == "" {
+		action = bindActionBind
+		if beforeErr == nil && before.ID == id {
+			action = bindActionRebind
+		}
 	}
-	s.recordBinding(ctx, tenantID, employeeID, id, email, provider, action, "")
+	s.recordBinding(ctx, tenantID, employeeID, actorID, id, email, provider, action, "")
 	return BindResult{AccountID: id, Email: email}, nil
 }
 
@@ -444,7 +461,7 @@ func (s *Service) markVerified(ctx context.Context, tenantID, accountID int64) {
 // recordBinding 写一行留痕。尽力而为，但**失败也记**——只记成功的话，
 // 反复拿别人的地址试探正好是看不见的那一半。
 func (s *Service) recordBinding(
-	ctx context.Context, tenantID, employeeID, accountID int64,
+	ctx context.Context, tenantID, employeeID, actorID, accountID int64,
 	email, provider, action, detail string,
 ) {
 	detail = truncateUTF8(detail, 500)
@@ -458,7 +475,7 @@ func (s *Service) recordBinding(
 		acct = &accountID
 	}
 	if err := s.q.RecordMailBinding(ctx, store.RecordMailBindingParams{
-		TenantID: tenantID, EmployeeID: employeeID, AccountID: acct,
+		TenantID: tenantID, EmployeeID: employeeID, ActorID: actorID, AccountID: acct,
 		Email: email, Provider: strings.ToLower(strings.TrimSpace(provider)),
 		Action: action, Detail: detail,
 	}); err != nil {
@@ -500,6 +517,11 @@ func (s *Service) UnbindMailbox(ctx context.Context, tenantID, employeeID, accou
 		TenantID: tenantID, ID: accountID,
 	}); err == nil && row.EmployeeID == employeeID {
 		email = row.Email
+		// 主邮箱（00067）是公司的，收回由管理员做。员工那边界面上没有这颗
+		// 按钮，这里是第二道——界面只是提示，不是边界。
+		if row.Kind == mailKindCompany {
+			return errCompanyMailboxManaged
+		}
 	}
 
 	n, err := s.q.UnbindMailAccount(ctx, store.UnbindMailAccountParams{
@@ -513,7 +535,7 @@ func (s *Service) UnbindMailbox(ctx context.Context, tenantID, employeeID, accou
 	}
 	// 留痕写在事务外：写失败不该把已经断开的连接接回去。见 storeBinding
 	// 里同一条理由——留痕是为了事后能问，不是这次操作成立的条件。
-	s.recordBinding(ctx, tenantID, employeeID, accountID, email, "", bindActionUnbind, "")
+	s.recordBinding(ctx, tenantID, employeeID, employeeID, accountID, email, "", bindActionUnbind, "")
 
 	// 解绑的那个可能正是默认发件箱（UnbindMailAccount 会把 is_default 清掉）。
 	// 清掉之后这个人可能一个默认都没有了，而「默认」是写信时预选哪一个——

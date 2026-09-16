@@ -263,6 +263,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
+		// 主邮箱（mail 00067）：管理员替员工配、看他配的是哪个。和开账号、重置
+		// 密码同一档权限——能管这个人的账号，就能管他的主邮箱。见 companymailbox_handlers.go。
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/company-mailbox", s.assignCompanyMailbox)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/company-mailbox", s.getCompanyMailbox)
 		// Ends the sessions somebody is already holding. Its own action
 		// because a stolen laptop is not a resignation, and deactivating is
 		// not always what is wanted.
@@ -932,6 +936,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/keep-sent-copy", s.setKeepSentCopy)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
+		// 主邮箱登录即开：有主邮箱的人不问密码直接发它那一把令牌。见 companymailbox_handlers.go。
+		r.With(s.perm("mail:email:read")).Post("/api/mailbox/unlock-company", s.unlockCompanyMailbox)
 		r.Post("/api/customer-offer", s.customerOffer)
 		// D7 汇率是全员可看的独立参考页；这些接口不写业务单据。
 		r.Get("/api/fx/latest", s.fxLatest)

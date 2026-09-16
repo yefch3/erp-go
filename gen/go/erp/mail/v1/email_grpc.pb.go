@@ -86,6 +86,8 @@ const (
 	EmailService_FetchAttachmentLink_FullMethodName          = "/erp.mail.v1.EmailService/FetchAttachmentLink"
 	EmailService_WithdrawAttachmentLink_FullMethodName       = "/erp.mail.v1.EmailService/WithdrawAttachmentLink"
 	EmailService_UnbindMailbox_FullMethodName                = "/erp.mail.v1.EmailService/UnbindMailbox"
+	EmailService_AssignCompanyMailbox_FullMethodName         = "/erp.mail.v1.EmailService/AssignCompanyMailbox"
+	EmailService_GetCompanyMailbox_FullMethodName            = "/erp.mail.v1.EmailService/GetCompanyMailbox"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
 	EmailService_SetExcelQuota_FullMethodName                = "/erp.mail.v1.EmailService/SetExcelQuota"
@@ -275,6 +277,13 @@ type EmailServiceClient interface {
 	WithdrawAttachmentLink(ctx context.Context, in *WithdrawAttachmentLinkRequest, opts ...grpc.CallOption) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error)
+	// 主邮箱（迁移 00067）：公司的邮箱，员工只是暂时拿着用。管理员替员工分配，
+	// 所以 employee_id 在请求体里，操作人来自登录令牌——和 VerifyMailAccess
+	// 「只能绑自己」正相反，网关那头只放行管理员工账号的权限。
+	AssignCompanyMailbox(ctx context.Context, in *AssignCompanyMailboxRequest, opts ...grpc.CallOption) (*AssignCompanyMailboxResponse, error)
+	// 某人现在拿着的主邮箱。employee_id = 0 问自己——登录 ERP 时网关据此直接
+	// 发一把开锁令牌，不问密码。
+	GetCompanyMailbox(ctx context.Context, in *GetCompanyMailboxRequest, opts ...grpc.CallOption) (*GetCompanyMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
 	// 额度状况。
 	ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error)
@@ -996,6 +1005,26 @@ func (c *emailServiceClient) UnbindMailbox(ctx context.Context, in *UnbindMailbo
 	return out, nil
 }
 
+func (c *emailServiceClient) AssignCompanyMailbox(ctx context.Context, in *AssignCompanyMailboxRequest, opts ...grpc.CallOption) (*AssignCompanyMailboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssignCompanyMailboxResponse)
+	err := c.cc.Invoke(ctx, EmailService_AssignCompanyMailbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) GetCompanyMailbox(ctx context.Context, in *GetCompanyMailboxRequest, opts ...grpc.CallOption) (*GetCompanyMailboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCompanyMailboxResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetCompanyMailbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExcelUsageResponse)
@@ -1291,6 +1320,13 @@ type EmailServiceServer interface {
 	WithdrawAttachmentLink(context.Context, *WithdrawAttachmentLinkRequest) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error)
+	// 主邮箱（迁移 00067）：公司的邮箱，员工只是暂时拿着用。管理员替员工分配，
+	// 所以 employee_id 在请求体里，操作人来自登录令牌——和 VerifyMailAccess
+	// 「只能绑自己」正相反，网关那头只放行管理员工账号的权限。
+	AssignCompanyMailbox(context.Context, *AssignCompanyMailboxRequest) (*AssignCompanyMailboxResponse, error)
+	// 某人现在拿着的主邮箱。employee_id = 0 问自己——登录 ERP 时网关据此直接
+	// 发一把开锁令牌，不问密码。
+	GetCompanyMailbox(context.Context, *GetCompanyMailboxRequest) (*GetCompanyMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
 	// 额度状况。
 	ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error)
@@ -1541,6 +1577,12 @@ func (UnimplementedEmailServiceServer) WithdrawAttachmentLink(context.Context, *
 }
 func (UnimplementedEmailServiceServer) UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnbindMailbox not implemented")
+}
+func (UnimplementedEmailServiceServer) AssignCompanyMailbox(context.Context, *AssignCompanyMailboxRequest) (*AssignCompanyMailboxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignCompanyMailbox not implemented")
+}
+func (UnimplementedEmailServiceServer) GetCompanyMailbox(context.Context, *GetCompanyMailboxRequest) (*GetCompanyMailboxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCompanyMailbox not implemented")
 }
 func (UnimplementedEmailServiceServer) ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExcelUsage not implemented")
@@ -2805,6 +2847,42 @@ func _EmailService_UnbindMailbox_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_AssignCompanyMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignCompanyMailboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).AssignCompanyMailbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_AssignCompanyMailbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).AssignCompanyMailbox(ctx, req.(*AssignCompanyMailboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_GetCompanyMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCompanyMailboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetCompanyMailbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetCompanyMailbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetCompanyMailbox(ctx, req.(*GetCompanyMailboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ExcelUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExcelUsageRequest)
 	if err := dec(in); err != nil {
@@ -3295,6 +3373,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnbindMailbox",
 			Handler:    _EmailService_UnbindMailbox_Handler,
+		},
+		{
+			MethodName: "AssignCompanyMailbox",
+			Handler:    _EmailService_AssignCompanyMailbox_Handler,
+		},
+		{
+			MethodName: "GetCompanyMailbox",
+			Handler:    _EmailService_GetCompanyMailbox_Handler,
 		},
 		{
 			MethodName: "ExcelUsage",

@@ -44,12 +44,26 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 -- ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
 -- 一声不吭。
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
-       is_active, is_default, updated_at,
+       is_active, is_default, kind, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND email = sqlc.arg(email)::text;
+
+-- name: GetCompanyMailboxForEmployee :one
+-- 这个人现在拿着的主邮箱（00067）。最多一行——部分唯一索引
+-- mail_accounts_one_company_mailbox_per_employee 保证；没有就是 ErrNoRows。
+--
+-- 两处用：管理员在员工详情页看「他配的是哪个」；员工登录 ERP 时网关问
+-- 「他有主邮箱吗」，有就直接发一把开锁令牌，不问密码。
+-- created_at 当「分配时间」看：一行只在分配时才生出来。
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, created_at
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND kind = 'COMPANY'
+  AND unbound_at IS NULL;
 
 -- name: GetMailAccountByID :one
 -- 按信箱 id 取一个信箱，不含密文。
@@ -61,7 +75,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
-       is_active, is_default, unbound_at, updated_at,
+       is_active, is_default, kind, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
@@ -97,8 +111,12 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- mail_hosts 从此就是它注释里写的那个角色：**新建信箱时的默认值模板**，
 -- 不是发信的事实来源。员工自己挑服务商之后，这里种下的值会被覆盖。
+--
+-- **kind 只升不降。** 管理员把一个员工自己早就绑着的地址分配成主邮箱，那一行
+-- 从 PERSONAL 变成 COMPANY；反过来员工重新填一次授权码不会把主邮箱降回
+-- PERSONAL——员工那条路在服务层就被拒了（见 VerifyMailSecret），这里再守一道。
 INSERT INTO mail_accounts (
-    tenant_id, employee_id, email, username, secret_enc, key_version, is_default,
+    tenant_id, employee_id, email, username, secret_enc, key_version, is_default, kind,
     domain, smtp_host, smtp_port, smtp_security,
     imap_host, imap_port, imap_security, hourly_quota, daily_quota, updated_at
 )
@@ -110,6 +128,9 @@ SELECT
          WHERE d.tenant_id = sqlc.arg(tenant_id)::bigint
            AND d.employee_id = sqlc.arg(employee_id)::bigint
     ),
+    -- 空当 PERSONAL：sqlc 的必填参数少填一个只是零值、不报编译错误（有先例），
+    -- 而 CHECK 会把空串当场打回。把默认写在这里，比指望每个调用方都记得填稳。
+    coalesce(nullif(sqlc.arg(kind)::text, ''), 'PERSONAL'),
     coalesce(h.domain, ''), coalesce(h.smtp_host, ''),
     coalesce(h.smtp_port, 465), coalesce(h.smtp_security, 'SSL'),
     coalesce(h.imap_host, ''),
@@ -126,6 +147,7 @@ LEFT JOIN mail_hosts h ON h.tenant_id = sqlc.arg(tenant_id)::bigint
 -- 没有行——调用方拿到 ErrNoRows，翻成「这个地址已经被别人绑了」。
 ON CONFLICT (tenant_id, email) DO UPDATE SET
     username = excluded.username,
+    kind = CASE WHEN excluded.kind = 'COMPANY' THEN 'COMPANY' ELSE mail_accounts.kind END,
     updated_at = now()
 WHERE mail_accounts.employee_id = excluded.employee_id
 RETURNING id;
@@ -168,10 +190,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- 有一个不言自明的答案。
 --
 -- 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+--
+-- actor_id 是谁动的手（00067）：员工自己操作时和 employee_id 是同一个人，
+-- 管理员替员工分配主邮箱时是管理员。
 INSERT INTO mail_binding_log (
-    tenant_id, employee_id, account_id, email, provider, action, detail
+    tenant_id, employee_id, actor_id, account_id, email, provider, action, detail
 ) VALUES (
-    sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint,
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint, sqlc.arg(actor_id)::bigint,
     sqlc.narg(account_id)::bigint, sqlc.arg(email)::text,
     sqlc.arg(provider)::text, sqlc.arg(action)::text, sqlc.arg(detail)::text
 );
@@ -273,7 +298,7 @@ ORDER BY id;
 -- 和 GetMyMailAccount 一样不选 secret_enc：这是设置页读的，凭据永远不回
 -- 浏览器。
 SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
-       is_default, domain, smtp_host, smtp_port, smtp_security,
+       is_default, kind, domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
