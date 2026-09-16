@@ -8,17 +8,24 @@
        modal 关掉，那一层仍然在最上面接着点击。自己画一个浮层，后面那一页
        连选中文字都不受影响。
 
-       三档：停靠（默认）、放大（居中大窗，长信用）、收起（只剩标题条）。
-       人选的那一档记在本地，下次开还是它。 -->
+       三档：停靠（默认，大小可以拖）、最大化（铺满屏幕）、收起（只剩标题条）。
+       人选的那一档记在本地，下次开还是它。
+
+       拖文件进窗子任何位置 = 加附件（图片拖进正文那块除外，那是插成正文里的图）。 -->
   <Teleport to="body">
     <section
       v-if="modelValue"
       ref="shell"
       class="composer"
       :class="`is-${pane}`"
+      :style="pane === 'dock' ? dockStyle : undefined"
       role="dialog"
       :aria-label="composerTitle"
       tabindex="-1"
+      @dragenter="onDragEnter"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDropFiles"
     >
       <!-- 标题条。收起来的时候整条是一颗按钮——那时它是唯一能点的东西。 -->
       <header class="composer-bar" @click="pane === 'min' && toggleMinimize()">
@@ -29,7 +36,7 @@
           :title="pane === 'min' ? t('emails.paneRestore') : t('emails.paneMinimize')"
           @click.stop="toggleMinimize()"
         >
-          <el-icon><Minus v-if="pane !== 'min'" /><FullScreen v-else /></el-icon>
+          <el-icon><Minus v-if="pane !== 'min'" /><CaretTop v-else /></el-icon>
         </button>
         <button
           type="button"
@@ -37,7 +44,7 @@
           :title="pane === 'full' ? t('emails.paneDock') : t('emails.paneExpand')"
           @click.stop="setPane(pane === 'full' ? 'dock' : 'full')"
         >
-          <el-icon><Rank /></el-icon>
+          <el-icon><ScaleToOriginal v-if="pane === 'full'" /><FullScreen v-else /></el-icon>
         </button>
         <button
           type="button"
@@ -48,6 +55,17 @@
           <el-icon><Close /></el-icon>
         </button>
       </header>
+
+      <!-- 停靠时可以拖左边、上边、左上角改大小。窗子贴着右下角，只有这三边能拖。 -->
+      <template v-if="pane === 'dock'">
+        <div class="resize-handle resize-w" @pointerdown="startResize('w', $event)" />
+        <div class="resize-handle resize-n" @pointerdown="startResize('n', $event)" />
+        <div class="resize-handle resize-nw" @pointerdown="startResize('nw', $event)" />
+      </template>
+      <!-- 拖着文件经过时罩一层。不接指针事件，正文那块照样接得到拖进去的图片。 -->
+      <div v-if="dragDepth > 0 && pane !== 'min'" class="drop-files" aria-hidden="true">
+        {{ t('emails.dropFiles') }}
+      </div>
 
       <div v-show="pane !== 'min'" class="composer-body">
     <!-- Stated once, plainly, where the person sending can see it: which of
@@ -460,7 +478,15 @@ import { applyTemplateToBody, type AppliedTemplate } from '../lib/mailTemplateAp
 import { linkedAttachmentFlags } from '../lib/bigAttachments'
 import { computed, h, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Close, FullScreen, Minus, Rank } from '@element-plus/icons-vue'
+import { CaretTop, Clock, Close, FullScreen, Minus, ScaleToOriginal } from '@element-plus/icons-vue'
+import {
+  COMPOSER_MARGIN,
+  readComposerSize,
+  resizedSize,
+  writeComposerSize,
+  type ResizeEdge,
+  type Size,
+} from '../lib/composerSize'
 import { useI18n } from 'vue-i18n'
 import MailBody from './MailBody.vue'
 import { get, post, quietErrors } from '../api'
@@ -1652,9 +1678,8 @@ async function requestClose() {
 
 // ---------------------------------------------------------- 窗口那三档 ---
 //
-// dock：停在右下角，后面那一页照常用。默认。
-// full：居中的大窗，写长信、贴大段引用时用。仍然不加遮罩——加了就又回到
-//       「看不见后面那封信」，而那正是这次要解决的事。
+// dock：停在右下角，后面那一页照常用。默认。大小可以拖（见下面 startResize）。
+// full：最大化，铺满整个屏幕，写长信、贴大段引用时用。
 // min ：只剩标题条。写到一半要回去翻另一封信时用，内容一个字都不丢。
 type Pane = 'dock' | 'full' | 'min'
 
@@ -1692,6 +1717,80 @@ function setPane(next: Pane) {
 // 标题条上那颗按钮：收起的时候它是「展开」，回到收起之前那一档。
 function toggleMinimize() {
   setPane(pane.value === 'min' ? paneBeforeMin.value : 'min')
+}
+
+// ---- 停靠窗的大小：拖左边、上边、左上角改，记在本地 ----
+//
+// 算术在 lib/composerSize：窗子贴右下角，往左拖变宽、往上拖变高，夹在最小值
+// 和屏幕之间。这里只管指针事件。指针捕获在把手上，拖快了指针飞出把手也不断。
+function safeStorage(): Storage | null {
+  try {
+    return localStorage
+  } catch {
+    return null
+  }
+}
+const dockSize = ref<Size>(readComposerSize(safeStorage()))
+// 记的是像素，但屏幕可能比上次小（换了台笔记本）：min() 兜住，不然窗子会
+// 伸到屏幕外面去。
+const dockStyle = computed(() => ({
+  width: `min(${dockSize.value.w}px, calc(100vw - ${COMPOSER_MARGIN}px))`,
+  height: `min(${dockSize.value.h}px, calc(100vh - ${COMPOSER_MARGIN}px))`,
+}))
+function startResize(edge: ResizeEdge, e: PointerEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  const handle = e.currentTarget as HTMLElement
+  const start = { ...dockSize.value }
+  const origin = { x: e.clientX, y: e.clientY }
+  const move = (ev: PointerEvent) => {
+    dockSize.value = resizedSize(start, edge, ev.clientX - origin.x, ev.clientY - origin.y, {
+      w: window.innerWidth,
+      h: window.innerHeight,
+    })
+  }
+  const stop = () => {
+    handle.removeEventListener('pointermove', move)
+    handle.removeEventListener('pointerup', stop)
+    handle.removeEventListener('pointercancel', stop)
+    writeComposerSize(safeStorage(), dockSize.value)
+  }
+  handle.setPointerCapture(e.pointerId)
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('pointerup', stop)
+  handle.addEventListener('pointercancel', stop)
+}
+
+// ---- 拖文件进窗子 = 加附件 ----
+//
+// 图片拖进正文那块由 MailEditor 接住插成正文里的图，它会 preventDefault，
+// 事件冒到这里时 defaultPrevented 已经是 true，这里就不再当附件收一遍。
+// 其余文件、以及拖到正文以外任何位置的文件，走回形针那条上传路
+// （uploadAttachment）。
+//
+// dragDepth 是计数不是布尔：拖着经过子元素时 dragenter/dragleave 成对连发，
+// 只记布尔的话罩层会闪。
+const dragDepth = ref(0)
+function carriesFiles(e: DragEvent): boolean {
+  return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+}
+function onDragEnter(e: DragEvent) {
+  if (!carriesFiles(e)) return
+  e.preventDefault()
+  dragDepth.value++
+}
+function onDragOver(e: DragEvent) {
+  if (carriesFiles(e)) e.preventDefault()
+}
+function onDragLeave(e: DragEvent) {
+  if (!carriesFiles(e)) return
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+function onDropFiles(e: DragEvent) {
+  dragDepth.value = 0
+  if (!carriesFiles(e) || e.defaultPrevented) return
+  e.preventDefault()
+  for (const file of Array.from(e.dataTransfer?.files ?? [])) void uploadAttachment(file)
 }
 // 每次打开都从记住的那一档开始（而不是上次关窗时碰巧收起着）。
 watch(
@@ -1789,21 +1888,64 @@ function restoreFocus() {
   overflow: hidden;
 }
 /* 右下角。和 Gmail 一样贴着右边、贴着底——**贴底**是关键：写信框不该
-   遮住列表的上半截，那里正是人要照着抄的东西。 */
+   遮住列表的上半截，那里正是人要照着抄的东西。
+   宽高由行内样式给（dockStyle，人拖出来的那个大小）；这里的是兜底。 */
 .composer.is-dock {
   right: 24px;
   bottom: 0;
   width: min(620px, calc(100vw - 48px));
   height: min(640px, calc(100vh - 48px));
 }
-/* 放大：居中的大窗，仍然不加遮罩。 */
+/* 最大化：铺满整个屏幕。 */
 .composer.is-full {
-  left: 50%;
-  top: 4vh;
-  transform: translateX(-50%);
-  width: min(1000px, calc(100vw - 48px));
-  height: 88vh;
-  border-radius: 10px;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+/* 改大小的把手：左边、上边、左上角，各一条看不见的窄带，光标一到就变。
+   压在标题条上面（z-index）——上边那条本来就和标题条重叠。 */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+.resize-w {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+.resize-n {
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+.resize-nw {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+/* 拖着文件经过时的罩层。不接指针事件：drop 要落到底下的元素上。 */
+.drop-files {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(64 158 255 / 12%);
+  border: 2px dashed var(--el-color-primary);
+  border-radius: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  pointer-events: none;
 }
 /* 收起：只剩标题条。宽度收窄，免得一条空条横在屏幕下方。 */
 .composer.is-min {
