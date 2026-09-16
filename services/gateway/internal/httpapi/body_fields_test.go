@@ -9,6 +9,7 @@ import (
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
@@ -139,4 +140,24 @@ func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
 	// 两个对账页上的「改到期日」。
 	mustDecode(t, `{"dueDate": "2026-11-30", "reason": "重新谈成 60 天"}`,
 		&prv1.SetPayableDueDateRequest{})
+
+	// frontend/src/pages/CustomerDetailPage.vue —— 编辑联系人 / 编辑地址。
+	// 表单是从列表行整个复制来的，所以发之前经 customerForms.ts 只挑接口认的
+	// 字段（那两张表和 proto 的对应关系另有 TestCustomerInputFieldListsMatchProto
+	// 钉着）。这里钉的是挑完之后浏览器真发的形状，含数组和布尔。
+	mustDecode(t, `{"contact": {
+		"name": "崔骏", "department": "", "title": "", "email": "cui@example.com",
+		"phone": "+86 1324564580", "mobile": "", "instantMessaging": "", "language": "",
+		"remark": "", "isPrimary": true, "sortOrder": 0,
+		"emailPermission": "ALLOWED", "emailCategories": ["QUOTE"]
+	}}`, &mdv1.UpdateCustomerContactRequest{})
+	mustDecode(t, `{"address": {
+		"addressType": "OFFICE", "countryCode": "CN", "state": "", "city": "上海",
+		"postalCode": "", "addressLine": "南京路 1 号", "isDefault": true, "sortOrder": 0
+	}}`, &mdv1.UpdateCustomerAddressRequest{})
+	// 挑之前的形状（列表行原样）网关确实拒收——这就是要挑的原因。
+	if err := protojson.Unmarshal([]byte(`{"contact": {"id": "7", "status": "ACTIVE", "name": "崔骏"}}`),
+		&mdv1.UpdateCustomerContactRequest{}); err == nil {
+		t.Error("带着列表行 id/status 的联系人请求体本该被拒，现在收下了——那 customerForms.ts 里那层挑选就没必要了，两边得一起改")
+	}
 }

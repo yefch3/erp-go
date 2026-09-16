@@ -688,6 +688,8 @@ import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
 import { portTimezoneOptions } from "../lib/portOptions";
 import {
+  customerAddressInput,
+  customerContactInput,
   validateCustomerContact,
   validateCustomerProfile,
 } from "../lib/customerForms";
@@ -1128,7 +1130,9 @@ async function saveAddress() {
   }
   saving.value = true;
   try {
-    const body = { address: { ...addressForm } };
+    // 只带接口认的字段：编辑时表单里还躺着列表行的 id、customerId、status，
+    // 网关看到就整个拒收。
+    const body = { address: customerAddressInput(addressForm) };
     addressEditing.value
       ? await put(`/customers/${id}/addresses/${addressEditing.value}`, body)
       : await post(`/customers/${id}/addresses`, body);
@@ -1192,7 +1196,8 @@ async function saveContact() {
   }
   saving.value = true;
   try {
-    const body = { contact: { ...contactForm } };
+    // 同上：编辑时表单里有列表行的 id 和 status，不能原样发。
+    const body = { contact: customerContactInput(contactForm) };
     contactEditing.value
       ? await put(`/customers/${id}/contacts/${contactEditing.value}`, body)
       : await post(`/customers/${id}/contacts`, body);
