@@ -100,6 +100,10 @@ func CleanPastedTable(raw string) string {
 	if node == nil {
 		return ""
 	}
+	// 样式块里的颜色、框线先抄到格子上，再净化（见 pastedtable_inline.go）。
+	// 样式块本身在 <head> 里，摘表格时就丢了；抄过来的那些是行内样式，
+	// 和格子上原有的一起过下面的白名单。
+	inlineRules(node, stylesheetRules(doc))
 	var sb strings.Builder
 	if err := html.Render(&sb, node); err != nil {
 		return ""
