@@ -437,7 +437,7 @@
               <MailBody
                 v-if="it.bodyFormat === 'HTML'"
                 :html="it.body"
-                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-context="openTextExcelMenu($event, threadAttachmentMailId(it))"
                 @selection-clear="closeExcelMenu"
               />
               <!-- 纯文本也走同一个沙箱 frame。以前它是直接插值渲染的，于是
@@ -450,7 +450,7 @@
               <MailBody
                 v-else
                 :html="plainTextToHtml(it.body)"
-                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-context="openTextExcelMenu($event, threadAttachmentMailId(it))"
                 @selection-clear="closeExcelMenu"
               />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
@@ -3524,8 +3524,13 @@ interface ThreadItem {
 }
 const threadItems = ref<ThreadItem[]>([])
 
-// 这一条的附件属于哪封信。收到的那条就是它自己；我发出的那条是本地「已发送」
-// 里留着的那一份，没对上就是空——空的话预览按钮不出现、右键也没有转 Excel。
+// 这一条的附件和正文属于哪封信。收到的那条就是它自己；我发出的那条是本地
+// 「已发送」里留着的那一份，没对上就是空——空的话预览按钮不出现、附件右键
+// 和选中正文都没有转 Excel。
+//
+// 选中正文那条菜单从前只给收到的开（「我发出」一律传空），附件那边改成认
+// 留底那份时漏了它——2026-09-16 报的「我发出的信里选了文字没有生成 Excel」。
+// 后端只查邮件是不是你的、选中的字在不在那封信里，留底那份两条都满足。
 function threadAttachmentMailId(it: ThreadItem): string {
   if (it.direction === 'IN') return String(it.id)
   const local = String(it.localMailId ?? '')
