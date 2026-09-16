@@ -475,6 +475,7 @@ import {
   zonedToInstant,
 } from '../lib/zonedtime'
 import { escapeText, quotedBlock, type QuotedSource } from '../lib/quotedMail'
+import { addressesToLookUp, bookHitsFor, withBookDetails } from '../lib/replyContacts'
 
 interface Signature {
   id: string
@@ -869,6 +870,35 @@ function openReply(mail: QuotedMail) {
   form.body = '<p><br></p>'
   setQuoted(quotedBlock(mail, t))
   markClean()
+  void fillNamesFromContactBook()
+}
+
+// 回信时按地址去通讯录补名字（规则在 lib/replyContacts）。
+//
+// 异步：写信框先开、名字后到。到的时候只改「还是那个地址、还没配上通讯录」
+// 的格子，人已经换掉的不动；写信框已经重开成另一封（token 变了）就全部
+// 作废。只补名字不算改动——脏检查（signature）只看地址。
+//
+// 通讯录查不到、查失败都不是错：格子空着，和从前一样，发送前的预览会说。
+let bookFillToken = 0
+
+async function fillNamesFromContactBook() {
+  const mine = ++bookFillToken
+  for (const email of addressesToLookUp([...selected.value, ...ccSelected.value])) {
+    let hits: Recipient[]
+    try {
+      const d = await get<{ contacts: Recipient[] }>('/mailing-contacts', { keyword: email })
+      hits = bookHitsFor(email, d.contacts ?? []) as Recipient[]
+    } catch {
+      return
+    }
+    if (mine !== bookFillToken) return
+    if (hits.length === 0) continue
+    const fill = (r: Recipient) =>
+      !r.contactId && r.email.trim().toLowerCase() === email ? withBookDetails(r, hits) : r
+    selected.value = selected.value.map(fill)
+    ccSelected.value = ccSelected.value.map(fill)
+  }
 }
 
 // 回复全部。收件人和抄送由页面算好传进来（规则在 lib/replyAll：发信人为
@@ -888,6 +918,7 @@ function openReplyAll(mail: QuotedMail, who: { to: { name?: string; email: strin
   form.body = '<p><br></p>'
   setQuoted(quotedBlock(mail, t))
   markClean()
+  void fillNamesFromContactBook()
 }
 
 // Prefills a forward: no recipient yet, subject gains Fwd:, the original is
@@ -1046,6 +1077,8 @@ function shortClock(d: Date) {
 
 function reset() {
   cancelAutosave()
+  // 上一封回信还在路上的通讯录查询，不能落到这一封上。
+  bookFillToken++
   autosavedAt.value = null
   lastAutosaveAt = 0
   draftId.value = '0'
