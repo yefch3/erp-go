@@ -347,30 +347,17 @@
                   {{ t('emails.restore') }}
                 </el-dropdown-item>
 
-                <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。
+                <!-- 这里从前有一整组「移动到」（Issue #362）。2026-09-16 去掉：
+                     把信拖到左栏那一格就是挪，而且拖得比菜单全——收件箱、
+                     垃圾邮件、自建文件夹、归档、回收站都接得住（lib/dragMails），
+                     菜单只有前三种。三栏之后列表就在读信旁边，开着一封信也能
+                     拖它那一行。
 
-                     文件夹**平铺**在这里，没有再套一层子菜单：Element Plus 的
-                     嵌套下拉不好用，而多一层对使用者也没有好处——一个人手上
-                     的自建文件夹通常就那么几个。 -->
-                <template v-if="canMoveOpened">
-                  <el-dropdown-item disabled divided class="menu-head">
-                    {{ t('emails.moveTo') }}
-                  </el-dropdown-item>
-                  <el-dropdown-item v-if="isCustomFolderKey(folder)" command="move:0">
-                    {{ t('emails.moveToInbox') }}
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-for="cf in currentCustomFolders"
-                    :key="cf.id"
-                    :command="`move:${cf.id}`"
-                    :disabled="folder === cf.viewKey || moving"
-                  >
-                    {{ cf.name }}
-                  </el-dropdown-item>
-                  <el-dropdown-item v-if="!currentCustomFolders.length" disabled>
-                    {{ t('emails.noFoldersYet') }}
-                  </el-dropdown-item>
-                </template>
+                     一封都没勾时拖一行 = 只拖它，和从前点菜单是同一件事。
+                     勾了多封仍旧用工具条上那颗「移动到」，那条路没动。
+
+                     弹出的读信窗口（MailWindowPage）里**留着**这一组：那扇窗
+                     只有一封信，没有列表，没有能拖的东西。 -->
 
                 <!-- Taking the exchange out of the system. Two errands behind
                      one intent: print it now for the person standing next to
@@ -2072,14 +2059,6 @@ const deleteAction = computed(() => {
   return { label: t('emails.toTrash'), run: () => markOpened({ deleted: true }) }
 })
 
-// 「移动到」那一组给不给。和从前那颗按钮同一个条件。
-const canMoveOpened = computed(
-  () => isInboundView.value
-    && folder.value !== 'trash'
-    && folder.value !== 'junk'
-    && openedInbound.value?.folder !== 'SENT',
-)
-
 // 「⋯」里到底有没有东西。一个点开是空的菜单比没有这颗按钮更糟。
 //
 // 改成图标条时这条守卫一度掉了：站在已发送里、又没有写信和导出权限的人，
@@ -2094,7 +2073,6 @@ const readerMenuAvailable = computed(() => {
     || (inbound && folder.value !== 'junk' && folder.value !== 'trash') // 标为未读/归档
     || folder.value === 'junk' // 不是垃圾邮件
     || folder.value === 'trash' // 还原
-    || canMoveOpened.value // 移动到
     || (canExport.value && !!m.threadKey) // 导出
   )
 })
@@ -2102,10 +2080,6 @@ const readerMenuAvailable = computed(() => {
 // 「⋯」菜单只有一个出口，省得每一项各写一个 @click——它们本来就是一组
 // 「对这封信做点什么」，一个 command 串把它们摊在一处，加一项也只改一处。
 function onReaderCommand(cmd: string) {
-  if (cmd.startsWith('move:')) {
-    void moveOpenedTo(Number(cmd.slice(5)))
-    return
-  }
   switch (cmd) {
     case 'forwardAttachment': return void forwardInboundAsAttachment()
     case 'unread': return void markOpened({ read: false })
@@ -2941,10 +2915,9 @@ function switchFolder(key: string) {
 // 白花一趟请求，还在历史里留下一个谁都没到过的位置。
 // ---------------------------------------------------------------- 自建文件夹
 
-// 每个信箱在服务器上的全部文件夹，带角色。左栏按同一级别画；「移动到」只列
-// 角色为 CUSTOM 的。
+// 每个信箱在服务器上的全部文件夹，带角色。左栏按同一级别画；工具条上那颗
+// 「移动到」（勾选多封时）只列角色为 CUSTOM 的。
 const hostFolders = ref<Record<number, CustomFolder[]>>({})
-const moving = ref(false)
 const currentCustomFolders = computed(() => (hostFolders.value[currentAccount.value] ?? []).filter((f) => f.role === 'CUSTOM'))
 
 /** 拉一个信箱的文件夹清单。失败就当没有：左栏少一截，比弹一句错强。 */
@@ -3022,23 +2995,6 @@ async function deleteFolder(cf: CustomFolder) {
     if (folder.value === cf.viewKey) switchFolder('inbox')
   } catch {
     // 里面还有信之类的原因，后端说了
-  }
-}
-
-/** 把打开的这封信挪进某个文件夹（0 = 收件箱）。成了就回到列表。 */
-async function moveOpenedTo(folderId: number) {
-  const id = openedInbound.value?.id
-  if (!id || moving.value) return
-  moving.value = true
-  try {
-    await post(`/inbound-mails/${id}/move`, { folderId: String(folderId) })
-    ElMessage.success(t('emails.moved'))
-    pushState({ mail: '' })
-    load()
-  } catch {
-    // 后端的原因拦截器已经弹了
-  } finally {
-    moving.value = false
   }
 }
 
@@ -5577,13 +5533,6 @@ async function doUnsuppress(row: Suppression) {
   height: 18px;
   margin: 0 6px;
   background: var(--el-border-color-lighter);
-}
-/* 菜单里那条「移动到」是组标题，不是可点的一项：压淡、去掉禁用态那种
-   「本来能点、现在不能」的观感。 */
-.menu-head {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  cursor: default;
 }
 .thread-item {
   transition: box-shadow var(--mail-fast) var(--mail-ease);
