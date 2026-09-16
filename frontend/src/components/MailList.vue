@@ -26,55 +26,56 @@
       @dragstart="onDragStart(m, $event)"
       @dragend="onDragEnd"
     >
-      <!-- 勾选框。
+      <!-- 勾选框和星标，**叠成一纵**。
+           它们从前并排，各占一格：20 + 6 + 24 = 50px。这一列总共只有
+           280–400px 宽，而行本身是三行高的，竖着放绰绰有余——叠起来这一纵
+           24px，省下的二十多像素全给主题。
+
            这里从前还有一个彩色的首字母头像，和勾选框轮流占这一格：平时看
-           头像，鼠标压上来才变成勾选框。头像去掉了——这一列只有 280–400px
-           宽，而那个圆圈认人的本事，发件人那一行的名字本来就有；一整列圆圈
-           换来的是主题少一截。
+           头像，鼠标压上来才变成勾选框。头像去掉了——那个圆圈认人的本事，
+           发件人那一行的名字本来就有。
 
-           头像一走，勾选框就不必再躲：它是这一格里唯一的东西，常驻反而让
-           「原来可以多选」看得见（从前要把鼠标压上去才发现）。
+           头像一走，勾选框就不必再躲：常驻反而让「原来可以多选」看得见
+           （从前要把鼠标压上去才发现）。
 
-           投递记录不给勾，理由和它没有星标是同一个：邮件服务器上没有这封信
-           的正本，标记无处可写。那时这一格是空的——**空着也要占位**，不然
-           它那一行的主题会比上下两行往左窜一截。 -->
-      <span class="face">
-        <el-checkbox
-          v-if="!isRecordOnly(m)"
-          class="pick"
-          :model-value="isPicked(m)"
-          :aria-label="t('emails.selectOne')"
-          @click.stop
-          @change="togglePick(m)"
-        />
+           投递记录既不给勾也没有星标：邮件服务器上没有这封信的正本，标记
+           无处可写。那时这一纵是空的——**空着也要占位**（宽度长在这一纵上，
+           不靠里面的东西撑），不然它那一行的主题会比上下两行往左窜一截。 -->
+      <span class="marks">
+        <span class="face">
+          <el-checkbox
+            v-if="!isRecordOnly(m)"
+            class="pick"
+            :model-value="isPicked(m)"
+            :aria-label="t('emails.selectOne')"
+            @click.stop
+            @change="togglePick(m)"
+          />
+        </span>
+
+        <!-- el-tooltip rather than a title attribute. The browser's own tooltip
+             takes about a second to appear, which is far too slow for a row of
+             unlabelled icons: by the time it arrives the cursor has usually
+             moved on, so the icons read as unexplained. show-after 0 puts the
+             name under the cursor the moment it lands, which is what Gmail
+             does and the only reason its icon-only toolbar is usable. -->
+        <el-tooltip
+          v-if="starrable && !isRecordOnly(m)"
+          :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
+          placement="top"
+          :show-after="0"
+          :hide-after="0"
+        >
+          <button
+            type="button"
+            class="star"
+            :class="{ on: m.isStarred }"
+            :aria-label="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
+            :aria-pressed="m.isStarred"
+            @click.stop="emit('star', m)"
+          >{{ m.isStarred ? '★' : '☆' }}</button>
+        </el-tooltip>
       </span>
-
-      <!-- el-tooltip rather than a title attribute. The browser's own tooltip
-           takes about a second to appear, which is far too slow for a row of
-           unlabelled icons: by the time it arrives the cursor has usually
-           moved on, so the icons read as unexplained. show-after 0 puts the
-           name under the cursor the moment it lands, which is what Gmail
-           does and the only reason its icon-only toolbar is usable. -->
-      <!-- No star on a delivery record: there is no message on the host to
-           write the flag to. Same reason it gets no checkbox. -->
-      <el-tooltip
-        v-if="starrable && !isRecordOnly(m)"
-        :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
-        placement="top"
-        :show-after="0"
-        :hide-after="0"
-      >
-        <button
-          type="button"
-          class="star"
-          :class="{ on: m.isStarred }"
-          :aria-label="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
-          :aria-pressed="m.isStarred"
-          @click.stop="emit('star', m)"
-        >{{ m.isStarred ? '★' : '☆' }}</button>
-      </el-tooltip>
-
-      <span v-else-if="starrable" class="star-gap" aria-hidden="true" />
 
       <!-- The row's own hit area. A button rather than a link because opening
            a mail is a state change in this app, not a document to fetch; the
@@ -526,19 +527,26 @@ function ariaFor(m: MailRow) {
   opacity: 0.45;
 }
 
-/* 勾选框那一格。**空着也要占位**：投递记录那几行没有勾选框，不占位的话
-   它们的主题会比上下两行往左窜一截。
-   对齐第一行而不是整行居中：三行高的行里居中会让它飘到主题旁边。 */
-.face {
+/* 勾选框和星标那一纵。**空着也要占位**：投递记录那几行两样都没有，宽度
+   长在这一纵上而不靠里面的东西撑，所以它们的主题不会比上下两行往左窜。
+
+   顶上对齐、不居中：这一纵从第一行（发件人）起往下排，居中的话三行高的行
+   里它会飘到中间，看着像在标记主题。 */
+.marks {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  /* 星标那颗字符最宽，24px 装得下；勾选框本身 14px，居中放。并排那会儿
+     两格加中间的空当是 50px，现在 24px。 */
+  width: 24px;
+}
+.face {
   display: grid;
   place-items: center;
-  /* 勾选框本身 14px，两边各留一点。头像在的时候这一格连外边距是 34px——
-     现在 20px，省下的 14px 全给主题。
-     不再单独留右边距：行本身有 6px 的 gap，再加一层就和星标离得太开。 */
-  width: 20px;
-  /* 和星标那一格同高（21px）：两者都该贴着第一行，高度不一样就会错开一点，
-     而一列里错开一点比错开很多更难看。 */
+  width: 100%;
+  /* 贴着第一行（发件人那一行）。 */
   height: 21px;
 }
 /* Element Plus reserves room for a label this checkbox does not have. */
@@ -550,9 +558,9 @@ function ariaFor(m: MailRow) {
   flex: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  /* 同 .pick：跟第一行走。 */
-  height: 21px;
+  width: 100%;
+  /* 挨着勾选框下面那一行（主题那一行的高度）。 */
+  height: 20px;
   padding: 0;
   background: none;
   border: none;
@@ -567,11 +575,6 @@ function ariaFor(m: MailRow) {
 }
 .star.on {
   color: var(--el-color-warning);
-}
-
-.star-gap {
-  flex: none;
-  width: 24px;
 }
 
 /* 三行竖着排。每一行自己占满整列的宽度，长了就省略号——这正是横排做不到
