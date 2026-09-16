@@ -43,3 +43,39 @@ func TestD2ContractOneSuperiorAndRetry(t *testing.T) {
 		t.Fatal("resubmission did not create new confirmation round", resubmitted, err)
 	}
 }
+
+func TestD2PrivilegedSubmitterCanConfirmOwnContract(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		roleCode string
+	}{
+		{name: "销售经理", roleCode: salesManagerRoleCode},
+		{name: "超级管理员", roleCode: superAdminRoleCode},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := stubDirectory{byCode: map[string][]int64{tc.roleCode: {500}}}
+			svc, cleanup := newSeedTestService(t, dir)
+			tenant := time.Now().UnixNano()
+			defer cleanup(tenant)
+
+			inst, tasks, err := svc.Submit(context.Background(), tenant, SubmitInput{
+				BizType: "CONTRACT", BizID: 1, BizNo: "CT-SELF-CONFIRM",
+				SubmitterID: 500, SubmitterName: tc.name, Amount: "1000",
+			})
+			if err != nil {
+				t.Fatalf("有确认权限的提交人应能提交自己的合同: %v", err)
+			}
+			if inst.Status != statusRunning || len(tasks) != 1 || tasks[0].AssigneeID != 500 {
+				t.Fatalf("应生成一条由提交人手动处理的确认任务: inst=%+v tasks=%+v", inst, tasks)
+			}
+
+			approved, next, err := svc.Act(context.Background(), tenant, 500, tasks[0].ID, ActionApprove, "本人确认")
+			if err != nil {
+				t.Fatalf("有确认权限的提交人应能确认自己的合同: %v", err)
+			}
+			if approved.Status != statusApproved || len(next) != 0 {
+				t.Fatalf("本人确认后合同审批应结束: approved=%+v next=%+v", approved, next)
+			}
+		})
+	}
+}

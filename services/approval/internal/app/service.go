@@ -88,13 +88,14 @@ const (
 )
 
 const (
-	statusRunning      = "RUNNING"
-	statusApproved     = "APPROVED"
-	statusRejected     = "REJECTED"
-	statusReturned     = "RETURNED"
-	taskPending        = "PENDING"
-	taskSkipped        = "SKIPPED"
-	superAdminRoleCode = "SUPER_ADMIN"
+	statusRunning        = "RUNNING"
+	statusApproved       = "APPROVED"
+	statusRejected       = "REJECTED"
+	statusReturned       = "RETURNED"
+	taskPending          = "PENDING"
+	taskSkipped          = "SKIPPED"
+	salesManagerRoleCode = "SALES_MANAGER"
+	superAdminRoleCode   = "SUPER_ADMIN"
 )
 
 // ---------------------------------------------------------------- submit
@@ -169,30 +170,44 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 		return store.ApprovalInstance{}, nil, err
 	}
 	if in.BizType == "CONTRACT" {
-		// A contract always needs an actual superior's decision, never self-approval.
-		filtered := make([]int64, 0, len(assignees))
-		for _, person := range assignees {
-			if person != in.SubmitterID {
-				filtered = append(filtered, person)
-			}
+		canSelfConfirm, err := s.canContractSelfConfirm(ctx, in.SubmitterID)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
 		}
-		assignees = filtered
-		if len(assignees) == 0 {
-			bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
-			if err != nil {
-				return store.ApprovalInstance{}, nil, err
-			}
-			for _, person := range bosses {
+		if canSelfConfirm {
+			// Sales managers and the tenant's highest-privilege administrator are
+			// themselves authorised contract confirmers. Give them an explicit
+			// task instead of silently approving at submit time, so the audit
+			// trail still records a separate confirmation decision.
+			assignees = appendUniqueEmployee(assignees, in.SubmitterID)
+			node := nodes[0]
+			node.Name = "销售管理确认"
+			firstNode = &node
+		} else {
+			filtered := make([]int64, 0, len(assignees))
+			for _, person := range assignees {
 				if person != in.SubmitterID {
-					assignees = append(assignees, person)
+					filtered = append(filtered, person)
 				}
 			}
+			assignees = filtered
 			if len(assignees) == 0 {
-				return store.ApprovalInstance{}, nil, apierr.Invalid("AP_CONTRACT_SUPERIOR_REQUIRED", "请为销售设置上级负责人，或配置本公司的老板审批人")
+				bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
+				if err != nil {
+					return store.ApprovalInstance{}, nil, err
+				}
+				for _, person := range bosses {
+					if person != in.SubmitterID {
+						assignees = append(assignees, person)
+					}
+				}
+				if len(assignees) == 0 {
+					return store.ApprovalInstance{}, nil, apierr.Invalid("AP_CONTRACT_SUPERIOR_REQUIRED", "请为销售设置上级负责人，或配置本公司的老板审批人")
+				}
+				node := nodes[0]
+				node.Name = "老板确认"
+				firstNode = &node
 			}
-			node := nodes[0]
-			node.Name = "老板确认"
-			firstNode = &node
 		}
 	}
 	// 采购单会形成真实的付款承诺。组织架构没有上级时，转交配置的
@@ -319,6 +334,36 @@ func preferOtherApprovers(ids []int64, submitterID int64) []int64 {
 		return others
 	}
 	return ids
+}
+
+func appendUniqueEmployee(ids []int64, employeeID int64) []int64 {
+	for _, id := range ids {
+		if id == employeeID {
+			return ids
+		}
+	}
+	return append(ids, employeeID)
+}
+
+func (s *Service) canContractSelfConfirm(ctx context.Context, employeeID int64) (bool, error) {
+	if employeeID == 0 || s.dir == nil {
+		return false, nil
+	}
+	for _, code := range []string{salesManagerRoleCode, superAdminRoleCode} {
+		members, found, err := s.dir.RoleMembersByCode(ctx, code)
+		if err != nil {
+			return false, err
+		}
+		if !found {
+			continue
+		}
+		for _, memberID := range members {
+			if memberID == employeeID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func assigneesOf(tasks []store.ApprovalTask) []int64 {
