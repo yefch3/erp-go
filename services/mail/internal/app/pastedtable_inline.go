@@ -2,6 +2,7 @@ package app
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -34,7 +35,94 @@ var (
 	// windowtext 是 Windows 的系统色，等于黑；.5pt 省掉了前导 0。
 	cssWindowText = regexp.MustCompile(`(?i)\bwindowtext\b`)
 	cssLeadingDot = regexp.MustCompile(`(^|[\s:,(])\.(\d)`)
+	// Excel 和 WPS 把单元格填充色写成 background 简写（background:#1F4E78），
+	// 白名单只认 background-color——不改写的话填充色整条被丢，表头的白字就
+	// 印在了白纸上（2026-09-16 员工从 WPS 复制实测）。只改「值就是一个颜色」
+	// 的：简写里还可能带图片，那种本来就不该进邮件。
+	cssBackgroundColourOnly = regexp.MustCompile(`(?i)^background\s*:\s*(#[0-9a-f]{3,8}|rgba?\([^)]*\)|[a-z]+)$`)
+	// 字体名：字母（任何文字，等线、宋体也是字母）、数字、空格和几个标点。
+	// 括号、斜杠、分号、尖括号一律不许——expression()、url()、注入都长在那些
+	// 字符上。bluemonday 交过来的值已经转成小写、去掉了 CSS 转义。
+	cssFontFamily = regexp.MustCompile(`^[\p{L}\p{N} _\-.,'"]*$`)
+	// 一条框线声明。值里有线型就算画了框，除非宽度是 0。
+	cssBorderDecl = regexp.MustCompile(`(?i)(^|;)\s*border(-top|-right|-bottom|-left)?\s*:\s*([^;]*)`)
 )
+
+// fontFamilyValue 是 font-family 的审法，两个白名单（粘贴清理、发信）共用。
+//
+// bluemonday 自带的那条正则只认 ASCII 字母和单引号，等线、宋体、"Times New
+// Roman"（双引号）全过不去，整条被丢，粘进来的表格字体就变了。
+func fontFamilyValue(v string) bool {
+	return cssFontFamily.MatchString(v)
+}
+
+// pastedCellBorder 是来源没画框时补的那圈框。和从前纯文本重建那条路用的
+// 同一个灰，收件人在手机上才对得齐列。
+const pastedCellBorder = "border:1px solid #d0d0d0"
+
+// drawsBorder 说这段样式有没有画出可见的框线：有线型（solid/dashed/dotted/
+// double），而且宽度不是 0。border:none、border:0 都不算。
+func drawsBorder(style string) bool {
+	for _, m := range cssBorderDecl.FindAllStringSubmatch(style, -1) {
+		val := strings.ToLower(m[3])
+		lined := false
+		for _, kind := range []string{"solid", "dashed", "dotted", "double"} {
+			if strings.Contains(val, kind) {
+				lined = true
+			}
+		}
+		if !lined {
+			continue
+		}
+		zero := false
+		for _, tok := range strings.Fields(val) {
+			switch tok {
+			case "0", "0px", "0pt", "0em", "0in", "0cm", "0mm":
+				zero = true
+			}
+		}
+		if !zero {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureCellBorders 给来源没画框的格子补一圈细灰框。
+//
+// Excel 和 WPS 里那层灰网格线只是显示用的，复制不带；只有用「边框」功能画
+// 上去的才会跟着来。邮件里一张没框的表，客户在手机上基本对不齐列，所以
+// 没框的补上；来源自己画了的（哪怕只画一边）用它的。<table border="1">
+// 这种老写法本身就画框，不再叠一层。
+func ensureCellBorders(table *html.Node) {
+	if b, err := strconv.Atoi(strings.TrimSpace(nodeAttr(table, "border"))); err == nil && b > 0 {
+		return
+	}
+	// 表格本身要贴边，不然相邻两格的 1px 变 2px。
+	if ts := nodeAttr(table, "style"); !strings.Contains(strings.ToLower(ts), "border-collapse") {
+		setNodeAttr(table, "style", joinDecls(ts, "border-collapse:collapse"))
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && (n.Data == "td" || n.Data == "th") {
+			if style := nodeAttr(n, "style"); !drawsBorder(style) {
+				setNodeAttr(n, "style", lastDeclWins(joinDecls(style, pastedCellBorder)))
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(table)
+}
+
+func joinDecls(style, extra string) string {
+	style = normaliseDecls(style)
+	if style == "" {
+		return extra
+	}
+	return style + ";" + extra
+}
 
 // styleRules 是 选择器 → 声明串（已规范化，分号分隔，末尾不带分号）。
 // 标签名一律小写，类名保持原样（CSS 里类名是区分大小写的）。
@@ -141,6 +229,14 @@ func normaliseDecls(body string) string {
 		d = strings.Join(strings.Fields(d), " ")
 		if d == "" {
 			continue
+		}
+		if m := cssBackgroundColourOnly.FindStringSubmatch(d); m != nil {
+			d = "background-color:" + m[1]
+		}
+		// 双引号的字体名换成单引号：这段最后要塞进一个双引号包着的 style
+		// 属性里，少一层转义少一处出错。
+		if strings.HasPrefix(strings.ToLower(d), "font-family") {
+			d = strings.ReplaceAll(d, `"`, `'`)
 		}
 		out = append(out, d)
 	}

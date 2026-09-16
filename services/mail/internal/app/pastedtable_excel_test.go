@@ -63,10 +63,12 @@ td
  </tr>
 </table></body></html>`
 
-// flat 把 bluemonday 重排过的样式（「color: red」，冒号后带空格）压成好比对的
-// 样子：全小写、冒号后不留空格。
+// flat 把 bluemonday 重排过的样式（「color: red」，冒号后带空格；属性值里的
+// 引号转义成 &#39;）压成好比对的样子：全小写、冒号后不留空格、引号还原。
 func flat(s string) string {
-	return strings.ReplaceAll(strings.ToLower(s), ": ", ":")
+	s = strings.ReplaceAll(strings.ToLower(s), ": ", ":")
+	s = strings.ReplaceAll(s, "&#39;", "'")
+	return strings.ReplaceAll(s, "&#34;", `"`)
 }
 
 // cellWith 找到装着这段文字的那个 <td> 的开标签（样式都在开标签上）。
@@ -167,5 +169,126 @@ func TestPastedTableInlinedStylesStillFaceThePolicy(t *testing.T) {
 	}
 	if !strings.Contains(out, "color:red") {
 		t.Errorf("白名单里的那条该留：%s", out)
+	}
+}
+
+// WPS 和 Excel 桌面版复制出来的样式是同一个模子，但有三处上一版没照顾到：
+// 填充色写的是 background 简写，不是 background-color；字体名是中文（等线）
+// 或者双引号包着的（"Times New Roman"）；表头白字配深蓝底——填充色一丢就是
+// 白字印在白纸上，看着像表头没了（2026-09-16 员工从 WPS 复制实测）。
+const wpsClipboard = `<html><head><style>
+<!--td
+	{padding-top:1px;
+	color:black;
+	font-size:11.0pt;
+	font-family:等线;
+	border:none;}
+.xl67
+	{color:white;
+	font-weight:700;
+	background:#1F4E78;
+	mso-pattern:black none;
+	text-align:center;}
+.xl65
+	{color:red;
+	font-family:"Times New Roman";}
+-->
+</style></head><body>
+<table border=0 cellpadding=0 cellspacing=0 style='border-collapse:collapse;width:380pt'>
+ <tr><td class=xl67>产品</td><td class=xl67>厚度</td></tr>
+ <tr><td class=xl65>Hot Rolled Steel Coil</td><td>3.0</td></tr>
+</table></body></html>`
+
+func TestPastedTableKeepsFillsAndFontsFromWPS(t *testing.T) {
+	out := CleanPastedTable(wpsClipboard)
+	if out == "" {
+		t.Fatal("WPS 的表格没认出来")
+	}
+	head := cellWith(t, out, "产品")
+	if !strings.Contains(head, "background-color:#1f4e78") {
+		t.Errorf("表头填充色丢了（background 简写该改写成 background-color）：%s", head)
+	}
+	if !strings.Contains(head, "color:white") {
+		t.Errorf("表头白字丢了：%s", head)
+	}
+	if !strings.Contains(head, "font-family:等线") {
+		t.Errorf("中文字体名丢了：%s", head)
+	}
+	red := cellWith(t, out, "Hot Rolled")
+	if !strings.Contains(red, "font-family:'times new roman'") {
+		t.Errorf("双引号的字体名该换成单引号留下：%s", red)
+	}
+	for _, bad := range []string{"mso-pattern", "background:#"} {
+		if strings.Contains(flat(out), bad) {
+			t.Errorf("%q 不该留下：%s", bad, out)
+		}
+	}
+	// 发信白名单也要放行：写信时粘进去，发的时候整个正文又过一遍。
+	sent := flat(SanitizeHTML(out))
+	for _, want := range []string{"font-family:等线", "background-color:#1f4e78", "font-family:'times new roman'"} {
+		if !strings.Contains(sent, want) {
+			t.Errorf("发信白名单吃掉了 %q：%s", want, sent)
+		}
+	}
+}
+
+// 来源一条框线都没有（WPS/Excel 里那层灰网格线只是显示用的，复制不带）：
+// 每格补一圈细灰框。邮件里一张没框的表，手机上基本对不齐列。
+func TestPastedTableGetsBordersWhenTheSourceDrawsNone(t *testing.T) {
+	out := CleanPastedTable(wpsClipboard)
+	for _, text := range []string{"产品", "厚度", "Hot Rolled", "3.0"} {
+		if c := cellWith(t, out, text); !strings.Contains(c, "border:1px solid #d0d0d0") {
+			t.Errorf("%q 这格该补上框：%s", text, c)
+		}
+	}
+	if !strings.Contains(flat(out), "border-collapse:collapse") {
+		t.Errorf("表格该贴边（border-collapse），不然 1px 变 2px：%s", out)
+	}
+}
+
+// 来源自己画了框的格子用它的，不盖；只画了一边的也算画了。
+// border:0 不算框。
+func TestPastedTableKeepsTheSourcesOwnBorders(t *testing.T) {
+	in := `<html><head><style>.b{border:.5pt solid windowtext;} .l{border-left:1px dashed #333;}</style></head><body>` +
+		`<table><tr><td class="b">有框</td><td class="l">左框</td><td style="border:0">零宽</td><td>没框</td></tr></table></body></html>`
+	out := CleanPastedTable(in)
+	if c := cellWith(t, out, "有框"); !strings.Contains(c, "border:0.5pt solid #000000") || strings.Contains(c, "#d0d0d0") {
+		t.Errorf("自己有框的该原样：%s", c)
+	}
+	if c := cellWith(t, out, "左框"); !strings.Contains(c, "border-left:1px dashed #333") || strings.Contains(c, "#d0d0d0") {
+		t.Errorf("只画一边的也算画了：%s", c)
+	}
+	if c := cellWith(t, out, "零宽"); !strings.Contains(c, "#d0d0d0") {
+		t.Errorf("border:0 不算框，该补：%s", c)
+	}
+	if c := cellWith(t, out, "没框"); !strings.Contains(c, "#d0d0d0") {
+		t.Errorf("没框的该补：%s", c)
+	}
+}
+
+// <table border="1"> 这种老写法本身就画框（某些来源这么写），不再叠一层。
+func TestPastedTableRespectsTheBorderAttribute(t *testing.T) {
+	out := CleanPastedTable(`<table border="1"><tr><td>a</td></tr></table>`)
+	if strings.Contains(out, "#d0d0d0") {
+		t.Errorf("border=\"1\" 已经有框，不该再补：%s", out)
+	}
+	if !strings.Contains(out, `border="1"`) {
+		t.Errorf("border=\"1\" 该留着：%s", out)
+	}
+}
+
+// 字体名的审法：字母（任何文字）、数字、空格和几个标点，别的一律拒——
+// 括号、斜杠、分号、尖括号正是 expression()、url() 和注入长的地方。
+// bluemonday 交过来的值已经转成小写、去掉了 CSS 转义。
+func TestFontFamilyValueAcceptsRealNamesAndNothingElse(t *testing.T) {
+	for _, ok := range []string{"calibri", "'segoe ui', arial, sans-serif", "等线", "'微软雅黑', 宋体, sans-serif", "'times new roman'", "dengxian light", "pingfang sc, sans-serif"} {
+		if !fontFamilyValue(ok) {
+			t.Errorf("该放行：%q", ok)
+		}
+	}
+	for _, bad := range []string{"expression(alert(1))", "url(x)", "a;b", "<b>", `a\b`, "a/b", "a:b", "a=b", "a&b"} {
+		if fontFamilyValue(bad) {
+			t.Errorf("该拒：%q", bad)
+		}
 	}
 }
