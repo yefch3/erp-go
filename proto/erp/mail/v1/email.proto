@@ -191,6 +191,13 @@ service EmailService {
   rpc WithdrawAttachmentLink(WithdrawAttachmentLinkRequest) returns (WithdrawAttachmentLinkResponse);
   // 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
   rpc UnbindMailbox(UnbindMailboxRequest) returns (UnbindMailboxResponse);
+  // 主邮箱（迁移 00067）：公司的邮箱，员工只是暂时拿着用。管理员替员工分配，
+  // 所以 employee_id 在请求体里，操作人来自登录令牌——和 VerifyMailAccess
+  // 「只能绑自己」正相反，网关那头只放行管理员工账号的权限。
+  rpc AssignCompanyMailbox(AssignCompanyMailboxRequest) returns (AssignCompanyMailboxResponse);
+  // 某人现在拿着的主邮箱。employee_id = 0 问自己——登录 ERP 时网关据此直接
+  // 发一把开锁令牌，不问密码。
+  rpc GetCompanyMailbox(GetCompanyMailboxRequest) returns (GetCompanyMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
   // 额度状况。
   rpc ExcelUsage(ExcelUsageRequest) returns (ExcelUsageResponse);
@@ -931,6 +938,59 @@ message MailAccount {
   string unbound_at = 14;
   // last_error 是不是凭据问题。横幅上那颗「重新登录邮箱」只认它。
   bool needs_reauth = 15;
+  // 这个箱归谁（迁移 00067）：PERSONAL = 员工自己绑的；COMPANY = 管理员分配
+  // 的主邮箱——界面据此不给「解绑」、不让改密码，并标出来。
+  string kind = 17;
+}
+
+message AssignCompanyMailboxRequest {
+  // 分给谁。管理员操作，所以在请求体里。
+  int64 employee_id = 1;
+  // 主邮箱地址和密码，管理员现在输入的。密码先拿去邮件服务器真的登录一次，
+  // 成功了才存——和 VerifyMailAccess 一样的规矩。
+  string email = 2;
+  string secret = 3;
+  // 服务商代号，见 VerifyMailAccessRequest.provider。
+  string provider = 4;
+  // 「其他」那一档才用得上，见 VerifyMailAccessRequest 里的同名字段。
+  string smtp_host = 5;
+  int32 smtp_port = 6;
+  string smtp_security = 7;
+  string imap_host = 8;
+  int32 imap_port = 9;
+  string imap_security = 10;
+}
+
+message AssignCompanyMailboxResponse {
+  // 和 VerifyMailAccessResponse 同一套约定：每一种失败都以 ok=false 到达，
+  // host_rejected 分出「邮件服务器说密码不对」（花了一次真登录，该扣尝试
+  // 次数）和「我们自己拒的」（格式不对、地址是别人的）。
+  bool ok = 1;
+  string detail = 2;
+  bool host_rejected = 3;
+  int64 account_id = 4;
+  string email = 5;
+}
+
+message GetCompanyMailboxRequest {
+  // 问谁的。0 = 登录的这个人自己。
+  int64 employee_id = 1;
+}
+
+message CompanyMailbox {
+  int64 account_id = 1;
+  string email = 2;
+  string verified_at = 3;
+  string last_error = 4;
+  // last_error 是不是凭据问题。是的话要管理员重新填密码——员工自己填不了。
+  bool needs_reauth = 5;
+  bool is_active = 6;
+  string assigned_at = 7;
+}
+
+message GetCompanyMailboxResponse {
+  // 没有主邮箱时为空。
+  CompanyMailbox mailbox = 1;
 }
 
 message GetMyMailAccountRequest {

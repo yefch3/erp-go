@@ -54,9 +54,14 @@ func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/my-mailboxes/keep-sent-copy",
 		"POST /api/mail-file-links/withdraw",
 		"POST /api/my-mailboxes/unbind",
-		// 绑定/登录邮箱。**存邮箱凭据的路只有这一条**，它要先拿这一对去
+		// 绑定/登录邮箱。员工自己存邮箱凭据的路只有这一条，它要先拿这一对去
 		// 邮件服务器真的登录一次，成功了才落库。
 		"POST /api/mailbox/verify",
+		// 主邮箱（mail 00067）。管理员替员工配的那条是**有意开的第二条**进凭据
+		// 存储的路，只放行管理员工账号的权限；员工登录后不问密码开主邮箱那一把。
+		"POST /api/employees/{id}/company-mailbox",
+		"GET /api/employees/{id}/company-mailbox",
+		"POST /api/mailbox/unlock-company",
 	} {
 		if !have[want] {
 			t.Errorf("路由没注册：%s", want)

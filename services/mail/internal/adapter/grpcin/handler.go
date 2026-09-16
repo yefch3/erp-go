@@ -784,7 +784,7 @@ func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 	return &mailv1.MailAccount{
 		Id: v.ID, Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, NeedsReauth: v.AuthFailed, IsActive: v.IsActive,
-		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
+		AuthKind: v.AuthKind, IsDefault: v.IsDefault, Kind: v.Kind,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
 		Unread: v.Unread, LastReadAt: v.LastReadAt, UnboundAt: v.UnboundAt,
 		KeepSentCopy: v.KeepSentCopy,
@@ -812,6 +812,55 @@ func (h *Handler) UnbindMailbox(ctx context.Context, req *mailv1.UnbindMailboxRe
 		return nil, err
 	}
 	return &mailv1.UnbindMailboxResponse{}, nil
+}
+
+// AssignCompanyMailbox：管理员替员工分配主邮箱（00067）。
+//
+// 和 VerifyMailAccess 正相反：分给谁在请求体里，操作人是登录的这个人。
+// 「这个人能不能替别人分配」网关那头已经按管理员工账号的权限判过；这里记
+// 下的是谁动的手，落进留痕表的 actor_id。
+//
+// 每一种失败都以 ok=false 到达，host_rejected 分出哪些花了一次真登录——
+// 和 VerifyMailAccess 一个约定，网关那边的限流逻辑照搬。
+func (h *Handler) AssignCompanyMailbox(ctx context.Context, req *mailv1.AssignCompanyMailboxRequest) (*mailv1.AssignCompanyMailboxResponse, error) {
+	op := operator(ctx)
+	res, err := h.svc.AssignCompanyMailbox(ctx, grpcx.TenantID(ctx), op.ID, req.GetEmployeeId(), app.BindRequest{
+		Email: req.GetEmail(), Provider: req.GetProvider(), Secret: req.GetSecret(),
+		SMTPHost: req.GetSmtpHost(), SMTPPort: req.GetSmtpPort(), SMTPSecurity: req.GetSmtpSecurity(),
+		IMAPHost: req.GetImapHost(), IMAPPort: req.GetImapPort(), IMAPSecurity: req.GetImapSecurity(),
+	})
+	if err != nil {
+		return &mailv1.AssignCompanyMailboxResponse{
+			Ok: false, Detail: err.Error(), HostRejected: app.FromMailHost(err),
+		}, nil
+	}
+	return &mailv1.AssignCompanyMailboxResponse{
+		Ok: true, Detail: res.Detail, AccountId: res.AccountID, Email: res.Email,
+	}, nil
+}
+
+// GetCompanyMailbox：某人现在拿着的主邮箱。employee_id = 0 问自己。
+//
+// 问别人的那条路网关按「查看员工」的权限放行；问自己的那条路是登录时自动
+// 开锁用的，谁都能问自己。
+func (h *Handler) GetCompanyMailbox(ctx context.Context, req *mailv1.GetCompanyMailboxRequest) (*mailv1.GetCompanyMailboxResponse, error) {
+	op := operator(ctx)
+	employeeID := req.GetEmployeeId()
+	if employeeID == 0 {
+		employeeID = op.ID
+	}
+	v, ok, err := h.svc.CompanyMailboxOf(ctx, grpcx.TenantID(ctx), employeeID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return &mailv1.GetCompanyMailboxResponse{}, nil
+	}
+	return &mailv1.GetCompanyMailboxResponse{Mailbox: &mailv1.CompanyMailbox{
+		AccountId: v.AccountID, Email: v.Email, VerifiedAt: v.VerifiedAt,
+		LastError: v.LastError, NeedsReauth: v.AuthFailed, IsActive: v.IsActive,
+		AssignedAt: v.AssignedAt,
+	}}, nil
 }
 
 func (h *Handler) SetDefaultMailbox(ctx context.Context, req *mailv1.SetDefaultMailboxRequest) (*mailv1.SetDefaultMailboxResponse, error) {

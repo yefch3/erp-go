@@ -41,6 +41,9 @@ type MailAccountView struct {
 	IsActive   bool
 	// IsDefault 是「写信时预选哪一个」。和登录地址无关。
 	IsDefault bool
+	// Kind 是这个箱归谁（00067）：PERSONAL = 员工自己绑的；COMPANY = 管理员
+	// 分配的主邮箱。界面据此不给「解绑」、不让改密码，并标出来。
+	Kind string
 	// 这个信箱自己的收发服务器（00042 之后长在信箱行上）。界面上要显示
 	// 「你这个箱走的是 imap.gmail.com」，不然跨服务商时人分不清哪个是哪个。
 	SMTPHost string
@@ -173,7 +176,7 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 		v := MailAccountView{
 			ID: row.ID, Email: row.Email, Username: row.Username,
 			AuthKind: row.AuthKind, LastError: row.LastError, AuthFailed: row.AuthFailed,
-			IsActive: row.IsActive, IsDefault: row.IsDefault,
+			IsActive: row.IsActive, IsDefault: row.IsDefault, Kind: row.Kind,
 			SMTPHost: row.SmtpHost, IMAPHost: row.ImapHost,
 			HasSecret: s.hasCredential(ctx, tenantID, row.ID),
 			Unread:    unread[row.ID],

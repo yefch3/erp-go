@@ -100,6 +100,7 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 	// 同一个地址重新授权是更新同一行，那些邮件正是它自己的。
 	id, err := s.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
 		TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: "",
+		Kind: mailKindPersonal,
 	})
 	if err != nil {
 		return "", translateMailboxTaken(err)
@@ -132,7 +133,7 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 		exp:   time.Now().Add(time.Duration(tok.ExpiresIn-60) * time.Second),
 	})
 	s.markVerified(ctx, tenantID, id)
-	s.recordBinding(ctx, tenantID, employeeID, id, email, "gmail", bindActionBind, "")
+	s.recordBinding(ctx, tenantID, employeeID, employeeID, id, email, "gmail", bindActionBind, "")
 	return email, nil
 }
 

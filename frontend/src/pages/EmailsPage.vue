@@ -1982,7 +1982,7 @@ const syncBanner = ref<SyncBanner>({ text: '', offerReauth: false })
 // 当前在看哪个信箱。0 = 全部（还没绑过，或者只有一个）。
 const currentAccount = ref(0)
 // 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
-const mailboxes = ref<{ id: number; email: string; isDefault: boolean }[]>([])
+const mailboxes = ref<{ id: number; email: string; isDefault: boolean; kind?: string }[]>([])
 // 发件人下拉只列**还开着**的箱。退出了 163 之后它不该还在里面——留着的话
 // 「一个一个退出」只退了一半：读不到 163 的信，却还能以 163 的地址给客户
 // 写信，而那正是退出想停掉的事。
@@ -2009,7 +2009,7 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 }
 
 // 信箱清单变了（切换器加载完、新绑了一个、换了默认）。
-function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
+function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean; kind?: string }[]) {
   mailboxes.value = boxes
   myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
   const next = settleMailbox(currentAccount.value, boxes)
@@ -2601,8 +2601,30 @@ onMounted(async () => {
   } catch {
     locked.value = true
   }
+  // 主邮箱登录即开（mail 00067）：锁着的话先向服务器要主邮箱那一把——有主邮箱
+  // 的人不用输密码直接进；没有的照旧过门。只要主邮箱这一把，个人邮箱不动。
+  if (locked.value === true) {
+    const opened = await tryUnlockCompanyMailbox()
+    if (opened) {
+      currentAccount.value = opened
+      locked.value = false
+    }
+  }
   if (locked.value === false) init()
 })
+
+// 向网关要主邮箱的开锁令牌（不问密码——员工不知道主邮箱的密码）。回那个箱的
+// 编号；没有主邮箱、或者它当前登不上，回 0，调用方照旧关门。
+async function tryUnlockCompanyMailbox(): Promise<number> {
+  try {
+    const resp = await http.post('/mailbox/unlock-company', {}, { ...mailHostRequest, ...quietErrors })
+    const acct = adoptVerification(resp.data.data as VerifyResponse)
+    tokensChanged.value++
+    return acct
+  } catch {
+    return 0
+  }
+}
 
 function onUnlocked() {
   locked.value = false
@@ -3068,17 +3090,24 @@ function reload() {
 // 也写进地址栏。仓库的习惯是可分享的状态放 URL，而这里还有一层：不写的话
 // 刷新会回到默认箱，而人以为自己还在另一个箱里；浏览器后退更糟——它会退回
 // 一个属于**上一个箱**的游标，然后拿它去翻当前这个箱。
-watch(currentAccount, (now, before) => {
+watch(currentAccount, async (now, before) => {
   if (!before || now === before) return
   // 换一把令牌。**必须在发请求之前**——令牌决定服务端给你看哪个箱
   // （见网关 requireMailUnlock），带着旧箱那把去拉新箱的列表，拿回来的
   // 还是旧箱的信。
   //
   // 没有这个箱的令牌 = 刚把它退出过。那时门要重新出来，只针对这个箱。
+  //
+  // 主邮箱例外：切到它而手里没它那一把（比如刚清过浏览器存储），先向服务器
+  // 要，要不到再关门。个人邮箱不走这条，照旧过门输密码。
   if (!useMailbox(now)) {
-    pendingFolder = null
-    locked.value = true
-    return
+    const box = mailboxes.value.find((b) => b.id === now)
+    const reopened = box?.kind === 'COMPANY' && (await tryUnlockCompanyMailbox()) === now && useMailbox(now)
+    if (!reopened) {
+      pendingFolder = null
+      locked.value = true
+      return
+    }
   }
   // **切回一个还开着的箱，门要收起来。**
   //
