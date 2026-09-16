@@ -1197,9 +1197,18 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	// generic HTTP 500, leaving the browser with only Axios' "Request failed"
 	// text and the service logs completely clean. Business refusals are normal
 	// and stay quiet; unexpected failures must leave enough evidence to fix.
+	//
+	// **取消不算失败。** 客户端关了页面，或者下游正在换版本——部署时每次都有。
+	// 记成 ERROR 就等于每次部署都点着 erp-gateway-errors（2026-09-15 实测：
+	// 一次部署，网关和采购同时报警，日志里是 "the client connection is
+	// closing"）。记 WARN：查得到，不告警。
 	if httpCode == http.StatusInternalServerError && s.Log != nil {
-		s.Log.Error("upstream gRPC request failed", "grpc_code", st.Code().String(),
-			"business_code", bizCode, "err", st.Message())
+		level := slog.LevelError
+		if st.Code() == codes.Canceled || strings.Contains(st.Message(), "the client connection is closing") {
+			level = slog.LevelWarn
+		}
+		s.Log.Log(context.Background(), level, "upstream gRPC request failed",
+			"grpc_code", st.Code().String(), "business_code", bizCode, "err", st.Message())
 	}
 	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
 }
