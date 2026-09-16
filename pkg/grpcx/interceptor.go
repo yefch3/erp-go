@@ -2,6 +2,7 @@ package grpcx
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/url"
 	"runtime/debug"
@@ -94,6 +95,44 @@ func unaryOperator(log *slog.Logger) grpc.UnaryServerInterceptor {
 	}
 }
 
+// failureLevel 说一次失败该记成哪一档。
+//
+// **ERROR 只留给「我们得去修的东西」。** 监控那条规则是「某个服务 5 分钟内
+// 打了 ERROR 就告警」（deploy/aws/05-alerts.sh），所以这一档的含义必须是
+// 「有东西坏了」，而不是「有什么事没成」。
+//
+// 不算坏的两种，都记 WARN：
+//
+//   - **业务拒绝**（有 biz_code）：额度用完、权限不够、附件类型不支持、激活
+//     链接已经用过。这是系统正常工作——它正在告诉人不能这么做。
+//   - **调用被取消**：客户端关了页面，或者进程正在换版本。部署必然产生。
+//
+// 依据是实测：告警上线第一天（2026-09-15）响了六次，一次真故障都没有——
+// 两次是一个界面 bug，两次是模型读图没对上（校验拦住了，重试就好），
+// 一次是我们自己在部署。
+func failureLevel(err error) slog.Level {
+	if apierr.CodeFromStatus(err) != "" || apierr.CodeFromError(err) != "" {
+		return slog.LevelWarn
+	}
+	if isCancellation(err) {
+		return slog.LevelWarn
+	}
+	// Unavailable 和 DeadlineExceeded 留在 ERROR：一个下游真的连不上、一个真
+	// 的超时了，那是该有人看一眼的事。换版本那几秒产生的是 Canceled，不是
+	// 这两个——实测那条是 "grpc: the client connection is closing"。
+	return slog.LevelError
+}
+
+// isCancellation 认出「这次调用是被取消的」，不管它以哪种面目出现：
+// gRPC 的 Canceled 状态、context 自己的哨兵，或者换版本时连接被关掉。
+func isCancellation(err error) bool {
+	if status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
+		return true
+	}
+	// 连接正在关：gRPC 客户端在进程退出时给的就是这句，它不带 Canceled 码。
+	return strings.Contains(err.Error(), "the client connection is closing")
+}
+
 // unaryError maps domain errors (apierr.Error) onto gRPC statuses with a
 // stable business code, so clients never match on message strings.
 func unaryError(log *slog.Logger) grpc.UnaryServerInterceptor {
@@ -105,6 +144,23 @@ func unaryError(log *slog.Logger) grpc.UnaryServerInterceptor {
 		}
 		if _, ok := status.FromError(err); ok && apierr.CodeFromStatus(err) != "" {
 			return nil, err // already a mapped status
+		}
+		// 业务拒绝不是「没处理的错」——它正是处理过的结果：额度用完、权限不够、
+		// 激活链接已经用过。转成状态码交出去就行，不记 ERROR。
+		//
+		// 从前这里不分，于是「该激活链接已经使用过，请直接登录」也进 ERROR。
+		// 上线告警第一天（2026-09-15）响了六次，一次真故障都没有，一半是这种。
+		// 每次都响的告警，看的人很快就不看了——那等于没有告警。
+		// 失败本身不会不见：下面 unaryLog 那条 rpc 行照记，带着 biz_code。
+		if apierr.CodeFromError(err) != "" {
+			return nil, apierr.ToStatus(err)
+		}
+		// 调用被取消：客户端关了页面，或者**进程正在换版本**——部署时必然发生。
+		// 不是我们出的错，也不该对外说成 Internal（那是在说「服务器坏了」）。
+		// 从前它被当成内部错误，于是每次部署都点着 erp-*-errors。
+		if isCancellation(err) {
+			log.WarnContext(ctx, "call cancelled", "method", info.FullMethod, "err", err.Error())
+			return nil, status.Error(codes.Canceled, "call cancelled")
 		}
 		// Anything that is not a business error becomes a bare "internal
 		// error" for the caller, on purpose: internals must not leak. But it
@@ -131,7 +187,7 @@ func unaryLog(log *slog.Logger) grpc.UnaryServerInterceptor {
 		if err != nil {
 			attrs = append(attrs, "code", status.Code(err).String(),
 				"biz_code", apierr.CodeFromStatus(err), "err", err.Error())
-			log.ErrorContext(ctx, "rpc", attrs...)
+			log.Log(ctx, failureLevel(err), "rpc", attrs...)
 		} else {
 			log.InfoContext(ctx, "rpc", attrs...)
 		}
