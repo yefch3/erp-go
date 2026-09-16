@@ -52,7 +52,7 @@ func buildPastedTablePolicy() *bluemonday.Policy {
 	// 这里列的是「表格看起来还是原来那个表格」真正需要的那些。
 	p.AllowStyles(
 		"width", "height", "min-width", "max-width",
-		"font-size", "font-family", "font-weight", "font-style",
+		"font-size", "font-weight", "font-style",
 		"text-align", "vertical-align", "text-decoration",
 		"background-color", "color",
 		"border", "border-top", "border-bottom", "border-left", "border-right",
@@ -60,6 +60,9 @@ func buildPastedTablePolicy() *bluemonday.Policy {
 		"padding", "padding-top", "padding-bottom", "padding-left", "padding-right",
 		"line-height", "white-space",
 	).Globally()
+	// 字体名用我们自己的审法：bluemonday 自带的只认 ASCII 字母，等线、宋体、
+	// 双引号包着的名字全过不去。见 pastedtable_inline.go 的 fontFamilyValue。
+	p.AllowStyles("font-family").MatchingHandler(fontFamilyValue).Globally()
 
 	// 表格里可能有链接。协议限死，和发信白名单同一套。
 	p.AllowAttrs("href").OnElements("a")
@@ -104,6 +107,8 @@ func CleanPastedTable(raw string) string {
 	// 样式块本身在 <head> 里，摘表格时就丢了；抄过来的那些是行内样式，
 	// 和格子上原有的一起过下面的白名单。
 	inlineRules(node, stylesheetRules(doc))
+	// 抄完再看：来源没画框的格子补一圈细灰框。
+	ensureCellBorders(node)
 	var sb strings.Builder
 	if err := html.Render(&sb, node); err != nil {
 		return ""

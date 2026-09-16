@@ -48,7 +48,15 @@ func buildMailPolicy() *bluemonday.Policy {
 	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
 
 	// Inline styles only — a <style> block would be stripped by Gmail anyway.
-	// bluemonday validates the CSS property list itself.
+	//
+	// **这里的 style 是原样放行的，一条 CSS 都不审。** 这个版本的 bluemonday
+	// 只在登记了至少一条样式规则（AllowStyles）时才审 style 属性；AllowStyling
+	// 在这个版本里只是放行 class，没登记任何样式规则。所以粘进来的表格带着
+	// 「等线」「宋体」这种字体名，写信时清理器（pastedTablePolicy，那边审得严）
+	// 放行了，发的时候这里不会再丢。
+	//
+	// 别在这里登记任何一条样式规则：登记一条，其余属性就全被丢，发出去的信
+	// 颜色、框线、对齐一起没了。
 	p.AllowStyling()
 	p.AllowAttrs("style").Globally()
 
