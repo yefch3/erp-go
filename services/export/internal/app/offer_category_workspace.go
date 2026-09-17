@@ -261,7 +261,7 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		if err != nil {
 			return b, err
 		}
-		cfrTotal := decimal.Zero
+		var cfrTotal decimal.Decimal
 		switch selection.Category {
 		case "FOB_USD":
 			cfrTotal = unitPrice.Mul(quantity).Add(freightTotal)
