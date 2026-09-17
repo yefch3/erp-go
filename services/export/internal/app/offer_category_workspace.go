@@ -155,13 +155,9 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		if target != "*" && selection.Category != target {
 			continue
 		}
-		product, ok := products[selection.ProductID]
+		_, ok := products[selection.ProductID]
 		if !ok {
 			return b, apierr.Invalid("OFFER_CATEGORY_SELECTION", "核算产品已失效，请刷新后重试")
-		}
-		quantity, err := decimal.NewFromString(strings.TrimSpace(product.Quantity))
-		if err != nil || !quantity.IsPositive() {
-			return b, apierr.Invalid("OFFER_CFR_QUANTITY", "产品数量必须大于零")
 		}
 		supplierPrice, factoryPrice, supplierCurrency := "", "", ""
 		for _, quote := range source.Quotes {
@@ -270,7 +266,7 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		if err != nil {
 			return b, err
 		}
-		interestFactor := decimal.NewFromInt(1).Add(interestRate.Div(decimal.NewFromInt(100))).Mul(interestDays).Div(decimal.NewFromInt(360))
+		interestFactor := decimal.NewFromInt(1).Add(interestRate.Div(decimal.NewFromInt(100)).Mul(interestDays).Div(decimal.NewFromInt(360)))
 
 		var cfrUnitPrice decimal.Decimal
 		switch selection.Category {
@@ -300,7 +296,6 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 			selection.ProductFreightUnitPrice = freightUnitPrice.StringFixed(4)
 		}
 		selection.CFRUnitPrice = cfrUnitPrice.StringFixed(4)
-		selection.CFRTotal = cfrUnitPrice.Mul(quantity).Round(2).StringFixed(2)
 		selection.FreightQuoteID = freightQuoteID
 	}
 	return b, nil
