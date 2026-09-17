@@ -144,6 +144,44 @@ func offerPDF(view OfferView) ([]byte, error) {
 	return buildQuotationPDFLayout(q, items, shipments, true)
 }
 
+func categoryOfferPDF(view OfferView) ([]byte, error) {
+	b := view.Body
+	if len(b.CustomerSelections) == 0 {
+		return nil, apierr.Invalid("OFFER_CATEGORY_EMPTY", "请至少选择一项客户报价")
+	}
+	prices := map[string]OfferNegotiation{}
+	for _, negotiation := range b.Negotiations {
+		key := negotiation.ProductID + ":" + negotiation.Category + ":" + negotiation.QuoteID
+		prices[key] = negotiation
+	}
+	items := make([]store.ListQuotationItemsRow, 0, len(b.CustomerSelections))
+	total := decimal.Zero
+	for i, selection := range b.CustomerSelections {
+		key := selection.ProductID + ":" + selection.Category + ":" + selection.QuoteID
+		negotiation := prices[key]
+		price := strings.TrimSpace(negotiation.ProposedPrice)
+		if price == "" {
+			price = strings.TrimSpace(negotiation.InitialPrice)
+		}
+		if price == "" {
+			price = strings.TrimSpace(selection.CFRUnitPrice)
+		}
+		unitPrice, err := decimal.NewFromString(price)
+		if err != nil || unitPrice.IsNegative() {
+			return nil, apierr.Invalid("OFFER_CUSTOMER_PRICE_REQUIRED", "请先完成初始核算，或填写最新对客单价")
+		}
+		qty, err := decimal.NewFromString(selection.Product.Quantity)
+		if err != nil || !qty.IsPositive() {
+			return nil, apierr.Invalid("OFFER_CFR_QUANTITY", "产品数量必须大于零")
+		}
+		amount := unitPrice.Mul(qty).Round(2)
+		total = total.Add(amount)
+		items = append(items, store.ListQuotationItemsRow{LineNo: int32(i + 1), ProductName: selection.Product.Product, Spec: offerSpecification(selection.Product, view.Source), Qty: selection.Product.Quantity, UomCode: selection.Product.Unit, UnitPrice: unitPrice.StringFixed(4), Amount: amount.StringFixed(2), Remark: selection.Product.Remark})
+	}
+	q := store.GetQuotationRow{QuoteNo: view.Source.Number, CustomerName: b.Customer, ContactName: b.Contact, Currency: "USD", Incoterm: "CFR", PortOfLoading: b.LoadingPort, PortOfDischarge: b.DestinationPort, PaymentMethod: b.Payment, ValidUntil: b.ValidUntil, TotalAmount: total.StringFixed(2), Remark: b.Remark}
+	return buildQuotationPDFLayoutLanguage(q, items, nil, false, b.DocumentLanguage)
+}
+
 // Flatten the frozen template's customer-facing specifications deterministically
 // for both quotation PDF and contract lines; internal calculation fields never enter here.
 func offerSpecification(p OfferProduct, source OfferInquiry) string {

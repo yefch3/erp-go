@@ -87,6 +87,27 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 }
 
 func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow, productSubtotal bool) ([]byte, error) {
+	return buildQuotationPDFLayoutLanguage(q, items, shipments, productSubtotal, "ZH")
+}
+
+type quotationPDFLabels struct {
+	title, quoteNo, customer, contact, currency, incoterm, loadingPort, dischargePort, payment, validUntil, productSubtotal, total string
+	headers                                                                                                                        []string
+}
+
+func quotationLabels(language string) quotationPDFLabels {
+	switch strings.ToUpper(strings.TrimSpace(language)) {
+	case "EN":
+		return quotationPDFLabels{"CUSTOMER QUOTATION", "Quotation No.", "Customer", "Contact", "Currency", "Incoterm", "Port of Loading", "Port of Discharge", "Payment Terms", "Valid Until", "Product subtotal", "Total", []string{"#", "Code", "Product", "Specification", "Quantity", "Unit", "Unit Price", "Amount"}}
+	case "ES":
+		return quotationPDFLabels{"COTIZACIÓN PARA EL CLIENTE", "N.º de cotización", "Cliente", "Contacto", "Moneda", "Incoterm", "Puerto de carga", "Puerto de destino", "Condiciones de pago", "Válida hasta", "Subtotal de productos", "Total", []string{"#", "Código", "Producto", "Especificación", "Cantidad", "Unidad", "Precio unitario", "Importe"}}
+	default:
+		return quotationPDFLabels{"客户报价单", "报价单号", "客户", "联系人", "币种", "贸易术语", "装运港", "目的港", "付款方式", "有效期至", "产品合计", "合计", []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}}
+	}
+}
+
+func buildQuotationPDFLayoutLanguage(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow, productSubtotal bool, language string) ([]byte, error) {
+	labels := quotationLabels(language)
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
@@ -97,15 +118,15 @@ func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotatio
 	}
 	pdf.AddPage()
 	pdf.SetFont(pdffont.Name, "B", 16)
-	pdf.CellFormat(0, 10, "客户报价单 / CUSTOMER QUOTATION", "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 10, labels.title, "", 1, "C", false, 0, "")
 	pdf.SetFont(pdffont.Name, "", 9)
 	meta := []string{
-		"报价单号: " + q.QuoteNo,
-		"客户: " + pdfText(q.CustomerName),
-		"联系人: " + pdfText(q.ContactName),
-		"币种: " + q.Currency + "    贸易术语: " + q.Incoterm,
-		"装运港: " + pdfText(q.PortOfLoading) + "    目的港: " + pdfText(q.PortOfDischarge),
-		"付款方式: " + pdfText(q.PaymentMethod) + "    有效期至: " + q.ValidUntil,
+		labels.quoteNo + ": " + q.QuoteNo,
+		labels.customer + ": " + pdfText(q.CustomerName),
+		labels.contact + ": " + pdfText(q.ContactName),
+		labels.currency + ": " + q.Currency + "    " + labels.incoterm + ": " + q.Incoterm,
+		labels.loadingPort + ": " + pdfText(q.PortOfLoading) + "    " + labels.dischargePort + ": " + pdfText(q.PortOfDischarge),
+		labels.payment + ": " + pdfText(q.PaymentMethod) + "    " + labels.validUntil + ": " + q.ValidUntil,
 	}
 	for _, line := range meta {
 		pdf.MultiCell(0, 5, line, "", "L", false)
@@ -113,7 +134,7 @@ func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotatio
 	pdf.Ln(3)
 	// 所有列宽之和严格等于 A4 可用宽度 186mm，避免数量和金额互相覆盖。
 	widths := []float64{11, 14, 30, 45, 17, 12, 25, 32}
-	headers := []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}
+	headers := labels.headers
 	drawQuotationPDFRow(pdf, headers, widths, true)
 	pdf.SetFont(pdffont.Name, "", 8)
 	for _, item := range items {
@@ -134,7 +155,7 @@ func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotatio
 			pdf.AddPage()
 		}
 		pdf.SetFont(pdffont.Name, "B", 9)
-		pdf.CellFormat(154, 8, "产品合计 "+q.Currency, "1", 0, "R", false, 0, "")
+		pdf.CellFormat(154, 8, labels.productSubtotal+" "+q.Currency, "1", 0, "R", false, 0, "")
 		pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
 	}
 	if len(shipments) > 0 {
@@ -164,7 +185,7 @@ func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotatio
 	}
 	if !productSubtotal {
 		pdf.SetFont(pdffont.Name, "B", 9)
-		pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")
+		pdf.CellFormat(154, 8, labels.total+" "+q.Currency, "1", 0, "R", false, 0, "")
 		pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
 	}
 	if strings.TrimSpace(q.Remark) != "" {

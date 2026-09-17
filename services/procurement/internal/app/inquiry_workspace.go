@@ -94,29 +94,46 @@ type InquiryCharge struct {
 	Remark         string `json:"remark"`
 	AllocationType string `json:"allocationType"`
 	ProductID      string `json:"productId"`
+	USDSubtotal    string `json:"usdSubtotal"`
+}
+type InquiryFreightRate struct {
+	ProductID string `json:"productId"`
+	Price     string `json:"price"`
+	Currency  string `json:"currency"`
+	Unit      string `json:"unit"`
+	Remark    string `json:"remark"`
+	USDPrice  string `json:"usdPrice"`
+	Total     string `json:"total"`
+	USDTotal  string `json:"usdTotal"`
 }
 type InquiryQuoteBody struct {
-	Company         string              `json:"company"`
-	Currency        string              `json:"currency"`
-	Delivery        string              `json:"delivery"`
-	ValidUntil      string              `json:"validUntil"`
-	PaymentTerms    string              `json:"paymentTerms"`
-	Incoterm        string              `json:"incoterm"`
-	Remark          string              `json:"remark"`
-	Prices          []InquiryPrice      `json:"prices"`
-	Carrier         string              `json:"carrier"`
-	Route           string              `json:"route"`
-	Vessel          string              `json:"vessel"`
-	Voyage          string              `json:"voyage"`
-	Departure       string              `json:"departure"`
-	Arrival         string              `json:"arrival"`
-	TransitDays     string              `json:"transitDays"`
-	LoadingPort     string              `json:"loadingPort"`
-	DestinationPort string              `json:"destinationPort"`
-	CargoIDs        []string            `json:"cargoIds"`
-	Charges         []InquiryCharge     `json:"charges"`
-	Totals          map[string]string   `json:"totals"`
-	Attachments     []InquiryAttachment `json:"attachments"`
+	Company         string               `json:"company"`
+	Currency        string               `json:"currency"`
+	QuoteCategory   string               `json:"quoteCategory"`
+	Delivery        string               `json:"delivery"`
+	ValidUntil      string               `json:"validUntil"`
+	PaymentTerms    string               `json:"paymentTerms"`
+	Incoterm        string               `json:"incoterm"`
+	Remark          string               `json:"remark"`
+	Prices          []InquiryPrice       `json:"prices"`
+	Carrier         string               `json:"carrier"`
+	Route           string               `json:"route"`
+	Vessel          string               `json:"vessel"`
+	Voyage          string               `json:"voyage"`
+	Departure       string               `json:"departure"`
+	Arrival         string               `json:"arrival"`
+	TransitDays     string               `json:"transitDays"`
+	LoadingPort     string               `json:"loadingPort"`
+	DestinationPort string               `json:"destinationPort"`
+	CargoIDs        []string             `json:"cargoIds"`
+	FreightRates    []InquiryFreightRate `json:"freightRates"`
+	Charges         []InquiryCharge      `json:"charges"`
+	ExchangeRates   map[string]string    `json:"exchangeRates"`
+	Totals          map[string]string    `json:"totals"`
+	TotalUSD        string               `json:"totalUsd"`
+	FreightTotalUSD string               `json:"freightTotalUsd"`
+	OtherChargesUSD string               `json:"otherChargesTotalUsd"`
+	Attachments     []InquiryAttachment  `json:"attachments"`
 }
 type InquiryQuoteView struct {
 	Historical  bool             `json:"historical"`
@@ -904,12 +921,17 @@ func (s *Service) compensateInquiryAvailability(ctx context.Context, id int64, a
 
 func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind string, submit bool) error {
 	if strings.TrimSpace(b.Company) == "" {
-		return apierr.Invalid("INQUIRY_COMPANY", "请选择或输入工厂/货代")
+		if kind == "LOGISTICS" {
+			return apierr.Invalid("INQUIRY_COMPANY", "请填写船运公司名称")
+		}
+		return apierr.Invalid("INQUIRY_COMPANY", "请选择或输入工厂/供应商")
 	}
 	b.Incoterm = strings.ToUpper(strings.TrimSpace(b.Incoterm))
 	allowed := map[string]bool{}
+	productByID := map[string]InquiryProduct{}
 	for _, p := range products {
 		allowed[p.ID] = true
+		productByID[p.ID] = p
 	}
 	for _, d := range []string{b.Delivery, b.ValidUntil, b.Departure, b.Arrival} {
 		if d != "" {
@@ -922,6 +944,24 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 		return apierr.Invalid("INQUIRY_DATES", "预计到港不能早于开船")
 	}
 	if kind == "PROCUREMENT" {
+		b.QuoteCategory = strings.ToUpper(strings.TrimSpace(b.QuoteCategory))
+		categoryCurrencies := map[string]string{
+			"FOB_USD":          "USD",
+			"FOB_CNY":          "CNY",
+			"ALL_IN_PORT_CNY":  "CNY",
+			"EX_FACTORY_CNY":   "CNY",
+			"REPROCESSING_CNY": "CNY",
+		}
+		expectedCurrency, categoryValid := categoryCurrencies[b.QuoteCategory]
+		if b.QuoteCategory != "" && !categoryValid {
+			return apierr.Invalid("INQUIRY_QUOTE_CATEGORY", "请选择有效的报价分类")
+		}
+		if submit && !categoryValid {
+			return apierr.Invalid("INQUIRY_QUOTE_CATEGORY", "请选择报价分类")
+		}
+		if categoryValid {
+			b.Currency = expectedCurrency
+		}
 		if submit && (len(b.Prices) == 0 || len(b.Currency) != 3) {
 			return apierr.Invalid("INQUIRY_PRICES", "请填写币种并选择至少一个产品报价")
 		}
@@ -943,6 +983,9 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 					return apierr.Invalid("INQUIRY_PRICE", "请填写有效的工厂报价").WithMeta("field", name)
 				}
 			}
+			if submit && b.QuoteCategory == "REPROCESSING_CNY" && (strings.TrimSpace(l.Price) == "" || strings.TrimSpace(l.FactoryPrice) == "") {
+				return apierr.Invalid("INQUIRY_PRICE", "再加工报价必须填写加工费和出厂单价")
+			}
 			if submit && l.Price == "" && l.FactoryPrice == "" && l.FOBPrice == "" {
 				return apierr.Invalid("INQUIRY_PRICE", "请填写工厂报价")
 			}
@@ -951,23 +994,86 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			}
 		}
 	} else {
+		b.Currency = "USD"
+		normalizedRates := map[string]string{}
+		parsedRates := map[string]decimal.Decimal{}
+		for currency, raw := range b.ExchangeRates {
+			currency = strings.ToUpper(strings.TrimSpace(currency))
+			raw = strings.TrimSpace(raw)
+			if currency == "USD" || raw == "" {
+				continue
+			}
+			rate, e := decimal.NewFromString(raw)
+			if len(currency) != 3 || e != nil || !rate.IsPositive() {
+				return apierr.Invalid("INQUIRY_EXCHANGE_RATE", "请填写有效的汇率（1 USD 可兑换多少原币）").WithMeta("currency", currency)
+			}
+			normalizedRates[currency] = rate.String()
+			parsedRates[currency] = rate
+		}
+		b.ExchangeRates = normalizedRates
+		toUSD := func(amount decimal.Decimal, currency string, scale int32) (decimal.Decimal, bool) {
+			if currency == "USD" {
+				return amount.Round(scale), true
+			}
+			rate, ok := parsedRates[currency]
+			if !ok {
+				return decimal.Zero, false
+			}
+			return amount.Div(rate).Round(scale), true
+		}
 		for _, id := range b.CargoIDs {
 			if !allowed[id] {
 				return apierr.Invalid("INQUIRY_CARGO", "产品不属于询盘")
 			}
 		}
-		if submit {
-			if len(b.Charges) == 0 {
-				return apierr.Invalid("INQUIRY_CHARGE", "请填写物流报价")
+		seenRates := map[string]bool{}
+		freightTotalUSD := decimal.Zero
+		freightUSDComplete := true
+		for i := range b.FreightRates {
+			rate := &b.FreightRates[i]
+			rate.Currency = strings.ToUpper(strings.TrimSpace(rate.Currency))
+			rate.Unit = strings.TrimSpace(rate.Unit)
+			price, e := decimal.NewFromString(strings.TrimSpace(rate.Price))
+			if !allowed[rate.ProductID] || seenRates[rate.ProductID] {
+				return apierr.Invalid("INQUIRY_FREIGHT_PRODUCT", "产品海运价格包含无效或重复产品")
 			}
-			currency, unit := strings.ToUpper(strings.TrimSpace(b.Charges[0].Currency)), strings.TrimSpace(b.Charges[0].Unit)
-			for _, c := range b.Charges {
-				if strings.ToUpper(strings.TrimSpace(c.Currency)) != currency || strings.TrimSpace(c.Unit) != unit || unit == "" {
-					return apierr.Invalid("INQUIRY_QUOTE_UNIT", "请将物流费用折算为同一币种和计价单位后提交")
+			seenRates[rate.ProductID] = true
+			if len(rate.Currency) != 3 || rate.Unit == "" || e != nil || price.IsNegative() {
+				return apierr.Invalid("INQUIRY_FREIGHT_RATE", "请填写有效的产品海运单价、币种和计价单位")
+			}
+			rate.Price = price.String()
+			quantity, quantityErr := decimal.NewFromString(strings.TrimSpace(productByID[rate.ProductID].Quantity))
+			if quantityErr != nil || !quantity.IsPositive() {
+				return apierr.Invalid("INQUIRY_FREIGHT_QUANTITY", "产品需求数量无效，无法计算海运总价").WithMeta("productId", rate.ProductID)
+			}
+			lineTotal := price.Mul(quantity).Round(2)
+			rate.Total = lineTotal.StringFixed(2)
+			if converted, ok := toUSD(price, rate.Currency, 4); ok {
+				rate.USDPrice = converted.StringFixed(4)
+				convertedTotal, _ := toUSD(lineTotal, rate.Currency, 2)
+				rate.USDTotal = convertedTotal.StringFixed(2)
+				freightTotalUSD = freightTotalUSD.Add(convertedTotal)
+			} else {
+				rate.USDPrice = ""
+				rate.USDTotal = ""
+				freightUSDComplete = false
+				if submit {
+					return apierr.Invalid("INQUIRY_EXCHANGE_RATE", "非 USD 物流费用必须填写汇率").WithMeta("currency", rate.Currency)
 				}
 			}
 		}
+		b.FreightTotalUSD = ""
+		if freightUSDComplete && len(b.FreightRates) > 0 {
+			b.FreightTotalUSD = freightTotalUSD.Round(2).StringFixed(2)
+		}
+		if submit {
+			if len(b.FreightRates) == 0 && len(b.Charges) == 0 {
+				return apierr.Invalid("INQUIRY_CHARGE", "请填写物流报价")
+			}
+		}
 		totals := map[string]decimal.Decimal{}
+		totalUSD := decimal.Zero
+		usdComplete := true
 		for i := range b.Charges {
 			c := &b.Charges[i]
 			c.Currency = strings.ToUpper(strings.TrimSpace(c.Currency))
@@ -992,10 +1098,26 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			sub := a.Mul(q).Round(2)
 			c.Subtotal = sub.StringFixed(2)
 			totals[c.Currency] = totals[c.Currency].Add(sub)
+			if converted, ok := toUSD(sub, c.Currency, 2); ok {
+				c.USDSubtotal = converted.StringFixed(2)
+				totalUSD = totalUSD.Add(converted)
+			} else {
+				c.USDSubtotal = ""
+				usdComplete = false
+				if submit {
+					return apierr.Invalid("INQUIRY_EXCHANGE_RATE", "非 USD 物流费用必须填写汇率").WithMeta("currency", c.Currency)
+				}
+			}
 		}
 		b.Totals = map[string]string{}
 		for k, v := range totals {
 			b.Totals[k] = v.StringFixed(2)
+		}
+		b.TotalUSD = ""
+		b.OtherChargesUSD = ""
+		if usdComplete && len(b.Charges) > 0 {
+			b.TotalUSD = totalUSD.Round(2).StringFixed(2)
+			b.OtherChargesUSD = b.TotalUSD
 		}
 	}
 	return nil

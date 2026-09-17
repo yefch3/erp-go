@@ -22,7 +22,7 @@ var offerCurrency = regexp.MustCompile(`^[A-Z]{3}$`)
 func offerID(s string) int64 { n, _ := strconv.ParseInt(s, 10, 64); return n }
 func initialOffer(source OfferInquiry) OfferBody {
 	b := source.Body
-	out := OfferBody{CustomerID: b.CustomerID, Customer: b.Customer, ContactID: b.ContactID, Contact: b.Contact, Currency: "USD", Delivery: b.Delivery, LoadingPort: b.LoadingPort, DestinationPort: b.DestinationPort, Incoterm: b.Incoterm, Remark: b.Remark, Lines: []OfferLine{}, Transports: []OfferTransport{}}
+	out := OfferBody{CustomerID: b.CustomerID, Customer: b.Customer, ContactID: b.ContactID, Contact: b.Contact, Currency: "USD", Delivery: b.Delivery, LoadingPort: b.LoadingPort, DestinationPort: b.DestinationPort, Incoterm: b.Incoterm, Remark: b.Remark, Lines: []OfferLine{}, Transports: []OfferTransport{}, CategorySelections: []OfferCategorySelection{}}
 	for _, p := range b.Products {
 		mt := ""
 		if strings.EqualFold(p.Unit, "MT") {
@@ -58,7 +58,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if !ok || s.offerSource == nil {
 		return "", apierr.Permission("OFFER_ACCESS", "报价权限校验不可用")
 	}
-	write := cmd.Action == "save" || cmd.Action == "calculate" || cmd.Action == "calculate_all" || cmd.Action == "confirm"
+	write := cmd.Action == "save" || cmd.Action == "stage_selections" || cmd.Action == "calculate" || cmd.Action == "calculate_all" || cmd.Action == "confirm"
 	if cmd.Action != "get" && cmd.Action != "pdf" && cmd.Action != "summaries" && !write {
 		return "", apierr.Invalid("OFFER_ACTION", "不支持的报价操作")
 	}
@@ -95,9 +95,23 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		return "", err
 	}
 	view.CanEdit = owner && view.Status != "CONFIRMED"
+	if (view.Body.CategoryWorkflow || cmd.Body.CategoryWorkflow) && cmd.Action == "confirm" {
+		return "", apierr.Invalid("OFFER_CATEGORY_FORMULA_PENDING", "分类公式尚未配置，请先保存和核对候选方案")
+	}
 	switch cmd.Action {
 	case "get":
 	case "pdf":
+		if view.Body.CategoryWorkflow {
+			if view.Revision == 0 {
+				return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
+			}
+			data, err := categoryOfferPDF(view)
+			if err != nil {
+				return "", err
+			}
+			out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.pdf", "fileData": data})
+			return string(out), nil
+		}
 		if view.Status != "CONFIRMED" {
 			if err := validateOfferPricing(view.Body, source); err != nil {
 				return "", err
@@ -129,7 +143,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", err
 		}
 		view.CanEdit = false
-	case "save", "calculate", "calculate_all":
+	case "save", "stage_selections", "calculate", "calculate_all":
 		if !view.CanEdit {
 			return "", apierr.Conflict("OFFER_CONFIRMED", "客户已确认，不能覆盖成交报价")
 		}
@@ -137,6 +151,14 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后再保存")
 		}
 		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
+		cmd.Body.CategoryWorkflow = cmd.Body.CategoryWorkflow || view.Body.CategoryWorkflow
+		if cmd.Action == "stage_selections" {
+			cmd.Body.CategoryWorkflow = true
+		}
+		// Only explicit staging replaces the customer-facing source snapshot.
+		cmd.Body.CustomerSelections = view.Body.CustomerSelections
+		cmd.Body.CustomerLogistics = view.Body.CustomerLogistics
+		cmd.Body.SelectionSavedAt = view.Body.SelectionSavedAt
 		if !calculate {
 			if err := validateOfferPricing(cmd.Body, source); err != nil {
 				return "", err
@@ -149,6 +171,16 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		body, err := prepareOffer(cmd.Body, source, nil, calculate, target)
 		if err != nil {
 			return "", err
+		}
+		if cmd.Action == "stage_selections" {
+			if len(body.CategorySelections) == 0 {
+				return "", apierr.Invalid("OFFER_CATEGORY_EMPTY", "请至少选择一项供应商报价")
+			}
+			body, err = calculateCategorySelections(body, source, "*")
+			if err != nil {
+				return "", err
+			}
+			stageOfferSelections(&body, source)
 		}
 		if calculate {
 			body.PricingSnapshot = offerPricingSnapshot(body, source)
@@ -256,6 +288,9 @@ func effectivePair(rates []OfferRate, base, quote string) (decimal.Decimal, time
 	return decimal.Zero, time.Time{}, apierr.Invalid("OFFER_FX_REQUIRED", "请先确认所需币种的有效汇率").WithMeta("pair", base+"/"+quote)
 }
 func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate bool, target string) (OfferBody, error) {
+	if b.CategoryWorkflow {
+		return prepareCategoryWorkspace(b, source, calculate, target)
+	}
 	b.Currency = strings.ToUpper(strings.TrimSpace(b.Currency))
 	if !offerCurrency.MatchString(b.Currency) || strings.TrimSpace(b.Customer) == "" {
 		return b, apierr.Invalid("OFFER_HEADER", "请填写客户和币种")
@@ -265,6 +300,45 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 	}
 	if len(b.Lines) == 0 {
 		return b, apierr.Invalid("OFFER_LINES", "至少保留一项成交产品")
+	}
+	validCategories := map[string]bool{"FOB_USD": true, "FOB_CNY": true, "ALL_IN_PORT_CNY": true, "EX_FACTORY_CNY": true, "REPROCESSING_CNY": true}
+	selectedProducts := map[string]bool{}
+	for i := range b.CategorySelections {
+		selection := &b.CategorySelections[i]
+		selection.ProductID = strings.TrimSpace(selection.ProductID)
+		selection.Category = strings.ToUpper(strings.TrimSpace(selection.Category))
+		selection.QuoteID = strings.TrimSpace(selection.QuoteID)
+		if selection.ProductID == "" || selection.QuoteID == "" || !validCategories[selection.Category] || selectedProducts[selection.ProductID] {
+			return b, apierr.Invalid("OFFER_CATEGORY_SELECTION", "产品分类报价选择无效")
+		}
+		selectedProducts[selection.ProductID] = true
+		found := false
+		for _, quote := range source.Quotes {
+			if quote.ID != selection.QuoteID || quote.Kind != "PROCUREMENT" || quote.SubmittedAt == "" {
+				continue
+			}
+			var quoteBody struct {
+				QuoteCategory string `json:"quoteCategory"`
+				Prices        []struct {
+					ProductID string `json:"productId"`
+				} `json:"prices"`
+			}
+			if err := json.Unmarshal(quote.Body, &quoteBody); err != nil {
+				return b, err
+			}
+			if strings.EqualFold(quoteBody.QuoteCategory, selection.Category) {
+				for _, price := range quoteBody.Prices {
+					if price.ProductID == selection.ProductID {
+						found = true
+						break
+					}
+				}
+			}
+			break
+		}
+		if !found {
+			return b, apierr.Invalid("OFFER_CATEGORY_SELECTION", "所选供应商报价不包含该产品或分类已变化")
+		}
 	}
 	fx, fxErr := decimal.NewFromString(strings.TrimSpace(b.QuoteFX))
 	if fxErr != nil || !fx.GreaterThan(decimal.RequireFromString("0.05")) || !b.QuoteFXConfirmed {
