@@ -89,7 +89,6 @@ type OfferCategorySelection struct {
 	QuoteID                 string `json:"quoteId"`
 	SupplierFOBUnitPrice    string `json:"supplierFobUnitPrice,omitempty"`
 	ProductFreightUnitPrice string `json:"productFreightUnitPrice,omitempty"`
-	CFRTotal                string `json:"cfrTotal,omitempty"`
 	CFRUnitPrice            string `json:"cfrUnitPrice,omitempty"`
 	FreightQuoteID          string `json:"freightQuoteId,omitempty"`
 }

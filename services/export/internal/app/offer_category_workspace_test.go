@@ -50,7 +50,7 @@ func TestCategoryWorkspaceCalculatesFOBUSDFromProductFreightUnitPrice(t *testing
 		t.Fatal(err)
 	}
 	for _, selection := range got.CategorySelections {
-		if selection.SupplierFOBUnitPrice != "10.0000" || selection.ProductFreightUnitPrice != "2.5000" || selection.CFRTotal != "250.00" || selection.CFRUnitPrice != "12.5000" || selection.FreightQuoteID != "ship" {
+		if selection.SupplierFOBUnitPrice != "10.0000" || selection.ProductFreightUnitPrice != "2.5000" || selection.CFRUnitPrice != "12.5000" || selection.FreightQuoteID != "ship" {
 			t.Fatalf("unexpected CFR result: %#v", selection)
 		}
 	}
@@ -73,13 +73,14 @@ func TestCategoryWorkspaceFOBUSDRequiresProductFreightUnitPrice(t *testing.T) {
 
 func TestCategoryWorkspaceCalculatesUnitPriceFormulasWithInterest(t *testing.T) {
 	tests := []struct {
-		category, quoteBody, fx, port, inland, loss, wantTotal, wantUnit string
+		category, quoteBody, fx, port, inland, loss, wantUnit string
 	}{
-		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "", "44.17", "2.2083"},
-		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "", "47.70", "2.3850"},
-		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "7", "", "51.23", "2.5617"},
-		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "7", "54.77", "2.7383"},
-		{"DIRECT_CFR_USD", `{"quoteCategory":"DIRECT_CFR_USD","currency":"USD","prices":[{"productId":"p1","price":"18"}]}`, "", "", "", "", "63.60", "3.1800"},
+		{"FOB_USD", `{"quoteCategory":"FOB_USD","currency":"USD","prices":[{"productId":"p1","price":"10"}]}`, "", "", "", "", "12.6250"},
+		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "", "12.6250"},
+		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "", "13.6350"},
+		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "7", "", "14.6450"},
+		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "7", "15.6550"},
+		{"DIRECT_CFR_USD", `{"quoteCategory":"DIRECT_CFR_USD","currency":"USD","prices":[{"productId":"p1","price":"18"}]}`, "", "", "", "", "18.1800"},
 	}
 	for _, test := range tests {
 		t.Run(test.category, func(t *testing.T) {
@@ -96,7 +97,7 @@ func TestCategoryWorkspaceCalculatesUnitPriceFormulasWithInterest(t *testing.T) 
 				t.Fatal(err)
 			}
 			selection := got.CategorySelections[0]
-			if selection.CFRTotal != test.wantTotal || selection.CFRUnitPrice != test.wantUnit {
+			if selection.CFRUnitPrice != test.wantUnit {
 				t.Fatalf("unexpected result: %#v", selection)
 			}
 			if test.category == "DIRECT_CFR_USD" && (selection.ProductFreightUnitPrice != "" || selection.FreightQuoteID != "") {
