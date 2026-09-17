@@ -60,6 +60,17 @@ func TestD1InquiryLifecycle(t *testing.T) {
 		t.Fatal("unsubmitted inquiry leaked")
 	}
 	current = call(101, InquiryCommand{Action: "submit", View: "SALES", ID: current.ID, Revision: current.Revision})
+	current = call(101, InquiryCommand{Action: "updateBasic", View: "SALES", ID: current.ID, Revision: current.Revision, Body: InquiryBody{
+		Customer: "Updated customer", Contact: "Updated contact", Delivery: "45 days",
+		LoadingPort: "Tianjin", DestinationPort: "Los Angeles", Remark: "Updated after submission",
+	}})
+	if current.Body.Customer != "Updated customer" || current.Body.Contact != "Updated contact" || current.Body.Delivery != "45 days" ||
+		current.Body.LoadingPort != "Tianjin" || current.Body.DestinationPort != "Los Angeles" || current.Body.Remark != "Updated after submission" {
+		t.Fatal("submitted inquiry basic information was not updated")
+	}
+	if len(current.Body.Products) != 1 || current.Body.Products[0].ID != originalLine {
+		t.Fatal("basic information update changed product requirements")
+	}
 	rev := current.Revision
 	q := InquiryQuoteBody{Company: "Factory A", Currency: "USD", QuoteCategory: "FOB_USD", Incoterm: "FOB", Prices: []InquiryPrice{{ProductID: originalLine, Price: "12.34"}}}
 	buyer := call(201, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, Quote: q})
