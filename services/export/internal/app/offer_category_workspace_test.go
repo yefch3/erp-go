@@ -10,8 +10,8 @@ func categoryWorkspaceFixture() (OfferBody, OfferInquiry) {
 	source := OfferInquiry{}
 	source.Body.Products = []OfferProduct{{ID: "p1", Product: "Steel", Quantity: "20", Unit: "MT"}}
 	q := json.RawMessage(`{"quoteCategory":"FOB_USD","currency":"USD","prices":[{"productId":"p1","price":"10"}]}`)
-	source.Quotes = []OfferSourceQuote{{ID: "q1", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "q2", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "ship", Kind: "LOGISTICS", SubmittedAt: "2026-09-16", Version: 1, Body: json.RawMessage(`{"company":"Carrier","freightRates":[{"productId":"p1","usdTotal":"50.00"}],"freightTotalUsd":"50.00"}`)}}
-	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1"}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2"}}, Transports: []OfferTransport{{QuoteID: "ship"}}}, source
+	source.Quotes = []OfferSourceQuote{{ID: "q1", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "q2", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "ship", Kind: "LOGISTICS", SubmittedAt: "2026-09-16", Version: 1, Body: json.RawMessage(`{"company":"Carrier","freightRates":[{"productId":"p1","usdPrice":"2.5000"}]}`)}}
+	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1"}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2"}}, Transports: []OfferTransport{{QuoteID: "ship"}}, CategoryCalculations: map[string]CategoryCalculation{"FOB_USD": {InterestRate: "0", InterestDays: "360"}}}, source
 }
 
 func TestCategoryOfferPDFUsesSelectedCustomerPrices(t *testing.T) {
@@ -43,14 +43,14 @@ func TestCategoryOfferPDFUsesSelectedCustomerPrices(t *testing.T) {
 	}
 }
 
-func TestCategoryWorkspaceCalculatesFOBUSDFromProductFreightTotal(t *testing.T) {
+func TestCategoryWorkspaceCalculatesFOBUSDFromProductFreightUnitPrice(t *testing.T) {
 	b, source := categoryWorkspaceFixture()
 	got, err := prepareOffer(b, source, nil, true, "*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, selection := range got.CategorySelections {
-		if selection.SupplierFOBUnitPrice != "10.0000" || selection.ProductFreightTotal != "50.00" || selection.CFRTotal != "250.00" || selection.CFRUnitPrice != "12.5000" || selection.FreightQuoteID != "ship" {
+		if selection.SupplierFOBUnitPrice != "10.0000" || selection.ProductFreightUnitPrice != "2.5000" || selection.CFRTotal != "250.00" || selection.CFRUnitPrice != "12.5000" || selection.FreightQuoteID != "ship" {
 			t.Fatalf("unexpected CFR result: %#v", selection)
 		}
 	}
@@ -63,37 +63,44 @@ func TestCategoryWorkspaceCalculatesFOBUSDFromProductFreightTotal(t *testing.T) 
 	}
 }
 
-func TestCategoryWorkspaceFOBUSDRequiresProductFreightTotal(t *testing.T) {
+func TestCategoryWorkspaceFOBUSDRequiresProductFreightUnitPrice(t *testing.T) {
 	b, source := categoryWorkspaceFixture()
 	source.Quotes[2].Body = json.RawMessage(`{"company":"Carrier","freightRates":[]}`)
 	if _, err := prepareOffer(b, source, nil, true, "*"); err == nil {
-		t.Fatal("calculation accepted a product without ocean freight total")
+		t.Fatal("calculation accepted a product without ocean freight unit price")
 	}
 }
 
-func TestCategoryWorkspaceCalculatesFixedCNYFormulas(t *testing.T) {
+func TestCategoryWorkspaceCalculatesUnitPriceFormulasWithInterest(t *testing.T) {
 	tests := []struct {
-		category, quoteBody, fx, port, loss, wantTotal, wantUnit, wantInland string
+		category, quoteBody, fx, port, inland, loss, wantTotal, wantUnit string
 	}{
-		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "250.00", "12.5000", "15.00"},
-		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "251.00", "12.5500", "15.00"},
-		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "266.00", "13.3000", "15.00"},
-		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "229.00", "11.4500", "15.00"},
+		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "", "44.17", "2.2083"},
+		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "", "47.70", "2.3850"},
+		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "7", "", "51.23", "2.5617"},
+		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "7", "54.77", "2.7383"},
+		{"DIRECT_CFR_USD", `{"quoteCategory":"DIRECT_CFR_USD","currency":"USD","prices":[{"productId":"p1","price":"18"}]}`, "", "", "", "", "63.60", "3.1800"},
 	}
 	for _, test := range tests {
 		t.Run(test.category, func(t *testing.T) {
 			b, source := categoryWorkspaceFixture()
 			source.Quotes[0].Body = json.RawMessage(test.quoteBody)
 			b.CategorySelections = []OfferCategorySelection{{ProductID: "p1", Category: test.category, QuoteID: "q1"}}
-			b.CategoryCalculations = map[string]CategoryCalculation{test.category: {QuoteFX: test.fx, PortCharge: test.port, Loss: test.loss}}
-			source.Quotes[2].Body = json.RawMessage(`{"freightRates":[{"productId":"p1","usdTotal":"50"}],"charges":[{"name":"内陆运费","productId":"p1","allocationType":"DIRECT","usdSubtotal":"15"}]}`)
+			b.CategoryCalculations = map[string]CategoryCalculation{test.category: {
+				QuoteFX: test.fx, PortCharge: test.port, InlandFreight: test.inland, Loss: test.loss,
+				InterestRate: "6", InterestDays: "60",
+			}}
+			source.Quotes[2].Body = json.RawMessage(`{"freightRates":[{"productId":"p1","usdPrice":"2.5"}]}`)
 			got, err := prepareOffer(b, source, nil, true, test.category)
 			if err != nil {
 				t.Fatal(err)
 			}
 			selection := got.CategorySelections[0]
-			if selection.CFRTotal != test.wantTotal || selection.CFRUnitPrice != test.wantUnit || selection.InlandFreightTotal != test.wantInland {
+			if selection.CFRTotal != test.wantTotal || selection.CFRUnitPrice != test.wantUnit {
 				t.Fatalf("unexpected result: %#v", selection)
+			}
+			if test.category == "DIRECT_CFR_USD" && (selection.ProductFreightUnitPrice != "" || selection.FreightQuoteID != "") {
+				t.Fatalf("direct CFR quote unexpectedly used logistics: %#v", selection)
 			}
 		})
 	}

@@ -17,7 +17,7 @@ func prepareCategoryWorkspace(b OfferBody, source OfferInquiry, calculate bool, 
 			return b, err
 		}
 	}
-	valid := map[string]string{"FOB_USD": "USD", "FOB_CNY": "CNY", "ALL_IN_PORT_CNY": "CNY", "EX_FACTORY_CNY": "CNY", "REPROCESSING_CNY": "CNY"}
+	valid := map[string]string{"FOB_USD": "USD", "FOB_CNY": "CNY", "ALL_IN_PORT_CNY": "CNY", "EX_FACTORY_CNY": "CNY", "REPROCESSING_CNY": "CNY", "DIRECT_CFR_USD": "USD"}
 	if strings.TrimSpace(b.DocumentLanguage) == "" {
 		b.DocumentLanguage = "ZH"
 	}
@@ -34,7 +34,7 @@ func prepareCategoryWorkspace(b OfferBody, source OfferInquiry, calculate bool, 
 				return b, apierr.Invalid("OFFER_CATEGORY_FX", "分类参考汇率必须大于零")
 			}
 		}
-		for _, input := range []struct{ value, code, label string }{{calculation.PortCharge, "OFFER_CATEGORY_PORT_CHARGE", "港区港杂费"}, {calculation.Loss, "OFFER_CATEGORY_LOSS", "损耗"}} {
+		for _, input := range []struct{ value, code, label string }{{calculation.PortCharge, "OFFER_CATEGORY_PORT_CHARGE", "港区港杂费单价"}, {calculation.InlandFreight, "OFFER_CATEGORY_INLAND_FREIGHT", "产品内陆运费单价"}, {calculation.Loss, "OFFER_CATEGORY_LOSS", "损耗单价"}, {calculation.InterestRate, "OFFER_CATEGORY_INTEREST_RATE", "年利率"}, {calculation.InterestDays, "OFFER_CATEGORY_INTEREST_DAYS", "计息天数"}} {
 			if strings.TrimSpace(input.value) == "" {
 				continue
 			}
@@ -133,7 +133,7 @@ func prepareCategoryWorkspace(b OfferBody, source OfferInquiry, calculate bool, 
 			return b, apierr.Invalid("OFFER_NEGOTIATION_NOTE", "议价说明不能超过 500 个字")
 		}
 	}
-	// The category workflow has no approved formulas yet. Never retain legacy computed prices.
+	// Category calculations are the source of truth; clear prices from the retired legacy workflow.
 	b.PricingSnapshot = ""
 	b.Total = ""
 	b.LogisticsQuoteID = ""
@@ -200,91 +200,107 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 			return b, apierr.Invalid("OFFER_CFR_SUPPLIER_PRICE", "供应商报价单价无效")
 		}
 		expectedCurrency := "CNY"
-		if selection.Category == "FOB_USD" {
+		if selection.Category == "FOB_USD" || selection.Category == "DIRECT_CFR_USD" {
 			expectedCurrency = "USD"
 		}
 		if supplierCurrency != expectedCurrency {
 			return b, apierr.Invalid("OFFER_CFR_CURRENCY", "供应商报价币种与报价分类不一致")
 		}
 
-		freightTotal, inlandTotal := decimal.Zero, decimal.Zero
+		freightUnitPrice := decimal.Zero
 		freightQuoteID, latestSubmitted := "", ""
 		var latestVersion int64
-		for _, quote := range source.Quotes {
-			if quote.Kind != "LOGISTICS" || quote.SubmittedAt == "" || quote.Historical {
-				continue
-			}
-			var body struct {
-				FreightRates []struct {
-					ProductID string `json:"productId"`
-					USDTotal  string `json:"usdTotal"`
-				} `json:"freightRates"`
-				Charges []struct {
-					Name           string `json:"name"`
-					ProductID      string `json:"productId"`
-					AllocationType string `json:"allocationType"`
-					USDSubtotal    string `json:"usdSubtotal"`
-				} `json:"charges"`
-			}
-			if err := json.Unmarshal(quote.Body, &body); err != nil {
-				return b, err
-			}
-			for _, rate := range body.FreightRates {
-				if rate.ProductID != selection.ProductID || strings.TrimSpace(rate.USDTotal) == "" {
+		if selection.Category != "DIRECT_CFR_USD" {
+			for _, quote := range source.Quotes {
+				if quote.Kind != "LOGISTICS" || quote.SubmittedAt == "" || quote.Historical {
 					continue
 				}
-				value, err := decimal.NewFromString(strings.TrimSpace(rate.USDTotal))
-				if err != nil || value.IsNegative() {
-					continue
+				var body struct {
+					FreightRates []struct {
+						ProductID string `json:"productId"`
+						USDPrice  string `json:"usdPrice"`
+					} `json:"freightRates"`
 				}
-				if freightQuoteID == "" || quote.SubmittedAt > latestSubmitted || (quote.SubmittedAt == latestSubmitted && quote.Version > latestVersion) {
-					freightTotal, inlandTotal, freightQuoteID, latestSubmitted, latestVersion = value, inlandFreightForProduct(body.Charges, selection.ProductID, len(body.FreightRates)), quote.ID, quote.SubmittedAt, quote.Version
+				if err := json.Unmarshal(quote.Body, &body); err != nil {
+					return b, err
+				}
+				for _, rate := range body.FreightRates {
+					if rate.ProductID != selection.ProductID || strings.TrimSpace(rate.USDPrice) == "" {
+						continue
+					}
+					value, parseErr := decimal.NewFromString(strings.TrimSpace(rate.USDPrice))
+					if parseErr != nil || value.IsNegative() {
+						continue
+					}
+					if freightQuoteID == "" || quote.SubmittedAt > latestSubmitted || (quote.SubmittedAt == latestSubmitted && quote.Version > latestVersion) {
+						freightUnitPrice, freightQuoteID, latestSubmitted, latestVersion = value, quote.ID, quote.SubmittedAt, quote.Version
+					}
 				}
 			}
+			if freightQuoteID == "" {
+				return b, apierr.Invalid("OFFER_CFR_FREIGHT", "所选产品尚无有效的产品海运单价")
+			}
 		}
-		if freightQuoteID == "" {
-			return b, apierr.Invalid("OFFER_CFR_FREIGHT", "所选产品尚无有效的产品海运总价")
-		}
+
 		calculation := b.CategoryCalculations[selection.Category]
 		fx := decimal.NewFromInt(1)
-		if selection.Category != "FOB_USD" {
+		if expectedCurrency == "CNY" {
 			fx, err = decimal.NewFromString(strings.TrimSpace(calculation.QuoteFX))
 			if err != nil || !fx.IsPositive() {
 				return b, apierr.Invalid("OFFER_CATEGORY_FX", "请填写有效汇率（1 USD 可兑换多少 CNY）")
 			}
 		}
-		portCharge, err := categoryInput(calculation.PortCharge, selection.Category == "ALL_IN_PORT_CNY" || selection.Category == "EX_FACTORY_CNY" || selection.Category == "REPROCESSING_CNY", "请填写港区港杂费")
+		portCharge, err := categoryInput(calculation.PortCharge, selection.Category == "ALL_IN_PORT_CNY" || selection.Category == "EX_FACTORY_CNY" || selection.Category == "REPROCESSING_CNY", "请填写港区港杂费单价")
 		if err != nil {
 			return b, err
 		}
-		loss, err := categoryInput(calculation.Loss, selection.Category == "REPROCESSING_CNY", "请填写损耗")
+		inlandFreight, err := categoryInput(calculation.InlandFreight, selection.Category == "EX_FACTORY_CNY" || selection.Category == "REPROCESSING_CNY", "请填写产品内陆运费单价")
 		if err != nil {
 			return b, err
 		}
-		var cfrTotal decimal.Decimal
+		loss, err := categoryInput(calculation.Loss, selection.Category == "REPROCESSING_CNY", "请填写损耗单价")
+		if err != nil {
+			return b, err
+		}
+		interestRate, err := categoryInput(calculation.InterestRate, true, "请填写年利率")
+		if err != nil {
+			return b, err
+		}
+		interestDays, err := categoryInput(calculation.InterestDays, true, "请填写计息天数")
+		if err != nil {
+			return b, err
+		}
+		interestFactor := decimal.NewFromInt(1).Add(interestRate.Div(decimal.NewFromInt(100))).Mul(interestDays).Div(decimal.NewFromInt(360))
+
+		var cfrUnitPrice decimal.Decimal
 		switch selection.Category {
 		case "FOB_USD":
-			cfrTotal = unitPrice.Mul(quantity).Add(freightTotal)
+			cfrUnitPrice = unitPrice.Add(freightUnitPrice)
 		case "FOB_CNY":
-			cfrTotal = unitPrice.Mul(quantity).Div(fx).Add(freightTotal)
+			cfrUnitPrice = unitPrice.Div(fx).Add(freightUnitPrice)
 		case "ALL_IN_PORT_CNY":
-			cfrTotal = unitPrice.Mul(quantity).Add(portCharge).Div(fx).Add(freightTotal)
+			cfrUnitPrice = unitPrice.Add(portCharge).Div(fx).Add(freightUnitPrice)
 		case "EX_FACTORY_CNY":
-			cfrTotal = unitPrice.Mul(quantity).Add(portCharge).Div(fx).Add(freightTotal).Add(inlandTotal)
+			cfrUnitPrice = unitPrice.Add(inlandFreight).Add(portCharge).Div(fx).Add(freightUnitPrice)
 		case "REPROCESSING_CNY":
 			factory, parseErr := decimal.NewFromString(factoryPrice)
 			if parseErr != nil || factory.IsNegative() {
 				return b, apierr.Invalid("OFFER_CFR_FACTORY_PRICE", "再加工报价缺少有效的出厂单价")
 			}
-			cfrTotal = factory.Mul(quantity).Add(unitPrice).Add(loss).Add(portCharge).Div(fx).Add(freightTotal).Add(inlandTotal)
+			cfrUnitPrice = factory.Add(inlandFreight).Add(unitPrice).Add(loss).Add(portCharge).Div(fx).Add(freightUnitPrice)
+		case "DIRECT_CFR_USD":
+			cfrUnitPrice = unitPrice
 		default:
 			continue
 		}
+		cfrUnitPrice = cfrUnitPrice.Mul(interestFactor).Round(4)
 		selection.SupplierFOBUnitPrice = unitPrice.StringFixed(4)
-		selection.ProductFreightTotal = freightTotal.StringFixed(2)
-		selection.InlandFreightTotal = inlandTotal.StringFixed(2)
-		selection.CFRTotal = cfrTotal.StringFixed(2)
-		selection.CFRUnitPrice = cfrTotal.Div(quantity).StringFixed(4)
+		selection.ProductFreightUnitPrice = ""
+		if selection.Category != "DIRECT_CFR_USD" {
+			selection.ProductFreightUnitPrice = freightUnitPrice.StringFixed(4)
+		}
+		selection.CFRUnitPrice = cfrUnitPrice.StringFixed(4)
+		selection.CFRTotal = cfrUnitPrice.Mul(quantity).Round(2).StringFixed(2)
 		selection.FreightQuoteID = freightQuoteID
 	}
 	return b, nil
@@ -303,29 +319,6 @@ func categoryInput(raw string, required bool, message string) (decimal.Decimal, 
 		return decimal.Zero, apierr.Invalid("OFFER_CATEGORY_INPUT", message)
 	}
 	return value, nil
-}
-
-func inlandFreightForProduct(charges []struct {
-	Name           string `json:"name"`
-	ProductID      string `json:"productId"`
-	AllocationType string `json:"allocationType"`
-	USDSubtotal    string `json:"usdSubtotal"`
-}, productID string, freightRateCount int) decimal.Decimal {
-	total := decimal.Zero
-	for _, charge := range charges {
-		name := strings.ToLower(strings.TrimSpace(charge.Name))
-		if !strings.Contains(name, "内陆") && !strings.Contains(name, "短驳") && !strings.Contains(name, "inland") && !strings.Contains(name, "drayage") {
-			continue
-		}
-		if charge.ProductID != productID && !(charge.ProductID == "" && freightRateCount == 1) {
-			continue
-		}
-		value, err := decimal.NewFromString(strings.TrimSpace(charge.USDSubtotal))
-		if err == nil && !value.IsNegative() {
-			total = total.Add(value)
-		}
-	}
-	return total
 }
 
 func stageOfferSelections(b *OfferBody, source OfferInquiry) {

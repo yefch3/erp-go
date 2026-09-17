@@ -103,8 +103,6 @@ type InquiryFreightRate struct {
 	Unit      string `json:"unit"`
 	Remark    string `json:"remark"`
 	USDPrice  string `json:"usdPrice"`
-	Total     string `json:"total"`
-	USDTotal  string `json:"usdTotal"`
 }
 type InquiryQuoteBody struct {
 	Company         string               `json:"company"`
@@ -131,7 +129,6 @@ type InquiryQuoteBody struct {
 	ExchangeRates   map[string]string    `json:"exchangeRates"`
 	Totals          map[string]string    `json:"totals"`
 	TotalUSD        string               `json:"totalUsd"`
-	FreightTotalUSD string               `json:"freightTotalUsd"`
 	OtherChargesUSD string               `json:"otherChargesTotalUsd"`
 	Attachments     []InquiryAttachment  `json:"attachments"`
 }
@@ -406,6 +403,11 @@ func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operato
 			return InquiryResult{}, apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以编辑询盘")
 		}
 		return s.saveInquiry(ctx, tenant, op, in)
+	case "updateBasic":
+		if in.View != "SALES" {
+			return InquiryResult{}, apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以编辑询盘")
+		}
+		return s.updateInquiryBasic(ctx, tenant, op, in)
 	case "submit", "withdraw":
 		if in.View != "SALES" {
 			return InquiryResult{}, apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以处理询盘")
@@ -762,6 +764,55 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 	return InquiryResult{Item: v}, err
 }
 
+func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
+	id := inquiryID(in.ID)
+	if id == 0 {
+		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "询盘不存在")
+	}
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var owner, revision int64
+		var state string
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT owner_id,inquiry_revision,status,inquiry_body FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' FOR UPDATE`, tenant, id).Scan(&owner, &revision, &state, &raw); err != nil {
+			if err == pgx.ErrNoRows {
+				return apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
+			}
+			return err
+		}
+		if err := s.authorizeInquiryOwner(ctx, op, owner); err != nil {
+			return err
+		}
+		if revision != in.Revision || state == "INTAKE_PENDING" {
+			return apierr.Conflict("INQUIRY_CHANGED", "询盘已变化，请刷新后重试")
+		}
+		var body InquiryBody
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return err
+		}
+		body.CustomerID = in.Body.CustomerID
+		body.Customer = strings.TrimSpace(in.Body.Customer)
+		body.ContactID = in.Body.ContactID
+		body.Contact = strings.TrimSpace(in.Body.Contact)
+		body.Delivery = strings.TrimSpace(in.Body.Delivery)
+		body.LoadingPort = strings.TrimSpace(in.Body.LoadingPort)
+		body.DestinationPort = strings.TrimSpace(in.Body.DestinationPort)
+		body.Remark = strings.TrimSpace(in.Body.Remark)
+		updated, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE sourcing_cases SET inquiry_body=$3,customer_id=$4,customer_name=$5,contact_id=$6,contact_name=$7,inquiry_revision=inquiry_revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, updated, inquiryID(body.CustomerID), body.Customer, inquiryID(body.ContactID), body.Contact); err != nil {
+			return err
+		}
+		return s.recordInquiryAction(ctx, tx, tenant, id, op, "updateBasic")
+	})
+	if err != nil {
+		return InquiryResult{}, err
+	}
+	s.nudge(ctx, tenant)
+	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
+	return InquiryResult{Item: v}, err
+}
 func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
 	id := inquiryID(in.ID)
 	view, err := s.readInquiry(ctx, tenant, id, op, "SALES")
@@ -882,7 +933,7 @@ func (s *Service) authorizeInquiryOwner(ctx context.Context, op Operator, owner 
 }
 
 func (s *Service) recordInquiryAction(ctx context.Context, tx pgx.Tx, tenant, id int64, op Operator, action string) error {
-	summary := map[string]string{"save": "保存询盘", "submit": "提交询价", "withdraw": "撤回询价"}[action]
+	summary := map[string]string{"save": "保存询盘", "updateBasic": "更新询盘基本信息", "submit": "提交询价", "withdraw": "撤回询价"}[action]
 	return s.q.WithTx(tx).CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
 		TenantID: tenant, CaseID: id, Section: "INQUIRY", Action: strings.ToUpper(action),
 		Summary: summary, BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`),
@@ -951,6 +1002,7 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			"ALL_IN_PORT_CNY":  "CNY",
 			"EX_FACTORY_CNY":   "CNY",
 			"REPROCESSING_CNY": "CNY",
+			"DIRECT_CFR_USD":   "USD",
 		}
 		expectedCurrency, categoryValid := categoryCurrencies[b.QuoteCategory]
 		if b.QuoteCategory != "" && !categoryValid {
@@ -1027,8 +1079,6 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			}
 		}
 		seenRates := map[string]bool{}
-		freightTotalUSD := decimal.Zero
-		freightUSDComplete := true
 		for i := range b.FreightRates {
 			rate := &b.FreightRates[i]
 			rate.Currency = strings.ToUpper(strings.TrimSpace(rate.Currency))
@@ -1042,29 +1092,14 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 				return apierr.Invalid("INQUIRY_FREIGHT_RATE", "请填写有效的产品海运单价、币种和计价单位")
 			}
 			rate.Price = price.String()
-			quantity, quantityErr := decimal.NewFromString(strings.TrimSpace(productByID[rate.ProductID].Quantity))
-			if quantityErr != nil || !quantity.IsPositive() {
-				return apierr.Invalid("INQUIRY_FREIGHT_QUANTITY", "产品需求数量无效，无法计算海运总价").WithMeta("productId", rate.ProductID)
-			}
-			lineTotal := price.Mul(quantity).Round(2)
-			rate.Total = lineTotal.StringFixed(2)
 			if converted, ok := toUSD(price, rate.Currency, 4); ok {
 				rate.USDPrice = converted.StringFixed(4)
-				convertedTotal, _ := toUSD(lineTotal, rate.Currency, 2)
-				rate.USDTotal = convertedTotal.StringFixed(2)
-				freightTotalUSD = freightTotalUSD.Add(convertedTotal)
 			} else {
 				rate.USDPrice = ""
-				rate.USDTotal = ""
-				freightUSDComplete = false
 				if submit {
 					return apierr.Invalid("INQUIRY_EXCHANGE_RATE", "非 USD 物流费用必须填写汇率").WithMeta("currency", rate.Currency)
 				}
 			}
-		}
-		b.FreightTotalUSD = ""
-		if freightUSDComplete && len(b.FreightRates) > 0 {
-			b.FreightTotalUSD = freightTotalUSD.Round(2).StringFixed(2)
 		}
 		if submit {
 			if len(b.FreightRates) == 0 && len(b.Charges) == 0 {

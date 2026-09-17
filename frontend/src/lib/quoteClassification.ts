@@ -4,6 +4,7 @@ export const procurementQuoteCategories = [
   {value: 'ALL_IN_PORT_CNY', currency: 'CNY', labelKey: 'inquiryWorkspace.quotes.categories.allInPortCny'},
   {value: 'EX_FACTORY_CNY', currency: 'CNY', labelKey: 'inquiryWorkspace.quotes.categories.exFactoryCny'},
   {value: 'REPROCESSING_CNY', currency: 'CNY', labelKey: 'inquiryWorkspace.quotes.categories.reprocessingCny'},
+  {value: 'DIRECT_CFR_USD', currency: 'USD', labelKey: 'inquiryWorkspace.quotes.categories.directCfrUsd'},
 ] as const
 
 export type ProcurementQuoteCategory = typeof procurementQuoteCategories[number]['value']

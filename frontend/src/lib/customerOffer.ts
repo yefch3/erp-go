@@ -4,9 +4,9 @@ export interface Calculation {formula:number;factory:string;slitting:string;shor
 export interface OfferLine extends Product {factoryQuoteId:string;calculation:Calculation;calculatedPrice:string;unitPrice:string;amount:string}
 export interface Transport {quoteId:string;title:string;currency:string;price:string;remark:string;accepted:boolean;quantities:Record<string,string>}
 export interface LogisticsAllocation {productId:string;product:string;currency:string;amount:string}
-export interface CategorySelection {productId:string;category:string;quoteId:string;supplierFobUnitPrice?:string;productFreightTotal?:string;inlandFreightTotal?:string;cfrTotal?:string;cfrUnitPrice?:string;freightQuoteId?:string}
+export interface CategorySelection {productId:string;category:string;quoteId:string;supplierFobUnitPrice?:string;productFreightUnitPrice?:string;cfrTotal?:string;cfrUnitPrice?:string;freightQuoteId?:string}
 export interface OfferSelectionSnapshot extends CategorySelection {product:Product;quote:Quote}
-export interface CategoryCalculation {quoteFx:string;quoteFxConfirmed:boolean;portCharge:string;loss:string;note:string}
+export interface CategoryCalculation {quoteFx:string;quoteFxConfirmed:boolean;portCharge:string;inlandFreight:string;loss:string;interestRate:string;interestDays:string;note:string}
 export interface OfferNegotiation extends CategorySelection {initialPrice:string;customerCounterPrice:string;proposedPrice:string;status:string;note:string}
 export interface OfferBody {categoryWorkflow?:boolean;customerSelections?:OfferSelectionSnapshot[];customerLogistics?:Quote[];selectionSavedAt?:string;categoryCalculations?:Record<string,CategoryCalculation>;negotiations?:OfferNegotiation[];documentLanguage?:string;pricingSnapshot?:string;logisticsQuoteId?:string;customerId:string;customer:string;contactId:string;contact:string;currency:string;quoteFx:string;quoteFxConfirmed:boolean;delivery:string;loadingPort:string;destinationPort:string;incoterm:string;payment:string;validUntil:string;remark:string;lines:OfferLine[];transports:Transport[];categorySelections:CategorySelection[];total:string;logisticsAllocations:LogisticsAllocation[]}
 export interface Offer {pricingStale?:boolean;body:OfferBody;revision:number;status:string;quotationId:string;contractId:string;canEdit:boolean;source:Inquiry}

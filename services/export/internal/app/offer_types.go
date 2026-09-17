@@ -84,15 +84,14 @@ type OfferTransport struct {
 	Quantities map[string]string `json:"quantities"`
 }
 type OfferCategorySelection struct {
-	ProductID            string `json:"productId"`
-	Category             string `json:"category"`
-	QuoteID              string `json:"quoteId"`
-	SupplierFOBUnitPrice string `json:"supplierFobUnitPrice,omitempty"`
-	ProductFreightTotal  string `json:"productFreightTotal,omitempty"`
-	InlandFreightTotal   string `json:"inlandFreightTotal,omitempty"`
-	CFRTotal             string `json:"cfrTotal,omitempty"`
-	CFRUnitPrice         string `json:"cfrUnitPrice,omitempty"`
-	FreightQuoteID       string `json:"freightQuoteId,omitempty"`
+	ProductID               string `json:"productId"`
+	Category                string `json:"category"`
+	QuoteID                 string `json:"quoteId"`
+	SupplierFOBUnitPrice    string `json:"supplierFobUnitPrice,omitempty"`
+	ProductFreightUnitPrice string `json:"productFreightUnitPrice,omitempty"`
+	CFRTotal                string `json:"cfrTotal,omitempty"`
+	CFRUnitPrice            string `json:"cfrUnitPrice,omitempty"`
+	FreightQuoteID          string `json:"freightQuoteId,omitempty"`
 }
 type OfferBody struct {
 	CategoryWorkflow     bool                           `json:"categoryWorkflow,omitempty"`
@@ -130,7 +129,10 @@ type CategoryCalculation struct {
 	QuoteFX          string `json:"quoteFx"`
 	QuoteFXConfirmed bool   `json:"quoteFxConfirmed"`
 	PortCharge       string `json:"portCharge"`
+	InlandFreight    string `json:"inlandFreight"`
 	Loss             string `json:"loss"`
+	InterestRate     string `json:"interestRate"`
+	InterestDays     string `json:"interestDays"`
 	Note             string `json:"note"`
 }
 

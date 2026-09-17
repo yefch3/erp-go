@@ -13,6 +13,7 @@ func TestValidateInquiryQuoteCategorySetsCurrency(t *testing.T) {
 		{"ALL_IN_PORT_CNY", "CNY"},
 		{"EX_FACTORY_CNY", "CNY"},
 		{"REPROCESSING_CNY", "CNY"},
+		{"DIRECT_CFR_USD", "USD"},
 	}
 	for _, test := range tests {
 		quote := InquiryQuoteBody{Company: "Factory", Currency: "WRONG", QuoteCategory: test.category, Prices: []InquiryPrice{{ProductID: "p", Price: "1"}}}
