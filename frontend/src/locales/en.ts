@@ -1868,6 +1868,10 @@ export default {
     customerTimezoneHelp: 'Choose the customer’s actual time zone. Leave it blank if unknown; the email address is not used to guess it.',
     customerCreated: 'Customer {code} was added to master data',
     customerEmailExists: 'This email already belongs to {code} · {name}; no duplicate was created',
+    addContactToExistingTitle: 'Add to existing company',
+    addContactToExistingConfirm: 'The same company already exists as {code} · {name}. This sender will be added as a contact. No new company will be created and existing company details will not be overwritten.',
+    addContactToExisting: 'Add contact',
+    customerContactAdded: 'Contact {contact} was added to {code} · {name}',
     customerForm: {
       moveHelp: 'Drag the window title aside to compare the email body or signature and complete the record. Leave uncertain fields blank and verify them later in master data.',
       basic: 'Profile', contact: 'Contact', tax: 'Registration & tax', settlement: 'Settlement & credit', address: 'Address',

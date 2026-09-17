@@ -1863,6 +1863,10 @@ export default {
     customerTimezoneHelp: '请选择客户实际所在时区；不确定可以留空，系统不会按邮箱地址猜测。',
     customerCreated: '客户 {code} 已写入基础数据',
     customerEmailExists: '邮箱已属于客户 {code} · {name}，未重复创建',
+    addContactToExistingTitle: '添加到现有公司',
+    addContactToExistingConfirm: '已找到同一家公司 {code} · {name}。将把本邮件发件人添加为该公司联系人，不会新建公司，也不会覆盖现有公司资料。',
+    addContactToExisting: '添加联系人',
+    customerContactAdded: '联系人 {contact} 已添加到 {code} · {name}',
     customerForm: {
       moveHelp: '拖动窗口标题可移开表单，对照邮件正文或签名一次补齐资料；不确定的字段可以留空，之后再到基础数据核实。',
       basic: '基本资料', contact: '联系人', tax: '工商与税务', settlement: '结算信用', address: '地址',

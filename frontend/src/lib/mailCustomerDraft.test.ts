@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { customerDraftFromMail, customerDraftFromSender } from './mailCustomerDraft'
+import { customerDraftFromMail, customerDraftFromSender, existingCompanyForMailContact } from './mailCustomerDraft'
 
 describe('customerDraftFromSender', () => {
   it('uses the sender display name and email from the mail header', () => {
@@ -12,6 +12,31 @@ describe('customerDraftFromSender', () => {
     expect(customerDraftFromSender('', 'new.customer@example.com')).toEqual({
       name: 'new.customer', email: 'new.customer@example.com',
     })
+  })
+})
+
+describe('existingCompanyForMailContact', () => {
+  it('returns the single exact company match for a different contact', () => {
+    const company = { id: '7', code: 'C0007', name: 'Acme Steel', matchFields: ['NAME'] }
+    expect(existingCompanyForMailContact([
+      company,
+      { id: '8', code: 'C0008', name: 'Acme', matchFields: ['SIMILAR_NAME'] },
+    ])).toEqual(company)
+  })
+
+  it('treats an exact tax id as the same company', () => {
+    const company = { id: '7', code: 'C0007', name: 'Acme Steel Ltd.', matchFields: ['TAX_ID'] }
+    expect(existingCompanyForMailContact([company])).toEqual(company)
+  })
+
+  it('does not attach on a similar or ambiguous company name', () => {
+    expect(existingCompanyForMailContact([
+      { id: '7', code: 'C0007', name: 'Acme Steel', matchFields: ['SIMILAR_NAME'] },
+    ])).toBeNull()
+    expect(existingCompanyForMailContact([
+      { id: '7', code: 'C0007', name: 'Acme Steel', matchFields: ['NAME'] },
+      { id: '8', code: 'C0008', name: 'Acme Steel', matchFields: ['NAME'] },
+    ])).toBeNull()
   })
 })
 
