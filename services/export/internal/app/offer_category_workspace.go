@@ -270,7 +270,7 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		if err != nil {
 			return b, err
 		}
-		interestFactor := decimal.NewFromInt(1).Add(interestRate.Div(decimal.NewFromInt(100)).Mul(interestDays).Div(decimal.NewFromInt(360)))
+		interestFactor := decimal.NewFromInt(1).Add(interestRate.Div(decimal.NewFromInt(100))).Mul(interestDays).Div(decimal.NewFromInt(360))
 
 		var cfrUnitPrice decimal.Decimal
 		switch selection.Category {

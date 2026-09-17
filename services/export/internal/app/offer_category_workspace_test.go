@@ -11,7 +11,7 @@ func categoryWorkspaceFixture() (OfferBody, OfferInquiry) {
 	source.Body.Products = []OfferProduct{{ID: "p1", Product: "Steel", Quantity: "20", Unit: "MT"}}
 	q := json.RawMessage(`{"quoteCategory":"FOB_USD","currency":"USD","prices":[{"productId":"p1","price":"10"}]}`)
 	source.Quotes = []OfferSourceQuote{{ID: "q1", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "q2", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "ship", Kind: "LOGISTICS", SubmittedAt: "2026-09-16", Version: 1, Body: json.RawMessage(`{"company":"Carrier","freightRates":[{"productId":"p1","usdPrice":"2.5000"}]}`)}}
-	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1"}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2"}}, Transports: []OfferTransport{{QuoteID: "ship"}}, CategoryCalculations: map[string]CategoryCalculation{"FOB_USD": {InterestRate: "0", InterestDays: "0"}}}, source
+	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1"}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2"}}, Transports: []OfferTransport{{QuoteID: "ship"}}, CategoryCalculations: map[string]CategoryCalculation{"FOB_USD": {InterestRate: "0", InterestDays: "360"}}}, source
 }
 
 func TestCategoryOfferPDFUsesSelectedCustomerPrices(t *testing.T) {
@@ -75,11 +75,11 @@ func TestCategoryWorkspaceCalculatesUnitPriceFormulasWithInterest(t *testing.T) 
 	tests := []struct {
 		category, quoteBody, fx, port, inland, loss, wantTotal, wantUnit string
 	}{
-		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "", "252.50", "12.6250"},
-		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "", "272.70", "13.6350"},
-		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "7", "", "292.90", "14.6450"},
-		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "7", "313.10", "15.6550"},
-		{"DIRECT_CFR_USD", `{"quoteCategory":"DIRECT_CFR_USD","currency":"USD","prices":[{"productId":"p1","price":"18"}]}`, "", "", "", "", "363.60", "18.1800"},
+		{"FOB_CNY", `{"quoteCategory":"FOB_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "", "", "", "44.17", "2.2083"},
+		{"ALL_IN_PORT_CNY", `{"quoteCategory":"ALL_IN_PORT_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "", "", "47.70", "2.3850"},
+		{"EX_FACTORY_CNY", `{"quoteCategory":"EX_FACTORY_CNY","currency":"CNY","prices":[{"productId":"p1","price":"70"}]}`, "7", "7", "7", "", "51.23", "2.5617"},
+		{"REPROCESSING_CNY", `{"quoteCategory":"REPROCESSING_CNY","currency":"CNY","prices":[{"productId":"p1","price":"14","factoryPrice":"56"}]}`, "7", "7", "7", "7", "54.77", "2.7383"},
+		{"DIRECT_CFR_USD", `{"quoteCategory":"DIRECT_CFR_USD","currency":"USD","prices":[{"productId":"p1","price":"18"}]}`, "", "", "", "", "63.60", "3.1800"},
 	}
 	for _, test := range tests {
 		t.Run(test.category, func(t *testing.T) {
