@@ -34,7 +34,6 @@
     <section class="workspace-card logistics-panel">
      <div class="card-heading"><div><span class="eyebrow">{{t('inquiryWorkspace.offer.transportCosts')}}</span><h3>{{t('inquiryWorkspace.offer.logisticsTitle')}}</h3><p>{{t('inquiryWorkspace.offer.logisticsAutoHint')}}</p></div><el-tag type="success" effect="plain">{{t('inquiryWorkspace.offer.logisticsAvailable',{count:logisticsQuotes.length})}}</el-tag></div>
      <el-table :data="logisticsQuotes" class="quote-table" :empty-text="t('inquiryWorkspace.offer.noLogisticsQuote')">
-      <el-table-column type="expand"><template #default="{row}"><div class="charge-details"><h4>{{t('inquiryWorkspace.quotes.productOceanFreight')}}</h4><el-table :data="row.body.freightRates||[]"><el-table-column :label="t('inquiryWorkspace.offer.product')"><template #default="{row:rate}">{{productName(rate.productId)}}</template></el-table-column><el-table-column :label="t('inquiryWorkspace.offer.unitPrice')"><template #default="{row:rate}"><strong>USD {{rate.usdPrice||rate.price}} / {{rate.unit}}</strong><small v-if="rate.currency!=='USD'">{{rate.currency}} {{rate.price}}</small></template></el-table-column></el-table></div></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.logisticsCompany')" min-width="230"><template #default="{row}"><strong>{{row.body.company||row.body.carrier||t('inquiryWorkspace.offer.logisticsMissing')}}</strong><small>{{routeOf(row)}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.departureArrival')" min-width="160"><template #default="{row}">{{row.body.departure||'—'}}<small>{{row.body.arrival||'—'}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.validUntil')" width="135"><template #default="{row}">{{row.body.validUntil||'—'}}</template></el-table-column>
@@ -63,7 +62,44 @@
    </template>
    <footer class="workspace-footer"><div><strong>{{t(isCompare?'inquiryWorkspace.offer.compareSummary':'inquiryWorkspace.offer.customerSummary',isCompare?{products:selections.length,logistics:automaticFreightQuoteIds.length}:{count:customerRows.length})}}</strong><small>{{t(dirty?'inquiryWorkspace.offer.unsaved':isCompare?'inquiryWorkspace.offer.compareFooterHint':'inquiryWorkspace.offer.offerFooterHint')}}</small></div><div class="footer-actions"><el-button @click="refreshSources" :disabled="busy">{{t('inquiryWorkspace.offer.refreshSources')}}</el-button><el-button v-if="!isCompare" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.backToCompare')}}</el-button><el-button v-if="editable" @click="persist(false)">{{t(isCompare?'inquiryWorkspace.offer.saveSelection':'inquiryWorkspace.offer.saveQuoteInfo')}}</el-button><el-button v-if="isCompare&&editable" type="primary" :disabled="!selections.length" @click="persist(true)">{{t(customerRows.length?'inquiryWorkspace.offer.updateCustomerSelection':'inquiryWorkspace.offer.addToCustomerQuote')}}</el-button><el-button v-if="offer.contractId&&offer.contractId!=='0'" type="primary" @click="router.push({path:'/contracts',query:{id:offer.contractId}})">{{t('inquiryWorkspace.offer.openContract')}}</el-button></div></footer>
   </template>
-  <el-dialog :model-value="!!preview" :title="t(preview?.kind==='LOGISTICS'?'inquiryWorkspace.offer.logisticsOriginalQuote':'inquiryWorkspace.offer.supplierOriginalQuote')" width="min(1000px,95vw)" @close="preview=null"><template v-if="preview"><el-descriptions :column="3" border><el-descriptions-item :label="t('inquiryWorkspace.offer.quotingParty')">{{preview.body.company||'—'}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.currency')">{{preview.body.currency}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.version')">v{{preview.version}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.paymentMethod')">{{preview.body.paymentTerms||'—'}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.validUntil')">{{preview.body.validUntil||'—'}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.submittedBy')">{{preview.author||'—'}}</el-descriptions-item><el-descriptions-item :label="t('inquiryWorkspace.offer.remark')" :span="3">{{preview.body.remark||'—'}}</el-descriptions-item></el-descriptions><el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" max-height="420"><el-table-column :label="t('inquiryWorkspace.offer.product')"><template #default="{row}">{{productName(row.productId)}}</template></el-table-column><el-table-column :label="t('inquiryWorkspace.offer.originalPrice')"><template #default="{row}">{{preview.body.currency}} {{priceOf(row)}}</template></el-table-column><el-table-column prop="delivery" :label="t('inquiryWorkspace.offer.delivery')"/><el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/></el-table><el-table v-else :data="preview.body.charges" max-height="420"><el-table-column prop="name" :label="t('inquiryWorkspace.offer.chargeName')"/><el-table-column :label="t('inquiryWorkspace.offer.unitPriceAndUnit')"><template #default="{row}">{{row.currency}} {{row.amount}} / {{row.unit}}</template></el-table-column><el-table-column prop="quantity" :label="t('inquiryWorkspace.offer.billingQty')"/><el-table-column prop="subtotal" :label="t('inquiryWorkspace.offer.subtotal')"/><el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/></el-table></template></el-dialog>
+  <el-dialog :model-value="!!preview" :title="t(preview?.kind==='LOGISTICS'?'inquiryWorkspace.offer.logisticsOriginalQuote':'inquiryWorkspace.offer.supplierOriginalQuote')" width="min(1000px,95vw)" @close="preview=null">
+   <template v-if="preview">
+    <el-descriptions :column="3" border>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.quotingParty')">{{preview.body.company||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.currency')">{{preview.body.currency||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.version')">v{{preview.version}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.paymentMethod')">{{preview.body.paymentTerms||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.validUntil')">{{preview.body.validUntil||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.submittedBy')">{{preview.author||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t('inquiryWorkspace.offer.remark')" :span="3">{{preview.body.remark||'—'}}</el-descriptions-item>
+    </el-descriptions>
+    <el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" max-height="420">
+     <el-table-column :label="t('inquiryWorkspace.offer.product')"><template #default="{row}">{{productName(row.productId)}}</template></el-table-column>
+     <el-table-column :label="t('inquiryWorkspace.offer.originalPrice')"><template #default="{row}">{{preview.body.currency}} {{priceOf(row)}}</template></el-table-column>
+     <el-table-column prop="delivery" :label="t('inquiryWorkspace.offer.delivery')"/>
+     <el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/>
+    </el-table>
+    <template v-else>
+     <div class="detail-section-title">{{t('inquiryWorkspace.quotes.productOceanFreight')}}</div>
+     <el-table :data="preview.body.freightRates||[]" max-height="300">
+      <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="180"><template #default="{row}">{{productName(row.productId)}}</template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.originalPrice')" min-width="180"><template #default="{row}">{{row.currency}} {{row.price}} / {{row.unit}}</template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.usdUnitPrice')" min-width="180"><template #default="{row}">USD {{row.usdPrice||row.price}} / {{row.unit}}</template></el-table-column>
+      <el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/>
+     </el-table>
+     <template v-if="preview.body.charges?.length">
+      <div class="detail-section-title">{{t('inquiryWorkspace.quotes.charges')}}</div>
+      <el-table :data="preview.body.charges" max-height="300">
+       <el-table-column prop="name" :label="t('inquiryWorkspace.offer.chargeName')"/>
+       <el-table-column :label="t('inquiryWorkspace.offer.unitPriceAndUnit')"><template #default="{row}">{{row.currency}} {{row.amount}} / {{row.unit}}</template></el-table-column>
+       <el-table-column prop="quantity" :label="t('inquiryWorkspace.offer.billingQty')"/>
+       <el-table-column prop="subtotal" :label="t('inquiryWorkspace.offer.subtotal')"/>
+       <el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/>
+      </el-table>
+     </template>
+    </template>
+   </template>
+  </el-dialog>
  </section>
 </template>
 <script setup lang="ts">
@@ -140,5 +176,6 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 @media(max-width:700px){.compare-mode .calculation-fields{grid-template-columns:1fr}.formula-summary{grid-column:auto;grid-template-columns:1fr}.formula-summary small{grid-column:auto}}
 @media(max-width:700px){.compare-mode .fixed-cfr-calculation{align-items:stretch;flex-direction:column}.compare-mode .fixed-cfr-calculation>.el-button{flex-basis:auto;width:100%}}
 .number-cell{display:inline-block;font-size:14px;font-weight:600;line-height:1.45;font-variant-numeric:tabular-nums;color:#28596c;white-space:nowrap}.column-heading{display:flex;flex-direction:column;gap:2px;font-size:13px;font-weight:600;line-height:1.25}.column-heading small{font-size:11px!important;font-weight:500;line-height:1.2!important;margin:0!important;color:#78909c!important}
+.detail-section-title{margin:18px 0 8px;font-size:14px;font-weight:650;color:var(--ink)}
 .fixed-category-calculation{display:grid!important;grid-template-columns:minmax(340px,1.5fr) minmax(260px,1fr) auto!important;align-items:end!important;gap:16px!important}.manual-inputs{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px}.manual-inputs label{display:grid;gap:6px;color:#536f7d;font-size:12px}.fixed-category-calculation>.el-button{margin:0;min-width:116px;width:138px;justify-self:end}@media(max-width:1100px){.fixed-category-calculation{grid-template-columns:1fr!important}.manual-inputs{grid-template-columns:repeat(3,minmax(120px,1fr))}.fixed-category-calculation>.el-button{width:140px}}@media(max-width:700px){.manual-inputs{grid-template-columns:1fr}.fixed-category-calculation>.el-button{width:100%}}
 </style>
