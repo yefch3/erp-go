@@ -103,8 +103,6 @@ type InquiryFreightRate struct {
 	Unit      string `json:"unit"`
 	Remark    string `json:"remark"`
 	USDPrice  string `json:"usdPrice"`
-	Total     string `json:"total"`
-	USDTotal  string `json:"usdTotal"`
 }
 type InquiryQuoteBody struct {
 	Company         string               `json:"company"`
@@ -131,7 +129,6 @@ type InquiryQuoteBody struct {
 	ExchangeRates   map[string]string    `json:"exchangeRates"`
 	Totals          map[string]string    `json:"totals"`
 	TotalUSD        string               `json:"totalUsd"`
-	FreightTotalUSD string               `json:"freightTotalUsd"`
 	OtherChargesUSD string               `json:"otherChargesTotalUsd"`
 	Attachments     []InquiryAttachment  `json:"attachments"`
 }
@@ -951,6 +948,7 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			"ALL_IN_PORT_CNY":  "CNY",
 			"EX_FACTORY_CNY":   "CNY",
 			"REPROCESSING_CNY": "CNY",
+			"DIRECT_CFR_USD":   "USD",
 		}
 		expectedCurrency, categoryValid := categoryCurrencies[b.QuoteCategory]
 		if b.QuoteCategory != "" && !categoryValid {
@@ -1027,8 +1025,6 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 			}
 		}
 		seenRates := map[string]bool{}
-		freightTotalUSD := decimal.Zero
-		freightUSDComplete := true
 		for i := range b.FreightRates {
 			rate := &b.FreightRates[i]
 			rate.Currency = strings.ToUpper(strings.TrimSpace(rate.Currency))
@@ -1042,29 +1038,14 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 				return apierr.Invalid("INQUIRY_FREIGHT_RATE", "请填写有效的产品海运单价、币种和计价单位")
 			}
 			rate.Price = price.String()
-			quantity, quantityErr := decimal.NewFromString(strings.TrimSpace(productByID[rate.ProductID].Quantity))
-			if quantityErr != nil || !quantity.IsPositive() {
-				return apierr.Invalid("INQUIRY_FREIGHT_QUANTITY", "产品需求数量无效，无法计算海运总价").WithMeta("productId", rate.ProductID)
-			}
-			lineTotal := price.Mul(quantity).Round(2)
-			rate.Total = lineTotal.StringFixed(2)
 			if converted, ok := toUSD(price, rate.Currency, 4); ok {
 				rate.USDPrice = converted.StringFixed(4)
-				convertedTotal, _ := toUSD(lineTotal, rate.Currency, 2)
-				rate.USDTotal = convertedTotal.StringFixed(2)
-				freightTotalUSD = freightTotalUSD.Add(convertedTotal)
 			} else {
 				rate.USDPrice = ""
-				rate.USDTotal = ""
-				freightUSDComplete = false
 				if submit {
 					return apierr.Invalid("INQUIRY_EXCHANGE_RATE", "非 USD 物流费用必须填写汇率").WithMeta("currency", rate.Currency)
 				}
 			}
-		}
-		b.FreightTotalUSD = ""
-		if freightUSDComplete && len(b.FreightRates) > 0 {
-			b.FreightTotalUSD = freightTotalUSD.Round(2).StringFixed(2)
 		}
 		if submit {
 			if len(b.FreightRates) == 0 && len(b.Charges) == 0 {

@@ -31,8 +31,8 @@ func TestSubmittedQuotesDoNotRequireCustomerTradeTerms(t *testing.T) {
 	if err := validateInquiryQuote(&logistics, products, "LOGISTICS", true); err != nil {
 		t.Fatalf("product ocean freight should be a complete logistics quote: %v", err)
 	}
-	if logistics.FreightRates[0].Total != "70.00" || logistics.FreightTotalUSD != "70.00" {
-		t.Fatalf("freight totals = %#v", logistics)
+	if logistics.FreightRates[0].USDPrice != "35.0000" {
+		t.Fatalf("normalized freight unit price = %#v", logistics.FreightRates[0])
 	}
 }
 
@@ -49,7 +49,7 @@ func TestSubmittedLogisticsQuoteRequiresRateForEachForeignCurrency(t *testing.T)
 	if err := validateInquiryQuote(&quote, products, "LOGISTICS", true); err != nil {
 		t.Fatal(err)
 	}
-	if quote.FreightRates[0].USDPrice != "100.0000" || quote.FreightRates[0].USDTotal != "200.00" || quote.FreightTotalUSD != "200.00" || quote.Currency != "USD" {
+	if quote.FreightRates[0].USDPrice != "100.0000" || quote.Currency != "USD" {
 		t.Fatalf("normalized quote = %#v", quote)
 	}
 }
