@@ -2423,7 +2423,7 @@ export default {
     countryAllPresent: '{country} 的联系人都已经在列表里了',
     placeholder: '输入邮箱地址，或输入姓名/公司搜索通讯录',
     typeToSearch: '输入前缀搜索通讯录，或直接填写完整邮箱地址',
-    fromBook: '从通讯录选择',
+    fromBook: '通讯录',
     book: '通讯录',
     addChosen: '添加所选（{n}）',
     unknownWarning: '{n} 个地址不在通讯录里，取不到联系人姓名',

@@ -2425,7 +2425,7 @@ export default {
     countryAllPresent: 'Everyone in {country} is already on the list',
     placeholder: 'Type an address, or type a name to search the address book',
     typeToSearch: 'Type a prefix to search contacts, or enter a full address',
-    fromBook: 'From address book',
+    fromBook: 'Address book',
     book: 'Address book',
     addChosen: 'Add selected ({n})',
     unknownWarning: '{n} address(es) are not in the address book, so no contact name resolves',

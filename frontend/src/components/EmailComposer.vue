@@ -113,30 +113,46 @@
           />
         </el-select>
       </el-form-item>
+      <!-- 那句说明**排在单选框旁边**，不另起一行：它只有一句话，而写信框
+           上半截每多一行，正文就往下走一行。 -->
       <el-form-item :label="t('emails.sendModeLabel')">
-        <div class="body-box">
+        <div class="mode-row">
           <el-radio-group v-model="form.sendMode">
             <el-radio value="SEPARATE">{{ t('emails.modeSeparate') }}</el-radio>
             <el-radio value="MERGED">{{ t('emails.modeMerged') }}</el-radio>
           </el-radio-group>
-          <div class="var-hint">
+          <span class="var-hint">
             {{ form.sendMode === 'MERGED' ? t('emails.modeMergedHint') : t('emails.modeSeparateHint') }}
-          </div>
+          </span>
         </div>
       </el-form-item>
 
+      <!-- 抄送、密送**空着就不占行**，收件人这一行上给两颗开关（照 Gmail 和
+           Foxmail）。从前它们在合并模式下一直摆着，一格是输入框、一格是
+           「从通讯录选择 已选 0 人」，两行说的都是「这里没人」。
+           里面有人时自动展开——回复全部预填的抄送不会被藏起来，草稿存的
+           也一样。 -->
       <el-form-item :label="t('emails.recipients')">
-        <RecipientField v-model="selected" />
+        <RecipientField v-model="selected">
+          <template v-if="form.sendMode === 'MERGED'" #extra>
+            <el-button v-if="!ccShown" size="small" link type="primary" @click="ccOpen = true">
+              {{ t('emails.ccLabel') }}
+            </el-button>
+            <el-button v-if="!bccShown" size="small" link type="primary" @click="bccOpen = true">
+              {{ t('emails.bccLabel') }}
+            </el-button>
+          </template>
+        </RecipientField>
       </el-form-item>
 
-      <el-form-item v-if="form.sendMode === 'MERGED'" :label="t('emails.ccLabel')">
+      <el-form-item v-if="ccShown" :label="t('emails.ccLabel')">
         <RecipientField v-model="ccSelected" />
       </el-form-item>
 
       <!-- Blind copies. Only in merged mode, like CC: in separate mode every
            recipient already gets their own copy, so a blind list would just
            mean one person receiving the mail N times. -->
-      <el-form-item v-if="form.sendMode === 'MERGED'" :label="t('emails.bccLabel')">
+      <el-form-item v-if="bccShown" :label="t('emails.bccLabel')">
         <div class="body-box">
           <RecipientField v-model="bccSelected" />
           <div class="var-hint">{{ t('emails.bccHint') }}</div>
@@ -620,6 +636,19 @@ const form = reactive({
 const attachments = ref<PendingFile[]>([])
 const ccSelected = ref<Recipient[]>([])
 const bccSelected = ref<Recipient[]>([])
+// 抄送、密送那两格摆不摆出来。人点过开关，或者里面本来就有人（回复全部
+// 预填的、草稿存下的），就摆出来；否则收件人那一行上只留一颗开关。
+//
+// 空着也摆的代价不是一行而是两行：一格输入框、一格「从通讯录选择 已选 0
+// 人」，说的都是「这里没人」，而写信框上半截每多一行，正文就往下走一行。
+const ccOpen = ref(false)
+const bccOpen = ref(false)
+const ccShown = computed(
+  () => form.sendMode === 'MERGED' && (ccOpen.value || ccSelected.value.length > 0),
+)
+const bccShown = computed(
+  () => form.sendMode === 'MERGED' && (bccOpen.value || bccSelected.value.length > 0),
+)
 // Set when this compose answers or forwards a mail from the inbox. '0' means
 // a fresh mail. The server takes threading headers (reply) or the original's
 // attachments (forward) from the referenced message.
@@ -1119,6 +1148,9 @@ function reset() {
   selected.value = []
   ccSelected.value = []
   bccSelected.value = []
+  // 上一封点开过抄送，不该让下一封一开就摆着两个空格子。
+  ccOpen.value = false
+  bccOpen.value = false
   replyCtx.replyToInboundId = '0'
   replyCtx.forwardInboundId = '0'
   replyCtx.forwardAsAttachment = false
@@ -2030,15 +2062,29 @@ function restoreFocus() {
    default form spacing is built for settings pages, where every row is a
    separate decision; a compose window is one continuous act and reads better
    tightened up. */
+/* 那两条提示是一句话，按一句话排：Element 给 alert 的内边距是按「页面顶上
+   一条横幅」设的，在写信框里它吃掉的正是正文的高度。 */
 .privacy {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  padding: 6px 12px;
   border-radius: var(--mail-radius);
+}
+.privacy :deep(.el-alert__content) {
+  font-size: 12px;
 }
 .compose-form {
   margin-bottom: 4px;
 }
 .compose-form :deep(.el-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+}
+/* 单选框和那句说明排一行，挤不下再折。 */
+.mode-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: 100%;
 }
 .compose-form :deep(.el-form-item__label) {
   font-size: var(--mail-sub);
