@@ -471,6 +471,26 @@ func TestDecodeStreamingCompletedResponse(t *testing.T) {
 	}
 }
 
+func TestNewTableExtractorBoundsTLSHandshakeWithConfiguredTimeout(t *testing.T) {
+	client := NewTableExtractor("test-key", "", "", 2*time.Minute)
+	transport, ok := client.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", client.client.Transport)
+	}
+	if transport.TLSHandshakeTimeout != 30*time.Second {
+		t.Fatalf("TLS handshake timeout = %s, want 30s", transport.TLSHandshakeTimeout)
+	}
+
+	short := NewTableExtractor("test-key", "", "", 5*time.Second)
+	shortTransport, ok := short.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("short transport = %T, want *http.Transport", short.client.Transport)
+	}
+	if shortTransport.TLSHandshakeTimeout != 5*time.Second {
+		t.Fatalf("short TLS handshake timeout = %s, want 5s", shortTransport.TLSHandshakeTimeout)
+	}
+}
+
 func TestExtractorRejectsMissingAPIKeyWithoutNetwork(t *testing.T) {
 	client := NewTableExtractor("", "", "", time.Second)
 	_, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "a,b\n1,2"})

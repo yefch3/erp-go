@@ -10,6 +10,25 @@ export interface MailCustomerHeaders {
   toEmail?: string
 }
 
+export interface MailCustomerDuplicateCandidate {
+  id: string
+  code: string
+  name: string
+  matchFields?: string[]
+}
+
+// Only an unambiguous company identity may absorb a new mail contact. Similar
+// names remain a human decision; automatically attaching there could put a
+// correspondent under the wrong legal entity.
+export function existingCompanyForMailContact<T extends MailCustomerDuplicateCandidate>(
+  candidates: T[],
+): T | null {
+  const exact = candidates.filter((candidate) =>
+    candidate.matchFields?.some((field) => field === 'NAME' || field === 'TAX_ID'),
+  )
+  return exact.length === 1 ? exact[0] : null
+}
+
 function fallbackName(email: string): string {
   const local = email.split('@')[0]?.trim() ?? ''
   return local || email

@@ -1874,6 +1874,10 @@ export default {
     customerTimezoneHelp: 'Elige la zona real del cliente. Déjala vacía si no se conoce; no se deduce del correo.',
     customerCreated: 'El cliente {code} se añadió a los datos maestros',
     customerEmailExists: 'Este correo ya pertenece a {code} · {name}; no se creó un duplicado',
+    addContactToExistingTitle: 'Añadir a empresa existente',
+    addContactToExistingConfirm: 'La misma empresa ya existe como {code} · {name}. El remitente se añadirá como contacto; no se creará otra empresa ni se sobrescribirán sus datos.',
+    addContactToExisting: 'Añadir contacto',
+    customerContactAdded: 'El contacto {contact} se añadió a {code} · {name}',
     customerForm: {
       moveHelp: 'Arrastra el título de la ventana para compararla con el cuerpo o la firma del correo. Deja en blanco los datos dudosos y verifícalos después en datos maestros.',
       basic: 'Perfil', contact: 'Contacto', tax: 'Registro e impuestos', settlement: 'Liquidación y crédito', address: 'Dirección',

@@ -147,13 +147,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
 import { CURRENCIES } from '../constants'
 import { countryOptions } from '../lib/countries'
 import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
-import type { MailCustomerDraft } from '../lib/mailCustomerDraft'
+import { existingCompanyForMailContact, type MailCustomerDraft, type MailCustomerDuplicateCandidate } from '../lib/mailCustomerDraft'
 import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
 import { portTimezoneOptions } from '../lib/portOptions'
 
@@ -221,7 +221,7 @@ async function save() {
 
   saving.value = true
   try {
-    const duplicates = await get<{ candidates?: Array<{ id: string; code: string; name: string; matchFields?: string[] }> }>(
+    const duplicates = await get<{ candidates?: MailCustomerDuplicateCandidate[] }>(
       '/customers/duplicates', { name, email, tax_id: form.taxId },
     )
     const candidates = duplicates.candidates ?? []
@@ -230,13 +230,47 @@ async function save() {
       ElMessage.warning(t('emails.customerEmailExists', { code: emailOwner.code, name: emailOwner.name }))
       return
     }
-    await confirmPossibleDuplicates(candidates, t)
     const contact = {
       name: form.contactName.trim(), email, department: form.contactDepartment, title: form.contactTitle,
       phone: form.contactPhone, mobile: form.contactMobile, instantMessaging: form.contactInstantMessaging,
       language: form.contactLanguage, remark: form.contactRemark, isPrimary: true, emailPermission: form.emailPermission,
       emailCategories: form.emailCategories,
     }
+    const existingCompany = existingCompanyForMailContact(candidates)
+    if (existingCompany) {
+      const existingContacts = await get<{ contacts?: Array<{ email?: string }> }>(
+        `/customers/${existingCompany.id}/contacts`, { status: 'ALL' },
+      )
+      if ((existingContacts.contacts ?? []).some((item) => item.email?.trim().toLowerCase() === email.toLowerCase())) {
+        ElMessage.warning(t('emails.customerEmailExists', { code: existingCompany.code, name: existingCompany.name }))
+        return
+      }
+      try {
+        await ElMessageBox.confirm(
+          t('emails.addContactToExistingConfirm', { code: existingCompany.code, name: existingCompany.name }),
+          t('emails.addContactToExistingTitle'),
+          {
+            type: 'info',
+            confirmButtonText: t('emails.addContactToExisting'),
+            cancelButtonText: t('common.backToEdit'),
+          },
+        )
+      } catch {
+        return
+      }
+      await post(`/customers/${existingCompany.id}/contacts`, {
+        contact: { ...contact, isPrimary: false },
+      })
+      emit('update:open', false)
+      emit('created', existingCompany)
+      ElMessage.success(t('emails.customerContactAdded', {
+        contact: contact.name,
+        code: existingCompany.code,
+        name: existingCompany.name,
+      }))
+      return
+    }
+    await confirmPossibleDuplicates(candidates, t)
     const { customer } = await post<{ customer: { id: string; code: string; name: string } }>('/customers', {
       code: form.code, name, country: '', countryCode: form.countryCode, address: form.includeAddress ? form.addressLine : '',
       currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark, contacts: [contact],
