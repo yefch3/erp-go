@@ -93,6 +93,52 @@ func TestSpreadsheetSourceClassifiesAndSelectsEverySteelRequestSheet(t *testing.
 	assertContext("COILS!3", []string{"Lot CIN.2", "ASTM A 653", "Port Valparaíso", "20” Coil I.D."}, []string{"Lot TU.7 PT"})
 }
 
+func TestSpreadsheetSourceRecognizesRepeatedDimensionalRFQTables(t *testing.T) {
+	rows := map[int]map[int]string{
+		1:  {6: "Qty", 8: "LC at sight\nCFR LO"},
+		2:  {1: "SKU CAASA", 2: "HRS ASTM A-36 requirements", 3: "T (mm)", 4: "W (mm)", 5: "L (mm)", 6: "MT", 7: "Tolerance (%)", 8: "USD/MT"},
+		3:  {1: "402656", 2: "PDLAC A-36 3.9MM X 1200MM X 2400MM", 3: "3.9", 4: "1200", 5: "2400", 6: "100", 7: "10"},
+		4:  {1: "402875", 2: "PNAVAL A-131 3/16 X 1800MM X 6000MM", 3: `3/16" (4.76mm)`, 4: "1800", 5: "6000", 6: "20", 7: "10"},
+		5:  {2: "TOTAL", 6: "120"},
+		7:  {6: "Condiciones"},
+		8:  {6: "Qty", 8: "LC at sight\nCFR LO"},
+		9:  {1: "SKU CAASA", 2: "HRP ASTM A-572 requirements", 3: "T (mm)", 4: "W (mm)", 5: "L (mm)", 6: "MT", 7: "Tolerance (%)", 8: "USD/MT"},
+		10: {1: "403813", 2: "PL A-572 GR50 4.5MM X 1500MM X 6000MM", 3: "4.5", 4: "1500", 5: "6000", 6: "200", 7: "10"},
+		11: {2: "TOTAL", 6: "200"},
+		13: {1: "Packing Conditions", 2: "Bundles of 4-5 MT"},
+		14: {2: "Protect plates with waterproof plastic"},
+	}
+	got := spreadsheetDetailRows("RFQ HR (S+P)", rows)
+	if len(got) != 3 {
+		t.Fatalf("detail rows = %d, want 3: %#v", len(got), got)
+	}
+	if got[0].SourceRef != "RFQ HR (S+P)!3" || got[1].SourceRef != "RFQ HR (S+P)!4" || got[2].SourceRef != "RFQ HR (S+P)!10" {
+		t.Fatalf("unexpected source refs: %#v", got)
+	}
+	for _, row := range got {
+		if row.QuantityUnitHint != "MT" || row.Cells["DESCRIPTION"] == "" || row.Cells["Quantity"] == "" || row.Cells["Length [mm]"] == "" {
+			t.Fatalf("canonical RFQ row is incomplete: %#v", row)
+		}
+		if row.Cells["SECTION REQUIREMENTS"] == "" || row.Cells["COMMERCIAL TERMS"] != "LC at sight\nCFR LO" {
+			t.Fatalf("shared RFQ facts are missing: %#v", row)
+		}
+		if row.Cells["PACKING CONDITIONS"] != "Bundles of 4-5 MT\nProtect plates with waterproof plastic" {
+			t.Fatalf("sheet-wide packing conditions are missing: %#v", row)
+		}
+	}
+	item := map[string]string{}
+	applySpreadsheetAnchors(got[1], item)
+	for key, want := range map[string]string{
+		"product": "PNAVAL A-131 3/16 X 1800MM X 6000MM", "thickness": "4.76",
+		"width": "1800", "length_or_form": "6000", "quantity": "20", "quantity_unit": "MT",
+		"packaging": "Bundles of 4-5 MT\nProtect plates with waterproof plastic",
+	} {
+		if item[key] != want {
+			t.Fatalf("anchored %s = %q, want %q: %#v", key, item[key], want, item)
+		}
+	}
+}
+
 func TestSpreadsheetAnchorsOverrideMissingOrAlteredModelFacts(t *testing.T) {
 	source := SpreadsheetSourceRow{SourceRef: "COILS!54", QuantityUnitHint: "MT", Cells: map[string]string{
 		"COUNTRY": "Perú Tupemesa", "LOT": "TU.1", "STEEL": "CRC",

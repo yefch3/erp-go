@@ -42,9 +42,15 @@ func NewTableExtractor(apiKey, baseURL, model string, timeout time.Duration) *Ta
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	tlsTimeout := 30 * time.Second
+	if timeout < tlsTimeout {
+		tlsTimeout = timeout
+	}
+	transport.TLSHandshakeTimeout = tlsTimeout
 	return &TableExtractor{
 		apiKey: strings.TrimSpace(apiKey), baseURL: strings.TrimRight(baseURL, "/"),
-		model: strings.TrimSpace(model), client: &http.Client{Timeout: timeout},
+		model: strings.TrimSpace(model), client: &http.Client{Timeout: timeout, Transport: transport},
 	}
 }
 
@@ -272,7 +278,7 @@ Rules:
 - context_sheets inventories every worksheet and its classified role. context_blocks contain source-addressed supporting specifications selected for this batch. Read every supplied context block before returning.
 - Context blocks never create requested items. Apply a lot-scoped block only to rows with that LOT; apply sheet_global blocks only when relevant to the row's company, country, LOT or product family. Reference-table quantities and prices are context, never current requested quantities or prices.
 - Map applicable context facts into material_standard, grade, surface_requirement, coating, tolerance, coil_weight, coil_id, packaging, delivery, payment_terms, port and remarks. Repeat shared requirements on every affected row. If a direct row cell conflicts with context, keep the direct row value and explain the conflict in remarks.
-- Copy explicit source columns without changing their facts: INQ Q'ty to quantity, Thickness [mm] to thickness, Width [mm] to width, Coil weights to coil_weight, and quantity_unit_hint to quantity_unit. Canonical dimension columns are millimetres and contain numbers only.
+- Copy explicit source columns without changing their facts: INQ Q'ty or Quantity to quantity, Thickness [mm] to thickness, Width [mm] to width, Length [mm] to length_or_form, Coil weights to coil_weight, and quantity_unit_hint to quantity_unit. Apply SECTION REQUIREMENTS, COMMERCIAL TERMS and PACKING CONDITIONS to every row carrying them. Canonical dimension columns are millimetres and contain numbers only.
 - For PRODUCTS rows, preserve the complete DESCRIPTION in product and classify the product family before assigning dimensions. Use these exact dimension orders: plate = thickness x width x length; flat bar/PLATINA = width x thickness x length; round bar/BARRA REDONDA = diameter x length; angle/ANG = leg1 x leg2 x thickness x length (when an equal angle abbreviates one leg, repeat it into leg2); square bar/BARRA CUADRADA = leg1 x leg2 x length; rectangular tube/REC/RECT = width x height x wall thickness x length; square tube/CUA ESTR/CUAD = side1 x side2 x wall thickness x length. Never drop the original description.
 - Keep distinct dimension concepts separate whenever their keys are present: custom.thickness_mm = plate/flat-bar/angle thickness; custom.wall_thickness_mm = tube wall thickness; custom.width_mm and custom.height_mm = rectangular dimensions; custom.diameter_mm = round diameter; custom.leg1_mm and custom.leg2_mm = profile legs/sides. Leave every non-applicable dimension empty. For backward-compatible mixed templates only, put thickness or wall thickness in thickness, width/diameter/first side in width, and height/second side in custom.height_or_leg2. Convert inch fractions such as 1/2, 5/8, 1 1/2 and 3/32 to millimetres.
 - For COILS rows, use STEEL as product and preserve qualifiers such as Used, Color, and stainless designation in the matching output fields or remarks.

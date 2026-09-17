@@ -511,18 +511,24 @@ func applySpreadsheetAnchors(source SpreadsheetSourceRow, item map[string]string
 		applyKnownProductDimensions(value, item)
 	}
 	if value := cell("thicknessmm", "thickness", "espesormm", "espesor"); value != "" {
-		item["thickness"] = canonicalPlainDecimal(value)
+		item["thickness"] = canonicalSpreadsheetDimension(value)
 		item["custom.thickness_mm"] = item["thickness"]
 	}
 	if value := cell("widthmm", "width", "anchomm", "ancho"); value != "" {
-		item["width"] = canonicalPlainDecimal(value)
+		item["width"] = canonicalSpreadsheetDimension(value)
 		item["custom.width_mm"] = item["width"]
+	}
+	if value := cell("lengthmm", "length", "largomm", "largo"); value != "" {
+		item["length_or_form"] = canonicalSpreadsheetDimension(value)
 	}
 	if value := cell("inqqty", "quantity", "qty", "cantidad"); value != "" {
 		item["quantity"] = value
 	}
 	if value := cell("coilweights", "coilweight"); value != "" {
 		item["coil_weight"] = value
+	}
+	if value := cell("packingconditions"); value != "" {
+		item["packaging"] = value
 	}
 	if source.QuantityUnitHint != "" {
 		item["quantity_unit"] = source.QuantityUnitHint
@@ -847,6 +853,21 @@ func canonicalPlainDecimal(value string) string {
 		return ""
 	}
 	return number.String()
+}
+
+var spreadsheetParentheticalMillimetres = regexp.MustCompile(`(?i)\(\s*([0-9]+(?:[.,][0-9]+)?)\s*mm\s*\)`)
+
+func canonicalSpreadsheetDimension(value string) string {
+	if canonical := canonicalPlainDecimal(value); canonical != "" {
+		return canonical
+	}
+	if match := spreadsheetParentheticalMillimetres.FindStringSubmatch(value); match != nil {
+		return canonicalPlainDecimal(match[1])
+	}
+	if canonical, ok := measurementToMillimetres(value, "mm"); ok {
+		return canonical
+	}
+	return ""
 }
 
 func normalizeSpreadsheetDimensions(item map[string]string) {

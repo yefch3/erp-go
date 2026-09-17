@@ -127,20 +127,13 @@ func ParseSpreadsheetSource(data []byte) (SpreadsheetSourceDocument, error) {
 
 func spreadsheetDetailRows(sheetName string, rows map[int]map[int]string) []SpreadsheetSourceRow {
 	rowNumbers := sortedSpreadsheetRows(rows)
+	sheetSharedValues := spreadsheetSheetSharedValues(rows)
 	var result []SpreadsheetSourceRow
 	for _, headerRow := range rowNumbers {
-		headers := rows[headerRow]
-		qtyCol := 0
-		for col, value := range headers {
-			if normalizeHeader(value) == "inqqty" {
-				qtyCol = col
-				break
-			}
-		}
-		if qtyCol == 0 {
+		layout, ok := spreadsheetDetailLayout(rows, headerRow)
+		if !ok {
 			continue
 		}
-		quantityUnitHint := spreadsheetQuantityUnitHint(headers)
 		blankRows := 0
 		for detailRow := headerRow + 1; blankRows < 3; detailRow++ {
 			values, ok := rows[detailRow]
@@ -149,11 +142,14 @@ func spreadsheetDetailRows(sheetName string, rows map[int]map[int]string) []Spre
 				continue
 			}
 			blankRows = 0
-			if strings.TrimSpace(values[qtyCol]) == "" || spreadsheetTotalRow(values, qtyCol) {
+			if _, nextHeader := spreadsheetDetailLayout(rows, detailRow); nextHeader {
+				break
+			}
+			if strings.TrimSpace(values[layout.qtyCol]) == "" || spreadsheetTotalRow(values, layout.qtyCol) {
 				continue
 			}
 			hasIdentity := false
-			for col := 1; col < qtyCol; col++ {
+			for col := 1; col < layout.qtyCol; col++ {
 				if strings.TrimSpace(values[col]) != "" {
 					hasIdentity = true
 					break
@@ -162,17 +158,136 @@ func spreadsheetDetailRows(sheetName string, rows map[int]map[int]string) []Spre
 			if !hasIdentity {
 				continue
 			}
-			record := SpreadsheetSourceRow{SourceRef: sheetName + "!" + strconv.Itoa(detailRow), Cells: map[string]string{}, QuantityUnitHint: quantityUnitHint}
-			for col, header := range headers {
+			record := SpreadsheetSourceRow{SourceRef: sheetName + "!" + strconv.Itoa(detailRow), Cells: map[string]string{}, QuantityUnitHint: layout.quantityUnitHint}
+			for col, header := range layout.headers {
 				header = strings.TrimSpace(header)
 				if value := strings.TrimSpace(values[col]); header != "" && value != "" {
 					record.Cells[header] = value
 				}
 			}
+			for header, value := range layout.sharedValues {
+				record.Cells[header] = value
+			}
+			for header, value := range sheetSharedValues {
+				record.Cells[header] = value
+			}
 			result = append(result, record)
 		}
 	}
 	return result
+}
+
+func spreadsheetSheetSharedValues(rows map[int]map[int]string) map[string]string {
+	var packing []string
+	insidePacking := false
+	for _, rowNo := range sortedSpreadsheetRows(rows) {
+		values := rows[rowNo]
+		if !insidePacking {
+			for _, value := range values {
+				if normalizeHeader(value) == "packingconditions" {
+					insidePacking = true
+					break
+				}
+			}
+			if !insidePacking {
+				continue
+			}
+		}
+		cols := make([]int, 0, len(values))
+		for col := range values {
+			cols = append(cols, col)
+		}
+		sort.Ints(cols)
+		for _, col := range cols {
+			value := strings.TrimSpace(values[col])
+			if value != "" && normalizeHeader(value) != "packingconditions" {
+				packing = append(packing, value)
+			}
+		}
+	}
+	if len(packing) == 0 {
+		return nil
+	}
+	return map[string]string{"PACKING CONDITIONS": strings.Join(packing, "\n")}
+}
+
+type spreadsheetTableLayout struct {
+	headers          map[int]string
+	qtyCol           int
+	quantityUnitHint string
+	sharedValues     map[string]string
+}
+
+// spreadsheetDetailLayout keeps the original INQ Q'ty contract and also
+// recognizes mill RFQs whose repeated table header is SKU + T/W/L + MT. The
+// latter is deliberately a strong signature: treating a lone Qty or MT cell
+// as a detail table would turn totals and note blocks into products.
+func spreadsheetDetailLayout(rows map[int]map[int]string, headerRow int) (spreadsheetTableLayout, bool) {
+	headers := rows[headerRow]
+	for col, value := range headers {
+		if normalizeHeader(value) == "inqqty" {
+			return spreadsheetTableLayout{
+				headers: headers, qtyCol: col,
+				quantityUnitHint: spreadsheetQuantityUnitHint(headers),
+			}, true
+		}
+	}
+
+	cols := map[string]int{}
+	for col, value := range headers {
+		cols[normalizeHeader(value)] = col
+	}
+	skuCol := firstSpreadsheetColumn(cols, "skucaasa", "sku", "itemcode", "productcode")
+	thicknessCol := firstSpreadsheetColumn(cols, "tmm", "thicknessmm")
+	widthCol := firstSpreadsheetColumn(cols, "wmm", "widthmm")
+	lengthCol := firstSpreadsheetColumn(cols, "lmm", "lengthmm")
+	qtyCol := firstSpreadsheetColumn(cols, "mt", "ton", "tons")
+	if skuCol == 0 || thicknessCol == 0 || widthCol == 0 || lengthCol == 0 || qtyCol == 0 {
+		return spreadsheetTableLayout{}, false
+	}
+
+	canonical := make(map[int]string, len(headers))
+	for col, value := range headers {
+		canonical[col] = value
+	}
+	canonical[thicknessCol] = "Thickness [mm]"
+	canonical[widthCol] = "Width [mm]"
+	canonical[lengthCol] = "Length [mm]"
+	canonical[qtyCol] = "Quantity"
+
+	shared := map[string]string{}
+	for col := skuCol + 1; col < thicknessCol; col++ {
+		if value := strings.TrimSpace(headers[col]); value != "" {
+			canonical[col] = "DESCRIPTION"
+			shared["SECTION REQUIREMENTS"] = value
+			break
+		}
+	}
+	if preceding := rows[headerRow-1]; len(preceding) > 0 {
+		var terms []string
+		for col, value := range preceding {
+			value = strings.TrimSpace(value)
+			if col != qtyCol && value != "" {
+				terms = append(terms, value)
+			}
+		}
+		if len(terms) > 0 {
+			sort.Strings(terms)
+			shared["COMMERCIAL TERMS"] = strings.Join(terms, " | ")
+		}
+	}
+	return spreadsheetTableLayout{
+		headers: canonical, qtyCol: qtyCol, quantityUnitHint: "MT", sharedValues: shared,
+	}, true
+}
+
+func firstSpreadsheetColumn(columns map[string]int, names ...string) int {
+	for _, name := range names {
+		if column := columns[name]; column > 0 {
+			return column
+		}
+	}
+	return 0
 }
 
 func spreadsheetTotalRow(values map[int]string, qtyCol int) bool {
