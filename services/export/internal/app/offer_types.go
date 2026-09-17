@@ -57,6 +57,7 @@ type OfferProduct struct {
 	CustomFields    map[string]string `json:"customFields"`
 }
 type OfferSourceQuote struct {
+	Historical  bool            `json:"historical,omitempty"`
 	ID          string          `json:"id"`
 	Kind        string          `json:"kind"`
 	Version     int64           `json:"version"`
@@ -82,28 +83,71 @@ type OfferTransport struct {
 	Accepted   bool              `json:"accepted"`
 	Quantities map[string]string `json:"quantities"`
 }
+type OfferCategorySelection struct {
+	ProductID            string `json:"productId"`
+	Category             string `json:"category"`
+	QuoteID              string `json:"quoteId"`
+	SupplierFOBUnitPrice string `json:"supplierFobUnitPrice,omitempty"`
+	ProductFreightTotal  string `json:"productFreightTotal,omitempty"`
+	InlandFreightTotal   string `json:"inlandFreightTotal,omitempty"`
+	CFRTotal             string `json:"cfrTotal,omitempty"`
+	CFRUnitPrice         string `json:"cfrUnitPrice,omitempty"`
+	FreightQuoteID       string `json:"freightQuoteId,omitempty"`
+}
 type OfferBody struct {
-	PricingSnapshot      string                     `json:"pricingSnapshot,omitempty"`
-	LogisticsQuoteID     string                     `json:"logisticsQuoteId"`
-	CustomerID           string                     `json:"customerId"`
-	Customer             string                     `json:"customer"`
-	ContactID            string                     `json:"contactId"`
-	Contact              string                     `json:"contact"`
-	Currency             string                     `json:"currency"`
-	QuoteFX              string                     `json:"quoteFx"`
-	QuoteFXConfirmed     bool                       `json:"quoteFxConfirmed"`
-	Delivery             string                     `json:"delivery"`
-	LoadingPort          string                     `json:"loadingPort"`
-	DestinationPort      string                     `json:"destinationPort"`
-	Incoterm             string                     `json:"incoterm"`
-	Payment              string                     `json:"payment"`
-	ValidUntil           string                     `json:"validUntil"`
-	Remark               string                     `json:"remark"`
-	Lines                []OfferLine                `json:"lines"`
-	Transports           []OfferTransport           `json:"transports"`
-	Rates                []OfferRate                `json:"rates"`
-	Total                string                     `json:"total"`
-	LogisticsAllocations []OfferLogisticsAllocation `json:"logisticsAllocations"`
+	CategoryWorkflow     bool                           `json:"categoryWorkflow,omitempty"`
+	CustomerSelections   []OfferSelectionSnapshot       `json:"customerSelections"`
+	CustomerLogistics    []OfferSourceQuote             `json:"customerLogistics"`
+	SelectionSavedAt     string                         `json:"selectionSavedAt"`
+	CategoryCalculations map[string]CategoryCalculation `json:"categoryCalculations"`
+	Negotiations         []OfferNegotiation             `json:"negotiations"`
+	DocumentLanguage     string                         `json:"documentLanguage"`
+	PricingSnapshot      string                         `json:"pricingSnapshot,omitempty"`
+	LogisticsQuoteID     string                         `json:"logisticsQuoteId"`
+	CustomerID           string                         `json:"customerId"`
+	Customer             string                         `json:"customer"`
+	ContactID            string                         `json:"contactId"`
+	Contact              string                         `json:"contact"`
+	Currency             string                         `json:"currency"`
+	QuoteFX              string                         `json:"quoteFx"`
+	QuoteFXConfirmed     bool                           `json:"quoteFxConfirmed"`
+	Delivery             string                         `json:"delivery"`
+	LoadingPort          string                         `json:"loadingPort"`
+	DestinationPort      string                         `json:"destinationPort"`
+	Incoterm             string                         `json:"incoterm"`
+	Payment              string                         `json:"payment"`
+	ValidUntil           string                         `json:"validUntil"`
+	Remark               string                         `json:"remark"`
+	Lines                []OfferLine                    `json:"lines"`
+	Transports           []OfferTransport               `json:"transports"`
+	CategorySelections   []OfferCategorySelection       `json:"categorySelections"`
+	Rates                []OfferRate                    `json:"rates"`
+	Total                string                         `json:"total"`
+	LogisticsAllocations []OfferLogisticsAllocation     `json:"logisticsAllocations"`
+}
+
+type CategoryCalculation struct {
+	QuoteFX          string `json:"quoteFx"`
+	QuoteFXConfirmed bool   `json:"quoteFxConfirmed"`
+	PortCharge       string `json:"portCharge"`
+	Loss             string `json:"loss"`
+	Note             string `json:"note"`
+}
+
+type OfferNegotiation struct {
+	OfferCategorySelection
+	InitialPrice         string `json:"initialPrice"`
+	CustomerCounterPrice string `json:"customerCounterPrice"`
+	ProposedPrice        string `json:"proposedPrice"`
+	Status               string `json:"status"`
+	Note                 string `json:"note"`
+}
+
+// Snapshot of sales' proposed alternatives; customer acceptance happens later.
+type OfferSelectionSnapshot struct {
+	OfferCategorySelection
+	Product OfferProduct     `json:"product"`
+	Quote   OfferSourceQuote `json:"quote"`
 }
 type OfferLogisticsAllocation struct {
 	ProductID string `json:"productId"`
