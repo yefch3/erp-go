@@ -52,6 +52,7 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "travel_reimbursements", true)
 	assertProcurementTable(t, db, "travel_reimbursement_files", true)
 	assertProcurementTable(t, db, "travel_reimbursement_history", true)
+	assertProcurementColumnType(t, db, "sourcing_lines", "packaging", "text")
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -72,6 +73,7 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementColumn(t, db, "sourcing_customer_selection_items", "product_spec", true)
 	assertProcurementColumn(t, db, "purchase_requirements", "source_payment_terms", true)
 	assertProcurementTable(t, db, "quality_inspection_tasks", true)
+	assertProcurementColumnType(t, db, "sourcing_lines", "packaging", "text")
 }
 
 func assertProcurementTable(t *testing.T, db *sql.DB, name string, want bool) {
@@ -94,5 +96,17 @@ func assertProcurementColumn(t *testing.T, db *sql.DB, table, column string, wan
 	}
 	if got != want {
 		t.Fatalf("column %s.%s exists=%v want=%v", table, column, got, want)
+	}
+}
+
+func assertProcurementColumnType(t *testing.T, db *sql.DB, table, column, want string) {
+	t.Helper()
+	var got string
+	err := db.QueryRowContext(context.Background(), `SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2`, table, column).Scan(&got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("column %s.%s type=%q want=%q", table, column, got, want)
 	}
 }
