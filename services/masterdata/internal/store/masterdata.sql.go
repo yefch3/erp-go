@@ -2712,16 +2712,16 @@ SELECT d.field_key, d.display_name, d.sort_order, COALESCE(v.value, '')::text AS
 FROM customer_field_definitions d
 JOIN customer_custom_field_values v
   ON v.tenant_id = d.tenant_id AND v.field_id = d.id
-  AND v.customer_id = $2
-WHERE d.tenant_id = $1
+  AND v.customer_id = $1
+WHERE d.tenant_id = $2
   AND d.status = 'ACTIVE'
   AND btrim(v.value) <> ''
 ORDER BY d.sort_order, d.id
 `
 
 type ListCustomerCustomFieldValuesParams struct {
-	TenantID   int64
 	CustomerID int64
+	TenantID   int64
 }
 
 type ListCustomerCustomFieldValuesRow struct {
@@ -2732,7 +2732,7 @@ type ListCustomerCustomFieldValuesRow struct {
 }
 
 func (q *Queries) ListCustomerCustomFieldValues(ctx context.Context, arg ListCustomerCustomFieldValuesParams) ([]ListCustomerCustomFieldValuesRow, error) {
-	rows, err := q.db.Query(ctx, listCustomerCustomFieldValues, arg.TenantID, arg.CustomerID)
+	rows, err := q.db.Query(ctx, listCustomerCustomFieldValues, arg.CustomerID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
