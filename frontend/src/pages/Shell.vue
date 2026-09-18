@@ -870,7 +870,25 @@ function pullShippingReminders() {
 
 // One stream for the whole session, opened once the user is inside the shell
 // and closed when they leave it.
-onMounted(startLive)
+const permissionRefreshIntervalMs = 60_000
+let permissionRefreshTimer: number | undefined
+
+function refreshPermissionCache() {
+  if (document.visibilityState === 'hidden') return
+  void auth.refreshPermissionCodes().catch(() => {})
+}
+
+function refreshPermissionCacheWhenVisible() {
+  if (document.visibilityState === 'visible') refreshPermissionCache()
+}
+
+onMounted(() => {
+  startLive()
+  window.addEventListener('focus', refreshPermissionCache)
+  window.addEventListener('permissions-stale', refreshPermissionCache)
+  document.addEventListener('visibilitychange', refreshPermissionCacheWhenVisible)
+  permissionRefreshTimer = window.setInterval(refreshPermissionCache, permissionRefreshIntervalMs)
+})
 
 // 顶栏的小头像。每次进壳子现取一次——地址带签名、十几分钟就过期，
 // 所以它存不进 localStorage（见 stores/auth.ts）。
@@ -886,7 +904,13 @@ onMounted(async () => {
     auth.avatarUrl = ''
   }
 })
-onUnmounted(stopLive)
+onUnmounted(() => {
+  stopLive()
+  window.removeEventListener('focus', refreshPermissionCache)
+  window.removeEventListener('permissions-stale', refreshPermissionCache)
+  document.removeEventListener('visibilitychange', refreshPermissionCacheWhenVisible)
+  if (permissionRefreshTimer !== undefined) window.clearInterval(permissionRefreshTimer)
+})
 
 // Desktop notification for new mail — but only when the person is NOT
 // looking at the mailbox: on another ERP page, another window, or another

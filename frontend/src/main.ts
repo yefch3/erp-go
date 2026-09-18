@@ -16,12 +16,21 @@ const pinia = createPinia()
 //
 // 用 .then 而不是顶层 await：顶层 await 要求把构建目标提到 es2022，为了一行
 // 写法去动整个应用的目标浏览器不划算。
-void bootLocale().then(() => {
+void bootLocale().then(async () => {
+  const auth = useAuthStore(pinia)
+  // The router guard reads localStorage synchronously. Repair its permission
+  // cache before installing the router; otherwise a newly granted route can
+  // be rejected once and leave the user on 我的待办 even though IAM already
+  // allows it. Failure is quiet and fail-closed: the API remains the security
+  // boundary and an expired session is still redirected by the interceptor.
+  if (auth.isLoggedIn) {
+    try {
+      await auth.refreshPermissionCodes()
+    } catch {
+      // The shell can still render from the last cache while the backend is
+      // temporarily unavailable. Focus and interval refreshes retry later.
+    }
+  }
   createApp(App).use(pinia).use(router).use(i18n).mount('#app')
-
-  // What this session is allowed to do, re-read once per load. The cached list
-  // paints the menu immediately; this makes a role change — or a renamed
-  // permission code, as mail:* just were — land on the next page load instead
-  // of the next login.
-  useAuthStore(pinia).refreshPermissions()
+  void auth.refreshProfile().catch(() => {})
 })

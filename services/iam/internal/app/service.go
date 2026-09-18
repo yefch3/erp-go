@@ -832,6 +832,16 @@ func (s *Service) ListPermissions(ctx context.Context) ([]store.Permission, erro
 
 // GrantRolePermissions 原子替换角色权限，并记录修改前后权限及操作人。
 func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int64, codes []string, operatorIDs ...int64) error {
+	role, err := s.q.GetRole(ctx, store.GetRoleParams{TenantID: tenantID, ID: roleID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierr.NotFound("IAM_ROLE_NOT_FOUND", "角色不存在")
+		}
+		return err
+	}
+	if role.Code == "SUPER_ADMIN" {
+		return apierr.Invalid("IAM_ROLE_SUPER_ADMIN_LOCKED", "超级管理员固定拥有全部功能权限，不能删减")
+	}
 	ids, err := s.q.GetPermissionIDsByCodes(ctx, codes)
 	if err != nil {
 		return err

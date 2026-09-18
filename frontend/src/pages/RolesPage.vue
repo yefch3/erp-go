@@ -45,16 +45,24 @@
               >
                 {{ selected.status === 'INACTIVE' ? t('roles.activate') : t('roles.deactivate') }}
               </el-button>
-              <el-button v-if="canWrite" type="primary" :loading="saving" @click="saveGrants">
+              <el-button v-if="canEditSelected" type="primary" :loading="saving" @click="saveGrants">
                 {{ t('roles.saveGrants') }}
               </el-button>
             </div>
           </div>
+          <el-alert
+            v-if="selected.code === 'SUPER_ADMIN'"
+            :title="t('roles.superAdminFixed')"
+            type="info"
+            :closable="false"
+            show-icon
+            class="super-admin-note"
+          />
           <!-- Grouped by module because that is how people think about it:
                "can this role touch customers", not "code #7". -->
           <div v-for="(items, module) in grouped" :key="module" class="module">
             <div class="module-name">{{ moduleLabel(module) }}</div>
-            <el-checkbox-group v-model="checked" :disabled="!canWrite" class="perm-list">
+            <el-checkbox-group v-model="checked" :disabled="!canEditSelected" class="perm-list">
               <el-checkbox v-for="p in items" :key="p.code" :value="p.code" :title="p.code">
                 {{ displayPermissionName(p) }}
               </el-checkbox>
@@ -66,46 +74,46 @@
             <div class="module-name">{{ t('roles.dataScope') }}</div>
             <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeExport') }}</span>
-              <el-select v-model="scopeExport" :disabled="!canWrite" style="width: 220px">
+              <el-select v-model="scopeExport" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveScope">
+              <el-button v-if="canEditSelected" :loading="savingScope" @click="saveScope">
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
             <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeSourcing') }}</span>
-              <el-select v-model="scopeSourcing" :disabled="!canWrite" style="width: 220px">
+              <el-select v-model="scopeSourcing" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveSourcingScope">
+              <el-button v-if="canEditSelected" :loading="savingScope" @click="saveSourcingScope">
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
             <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeOrder') }}</span>
-              <el-select v-model="scopeOrder" :disabled="!canWrite" style="width: 220px">
+              <el-select v-model="scopeOrder" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveOrderScope">
+              <el-button v-if="canEditSelected" :loading="savingScope" @click="saveOrderScope">
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
             <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeRequirement') }}</span>
-              <el-select v-model="scopeRequirement" :disabled="!canWrite" style="width: 220px">
+              <el-select v-model="scopeRequirement" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveRequirementScope">
+              <el-button v-if="canEditSelected" :loading="savingScope" @click="saveRequirementScope">
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
             <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeShipping') }}</span>
-              <el-select v-model="scopeShipping" :disabled="!canWrite" style="width: 220px">
+              <el-select v-model="scopeShipping" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveShippingScope">
+              <el-button v-if="canEditSelected" :loading="savingScope" @click="saveShippingScope">
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
@@ -156,6 +164,7 @@ const canWrite = auth.can('iam:role:write')
 const roles = ref<Role[]>([])
 const permissions = ref<Permission[]>([])
 const selected = ref<Role | null>(null)
+const canEditSelected = computed(() => canWrite && selected.value?.code !== 'SUPER_ADMIN')
 const checked = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -341,6 +350,10 @@ async function saveGrants() {
     await put(`/roles/${selected.value?.id}/permissions`, { permissionCodes: checked.value })
     ElMessage.success(t('roles.grantsSaved'))
     await load()
+    // If the administrator edited a role they personally hold, update their
+    // own navigation immediately instead of waiting for the focus/interval
+    // synchronizer in the shell.
+    await auth.refreshPermissionCodes().catch(() => {})
   } finally {
     saving.value = false
   }
