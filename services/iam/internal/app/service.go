@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -921,12 +922,47 @@ func (s *Service) ListRoleMembers(ctx context.Context, tenantID, roleID int64) (
 	return s.q.ListRoleMembers(ctx, store.ListRoleMembersParams{TenantID: tenantID, RoleID: roleID})
 }
 
-// translateUnique turns a unique-violation into the given business error and
-// passes everything else through untouched.
+// uniqueMessages 说每一条唯一约束被撞上时该说什么。
+//
+// **一张表上不止一条唯一约束**，而从前这里只看「是不是 23505」，然后一律
+// 说成调用方猜的那一种。employees 上有两条：(tenant_id, code) 和跨租户的
+// lower(email)。于是新建员工时填了一个**别人用过的邮箱**，人看到的是
+// 「工号已存在」——而那个工号确实没人用过，怎么换都还是这句话。
+// 2026-09-18 报的就是这个。
+//
+// 所以按约束名翻。名字来自数据库（pgconn.PgError.ConstraintName），改迁移
+// 时如果动了名字，这里认不出，会落回下面那句"说不清是哪一项"——那句话不
+// 好看，但它是真的，比一句笃定的错话强。
+var uniqueMessages = map[string]struct{ code, msg string }{
+	"employees_tenant_id_code_key": {"IAM_EMP_CODE_TAKEN", "工号已存在"},
+	// 这条索引是**跨租户**的（见迁移 00023：登录按邮箱地址而不是域名），
+	// 所以「已经有人用」里的那个人可能不在本公司，界面上查不到。话要说得
+	// 让人能往下走，而不是让人去翻自己公司的花名册。
+	"employees_email_key":            {"IAM_EMP_EMAIL_TAKEN", "这个邮箱已经注册过了，换一个邮箱，或者先把原来那个账号停用"},
+	"users_tenant_id_username_key":   {"IAM_USERNAME_TAKEN", "用户名已存在"},
+	"users_username_lower_idx":       {"IAM_USERNAME_TAKEN", "用户名已存在"},
+	"users_employee_id_key":          {"IAM_USER_EXISTS", "这个员工已经有账号了"},
+	"departments_tenant_id_code_key": {"IAM_DEPT_CODE_TAKEN", "部门编码已存在"},
+	"roles_tenant_id_code_key":       {"IAM_ROLE_CODE_TAKEN", "角色编码已存在"},
+}
+
+// translateUnique turns a unique-violation into the business error that names
+// the field actually duplicated, and passes everything else through untouched.
+//
+// code/msg 是调用方给的兜底：约束名认得出时以约束为准，认不出才用它。
 func translateUnique(err error, code, msg string) error {
-	var pgErr interface{ SQLState() string }
-	if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
-		return apierr.Conflict(code, msg)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return err
 	}
-	return err
+	if m, ok := uniqueMessages[pgErr.ConstraintName]; ok {
+		return apierr.Conflict(m.code, m.msg)
+	}
+	// 认不出这条约束。**不要替它编一个字段名**——那正是这次要修的毛病。
+	// 把约束名带上：使用的人看不懂，但报上来的截图里有它，一眼就能定位。
+	if pgErr.ConstraintName != "" {
+		return apierr.Conflict("IAM_DUPLICATE",
+			"有一项和系统里已有的记录重复了（"+pgErr.ConstraintName+"）")
+	}
+	return apierr.Conflict(code, msg)
 }
