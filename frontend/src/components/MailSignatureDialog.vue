@@ -26,11 +26,6 @@
         <el-table-column :label="t('signatures.name')" min-width="200">
           <template #default="{ row }">
             <div class="prod">{{ row.name }}</div>
-            <div class="sub">
-              <!-- Whose block this is matters: a shared one changes what
-                   every colleague sends, a personal one only your own mail. -->
-              {{ row.ownerType === 'TENANT' ? t('signatures.shared') : t('signatures.personal') }}
-            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('signatures.content')" min-width="380">
@@ -79,12 +74,9 @@
         <el-form-item :label="t('signatures.name')">
           <el-input v-model="form.name" :placeholder="t('signatures.namePlaceholder')" />
         </el-form-item>
-        <el-form-item :label="t('signatures.scope')">
-          <el-radio-group v-model="form.ownerType">
-            <el-radio value="EMPLOYEE">{{ t('signatures.personal') }}</el-radio>
-            <el-radio value="TENANT">{{ t('signatures.shared') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
+        <!-- No "who is this for" choice: a signature is its writer's own
+             (2026-09-18). The company-wide layer that used to sit here is
+             gone, and the server owns the row by whoever saves it. -->
         <el-form-item :label="t('signatures.content')">
           <div class="body-box">
             <!-- The signature is appended to the body before rendering, so
@@ -140,7 +132,6 @@ import { del, get, post, put } from '../api'
 
 interface Signature {
   id: string
-  ownerType: string
   ownerId: string
   name: string
   content: string
@@ -166,7 +157,7 @@ const saving = ref(false)
 // save() pick the verb without a second flag to keep in step.
 const editingId = ref('')
 const editor = ref<InstanceType<typeof MailEditor>>()
-const form = reactive({ name: '', ownerType: 'EMPLOYEE', content: '', isDefault: false })
+const form = reactive({ name: '', content: '', isDefault: false })
 
 async function load() {
   loading.value = true
@@ -181,7 +172,6 @@ async function load() {
 function openCreate() {
   editingId.value = ''
   form.name = ''
-  form.ownerType = 'EMPLOYEE'
   form.content = ''
   form.isDefault = false
   open.value = true
@@ -190,7 +180,6 @@ function openCreate() {
 function openEdit(row: Signature) {
   editingId.value = row.id
   form.name = row.name
-  form.ownerType = row.ownerType
   form.content = row.bodyFormat === 'HTML' ? row.content : textToHTML(row.content)
   form.isDefault = row.isDefault
   open.value = true

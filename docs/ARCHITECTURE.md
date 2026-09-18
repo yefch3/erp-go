@@ -3497,26 +3497,29 @@ Google 的 `GoogleImageProxy`）。前端默认**把代理预取从「已打开�
 
 #### 5.12.8 需求 6：签名模板
 
+下面是目标形态。今天的库里还多一列 `owner_type`（值只剩 'EMPLOYEE'）和
+一个带它的默认索引，按两步发布的规矩迟一个版本再删，见迁移 00069。
+
 ```sql
 CREATE TABLE email_signatures (
     id           BIGSERIAL PRIMARY KEY,
     tenant_id    BIGINT       NOT NULL,
-    owner_type   VARCHAR(16)  NOT NULL,   -- TENANT（公司统一）/ EMPLOYEE（个人）
-    owner_id     BIGINT       NOT NULL,   -- employee_id，TENANT 时为 0
+    owner_id     BIGINT       NOT NULL,   -- employee_id：写它的人
     name         VARCHAR(100) NOT NULL,   -- 「英文签名」「西语签名」
     content_html TEXT         NOT NULL,
     is_default   BOOLEAN      NOT NULL DEFAULT false,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX email_signatures_default_idx
-    ON email_signatures (tenant_id, owner_type, owner_id) WHERE is_default;
+    ON email_signatures (tenant_id, owner_id) WHERE is_default;
 ```
 
 - 每人可以有多个（中 / 英 / 西各一套），一个默认，写信时自动附加、可切换、可临时关掉
-- **签名里也支持变量**（`{{my_name}}` `{{my_title}}` `{{my_phone}}`），
-  所以公司统一模板改一次，全员的签名跟着变，不用挨个通知改
-- 两层：**公司级模板**（管理员维护，保证格式统一）+ **个人覆盖**。
-  外贸公司通常要求对外签名格式一致，但业务员的电话分机各不相同
+- **签名里也支持变量**（`{{my_name}}` `{{my_title}}` `{{my_phone}}`）
+- **只有一层：各人自己的。** 清单、改、删、发信时按 id 取签名，一律只认
+  `owner_id = 本人`——签名是各人自己的数据，别人看不到（2026-09-18 定的）。
+  原设计还有一层「公司统一」（`owner_type = 'TENANT'`，谁都能选、谁都能改），
+  已拿掉；`owner_type` 列按两步发布的规矩晚一个版本再删（迁移 00069）
 
 #### 5.12.9 地址可达性：一次学会，永久生效
 

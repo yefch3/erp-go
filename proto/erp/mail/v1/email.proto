@@ -1247,8 +1247,10 @@ message Signature {
   int64 id = 1;
   // TEXT or HTML. HTML is what allows a logo in the sign-off.
   string body_format = 7;
-  // TENANT (shared) or EMPLOYEE (personal).
-  string owner_type = 2;
+  // Always empty since 2026-09-18: every signature is its owner's, the
+  // company-wide layer is gone. Kept on the wire only because removing a
+  // field is a breaking change the proto check refuses.
+  string owner_type = 2 [deprecated = true];
   int64 owner_id = 3;
   string name = 4;
   string content = 5;
@@ -1461,7 +1463,8 @@ message ListSignaturesResponse {
 }
 
 message CreateSignatureRequest {
-  string owner_type = 1;
+  // Ignored: the owner is the caller. See Signature.owner_type.
+  string owner_type = 1 [deprecated = true];
   string name = 2;
   string content = 3;
   bool is_default = 4;
@@ -1477,7 +1480,8 @@ message CreateSignatureResponse {
 // say "clear this field" that JSON omission cannot express.
 message UpdateSignatureRequest {
   int64 id = 1;
-  string owner_type = 2;
+  // Ignored: the owner is the caller. See Signature.owner_type.
+  string owner_type = 2 [deprecated = true];
   string name = 3;
   string content = 4;
   bool is_default = 5;
@@ -1501,8 +1505,10 @@ message DeleteSignatureResponse {
 // (contact_name, my_name, ...), substituted in the editor at apply time.
 message EmailTemplate {
   int64 id = 1;
-  // TENANT (the company phrasebook) or EMPLOYEE (personal).
-  string owner_type = 2;
+  // Always empty since 2026-09-18: every template is its owner's, the
+  // company phrasebook layer is gone. Kept on the wire only because
+  // removing a field is a breaking change the proto check refuses.
+  string owner_type = 2 [deprecated = true];
   int64 owner_id = 3;
   string name = 4;
   // zh / en / es, or "" for language-neutral. A picker filter, not a
@@ -1521,7 +1527,8 @@ message ListEmailTemplatesResponse {
 }
 
 message CreateEmailTemplateRequest {
-  string owner_type = 1;
+  // Ignored: the owner is the caller. See EmailTemplate.owner_type.
+  string owner_type = 1 [deprecated = true];
   string name = 2;
   string lang = 3;
   string subject = 4;
@@ -1536,7 +1543,8 @@ message CreateEmailTemplateResponse {
 // Whole block, not a patch, for the same reason UpdateSignatureRequest is.
 message UpdateEmailTemplateRequest {
   int64 id = 1;
-  string owner_type = 2;
+  // Ignored: the owner is the caller. See EmailTemplate.owner_type.
+  string owner_type = 2 [deprecated = true];
   string name = 3;
   string lang = 4;
   string subject = 5;

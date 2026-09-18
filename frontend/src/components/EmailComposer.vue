@@ -184,9 +184,8 @@
                   <template v-if="templates.length">
                     <el-dropdown-item v-for="tp in templates" :key="tp.id" :command="tp">
                       {{ tp.name }}
-                      <span class="tpl-item-meta">
-                        {{ tp.ownerType === 'TENANT' ? t('templates.shared') : t('templates.personal') }}
-                        <template v-if="tp.lang"> · {{ t(`templates.langs.${tp.lang}`) }}</template>
+                      <span v-if="tp.lang" class="tpl-item-meta">
+                        {{ t(`templates.langs.${tp.lang}`) }}
                       </span>
                     </el-dropdown-item>
                   </template>
@@ -299,12 +298,7 @@
       <el-form-item :label="t('emails.signature')">
         <el-select v-model="form.signatureId" clearable style="width: 320px">
           <el-option :label="t('emails.noSignature')" :value="'0'" />
-          <el-option
-            v-for="s in signatures"
-            :key="s.id"
-            :label="s.ownerType === 'TENANT' ? `${s.name}（${t('emails.shared')}）` : s.name"
-            :value="s.id"
-          />
+          <el-option v-for="s in signatures" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
       </el-form-item>
     </el-form>
@@ -521,7 +515,6 @@ import { addressesToLookUp, bookHitsFor, withBookDetails } from '../lib/replyCon
 
 interface Signature {
   id: string
-  ownerType: string
   name: string
   content: string
   isDefault: boolean
@@ -597,7 +590,6 @@ const VARIABLES = [
 // spinner to a menu.
 interface ComposeTemplate {
   id: string
-  ownerType: string
   name: string
   lang: string
   subject: string

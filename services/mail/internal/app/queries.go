@@ -252,10 +252,13 @@ func (s *Service) mayActOn(ctx context.Context, tenantID, id int64, op Operator)
 // ---------------------------------------------------------------- signatures
 
 // SignatureInput is one signature block.
+//
+// No owner in here: a signature belongs to whoever writes it (2026-09-18),
+// so the owner is the operator, never a choice on the form. The company-wide
+// layer that used to sit beside the personal one is gone.
 type SignatureInput struct {
-	OwnerType string
-	Name      string
-	Content   string
+	Name    string
+	Content string
 	// TEXT or HTML. HTML is what allows a logo in the sign-off.
 	Format    string
 	IsDefault bool
@@ -267,15 +270,11 @@ func (s *Service) ListSignatures(ctx context.Context, tenantID int64, op Operato
 	})
 }
 
-// cleanSignature is the validation and owner resolution both writing paths
-// share, so an edit cannot store something a create would have refused.
-func cleanSignature(in SignatureInput, op Operator) (ownerType string, ownerID int64, content, format string, err error) {
+// cleanSignature is the validation both writing paths share, so an edit
+// cannot store something a create would have refused.
+func cleanSignature(in SignatureInput) (content, format string, err error) {
 	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Content) == "" {
-		return "", 0, "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
-	}
-	ownerType, ownerID = "EMPLOYEE", op.ID
-	if strings.ToUpper(in.OwnerType) == "TENANT" {
-		ownerType, ownerID = "TENANT", 0
+		return "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
 	}
 	format = normalizeFormat(in.Format)
 	content = in.Content
@@ -288,14 +287,14 @@ func cleanSignature(in SignatureInput, op Operator) (ownerType string, ownerID i
 			// produces "<br>" or an empty paragraph — which passes the check
 			// above and stores a signature that appends nothing to every mail
 			// and looks, in the list, exactly like a working one.
-			return "", 0, "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
+			return "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
 		}
 	}
-	return ownerType, ownerID, content, format, nil
+	return content, format, nil
 }
 
 func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in SignatureInput, op Operator) (int64, error) {
-	ownerType, ownerID, content, format, err := cleanSignature(in, op)
+	content, format, err := cleanSignature(in)
 	if err != nil {
 		return 0, err
 	}
@@ -311,13 +310,13 @@ func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in Signat
 			// the owner with no default at all — which is what "clear, then
 			// fail" produced when these were two separate statements.
 			if err := q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
-				TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+				TenantID: tenantID, OwnerID: op.ID,
 			}); err != nil {
 				return err
 			}
 		}
 		id, err = q.CreateSignature(ctx, store.CreateSignatureParams{
-			TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+			TenantID: tenantID, OwnerID: op.ID,
 			Name: in.Name, Content: content, BodyFormat: format,
 			IsDefault: in.IsDefault,
 		})
@@ -331,18 +330,18 @@ func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in Signat
 // In place, rather than delete-and-recreate: a campaign row points at a
 // signature by id, and recreating would orphan every send that referenced it.
 func (s *Service) UpdateSignature(ctx context.Context, tenantID, id int64, in SignatureInput, op Operator) error {
-	ownerType, ownerID, content, format, err := cleanSignature(in, op)
+	content, format, err := cleanSignature(in)
 	if err != nil {
 		return err
 	}
 	// An edit removes images as surely as a delete does — the logo swapped
 	// out of a signature is just as orphaned as one whose signature is gone.
-	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id})
+	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id, EmployeeID: op.ID})
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if in.IsDefault {
 			if err := q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
-				TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+				TenantID: tenantID, OwnerID: op.ID,
 			}); err != nil {
 				return err
 			}
@@ -352,7 +351,6 @@ func (s *Service) UpdateSignature(ctx context.Context, tenantID, id int64, in Si
 		// this way cannot have cleared somebody else's default on its way out.
 		n, err := q.UpdateSignature(ctx, store.UpdateSignatureParams{
 			TenantID: tenantID, ID: id, EmployeeID: op.ID,
-			OwnerType: ownerType, OwnerID: ownerID,
 			Name: in.Name, Content: content, BodyFormat: format,
 			IsDefault: in.IsDefault,
 		})
@@ -386,7 +384,7 @@ func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64, op Op
 	// Read before delete: the content is the only record of which images
 	// this signature was using, and the sweep below needs it after the row
 	// is gone. A failed read only skips the sweep, never the delete.
-	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id})
+	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id, EmployeeID: op.ID})
 	n, err := s.q.DeleteSignature(ctx, store.DeleteSignatureParams{
 		TenantID: tenantID, ID: id, EmployeeID: op.ID,
 	})

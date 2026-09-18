@@ -28,9 +28,6 @@
                 {{ t(`templates.langs.${row.lang}`) }}
               </el-tag>
             </div>
-            <div class="sub">
-              {{ row.ownerType === 'TENANT' ? t('templates.shared') : t('templates.personal') }}
-            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('templates.subject')" min-width="200">
@@ -72,12 +69,9 @@
         <el-form-item :label="t('templates.name')">
           <el-input v-model="form.name" :placeholder="t('templates.namePlaceholder')" />
         </el-form-item>
-        <el-form-item :label="t('templates.scope')">
-          <el-radio-group v-model="form.ownerType">
-            <el-radio value="EMPLOYEE">{{ t('templates.personal') }}</el-radio>
-            <el-radio value="TENANT">{{ t('templates.shared') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
+        <!-- No "who is this for" choice, same as signatures: a template is
+             its writer's own (2026-09-18). The server owns the row by
+             whoever saves it. -->
         <el-form-item :label="t('templates.lang')">
           <!-- Which language the CONTENT is written in — a picker filter, so
                the person writing to a Spanish customer is not offered 中文
@@ -135,7 +129,6 @@ import { del, get, post, put } from '../api'
 
 export interface EmailTemplate {
   id: string
-  ownerType: string
   ownerId: string
   name: string
   lang: string
@@ -169,7 +162,7 @@ const open = ref(false)
 const saving = ref(false)
 const editingId = ref('')
 const editor = ref<InstanceType<typeof MailEditor>>()
-const form = reactive({ name: '', ownerType: 'EMPLOYEE', lang: '', subject: '', content: '' })
+const form = reactive({ name: '', lang: '', subject: '', content: '' })
 
 async function load() {
   loading.value = true
@@ -184,7 +177,6 @@ async function load() {
 function openCreate() {
   editingId.value = ''
   form.name = ''
-  form.ownerType = 'EMPLOYEE'
   form.lang = ''
   form.subject = ''
   form.content = ''
@@ -194,7 +186,6 @@ function openCreate() {
 function openEdit(row: EmailTemplate) {
   editingId.value = row.id
   form.name = row.name
-  form.ownerType = row.ownerType
   form.lang = row.lang
   form.subject = row.subject
   form.content = row.bodyFormat === 'HTML' ? row.content : textToHTML(row.content)
