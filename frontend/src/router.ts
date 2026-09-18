@@ -61,6 +61,14 @@ export const router = createRouter({
         { path: 'quotations', redirect: '/sales/quotations' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
+        // 员工邮箱监管（老板端）。挂在 Shell 里面：它是一页管理功能，顶栏和
+        // 菜单照常。权限由网关拦，这里再挡一道，免得没权限的人点进来看到
+        // 一页 403。
+        {
+          path: 'mail/supervision',
+          component: () => import('./pages/MailSupervisionPage.vue'),
+          meta: { permission: 'mail:supervision:read' },
+        },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
         // 合同开始执行后直接进入财务与下游任务，旧“执行一览”书签统一回到外销合同。
         { path: 'contract-execution', redirect: (to) => ({ path: '/contracts', query: to.query }) },

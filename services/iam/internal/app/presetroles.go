@@ -24,7 +24,10 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
-	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
+	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read",
+		// 员工邮箱监管（迁移 00074）。给 BOSS，不给别人——读自己的邮件和读
+		// 别人的邮件是两件事。两条分开：看信箱，和看"谁看过谁的信箱"。
+		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",

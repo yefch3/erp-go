@@ -864,6 +864,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Get("/api/inbound-mails/{id}/attachments/download", s.downloadInboundAttachments)
 		// 自建文件夹（Issue #362）：建在邮件服务器上，Foxmail 里也看得到。
+		// 员工邮箱监管（老板端）。**这一组不要 requireMailUnlock**：信箱令牌
+		// 是「我知道这个箱的密码」，而看的人恰恰不知道、也不该知道。认的是
+		// 权限，而且邮件服务每读一次都往登记簿写一行，写不进去就不给读。
+		// 理由写在 mail_supervision_handlers.go 和 app/supervision.go 的文件头。
+		r.With(s.perm("mail:supervision:read")).Get("/api/mail-supervision/tree", s.mailSupervisionTree)
+		r.With(s.perm("mail:supervision:read")).Get("/api/mail-supervision/mails", s.mailSupervisionFolder)
+		r.With(s.perm("mail:supervision:read")).Get("/api/mail-supervision/mails/{id}", s.mailSupervisionMail)
+		// 登记簿另给一条权限：能翻簿子的人和被记的人分开。
+		r.With(s.perm("mail:supervision:audit")).Get("/api/mail-supervision/log", s.mailSupervisionLog)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-folders", s.listMailFolders)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mail-folders", s.createMailFolder)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Put("/api/mail-folders/{id}", s.renameMailFolder)

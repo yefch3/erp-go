@@ -301,6 +301,24 @@
       </button>
     </div>
 
+    <!-- 员工邮箱监管（老板端）。**不挂在任何一个信箱底下**，也不是文件夹：
+         它看的是别人的信箱，和这棵树上的东西不是一类。所以摆在最底下、
+         和上面隔开，点了是换一页，不是换一个文件夹。
+
+         只有拿着 mail:supervision:read 的人看得见。看不见不等于拦得住——
+         真正拦住的是网关那条权限，这里只是别让人看见一个点了会被拒的入口。 -->
+    <button
+      v-if="canSupervise"
+      type="button"
+      class="folder supervise"
+      :title="t('mailGate.superviseHint')"
+      @click="emit('supervise')"
+    >
+      <span class="fold-caret" aria-hidden="true" />
+      <el-icon class="ficon"><User /></el-icon>
+      <span class="fname">{{ t('mailGate.supervise') }}</span>
+    </button>
+
     <!-- append-to-body：这个弹窗开在左侧栏里，而 .rail 是 position: sticky，
          sticky 自成一个层叠上下文——弹窗生在里面就爬不到右边的邮件列表上面
          去，表现是「点了添加邮箱，弹窗被列表盖住只露出个标题」。
@@ -326,7 +344,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
-import { CaretRight, Star, SwitchButton, Folder, FolderOpened } from '@element-plus/icons-vue'
+import { CaretRight, Star, SwitchButton, Folder, FolderOpened, User } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
 import { canDropInto, dropTargetFor, type DropTarget } from '../lib/dragMails'
@@ -389,6 +407,8 @@ const props = defineProps<{
    * 与其让人拖过去再看到一条失败提示，不如那一格干脆不亮。
    */
   dragAccounts?: number[]
+  /** 这个人能不能看员工邮箱监管。看不见不等于拦得住，真正拦住的是网关。 */
+  canSupervise?: boolean
 }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
@@ -407,6 +427,8 @@ const emit = defineEmits<{
    * 左栏里没了。
    */
   needFolders: [number]
+  /** 点了「员工邮箱」。页面把它变成一次跳转。 */
+  supervise: []
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
   /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
@@ -1026,6 +1048,16 @@ button.fold-caret:hover .caret {
 }
 /* 一条线代替那行标题：把「它不属于上面任何一个信箱」这件事说清楚，
    而不占一整行的高度。 */
+/* 「员工邮箱」不是文件夹，摆在最底下、和上面隔一条线。 */
+.supervise {
+  margin-top: 6px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 8px;
+  cursor: pointer;
+}
+.supervise .ficon {
+  color: var(--el-color-primary);
+}
 .shared {
   margin-top: 10px;
   padding-top: 8px;

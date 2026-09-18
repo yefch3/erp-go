@@ -59,6 +59,8 @@
         @select="pickFolder"
         @changed="onMailboxesChanged"
         @need-folders="ensureFolders"
+        :can-supervise="canSupervise"
+        @supervise="router.push('/mail/supervision')"
         @added="tokensChanged++"
         @create-folder="createFolder"
         @rename-folder="renameFolder"
@@ -1694,6 +1696,10 @@ const canWrite = computed(() => auth.can('mail:email:write'))
 const canSuppress = computed(() => auth.can('mail:suppression:write'))
 const isAdmin = computed(() => auth.can('iam:role:write'))
 const canExport = computed(() => auth.can('mail:email:export'))
+// 员工邮箱监管：老板端按国家和员工看同事的收发。左栏最底下那个入口只对
+// 拿着这条权限的人出现——拦住的是网关，这里只是别让人看见一个点了会被拒
+// 的入口。
+const canSupervise = computed(() => auth.can('mail:supervision:read'))
 const canCreateCustomer = computed(() => auth.can('masterdata:customer:write'))
 
 // An icon per folder. Text alone made the rail a list of similar-length words

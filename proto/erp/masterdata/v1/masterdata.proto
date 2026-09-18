@@ -39,6 +39,9 @@ service CustomerService {
   // a lookup per customer, because the mail composer needs all of them at
   // once and an N+1 there is a page that visibly stalls.
   rpc ListMailingContacts(ListMailingContactsRequest) returns (ListMailingContactsResponse);
+  // 每个业务员负责哪些国家的客户。老板端的员工邮箱监管拿它把左栏排成
+  // 「国家 → 员工」——员工表上没有国家，这家公司的"国家"是通过客户体现的。
+  rpc ListOwnerCountries(ListOwnerCountriesRequest) returns (ListOwnerCountriesResponse);
   // ListCustomerCountries answers "which countries do we sell to, and how
   // many people are in each" — the grouping the recipient picker offers.
   rpc ListCustomerCountries(ListCustomerCountriesRequest) returns (ListCustomerCountriesResponse);
@@ -1203,4 +1206,19 @@ message ListCustomerIdsByOwnerEmployeesRequest {
 
 message ListCustomerIdsByOwnerEmployeesResponse {
   repeated int64 customer_ids = 1;
+}
+
+message ListOwnerCountriesRequest {}
+
+// 一个业务员在一个国家下负责了几家客户。一个人负责几个国家就有几行。
+message OwnerCountry {
+  int64 employee_id = 1;
+  string employee_name = 2;
+  // 两位国家码，空表示这家客户没填国家。
+  string country_code = 3;
+  int64 customer_count = 4;
+}
+
+message ListOwnerCountriesResponse {
+  repeated OwnerCountry rows = 1;
 }

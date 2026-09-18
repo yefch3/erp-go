@@ -238,6 +238,14 @@ service EmailService {
   // Pull now rather than waiting for the next poll. A mail host offers no
   // webhook, so this is the "refresh" a person reaches for.
   rpc SyncMailbox(SyncMailboxRequest) returns (SyncMailboxResponse);
+
+  // 员工邮箱监管（老板端）。**第二条读信的路**，和上面那些不同：读的是
+  // 别人的信，靠的是一条单独的权限而不是信箱令牌，而且每读一次都留痕。
+  // 规矩写在 services/mail/internal/app/supervision.go 的文件头。
+  rpc ListSupervisableEmployees(ListSupervisableEmployeesRequest) returns (ListSupervisableEmployeesResponse);
+  rpc SuperviseFolder(SuperviseFolderRequest) returns (SuperviseFolderResponse);
+  rpc SuperviseMail(SuperviseMailRequest) returns (SuperviseMailResponse);
+  rpc ListSupervisionLog(ListSupervisionLogRequest) returns (ListSupervisionLogResponse);
 }
 
 // InboundMail is one received message as a list shows it.
@@ -1961,3 +1969,80 @@ message SetExcelQuotaRequest {
 }
 
 message SetExcelQuotaResponse {}
+
+// ---------------------------------------------------------------- 邮箱监管
+
+message ListSupervisableEmployeesRequest {}
+
+// 一个有信箱、因而可看的人。**没有名字**：邮件服务不认识员工表，名字由
+// 网关去 IAM 那边补，国家由主数据那边补。
+message SupervisableEmployee {
+  int64 employee_id = 1;
+  int64 mailboxes = 2;
+  int64 unread = 3;
+  string last_read_at = 4;
+}
+
+message ListSupervisableEmployeesResponse {
+  repeated SupervisableEmployee employees = 1;
+}
+
+// 看谁的、看哪个文件夹。
+//
+// viewer_* 由**网关**填，来自登录令牌，不是调用方说的——这三样要落进
+// 监管日志，而一条能被调用方伪造的日志不如没有。
+message SuperviseFolderRequest {
+  int64 employee_id = 1;
+  string employee_name = 2;
+  // inbox / sent。先只有这两个。
+  string folder = 3;
+  string keyword = 4;
+  string cursor = 5;
+  int32 page_size = 6;
+  int64 viewer_id = 7;
+  string viewer_name = 8;
+  string client_ip = 9;
+}
+
+message SuperviseFolderResponse {
+  repeated InboundMail mails = 1;
+  erp.common.v1.PageMeta meta = 2;
+  string next_cursor = 3;
+}
+
+message SuperviseMailRequest {
+  int64 employee_id = 1;
+  string employee_name = 2;
+  int64 id = 3;
+  int64 viewer_id = 4;
+  string viewer_name = 5;
+  string client_ip = 6;
+}
+
+message SuperviseMailResponse {
+  InboundMail mail = 1;
+  repeated ThreadItem thread = 2;
+}
+
+message ListSupervisionLogRequest {
+  // 0 = 不限某个人。
+  int64 employee_id = 1;
+  int32 limit = 2;
+}
+
+message SupervisionLogEntry {
+  int64 id = 1;
+  int64 viewer_id = 2;
+  string viewer_name = 3;
+  int64 target_id = 4;
+  string target_name = 5;
+  // LIST / OPEN
+  string action = 6;
+  string detail = 7;
+  string client_ip = 8;
+  string viewed_at = 9;
+}
+
+message ListSupervisionLogResponse {
+  repeated SupervisionLogEntry entries = 1;
+}

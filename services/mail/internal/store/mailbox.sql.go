@@ -597,6 +597,43 @@ func (q *Queries) CreateMailFolder(ctx context.Context, arg CreateMailFolderPara
 	return i, err
 }
 
+const createSupervisionLog = `-- name: CreateSupervisionLog :exec
+INSERT INTO mail_supervision_log (
+    tenant_id, viewer_id, viewer_name, target_id, target_name, action, detail, client_ip
+) VALUES (
+    $1::bigint,
+    $2::bigint, $3::text,
+    $4::bigint, $5::text,
+    $6::text, $7::text, $8::text
+)
+`
+
+type CreateSupervisionLogParams struct {
+	TenantID   int64
+	ViewerID   int64
+	ViewerName string
+	TargetID   int64
+	TargetName string
+	Action     string
+	Detail     string
+	ClientIp   string
+}
+
+// 监管这条路每读一次就记一行。写不进去就不给看，见迁移 00068。
+func (q *Queries) CreateSupervisionLog(ctx context.Context, arg CreateSupervisionLogParams) error {
+	_, err := q.db.Exec(ctx, createSupervisionLog,
+		arg.TenantID,
+		arg.ViewerID,
+		arg.ViewerName,
+		arg.TargetID,
+		arg.TargetName,
+		arg.Action,
+		arg.Detail,
+		arg.ClientIp,
+	)
+	return err
+}
+
 const deleteFlagOp = `-- name: DeleteFlagOp :exec
 DELETE FROM mail_flag_ops WHERE id = $1::bigint
 `
@@ -2999,6 +3036,119 @@ func (q *Queries) ListSentWithEngagement(ctx context.Context, arg ListSentWithEn
 			&i.QueuedAt,
 			&i.OpenedAt,
 			&i.ReplyCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSupervisableEmployees = `-- name: ListSupervisableEmployees :many
+SELECT a.employee_id,
+       count(DISTINCT a.id)::bigint AS mailboxes,
+       coalesce(max(a.last_read_at), NULL)::timestamptz AS last_read_at,
+       (SELECT count(*) FROM email_inbound i
+         WHERE i.tenant_id = a.tenant_id
+           AND i.owner_id = a.employee_id
+           AND (i.folder = 'INBOX' OR (i.folder = 'JUNK' AND i.not_junk))
+           AND NOT i.is_bounce AND NOT i.is_read
+           AND i.archived_at IS NULL AND i.deleted_at IS NULL)::bigint AS unread
+FROM mail_accounts a
+WHERE a.tenant_id = $1::bigint
+GROUP BY a.tenant_id, a.employee_id
+ORDER BY a.employee_id
+`
+
+type ListSupervisableEmployeesRow struct {
+	EmployeeID int64
+	Mailboxes  int64
+	LastReadAt pgtype.Timestamptz
+	Unread     int64
+}
+
+// 这家公司里**有信箱的**那些人，各有几个箱、多少封没读。
+//
+// 老板端的员工邮箱监管用它列出「有什么可看的」。没绑过箱的人不在里面：
+// 列出来点进去是一片空，那不是信息，是噪音。
+//
+// 已解绑的箱也算进 mailboxes：历史邮件还在，监管要看的往往正是那些。
+// 未读只算还绑着的箱，和左栏那个角标同一个口径（CountUnreadByMailbox）。
+func (q *Queries) ListSupervisableEmployees(ctx context.Context, tenantID int64) ([]ListSupervisableEmployeesRow, error) {
+	rows, err := q.db.Query(ctx, listSupervisableEmployees, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSupervisableEmployeesRow
+	for rows.Next() {
+		var i ListSupervisableEmployeesRow
+		if err := rows.Scan(
+			&i.EmployeeID,
+			&i.Mailboxes,
+			&i.LastReadAt,
+			&i.Unread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSupervisionLog = `-- name: ListSupervisionLog :many
+SELECT id, viewer_id, viewer_name, target_id, target_name, action, detail, client_ip, viewed_at
+FROM mail_supervision_log
+WHERE tenant_id = $1::bigint
+  AND ($2::bigint = 0 OR target_id = $2::bigint)
+ORDER BY viewed_at DESC, id DESC
+LIMIT $3::int
+`
+
+type ListSupervisionLogParams struct {
+	TenantID int64
+	TargetID int64
+	RowLimit int32
+}
+
+type ListSupervisionLogRow struct {
+	ID         int64
+	ViewerID   int64
+	ViewerName string
+	TargetID   int64
+	TargetName string
+	Action     string
+	Detail     string
+	ClientIp   string
+	ViewedAt   pgtype.Timestamptz
+}
+
+// 登记簿本身。按时间倒着看；target_id 传 0 表示不限某个人。
+func (q *Queries) ListSupervisionLog(ctx context.Context, arg ListSupervisionLogParams) ([]ListSupervisionLogRow, error) {
+	rows, err := q.db.Query(ctx, listSupervisionLog, arg.TenantID, arg.TargetID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSupervisionLogRow
+	for rows.Next() {
+		var i ListSupervisionLogRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ViewerID,
+			&i.ViewerName,
+			&i.TargetID,
+			&i.TargetName,
+			&i.Action,
+			&i.Detail,
+			&i.ClientIp,
+			&i.ViewedAt,
 		); err != nil {
 			return nil, err
 		}

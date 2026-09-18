@@ -402,6 +402,12 @@ func TestAttachmentBundleDownloadRouteIsRegistered(t *testing.T) {
 func TestCustomFolderRoutesAreRegistered(t *testing.T) {
 	routes := routeSet(t)
 	for _, want := range []string{
+		// 员工邮箱监管（老板端）。这一组**没有 requireMailUnlock**，是有意的：
+		// 看的人不知道那个箱的密码，认的是权限。见 mail_supervision_handlers.go。
+		"GET /api/mail-supervision/tree",
+		"GET /api/mail-supervision/mails",
+		"GET /api/mail-supervision/mails/{id}",
+		"GET /api/mail-supervision/log",
 		"GET /api/mail-folders",
 		"POST /api/mail-folders",
 		"PUT /api/mail-folders/{id}",

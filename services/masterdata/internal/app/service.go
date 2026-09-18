@@ -246,7 +246,7 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 			Timezone: in.Timezone, RegisteredName: in.RegisteredName,
 			RegistrationNo: in.RegistrationNo, TaxID: in.TaxID,
 			InvoiceTitle: in.InvoiceTitle, InvoiceTaxNo: in.InvoiceTaxNo,
-			InvoiceRemark: in.InvoiceRemark,
+			InvoiceRemark:    in.InvoiceRemark,
 			CreditLimitMinor: in.CreditLimitMinor, CreditCurrency: in.CreditCurrency,
 			CreditStatus: in.CreditStatus, BusinessStatus: in.BusinessStatus,
 			OperatorID: in.OperatorID,
@@ -372,7 +372,7 @@ func (s *Service) UpdateCustomerProfile(ctx context.Context, tenantID, id int64,
 		Timezone: in.Timezone, RegisteredName: in.RegisteredName,
 		RegistrationNo: in.RegistrationNo, TaxID: in.TaxID,
 		InvoiceTitle: in.InvoiceTitle, InvoiceTaxNo: in.InvoiceTaxNo,
-		InvoiceRemark: in.InvoiceRemark,
+		InvoiceRemark:    in.InvoiceRemark,
 		CreditLimitMinor: in.CreditLimitMinor, CreditCurrency: in.CreditCurrency,
 		CreditStatus: in.CreditStatus, BusinessStatus: in.BusinessStatus,
 		OperatorID: in.OperatorID,
@@ -527,8 +527,8 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
 			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
 			BusinessTypes: in.BusinessTypes,
-			ContactName:  in.ContactName,
-			ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
+			ContactName:   in.ContactName,
+			ContactPhone:  in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
 		})
 		if err != nil {
@@ -582,7 +582,7 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
 			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
 			BusinessTypes: in.BusinessTypes,
-			ContactName: in.ContactName, ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
+			ContactName:   in.ContactName, ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
 		})
 		if err != nil {
@@ -813,6 +813,14 @@ func (s *Service) ListMailingContacts(ctx context.Context, tenantID int64, keywo
 	return s.q.ListMailingContacts(ctx, store.ListMailingContactsParams{
 		TenantID: tenantID, Keyword: keyword, CustomerIds: customerIDs,
 	})
+}
+
+// ListOwnerCountries 说每个业务员负责哪些国家的客户。
+//
+// 老板端的员工邮箱监管用它排左栏。不分页：一家公司的业务员就那么些，而
+// 调用方要的是整棵树，分页只会让它自己再拼一遍。
+func (s *Service) ListOwnerCountries(ctx context.Context, tenantID int64) ([]store.ListOwnerCountriesRow, error) {
+	return s.q.ListOwnerCountries(ctx, tenantID)
 }
 
 // CountryGroup is one country and how big a send to it would be.

@@ -460,6 +460,21 @@ func (h *Handler) ActivateSupplier(ctx context.Context, req *mdv1.ActivateSuppli
 	return &mdv1.ActivateSupplierResponse{}, nil
 }
 
+func (h *Handler) ListOwnerCountries(ctx context.Context, _ *mdv1.ListOwnerCountriesRequest) (*mdv1.ListOwnerCountriesResponse, error) {
+	rows, err := h.svc.ListOwnerCountries(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.OwnerCountry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mdv1.OwnerCountry{
+			EmployeeId: r.EmployeeID, EmployeeName: r.EmployeeName,
+			CountryCode: strings.TrimSpace(r.CountryCode), CustomerCount: r.CustomerCount,
+		})
+	}
+	return &mdv1.ListOwnerCountriesResponse{Rows: out}, nil
+}
+
 func (h *Handler) ListMailingContacts(ctx context.Context, req *mdv1.ListMailingContactsRequest) (*mdv1.ListMailingContactsResponse, error) {
 	rows, err := h.svc.ListMailingContacts(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetCustomerIds())
 	if err != nil {
