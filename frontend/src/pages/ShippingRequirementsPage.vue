@@ -31,7 +31,7 @@
       <template v-if="detail">
         <div class="detail-hero"><div><span>{{ detail.customerName }}</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
         <div v-if="detail.status === 'PENDING_APPROVAL' && approvalTaskId" class="submit-selection">
-          <span>{{ approvalOverride ? '管理员可以直接处理当前审批，备注为选填。' : t('shipping.d4ApprovalHint') }}</span>
+          <span>{{ t('shipping.d4ApprovalHint') }}</span>
           <el-dropdown trigger="click" @command="actOnApproval">
             <el-button type="primary" :loading="saving">{{ t('orders.moreActions') }} ▾</el-button>
             <template #dropdown><el-dropdown-menu>
@@ -149,11 +149,8 @@ async function actOnApproval(action:'APPROVE'|'REJECT'){
   if(!approvalTaskId.value||saving.value)return
   let comment=''
   try{
-    if(approvalOverride.value){
-      const result=await ElMessageBox.prompt(action==='APPROVE'?'可以填写审批备注，也可以直接同意':'可以填写退回备注，也可以直接退回','管理员处理',{inputType:'textarea',inputPlaceholder:'备注（选填）',confirmButtonText:action==='APPROVE'?t('todos.approve'):t('todos.reject'),cancelButtonText:t('common.cancel')})
-      comment=result.value.trim()
-    }else if(action==='APPROVE')await ElMessageBox.confirm(t('orders.approveConfirm',{no:detail.value?.contractNo}),t('todos.approve'),{confirmButtonText:t('todos.approve'),cancelButtonText:t('common.cancel')})
-    else{
+    if(!approvalOverride.value&&action==='APPROVE')await ElMessageBox.confirm(t('orders.approveConfirm',{no:detail.value?.contractNo}),t('todos.approve'),{confirmButtonText:t('todos.approve'),cancelButtonText:t('common.cancel')})
+    else if(!approvalOverride.value){
       const result=await ElMessageBox.prompt(t('orders.rejectReasonHint'),t('todos.reject'),{inputType:'textarea',inputValidator:value=>Boolean(String(value||'').trim())||t('todos.commentRequired'),confirmButtonText:t('todos.reject'),cancelButtonText:t('common.cancel')})
       comment=result.value.trim()
     }

@@ -17,7 +17,6 @@
       <el-table-column label="操作" width="230" fixed="right"><template #default="{row}">
         <el-button v-if="['DRAFT','REJECTED','PENDING_PAYMENT'].includes(row.status) && row.claimantId===myID" link @click="openEdit(row)">编辑</el-button>
         <el-button v-if="['DRAFT','REJECTED'].includes(row.status) && row.claimantId===myID" link type="primary" @click="submit(row)">提交审批</el-button>
-        <el-tag v-if="overrideFor(row)" type="warning" effect="plain" size="small">管理员处理</el-tag>
         <el-button v-if="taskFor(row)" link type="success" @click="act(row,'APPROVE')">同意</el-button>
         <el-button v-if="taskFor(row)" link type="danger" @click="act(row,'RETURN')">退回</el-button>
         <el-button v-if="canManage && row.status==='PENDING_PAYMENT'" link type="success" @click="openPay(row)">登记付款</el-button>
@@ -63,7 +62,7 @@ const taskFor=(row:Claim)=>approvalTasks.value[String(row.id)]||''
 const overrideFor=(row:Claim)=>Boolean(approvalOverrides.value[String(row.id)])
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 async function reloadUntilStatusChanges(id:string,previousStatus:string){for(let attempt=0;attempt<8;attempt++){await load();if(rows.value.find(item=>String(item.id)===String(id))?.status!==previousStatus)return;await delay(300)}}
-async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(overrideFor(row)){const answer=await ElMessageBox.prompt(action==='APPROVE'?'可以填写审批备注，也可以直接同意':'可以填写退回备注，也可以直接退回','管理员处理',{inputType:'textarea',inputPlaceholder:'备注（选填）'}).catch(()=>null);if(!answer)return;comment=String(answer.value||'').trim()}else if(action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
+async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(!overrideFor(row)&&action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
 function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
 function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{tripStart:row.tripStart,tripEnd:row.tripEnd,origin:row.origin,destination:row.destination,purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
 function pickFiles(e:Event){picked.value=Array.from((e.target as HTMLInputElement).files||[])}

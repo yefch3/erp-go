@@ -229,7 +229,6 @@
       <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
       <div v-if="detail && approvalTaskFor(detail)" class="next-step">
         <span class="next-step-label">{{ t('orders.approvalDecision') }}</span>
-        <el-tag v-if="approvalOverrideFor(detail)" type="warning" effect="plain" size="small">管理员处理</el-tag>
         <el-button size="small" type="success" @click="actOnOrderApproval(detail, 'APPROVE')">{{ t('todos.approve') }}</el-button>
         <el-button size="small" type="danger" @click="actOnOrderApproval(detail, 'REJECT')">{{ t('todos.reject') }}</el-button>
       </div>
@@ -888,20 +887,11 @@ async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
   if (!taskID) return
   let comment = ''
   try {
-    if (approvalOverrideFor(row)) {
-      const result = await ElMessageBox.prompt(
-        action === 'APPROVE' ? '可以填写审批备注，也可以直接同意' : '可以填写退回备注，也可以直接退回',
-        '管理员处理', {
-          inputType: 'textarea', inputPlaceholder: '备注（选填）',
-          confirmButtonText: action === 'APPROVE' ? t('todos.approve') : t('todos.reject'), cancelButtonText: common('cancel'),
-        },
-      )
-      comment = result.value.trim()
-    } else if (action === 'APPROVE') {
+    if (!approvalOverrideFor(row) && action === 'APPROVE') {
       await ElMessageBox.confirm(t('orders.approveConfirm', { no: row.poNo }), t('todos.approve'), {
         type: 'warning', confirmButtonText: t('todos.approve'), cancelButtonText: common('cancel'),
       })
-    } else {
+    } else if (!approvalOverrideFor(row)) {
       const result = await ElMessageBox.prompt(t('orders.rejectReasonHint'), t('todos.reject'), {
         inputType: 'textarea', inputValidator: (value) => Boolean(String(value).trim()) || t('todos.commentRequired'),
         confirmButtonText: t('todos.reject'), cancelButtonText: common('cancel'),
