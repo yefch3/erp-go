@@ -185,7 +185,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	if err != nil {
 		return CampaignResult{}, err
 	}
-	body, textBody, format, err := s.composeBody(ctx, tenantID, in)
+	body, textBody, format, err := s.composeBody(ctx, tenantID, in, op)
 	if err != nil {
 		return CampaignResult{}, err
 	}
@@ -339,7 +339,7 @@ func (s *Service) Preview(ctx context.Context, tenantID int64, in CampaignInput,
 	if err != nil {
 		return PreviewResult{}, err
 	}
-	body, textBody, format, err := s.composeBody(ctx, tenantID, in)
+	body, textBody, format, err := s.composeBody(ctx, tenantID, in, op)
 	if err != nil {
 		return PreviewResult{}, err
 	}
@@ -369,7 +369,7 @@ type PreviewResult struct {
 // The signature is joined before rendering so its own variables resolve in
 // the same pass, and before the text is derived so the sign-off appears in
 // both versions.
-func (s *Service) composeBody(ctx context.Context, tenantID int64, in CampaignInput) (body, text, format string, err error) {
+func (s *Service) composeBody(ctx context.Context, tenantID int64, in CampaignInput, op Operator) (body, text, format string, err error) {
 	format = normalizeFormat(in.Format)
 	body = in.Body
 	if format == FormatHTML {
@@ -378,7 +378,7 @@ func (s *Service) composeBody(ctx context.Context, tenantID int64, in CampaignIn
 		// once here closes both holes.
 		body = SanitizeHTML(body)
 	}
-	sig, sigFormat, err := s.signature(ctx, tenantID, in.SignatureID)
+	sig, sigFormat, err := s.signature(ctx, tenantID, in.SignatureID, op)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -492,11 +492,14 @@ func (s *Service) senderOf(ctx context.Context, op Operator) (Sender, error) {
 }
 
 // signature reads the chosen block and the format it was written in.
-func (s *Service) signature(ctx context.Context, tenantID, signatureID int64) (string, string, error) {
+//
+// The sender's own block only: the lookup is owner-scoped, so a colleague's
+// signature id resolves to "no such signature" rather than to their sign-off.
+func (s *Service) signature(ctx context.Context, tenantID, signatureID int64, op Operator) (string, string, error) {
 	if signatureID == 0 {
 		return "", FormatText, nil
 	}
-	sig, err := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: signatureID})
+	sig, err := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: signatureID, EmployeeID: op.ID})
 	if err == pgx.ErrNoRows {
 		return "", "", apierr.NotFound("NT_SIGNATURE_NOT_FOUND", "签名不存在")
 	}

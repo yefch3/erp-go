@@ -1,22 +1,28 @@
 -- name: ListSignatures :many
--- Both layers at once: the company template and this person's own. The
--- caller decides which to offer; the query does not hide either.
-SELECT id, owner_type, owner_id, name, content, body_format, is_default
+-- Only this person's own. A signature is its writer's data (2026-09-18):
+-- the company-wide layer is gone, so nobody's list shows anybody else's.
+SELECT id, owner_id, name, content, body_format, is_default
 FROM email_signatures
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint)
-ORDER BY owner_type, is_default DESC, id;
+  AND owner_id = sqlc.arg(employee_id)::bigint
+ORDER BY is_default DESC, id;
 
 -- name: GetSignature :one
-SELECT id, owner_type, owner_id, name, content, body_format, is_default
+-- Owner-scoped like the list: sending resolves the chosen block through
+-- here, so somebody else's id is simply "no such signature". A list that
+-- hides a row while the id still works would only be hiding, not withholding.
+SELECT id, owner_id, name, content, body_format, is_default
 FROM email_signatures
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND owner_id = sqlc.arg(employee_id)::bigint;
 
 -- name: CreateSignature :one
-INSERT INTO email_signatures (tenant_id, owner_type, owner_id, name, content, body_format, is_default)
+-- owner_type is left to its default: the column outlives the concept by one
+-- release (see migration 00069) and nothing reads it any more.
+INSERT INTO email_signatures (tenant_id, owner_id, name, content, body_format, is_default)
 VALUES (
     sqlc.arg(tenant_id)::bigint,
-    sqlc.arg(owner_type)::text,
     sqlc.arg(owner_id)::bigint,
     sqlc.arg(name)::text,
     sqlc.arg(content)::text,
@@ -31,24 +37,21 @@ RETURNING id;
 -- simply moving the flag.
 UPDATE email_signatures SET is_default = false
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND owner_type = sqlc.arg(owner_type)::text
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND is_default;
 
 -- name: UpdateSignature :execrows
 -- The owner guard is on the WHERE, which sees the row as it was: you may edit
--- the company block or your own, and nobody else's. Without it any colleague
--- holding mail:email:write could rewrite the sign-off you send under.
+-- your own and nobody else's. Without it any colleague holding
+-- mail:email:write could rewrite the sign-off you send under.
 UPDATE email_signatures
-SET owner_type  = sqlc.arg(owner_type)::text,
-    owner_id    = sqlc.arg(owner_id)::bigint,
-    name        = sqlc.arg(name)::text,
+SET name        = sqlc.arg(name)::text,
     content     = sqlc.arg(content)::text,
     body_format = sqlc.arg(body_format)::text,
     is_default  = sqlc.arg(is_default)::bool
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
-  AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint);
+  AND owner_id = sqlc.arg(employee_id)::bigint;
 
 -- name: DeleteSignature :execrows
 -- Same guard as the update, for the same reason. It was missing: deletion was
@@ -57,7 +60,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 DELETE FROM email_signatures
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
-  AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint);
+  AND owner_id = sqlc.arg(employee_id)::bigint;
 
 -- name: CreateCampaign :one
 INSERT INTO email_campaigns (

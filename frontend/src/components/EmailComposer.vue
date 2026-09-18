@@ -299,12 +299,7 @@
       <el-form-item :label="t('emails.signature')">
         <el-select v-model="form.signatureId" clearable style="width: 320px">
           <el-option :label="t('emails.noSignature')" :value="'0'" />
-          <el-option
-            v-for="s in signatures"
-            :key="s.id"
-            :label="s.ownerType === 'TENANT' ? `${s.name}（${t('emails.shared')}）` : s.name"
-            :value="s.id"
-          />
+          <el-option v-for="s in signatures" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
       </el-form-item>
     </el-form>
@@ -521,7 +516,6 @@ import { addressesToLookUp, bookHitsFor, withBookDetails } from '../lib/replyCon
 
 interface Signature {
   id: string
-  ownerType: string
   name: string
   content: string
   isDefault: boolean

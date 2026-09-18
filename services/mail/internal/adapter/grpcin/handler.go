@@ -308,8 +308,11 @@ func (h *Handler) ListSignatures(ctx context.Context, _ *mailv1.ListSignaturesRe
 	}
 	out := make([]*mailv1.Signature, 0, len(rows))
 	for _, r := range rows {
+		// owner_type is not filled: every signature is its owner's now, and
+		// the field only stays on the wire because deleting one is a
+		// breaking change the proto check refuses.
 		out = append(out, &mailv1.Signature{
-			Id: r.ID, OwnerType: r.OwnerType, OwnerId: r.OwnerID,
+			Id: r.ID, OwnerId: r.OwnerID,
 			Name: r.Name, Content: r.Content, BodyFormat: r.BodyFormat,
 			IsDefault: r.IsDefault,
 		})
@@ -317,10 +320,10 @@ func (h *Handler) ListSignatures(ctx context.Context, _ *mailv1.ListSignaturesRe
 	return &mailv1.ListSignaturesResponse{Signatures: out}, nil
 }
 
+// owner_type on the request is ignored on purpose: the owner is the caller.
 func (h *Handler) CreateSignature(ctx context.Context, req *mailv1.CreateSignatureRequest) (*mailv1.CreateSignatureResponse, error) {
 	id, err := h.svc.CreateSignature(ctx, grpcx.TenantID(ctx), app.SignatureInput{
-		OwnerType: req.GetOwnerType(), Name: req.GetName(),
-		Content: req.GetContent(), Format: req.GetBodyFormat(),
+		Name: req.GetName(), Content: req.GetContent(), Format: req.GetBodyFormat(),
 		IsDefault: req.GetIsDefault(),
 	}, operator(ctx))
 	if err != nil {
@@ -331,8 +334,7 @@ func (h *Handler) CreateSignature(ctx context.Context, req *mailv1.CreateSignatu
 
 func (h *Handler) UpdateSignature(ctx context.Context, req *mailv1.UpdateSignatureRequest) (*mailv1.UpdateSignatureResponse, error) {
 	if err := h.svc.UpdateSignature(ctx, grpcx.TenantID(ctx), req.GetId(), app.SignatureInput{
-		OwnerType: req.GetOwnerType(), Name: req.GetName(),
-		Content: req.GetContent(), Format: req.GetBodyFormat(),
+		Name: req.GetName(), Content: req.GetContent(), Format: req.GetBodyFormat(),
 		IsDefault: req.GetIsDefault(),
 	}, operator(ctx)); err != nil {
 		return nil, err

@@ -55,7 +55,7 @@ func TestOrphanedImagesAreWithdrawnAndSharedOnesSurvive(t *testing.T) {
 	}
 
 	sigA, err := svc.CreateSignature(ctx, tenantID, SignatureInput{
-		OwnerType: "EMPLOYEE", Name: "A",
+		Name:    "A",
 		Content: imgURL(tokens["onlyA"]) + imgURL(tokens["shared"]) + imgURL(tokens["inSent"]),
 		Format:  FormatHTML,
 	}, op)
@@ -63,7 +63,7 @@ func TestOrphanedImagesAreWithdrawnAndSharedOnesSurvive(t *testing.T) {
 		t.Fatal(err)
 	}
 	sigB, err := svc.CreateSignature(ctx, tenantID, SignatureInput{
-		OwnerType: "EMPLOYEE", Name: "B",
+		Name:    "B",
 		Content: imgURL(tokens["shared"]), Format: FormatHTML,
 	}, op)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestOrphanedImagesAreWithdrawnAndSharedOnesSurvive(t *testing.T) {
 
 	// Editing the image out of B orphans it as surely as deleting B would.
 	if err := svc.UpdateSignature(ctx, tenantID, sigB, SignatureInput{
-		OwnerType: "EMPLOYEE", Name: "B", Content: "<p>no image any more</p>",
+		Name: "B", Content: "<p>no image any more</p>",
 		Format: FormatHTML,
 	}, op); err != nil {
 		t.Fatal(err)

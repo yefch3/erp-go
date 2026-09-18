@@ -341,22 +341,20 @@ func (q *Queries) ClaimMessages(ctx context.Context, arg ClaimMessagesParams) ([
 const clearDefaultSignature = `-- name: ClearDefaultSignature :exec
 UPDATE email_signatures SET is_default = false
 WHERE tenant_id = $1::bigint
-  AND owner_type = $2::text
-  AND owner_id = $3::bigint
+  AND owner_id = $2::bigint
   AND is_default
 `
 
 type ClearDefaultSignatureParams struct {
-	TenantID  int64
-	OwnerType string
-	OwnerID   int64
+	TenantID int64
+	OwnerID  int64
 }
 
 // Run before setting a new default: the partial unique index would otherwise
 // refuse the second one, and a constraint violation is a worse message than
 // simply moving the flag.
 func (q *Queries) ClearDefaultSignature(ctx context.Context, arg ClearDefaultSignatureParams) error {
-	_, err := q.db.Exec(ctx, clearDefaultSignature, arg.TenantID, arg.OwnerType, arg.OwnerID)
+	_, err := q.db.Exec(ctx, clearDefaultSignature, arg.TenantID, arg.OwnerID)
 	return err
 }
 
@@ -421,22 +419,20 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 }
 
 const createSignature = `-- name: CreateSignature :one
-INSERT INTO email_signatures (tenant_id, owner_type, owner_id, name, content, body_format, is_default)
+INSERT INTO email_signatures (tenant_id, owner_id, name, content, body_format, is_default)
 VALUES (
     $1::bigint,
-    $2::text,
-    $3::bigint,
+    $2::bigint,
+    $3::text,
     $4::text,
     $5::text,
-    $6::text,
-    $7::bool
+    $6::bool
 )
 RETURNING id
 `
 
 type CreateSignatureParams struct {
 	TenantID   int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Content    string
@@ -444,10 +440,11 @@ type CreateSignatureParams struct {
 	IsDefault  bool
 }
 
+// owner_type is left to its default: the column outlives the concept by one
+// release (see migration 00069) and nothing reads it any more.
 func (q *Queries) CreateSignature(ctx context.Context, arg CreateSignatureParams) (int64, error) {
 	row := q.db.QueryRow(ctx, createSignature,
 		arg.TenantID,
-		arg.OwnerType,
 		arg.OwnerID,
 		arg.Name,
 		arg.Content,
@@ -519,7 +516,7 @@ const deleteSignature = `-- name: DeleteSignature :execrows
 DELETE FROM email_signatures
 WHERE tenant_id = $1::bigint
   AND id = $2::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $3::bigint)
+  AND owner_id = $3::bigint
 `
 
 type DeleteSignatureParams struct {
@@ -812,19 +809,21 @@ func (q *Queries) GetScheduledCampaign(ctx context.Context, arg GetScheduledCamp
 }
 
 const getSignature = `-- name: GetSignature :one
-SELECT id, owner_type, owner_id, name, content, body_format, is_default
+SELECT id, owner_id, name, content, body_format, is_default
 FROM email_signatures
-WHERE tenant_id = $1::bigint AND id = $2::bigint
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+  AND owner_id = $3::bigint
 `
 
 type GetSignatureParams struct {
-	TenantID int64
-	ID       int64
+	TenantID   int64
+	ID         int64
+	EmployeeID int64
 }
 
 type GetSignatureRow struct {
 	ID         int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Content    string
@@ -832,12 +831,14 @@ type GetSignatureRow struct {
 	IsDefault  bool
 }
 
+// Owner-scoped like the list: sending resolves the chosen block through
+// here, so somebody else's id is simply "no such signature". A list that
+// hides a row while the id still works would only be hiding, not withholding.
 func (q *Queries) GetSignature(ctx context.Context, arg GetSignatureParams) (GetSignatureRow, error) {
-	row := q.db.QueryRow(ctx, getSignature, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, getSignature, arg.TenantID, arg.ID, arg.EmployeeID)
 	var i GetSignatureRow
 	err := row.Scan(
 		&i.ID,
-		&i.OwnerType,
 		&i.OwnerID,
 		&i.Name,
 		&i.Content,
@@ -1609,11 +1610,11 @@ func (q *Queries) ListSendersWithCounts(ctx context.Context, arg ListSendersWith
 }
 
 const listSignatures = `-- name: ListSignatures :many
-SELECT id, owner_type, owner_id, name, content, body_format, is_default
+SELECT id, owner_id, name, content, body_format, is_default
 FROM email_signatures
 WHERE tenant_id = $1::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $2::bigint)
-ORDER BY owner_type, is_default DESC, id
+  AND owner_id = $2::bigint
+ORDER BY is_default DESC, id
 `
 
 type ListSignaturesParams struct {
@@ -1623,7 +1624,6 @@ type ListSignaturesParams struct {
 
 type ListSignaturesRow struct {
 	ID         int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Content    string
@@ -1631,8 +1631,8 @@ type ListSignaturesRow struct {
 	IsDefault  bool
 }
 
-// Both layers at once: the company template and this person's own. The
-// caller decides which to offer; the query does not hide either.
+// Only this person's own. A signature is its writer's data (2026-09-18):
+// the company-wide layer is gone, so nobody's list shows anybody else's.
 func (q *Queries) ListSignatures(ctx context.Context, arg ListSignaturesParams) ([]ListSignaturesRow, error) {
 	rows, err := q.db.Query(ctx, listSignatures, arg.TenantID, arg.EmployeeID)
 	if err != nil {
@@ -1644,7 +1644,6 @@ func (q *Queries) ListSignatures(ctx context.Context, arg ListSignaturesParams) 
 		var i ListSignaturesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.OwnerType,
 			&i.OwnerID,
 			&i.Name,
 			&i.Content,
@@ -2201,20 +2200,16 @@ func (q *Queries) SuppressedAmong(ctx context.Context, arg SuppressedAmongParams
 
 const updateSignature = `-- name: UpdateSignature :execrows
 UPDATE email_signatures
-SET owner_type  = $1::text,
-    owner_id    = $2::bigint,
-    name        = $3::text,
-    content     = $4::text,
-    body_format = $5::text,
-    is_default  = $6::bool
-WHERE tenant_id = $7::bigint
-  AND id = $8::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $9::bigint)
+SET name        = $1::text,
+    content     = $2::text,
+    body_format = $3::text,
+    is_default  = $4::bool
+WHERE tenant_id = $5::bigint
+  AND id = $6::bigint
+  AND owner_id = $7::bigint
 `
 
 type UpdateSignatureParams struct {
-	OwnerType  string
-	OwnerID    int64
 	Name       string
 	Content    string
 	BodyFormat string
@@ -2225,12 +2220,10 @@ type UpdateSignatureParams struct {
 }
 
 // The owner guard is on the WHERE, which sees the row as it was: you may edit
-// the company block or your own, and nobody else's. Without it any colleague
-// holding mail:email:write could rewrite the sign-off you send under.
+// your own and nobody else's. Without it any colleague holding
+// mail:email:write could rewrite the sign-off you send under.
 func (q *Queries) UpdateSignature(ctx context.Context, arg UpdateSignatureParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateSignature,
-		arg.OwnerType,
-		arg.OwnerID,
 		arg.Name,
 		arg.Content,
 		arg.BodyFormat,
