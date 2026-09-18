@@ -2366,9 +2366,6 @@ export default {
     edit: 'Edit template',
     name: 'Name',
     namePlaceholder: 'e.g. Quote follow-up',
-    scope: 'Scope',
-    personal: 'Only me',
-    shared: 'Company-wide',
     lang: 'Content language',
     langs: {
       all: 'Any',

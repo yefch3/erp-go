@@ -2372,9 +2372,6 @@ export default {
     edit: 'Editar plantilla',
     name: 'Nombre',
     namePlaceholder: 'p. ej. Seguimiento de cotización',
-    scope: 'Ámbito',
-    personal: 'Solo yo',
-    shared: 'Toda la empresa',
     lang: 'Idioma del contenido',
     langs: {
       all: 'Cualquiera',

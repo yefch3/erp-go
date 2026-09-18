@@ -11,18 +11,17 @@ import (
 
 const createEmailTemplate = `-- name: CreateEmailTemplate :one
 INSERT INTO email_templates
-    (tenant_id, owner_type, owner_id, name, lang, subject, content, body_format)
+    (tenant_id, owner_id, name, lang, subject, content, body_format)
 VALUES
-    ($1::bigint, $2::text,
-     $3::bigint, $4::text, $5::text,
-     $6::text, $7::text,
-     $8::text)
+    ($1::bigint, $2::bigint,
+     $3::text, $4::text,
+     $5::text, $6::text,
+     $7::text)
 RETURNING id
 `
 
 type CreateEmailTemplateParams struct {
 	TenantID   int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Lang       string
@@ -31,10 +30,11 @@ type CreateEmailTemplateParams struct {
 	BodyFormat string
 }
 
+// owner_type is left to its default: the column outlives the concept by one
+// release (see migration 00070) and nothing reads it any more.
 func (q *Queries) CreateEmailTemplate(ctx context.Context, arg CreateEmailTemplateParams) (int64, error) {
 	row := q.db.QueryRow(ctx, createEmailTemplate,
 		arg.TenantID,
-		arg.OwnerType,
 		arg.OwnerID,
 		arg.Name,
 		arg.Lang,
@@ -51,7 +51,7 @@ const deleteEmailTemplate = `-- name: DeleteEmailTemplate :execrows
 DELETE FROM email_templates
 WHERE tenant_id = $1::bigint
   AND id = $2::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $3::bigint)
+  AND owner_id = $3::bigint
 `
 
 type DeleteEmailTemplateParams struct {
@@ -72,19 +72,21 @@ func (q *Queries) DeleteEmailTemplate(ctx context.Context, arg DeleteEmailTempla
 }
 
 const getEmailTemplate = `-- name: GetEmailTemplate :one
-SELECT id, owner_type, owner_id, name, lang, subject, content, body_format
+SELECT id, owner_id, name, lang, subject, content, body_format
 FROM email_templates
-WHERE tenant_id = $1::bigint AND id = $2::bigint
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+  AND owner_id = $3::bigint
 `
 
 type GetEmailTemplateParams struct {
-	TenantID int64
-	ID       int64
+	TenantID   int64
+	ID         int64
+	EmployeeID int64
 }
 
 type GetEmailTemplateRow struct {
 	ID         int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Lang       string
@@ -93,12 +95,12 @@ type GetEmailTemplateRow struct {
 	BodyFormat string
 }
 
+// Owner-scoped like the list, for the same reason GetSignature is.
 func (q *Queries) GetEmailTemplate(ctx context.Context, arg GetEmailTemplateParams) (GetEmailTemplateRow, error) {
-	row := q.db.QueryRow(ctx, getEmailTemplate, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, getEmailTemplate, arg.TenantID, arg.ID, arg.EmployeeID)
 	var i GetEmailTemplateRow
 	err := row.Scan(
 		&i.ID,
-		&i.OwnerType,
 		&i.OwnerID,
 		&i.Name,
 		&i.Lang,
@@ -110,11 +112,11 @@ func (q *Queries) GetEmailTemplate(ctx context.Context, arg GetEmailTemplatePara
 }
 
 const listEmailTemplates = `-- name: ListEmailTemplates :many
-SELECT id, owner_type, owner_id, name, lang, subject, content, body_format
+SELECT id, owner_id, name, lang, subject, content, body_format
 FROM email_templates
 WHERE tenant_id = $1::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $2::bigint)
-ORDER BY owner_type, name, lang, id
+  AND owner_id = $2::bigint
+ORDER BY name, lang, id
 `
 
 type ListEmailTemplatesParams struct {
@@ -124,7 +126,6 @@ type ListEmailTemplatesParams struct {
 
 type ListEmailTemplatesRow struct {
 	ID         int64
-	OwnerType  string
 	OwnerID    int64
 	Name       string
 	Lang       string
@@ -133,9 +134,8 @@ type ListEmailTemplatesRow struct {
 	BodyFormat string
 }
 
-// Both layers at once, same shape as ListSignatures: the company phrasebook
-// and this person's own. The caller decides how to present them; the query
-// does not hide either.
+// Only this person's own, same shape as ListSignatures: a template is its
+// writer's data (2026-09-18), the company phrasebook layer is gone.
 func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplatesParams) ([]ListEmailTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailTemplates, arg.TenantID, arg.EmployeeID)
 	if err != nil {
@@ -147,7 +147,6 @@ func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplates
 		var i ListEmailTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.OwnerType,
 			&i.OwnerID,
 			&i.Name,
 			&i.Lang,
@@ -167,22 +166,18 @@ func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplates
 
 const updateEmailTemplate = `-- name: UpdateEmailTemplate :execrows
 UPDATE email_templates
-SET owner_type  = $1::text,
-    owner_id    = $2::bigint,
-    name        = $3::text,
-    lang        = $4::text,
-    subject     = $5::text,
-    content     = $6::text,
-    body_format = $7::text,
+SET name        = $1::text,
+    lang        = $2::text,
+    subject     = $3::text,
+    content     = $4::text,
+    body_format = $5::text,
     updated_at  = now()
-WHERE tenant_id = $8::bigint
-  AND id = $9::bigint
-  AND (owner_type = 'TENANT' OR owner_id = $10::bigint)
+WHERE tenant_id = $6::bigint
+  AND id = $7::bigint
+  AND owner_id = $8::bigint
 `
 
 type UpdateEmailTemplateParams struct {
-	OwnerType  string
-	OwnerID    int64
 	Name       string
 	Lang       string
 	Subject    string
@@ -194,12 +189,10 @@ type UpdateEmailTemplateParams struct {
 }
 
 // The owner guard is on the WHERE, exactly as for signatures: you may edit
-// the company phrasebook or your own templates, and nobody else's. A row the
-// caller may not touch simply matches nothing.
+// your own templates and nobody else's. A row the caller may not touch
+// simply matches nothing.
 func (q *Queries) UpdateEmailTemplate(ctx context.Context, arg UpdateEmailTemplateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateEmailTemplate,
-		arg.OwnerType,
-		arg.OwnerID,
 		arg.Name,
 		arg.Lang,
 		arg.Subject,

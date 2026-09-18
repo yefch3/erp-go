@@ -358,8 +358,11 @@ func (h *Handler) ListEmailTemplates(ctx context.Context, _ *mailv1.ListEmailTem
 	}
 	out := make([]*mailv1.EmailTemplate, 0, len(rows))
 	for _, r := range rows {
+		// owner_type is not filled, same as for signatures: every template is
+		// its owner's now, and the field only stays on the wire because
+		// deleting one is a breaking change the proto check refuses.
 		out = append(out, &mailv1.EmailTemplate{
-			Id: r.ID, OwnerType: r.OwnerType, OwnerId: r.OwnerID,
+			Id: r.ID, OwnerId: r.OwnerID,
 			Name: r.Name, Lang: r.Lang, Subject: r.Subject,
 			Content: r.Content, BodyFormat: r.BodyFormat,
 		})
@@ -367,9 +370,10 @@ func (h *Handler) ListEmailTemplates(ctx context.Context, _ *mailv1.ListEmailTem
 	return &mailv1.ListEmailTemplatesResponse{Templates: out}, nil
 }
 
+// owner_type on the request is ignored on purpose: the owner is the caller.
 func (h *Handler) CreateEmailTemplate(ctx context.Context, req *mailv1.CreateEmailTemplateRequest) (*mailv1.CreateEmailTemplateResponse, error) {
 	id, err := h.svc.CreateTemplate(ctx, grpcx.TenantID(ctx), app.TemplateInput{
-		OwnerType: req.GetOwnerType(), Name: req.GetName(), Lang: req.GetLang(),
+		Name: req.GetName(), Lang: req.GetLang(),
 		Subject: req.GetSubject(), Content: req.GetContent(),
 		Format: req.GetBodyFormat(),
 	}, operator(ctx))
@@ -381,7 +385,7 @@ func (h *Handler) CreateEmailTemplate(ctx context.Context, req *mailv1.CreateEma
 
 func (h *Handler) UpdateEmailTemplate(ctx context.Context, req *mailv1.UpdateEmailTemplateRequest) (*mailv1.UpdateEmailTemplateResponse, error) {
 	if err := h.svc.UpdateTemplate(ctx, grpcx.TenantID(ctx), req.GetId(), app.TemplateInput{
-		OwnerType: req.GetOwnerType(), Name: req.GetName(), Lang: req.GetLang(),
+		Name: req.GetName(), Lang: req.GetLang(),
 		Subject: req.GetSubject(), Content: req.GetContent(),
 		Format: req.GetBodyFormat(),
 	}, operator(ctx)); err != nil {

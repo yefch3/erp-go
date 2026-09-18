@@ -2365,9 +2365,6 @@ export default {
     edit: '编辑模板',
     name: '名称',
     namePlaceholder: '例如：报价跟进',
-    scope: '适用范围',
-    personal: '仅自己',
-    shared: '公司统一',
     lang: '内容语言',
     langs: {
       all: '通用',

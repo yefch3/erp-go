@@ -184,9 +184,8 @@
                   <template v-if="templates.length">
                     <el-dropdown-item v-for="tp in templates" :key="tp.id" :command="tp">
                       {{ tp.name }}
-                      <span class="tpl-item-meta">
-                        {{ tp.ownerType === 'TENANT' ? t('templates.shared') : t('templates.personal') }}
-                        <template v-if="tp.lang"> · {{ t(`templates.langs.${tp.lang}`) }}</template>
+                      <span v-if="tp.lang" class="tpl-item-meta">
+                        {{ t(`templates.langs.${tp.lang}`) }}
                       </span>
                     </el-dropdown-item>
                   </template>
@@ -591,7 +590,6 @@ const VARIABLES = [
 // spinner to a menu.
 interface ComposeTemplate {
   id: string
-  ownerType: string
   name: string
   lang: string
   subject: string
