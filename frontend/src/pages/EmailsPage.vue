@@ -58,6 +58,7 @@
         :drag-accounts="dragging?.accounts ?? []"
         @select="pickFolder"
         @changed="onMailboxesChanged"
+        @need-folders="ensureFolders"
         @added="tokensChanged++"
         @create-folder="createFolder"
         @rename-folder="renameFolder"
@@ -2996,6 +2997,19 @@ async function deleteFolder(cf: CustomFolder) {
   } catch {
     // 里面还有信之类的原因，后端说了
   }
+}
+
+/**
+ * 左栏展开了某个箱：它的文件夹清单要用了。
+ *
+ * **已经有的不再取**：展开收起是个随手的动作，每点一次都发一趟请求，而那
+ * 趟请求在服务端还会顺带去邮件服务器对一次文件夹（folders.go 的
+ * refreshHostFoldersInBackground）。当前那个箱另有一条路（下面那个 watch），
+ * 每次切过去都会刷新，所以"在 Foxmail 里新建的文件夹多久能看到"这件事没变。
+ */
+function ensureFolders(accountId: number) {
+  if (!accountId || accountId in hostFolders.value) return
+  void loadCustomFolders(accountId)
 }
 
 watch(currentAccount, (id) => { void loadCustomFolders(id) }, { immediate: true })
