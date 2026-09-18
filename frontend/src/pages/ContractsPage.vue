@@ -335,7 +335,7 @@
             <span v-if="isInForce" class="in-force">{{ t('contracts.inForce') }}</span>
           </div>
           <div class="detail-actions">
-            <template v-if="myConfirmationTask"><el-tag v-if="myConfirmationOverride" type="warning" effect="plain">最高权限管理员代办</el-tag><el-button type="success" @click="confirmContract('APPROVE')">同意</el-button><el-button type="warning" @click="confirmContract('RETURN')">退回修改</el-button></template>
+            <template v-if="myConfirmationTask"><el-tag v-if="myConfirmationOverride" type="warning" effect="plain">管理员处理</el-tag><el-button type="success" @click="confirmContract('APPROVE')">同意</el-button><el-button type="warning" @click="confirmContract('RETURN')">退回修改</el-button></template>
             <el-button v-if="canTransfer" size="small" plain @click="openTransfer">
               {{ t('ownership.transfer') }}
             </el-button>
@@ -1524,7 +1524,7 @@ async function loadMyConfirmation(id:string){
 }
 async function confirmContract(action:'APPROVE'|'RETURN'){
  if(!detail.value||!myConfirmationTask.value)return
- let comment='';if(myConfirmationOverride.value){const r=await ElMessageBox.prompt(action==='RETURN'?'请说明退回内容及代办原因':'请说明代替原审批人处理的原因','最高权限管理员代办',{inputType:'textarea',inputValidator:v=>!!v?.trim()||'请填写代办原因'});comment=r.value.trim()}else if(action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value.trim()}else{await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
+ let comment='';if(myConfirmationOverride.value){const r=await ElMessageBox.prompt(action==='RETURN'?'可以填写退回备注，也可以直接退回':'可以填写审批备注，也可以直接同意','管理员处理',{inputType:'textarea',inputPlaceholder:'备注（选填）'});comment=r.value.trim()}else if(action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value.trim()}else{await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
  await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';myConfirmationOverride.value=false;ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(detail.value?.contract.status!=='PENDING_APPROVAL')break;await new Promise(r=>setTimeout(r,500))}await load()
 }
 function openSupplement(){if(!detail.value)return;supplementForm.externalContractNo=detail.value.contract.externalContractNo||'';supplementForm.due=detail.value.contract.receivableDueDate||'';supplementOpen.value=true}

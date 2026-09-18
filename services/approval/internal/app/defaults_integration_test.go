@@ -329,12 +329,9 @@ func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 	if _, _, err := svc.Act(ctx, tenantID, 601, tasks[0].ID, ActionApprove, ""); err == nil {
 		t.Fatal("普通员工不应能接管别人的采购审批")
 	}
-	if _, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, ""); err == nil {
-		t.Fatal("最高权限管理员代办时必须填写原因")
-	}
-	approved, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, "最高权限管理员接管")
+	approved, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, "")
 	if err != nil {
-		t.Fatalf("最高权限管理员应能接管采购审批: %v", err)
+		t.Fatalf("最高权限管理员应能不填备注直接处理采购审批: %v", err)
 	}
 	if approved.Status != statusApproved {
 		t.Fatalf("接管审批后采购单应通过，实际 %s", approved.Status)

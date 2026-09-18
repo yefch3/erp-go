@@ -80,9 +80,6 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 		if !override {
 			return store.ApprovalInstance{}, nil, apierr.Permission("AP_NOT_ASSIGNEE", "该审批任务不属于当前用户")
 		}
-		if strings.TrimSpace(comment) == "" {
-			return store.ApprovalInstance{}, nil, apierr.Invalid("AP_OVERRIDE_REASON_REQUIRED", "代替原审批人处理时必须填写原因")
-		}
 	}
 
 	var nextNode *store.ApprovalNode
