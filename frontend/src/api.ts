@@ -134,6 +134,13 @@ http.interceptors.response.use(
       window.dispatchEvent(new CustomEvent('mail-locked'))
       return Promise.reject(env ?? err)
     }
+    // IAM checks every guarded request live, while the menu keeps a small
+    // browser cache. A permission-related 403 means those two views may have
+    // diverged (for example an administrator just changed this role). Ask the
+    // shell to repair its cache immediately; the failed action still fails.
+    if (err.response?.status === 403 && env?.code === 'AUTH_PERMISSION_DENIED') {
+      window.dispatchEvent(new CustomEvent('permissions-stale'))
+    }
     if (shouldToast(err.config)) {
       ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
     }

@@ -249,6 +249,7 @@ func (s *Service) seedTenantCore(ctx context.Context, q *store.Queries, companyN
 // 别人的单子」，而权限页上一切正常。
 var superAdminScopeModules = []string{
 	"export",
+	"quality",
 	"shipping",
 	"procurement_order",
 	"procurement_requirement",

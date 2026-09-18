@@ -23,6 +23,11 @@ interface LoginData {
   mustChangePassword?: boolean
 }
 
+// Several browser signals can ask for a permission refresh at the same time
+// (focus, visibility, the periodic check, or a 403 response). Share one
+// request so returning to a tab never creates a burst against IAM.
+let permissionRefreshInFlight: Promise<void> | null = null
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // No token here, and none anywhere script can reach: the credential is
@@ -88,6 +93,48 @@ export const useAuthStore = defineStore('auth', {
       this.mustChangePassword = false
       localStorage.removeItem('mustChangePassword')
     },
+    // Re-read the small permission list independently from the profile. The
+    // router uses this before its first navigation, so a role change made
+    // while the browser was closed cannot be overwritten by stale
+    // localStorage and incorrectly send the user back to 我的待办.
+    async refreshPermissionCodes() {
+      if (!this.isLoggedIn) return
+      if (permissionRefreshInFlight) return permissionRefreshInFlight
+      const employeeID = this.employeeId
+      permissionRefreshInFlight = (async () => {
+        const data = await get<{ permissionCodes: string[] }>('/me/permissions', undefined, {
+          ...quietErrors,
+          // This request runs before the first route resolves. A short retry
+          // budget keeps a temporarily unavailable IAM from holding the
+          // entire application behind a blank screen.
+          timeout: 5000,
+        })
+        // A slow response from an older session must not paint permissions
+        // over a different person who signed in while it was in flight.
+        if (!this.isLoggedIn || this.employeeId !== employeeID) return
+        this.permissions = data.permissionCodes ?? []
+        localStorage.setItem('permissions', JSON.stringify(this.permissions))
+      })().finally(() => {
+        permissionRefreshInFlight = null
+      })
+      return permissionRefreshInFlight
+    },
+    async refreshProfile() {
+      if (!this.isLoggedIn) return
+      const employeeID = this.employeeId
+      const data = await get<{ profile: SessionProfile }>('/me/profile', undefined, quietErrors)
+      if (!this.isLoggedIn || this.employeeId !== employeeID || !data.profile?.id) return
+      const profile = data.profile
+      this.employeeId = String(profile.id)
+      this.employeeName = profile.name ?? ''
+      this.employeeEmail = profile.email ?? ''
+      this.employeeDepartment = profile.departmentName ?? ''
+      this.avatarUrl = profile.avatarUrl ?? ''
+      localStorage.setItem('employeeId', this.employeeId)
+      localStorage.setItem('employeeName', this.employeeName)
+      localStorage.setItem('employeeEmail', this.employeeEmail)
+      localStorage.setItem('employeeDepartment', this.employeeDepartment)
+    },
     // Permissions and the harmless identity cache are both refreshed on boot.
     // The cookie is the real session; localStorage may outlive an older login
     // and must never be trusted for an ownership decision such as who may sign
@@ -95,26 +142,7 @@ export const useAuthStore = defineStore('auth', {
     // does not prevent the other cache from being repaired.
     async refreshPermissions() {
       if (!this.isLoggedIn) return
-      const [permissionsResult, profileResult] = await Promise.allSettled([
-        get<{ permissionCodes: string[] }>('/me/permissions'),
-        get<{ profile: SessionProfile }>('/me/profile'),
-      ])
-      if (permissionsResult.status === 'fulfilled') {
-        this.permissions = permissionsResult.value.permissionCodes ?? []
-        localStorage.setItem('permissions', JSON.stringify(this.permissions))
-      }
-      if (profileResult.status === 'fulfilled' && profileResult.value.profile?.id) {
-        const profile = profileResult.value.profile
-        this.employeeId = String(profile.id)
-        this.employeeName = profile.name ?? ''
-        this.employeeEmail = profile.email ?? ''
-        this.employeeDepartment = profile.departmentName ?? ''
-        this.avatarUrl = profile.avatarUrl ?? ''
-        localStorage.setItem('employeeId', this.employeeId)
-        localStorage.setItem('employeeName', this.employeeName)
-        localStorage.setItem('employeeEmail', this.employeeEmail)
-        localStorage.setItem('employeeDepartment', this.employeeDepartment)
-      }
+      await Promise.allSettled([this.refreshPermissionCodes(), this.refreshProfile()])
     },
     logout() {
       // The server must clear the cookie — httpOnly means this code cannot.

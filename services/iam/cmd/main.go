@@ -92,6 +92,12 @@ func run(log *slog.Logger) error {
 	if err := svc.EnsurePresetRoles(ctx); err != nil {
 		return err
 	}
+	// SUPER_ADMIN is a recovery boundary, not a customizable business role.
+	// Repair historical drift on every start so later permission additions or
+	// an old accidental edit cannot leave a tenant without a complete admin.
+	if err := svc.EnsureSuperAdminAccess(ctx); err != nil {
+		return err
+	}
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	h := grpcin.New(svc)

@@ -6,11 +6,16 @@
 # gateway. It serves static files and nothing else — no TLS, no proxying,
 # no knowledge of the backend.
 FROM node:22-alpine AS build
+ARG ERP_SHA=dev
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
+# A public, cache-free build identity lets deployment verify the browser files
+# and API came from the same commit. Checking only /api/healthz can miss an old
+# frontend container, which appears to users as missing pages or buttons.
+RUN printf '{"version":"%s"}\n' "$ERP_SHA" > /src/dist/version.json
 
 FROM nginx:1.27-alpine
 COPY deploy/frontend-nginx.conf /etc/nginx/conf.d/default.conf

@@ -45,16 +45,24 @@
               >
                 {{ selected.status === 'INACTIVE' ? t('roles.activate') : t('roles.deactivate') }}
               </el-button>
-              <el-button v-if="canWrite" type="primary" :loading="saving" @click="saveGrants">
+              <el-button v-if="canEditSelected" type="primary" :loading="saving" @click="saveGrants">
                 {{ t('roles.saveGrants') }}
               </el-button>
             </div>
           </div>
+          <el-alert
+            v-if="selected.code === 'SUPER_ADMIN'"
+            :title="t('roles.superAdminFixed')"
+            type="info"
+            :closable="false"
+            show-icon
+            class="super-admin-note"
+          />
           <!-- Grouped by module because that is how people think about it:
                "can this role touch customers", not "code #7". -->
           <div v-for="(items, module) in grouped" :key="module" class="module">
             <div class="module-name">{{ moduleLabel(module) }}</div>
-            <el-checkbox-group v-model="checked" :disabled="!canWrite" class="perm-list">
+            <el-checkbox-group v-model="checked" :disabled="!canEditSelected" class="perm-list">
               <el-checkbox v-for="p in items" :key="p.code" :value="p.code" :title="p.code">
                 {{ displayPermissionName(p) }}
               </el-checkbox>
@@ -64,48 +72,16 @@
                whose records those features operate on. -->
           <div class="module">
             <div class="module-name">{{ t('roles.dataScope') }}</div>
-            <div class="scope-row">
-              <span class="scope-label">{{ t('roles.scopeExport') }}</span>
-              <el-select v-model="scopeExport" :disabled="!canWrite" style="width: 220px">
+            <div v-for="scopeModule in DATA_SCOPE_MODULES" :key="scopeModule.key" class="scope-row">
+              <span class="scope-label">{{ t(scopeModule.label) }}</span>
+              <el-select v-model="scopeValues[scopeModule.key]" :disabled="!canEditSelected" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
               </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveScope">
-                {{ t('roles.saveScope') }}
-              </el-button>
-            </div>
-            <div class="scope-row">
-              <span class="scope-label">{{ t('roles.scopeSourcing') }}</span>
-              <el-select v-model="scopeSourcing" :disabled="!canWrite" style="width: 220px">
-                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
-              </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveSourcingScope">
-                {{ t('roles.saveScope') }}
-              </el-button>
-            </div>
-            <div class="scope-row">
-              <span class="scope-label">{{ t('roles.scopeOrder') }}</span>
-              <el-select v-model="scopeOrder" :disabled="!canWrite" style="width: 220px">
-                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
-              </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveOrderScope">
-                {{ t('roles.saveScope') }}
-              </el-button>
-            </div>
-            <div class="scope-row">
-              <span class="scope-label">{{ t('roles.scopeRequirement') }}</span>
-              <el-select v-model="scopeRequirement" :disabled="!canWrite" style="width: 220px">
-                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
-              </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveRequirementScope">
-                {{ t('roles.saveScope') }}
-              </el-button>
-            </div>
-            <div class="scope-row">
-              <span class="scope-label">{{ t('roles.scopeShipping') }}</span>
-              <el-select v-model="scopeShipping" :disabled="!canWrite" style="width: 220px">
-                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
-              </el-select>
-              <el-button v-if="canWrite" :loading="savingScope" @click="saveShippingScope">
+              <el-button
+                v-if="canEditSelected"
+                :loading="savingScopeModule === scopeModule.key"
+                @click="saveScope(scopeModule.key)"
+              >
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
@@ -156,6 +132,7 @@ const canWrite = auth.can('iam:role:write')
 const roles = ref<Role[]>([])
 const permissions = ref<Permission[]>([])
 const selected = ref<Role | null>(null)
+const canEditSelected = computed(() => canWrite && selected.value?.code !== 'SUPER_ADMIN')
 const checked = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -163,13 +140,24 @@ const createOpen = ref(false)
 // Absence of a row means SELF, so the picker shows SELF for an unconfigured
 // role rather than a blank that hides which way it will actually behave.
 const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
+// This is the complete list of modules for which a business service asks IAM
+// to filter rows. Keeping the controls in one table makes omissions visible:
+// quality and mail used to fall back silently to SELF because this page had no
+// way to configure them, even when the role held the matching feature access.
+const DATA_SCOPE_MODULES = [
+  { key: 'export', label: 'roles.scopeExport' },
+  { key: 'procurement_sourcing', label: 'roles.scopeSourcing' },
+  { key: 'procurement_order', label: 'roles.scopeOrder' },
+  { key: 'procurement_requirement', label: 'roles.scopeRequirement' },
+  { key: 'shipping', label: 'roles.scopeShipping' },
+  { key: 'quality', label: 'roles.scopeQuality' },
+  { key: 'mail', label: 'roles.scopeMail' },
+] as const
 const scopes = ref<Record<string, string>>({})
-const scopeExport = ref('SELF')
-const scopeSourcing = ref('SELF')
-const scopeOrder = ref('SELF')
-const scopeRequirement = ref('SELF')
-const scopeShipping = ref('SELF')
-const savingScope = ref(false)
+const scopeValues = reactive<Record<string, string>>(
+  Object.fromEntries(DATA_SCOPE_MODULES.map((m) => [m.key, 'SELF'])),
+)
+const savingScopeModule = ref('')
 const form = reactive({ code: '', name: '', description: '' })
 const statusSaving = ref(false)
 
@@ -232,87 +220,31 @@ async function load() {
 function select(role: Role) {
   selected.value = role
   checked.value = [...role.permissionCodes]
-  scopeExport.value = scopes.value[`${role.id}:export`] ?? 'SELF'
-  scopeSourcing.value = scopes.value[`${role.id}:procurement_sourcing`] ?? 'SELF'
-  scopeOrder.value = scopes.value[`${role.id}:procurement_order`] ?? 'SELF'
-  scopeRequirement.value = scopes.value[`${role.id}:procurement_requirement`] ?? 'SELF'
-  scopeShipping.value = scopes.value[`${role.id}:shipping`] ?? 'SELF'
+  syncScopeValues(role.id)
+}
+
+function syncScopeValues(roleId: string) {
+  for (const module of DATA_SCOPE_MODULES) {
+    scopeValues[module.key] = scopes.value[`${roleId}:${module.key}`] ?? 'SELF'
+  }
 }
 
 async function loadScopes() {
   const data = await get<{ scopes: { roleId: string; module: string; scopeType: string }[] }>('/data-scopes')
   scopes.value = Object.fromEntries((data.scopes ?? []).map((s) => [`${s.roleId}:${s.module}`, s.scopeType]))
-  if (selected.value) {
-    scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
-    scopeSourcing.value = scopes.value[`${selected.value.id}:procurement_sourcing`] ?? 'SELF'
-    scopeOrder.value = scopes.value[`${selected.value.id}:procurement_order`] ?? 'SELF'
-    scopeRequirement.value = scopes.value[`${selected.value.id}:procurement_requirement`] ?? 'SELF'
-    scopeShipping.value = scopes.value[`${selected.value.id}:shipping`] ?? 'SELF'
-  }
+  if (selected.value) syncScopeValues(selected.value.id)
 }
 
-async function saveScope() {
-  savingScope.value = true
+async function saveScope(module: string) {
+  savingScopeModule.value = module
   try {
     await put(`/roles/${selected.value!.id}/data-scope`, {
-      scope: { module: 'export', scopeType: scopeExport.value },
+      scope: { module, scopeType: scopeValues[module] },
     })
     ElMessage.success(t('roles.scopeSaved'))
     await loadScopes()
   } finally {
-    savingScope.value = false
-  }
-}
-
-async function saveSourcingScope() {
-  savingScope.value = true
-  try {
-    await put(`/roles/${selected.value!.id}/data-scope`, {
-      scope: { module: 'procurement_sourcing', scopeType: scopeSourcing.value },
-    })
-    ElMessage.success(t('roles.scopeSaved'))
-    await loadScopes()
-  } finally {
-    savingScope.value = false
-  }
-}
-
-async function saveOrderScope() {
-  savingScope.value = true
-  try {
-    await put(`/roles/${selected.value!.id}/data-scope`, {
-      scope: { module: 'procurement_order', scopeType: scopeOrder.value },
-    })
-    ElMessage.success(t('roles.scopeSaved'))
-    await loadScopes()
-  } finally {
-    savingScope.value = false
-  }
-}
-
-async function saveRequirementScope() {
-  savingScope.value = true
-  try {
-    await put(`/roles/${selected.value!.id}/data-scope`, {
-      scope: { module: 'procurement_requirement', scopeType: scopeRequirement.value },
-    })
-    ElMessage.success(t('roles.scopeSaved'))
-    await loadScopes()
-  } finally {
-    savingScope.value = false
-  }
-}
-
-async function saveShippingScope() {
-  savingScope.value = true
-  try {
-    await put(`/roles/${selected.value!.id}/data-scope`, {
-      scope: { module: 'shipping', scopeType: scopeShipping.value },
-    })
-    ElMessage.success(t('roles.scopeSaved'))
-    await loadScopes()
-  } finally {
-    savingScope.value = false
+    savingScopeModule.value = ''
   }
 }
 
@@ -341,6 +273,10 @@ async function saveGrants() {
     await put(`/roles/${selected.value?.id}/permissions`, { permissionCodes: checked.value })
     ElMessage.success(t('roles.grantsSaved'))
     await load()
+    // If the administrator edited a role they personally hold, update their
+    // own navigation immediately instead of waiting for the focus/interval
+    // synchronizer in the shell.
+    await auth.refreshPermissionCodes().catch(() => {})
   } finally {
     saving.value = false
   }

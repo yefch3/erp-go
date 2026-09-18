@@ -153,6 +153,19 @@ func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, modu
 	if scopeType == "CUSTOM" && len(deptIDs) == 0 {
 		return apierr.Invalid("IAM_SCOPE_DEPTS_REQUIRED", "自定义范围必须选择部门")
 	}
+	role, err := s.q.GetRole(ctx, store.GetRoleParams{TenantID: tenantID, ID: roleID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierr.NotFound("IAM_ROLE_NOT_FOUND", "角色不存在")
+		}
+		return err
+	}
+	// The ordinary business modules are part of SUPER_ADMIN's recovery
+	// boundary. Mail is deliberately exempt: cross-mailbox visibility must be
+	// explicitly chosen and audited rather than silently inherited.
+	if role.Code == "SUPER_ADMIN" && module != "mail" && scopeType != "ALL" {
+		return apierr.Invalid("IAM_ROLE_SUPER_ADMIN_LOCKED", "超级管理员的业务数据范围固定为全部")
+	}
 	var operatorID int64
 	if len(operatorIDs) > 0 {
 		operatorID = operatorIDs[0]

@@ -56,9 +56,20 @@ health() {
   curl -fsS --max-time 5 http://127.0.0.1:8080/api/healthz 2>/dev/null || return 1
 }
 
-if ! health; then
+frontend_version() {
+  curl -fsS --max-time 5 http://127.0.0.1:8082/version.json 2>/dev/null || return 1
+}
+
+versions_match() {
+  EXPECTED="$1"
+  BACKEND=$(health | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  FRONTEND=$(frontend_version | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  [ "$BACKEND" = "$EXPECTED" ] && [ "$FRONTEND" = "$EXPECTED" ]
+}
+
+if ! health || ! versions_match "$SHA"; then
   PREV=$(cat "$LAST_GOOD" 2>/dev/null || true)
-  echo "健康检查未通过" >&2
+  echo "健康检查或前后端版本一致性检查未通过" >&2
   if [ -z "$PREV" ] || [ "$PREV" = "$SHA" ]; then
     echo "没有可回滚的上一个好版本，容器保持现状等待人工处理" >&2
     exit 1
@@ -67,18 +78,11 @@ if ! health; then
   git checkout --quiet "$PREV"
   ERP_SHA="$PREV" $COMPOSE up -d --remove-orphans
   sleep 20
-  if health; then
+  if health && versions_match "$PREV"; then
     echo "已回滚到 $PREV，服务恢复" >&2
   else
     echo "回滚后仍不健康，需要人工介入" >&2
   fi
-  exit 1
-fi
-
-# 版本号自证：healthz 报的是容器里的 ERP_SHA，与本次部署一致才算换血成功。
-RUNNING=$(health | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
-if [ "$RUNNING" != "$SHA" ]; then
-  echo "健康检查通过，但报告的版本是 $RUNNING，不是 $SHA" >&2
   exit 1
 fi
 
