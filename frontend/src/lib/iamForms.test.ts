@@ -13,7 +13,7 @@ const employee: EmployeeFormInput = {
   id: '9', code: 'E009', name: '测试员工', departmentId: '2', position: '会计',
   email: 'staff@example.com', phone: '+1 (212) 555-0100', managerId: '1',
   englishName: 'Tester', hireDate: '2026-08-01', leaveDate: '2026-08-31', remark: '备注',
-  version: 3, username: 'tester', initialPassword: 'password-10',
+  version: 3, username: 'tester', initialPassword: 'tRuck-plum-92',
 }
 
 const department: DepartmentFormInput = {
@@ -50,10 +50,18 @@ describe('IAM 请求字段契约', () => {
 })
 
 describe('员工表单校验', () => {
-  it('拒绝错误邮箱、电话和过短密码', () => {
+  it('拒绝错误邮箱、电话和不合格的密码', () => {
     expect(validateEmployeeForm({ ...employee, email: 'bad-email' }, false)).toBe('emailInvalid')
     expect(validateEmployeeForm({ ...employee, phone: 'call-me' }, false)).toBe('phoneInvalid')
-    expect(validateEmployeeForm({ ...employee, initialPassword: 'short' }, false)).toBe('passwordTooShort')
+    // 密码那几条**各报各的**：说一句「密码不合要求」等于把人推回去继续猜。
+    // 规则和服务端共用一份（lib/passwordPolicy），措辞也就对得上。
+    expect(validateEmployeeForm({ ...employee, initialPassword: 'short' }, false)).toBe('password_tooShort')
+    expect(validateEmployeeForm({ ...employee, initialPassword: 'password-10' }, false)).toBe('password_tooCommon')
+    expect(validateEmployeeForm({ ...employee, initialPassword: 'Qabcdefzz19' }, false)).toBe('password_tooSimple')
+    // 用自己的工号当密码——猜的人第一个就试这个。
+    expect(validateEmployeeForm({ ...employee, initialPassword: 'e009-truck-plum' }, false)).toBe('password_fromIdentity')
+    // 中文密码不再被长度这一关冤枉：服务端一个汉字算两位。
+    expect(validateEmployeeForm({ ...employee, initialPassword: '今天想吃小笼包' }, false)).toBeNull()
   })
 
   it('拒绝早于入职日期的离职日期', () => {

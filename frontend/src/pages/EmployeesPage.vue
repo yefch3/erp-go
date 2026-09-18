@@ -258,8 +258,16 @@
           <el-form-item :label="t('employees.username')">
             <el-input v-model="form.username" autocomplete="off" />
           </el-form-item>
-          <el-form-item :label="t('employees.initialPassword')">
-            <el-input v-model="form.initialPassword" type="password" show-password autocomplete="new-password" />
+          <el-form-item :label="t('employees.initialPassword')" class="wide">
+            <div class="pw-field">
+              <el-input v-model="form.initialPassword" type="password" show-password autocomplete="new-password" />
+              <!-- 规则摆在输入框底下，边打边对。context 是这个人身上攻击者
+                   已经知道的那几样——密码里带着它们，是猜的人第一个会试的。 -->
+              <PasswordRules
+                :password="form.initialPassword"
+                :context="[form.name, form.code, form.username, form.email]"
+              />
+            </div>
           </el-form-item>
         </div>
       </el-form>
@@ -345,7 +353,13 @@
           <el-input v-model="accountForm.username" autocomplete="off" />
         </el-form-item>
         <el-form-item :label="t('employees.newPassword')">
-          <el-input v-model="accountForm.password" type="password" show-password autocomplete="new-password" />
+          <div class="pw-field">
+            <el-input v-model="accountForm.password" type="password" show-password autocomplete="new-password" />
+            <PasswordRules
+              :password="accountForm.password"
+              :context="[current?.name, current?.code, accountForm.username, current?.email]"
+            />
+          </div>
         </el-form-item>
       </el-form>
       <!-- Because this password was typed by you, not chosen by them: it
@@ -369,6 +383,7 @@ import { useAuthStore } from '../stores/auth'
 import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 import { createEmployeeBody, updateEmployeeBody, validateEmployeeForm } from '../lib/iamForms'
+import PasswordRules from '../components/PasswordRules.vue'
 
 interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
@@ -833,6 +848,10 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 </script>
 
 <style scoped>
+/* 输入框和它底下那份规则清单是一件事，竖着摞。 */
+.pw-field {
+  width: 100%;
+}
 .change-values pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .breadcrumb {
   margin-bottom: 12px;

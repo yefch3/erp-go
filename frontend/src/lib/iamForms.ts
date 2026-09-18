@@ -1,3 +1,5 @@
+import { checkPassword } from './passwordPolicy'
+
 export interface EmployeeFormInput {
   id: string
   code: string
@@ -21,7 +23,12 @@ export type EmployeeValidationError =
   | 'emailInvalid'
   | 'phoneInvalid'
   | 'accountIncomplete'
-  | 'passwordTooShort'
+  // 密码那几条各报各的：说「密码不合要求」等于把人推回去继续猜。
+  | 'password_tooShort'
+  | 'password_tooLong'
+  | 'password_tooCommon'
+  | 'password_tooSimple'
+  | 'password_fromIdentity'
   | 'leaveBeforeHire'
 
 // 前端先做与 IAM 服务一致的基础校验，让员工在提交前就能看到可修正的问题。
@@ -38,7 +45,16 @@ export function validateEmployeeForm(form: EmployeeFormInput, editing: boolean):
 
   if (!editing) {
     if (!form.username !== !form.initialPassword) return 'accountIncomplete'
-    if (form.initialPassword && form.initialPassword.length < 10) return 'passwordTooShort'
+    // 和服务端同一套规则（lib/passwordPolicy），不再只数长度：从前这里写的是
+    // 「少于 10 个字符」，于是中文密码在这一关就被拦下（服务端一个汉字算两位，
+    // 五个字就够），而常见密码、键盘顺序那几条这里一条都不管，人要提交了才
+    // 知道。两边报的是同一条规则，措辞也就能对得上。
+    if (form.initialPassword) {
+      const problem = checkPassword(form.initialPassword, [
+        form.name, form.code, form.username, form.email,
+      ])
+      if (problem) return `password_${problem}` as EmployeeValidationError
+    }
   }
 
   if (editing && form.hireDate && form.leaveDate && form.leaveDate < form.hireDate) return 'leaveBeforeHire'
