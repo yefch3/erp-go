@@ -132,9 +132,11 @@ function Ensure-EmployeeDepartment($admin, $employee, [string]$departmentID) {
   }).employee
 }
 
-function Find-Claim($session, [string]$purpose) {
+function Find-Claim($session, [string]$purpose, [string[]]$statuses = @()) {
   $items = @((Invoke-Api $session GET '/travel-reimbursements').items)
-  return @($items | Where-Object { $_.purpose -eq $purpose } | Select-Object -First 1)
+  return @($items | Where-Object {
+    $_.purpose -eq $purpose -and (!$statuses.Count -or $statuses -contains $_.status)
+  } | Select-Object -First 1)
 }
 
 function New-ClaimWithEvidence($session, [string]$purpose, [string]$amount) {
@@ -165,8 +167,8 @@ function New-ClaimWithEvidence($session, [string]$purpose, [string]$amount) {
   return $claim
 }
 
-function Ensure-SubmittedClaim($submitter, [string]$purpose, [string]$amount) {
-  $found = Find-Claim $submitter $purpose
+function Ensure-SubmittedClaim($submitter, [string]$purpose, [string]$amount, [string[]]$statuses) {
+  $found = Find-Claim $submitter $purpose $statuses
   $claim = if ($found.Count) { $found[0] } else { New-ClaimWithEvidence $submitter $purpose $amount }
   if ($claim.status -eq 'DRAFT') {
     $claim = (Invoke-Api $submitter POST "/travel-reimbursements/$($claim.id)/submit" @{}).reimbursement
@@ -213,7 +215,7 @@ $managerSession = New-Session 'approval-demo-manager' $TestPassword
 $observerSession = New-Session 'approval-demo-observer' $TestPassword
 
 $draftPurpose = '审批演示-提交人草稿'
-$draftFound = Find-Claim $submitterSession $draftPurpose
+$draftFound = Find-Claim $submitterSession $draftPurpose @('DRAFT')
 $draft = if ($draftFound.Count) { $draftFound[0] } else {
   (Invoke-Api $submitterSession POST '/travel-reimbursements' @{
     tripStart = '2026-09-20'; tripEnd = '2026-09-20'; origin = '上海'; destination = '苏州'
@@ -223,10 +225,10 @@ $draft = if ($draftFound.Count) { $draftFound[0] } else {
 }
 
 $departmentPurpose = '审批演示-等待部门负责人审批'
-$departmentClaim = Ensure-SubmittedClaim $submitterSession $departmentPurpose '680.50'
+$departmentClaim = Ensure-SubmittedClaim $submitterSession $departmentPurpose '680.50' @('DRAFT', 'PENDING_DEPARTMENT_CONFIRMATION')
 
 $financePurpose = '审批演示-等待财务负责人审批'
-$financeClaim = Ensure-SubmittedClaim $submitterSession $financePurpose '1280.00'
+$financeClaim = Ensure-SubmittedClaim $submitterSession $financePurpose '1280.00' @('DRAFT', 'PENDING_DEPARTMENT_CONFIRMATION', 'PENDING_FINANCE_APPROVAL')
 if ($financeClaim.status -eq 'PENDING_DEPARTMENT_CONFIRMATION') {
   $firstTask = Wait-ApprovalTask $managerSession ([string]$financeClaim.id)
   Invoke-Api $managerSession POST "/approvals/tasks/$($firstTask.task.id)/act" @{
@@ -234,7 +236,7 @@ if ($financeClaim.status -eq 'PENDING_DEPARTMENT_CONFIRMATION') {
     comment = '审批演示：部门负责人已确认，保留在财务审批阶段。'
   } | Out-Null
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    $updated = Find-Claim $submitterSession $financePurpose
+    $updated = Find-Claim $submitterSession $financePurpose @('PENDING_FINANCE_APPROVAL')
     if ($updated.Count -and $updated[0].status -eq 'PENDING_FINANCE_APPROVAL') { $financeClaim = $updated[0]; break }
     Start-Sleep -Milliseconds 300
   }
