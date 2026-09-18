@@ -1,5 +1,14 @@
 <template>
   <div class="recip-field">
+    <!-- 输入框和它那几颗按钮**排在同一行**。
+         从前按钮另起一行（「从通讯录选择 · 已选 N 人 · 清空」），三个收件
+         人格子就是三条这样的行，写信框上半截被它们撑得要往下拉才看得见
+         正文。竖着排的东西横着排得下：输入框会收缩，按钮定宽，窗子窄到
+         挤不下时再折行（flex-wrap），也就回到从前那个样子。
+
+         「已选 N 人」和「清空」只在真选了人时出现：0 个人的时候那两样
+         什么都没说。 -->
+    <div class="bar">
     <!-- One field, three ways in: type an address nobody has recorded, type a
          prefix and pick a suggestion, or open the address book and tick.
          Gmail's To field works this way and people expect it to. -->
@@ -37,18 +46,23 @@
       </template>
     </el-select>
 
-    <div class="bar">
-      <el-button size="small" @click="bookOpen = true">
+      <el-button size="small" class="book" @click="bookOpen = true">
         {{ t('recipients.fromBook') }}
       </el-button>
-      <span class="count">{{ t('emails.selectedCount', { n: modelValue.length }) }}</span>
+      <!-- 一个人的时候不数：那一颗令牌就在旁边摆着，「已选 1 人」一个字
+           都没多说，却占着这一行的宽。 -->
+      <span v-if="modelValue.length > 1" class="count">
+        {{ t('emails.selectedCount', { n: modelValue.length }) }}
+      </span>
       <span v-if="unknownCount > 0" class="warn">
         {{ t('recipients.unknownWarning', { n: unknownCount }) }}
       </span>
-      <span class="grow" />
       <el-button v-if="modelValue.length" size="small" link @click="clearAll">
         {{ t('emails.clearSelection') }}
       </el-button>
+      <!-- 写信框把「抄送」「密送」两颗开关放在这里（只有收件人那一格用得上）：
+           它们和收件人是同一件事的三面，挤在同一行才不多占一行。 -->
+      <slot name="extra" />
     </div>
 
     <el-dialog v-model="bookOpen" :title="t('recipients.book')" width="760px" append-to-body>
@@ -459,8 +473,14 @@ function addFromBook() {
 .recip-field {
   width: 100%;
 }
+/* 输入框会收缩（min-width: 0 是前提，flex 子项默认不肯缩到内容宽度以下），
+   按钮定宽。挤不下时整条折行，按钮回到下面那一行，和从前一样能用。 */
 .picker {
-  width: 100%;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.book {
+  flex: none;
 }
 .opt {
   display: flex;
@@ -483,11 +503,8 @@ function addFromBook() {
 .bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-.grow {
-  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .count {
   font-size: 12px;

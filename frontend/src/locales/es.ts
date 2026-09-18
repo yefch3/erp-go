@@ -2440,7 +2440,7 @@ export default {
     countryAllPresent: 'Todos los de {country} ya están en la lista',
     placeholder: 'Escriba una dirección, o un nombre para buscar en la libreta',
     typeToSearch: 'Escriba un prefijo para buscar contactos, o una dirección completa',
-    fromBook: 'Desde la libreta',
+    fromBook: 'Libreta',
     book: 'Libreta de direcciones',
     addChosen: 'Añadir seleccionados ({n})',
     unknownWarning: '{n} dirección(es) no están en la libreta, no se resuelve el nombre',
