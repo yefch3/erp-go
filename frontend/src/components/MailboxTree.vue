@@ -140,6 +140,7 @@
           class="folder sub locked"
           @click="emit('update:modelValue', b.id)"
         >
+<span class="fold-caret" aria-hidden="true" />
           <span class="ficon">🔒</span>
           <span class="fname">{{ t('mailGate.signInToRead') }}</span>
         </button>
@@ -166,6 +167,10 @@
             @dragleave="onDragLeave(b.id, item)"
             @drop="onDrop(b.id, item, $event)"
           >
+            <!-- 三角那一格的空位。固定视图没有层级，但**要占同样的宽**：
+                 不占的话它们的图标比底下那棵树往左挪一格，看着像自建文件夹
+                 全是它们的下级。 -->
+            <span class="fold-caret" aria-hidden="true" />
             <el-icon class="ficon"><component :is="item.icon" /></el-icon>
             <span class="fname">{{ t(`emails.folders.${item.key}`) }}</span>
             <!-- 数字只给当前这个箱：别的箱的分文件夹计数服务端没给，
@@ -191,6 +196,7 @@
             @dragleave="onDragLeave(b.id, item)"
             @drop="onDrop(b.id, item, $event)"
           >
+            <span class="fold-caret" aria-hidden="true" />
             <el-icon class="ficon"><Folder /></el-icon>
             <span class="fname">{{ item.name }}</span>
           </button>
@@ -201,14 +207,39 @@
               on: modelValue === b.id && folder === item.key,
               droppable: canDrop(b.id, item),
               over: over === `${b.id}:${item.key}`,
+              child: (item.depth ?? 0) > 0,
             }"
             :style="indent(item)"
             @dragover="onDragOver(b.id, item, $event)"
             @dragleave="onDragLeave(b.id, item)"
             @drop="onDrop(b.id, item, $event)"
           >
+            <!-- 三角只给**真有子文件夹**的那几行：给每一行都画一个，等于在说
+                 每一行底下都有东西，点开却是空的。没有子的那几行占一个同样
+                 宽的空格——不占的话同一级的名字左右对不齐。
+
+                 它是一颗独立的按钮，不是套在下面那颗里：嵌套的可点击元素在
+                 HTML 里非法（这一栏别处也踩过），而且「开合」和「进这个
+                 文件夹」本来就是两件事——Foxmail、Outlook 也是分开的。 -->
+            <button
+              v-if="item.hasChildren"
+              type="button"
+              class="fold-caret"
+              :aria-expanded="!isShut(b.id, item.key)"
+              :title="t(isShut(b.id, item.key) ? 'mailGate.expandFolder' : 'mailGate.collapseFolder')"
+              @click.stop="toggleFolder(b.id, item.key)"
+            >
+              <el-icon class="caret" :class="{ open: !isShut(b.id, item.key) }"><CaretRight /></el-icon>
+            </button>
+            <span v-else class="fold-caret" aria-hidden="true" />
             <button type="button" class="custom-main" :title="item.hostName" @click="emit('select', b.id, item.key)">
-              <el-icon class="ficon"><Folder /></el-icon>
+              <!-- 打开着的父文件夹画成翻开的那个图标，收起来就是合上的。
+                   和三角说的是同一件事，说两遍是有意的：三角只有 12px，
+                   而图标是这一行上第一眼看到的东西。 -->
+              <el-icon class="ficon">
+                <FolderOpened v-if="item.hasChildren && !isShut(b.id, item.key)" />
+                <Folder v-else />
+              </el-icon>
               <span class="fname">{{ item.name }}</span>
             </button>
             <span class="custom-acts">
@@ -223,6 +254,7 @@
         </template>
         <template v-if="!isLocked(b.id)">
           <button type="button" class="folder sub new-folder" @click="emit('createFolder', b.id)">
+<span class="fold-caret" aria-hidden="true" />
             <span class="ficon">＋</span>
             <span class="fname">{{ t('mailGate.newFolder') }}</span>
           </button>
@@ -232,6 +264,7 @@
                出来，只能让用的人说——Outlook / Foxmail / Apple Mail 也都是给
                一个开关，不是替人猜。 -->
           <label class="folder sub keep-copy" :title="t('mailGate.keepSentCopyHint')">
+            <span class="fold-caret" aria-hidden="true" />
             <el-checkbox
               :model-value="b.keepSentCopy"
               @change="setKeepSentCopy(b, $event as boolean)"
@@ -293,15 +326,19 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
-import { CaretRight, Star, SwitchButton, Folder } from '@element-plus/icons-vue'
+import { CaretRight, Star, SwitchButton, Folder, FolderOpened } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
 import { canDropInto, dropTargetFor, type DropTarget } from '../lib/dragMails'
 import {
   expandedAfterSwitch,
+  parseCollapsedFolders,
   parseExpanded,
   splitFolders,
   toggleExpanded,
+  revealPathTo,
+  toggleFolderCollapse,
+  visibleRail,
   type FolderDef, mailboxRail } from '../lib/mailFolders'
 import type { CustomFolder, RailItem } from '../lib/mailFolders'
 
@@ -385,8 +422,13 @@ const adding = ref(false)
 function indent(item: RailItem) {
   // 最多缩四级。这一栏只有两百来像素，再深就只剩省略号了——真要看清楚，
   // 这一栏本身是能拖宽的。
+  //
+  // 一级 16px，正好是一颗三角的宽：孩子的三角落在父亲图标的正下方，
+  // 「谁在谁底下」不用数像素就看得出来。
   const depth = Math.min(item.depth ?? 0, 4)
-  return depth > 0 ? { paddingLeft: `${depth * 12}px` } : undefined
+  // 顶层也要 8px：那是别的行（.folder.sub）的左内边距，自建文件夹的行自己
+  // 把 padding 清成 0 了，不补上就比上面那些往左顶出去一截。
+  return { paddingLeft: `${8 + depth * 16}px` }
 }
 
 /** 光标此刻停在哪一格上。`${accountId}:${folderId}`，空串 = 不在任何一格上。 */
@@ -430,8 +472,57 @@ function onDrop(accountId: number, item: RailItem, ev: DragEvent) {
 const split = computed(() => splitFolders(props.folders))
 const perMailbox = computed(() => split.value.perMailbox)
 function railFor(accountId: number) {
-  return mailboxRail(perMailbox.value, props.hostFolders[accountId] ?? [])
+  return visibleRail(mailboxRail(perMailbox.value, props.hostFolders[accountId] ?? []), shutIn(accountId))
 }
+
+// ------------------------------------------------ 父文件夹的收起与展开
+//
+// 记的是收起来的那几个（默认全展开，和从前看到的一样）。存的键带信箱号：
+// 两个箱底下可以有同名的文件夹，只记名字的话收起一个会连另一个箱的一起收。
+const COLLAPSED_KEY = 'mail.collapsedFolders'
+const collapsedFolders = ref<string[]>(parseCollapsedFolders(localStorage.getItem(COLLAPSED_KEY)))
+const shutKey = (accountId: number, key: string) => `${accountId}:${key}`
+
+function shutIn(accountId: number): string[] {
+  const prefix = `${accountId}:`
+  return collapsedFolders.value.filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length))
+}
+function isShut(accountId: number, key: string): boolean {
+  return collapsedFolders.value.includes(shutKey(accountId, key))
+}
+function persistCollapsed() {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsedFolders.value))
+  } catch {
+    // 无痕模式记不住而已，不该连折叠都不让用。
+  }
+}
+function toggleFolder(accountId: number, key: string) {
+  collapsedFolders.value = toggleFolderCollapse(collapsedFolders.value, shutKey(accountId, key))
+  persistCollapsed()
+}
+
+// 换到某个文件夹（点左栏、开书签、地址栏回退）：它头上收着的几级一起放开，
+// 否则人点进一个看不见的文件夹，左栏上没有任何地方说「你在这儿」。
+// 文件夹清单是异步拉的，所以它到了也要再算一次——immediate 让第一次进来
+// 就算上。
+watch(
+  () => [props.modelValue, props.folder, props.hostFolders[props.modelValue]] as const,
+  ([id, key]) => {
+    if (!id || !key || collapsedFolders.value.length === 0) return
+    const items = mailboxRail(perMailbox.value, props.hostFolders[id] ?? [])
+    const keep = new Set(revealPathTo(shutIn(id), items, key))
+    const prefix = `${id}:`
+    const next = collapsedFolders.value.filter(
+      (k) => !k.startsWith(prefix) || keep.has(k.slice(prefix.length)),
+    )
+    if (next.length !== collapsedFolders.value.length) {
+      collapsedFolders.value = next
+      persistCollapsed()
+    }
+  },
+  { immediate: true },
+)
 const shared = computed(() => split.value.shared)
 
 function countOf(key: string): number {
@@ -646,13 +737,32 @@ defineExpose({ reload: load })
 .folder.over * {
   pointer-events: none;
 }
+/* 三角那一格。**没有子文件夹的那几行也占**：不占的话同一级的名字左右
+   对不齐，一栏文件夹看着是歪的。 */
+.fold-caret {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+button.fold-caret:hover .caret {
+  color: var(--el-color-primary);
+}
 .custom-main {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* 和 .folder 的 gap 一样，这样名字那一列和上面那些固定视图对得齐。 */
+  gap: 10px;
   min-width: 0;
-  padding: 5px 8px 5px 22px;
+  /* 左边不再留 22px：那一截现在是三角那一格。 */
+  padding: 5px 8px 5px 0;
   border: 0;
   background: none;
   color: inherit;
@@ -830,6 +940,17 @@ defineExpose({ reload: load })
 }
 .folder.on .ficon {
   color: inherit;
+}
+/* 层级靠颜色分，这是这次改动的要点：一支的头是暖色（琥珀），它底下的是
+   冷色（蓝）。扫一眼就知道哪几行是同一支的。
+
+   排在 .folder.on .ficon 后面，所以选中的那一行也留着自己的颜色——颜色在
+   这里说的是「第几层」，不是「选没选中」，那件事由整行的底色说。 */
+.folder.custom .ficon {
+  color: var(--el-color-warning);
+}
+.folder.custom.child .ficon {
+  color: var(--el-color-primary);
 }
 .folder:focus-visible {
   outline: 2px solid var(--el-color-primary);

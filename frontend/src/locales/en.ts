@@ -2278,6 +2278,8 @@ export default {
     signInToRead: 'Sign in to read',
     newFolder: 'New folder',
     newSubfolder: 'New folder inside this one',
+    expandFolder: 'Show subfolders',
+    collapseFolder: 'Hide subfolders',
     newFolderAsk: 'Folder name',
     renameFolder: 'Rename folder',
     deleteFolder: 'Delete folder',

@@ -2277,6 +2277,8 @@ export default {
     signInToRead: '登录后查看',
     newFolder: '新建文件夹',
     newSubfolder: '在这里面新建文件夹',
+    expandFolder: '展开子文件夹',
+    collapseFolder: '收起子文件夹',
     newFolderAsk: '文件夹名',
     renameFolder: '重命名文件夹',
     deleteFolder: '删除文件夹',

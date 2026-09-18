@@ -2284,6 +2284,8 @@ export default {
     signInToRead: 'Inicia sesión para ver',
     newFolder: 'Nueva carpeta',
     newSubfolder: 'Nueva carpeta dentro de esta',
+    expandFolder: 'Mostrar subcarpetas',
+    collapseFolder: 'Ocultar subcarpetas',
     newFolderAsk: 'Nombre de la carpeta',
     renameFolder: 'Renombrar carpeta',
     deleteFolder: 'Eliminar carpeta',
