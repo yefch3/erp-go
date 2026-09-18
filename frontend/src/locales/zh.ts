@@ -535,6 +535,7 @@ export default {
     handoffStatuses:{WAITING_REQUOTE:'待重新询价',DRAFT:'草稿',RETURNED:'已退回修改',PENDING_APPROVAL:'审批中',APPROVED:'待上传合同',CONTRACT_UPLOADED:'待财务审核',CONTRACT_VERIFIED:'合同已核验',PAYMENT_REQUESTED:'已委托',PENDING:'待建立船期',SCHEDULED:'已建立船期',CUSTOMER_MANAGED:'客户自理',SUPERSEDED:'已被新版取代'},
   },
   common: {
+    back: '返回',
     deactivationImpact: '确定停用“{name}”吗？共有 {total} 条进行中业务可能受到影响。', historyRetained: '已有订单、船期和历史记录会保留；该资料只会禁止用于新业务。', lifecycleReasonPlaceholder: '请输入本次停用或恢复原因', lifecycleReasonRequired: '必须填写原因', confirmDeactivate: '确认停用', confirmActivate: '确认恢复', activationReason: '确定恢复“{name}”吗？请填写恢复原因。',
     selectCustomer: '选择可用客户', selectEmployee: '选择在职员工', selectSupplier: '选择已启用供应商', selectFactory: '选择合作中工厂', selectPort: '选择已启用港口',
     duplicateTitle: '可能存在重复资料', duplicateWarning: '发现 {count} 条相似资料，请确认后再保存：', duplicateMore: '另有 {count} 条', saveAnyway: '仍然保存', backToEdit: '返回修改',
