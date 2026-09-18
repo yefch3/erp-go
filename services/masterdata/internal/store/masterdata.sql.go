@@ -3435,6 +3435,63 @@ func (q *Queries) ListOptions(ctx context.Context, arg ListOptionsParams) ([]Opt
 	return items, nil
 }
 
+const listOwnerCountries = `-- name: ListOwnerCountries :many
+SELECT o.employee_id,
+       max(o.employee_name)::text       AS employee_name,
+       c.country_code,
+       count(DISTINCT c.id)::bigint     AS customer_count
+FROM customer_owners o
+JOIN customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
+WHERE o.tenant_id = $1::bigint
+  AND o.status = 'ACTIVE'
+  AND c.status = 'ACTIVE'
+GROUP BY o.employee_id, c.country_code
+ORDER BY c.country_code, employee_name
+`
+
+type ListOwnerCountriesRow struct {
+	EmployeeID    int64
+	EmployeeName  string
+	CountryCode   string
+	CustomerCount int64
+}
+
+// 每个业务员负责哪些国家的客户，各多少家。
+//
+// 老板端的员工邮箱监管（2026-09-18）拿它把左栏排成「国家 → 员工」。员工表
+// 上没有国家这一项，也不该有：这家公司的"国家"说的是**市场**，而市场是通过
+// 客户体现的——张三这个月接了巴西的单子，他就在巴西下面，不必有人去改一次
+// 员工资料。
+//
+// 一个人负责几个国家就在几个国家下各出现一次，这是实情，不是要修的毛病。
+//
+// 只算在职的负责关系和还在用的客户：停掉的客户不该把一个人钉在一个他早就
+// 不做的市场上。国家为空的（客户没填国家）照样回，调用方归到「未分配」。
+func (q *Queries) ListOwnerCountries(ctx context.Context, tenantID int64) ([]ListOwnerCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listOwnerCountries, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnerCountriesRow
+	for rows.Next() {
+		var i ListOwnerCountriesRow
+		if err := rows.Scan(
+			&i.EmployeeID,
+			&i.EmployeeName,
+			&i.CountryCode,
+			&i.CustomerCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSupplierChanges = `-- name: ListSupplierChanges :many
 SELECT id, tenant_id, supplier_id, action, section, summary, before_data, after_data, operator_id, operator_name, created_at FROM supplier_change_logs WHERE tenant_id=$1 AND supplier_id=$2
 ORDER BY created_at DESC, id DESC LIMIT 200

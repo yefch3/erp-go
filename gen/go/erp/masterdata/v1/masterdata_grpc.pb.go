@@ -44,6 +44,7 @@ const (
 	CustomerService_CheckCustomerDuplicates_FullMethodName         = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
 	CustomerService_GetCustomerDeactivationImpact_FullMethodName   = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
 	CustomerService_ListMailingContacts_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListOwnerCountries_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListOwnerCountries"
 	CustomerService_ListCustomerCountries_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
 	CustomerService_ContactsInCountry_FullMethodName               = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
@@ -87,6 +88,9 @@ type CustomerServiceClient interface {
 	// a lookup per customer, because the mail composer needs all of them at
 	// once and an N+1 there is a page that visibly stalls.
 	ListMailingContacts(ctx context.Context, in *ListMailingContactsRequest, opts ...grpc.CallOption) (*ListMailingContactsResponse, error)
+	// 每个业务员负责哪些国家的客户。老板端的员工邮箱监管拿它把左栏排成
+	// 「国家 → 员工」——员工表上没有国家，这家公司的"国家"是通过客户体现的。
+	ListOwnerCountries(ctx context.Context, in *ListOwnerCountriesRequest, opts ...grpc.CallOption) (*ListOwnerCountriesResponse, error)
 	// ListCustomerCountries answers "which countries do we sell to, and how
 	// many people are in each" — the grouping the recipient picker offers.
 	ListCustomerCountries(ctx context.Context, in *ListCustomerCountriesRequest, opts ...grpc.CallOption) (*ListCustomerCountriesResponse, error)
@@ -352,6 +356,16 @@ func (c *customerServiceClient) ListMailingContacts(ctx context.Context, in *Lis
 	return out, nil
 }
 
+func (c *customerServiceClient) ListOwnerCountries(ctx context.Context, in *ListOwnerCountriesRequest, opts ...grpc.CallOption) (*ListOwnerCountriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOwnerCountriesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListOwnerCountries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) ListCustomerCountries(ctx context.Context, in *ListCustomerCountriesRequest, opts ...grpc.CallOption) (*ListCustomerCountriesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListCustomerCountriesResponse)
@@ -411,6 +425,9 @@ type CustomerServiceServer interface {
 	// a lookup per customer, because the mail composer needs all of them at
 	// once and an N+1 there is a page that visibly stalls.
 	ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error)
+	// 每个业务员负责哪些国家的客户。老板端的员工邮箱监管拿它把左栏排成
+	// 「国家 → 员工」——员工表上没有国家，这家公司的"国家"是通过客户体现的。
+	ListOwnerCountries(context.Context, *ListOwnerCountriesRequest) (*ListOwnerCountriesResponse, error)
 	// ListCustomerCountries answers "which countries do we sell to, and how
 	// many people are in each" — the grouping the recipient picker offers.
 	ListCustomerCountries(context.Context, *ListCustomerCountriesRequest) (*ListCustomerCountriesResponse, error)
@@ -500,6 +517,9 @@ func (UnimplementedCustomerServiceServer) GetCustomerDeactivationImpact(context.
 }
 func (UnimplementedCustomerServiceServer) ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailingContacts not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListOwnerCountries(context.Context, *ListOwnerCountriesRequest) (*ListOwnerCountriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOwnerCountries not implemented")
 }
 func (UnimplementedCustomerServiceServer) ListCustomerCountries(context.Context, *ListCustomerCountriesRequest) (*ListCustomerCountriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerCountries not implemented")
@@ -978,6 +998,24 @@ func _CustomerService_ListMailingContacts_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ListOwnerCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOwnerCountriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListOwnerCountries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListOwnerCountries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListOwnerCountries(ctx, req.(*ListOwnerCountriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_ListCustomerCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListCustomerCountriesRequest)
 	if err := dec(in); err != nil {
@@ -1120,6 +1158,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMailingContacts",
 			Handler:    _CustomerService_ListMailingContacts_Handler,
+		},
+		{
+			MethodName: "ListOwnerCountries",
+			Handler:    _CustomerService_ListOwnerCountries_Handler,
 		},
 		{
 			MethodName: "ListCustomerCountries",

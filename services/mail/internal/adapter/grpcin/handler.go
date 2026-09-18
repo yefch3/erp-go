@@ -1131,6 +1131,11 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 	if err != nil {
 		return nil, err
 	}
+	return &mailv1.GetMailThreadResponse{Items: threadItemsToProto(items)}, nil
+}
+
+// threadItemsToProto 把一条会话摊成 proto。读信和监管两条路共用。
+func threadItemsToProto(items []app.ThreadItem) []*mailv1.ThreadItem {
 	out := make([]*mailv1.ThreadItem, 0, len(items))
 	for _, v := range items {
 		it := &mailv1.ThreadItem{
@@ -1153,7 +1158,92 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 		}
 		out = append(out, it)
 	}
-	return &mailv1.GetMailThreadResponse{Items: out}, nil
+	return out
+}
+
+// ---------------------------------------------------------------- 邮箱监管
+//
+// viewer_* 一律用**请求里带的**那三样，不是 operator(ctx)。这条路只经网关
+// 一个入口，而网关是从登录令牌填的；这里再从 ctx 取一次的话，两处各有一份
+// 真相，日后谁也说不清日志里记的是谁。规矩见 app/supervision.go 文件头。
+
+func supervisionViewer(req interface {
+	GetViewerId() int64
+	GetViewerName() string
+	GetClientIp() string
+}) app.SupervisionViewer {
+	return app.SupervisionViewer{
+		EmployeeID: req.GetViewerId(),
+		Name:       req.GetViewerName(),
+		ClientIP:   req.GetClientIp(),
+	}
+}
+
+func (h *Handler) ListSupervisableEmployees(ctx context.Context, _ *mailv1.ListSupervisableEmployeesRequest) (*mailv1.ListSupervisableEmployeesResponse, error) {
+	rows, err := h.svc.SupervisableEmployees(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.SupervisableEmployee, 0, len(rows))
+	for _, r := range rows {
+		e := &mailv1.SupervisableEmployee{
+			EmployeeId: r.EmployeeID, Mailboxes: r.Mailboxes, Unread: r.Unread,
+		}
+		if !r.LastReadAt.IsZero() {
+			e.LastReadAt = r.LastReadAt.Format(time.RFC3339)
+		}
+		out = append(out, e)
+	}
+	return &mailv1.ListSupervisableEmployeesResponse{Employees: out}, nil
+}
+
+func (h *Handler) SuperviseFolder(ctx context.Context, req *mailv1.SuperviseFolderRequest) (*mailv1.SuperviseFolderResponse, error) {
+	p, err := h.svc.SuperviseFolder(ctx, grpcx.TenantID(ctx), supervisionViewer(req),
+		req.GetEmployeeId(), req.GetEmployeeName(), req.GetFolder(),
+		req.GetKeyword(), req.GetCursor(), req.GetPageSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.InboundMail, 0, len(p.Mails))
+	for _, r := range p.Mails {
+		out = append(out, inboundToProto(r))
+	}
+	return &mailv1.SuperviseFolderResponse{
+		Mails: out, NextCursor: p.NextCursor,
+		Meta: &commonv1.PageMeta{Total: p.Total},
+	}, nil
+}
+
+func (h *Handler) SuperviseMail(ctx context.Context, req *mailv1.SuperviseMailRequest) (*mailv1.SuperviseMailResponse, error) {
+	v, thread, err := h.svc.SuperviseMail(ctx, grpcx.TenantID(ctx), supervisionViewer(req),
+		req.GetEmployeeId(), req.GetEmployeeName(), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SuperviseMailResponse{
+		Mail:   inboundToProto(v),
+		Thread: threadItemsToProto(thread),
+	}, nil
+}
+
+func (h *Handler) ListSupervisionLog(ctx context.Context, req *mailv1.ListSupervisionLogRequest) (*mailv1.ListSupervisionLogResponse, error) {
+	rows, err := h.svc.SupervisionLog(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.SupervisionLogEntry, 0, len(rows))
+	for _, r := range rows {
+		e := &mailv1.SupervisionLogEntry{
+			Id: r.ID, ViewerId: r.ViewerID, ViewerName: r.ViewerName,
+			TargetId: r.TargetID, TargetName: r.TargetName,
+			Action: r.Action, Detail: r.Detail, ClientIp: r.ClientIP,
+		}
+		if !r.ViewedAt.IsZero() {
+			e.ViewedAt = r.ViewedAt.Format(time.RFC3339)
+		}
+		out = append(out, e)
+	}
+	return &mailv1.ListSupervisionLogResponse{Entries: out}, nil
 }
 
 func (h *Handler) ExportMailThread(ctx context.Context, req *mailv1.ExportMailThreadRequest) (*mailv1.ExportMailThreadResponse, error) {

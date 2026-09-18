@@ -850,3 +850,27 @@ SELECT DISTINCT category FROM option_items WHERE tenant_id = $1;
 INSERT INTO option_items (tenant_id, category, code, label, sort_order)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (tenant_id, category, code) DO NOTHING;
+
+-- name: ListOwnerCountries :many
+-- 每个业务员负责哪些国家的客户，各多少家。
+--
+-- 老板端的员工邮箱监管（2026-09-18）拿它把左栏排成「国家 → 员工」。员工表
+-- 上没有国家这一项，也不该有：这家公司的"国家"说的是**市场**，而市场是通过
+-- 客户体现的——张三这个月接了巴西的单子，他就在巴西下面，不必有人去改一次
+-- 员工资料。
+--
+-- 一个人负责几个国家就在几个国家下各出现一次，这是实情，不是要修的毛病。
+--
+-- 只算在职的负责关系和还在用的客户：停掉的客户不该把一个人钉在一个他早就
+-- 不做的市场上。国家为空的（客户没填国家）照样回，调用方归到「未分配」。
+SELECT o.employee_id,
+       max(o.employee_name)::text       AS employee_name,
+       c.country_code,
+       count(DISTINCT c.id)::bigint     AS customer_count
+FROM customer_owners o
+JOIN customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
+WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND o.status = 'ACTIVE'
+  AND c.status = 'ACTIVE'
+GROUP BY o.employee_id, c.country_code
+ORDER BY c.country_code, employee_name;

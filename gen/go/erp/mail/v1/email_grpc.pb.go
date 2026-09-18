@@ -100,6 +100,10 @@ const (
 	EmailService_EmptyJunk_FullMethodName                    = "/erp.mail.v1.EmailService/EmptyJunk"
 	EmailService_ListMailboxSent_FullMethodName              = "/erp.mail.v1.EmailService/ListMailboxSent"
 	EmailService_SyncMailbox_FullMethodName                  = "/erp.mail.v1.EmailService/SyncMailbox"
+	EmailService_ListSupervisableEmployees_FullMethodName    = "/erp.mail.v1.EmailService/ListSupervisableEmployees"
+	EmailService_SuperviseFolder_FullMethodName              = "/erp.mail.v1.EmailService/SuperviseFolder"
+	EmailService_SuperviseMail_FullMethodName                = "/erp.mail.v1.EmailService/SuperviseMail"
+	EmailService_ListSupervisionLog_FullMethodName           = "/erp.mail.v1.EmailService/ListSupervisionLog"
 )
 
 // EmailServiceClient is the client API for EmailService service.
@@ -324,6 +328,13 @@ type EmailServiceClient interface {
 	// Pull now rather than waiting for the next poll. A mail host offers no
 	// webhook, so this is the "refresh" a person reaches for.
 	SyncMailbox(ctx context.Context, in *SyncMailboxRequest, opts ...grpc.CallOption) (*SyncMailboxResponse, error)
+	// 员工邮箱监管（老板端）。**第二条读信的路**，和上面那些不同：读的是
+	// 别人的信，靠的是一条单独的权限而不是信箱令牌，而且每读一次都留痕。
+	// 规矩写在 services/mail/internal/app/supervision.go 的文件头。
+	ListSupervisableEmployees(ctx context.Context, in *ListSupervisableEmployeesRequest, opts ...grpc.CallOption) (*ListSupervisableEmployeesResponse, error)
+	SuperviseFolder(ctx context.Context, in *SuperviseFolderRequest, opts ...grpc.CallOption) (*SuperviseFolderResponse, error)
+	SuperviseMail(ctx context.Context, in *SuperviseMailRequest, opts ...grpc.CallOption) (*SuperviseMailResponse, error)
+	ListSupervisionLog(ctx context.Context, in *ListSupervisionLogRequest, opts ...grpc.CallOption) (*ListSupervisionLogResponse, error)
 }
 
 type emailServiceClient struct {
@@ -1145,6 +1156,46 @@ func (c *emailServiceClient) SyncMailbox(ctx context.Context, in *SyncMailboxReq
 	return out, nil
 }
 
+func (c *emailServiceClient) ListSupervisableEmployees(ctx context.Context, in *ListSupervisableEmployeesRequest, opts ...grpc.CallOption) (*ListSupervisableEmployeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupervisableEmployeesResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListSupervisableEmployees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SuperviseFolder(ctx context.Context, in *SuperviseFolderRequest, opts ...grpc.CallOption) (*SuperviseFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuperviseFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_SuperviseFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SuperviseMail(ctx context.Context, in *SuperviseMailRequest, opts ...grpc.CallOption) (*SuperviseMailResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuperviseMailResponse)
+	err := c.cc.Invoke(ctx, EmailService_SuperviseMail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListSupervisionLog(ctx context.Context, in *ListSupervisionLogRequest, opts ...grpc.CallOption) (*ListSupervisionLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupervisionLogResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListSupervisionLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EmailServiceServer is the server API for EmailService service.
 // All implementations must embed UnimplementedEmailServiceServer
 // for forward compatibility.
@@ -1367,6 +1418,13 @@ type EmailServiceServer interface {
 	// Pull now rather than waiting for the next poll. A mail host offers no
 	// webhook, so this is the "refresh" a person reaches for.
 	SyncMailbox(context.Context, *SyncMailboxRequest) (*SyncMailboxResponse, error)
+	// 员工邮箱监管（老板端）。**第二条读信的路**，和上面那些不同：读的是
+	// 别人的信，靠的是一条单独的权限而不是信箱令牌，而且每读一次都留痕。
+	// 规矩写在 services/mail/internal/app/supervision.go 的文件头。
+	ListSupervisableEmployees(context.Context, *ListSupervisableEmployeesRequest) (*ListSupervisableEmployeesResponse, error)
+	SuperviseFolder(context.Context, *SuperviseFolderRequest) (*SuperviseFolderResponse, error)
+	SuperviseMail(context.Context, *SuperviseMailRequest) (*SuperviseMailResponse, error)
+	ListSupervisionLog(context.Context, *ListSupervisionLogRequest) (*ListSupervisionLogResponse, error)
 	mustEmbedUnimplementedEmailServiceServer()
 }
 
@@ -1619,6 +1677,18 @@ func (UnimplementedEmailServiceServer) ListMailboxSent(context.Context, *ListMai
 }
 func (UnimplementedEmailServiceServer) SyncMailbox(context.Context, *SyncMailboxRequest) (*SyncMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SyncMailbox not implemented")
+}
+func (UnimplementedEmailServiceServer) ListSupervisableEmployees(context.Context, *ListSupervisableEmployeesRequest) (*ListSupervisableEmployeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupervisableEmployees not implemented")
+}
+func (UnimplementedEmailServiceServer) SuperviseFolder(context.Context, *SuperviseFolderRequest) (*SuperviseFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SuperviseFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) SuperviseMail(context.Context, *SuperviseMailRequest) (*SuperviseMailResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SuperviseMail not implemented")
+}
+func (UnimplementedEmailServiceServer) ListSupervisionLog(context.Context, *ListSupervisionLogRequest) (*ListSupervisionLogResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupervisionLog not implemented")
 }
 func (UnimplementedEmailServiceServer) mustEmbedUnimplementedEmailServiceServer() {}
 func (UnimplementedEmailServiceServer) testEmbeddedByValue()                      {}
@@ -3099,6 +3169,78 @@ func _EmailService_SyncMailbox_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ListSupervisableEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupervisableEmployeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListSupervisableEmployees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListSupervisableEmployees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListSupervisableEmployees(ctx, req.(*ListSupervisableEmployeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SuperviseFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuperviseFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SuperviseFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SuperviseFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SuperviseFolder(ctx, req.(*SuperviseFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SuperviseMail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuperviseMailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SuperviseMail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SuperviseMail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SuperviseMail(ctx, req.(*SuperviseMailRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListSupervisionLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupervisionLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListSupervisionLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListSupervisionLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListSupervisionLog(ctx, req.(*ListSupervisionLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EmailService_ServiceDesc is the grpc.ServiceDesc for EmailService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3429,6 +3571,22 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncMailbox",
 			Handler:    _EmailService_SyncMailbox_Handler,
+		},
+		{
+			MethodName: "ListSupervisableEmployees",
+			Handler:    _EmailService_ListSupervisableEmployees_Handler,
+		},
+		{
+			MethodName: "SuperviseFolder",
+			Handler:    _EmailService_SuperviseFolder_Handler,
+		},
+		{
+			MethodName: "SuperviseMail",
+			Handler:    _EmailService_SuperviseMail_Handler,
+		},
+		{
+			MethodName: "ListSupervisionLog",
+			Handler:    _EmailService_ListSupervisionLog_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

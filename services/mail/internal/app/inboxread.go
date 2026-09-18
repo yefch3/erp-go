@@ -388,6 +388,16 @@ func errBadCursor() error {
 // means: the person has seen it. This is our own inbox, so unlike the
 // customer-side "opened" signal there is nothing probabilistic about it.
 func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (InboundView, error) {
+	return s.inboundFor(ctx, tenantID, ownerID, id, true)
+}
+
+// inboundFor 是 GetInbound 的本体，多一个「要不要标已读」。
+//
+// **监管那条路读信不标已读**（supervision.go）。老板看一眼别人的收件箱，
+// 不该把那封信在员工自己的列表里变成已读——更不该把 Seen 推到邮件服务器上，
+// 那是员工在 Foxmail、在手机上也会看到的一次改动。而"老板看过了"这件事，
+// 该记在监管日志里，不是记在员工的信上。
+func (s *Service) inboundFor(ctx context.Context, tenantID, ownerID, id int64, markRead bool) (InboundView, error) {
 	row, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		return InboundView{}, errNotFound()
@@ -398,7 +408,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		return InboundView{}, errNotFound()
 	}
 
-	if !row.IsRead {
+	if markRead && !row.IsRead {
 		touched, err := s.q.MarkInboundRead(ctx, store.MarkInboundReadParams{
 			TenantID: tenantID, OwnerID: ownerID, ID: id,
 		})
@@ -416,7 +426,8 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		ID: row.ID, AccountID: row.AccountID,
 		FromEmail: row.FromEmail, FromName: row.FromName,
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
-		IsRead: true, HasAttachments: row.HasAttachments,
+		// 标过就是已读；没标（监管在看）就照实说。
+		IsRead: markRead || row.IsRead, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
 		Folder: row.Folder, View: row.View, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
 		ReplyTo: row.ReplyTo, CC: row.Cc,

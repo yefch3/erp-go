@@ -416,6 +416,19 @@ type MailSendCounter struct {
 	SentCount int32
 }
 
+type MailSupervisionLog struct {
+	ID         int64
+	TenantID   int64
+	ViewerID   int64
+	ViewerName string
+	TargetID   int64
+	TargetName string
+	Action     string
+	Detail     string
+	ClientIp   string
+	ViewedAt   pgtype.Timestamptz
+}
+
 type MailSyncState struct {
 	TenantID     int64
 	AccountID    int64
