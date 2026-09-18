@@ -242,7 +242,7 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 				_, err = q.CreateCustomerContact(ctx, store.CreateCustomerContactParams{TenantID: tenantID, CustomerID: c.ID,
 					Name: defaultText(strings.TrimSpace(row.ContactName), "主要联系人"), Email: strings.TrimSpace(row.ContactEmail),
 					Phone: strings.TrimSpace(row.ContactPhone), IsPrimary: true, Department: "", Title: "", Mobile: strings.TrimSpace(row.ContactMobile),
-					InstantMessaging: "", Language: "", Remark: "", SortOrder: 0, OperatorID: operatorID})
+					InstantMessaging: "", Language: "", Remark: "", SortOrder: 0, EmailPermission: "ALLOWED", EmailCategories: []string{}, OperatorID: operatorID})
 				if err != nil {
 					return err
 				}
