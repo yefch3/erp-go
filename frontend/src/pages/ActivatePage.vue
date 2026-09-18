@@ -52,6 +52,7 @@
             autofocus
           />
         </el-form-item>
+        <PasswordRules :password="form.password" :context="[target.name, target.email]" />
         <el-form-item :label="t('activate.confirm')">
           <el-input
             v-model="form.confirm"
@@ -73,6 +74,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PasswordRules from '../components/PasswordRules.vue'
+import { checkPassword } from '../lib/passwordPolicy'
 import { useI18n } from 'vue-i18n'
 import { http, quietErrors } from '../api'
 import LangSwitcher from '../components/LangSwitcher.vue'
@@ -125,8 +128,12 @@ async function submit() {
   // Ten, matching the server. A local check that disagrees with the server
   // is worse than no local check: it accepts something that is then refused,
   // which reads as the form being broken.
-  if (form.password.length < 10) {
-    error.value = t('activate.tooShort')
+  // 和服务端同一套规则（lib/passwordPolicy），而且**说清是哪一条**没过。
+  // 从前这里只数「少于 10 个字符」：中文密码会在这一关被冤枉（服务端一个
+  // 汉字算两位），而常见密码、键盘顺序那几条要等服务端答复才知道。
+  const problem = checkPassword(form.password, [target.name, target.email])
+  if (problem) {
+    error.value = t(`passwordPolicy.password_${problem}`)
     return
   }
   if (form.password !== form.confirm) {

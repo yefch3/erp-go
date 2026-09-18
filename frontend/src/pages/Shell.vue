@@ -448,6 +448,7 @@
           <el-input v-model="pw.confirm" type="password" show-password autocomplete="new-password" />
         </el-form-item>
       </el-form>
+      <PasswordRules :password="pw.newPassword" :context="[auth.employeeName, auth.employeeEmail]" />
       <p class="pw-hint">{{ t('password.hint') }}</p>
       <template #footer>
         <el-button v-if="!auth.mustChangePassword" @click="passwordOpen = false">{{ t('common.cancel') }}</el-button>
@@ -465,6 +466,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
+import PasswordRules from '../components/PasswordRules.vue'
+import { checkPassword } from '../lib/passwordPolicy'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
 import ReceivableReminders from '../components/ReceivableReminders.vue'
@@ -957,6 +960,13 @@ async function changePassword() {
   }
   if (pw.newPassword !== pw.confirm) {
     ElMessage.warning(t('password.mismatch'))
+    return
+  }
+  // 和服务端同一套规则，说清是哪一条没过——从前这里一条都不查，人要等
+  // 服务端答复才知道。
+  const problem = checkPassword(pw.newPassword, [auth.employeeName, auth.employeeEmail])
+  if (problem) {
+    ElMessage.warning(t(`passwordPolicy.password_${problem}`))
     return
   }
   saving.value = true

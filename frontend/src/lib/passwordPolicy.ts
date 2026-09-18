@@ -133,10 +133,17 @@ export function isTooSimple(password: string): boolean {
   return false
 }
 
-/** 密码里撞上的那个身份片段，没有就是空串。 */
-export function borrowedFromIdentity(password: string, context: readonly string[]): string {
+/**
+ * 密码里撞上的那个身份片段，没有就是空串。
+ *
+ * context 里允许有 undefined 和空串：调用方往往是直接把「姓名、工号、用户名、
+ * 邮箱」几个字段摊进来，而那几个字段常常还没填。让调用方各自过滤，等于把
+ * 同一句 filter 抄到每个页面。
+ */
+export function borrowedFromIdentity(password: string, context: readonly (string | undefined)[]): string {
   const lower = password.toLowerCase()
   for (const raw of context) {
+    if (!raw) continue
     for (const part of identityParts(raw)) {
       if (byteLength(part) >= MIN_IDENTITY_PART_BYTES && lower.includes(part)) return part
     }
@@ -155,7 +162,7 @@ function identityParts(raw: string): string[] {
  *
  * context 是这个人身上攻击者已经知道的那些（姓名、工号、用户名、邮箱）。
  */
-export function checkPassword(password: string, context: readonly string[] = []): PasswordProblem | null {
+export function checkPassword(password: string, context: readonly (string | undefined)[] = []): PasswordProblem | null {
   if (isTooShort(password)) return 'tooShort'
   if (isTooLong(password)) return 'tooLong'
   if (isTooCommon(password)) return 'tooCommon'
@@ -170,7 +177,7 @@ export function checkPassword(password: string, context: readonly string[] = [])
  * 和 checkPassword 不同——那个到第一条没过就停（要和服务端报同一句话），
  * 这个要把四条都算出来，人才看得见还差哪几条。
  */
-export function passwordRules(password: string, context: readonly string[] = []): PasswordRule[] {
+export function passwordRules(password: string, context: readonly (string | undefined)[] = []): PasswordRule[] {
   const borrowed = borrowedFromIdentity(password, context)
   return [
     { key: 'length', ok: !isTooShort(password) && !isTooLong(password) },

@@ -39,9 +39,7 @@ const { t } = useI18n()
 
 // 还一个字都没打时不标红：那不是「错了」，是「还没开始」。
 const touched = computed(() => props.password.length > 0)
-const rules = computed(() =>
-  passwordRules(props.password, (props.context ?? []).filter((c): c is string => !!c)),
-)
+const rules = computed(() => passwordRules(props.password, props.context ?? []))
 function state(ok: boolean) {
   if (ok) return 'ok'
   return touched.value ? 'bad' : 'idle'
