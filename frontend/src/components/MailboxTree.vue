@@ -396,6 +396,17 @@ const emit = defineEmits<{
   select: [number, string]
   /** 信箱清单变了（新绑了一个、换了默认），页面要跟着重新取列表。 */
   changed: [Mailbox[]]
+  /**
+   * 这个箱的文件夹清单要用了，页面去取。
+   *
+   * **每个箱都要自己那一份**：左栏上每个展开的箱都在画自己的文件夹，而
+   * 页面从前只给「当前那个箱」取过。别的箱展开之后画出来的是一份**残缺
+   * 的清单**——自建文件夹一个都没有，连「已归档」也不见了（那一行要靠
+   * 服务器上真有归档文件夹才画），而它看着和完整的一模一样。
+   * 2026-09-18 报的就是这个：263 网页版上好好的「测试文件夹1」，在 ERP
+   * 左栏里没了。
+   */
+  needFolders: [number]
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
   /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
@@ -543,6 +554,8 @@ function isOpen(id: number) {
 function toggle(id: number) {
   expanded.value = toggleExpanded(expanded.value, id)
   persist()
+  // 展开才要：收着的那个箱，它的文件夹一行都不画，取回来也没处放。
+  if (isOpen(id)) emit('needFolders', id)
 }
 // 切过去的那个一定展开：要读它，不能让人再点一下才看得见文件夹。
 watch(
@@ -589,6 +602,11 @@ async function load() {
     keepSentCopy: a.keepSentCopy ?? true,
   }))
   emit('changed', boxes.value)
+  // 上次留下的展开状态是从 localStorage 读的，所以清单一到就可能有好几个
+  // 箱是开着的。它们各自的文件夹现在就要。
+  for (const b of boxes.value) {
+    if (isOpen(b.id)) emit('needFolders', b.id)
+  }
 }
 
 onMounted(load)
