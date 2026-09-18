@@ -72,6 +72,85 @@ export function toggleExpanded(saved: readonly number[], id: number): number[] {
   return saved.includes(id) ? saved.filter((x) => x !== id) : [...saved, id]
 }
 
+// ---------------------------------------- 父文件夹的收起与展开（2026-09-17）
+//
+// 信箱那一层早就能开合（上面那三个函数）。多层文件夹从前一律摊开：建了几十
+// 个的人左栏要滚半天，而父子关系只有 12px 的缩进在说，看不出来。
+//
+// 收起的记的是**父的 key**，不是「展开的」——默认全展开，和从前看到的一样，
+// 只有人自己收起来的那几个才进这张单子。
+
+/** 点了三角：开的收起来，收的展开。 */
+export function toggleFolderCollapse(collapsed: readonly string[], key: string): string[] {
+  return collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
+}
+
+/** localStorage 里存的那串。坏了、混进非字符串，都当没存过。 */
+export function parseCollapsedFolders(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw)
+    if (!Array.isArray(v)) return []
+    return v.filter((x): x is string => typeof x === 'string' && x !== '')
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 收起了这几个之后，左栏实际画哪几行。
+ *
+ * 靠 depth 走：收起的那一行之后，所有比它深的都跳过，直到回到同级或更浅的
+ * 一行。孙子不用单独判断——它比爹深，自然一起被跳过。
+ */
+export function visibleRail(items: readonly RailItem[], collapsed: readonly string[]): RailItem[] {
+  const shut = new Set(collapsed)
+  if (shut.size === 0) return [...items]
+  const out: RailItem[] = []
+  // 比这个深度更深的都不画。null = 眼下没有收起着的祖宗。
+  let hideDeeperThan: number | null = null
+  for (const item of items) {
+    const depth = item.depth ?? 0
+    if (hideDeeperThan !== null && depth > hideDeeperThan) continue
+    hideDeeperThan = item.hasChildren && shut.has(item.key) ? depth : null
+    out.push(item)
+  }
+  return out
+}
+
+/**
+ * 换到某个文件夹之后，收起的那张单子该剩下谁。
+ *
+ * 换过去的那个**一定看得见**：它头上收着的几级一起放开。和信箱那一层的
+ * expandedAfterSwitch 是同一条规矩——藏起正在读的位置，人会以为文件夹没了。
+ *
+ * 只在**换**的时候放开，不是每次画都放开：后者会让「收起」这颗按钮在正读着
+ * 它里面某封信时点下去毫无动静，看着像坏了。
+ */
+export function revealPathTo(
+  collapsed: readonly string[],
+  items: readonly RailItem[],
+  active: string,
+): string[] {
+  if (!active || collapsed.length === 0) return [...collapsed]
+  const up = new Set(ancestorsOf(items, active))
+  return collapsed.filter((k) => !up.has(k))
+}
+
+/** 从 active 一路往上的那几个 key（不含它自己）。 */
+function ancestorsOf(items: readonly RailItem[], active: string): string[] {
+  if (!active) return []
+  const byKey = new Map(items.map((i) => [i.key, i]))
+  const out: string[] = []
+  let cur = byKey.get(active)
+  // 有上限：数据坏成一个环时，这里不能转不出来。
+  for (let i = 0; cur?.parentKey && i < 32; i++) {
+    out.push(cur.parentKey)
+    cur = byKey.get(cur.parentKey)
+  }
+  return out
+}
+
 /** localStorage 里存的那串。坏了就当没存过——一个手改坏的值不该让左栏白屏。 */
 export function parseExpanded(raw: string | null): number[] {
   if (!raw) return []
@@ -125,6 +204,10 @@ export interface RailItem {
   hostName?: string
   /** 缩进几级。顶层是 0。 */
   depth?: number
+  /** 底下挂着子文件夹。只有这种才画得出三角，也才收得起来。 */
+  hasChildren?: boolean
+  /** 上一级的 key。空 = 顶层。收起时要靠它往上找祖宗。 */
+  parentKey?: string
 }
 
 // IMAP 拿一个字符分层级，各家不一样：263、Gmail、QQ 是 '/'，有些 Dovecot 配成
@@ -172,9 +255,10 @@ export function nestFolders(folders: readonly CustomFolder[]): RailItem[] {
   }
   const byLabel = (a: CustomFolder, b: CustomFolder) => a.name.localeCompare(b.name, 'zh')
   const out: RailItem[] = []
-  const walk = (list: CustomFolder[], depth: number) => {
+  const walk = (list: CustomFolder[], depth: number, parentKey: string) => {
     for (const f of list.slice().sort(byLabel)) {
       const { parent, leaf } = splitFolderPath(f.name)
+      const kids = children.get(f.name) ?? []
       out.push({
         key: f.viewKey,
         // 树上只写最后一段：父路径已经由上一行和缩进说了。没有父的写全名。
@@ -183,11 +267,14 @@ export function nestFolders(folders: readonly CustomFolder[]): RailItem[] {
         folder: f,
         hostName: f.name,
         depth,
+        // 这两样是给左栏画三角、收起整支用的（见 visibleRail）。
+        hasChildren: kids.length > 0,
+        parentKey,
       })
-      walk(children.get(f.name) ?? [], depth + 1)
+      walk(kids, depth + 1, f.viewKey)
     }
   }
-  walk(roots, 0)
+  walk(roots, 0, '')
   return out
 }
 
