@@ -250,6 +250,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:department:read")).Get("/api/departments/{id}/changes", s.listDepartmentChanges)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees", s.listEmployees)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
+		// Read-only explanation of the employee's effective roles, feature
+		// permissions and data scopes.  Both directory and role visibility are
+		// required because the response joins those two administrative views.
+		r.With(s.perm("iam:employee:read"), s.perm("iam:role:read")).
+			Get("/api/employees/{id}/access-diagnostic", s.diagnoseEmployeeAccess)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
 		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}", s.updateEmployee)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/changes", s.listEmployeeChanges)
@@ -779,6 +784,10 @@ func (s *Server) Router() http.Handler {
 		// manager without any power to approve anything.
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances", s.listApprovalInstances)
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
+		// Used by the employee access diagnostic to find approvals stranded on
+		// a departed or misconfigured employee.
+		r.With(s.perm("approval:instance:read")).
+			Get("/api/employees/{id}/pending-approvals", s.employeePendingApprovals)
 		// Correspondence. Reading is scoped by the notification data scope —
 		// the permission only says "may open the mail module at all", the
 		// scope decides whose mail comes back.

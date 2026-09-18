@@ -88,6 +88,45 @@ func (h *Handler) MyTodos(ctx context.Context, req *apv1.MyTodosRequest) (*apv1.
 	return &apv1.MyTodosResponse{Todos: todos, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+// AdminEmployeeTodos exposes another employee's pending queue only to the
+// gateway's administrator route.  Requiring an authenticated actor here as
+// well prevents an accidentally unguarded internal caller from turning the
+// approval service into a company-wide task directory.
+func (h *Handler) AdminEmployeeTodos(ctx context.Context, req *apv1.AdminEmployeeTodosRequest) (*apv1.AdminEmployeeTodosResponse, error) {
+	if _, err := actorID(ctx); err != nil {
+		return nil, err
+	}
+	if req.GetEmployeeId() == 0 {
+		return nil, apierr.Invalid("AP_EMPLOYEE_REQUIRED", "员工编号必填")
+	}
+	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
+	rows, total, err := h.svc.MyTasks(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), "", "", "", page, size)
+	if err != nil {
+		return nil, err
+	}
+	todos := make([]*apv1.TodoItem, 0, len(rows))
+	now := time.Now()
+	for _, r := range rows {
+		dueAt, priority, remainingMinutes := app.ApprovalUrgency(r.CreatedAt.Time, now)
+		todos = append(todos, &apv1.TodoItem{
+			Task: &apv1.Task{
+				Id: r.ID, InstanceId: r.InstanceID, NodeSeq: r.NodeSeq, NodeName: r.NodeName,
+				AssigneeId: r.AssigneeID, Status: r.Status, Comment: r.Comment,
+				ActedAt: ts(r.ActedAt), CreatedAt: ts(r.CreatedAt),
+			},
+			Instance: &apv1.Instance{
+				Id: r.InstanceID, BizType: r.BizType, BizId: r.BizID, BizNo: r.BizNo,
+				BizSummary: string(r.BizSummary), SubmitterId: r.SubmitterID,
+				SubmitterName: r.SubmitterName, Status: r.InstanceStatus,
+				CurrentSeq: r.CurrentSeq, SubmittedAt: ts(r.SubmittedAt),
+			},
+			DueAt: dueAt.Format(time.RFC3339), Priority: priority,
+			RemainingMinutes: remainingMinutes,
+		})
+	}
+	return &apv1.AdminEmployeeTodosResponse{Todos: todos, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
 // MySubmitted 只返回认证员工本人发起的审批。发起关系与受理关系含义不同，
 // 因此不能与上面的审批人任务查询混为一组。
 func (h *Handler) MySubmitted(ctx context.Context, req *apv1.MySubmittedRequest) (*apv1.MySubmittedResponse, error) {

@@ -16,6 +16,11 @@ service ApprovalService {
   rpc Act(ActRequest) returns (ActResponse);
   // MyTodos lists the pending tasks assigned to one employee.
   rpc MyTodos(MyTodosRequest) returns (MyTodosResponse);
+  // AdminEmployeeTodos powers the access-diagnostic screen.  Unlike MyTodos,
+  // the employee is explicit because an administrator is investigating a
+  // queue that may belong to somebody who left or can no longer sign in.
+  // The gateway protects this with approval:instance:read.
+  rpc AdminEmployeeTodos(AdminEmployeeTodosRequest) returns (AdminEmployeeTodosResponse);
   // MySubmitted lists approval instances submitted by the current employee.
   // It powers the personal home page without exposing another employee's
   // documents or requiring permission to act on approval tasks.
@@ -220,6 +225,16 @@ message MyTodosRequest {
 }
 
 message MyTodosResponse {
+  repeated TodoItem todos = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message AdminEmployeeTodosRequest {
+  int64 employee_id = 1;
+  erp.common.v1.PageRequest page = 2;
+}
+
+message AdminEmployeeTodosResponse {
   repeated TodoItem todos = 1;
   erp.common.v1.PageMeta meta = 2;
 }
