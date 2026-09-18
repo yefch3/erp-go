@@ -156,9 +156,19 @@ func (h *Handler) ListCustomerChanges(ctx context.Context, req *mdv1.ListCustome
 func (h *Handler) ImportCustomers(ctx context.Context, req *mdv1.ImportCustomersRequest) (*mdv1.ImportCustomersResponse, error) {
 	rows := make([]app.CustomerImportRow, len(req.GetRows()))
 	for i, r := range req.GetRows() {
-		rows[i] = app.CustomerImportRow{Code: r.GetCode(), Name: r.GetName(), CountryCode: r.GetCountryCode(), CustomerType: r.GetCustomerType(), Currency: r.GetCurrency(), PaymentTerm: r.GetPaymentTerm(), ContactName: r.GetContactName(), ContactEmail: r.GetContactEmail(), ContactPhone: r.GetContactPhone(), Remark: r.GetRemark()}
+		rows[i] = app.CustomerImportRow{
+			Code: r.GetCode(), Name: r.GetName(), CountryCode: r.GetCountryCode(), CustomerType: r.GetCustomerType(), Currency: r.GetCurrency(), PaymentTerm: r.GetPaymentTerm(),
+			ContactName: r.GetContactName(), ContactEmail: r.GetContactEmail(), ContactPhone: r.GetContactPhone(), ContactMobile: r.GetContactMobile(), Remark: r.GetRemark(), CustomFields: r.GetCustomFields(),
+			Address: r.GetAddress(), ShortName: r.GetShortName(), EnglishName: r.GetEnglishName(), Industry: r.GetIndustry(), Source: r.GetSource(), Tags: r.GetTags(), Website: r.GetWebsite(), PrimaryLanguage: r.GetPrimaryLanguage(), Timezone: r.GetTimezone(),
+			RegisteredName: r.GetRegisteredName(), RegistrationNo: r.GetRegistrationNo(), TaxID: r.GetTaxId(), InvoiceTitle: r.GetInvoiceTitle(), InvoiceTaxNo: r.GetInvoiceTaxNo(), InvoiceRemark: r.GetInvoiceRemark(), BusinessStatus: r.GetBusinessStatus(),
+			PostalCode: r.GetPostalCode(), AddressState: r.GetAddressState(), CreditGrade: r.GetCreditGrade(), OwnerEmployeeID: r.GetOwnerEmployeeId(), OwnerName: r.GetOwnerName(),
+		}
 	}
-	verdicts, imported, err := h.svc.ImportCustomers(ctx, grpcx.TenantID(ctx), rows, req.GetDryRun(), operatorID(ctx), operatorName(ctx))
+	mappings := make([]app.CustomerImportFieldMapping, len(req.GetCustomFieldMappings()))
+	for i, mapping := range req.GetCustomFieldMappings() {
+		mappings[i] = app.CustomerImportFieldMapping{SourceKey: mapping.GetSourceKey(), FieldKey: mapping.GetFieldKey(), DisplayName: mapping.GetDisplayName(), Aliases: mapping.GetAliases()}
+	}
+	verdicts, imported, err := h.svc.ImportCustomers(ctx, grpcx.TenantID(ctx), rows, mappings, req.GetDryRun(), operatorID(ctx), operatorName(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +183,30 @@ func (h *Handler) ImportCustomers(ctx context.Context, req *mdv1.ImportCustomers
 		}
 	}
 	return &mdv1.ImportCustomersResponse{Verdicts: out, Ready: ready, Blocked: blocked, Imported: imported}, nil
+}
+
+func customerFieldToProto(field store.CustomerFieldDefinition) *mdv1.CustomerFieldDefinition {
+	return &mdv1.CustomerFieldDefinition{FieldKey: field.FieldKey, DisplayName: field.DisplayName, Aliases: field.Aliases, SortOrder: field.SortOrder}
+}
+
+func (h *Handler) ListCustomerFields(ctx context.Context, _ *mdv1.ListCustomerFieldsRequest) (*mdv1.ListCustomerFieldsResponse, error) {
+	fields, err := h.svc.ListCustomerFields(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.CustomerFieldDefinition, len(fields))
+	for i, field := range fields {
+		out[i] = customerFieldToProto(field)
+	}
+	return &mdv1.ListCustomerFieldsResponse{Fields: out}, nil
+}
+
+func (h *Handler) SaveCustomerField(ctx context.Context, req *mdv1.SaveCustomerFieldRequest) (*mdv1.SaveCustomerFieldResponse, error) {
+	field, err := h.svc.SaveCustomerField(ctx, grpcx.TenantID(ctx), req.GetFieldKey(), req.GetDisplayName(), req.GetAliases(), req.GetSortOrder(), operatorID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.SaveCustomerFieldResponse{Field: customerFieldToProto(field)}, nil
 }
 
 func (h *Handler) CheckCustomerDuplicates(ctx context.Context, req *mdv1.CheckCustomerDuplicatesRequest) (*mdv1.CheckCustomerDuplicatesResponse, error) {

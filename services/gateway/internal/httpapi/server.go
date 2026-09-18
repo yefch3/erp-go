@@ -159,6 +159,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers", s.createCustomer)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/countries", s.listCustomerCountryGroups)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/duplicates", s.checkCustomerDuplicates)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/fields", s.listCustomerFields)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/fields/{fieldKey}", s.saveCustomerField)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/import", s.importCustomers)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
 		// 信用评级（E3）。读跟着各自主数据的读权限走；打分要写权限——

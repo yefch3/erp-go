@@ -1,11 +1,20 @@
-import { defineConfig } from 'vite'
+import { resolve } from 'node:path'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { isLiveEventsRequest } from './viteProxyPolicy.ts'
 
 // /api 代理到 gateway：开发期前端与后端同源，无需 CORS。
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // The local Docker stack publishes the gateway on the host port configured
+  // in deploy/.env. Reading the same value here keeps `npm run dev` aligned
+  // with Docker even when port 8080 is occupied by another Windows service.
+  const deployEnv = loadEnv(mode, resolve(__dirname, '../deploy'), '')
+  const gatewayTarget = process.env.VITE_GATEWAY_URL
+    || `http://127.0.0.1:${deployEnv.GATEWAY_PORT || '8080'}`
+
+  return {
   plugins: [
     vue(),
     // Element Plus 按用到的组件引入，不再整包塞进主包。
@@ -41,7 +50,7 @@ export default defineConfig({
         headers: { 'X-Forwarded-Host': 'localhost:5173/docs', 'X-Forwarded-Proto': 'http' },
       },
       '/api': {
-        target: process.env.VITE_GATEWAY_URL || 'http://localhost:8080',
+        target: gatewayTarget,
         changeOrigin: true,
         configure(proxy) {
           // The SSE feed is optional, best-effort UI freshness. During local
@@ -66,4 +75,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })
