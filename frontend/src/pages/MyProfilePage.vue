@@ -145,6 +145,7 @@
           <el-input v-model="pw.newPassword" type="password" show-password autocomplete="new-password" />
         </el-form-item>
       </el-form>
+      <PasswordRules :password="pw.newPassword" :context="[profile.name, profile.email]" />
       <template #footer>
         <el-button @click="passwordOpen = false">{{ common('cancel') }}</el-button>
         <el-button type="primary" :loading="changingPassword" @click="changePassword">
@@ -162,6 +163,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post, put } from '../api'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import PasswordRules from '../components/PasswordRules.vue'
+import { checkPassword } from '../lib/passwordPolicy'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -304,6 +307,12 @@ async function clearAvatar() {
 async function changePassword() {
   if (!pw.oldPassword || !pw.newPassword) {
     ElMessage.warning(t('password.required'))
+    return
+  }
+  // 同 Shell：和服务端同一套规则，说清是哪一条没过。
+  const problem = checkPassword(pw.newPassword, [profile.value.name, profile.value.email])
+  if (problem) {
+    ElMessage.warning(t(`passwordPolicy.password_${problem}`))
     return
   }
   changingPassword.value = true

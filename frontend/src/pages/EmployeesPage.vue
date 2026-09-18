@@ -568,7 +568,13 @@ async function openEdit(row: Employee) {
 async function save() {
   const validationError = validateEmployeeForm(form, editing.value)
   if (validationError) {
-    ElMessage.warning(t(`employees.${validationError}`))
+    // 密码那几条的文案挂在 passwordPolicy 底下：每个设密码的页面都在用它们
+    // （激活、忘记密码、顶栏改密码、我的资料），不该只属于员工页。
+    ElMessage.warning(t(
+      validationError.startsWith('password_')
+        ? `passwordPolicy.${validationError}`
+        : `employees.${validationError}`,
+    ))
     return
   }
   saving.value = true
