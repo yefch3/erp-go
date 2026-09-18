@@ -759,6 +759,8 @@ export default {
     scopeSourcing: '客户询盘 / 采购寻源可见范围', scopeOrder: '采购订单可见范围',
     scopeRequirement: '采购需求可见范围',
     scopeShipping: '船期管理',
+    scopeQuality: '质检任务可见范围',
+    scopeMail: '邮件可见范围',
     scopes: { SELF: '仅本人', DEPT: '本部门', DEPT_AND_SUB: '本部门及下级', ALL: '全部' },
     scopeHint: '这里必须单独设置：上面的功能权限只决定能否进入页面；数据范围决定进入后能看到谁的单据。未配置时只显示本人单据。',
     saveScope: '保存范围',

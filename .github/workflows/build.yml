@@ -50,6 +50,7 @@ jobs:
         run: |
           docker buildx build --push \
             --cache-from type=gha --cache-to type=gha,mode=max \
+            --build-arg ERP_SHA=${{ github.sha }} \
             -f deploy/frontend.Dockerfile \
             -t ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} \
             -t ghcr.io/${{ github.repository }}/frontend:latest .

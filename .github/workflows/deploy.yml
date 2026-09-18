@@ -144,6 +144,10 @@ jobs:
           echo "$BODY"
           echo "$BODY" | grep -q "${{ steps.pick.outputs.sha }}" || {
             echo "公网 healthz 报的版本与本次部署不一致" >&2; exit 1; }
+          FRONTEND=$(curl -fsS --max-time 10 "https://${{ secrets.PUBLIC_HOST }}/version.json")
+          echo "$FRONTEND"
+          echo "$FRONTEND" | grep -q "${{ steps.pick.outputs.sha }}" || {
+            echo "公网前端版本与本次部署不一致" >&2; exit 1; }
 
       # always()：失败路径尤其要回填，否则时间线上会留下一条永远「进行中」的
       # 记录 —— 那比红叉更糟，它什么也没说。

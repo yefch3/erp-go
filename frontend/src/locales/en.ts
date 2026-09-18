@@ -758,6 +758,8 @@ export default {
     scopeSourcing: 'Customer inquiry / sourcing visibility', scopeOrder: 'Purchase-order visibility',
     scopeRequirement: 'Purchase-requirement visibility',
     scopeShipping: 'Shipping schedules',
+    scopeQuality: 'Quality-task visibility',
+    scopeMail: 'Mail visibility',
     scopes: { SELF: 'Own records only', DEPT: 'Own department', DEPT_AND_SUB: 'Department and below', ALL: 'Everything' },
     scopeHint: 'Set this separately: feature permissions above control page access; data scope controls whose records appear inside it. Unset shows own records only.',
     saveScope: 'Save scope',

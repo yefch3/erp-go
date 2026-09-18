@@ -767,6 +767,8 @@ export default {
     scopeSourcing: 'Visibilidad de consultas / abastecimiento', scopeOrder: 'Visibilidad de órdenes de compra',
     scopeRequirement: 'Visibilidad de necesidades de compra',
     scopeShipping: 'Programación de embarques',
+    scopeQuality: 'Visibilidad de tareas de calidad',
+    scopeMail: 'Visibilidad del correo',
     scopes: { SELF: 'Solo propios', DEPT: 'Su departamento', DEPT_AND_SUB: 'Departamento e inferiores', ALL: 'Todo' },
     scopeHint: 'Configúrelo por separado: los permisos superiores controlan el acceso a la página; el alcance decide qué registros aparecen. Sin configurar muestra solo los propios.',
     saveScope: 'Guardar alcance',
