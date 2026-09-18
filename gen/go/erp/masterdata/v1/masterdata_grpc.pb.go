@@ -41,6 +41,8 @@ const (
 	CustomerService_DeactivateCustomerOwner_FullMethodName         = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
 	CustomerService_ListCustomerChanges_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
 	CustomerService_ImportCustomers_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ImportCustomers"
+	CustomerService_ListCustomerFields_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListCustomerFields"
+	CustomerService_SaveCustomerField_FullMethodName               = "/erp.masterdata.v1.CustomerService/SaveCustomerField"
 	CustomerService_CheckCustomerDuplicates_FullMethodName         = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
 	CustomerService_GetCustomerDeactivationImpact_FullMethodName   = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
 	CustomerService_ListMailingContacts_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
@@ -81,6 +83,8 @@ type CustomerServiceClient interface {
 	DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error)
 	ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error)
 	ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error)
+	ListCustomerFields(ctx context.Context, in *ListCustomerFieldsRequest, opts ...grpc.CallOption) (*ListCustomerFieldsResponse, error)
+	SaveCustomerField(ctx context.Context, in *SaveCustomerFieldRequest, opts ...grpc.CallOption) (*SaveCustomerFieldResponse, error)
 	CheckCustomerDuplicates(ctx context.Context, in *CheckCustomerDuplicatesRequest, opts ...grpc.CallOption) (*CheckCustomerDuplicatesResponse, error)
 	GetCustomerDeactivationImpact(ctx context.Context, in *GetCustomerDeactivationImpactRequest, opts ...grpc.CallOption) (*GetCustomerDeactivationImpactResponse, error)
 	// The address book, flattened: every contact that has an email, with the
@@ -326,6 +330,26 @@ func (c *customerServiceClient) ImportCustomers(ctx context.Context, in *ImportC
 	return out, nil
 }
 
+func (c *customerServiceClient) ListCustomerFields(ctx context.Context, in *ListCustomerFieldsRequest, opts ...grpc.CallOption) (*ListCustomerFieldsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerFieldsResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerFields_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) SaveCustomerField(ctx context.Context, in *SaveCustomerFieldRequest, opts ...grpc.CallOption) (*SaveCustomerFieldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveCustomerFieldResponse)
+	err := c.cc.Invoke(ctx, CustomerService_SaveCustomerField_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) CheckCustomerDuplicates(ctx context.Context, in *CheckCustomerDuplicatesRequest, opts ...grpc.CallOption) (*CheckCustomerDuplicatesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CheckCustomerDuplicatesResponse)
@@ -418,6 +442,8 @@ type CustomerServiceServer interface {
 	DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error)
 	ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error)
 	ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error)
+	ListCustomerFields(context.Context, *ListCustomerFieldsRequest) (*ListCustomerFieldsResponse, error)
+	SaveCustomerField(context.Context, *SaveCustomerFieldRequest) (*SaveCustomerFieldResponse, error)
 	CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error)
 	GetCustomerDeactivationImpact(context.Context, *GetCustomerDeactivationImpactRequest) (*GetCustomerDeactivationImpactResponse, error)
 	// The address book, flattened: every contact that has an email, with the
@@ -508,6 +534,12 @@ func (UnimplementedCustomerServiceServer) ListCustomerChanges(context.Context, *
 }
 func (UnimplementedCustomerServiceServer) ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportCustomers not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerFields(context.Context, *ListCustomerFieldsRequest) (*ListCustomerFieldsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerFields not implemented")
+}
+func (UnimplementedCustomerServiceServer) SaveCustomerField(context.Context, *SaveCustomerFieldRequest) (*SaveCustomerFieldResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveCustomerField not implemented")
 }
 func (UnimplementedCustomerServiceServer) CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckCustomerDuplicates not implemented")
@@ -944,6 +976,42 @@ func _CustomerService_ImportCustomers_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ListCustomerFields_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerFieldsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerFields(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerFields_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerFields(ctx, req.(*ListCustomerFieldsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_SaveCustomerField_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveCustomerFieldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).SaveCustomerField(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_SaveCustomerField_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).SaveCustomerField(ctx, req.(*SaveCustomerFieldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_CheckCustomerDuplicates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CheckCustomerDuplicatesRequest)
 	if err := dec(in); err != nil {
@@ -1146,6 +1214,14 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImportCustomers",
 			Handler:    _CustomerService_ImportCustomers_Handler,
+		},
+		{
+			MethodName: "ListCustomerFields",
+			Handler:    _CustomerService_ListCustomerFields_Handler,
+		},
+		{
+			MethodName: "SaveCustomerField",
+			Handler:    _CustomerService_SaveCustomerField_Handler,
 		},
 		{
 			MethodName: "CheckCustomerDuplicates",

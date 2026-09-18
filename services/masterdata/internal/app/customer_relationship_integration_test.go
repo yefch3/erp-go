@@ -134,7 +134,7 @@ func TestCustomerImportAllOrNothing(t *testing.T) {
 		{Code: "B2-IMPORT-OK", Name: "B2 Import Valid Probe", CountryCode: "US"},
 		{Code: "B2-IMPORT-BAD", Name: "B2 Import Invalid Probe", CountryCode: "USA"},
 	}
-	verdicts, imported, err := svc.ImportCustomers(ctx, 1, rows, false, 9, "测试员")
+	verdicts, imported, err := svc.ImportCustomers(ctx, 1, rows, nil, false, 9, "测试员")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +147,78 @@ func TestCustomerImportAllOrNothing(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("invalid batch wrote %d customer rows", count)
+	}
+}
+
+func TestCustomerImportCreatesDynamicFieldsAtomically(t *testing.T) {
+	dsn := os.Getenv("MD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MD_TEST_DSN not set; skipping DB-backed test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	svc := New(pool)
+	rows := []CustomerImportRow{{Code: "B2-DYNAMIC-FIELD", Name: "Dynamic Field Probe", CustomFields: map[string]string{"column_2": "A级"}}}
+	mappings := []CustomerImportFieldMapping{{SourceKey: "column_2", DisplayName: "客户等级", Aliases: []string{"等级"}}}
+	if _, imported, err := svc.ImportCustomers(ctx, 1, rows, mappings, true, 9, "测试员"); err != nil || imported != 0 {
+		t.Fatalf("dry run failed: imported=%d err=%v", imported, err)
+	}
+	if _, imported, err := svc.ImportCustomers(ctx, 1, rows, mappings, false, 9, "测试员"); err != nil || imported != 1 {
+		t.Fatalf("commit failed: imported=%d err=%v", imported, err)
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM customers WHERE tenant_id=1 AND code='B2-DYNAMIC-FIELD'")
+		_, _ = pool.Exec(ctx, "DELETE FROM customer_field_definitions WHERE tenant_id=1 AND field_key=$1", customerFieldKey("客户等级"))
+	}()
+	var value string
+	err = pool.QueryRow(ctx, `SELECT v.value FROM customer_custom_field_values v JOIN customers c ON c.id=v.customer_id JOIN customer_field_definitions d ON d.id=v.field_id WHERE c.tenant_id=1 AND c.code='B2-DYNAMIC-FIELD' AND d.field_key=$1`, customerFieldKey("客户等级")).Scan(&value)
+	if err != nil || value != "A级" {
+		t.Fatalf("dynamic value missing: value=%q err=%v", value, err)
+	}
+}
+
+func TestCustomerImportRoutesKnownFieldsToCustomerModules(t *testing.T) {
+	dsn := os.Getenv("MD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MD_TEST_DSN not set; skipping DB-backed test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	svc := New(pool)
+	rows := []CustomerImportRow{{
+		Code: "B2-ROUTED-IMPORT", Name: "Routed Import Probe", CountryCode: "US",
+		Address: "100 Test Street", AddressState: "California", PostalCode: "94105",
+		ContactName: "Amy Chen", ContactEmail: "amy@example.com", ContactPhone: "+1-415-555-0103", ContactMobile: "+1-415-555-0104",
+		CreditGrade: "B", OwnerEmployeeID: 77, OwnerName: "王业务",
+	}}
+	if _, imported, err := svc.ImportCustomers(ctx, 1, rows, nil, false, 9, "测试员"); err != nil || imported != 1 {
+		t.Fatalf("commit failed: imported=%d err=%v", imported, err)
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM customer_owners WHERE tenant_id=1 AND customer_id IN (SELECT id FROM customers WHERE tenant_id=1 AND code='B2-ROUTED-IMPORT')")
+		_, _ = pool.Exec(ctx, "DELETE FROM customers WHERE tenant_id=1 AND code='B2-ROUTED-IMPORT'")
+	}()
+	var contactName, contactMobile, address, postalCode, ownerName, grade string
+	err = pool.QueryRow(ctx, `
+		SELECT cc.name, cc.mobile, ca.address_line, ca.postal_code, co.employee_name, c.credit_grade
+		FROM customers c
+		JOIN customer_contacts cc ON cc.tenant_id=c.tenant_id AND cc.customer_id=c.id AND cc.status='ACTIVE'
+		JOIN customer_addresses ca ON ca.tenant_id=c.tenant_id AND ca.customer_id=c.id AND ca.status='ACTIVE'
+		JOIN customer_owners co ON co.tenant_id=c.tenant_id AND co.customer_id=c.id AND co.status='ACTIVE'
+		WHERE c.tenant_id=1 AND c.code='B2-ROUTED-IMPORT'`).Scan(&contactName, &contactMobile, &address, &postalCode, &ownerName, &grade)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contactName != "Amy Chen" || contactMobile != "+1-415-555-0104" || address != "100 Test Street" || postalCode != "94105" || ownerName != "王业务" || grade != "B" {
+		t.Fatalf("routed values mismatch: %q %q %q %q %q %q", contactName, contactMobile, address, postalCode, ownerName, grade)
 	}
 }
 

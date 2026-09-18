@@ -138,6 +138,27 @@ func (s *Server) importCustomers(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+func (s *Server) listCustomerFields(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerFields(r.Context(), &mdv1.ListCustomerFieldsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) saveCustomerField(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.SaveCustomerFieldRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.FieldKey = chi.URLParam(r, "fieldKey")
+	resp, err := s.Customers.SaveCustomerField(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
 func (s *Server) checkCustomerDuplicates(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Customers.CheckCustomerDuplicates(r.Context(), &mdv1.CheckCustomerDuplicatesRequest{Name: r.URL.Query().Get("name"), TaxId: r.URL.Query().Get("tax_id"), Email: r.URL.Query().Get("email"), ExcludeId: int64FromQuery(r, "exclude_id")})
 	if err != nil {

@@ -715,6 +715,51 @@ func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerC
 	return i, err
 }
 
+const createCustomerFieldDefinition = `-- name: CreateCustomerFieldDefinition :one
+INSERT INTO customer_field_definitions (
+    tenant_id, field_key, display_name, aliases, sort_order, created_by, updated_by
+) VALUES (
+    $1, $2, $3,
+    $4::text[], $5, $6, $6
+)
+RETURNING id, tenant_id, field_key, display_name, aliases, sort_order, status, created_by, updated_by, created_at, updated_at
+`
+
+type CreateCustomerFieldDefinitionParams struct {
+	TenantID    int64
+	FieldKey    string
+	DisplayName string
+	Aliases     []string
+	SortOrder   int32
+	OperatorID  int64
+}
+
+func (q *Queries) CreateCustomerFieldDefinition(ctx context.Context, arg CreateCustomerFieldDefinitionParams) (CustomerFieldDefinition, error) {
+	row := q.db.QueryRow(ctx, createCustomerFieldDefinition,
+		arg.TenantID,
+		arg.FieldKey,
+		arg.DisplayName,
+		arg.Aliases,
+		arg.SortOrder,
+		arg.OperatorID,
+	)
+	var i CustomerFieldDefinition
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FieldKey,
+		&i.DisplayName,
+		&i.Aliases,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createCustomerOwner = `-- name: CreateCustomerOwner :one
 INSERT INTO customer_owners (
     tenant_id, customer_id, employee_id, employee_name, responsibility_code,
@@ -1965,6 +2010,35 @@ func (q *Queries) GetCustomerCreditGrade(ctx context.Context, arg GetCustomerCre
 	return i, err
 }
 
+const getCustomerFieldDefinitionByKey = `-- name: GetCustomerFieldDefinitionByKey :one
+SELECT id, tenant_id, field_key, display_name, aliases, sort_order, status, created_by, updated_by, created_at, updated_at FROM customer_field_definitions
+WHERE tenant_id = $1 AND field_key = $2 AND status = 'ACTIVE'
+`
+
+type GetCustomerFieldDefinitionByKeyParams struct {
+	TenantID int64
+	FieldKey string
+}
+
+func (q *Queries) GetCustomerFieldDefinitionByKey(ctx context.Context, arg GetCustomerFieldDefinitionByKeyParams) (CustomerFieldDefinition, error) {
+	row := q.db.QueryRow(ctx, getCustomerFieldDefinitionByKey, arg.TenantID, arg.FieldKey)
+	var i CustomerFieldDefinition
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FieldKey,
+		&i.DisplayName,
+		&i.Aliases,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getCustomerOwner = `-- name: GetCustomerOwner :one
 SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
 WHERE tenant_id = $1 AND customer_id = $2
@@ -2622,6 +2696,93 @@ func (q *Queries) ListCustomerCountries(ctx context.Context, arg ListCustomerCou
 			&i.CustomerCount,
 			&i.ContactCount,
 			&i.OneEachCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerCustomFieldValues = `-- name: ListCustomerCustomFieldValues :many
+SELECT d.field_key, d.display_name, d.sort_order, COALESCE(v.value, '')::text AS value
+FROM customer_field_definitions d
+JOIN customer_custom_field_values v
+  ON v.tenant_id = d.tenant_id AND v.field_id = d.id
+  AND v.customer_id = $2
+WHERE d.tenant_id = $1
+  AND d.status = 'ACTIVE'
+  AND btrim(v.value) <> ''
+ORDER BY d.sort_order, d.id
+`
+
+type ListCustomerCustomFieldValuesParams struct {
+	TenantID   int64
+	CustomerID int64
+}
+
+type ListCustomerCustomFieldValuesRow struct {
+	FieldKey    string
+	DisplayName string
+	SortOrder   int32
+	Value       string
+}
+
+func (q *Queries) ListCustomerCustomFieldValues(ctx context.Context, arg ListCustomerCustomFieldValuesParams) ([]ListCustomerCustomFieldValuesRow, error) {
+	rows, err := q.db.Query(ctx, listCustomerCustomFieldValues, arg.TenantID, arg.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomerCustomFieldValuesRow
+	for rows.Next() {
+		var i ListCustomerCustomFieldValuesRow
+		if err := rows.Scan(
+			&i.FieldKey,
+			&i.DisplayName,
+			&i.SortOrder,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerFieldDefinitions = `-- name: ListCustomerFieldDefinitions :many
+SELECT id, tenant_id, field_key, display_name, aliases, sort_order, status, created_by, updated_by, created_at, updated_at FROM customer_field_definitions
+WHERE tenant_id = $1 AND status = 'ACTIVE'
+ORDER BY sort_order, id
+`
+
+func (q *Queries) ListCustomerFieldDefinitions(ctx context.Context, tenantID int64) ([]CustomerFieldDefinition, error) {
+	rows, err := q.db.Query(ctx, listCustomerFieldDefinitions, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerFieldDefinition
+	for rows.Next() {
+		var i CustomerFieldDefinition
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FieldKey,
+			&i.DisplayName,
+			&i.Aliases,
+			&i.SortOrder,
+			&i.Status,
+			&i.CreatedBy,
+			&i.UpdatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -4243,6 +4404,49 @@ func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerC
 	return i, err
 }
 
+const updateCustomerFieldDefinition = `-- name: UpdateCustomerFieldDefinition :one
+UPDATE customer_field_definitions
+SET display_name = $1, aliases = $2::text[],
+    sort_order = $3, updated_by = $4, updated_at = now()
+WHERE tenant_id = $5 AND field_key = $6 AND status = 'ACTIVE'
+RETURNING id, tenant_id, field_key, display_name, aliases, sort_order, status, created_by, updated_by, created_at, updated_at
+`
+
+type UpdateCustomerFieldDefinitionParams struct {
+	DisplayName string
+	Aliases     []string
+	SortOrder   int32
+	OperatorID  int64
+	TenantID    int64
+	FieldKey    string
+}
+
+func (q *Queries) UpdateCustomerFieldDefinition(ctx context.Context, arg UpdateCustomerFieldDefinitionParams) (CustomerFieldDefinition, error) {
+	row := q.db.QueryRow(ctx, updateCustomerFieldDefinition,
+		arg.DisplayName,
+		arg.Aliases,
+		arg.SortOrder,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FieldKey,
+	)
+	var i CustomerFieldDefinition
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FieldKey,
+		&i.DisplayName,
+		&i.Aliases,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateCustomerOwner = `-- name: UpdateCustomerOwner :one
 UPDATE customer_owners
 SET responsibility_code = $1,
@@ -4785,4 +4989,34 @@ func (q *Queries) UpdateSupplierOwner(ctx context.Context, arg UpdateSupplierOwn
 		&i.UpdatedBy,
 	)
 	return i, err
+}
+
+const upsertCustomerCustomFieldValue = `-- name: UpsertCustomerCustomFieldValue :exec
+INSERT INTO customer_custom_field_values (
+    tenant_id, customer_id, field_id, value, created_by, updated_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $5
+)
+ON CONFLICT (tenant_id, customer_id, field_id) DO UPDATE
+SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
+`
+
+type UpsertCustomerCustomFieldValueParams struct {
+	TenantID   int64
+	CustomerID int64
+	FieldID    int64
+	Value      string
+	OperatorID int64
+}
+
+func (q *Queries) UpsertCustomerCustomFieldValue(ctx context.Context, arg UpsertCustomerCustomFieldValueParams) error {
+	_, err := q.db.Exec(ctx, upsertCustomerCustomFieldValue,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.FieldID,
+		arg.Value,
+		arg.OperatorID,
+	)
+	return err
 }

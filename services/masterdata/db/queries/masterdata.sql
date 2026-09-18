@@ -25,6 +25,52 @@ RETURNING *;
 -- name: GetCustomer :one
 SELECT * FROM customers WHERE tenant_id = $1 AND id = $2;
 
+-- name: ListCustomerFieldDefinitions :many
+SELECT * FROM customer_field_definitions
+WHERE tenant_id = sqlc.arg(tenant_id) AND status = 'ACTIVE'
+ORDER BY sort_order, id;
+
+-- name: GetCustomerFieldDefinitionByKey :one
+SELECT * FROM customer_field_definitions
+WHERE tenant_id = sqlc.arg(tenant_id) AND field_key = sqlc.arg(field_key) AND status = 'ACTIVE';
+
+-- name: CreateCustomerFieldDefinition :one
+INSERT INTO customer_field_definitions (
+    tenant_id, field_key, display_name, aliases, sort_order, created_by, updated_by
+) VALUES (
+    sqlc.arg(tenant_id), sqlc.arg(field_key), sqlc.arg(display_name),
+    sqlc.arg(aliases)::text[], sqlc.arg(sort_order), sqlc.arg(operator_id), sqlc.arg(operator_id)
+)
+RETURNING *;
+
+-- name: UpdateCustomerFieldDefinition :one
+UPDATE customer_field_definitions
+SET display_name = sqlc.arg(display_name), aliases = sqlc.arg(aliases)::text[],
+    sort_order = sqlc.arg(sort_order), updated_by = sqlc.arg(operator_id), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND field_key = sqlc.arg(field_key) AND status = 'ACTIVE'
+RETURNING *;
+
+-- name: ListCustomerCustomFieldValues :many
+SELECT d.field_key, d.display_name, d.sort_order, COALESCE(v.value, '')::text AS value
+FROM customer_field_definitions d
+JOIN customer_custom_field_values v
+  ON v.tenant_id = d.tenant_id AND v.field_id = d.id
+  AND v.customer_id = sqlc.arg(customer_id)
+WHERE d.tenant_id = sqlc.arg(tenant_id)
+  AND d.status = 'ACTIVE'
+  AND btrim(v.value) <> ''
+ORDER BY d.sort_order, d.id;
+
+-- name: UpsertCustomerCustomFieldValue :exec
+INSERT INTO customer_custom_field_values (
+    tenant_id, customer_id, field_id, value, created_by, updated_by
+) VALUES (
+    sqlc.arg(tenant_id), sqlc.arg(customer_id), sqlc.arg(field_id), sqlc.arg(value),
+    sqlc.arg(operator_id), sqlc.arg(operator_id)
+)
+ON CONFLICT (tenant_id, customer_id, field_id) DO UPDATE
+SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now();
+
 -- name: ListCustomers :many
 SELECT c.*,
   COALESCE((SELECT cc.name FROM customer_contacts cc

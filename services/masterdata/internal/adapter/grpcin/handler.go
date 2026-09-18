@@ -155,7 +155,15 @@ func (h *Handler) GetCustomer(ctx context.Context, req *mdv1.GetCustomerRequest)
 	if err != nil {
 		return nil, err
 	}
-	return &mdv1.GetCustomerResponse{Customer: customerToProto(c, contacts, addresses)}, nil
+	out := customerToProto(c, contacts, addresses)
+	customFields, err := h.svc.ListCustomerCustomFieldValues(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range customFields {
+		out.CustomFields = append(out.CustomFields, &mdv1.CustomerCustomFieldValue{FieldKey: field.FieldKey, DisplayName: field.DisplayName, Value: field.Value, SortOrder: field.SortOrder})
+	}
+	return &mdv1.GetCustomerResponse{Customer: out}, nil
 }
 
 func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequest) (*mdv1.ListCustomersResponse, error) {

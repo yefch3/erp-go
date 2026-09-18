@@ -119,6 +119,31 @@ type CustomerContact struct {
 	EmailCategories  []string
 }
 
+type CustomerCustomFieldValue struct {
+	TenantID   int64
+	CustomerID int64
+	FieldID    int64
+	Value      string
+	CreatedBy  int64
+	UpdatedBy  int64
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type CustomerFieldDefinition struct {
+	ID          int64
+	TenantID    int64
+	FieldKey    string
+	DisplayName string
+	Aliases     []string
+	SortOrder   int32
+	Status      string
+	CreatedBy   int64
+	UpdatedBy   int64
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type CustomerOwner struct {
 	ID                 int64
 	TenantID           int64

@@ -32,6 +32,8 @@ service CustomerService {
   rpc DeactivateCustomerOwner(DeactivateCustomerOwnerRequest) returns (DeactivateCustomerOwnerResponse);
   rpc ListCustomerChanges(ListCustomerChangesRequest) returns (ListCustomerChangesResponse);
   rpc ImportCustomers(ImportCustomersRequest) returns (ImportCustomersResponse);
+  rpc ListCustomerFields(ListCustomerFieldsRequest) returns (ListCustomerFieldsResponse);
+  rpc SaveCustomerField(SaveCustomerFieldRequest) returns (SaveCustomerFieldResponse);
   rpc CheckCustomerDuplicates(CheckCustomerDuplicatesRequest) returns (CheckCustomerDuplicatesResponse);
   rpc GetCustomerDeactivationImpact(GetCustomerDeactivationImpactRequest) returns (GetCustomerDeactivationImpactResponse);
   // The address book, flattened: every contact that has an email, with the
@@ -314,6 +316,7 @@ message Customer {
   // 一个是看过并判定为差。graded_at 用来回答「多久没评了」。
   string credit_grade = 35;
   string credit_graded_at = 36;
+  repeated CustomerCustomFieldValue custom_fields = 37;
 }
 
 message CreateCustomerRequest {
@@ -713,11 +716,35 @@ message CustomerImportRow {
   string contact_email = 8;
   string contact_phone = 9;
   string remark = 10;
+  map<string, string> custom_fields = 11;
+  string address = 12;
+  string short_name = 13;
+  string english_name = 14;
+  string industry = 15;
+  string source = 16;
+  string tags = 17;
+  string website = 18;
+  string primary_language = 19;
+  string timezone = 20;
+  string registered_name = 21;
+  string registration_no = 22;
+  string tax_id = 23;
+  string invoice_title = 24;
+  string invoice_tax_no = 25;
+  string invoice_remark = 26;
+  string business_status = 27;
+  string contact_mobile = 28;
+  string postal_code = 29;
+  string address_state = 30;
+  string credit_grade = 31;
+  int64 owner_employee_id = 32;
+  string owner_name = 33;
 }
 
 message ImportCustomersRequest {
   repeated CustomerImportRow rows = 1;
   bool dry_run = 2;
+  repeated CustomerImportFieldMapping custom_field_mappings = 3;
 }
 
 message CustomerImportVerdict {
@@ -1221,4 +1248,37 @@ message OwnerCountry {
 
 message ListOwnerCountriesResponse {
   repeated OwnerCountry rows = 1;
+}
+
+// 动态客户字段消息只追加在文件末尾，保持既有消息的描述符编号稳定。
+message CustomerFieldDefinition {
+  string field_key = 1;
+  string display_name = 2;
+  repeated string aliases = 3;
+  int32 sort_order = 4;
+}
+
+message CustomerCustomFieldValue {
+  string field_key = 1;
+  string display_name = 2;
+  string value = 3;
+  int32 sort_order = 4;
+}
+
+message ListCustomerFieldsRequest {}
+message ListCustomerFieldsResponse { repeated CustomerFieldDefinition fields = 1; }
+
+message SaveCustomerFieldRequest {
+  string field_key = 1;
+  string display_name = 2;
+  repeated string aliases = 3;
+  int32 sort_order = 4;
+}
+message SaveCustomerFieldResponse { CustomerFieldDefinition field = 1; }
+
+message CustomerImportFieldMapping {
+  string source_key = 1;
+  string field_key = 2;
+  string display_name = 3;
+  repeated string aliases = 4;
 }

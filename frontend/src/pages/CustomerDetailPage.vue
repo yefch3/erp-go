@@ -66,6 +66,13 @@
             <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
             <InfoRow label="备注" :value="customer.remark" />
           </InfoCard>
+          <InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
+            <div v-for="field in visibleCustomFields" :key="field.fieldKey" class="custom-info-row">
+              <span>{{ field.displayName }}</span>
+              <strong>{{ field.value || '—' }}</strong>
+              <el-button v-if="canWrite" link type="primary" @click="openCustomerField(field)">修改字段名</el-button>
+            </div>
+          </InfoCard>
             </div>
           </section>
         </div>
@@ -507,6 +514,15 @@
       >
     </el-dialog>
 
+    <el-dialog v-model="customerFieldOpen" title="修改客户字段" width="560px">
+      <el-alert type="info" :closable="false" title="修改显示名称会同步应用到所有客户，已保存的数据不会改变。" />
+      <el-form :model="customerFieldForm" label-width="100px" style="margin-top:16px">
+        <el-form-item label="显示名称" required><el-input v-model="customerFieldForm.displayName" /></el-form-item>
+        <el-form-item label="Excel 别名"><el-select v-model="customerFieldForm.aliases" multiple allow-create filterable default-first-option style="width:100%" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="customerFieldOpen = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveCustomerField">保存</el-button></template>
+    </el-dialog>
+
     <el-dialog
       v-model="addressOpen"
       :title="addressEditing ? '编辑地址' : '新增地址'"
@@ -686,6 +702,7 @@ import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
 import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
+import { isSystemCustomerFieldDefinition } from "../lib/customerImport";
 import { portTimezoneOptions } from "../lib/portOptions";
 import {
   customerAddressInput,
@@ -765,12 +782,16 @@ const loading = ref(true),
   saving = ref(false),
   activeTab = ref("basic");
 const customer = ref<any>(null),
+  customerFieldDefinitions = ref<any[]>([]),
   addresses = ref<any[]>([]),
   contacts = ref<any[]>([]),
   owners = ref<any[]>([]),
   changes = ref<any[]>([]),
   changeTotal = ref(0);
 const profileTimezoneOptions = computed(() => portTimezoneOptions(customer.value?.countryCode ?? ""));
+const visibleCustomFields = computed(() => (customer.value?.customFields || []).filter((field: any) =>
+  String(field.value ?? "").trim() && !isSystemCustomerFieldDefinition(field),
+));
 const types = ref<any[]>([]),
   sources = ref<any[]>([]),
   paymentOptions = ref<any[]>([]),
@@ -781,6 +802,7 @@ const basicOpen = ref(false),
   taxOpen = ref(false),
   creditOpen = ref(false),
   profileOpen = ref(false),
+  customerFieldOpen = ref(false),
   addressOpen = ref(false),
   contactOpen = ref(false),
   ownerOpen = ref(false);
@@ -791,6 +813,7 @@ const basicForm = reactive<any>({}),
   taxForm = reactive<any>({}),
   creditForm = reactive<any>({}),
   profileForm = reactive<any>({}),
+  customerFieldForm = reactive<any>({ fieldKey: "", displayName: "", aliases: [], sortOrder: 0 }),
   addressForm = reactive<any>({}),
   contactForm = reactive<any>({}),
   ownerForm = reactive<any>({});
@@ -901,8 +924,16 @@ function formatTime(v: string) {
 }
 
 async function loadCustomer() {
-  const d = await get<any>(`/customers/${id}`);
+  const [d, fields] = await Promise.all([
+    get<any>(`/customers/${id}`),
+    get<any>("/customers/fields"),
+  ]);
+  customerFieldDefinitions.value = fields.fields || [];
   customer.value = d.customer;
+  customer.value.customFields = (customer.value.customFields || []).map((field: any) => ({
+    ...field,
+    aliases: customerFieldDefinitions.value.find((definition: any) => definition.fieldKey === field.fieldKey)?.aliases || [],
+  }));
 }
 async function loadAddresses() {
   addresses.value =
@@ -1074,6 +1105,34 @@ function openProfile() {
     businessStatus: c.businessStatus || "PROSPECT",
   });
   profileOpen.value = true;
+}
+function openCustomerField(field: any) {
+  Object.assign(customerFieldForm, {
+    fieldKey: field.fieldKey,
+    displayName: field.displayName,
+    aliases: field.aliases || [field.displayName],
+    sortOrder: field.sortOrder || 0,
+  });
+  customerFieldOpen.value = true;
+}
+async function saveCustomerField() {
+  if (!String(customerFieldForm.displayName || "").trim()) {
+    ElMessage.warning("请填写字段显示名称");
+    return;
+  }
+  saving.value = true;
+  try {
+    await put(`/customers/fields/${encodeURIComponent(customerFieldForm.fieldKey)}`, {
+      displayName: customerFieldForm.displayName,
+      aliases: customerFieldForm.aliases,
+      sortOrder: customerFieldForm.sortOrder,
+    });
+    customerFieldOpen.value = false;
+    await loadCustomer();
+    ElMessage.success("客户字段名称已更新");
+  } finally {
+    saving.value = false;
+  }
 }
 async function saveProfile() {
   const error = validateCustomerProfile(profileForm);
@@ -1435,6 +1494,10 @@ onMounted(async () => {
   font-weight: 500;
   word-break: break-word;
 }
+.custom-info-row { display:grid; grid-template-columns:minmax(110px,.7fr) minmax(140px,1fr) auto; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--el-border-color-lighter); }
+.custom-info-row:last-child { border-bottom:0; }
+.custom-info-row > span { color:var(--el-text-color-secondary); font-size:13px; }
+.custom-info-row > strong { font-weight:500; overflow-wrap:anywhere; }
 .detail-tabs :deep(.section-head) {
   display: flex;
   align-items: center;
