@@ -85,3 +85,41 @@ func TestQualityModuleIsRestrictedToQualityDepartment(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationalPresetRoleScopesExposeSharedWorkQueues(t *testing.T) {
+	tests := []struct {
+		roleCode string
+		module   string
+		want     string
+	}{
+		// 采购员处理全公司的采购需求，但采购单仍只看本人负责的单据。
+		{"BUYER", "procurement_requirement", "ALL"},
+		{"BUYER", "procurement_order", "SELF"},
+		// 采购经理需要查看并审批团队全部采购单和采购需求。
+		{"PROCUREMENT_MANAGER", "procurement_requirement", "ALL"},
+		{"PROCUREMENT_MANAGER", "procurement_order", "ALL"},
+		// 物流需要查看全公司的采购单才能执行收货。
+		{"LOGISTICS", "procurement_order", "ALL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.roleCode+"/"+tt.module, func(t *testing.T) {
+			got := ""
+			for _, role := range presetRoles {
+				if role.Code != tt.roleCode {
+					continue
+				}
+				for _, scope := range role.Scopes {
+					if scope.Module == tt.module {
+						got = scope.Type
+						break
+					}
+				}
+				break
+			}
+			if got != tt.want {
+				t.Fatalf("%s scope for %s = %q, want %q", tt.module, tt.roleCode, got, tt.want)
+			}
+		})
+	}
+}
