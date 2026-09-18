@@ -314,8 +314,23 @@ func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 	if err != nil || len(tasks) != 1 || tasks[0].AssigneeID != 777 {
 		t.Fatalf("采购单应先分配给采购经理: tasks=%+v err=%v", tasks, err)
 	}
+	assigned, _, override, err := svc.ActionableTask(ctx, tenantID, 777, "PURCHASE_ORDER", 1)
+	if err != nil || assigned.ID != tasks[0].ID || override {
+		t.Fatalf("原审批人应直接取得任务: task=%+v override=%v err=%v", assigned, override, err)
+	}
+	unauthorized, _, _, err := svc.ActionableTask(ctx, tenantID, 601, "PURCHASE_ORDER", 1)
+	if err != nil || unauthorized.ID != 0 {
+		t.Fatalf("普通非审批人不应取得任务: task=%+v err=%v", unauthorized, err)
+	}
+	takeover, _, override, err := svc.ActionableTask(ctx, tenantID, 500, "PURCHASE_ORDER", 1)
+	if err != nil || takeover.ID != tasks[0].ID || !override {
+		t.Fatalf("最高权限管理员应取得代办任务: task=%+v override=%v err=%v", takeover, override, err)
+	}
 	if _, _, err := svc.Act(ctx, tenantID, 601, tasks[0].ID, ActionApprove, ""); err == nil {
 		t.Fatal("普通员工不应能接管别人的采购审批")
+	}
+	if _, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, ""); err == nil {
+		t.Fatal("最高权限管理员代办时必须填写原因")
 	}
 	approved, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, "最高权限管理员接管")
 	if err != nil {

@@ -773,6 +773,10 @@ func (s *Server) Router() http.Handler {
 		// 真正执行通过、驳回或退回仍由下面的动作权限控制。
 		r.Get("/api/approvals/todos", s.myTodos)
 		r.Get("/api/approvals/submitted", s.mySubmittedApprovals)
+		// Concrete business pages ask the approval service whether the caller
+		// may act. This covers the assigned approver and SUPER_ADMIN takeover
+		// without exposing company-wide approval history to the browser.
+		r.Get("/api/approvals/actionable-task", s.actionableApprovalTask)
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)

@@ -229,6 +229,7 @@
       <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
       <div v-if="detail && approvalTaskFor(detail)" class="next-step">
         <span class="next-step-label">{{ t('orders.approvalDecision') }}</span>
+        <el-tag v-if="approvalOverrideFor(detail)" type="warning" effect="plain" size="small">最高权限管理员代办</el-tag>
         <el-button size="small" type="success" @click="actOnOrderApproval(detail, 'APPROVE')">{{ t('todos.approve') }}</el-button>
         <el-button size="small" type="danger" @click="actOnOrderApproval(detail, 'REJECT')">{{ t('todos.reject') }}</el-button>
       </div>
@@ -576,6 +577,7 @@ import { download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
+import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
@@ -628,13 +630,6 @@ interface Order {
   paymentRequestedAt: string
   paymentRequestedByName: string
 }
-interface ApprovalTodo {
-  task: { id: string; status: string }
-  instance: { bizType: string; bizId: string }
-}
-interface ApprovalInstance { id: string; status: string }
-interface ApprovalTask { id: string; status: string }
-interface ApprovalRound { instance: ApprovalInstance; tasks: ApprovalTask[] }
 interface OrderItem {
   id: string
   requirementId: string
@@ -698,7 +693,6 @@ const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
-const canApprove = auth.can('approval:task:act')
 const canCancel = auth.can('procurement:order:cancel')
 const canReceive = auth.can('procurement:receipt:write')
 const canProduction = auth.can('procurement:production:write')
@@ -722,8 +716,7 @@ const loading = ref(false)
 const saving = ref(false)
 const downloadingId = ref(0)
 const approvalTasks = ref<Record<string, string>>({})
-const isSuperAdmin = ref(false)
-let superAdminResolved = false
+const approvalOverrides = ref<Record<string, boolean>>({})
 
 const createOpen = ref(false)
 const approvalEntry = ref(false)
@@ -878,38 +871,12 @@ function primaryAction(row: Order): RowAction | null {
 function approvalTaskFor(row: Order): string {
   return approvalTasks.value[String(row.id)] ?? ''
 }
-
-async function resolveSuperAdmin() {
-  if (superAdminResolved) return
-  superAdminResolved = true
-  if (!canApprove || !auth.can('iam:role:read')) return
-  try {
-    const roleData = await get<{ roles: { id: string; code: string; status: string }[] }>('/roles', undefined, quietErrors)
-    const role = (roleData.roles ?? []).find((item) => item.code === 'SUPER_ADMIN' && item.status !== 'INACTIVE')
-    if (!role) return
-    const memberData = await get<{ members: { employeeId: string }[] }>(`/roles/${role.id}/members`, undefined, quietErrors)
-    isSuperAdmin.value = (memberData.members ?? []).some((member) => String(member.employeeId) === String(auth.employeeId))
-  } catch {
-    isSuperAdmin.value = false
-  }
-}
-
-async function loadPendingApprovalTask(row: Order): Promise<string> {
-  try {
-    const listed = await get<{ instances: ApprovalInstance[] }>('/approvals/instances', {
-      biz_type: 'PURCHASE_ORDER', biz_id: row.id,
-    }, quietErrors)
-    const running = (listed.instances ?? []).find((instance) => instance.status === 'RUNNING')
-    if (!running) return ''
-    const round = await get<ApprovalRound>(`/approvals/instances/${running.id}`, undefined, quietErrors)
-    return String((round.tasks ?? []).find((task) => task.status === 'PENDING')?.id ?? '')
-  } catch {
-    return ''
-  }
+function approvalOverrideFor(row: Order): boolean {
+  return Boolean(approvalOverrides.value[String(row.id)])
 }
 
 function canActOnOrderApproval(row: Order): boolean {
-  return row.status === 'PENDING_APPROVAL' && canApprove && Boolean(approvalTaskFor(row))
+  return row.status === 'PENDING_APPROVAL' && Boolean(approvalTaskFor(row))
 }
 
 async function openApprovalReview(row: Order) {
@@ -921,7 +888,16 @@ async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
   if (!taskID) return
   let comment = ''
   try {
-    if (action === 'APPROVE') {
+    if (approvalOverrideFor(row)) {
+      const result = await ElMessageBox.prompt(
+        action === 'APPROVE' ? '请说明代替原审批人同意的原因' : '请说明驳回内容及代办原因',
+        '最高权限管理员代办', {
+          inputType: 'textarea', inputValidator: (value) => Boolean(String(value).trim()) || '请填写代办原因',
+          confirmButtonText: action === 'APPROVE' ? t('todos.approve') : t('todos.reject'), cancelButtonText: common('cancel'),
+        },
+      )
+      comment = result.value.trim()
+    } else if (action === 'APPROVE') {
       await ElMessageBox.confirm(t('orders.approveConfirm', { no: row.poNo }), t('todos.approve'), {
         type: 'warning', confirmButtonText: t('todos.approve'), cancelButtonText: common('cancel'),
       })
@@ -1065,25 +1041,14 @@ async function load() {
     rows.value = d.orders ?? []
     total.value = Number(d.meta?.total ?? 0)
     approvalTasks.value = {}
-    if (canApprove && status.value === 'PENDING_APPROVAL') {
-      const todoData = await get<{ todos: ApprovalTodo[] }>('/approvals/todos', {
-        page: 1, page_size: 200, status: '',
-      }, quietErrors)
-      approvalTasks.value = Object.fromEntries((todoData.todos ?? [])
-        .filter((todo) => todo.instance.bizType === 'PURCHASE_ORDER' && todo.task.status === 'PENDING')
-        .map((todo) => [String(todo.instance.bizId), String(todo.task.id)]))
-
-	  // 最高权限管理员可以处理历史遗留或分配给他人的采购审批。
-	  // 本人待办接口只返回自己的任务，因此管理员还需从审批实例中解析
-	  // 当前待处理任务；后端会再次按 SUPER_ADMIN 角色做强制校验。
-	  await resolveSuperAdmin()
-	  if (isSuperAdmin.value) {
-	    const missing = rows.value.filter((row) => !approvalTaskFor(row))
-	    const resolved = await Promise.all(missing.map(async (row) => [row.id, await loadPendingApprovalTask(row)] as const))
-	    for (const [orderID, taskID] of resolved) {
-	      if (taskID) approvalTasks.value[String(orderID)] = taskID
-	    }
-	  }
+    approvalOverrides.value = {}
+    if (status.value === 'PENDING_APPROVAL') {
+      const resolved = await Promise.all(rows.value.map(async row => [String(row.id), await getActionableApproval('PURCHASE_ORDER', row.id)] as const))
+      for (const [orderID, action] of resolved) {
+        if (!action) continue
+        approvalTasks.value[orderID] = action.taskId
+        approvalOverrides.value[orderID] = action.override
+      }
     }
   } finally {
     loading.value = false

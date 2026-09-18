@@ -31,7 +31,7 @@
       <template v-if="detail">
         <div class="detail-hero"><div><span>{{ detail.customerName }}</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
         <div v-if="detail.status === 'PENDING_APPROVAL' && approvalTaskId" class="submit-selection">
-          <span>{{ t('shipping.d4ApprovalHint') }}</span>
+          <span>{{ approvalOverride ? '最高权限管理员可代办此审批，处理原因将写入记录。' : t('shipping.d4ApprovalHint') }}</span>
           <el-dropdown trigger="click" @command="actOnApproval">
             <el-button type="primary" :loading="saving">{{ t('orders.moreActions') }} ▾</el-button>
             <template #dropdown><el-dropdown-menu>
@@ -116,10 +116,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { del, get, post } from '../api'
-import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-const auth = useAuthStore()
+import { getActionableApproval } from '../lib/approvalAction'
 const approvalTaskId = ref('')
+const approvalOverride = ref(false)
 const props=withDefaults(defineProps<{mode?:'inquiry'|'orders'}>(),{mode:'inquiry'}); const mode=computed(()=>props.mode)
 interface CargoItem { id:string;contractItemId:string;lineNo:number;productCode:string;productName:string;specification:string;quantity:string;uomCode:string;remark:string }
 interface Handoff { id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;remark:string;status:string;scheduleId:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string;cargoItems:CargoItem[] }
@@ -139,15 +139,20 @@ async function loadOptions(){if(!detail.value){requoteOptions.value=[];return}co
 async function openDetail(r:Handoff){detailOpen.value=true;contractFile.value=null;selectedOptionId.value=0;const d=await get<{handoff:Handoff}>(`/shipping/contract-handoffs/${r.id}`);detail.value=d.handoff;await loadApprovalTask();if(canManageCandidates.value)clearCandidateForm();else fillForm(d.handoff);if(mode.value==='inquiry')await loadOptions();else requoteOptions.value=[]} function selectForwarder(id:number){form.finalForwarderName=forwarders.value.find(x=>Number(x.id)===Number(id))?.name||''} function selectCarrier(id:number){form.actualCarrierName=carriers.value.find(x=>Number(x.id)===Number(id))?.name||''} async function refreshDetail(){if(!detail.value)return;await openDetail(detail.value);await load()}
 async function loadApprovalTask(){
   approvalTaskId.value=''
-  if(detail.value?.status!=='PENDING_APPROVAL'||!auth.can('approval:task:act'))return
-  const data=await get<{todos:{task:{id:string;status:string};instance:{bizType:string;bizId:string}}[]}>('/approvals/todos',{page:1,page_size:200})
-  approvalTaskId.value=data.todos?.find(x=>x.instance.bizType==='SHIPPING_REQUOTE'&&String(x.instance.bizId)===String(detail.value?.id)&&x.task.status==='PENDING')?.task.id||''
+  approvalOverride.value=false
+  if(detail.value?.status!=='PENDING_APPROVAL')return
+  const result=await getActionableApproval('SHIPPING_REQUOTE',detail.value.id)
+  approvalTaskId.value=result?.taskId||''
+  approvalOverride.value=Boolean(result?.override)
 }
 async function actOnApproval(action:'APPROVE'|'REJECT'){
   if(!approvalTaskId.value||saving.value)return
   let comment=''
   try{
-    if(action==='APPROVE')await ElMessageBox.confirm(t('orders.approveConfirm',{no:detail.value?.contractNo}),t('todos.approve'),{confirmButtonText:t('todos.approve'),cancelButtonText:t('common.cancel')})
+    if(approvalOverride.value){
+      const result=await ElMessageBox.prompt(action==='APPROVE'?'请说明代替原审批人同意的原因':'请说明退回内容及代办原因','最高权限管理员代办',{inputType:'textarea',inputValidator:value=>Boolean(String(value||'').trim())||'请填写代办原因',confirmButtonText:action==='APPROVE'?t('todos.approve'):t('todos.reject'),cancelButtonText:t('common.cancel')})
+      comment=result.value.trim()
+    }else if(action==='APPROVE')await ElMessageBox.confirm(t('orders.approveConfirm',{no:detail.value?.contractNo}),t('todos.approve'),{confirmButtonText:t('todos.approve'),cancelButtonText:t('common.cancel')})
     else{
       const result=await ElMessageBox.prompt(t('orders.rejectReasonHint'),t('todos.reject'),{inputType:'textarea',inputValidator:value=>Boolean(String(value||'').trim())||t('todos.commentRequired'),confirmButtonText:t('todos.reject'),cancelButtonText:t('common.cancel')})
       comment=result.value.trim()
@@ -158,6 +163,7 @@ async function actOnApproval(action:'APPROVE'|'REJECT'){
     await post('/approvals/tasks/'+approvalTaskId.value+'/act',{action,comment})
     ElMessage.success(t('todos.acted'))
     approvalTaskId.value=''
+    approvalOverride.value=false
     detailOpen.value=false
     await load()
   }finally{saving.value=false}

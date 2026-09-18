@@ -88,6 +88,23 @@ func (h *Handler) MyTodos(ctx context.Context, req *apv1.MyTodosRequest) (*apv1.
 	return &apv1.MyTodosResponse{Todos: todos, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+func (h *Handler) ActionableTask(ctx context.Context, req *apv1.ActionableTaskRequest) (*apv1.ActionableTaskResponse, error) {
+	actor, err := actorID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	task, inst, override, err := h.svc.ActionableTask(ctx, grpcx.TenantID(ctx), actor, req.GetBizType(), req.GetBizId())
+	if err != nil {
+		return nil, err
+	}
+	resp := &apv1.ActionableTaskResponse{Override: override}
+	if task.ID != 0 {
+		resp.Task = tasksToProto([]store.ApprovalTask{task})[0]
+		resp.Instance = instanceToProto(inst)
+	}
+	return resp, nil
+}
+
 // AdminEmployeeTodos exposes another employee's pending queue only to the
 // gateway's administrator route.  Requiring an authenticated actor here as
 // well prevents an accidentally unguarded internal caller from turning the

@@ -16,6 +16,11 @@ service ApprovalService {
   rpc Act(ActRequest) returns (ActResponse);
   // MyTodos lists the pending tasks assigned to one employee.
   rpc MyTodos(MyTodosRequest) returns (MyTodosResponse);
+  // ActionableTask resolves the pending task for one concrete business
+  // document.  It returns a task only when the caller is its assignee or an
+  // active SUPER_ADMIN.  Business pages use this instead of reproducing role
+  // and assignment checks in the browser.
+  rpc ActionableTask(ActionableTaskRequest) returns (ActionableTaskResponse);
   // AdminEmployeeTodos powers the access-diagnostic screen.  Unlike MyTodos,
   // the employee is explicit because an administrator is investigating a
   // queue that may belong to somebody who left or can no longer sign in.
@@ -227,6 +232,19 @@ message MyTodosRequest {
 message MyTodosResponse {
   repeated TodoItem todos = 1;
   erp.common.v1.PageMeta meta = 2;
+}
+
+message ActionableTaskRequest {
+  string biz_type = 1;
+  int64 biz_id = 2;
+}
+
+message ActionableTaskResponse {
+  Task task = 1;
+  Instance instance = 2;
+  // True when SUPER_ADMIN is taking over a task assigned to somebody else.
+  // The UI uses this to require and explain an override reason.
+  bool override = 3;
 }
 
 message AdminEmployeeTodosRequest {

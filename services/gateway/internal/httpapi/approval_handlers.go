@@ -40,6 +40,18 @@ func (s *Server) mySubmittedApprovals(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) actionableApprovalTask(w http.ResponseWriter, r *http.Request) {
+	bizID, _ := strconv.ParseInt(r.URL.Query().Get("biz_id"), 10, 64)
+	resp, err := s.Approval.ActionableTask(r.Context(), &apv1.ActionableTaskRequest{
+		BizType: r.URL.Query().Get("biz_type"), BizId: bizID,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // employeePendingApprovals is the administrator's read-only view used by
 // the employee access diagnostic.  It is intentionally a different route
 // from /approvals/todos: personal todos derive the employee from the token,
