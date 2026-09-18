@@ -18,7 +18,7 @@
       <!-- 菜单按一笔生意的走向排，而不是按模块字母序：待办与邮箱是每天的入口，
            中间四组是一张单子的行程（签合同 → 采购 → 进出库 → 出运），财务收尾，
            基础数据与设置沉到底部——它们是偶尔配置一次的东西。 -->
-      <el-menu :default-active="menuActive" router class="side-menu">
+      <el-menu :default-active="menuActive" class="side-menu" @select="navigateFromMenu">
         <!-- No permission gate: 我的待办 is the landing page and the one
              surface every employee owns. Somebody with no approval role sees
              an empty list (and, with no roles at all, a hint to ask the
@@ -53,7 +53,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('sales')"
               @dragend="finishNavigationDrag"
-              @click="salesOpen = !salesOpen"
+              @click="goModule(salesItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><Sell /></el-icon></span><span class="module-label">{{ t('menu.sales') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -99,7 +99,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('procurement')"
               @dragend="finishNavigationDrag"
-              @click="procurementOpen = !procurementOpen"
+              @click="goModule(procurementItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><ShoppingCart /></el-icon></span><span class="module-label">{{ t('menu.procurement') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -148,7 +148,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('warehouse')"
               @dragend="finishNavigationDrag"
-              @click="warehouseOpen = !warehouseOpen"
+              @click="goModule(warehouseItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><Box /></el-icon></span><span class="module-label">{{ t('menu.stockAndGoods') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -195,7 +195,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('logistics')"
               @dragend="finishNavigationDrag"
-              @click="logisticsOpen = !logisticsOpen"
+              @click="goModule(logisticsItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><Van /></el-icon></span><span class="module-label">{{ t('menu.logistics') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -241,7 +241,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('finance')"
               @dragend="finishNavigationDrag"
-              @click="financeOpen = !financeOpen"
+              @click="goModule(financeItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><Money /></el-icon></span><span class="module-label">{{ t('menu.finance') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -287,7 +287,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('basic')"
               @dragend="finishNavigationDrag"
-              @click="basicDataOpen = !basicDataOpen"
+              @click="goModule(basicDataItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><DataBoard /></el-icon></span><span class="module-label">{{ t('menu.basicData') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -337,7 +337,7 @@
               @dragover.prevent
               @drop.prevent="dropModuleDirect('system')"
               @dragend="finishNavigationDrag"
-              @click="systemOpen = !systemOpen"
+              @click="goModule(systemItems)"
             >
               <span class="module-short" aria-hidden="true"><el-icon><Setting /></el-icon></span><span class="module-label">{{ t('menu.system') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
@@ -395,8 +395,11 @@
       </div>
     </el-aside>
     <el-container class="pane-col">
-      <el-header class="topbar" :class="{ 'topbar--empty': !hasTopbarTools }">
-        <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" :aria-label="t('menu.toggleNav')" @click="navigationOpen = !navigationOpen">☰ {{ t('menu.navigation') }}</button>
+      <el-header class="topbar">
+        <div class="topbar-left">
+          <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" :aria-label="t('menu.toggleNav')" @click="navigationOpen = !navigationOpen">☰ {{ t('menu.navigation') }}</button>
+          <button class="page-back" type="button" @click="goBack">← {{ t('common.back') }}</button>
+        </div>
         <div class="topbar-right">
           <ShippingArrivalNotifications
             v-if="auth.can('shipping:schedule:read')"
@@ -409,7 +412,7 @@
         </div>
       </el-header>
       <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
-        <router-view />
+        <router-view :key="`${route.path}:${pageInstanceKey}`" />
       </el-main>
     </el-container>
 
@@ -493,6 +496,7 @@ const navigationPreferences = ref(readNavigationPreferences(navigationStorageKey
 const sidebarStorageKey = `erp.sidebar-collapsed.${auth.employeeId || auth.employeeEmail || 'anonymous'}`
 const sidebarCollapsed = ref(localStorage.getItem(sidebarStorageKey) === 'true')
 const navigationOpen = ref(false)
+const pageInstanceKey = ref(0)
 watch(() => route.path, () => { navigationOpen.value = false })
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
@@ -686,8 +690,6 @@ const financeItems = computed(() => sortByOrder([
 const hasFinance = computed(() => financeItems.value.length > 0)
 const financeActive = computed(() => financeItems.value.some((item) => route.path === item.path))
 const hasBasicData = computed(() => basicDataItems.value.length > 0)
-const hasTopbarTools = computed(() => auth.can('shipping:schedule:read') || auth.can('export:receipt:read'))
-
 const visibleModules = computed(() => sortByOrder([
   { key: 'todos', visible: true },
   { key: 'emails', visible: true },
@@ -772,42 +774,93 @@ function finishNavigationDrag() {
   draggedChildKey.value = ''
 }
 
-function goBasicData(path: string) {
+function closeNavigationMenus() {
+  navigationOpen.value = false
+  salesOpen.value = false
+  procurementOpen.value = false
+  warehouseOpen.value = false
+  logisticsOpen.value = false
+  financeOpen.value = false
   basicDataOpen.value = false
-  router.push(path)
+  systemOpen.value = false
+}
+
+async function navigateFromMenu(path: string) {
+  closeNavigationMenus()
+  const samePage = route.path === path
+  await router.push({ path })
+  // Detail state on several workspaces lives in ?id=. Vue keeps the same
+  // component instance when only the query changes, so clicking the active
+  // navigation item used to clear the address while leaving the old detail on
+  // screen. An explicit menu click means "open this page from its entrance";
+  // remount that page even when its path is already active.
+  if (samePage) pageInstanceKey.value += 1
+}
+
+function goModule(items: Array<{ path: string }>) {
+  const target = items[0]?.path
+  if (target) void navigateFromMenu(target)
+}
+
+function goBasicData(path: string) {
+  void navigateFromMenu(path)
 }
 
 function goProcurement(path: string) {
-  procurementOpen.value = false
-  router.push(path)
+  void navigateFromMenu(path)
 }
 
 function goWarehouse(path: string) {
-  warehouseOpen.value = false
-  router.push(path)
+  void navigateFromMenu(path)
 }
 
 function goFinance(path: string) {
-  financeOpen.value = false
-  router.push(path)
+  void navigateFromMenu(path)
 }
 
 function goSales(path: string) {
-  salesOpen.value = false
-  router.push(path)
+  void navigateFromMenu(path)
 }
 
 // 船期页有个额外动作：进去时主动拉一次未读提醒，原来挂在顶层菜单项上。
 // 等导航完成再拉——提醒组件是按路由 v-if 渲染的，跳转还没落地时它还不在。
 async function goLogistics(path: string) {
-  logisticsOpen.value = false
-  await router.push(path)
+  await navigateFromMenu(path)
   if (path === '/shipping') pullShippingReminders()
 }
 
 function goSystem(path: string) {
-  systemOpen.value = false
-  router.push(path)
+  void navigateFromMenu(path)
+}
+
+function moduleEntrance(path: string): string {
+  if (path.startsWith('/sales/inquiries')) return '/sales/inquiries'
+  if (path.startsWith('/sales/quotations')) return '/sales/quotations'
+  if (path.startsWith('/procurement/sourcing')) return '/procurement/sourcing'
+  if (path.startsWith('/shipping/sourcing')) return '/shipping/sourcing'
+  if (/^\/shipping\/[^/]+$/.test(path)) return '/shipping/schedules'
+  if (path.startsWith('/basic/customers/')) return '/basic/customers'
+  if (path.startsWith('/basic/suppliers/factories/')) return '/basic/suppliers/factories'
+  if (path.startsWith('/basic/suppliers/')) return '/basic/suppliers'
+  if (/^\/basic\/employees\/\d+$/.test(path)) return '/basic/employees'
+  return '/todos'
+}
+
+function goBack() {
+  closeNavigationMenus()
+  // Query-based detail workspaces need to return to their list explicitly;
+  // browser back alone reuses the same component and can leave the detail
+  // painted on screen.
+  if (route.query.id !== undefined) {
+    void navigateFromMenu(route.path)
+    return
+  }
+  const previous = String(window.history.state?.back ?? '')
+  if (previous.startsWith('/')) {
+    router.back()
+    return
+  }
+  void navigateFromMenu(moduleEntrance(route.path))
 }
 
 // 即使用户已经位于船期页面，再次点击菜单也会主动拉取并展示未读提醒。
@@ -1181,10 +1234,12 @@ async function changePassword() {
   align-items: center;
   gap: 18px;
 }
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.page-back { border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 13px; background: #fff; color: #334155; cursor: pointer; white-space: nowrap; }
+.page-back:hover { color: #176b87; border-color: #8fc5d3; background: #f3fafc; }
 .side { flex-shrink: 0; }
 .navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
-.topbar { justify-content: flex-end; }
-.topbar--empty { display: none; }
+.topbar { justify-content: space-between; }
 .content { background: #f3f6fa; }
 .content--procurement,
 .content--logistics {
@@ -1252,7 +1307,6 @@ async function changePassword() {
   .side { display: none; }
   .side.side-open { display: flex; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
   .navigation-toggle { display: block; margin-right: auto; }
-  .topbar--empty { display: flex; }
   .content { padding: 16px; }
   .topbar { padding: 0 16px; gap: 12px; }
 }
