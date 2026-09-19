@@ -860,6 +860,10 @@ type SourcingCase struct {
 	InquiryBody            []byte
 	InquiryRevision        int64
 	InquirySubmittedAt     pgtype.Timestamptz
+	DisplayInquiryNo       string
+	DeletedAt              pgtype.Timestamptz
+	DeletedByID            int64
+	DeletedByName          string
 }
 
 type SourcingCaseChange struct {
