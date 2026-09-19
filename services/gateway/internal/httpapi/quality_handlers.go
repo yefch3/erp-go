@@ -56,19 +56,6 @@ func (s *Server) submitQualityRound(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
-func (s *Server) decideQualityRelease(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.DecideQualityReleaseRequest{}
-	if !s.decodeBody(w, r, req) {
-		return
-	}
-	req.Id = idFromPath(r)
-	resp, err := s.Orders.DecideQualityRelease(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
 func (s *Server) presignQualityFile(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.PresignQualityInspectionFileRequest{}
 	if !s.decodeBody(w, r, req) {
