@@ -652,7 +652,7 @@ export default {
     notIdentity: 'No contiene el nombre, el número de empleado, el usuario ni el correo',
     borrowed: 'contiene «{w}»',
     noComposition: 'No se exigen mayúsculas, dígitos ni símbolos: basta con longitud y que no sea previsible.',
-    unmet: 'A la contraseña aún le falta',
+    title: 'Requisitos de la contraseña',
   },
   supervision: {
     title: 'Buzones de empleados',

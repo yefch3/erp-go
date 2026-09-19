@@ -644,7 +644,7 @@ export default {
     notIdentity: '不包含姓名、工号、用户名或邮箱',
     borrowed: '里面有「{w}」',
     noComposition: '不要求大写字母、数字或特殊字符：长一点、别用常见词就行。',
-    unmet: '密码还差这几条',
+    title: '密码要求',
   },
   supervision: {
     title: '员工邮箱',

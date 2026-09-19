@@ -643,7 +643,7 @@ export default {
     notIdentity: 'Does not contain the name, staff number, username or email',
     borrowed: 'it contains "{w}"',
     noComposition: 'No upper-case, digit or symbol required — length and unpredictability do the work.',
-    unmet: 'The password still needs',
+    title: 'Password requirements',
   },
   supervision: {
     title: 'Employee mailboxes',
