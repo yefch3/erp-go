@@ -261,7 +261,7 @@ SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        returned_by, returned_by_name, returned_at, return_reason, return_fields,
        created_at, updated_at
 FROM sourcing_cases
-WHERE tenant_id = $1 AND id = $2
+WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 `
 
 type GetSourcingCaseParams struct {
@@ -381,6 +381,7 @@ SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = $2::bigint
+  AND deleted_at IS NULL
   AND ($3::bool
        OR owner_id = ANY($4::bigint[]))
   -- 待复核询盘有独立页面；正式询价列表默认不混入尚未复核的数据。

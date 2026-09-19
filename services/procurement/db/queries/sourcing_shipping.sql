@@ -23,17 +23,24 @@ ON CONFLICT (tenant_id,case_id) DO UPDATE SET
  requested_by=excluded.requested_by,requested_by_name=excluded.requested_by_name,requested_at=now(),updated_at=now();
 
 -- name: GetSourcingShippingRequest :one
-SELECT * FROM sourcing_shipping_requests WHERE tenant_id=$1 AND case_id=$2;
+SELECT r.* FROM sourcing_shipping_requests r
+WHERE r.tenant_id=$1 AND r.case_id=$2 AND r.status<>'CANCELLED'
+  AND EXISTS (SELECT 1 FROM sourcing_cases c
+              WHERE c.tenant_id=r.tenant_id AND c.id=r.case_id
+                AND c.deleted_at IS NULL AND c.status<>'CANCELLED');
 
 -- name: ListSourcingShippingRequests :many
-SELECT *,count(*) OVER() AS total FROM sourcing_shipping_requests
-WHERE tenant_id=sqlc.arg(tenant_id)
-  AND (sqlc.arg(status)::text='' OR status=sqlc.arg(status)::text)
-  AND (sqlc.arg(keyword)::text='' OR case_no ILIKE '%'||sqlc.arg(keyword)::text||'%'
-       OR case_title ILIKE '%'||sqlc.arg(keyword)::text||'%'
-       OR customer_name ILIKE '%'||sqlc.arg(keyword)::text||'%'
-       OR cargo_summary ILIKE '%'||sqlc.arg(keyword)::text||'%')
-ORDER BY CASE status WHEN 'REQUOTE_REQUIRED' THEN 0 WHEN 'WAITING_PARTICIPATION' THEN 1 WHEN 'QUOTING' THEN 2 WHEN 'MANAGER_REVIEW' THEN 3 ELSE 4 END,updated_at DESC
+SELECT r.*,count(*) OVER() AS total FROM sourcing_shipping_requests r
+WHERE r.tenant_id=sqlc.arg(tenant_id) AND r.status<>'CANCELLED'
+  AND EXISTS (SELECT 1 FROM sourcing_cases c
+              WHERE c.tenant_id=r.tenant_id AND c.id=r.case_id
+                AND c.deleted_at IS NULL AND c.status<>'CANCELLED')
+  AND (sqlc.arg(status)::text='' OR r.status=sqlc.arg(status)::text)
+  AND (sqlc.arg(keyword)::text='' OR r.case_no ILIKE '%'||sqlc.arg(keyword)::text||'%'
+       OR r.case_title ILIKE '%'||sqlc.arg(keyword)::text||'%'
+       OR r.customer_name ILIKE '%'||sqlc.arg(keyword)::text||'%'
+       OR r.cargo_summary ILIKE '%'||sqlc.arg(keyword)::text||'%')
+ORDER BY CASE r.status WHEN 'REQUOTE_REQUIRED' THEN 0 WHEN 'WAITING_PARTICIPATION' THEN 1 WHEN 'QUOTING' THEN 2 WHEN 'MANAGER_REVIEW' THEN 3 ELSE 4 END,r.updated_at DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: StartSourcingShippingRequest :execrows

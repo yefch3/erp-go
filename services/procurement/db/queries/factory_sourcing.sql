@@ -106,6 +106,8 @@ SELECT r.id, r.rfq_no, r.case_id, c.case_no, r.supplier_name,
 FROM factory_rfqs r
 JOIN sourcing_cases c ON c.id = r.case_id AND c.tenant_id = r.tenant_id
 WHERE r.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND c.deleted_at IS NULL
+  AND c.status <> 'CANCELLED'
   AND r.status IN ('SENT', 'PARTIALLY_QUOTED')
   AND r.response_due_at < current_date
   AND (sqlc.arg(visible_all)::bool
