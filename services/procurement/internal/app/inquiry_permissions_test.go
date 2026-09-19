@@ -23,13 +23,31 @@ func (inquiryManagerAccess) VisibleEmployees(_ context.Context, id int64, _ stri
 	}
 }
 func (inquiryManagerAccess) HasPermission(ctx context.Context, id int64, p string) (bool, error) {
-	if id == 401 || id == 501 {
+	if id == 501 {
 		return strings.HasPrefix(p, "sales:"), nil
+	}
+	if id == 401 {
+		return p == "sales:inquiry:read" || p == "sales:inquiry:write" || p == "sales:inquiry:submit", nil
+	}
+	if id == 101 || id == 102 {
+		return p == "sales:inquiry:read" || p == "sales:inquiry:write" || p == "sales:inquiry:submit", nil
 	}
 	if id == 601 {
 		return p == "sales:inquiry:read", nil
 	}
 	return (d1Access{}).HasPermission(ctx, id, p)
+}
+
+func TestInquiryDeleteRequiresDedicatedPermission(t *testing.T) {
+	s := &Service{scopes: inquiryManagerAccess{}}
+	if err := s.inquiryDeleteAllowed(context.Background(), Operator{ID: 501}); err != nil {
+		t.Fatalf("highest privilege account denied: %v", err)
+	}
+	for _, actor := range []int64{101, 401, 601} {
+		if err := s.inquiryDeleteAllowed(context.Background(), Operator{ID: actor}); err == nil {
+			t.Fatalf("actor %d deleted without dedicated permission", actor)
+		}
+	}
 }
 
 func TestInquiryWriteScope(t *testing.T) {
@@ -136,5 +154,19 @@ func TestInquiryManagerLifecycle(t *testing.T) {
 	_, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 501}, InquiryCommand{Action: "withdraw", View: "SALES", ID: v.ID, Revision: v.Revision})
 	if err == nil {
 		t.Fatal("administrator withdrew confirmed inquiry")
+	}
+	if _, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 401}, InquiryCommand{Action: "delete", View: "SALES", ID: v.ID}); err == nil {
+		t.Fatal("sales manager deleted inquiry without dedicated permission")
+	}
+	if _, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 501, Name: "permission admin"}, InquiryCommand{Action: "delete", View: "SALES", ID: v.ID}); err != nil {
+		t.Fatalf("privileged delete: %v", err)
+	}
+	var deletedBy int64
+	var deletedAt time.Time
+	if err = pool.QueryRow(ctx, `SELECT deleted_by_id,deleted_at FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, inquiryID(v.ID)).Scan(&deletedBy, &deletedAt); err != nil || deletedBy != 501 || deletedAt.IsZero() {
+		t.Fatalf("delete audit not retained: by=%d at=%v err=%v", deletedBy, deletedAt, err)
+	}
+	if _, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 501}, InquiryCommand{Action: "get", View: "SALES", ID: v.ID}); err == nil {
+		t.Fatal("soft-deleted inquiry remained visible")
 	}
 }

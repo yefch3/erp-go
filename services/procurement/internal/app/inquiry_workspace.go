@@ -148,6 +148,7 @@ type InquiryQuoteView struct {
 type InquiryView struct {
 	ID               string             `json:"id"`
 	Number           string             `json:"number"`
+	DisplayInquiryNo string             `json:"displayInquiryNo"`
 	OwnerID          string             `json:"ownerId"`
 	Owner            string             `json:"owner"`
 	State            string             `json:"state"`
@@ -158,6 +159,7 @@ type InquiryView struct {
 	ProcurementCount int                `json:"procurementCount"`
 	LogisticsCount   int                `json:"logisticsCount"`
 	CanEdit          bool               `json:"canEdit"`
+	CanDelete        bool               `json:"canDelete"`
 	ReadOnlyReason   string             `json:"readOnlyReason,omitempty"`
 	CanWithdraw      bool               `json:"canWithdraw"`
 	WithdrawReason   string             `json:"withdrawReason,omitempty"`
@@ -236,6 +238,21 @@ func (s *Service) inquiryAllowed(ctx context.Context, op Operator, view string, 
 	}
 	if !allowed {
 		return apierr.Permission("INQUIRY_PERMISSION", "没有此业务权限")
+	}
+	return nil
+}
+
+func (s *Service) inquiryDeleteAllowed(ctx context.Context, op Operator) error {
+	access, ok := s.scopes.(InquiryAccess)
+	if !ok || op.ID <= 0 {
+		return apierr.Permission("INQUIRY_DELETE_PERMISSION", "没有删除询盘权限")
+	}
+	allowed, err := access.HasPermission(ctx, op.ID, "sales:inquiry:delete")
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return apierr.Permission("INQUIRY_DELETE_PERMISSION", "没有删除询盘权限")
 	}
 	return nil
 }
@@ -384,7 +401,7 @@ func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operato
 	if (in.ID != "" && inquiryID(in.ID) <= 0) || (in.QuoteID != "" && inquiryID(in.QuoteID) <= 0) {
 		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "编号无效")
 	}
-	write := in.Action != "list" && in.Action != "get" && in.Action != "download" && in.Action != "readFile"
+	write := in.Action != "list" && in.Action != "get" && in.Action != "download" && in.Action != "readFile" && in.Action != "delete"
 	if err := s.inquiryAllowed(ctx, op, in.View, write); err != nil {
 		return InquiryResult{}, err
 	}
@@ -398,6 +415,11 @@ func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operato
 	case "get":
 		v, err := s.readInquiry(ctx, tenant, inquiryID(in.ID), op, in.View)
 		return InquiryResult{Item: v}, err
+	case "delete":
+		if in.View != "SALES" {
+			return InquiryResult{}, apierr.Permission("INQUIRY_DELETE_PERMISSION", "仅可从客户询盘删除")
+		}
+		return s.deleteInquiry(ctx, tenant, op, in)
 	case "save":
 		if in.View != "SALES" {
 			return InquiryResult{}, apierr.Permission("INQUIRY_OWNER_ONLY", "仅负责销售可以编辑询盘")
@@ -429,7 +451,7 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	var status, handoff string
 	var owner int64
 	var source, templateID int64
-	err := s.pool.QueryRow(ctx, `SELECT id::text,case_no,owner_id,owner_name,status,handoff_status,inquiry_revision,coalesce(inquiry_submitted_at::text,''),inquiry_body,source_mail_id,inquiry_template_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED'`, tenant, id).Scan(&v.ID, &v.Number, &owner, &v.Owner, &status, &handoff, &v.Revision, &v.SubmittedAt, &raw, &source, &templateID)
+	err := s.pool.QueryRow(ctx, `SELECT id::text,case_no,display_inquiry_no,owner_id,owner_name,status,handoff_status,inquiry_revision,coalesce(inquiry_submitted_at::text,''),inquiry_body,source_mail_id,inquiry_template_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' AND deleted_at IS NULL`, tenant, id).Scan(&v.ID, &v.Number, &v.DisplayInquiryNo, &owner, &v.Owner, &status, &handoff, &v.Revision, &v.SubmittedAt, &raw, &source, &templateID)
 	if err == pgx.ErrNoRows {
 		return nil, apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
 	}
@@ -449,6 +471,7 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	// SALES visibility was checked above. Managers use the same write permission
 	// as salespeople, within the employee range supplied by IAM.
 	v.CanEdit = view == "SALES" && s.inquiryAllowed(ctx, op, view, true) == nil
+	v.CanDelete = view == "SALES" && s.inquiryDeleteAllowed(ctx, op) == nil
 	if view == "SALES" && !v.CanEdit {
 		v.ReadOnlyReason = "当前账号没有询盘编辑权限"
 	}
@@ -566,7 +589,7 @@ func (s *Service) listInquiryWorkspace(ctx context.Context, tenant int64, op Ope
 			return InquiryResult{}, err
 		}
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND status<>'CANCELLED' AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES")
+	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND status<>'CANCELLED' AND deleted_at IS NULL AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR display_inquiry_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES")
 	if err != nil {
 		return InquiryResult{}, err
 	}
@@ -917,6 +940,41 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 	return InquiryResult{Item: v}, err
 }
 
+// deleteInquiry performs a soft delete.  CANCELLED keeps older readers and
+// downstream work queues from treating the inquiry as active, while the
+// deletion columns and sourcing change record preserve who deleted it and
+// when.  Related lines, quotes and documents are intentionally retained.
+func (s *Service) deleteInquiry(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
+	if err := s.inquiryDeleteAllowed(ctx, op); err != nil {
+		return InquiryResult{}, err
+	}
+	id := inquiryID(in.ID)
+	if id <= 0 {
+		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "询盘不存在")
+	}
+	if err := s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
+		return InquiryResult{}, err
+	}
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var lockedID int64
+		if err := tx.QueryRow(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' AND deleted_at IS NULL FOR UPDATE`, tenant, id).Scan(&lockedID); err != nil {
+			if err == pgx.ErrNoRows {
+				return apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
+			}
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE sourcing_cases SET status='CANCELLED',deleted_at=now(),deleted_by_id=$3,deleted_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, op.ID, op.Name); err != nil {
+			return err
+		}
+		return s.recordInquiryAction(ctx, tx, tenant, id, op, "delete")
+	})
+	if err != nil {
+		return InquiryResult{}, err
+	}
+	s.nudge(ctx, tenant)
+	return InquiryResult{}, nil
+}
+
 // Called with the case row locked so authorization uses its current owner.
 func (s *Service) authorizeInquiryOwner(ctx context.Context, op Operator, owner int64) error {
 	if err := s.inquiryAllowed(ctx, op, "SALES", true); err != nil {
@@ -933,7 +991,7 @@ func (s *Service) authorizeInquiryOwner(ctx context.Context, op Operator, owner 
 }
 
 func (s *Service) recordInquiryAction(ctx context.Context, tx pgx.Tx, tenant, id int64, op Operator, action string) error {
-	summary := map[string]string{"save": "保存询盘", "updateBasic": "更新询盘基本信息", "submit": "提交询价", "withdraw": "撤回询价"}[action]
+	summary := map[string]string{"save": "保存询盘", "updateBasic": "更新询盘基本信息", "submit": "提交询价", "withdraw": "撤回询价", "delete": "删除询盘"}[action]
 	return s.q.WithTx(tx).CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
 		TenantID: tenant, CaseID: id, Section: "INQUIRY", Action: strings.ToUpper(action),
 		Summary: summary, BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`),

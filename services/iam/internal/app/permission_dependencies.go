@@ -68,6 +68,7 @@ var permissionDependencies = map[string][]string{
 
 	"sales:inquiry:submit": {"sales:inquiry:read"},
 	"sales:inquiry:write":  {"sales:inquiry:read"},
+	"sales:inquiry:delete": {"sales:inquiry:read"},
 
 	"shipping:document:download":   {"shipping:document:view", "shipping:schedule:read"},
 	"shipping:document:invalidate": {"shipping:document:view", "shipping:schedule:read"},
