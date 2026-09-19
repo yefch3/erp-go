@@ -16,34 +16,14 @@
   --mail-row-pad: 0 14px;
   --mail-gutter: 16px;
 
-  /* Surfaces.
-     One ground for the whole reading side: the pane, the list and its rows,
-     and the mail's own frame. Against the white the folder rail sits on, it
-     is the boundary between "where your mail lives" and "what you are
-     reading" — and within it nothing is drawn twice, so the list is a surface
-     rather than a stack of white strips laid on grey.
-     Inlined as a literal in MailBody.vue's srcdoc too — the mail renders in
-     its own document, which cannot see these variables — but read back from
-     here at runtime so the two can never drift apart. */
-  --mail-ground: #f1f3f4;
-  /* Rows take the ground. They used to be white, which was right when the
-     page around them was white too: the list was the only surface, so it was
-     the one that had to be lit. Now that it sits on the ground it belongs to
-     it, and what separates one mail from the next is the rule between them
-     and the weight of the type — never a second colour. Bold still says
-     unread, and it says it alone. */
-  --mail-surface: var(--mail-ground);
-  /* Which leaves the rules and the hover to carry the structure the row's own
-     colour used to, so both step up. The divider moves off the near-invisible
-     lighter border, which was pitched against white and disappears on grey.
-     And the row under the cursor turns white as it lifts, instead of only
-     casting a shadow onto a field its own colour — the same paper-on-a-desk
-     the reading pane is now built on. Its own token: --mail-hover is the grey
-     the folder rail uses, and the rail is white, so the two cannot share. */
-  --mail-row-hover: var(--el-bg-color);
-  --mail-hover: var(--el-fill-color-darker);
-  --mail-hover-shadow: 0 1px 2px rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
-  --mail-divider: var(--el-border-color-light);
+  /* Mail stays on white. Blue-grey is reserved for interaction feedback and
+     separators, so the list and the message body never turn into a grey slab. */
+  --mail-ground: #ffffff;
+  --mail-surface: #ffffff;
+  --mail-row-hover: #e3eaf3;
+  --mail-hover: #e3eaf3;
+  --mail-hover-shadow: 0 1px 2px rgb(35 75 128 / 0.12), 0 2px 8px rgb(35 75 128 / 0.08);
+  --mail-divider: #e3eaf3;
 
   /* Typography. Two steps only: the line you read and the line you skim. */
   --mail-text: 14px;
@@ -61,6 +41,43 @@
   /* Motion. Short enough to feel like the cursor caused it. */
   --mail-fast: 120ms;
   --mail-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The mailbox owns its palette. Keeping the Element Plus variables on these
+   three roots prevents the mail redesign from recolouring Shell's navigation
+   or the application's top-right controls. The composer is teleported to
+   body, so it must opt into the same palette explicitly. */
+.mailbox,
+.mail-window,
+.composer {
+  --mail-primary: #234b80;
+  --mail-medium: #4a73a8;
+  --mail-soft: #82a1c4;
+  --mail-wash: #e3eaf3;
+  --mail-danger: #c23b45;
+  --mail-danger-bg: #fff4f4;
+  --mail-danger-border: #efc8cc;
+
+  --el-color-primary: #234b80;
+  --el-color-primary-dark-2: #1c3c67;
+  --el-color-primary-light-3: #4a73a8;
+  --el-color-primary-light-5: #82a1c4;
+  --el-color-primary-light-7: #e3eaf3;
+  --el-color-primary-light-8: #e3eaf3;
+  --el-color-primary-light-9: #e3eaf3;
+  --el-border-color: #b8c9dc;
+  --el-border-color-light: #d3deea;
+  --el-border-color-lighter: #e3eaf3;
+  --el-fill-color: #e3eaf3;
+  --el-fill-color-light: #edf2f7;
+  --el-fill-color-lighter: #f6f8fb;
+  --el-fill-color-dark: #d3deea;
+  --el-text-color-primary: #234b80;
+  --el-text-color-regular: #365778;
+  --el-text-color-secondary: #4a73a8;
+  --el-text-color-placeholder: #82a1c4;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #ffffff;
 }
 
 /* Anybody who has asked their system to stop moving things gets stillness,

@@ -64,9 +64,9 @@ const ready = ref(false)
 // here. The frame is a separate document and cannot resolve our CSS variables,
 // so the value must be inlined into its srcdoc — but it can be inlined from
 // the one place that defines it, which is what stops the pane and the mail
-// inside it from drifting to two slightly different greys.
+// inside it from drifting away from the mailbox's white reading surface.
 const ground =
-  getComputedStyle(document.documentElement).getPropertyValue('--mail-ground').trim() || '#f1f3f4'
+  getComputedStyle(document.documentElement).getPropertyValue('--mail-ground').trim() || '#ffffff'
 
 // allow-same-origin, and deliberately never allow-scripts.
 //

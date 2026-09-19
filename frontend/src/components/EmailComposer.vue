@@ -1963,7 +1963,7 @@ function restoreFocus() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(64 158 255 / 12%);
+  background: rgb(74 115 168 / 12%);
   border: 2px dashed var(--el-color-primary);
   border-radius: inherit;
   font-size: 15px;

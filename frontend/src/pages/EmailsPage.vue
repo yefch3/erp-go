@@ -271,7 +271,9 @@
         <div class="in-actions">
           <template v-if="canWrite">
             <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
-              <button type="button" class="tb" :aria-label="t('emails.reply')" @click="replyToInbound">↩</button>
+              <button type="button" class="tb" :aria-label="t('emails.reply')" @click="replyToInbound">
+                <MailActionIcon kind="reply" />
+              </button>
             </el-tooltip>
             <!-- 常驻，不按「原信有没有别人」来显示。
 
@@ -281,10 +283,14 @@
                  抄送就是空的——于是「明明发给了多个人却没有回复全部」。真实
                  发生过。而且按钮时有时无本身就难用：人记不住它什么时候在。 -->
             <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
-              <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAllToInbound">↩↩</button>
+              <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAllToInbound">
+                <MailActionIcon kind="reply-all" />
+              </button>
             </el-tooltip>
             <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
-              <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forwardInbound">↪</button>
+              <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forwardInbound">
+                <MailActionIcon kind="forward" />
+              </button>
             </el-tooltip>
           </template>
           <!-- 删除在最右，和前三颗隔一条线：前三颗是「继续这封信」，它是
@@ -1485,6 +1491,7 @@ import { customerDraftFromMail } from '../lib/mailCustomerDraft'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
+import MailActionIcon from '../components/MailActionIcon.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
@@ -5073,10 +5080,8 @@ async function doUnsuppress(row: Suppression) {
 </script>
 
 <style scoped>
-/* Two surfaces, not one page. The folder rail keeps the white — it is part of
-   the application, the same way the navigation is — and the reading side gets
-   its own ground, so the seam between them is a change of colour rather than
-   an 18px gap you have to look for.
+/* One white mail workspace. Structure comes from the pale blue-grey dividers
+   and interaction states, while list rows and message content stay white.
 
    align-items: stretch so the two colours run the full height of whichever is
    taller; without it the ground stopped at the bottom of the mail and the page
@@ -5132,6 +5137,14 @@ async function doUnsuppress(row: Suppression) {
 .rail-search {
   margin-bottom: 12px;
 }
+.rail-search :deep(.el-input__wrapper) {
+  background: var(--mail-wash);
+  box-shadow: 0 0 0 1px #d3deea inset;
+}
+.rail-search :deep(.el-input__wrapper:hover),
+.rail-search :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--mail-soft) inset;
+}
 .rail-search :deep(.el-input__prefix) {
   /* 放大镜按emoji渲染时基线偏高，压回文字中线。 */
   font-size: 13px;
@@ -5145,10 +5158,7 @@ async function doUnsuppress(row: Suppression) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  /* One ground for everything on this side — the list, the four folders that
-     are tables, the reading page, and the mail's own frame, which is given
-     this same colour. The only white left on it is white that means
-     something: a row under the cursor, and whatever card a sender drew.
+  /* One white surface for the list, tables, reading page and message frame.
      The padding keeps the content off the edge; it also narrows the container
      below, which is correct — the list should respond to the width it can
      actually use. */
@@ -5162,10 +5172,9 @@ async function doUnsuppress(row: Suppression) {
      280–400px。规则一条都没触发，行里的东西溢出来叠在一起，看着像渲染
      出错。**容器建在哪一层，量的就是哪一层**，而布局改动会悄悄换掉那一层。 */
 }
-/* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists, and
-   Element Plus paints a table white. Left alone they would put back exactly
-   the white slab the mail list just stopped being, and a folder would change
-   colour depending on which one you clicked.
+/* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists.
+   Their variables keep them on the same white surface and reuse the mailbox
+   hover and divider colours.
    Set through the component's own variables rather than by overriding its
    selectors: the library is telling us where its colours come from, and every
    background it paints — table, row, header cell, hover — reads one of these
@@ -5513,46 +5522,66 @@ async function doUnsuppress(row: Suppression) {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 2px;
+  gap: 6px;
   margin-top: 14px;
 }
 .tb {
   display: grid;
   place-items: center;
   flex: none;
-  min-width: 34px;
-  height: 32px;
-  padding: 0 6px;
-  border: none;
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #b8c9dc;
   border-radius: 8px;
-  background: none;
-  color: var(--el-text-color-regular);
-  /* 箭头和垃圾桶是字形，不是图标字体：字号大一档才和一行 14px 的正文
-     视觉上等重。 */
-  font-size: 17px;
+  background: #ffffff;
+  color: var(--mail-primary);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgb(35 75 128 / 0.05);
   transition: background var(--mail-fast) var(--mail-ease),
-    color var(--mail-fast) var(--mail-ease);
+    border-color var(--mail-fast) var(--mail-ease),
+    color var(--mail-fast) var(--mail-ease),
+    box-shadow var(--mail-fast) var(--mail-ease),
+    transform var(--mail-fast) var(--mail-ease);
 }
 .tb:hover {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-primary);
+  background: var(--mail-wash);
+  border-color: var(--mail-soft);
+  color: var(--mail-medium);
+  box-shadow: 0 2px 6px rgb(35 75 128 / 0.12);
+}
+.tb:active {
+  transform: translateY(1px);
+  background: var(--mail-wash);
+  box-shadow: inset 0 1px 2px rgb(35 75 128 / 0.16);
 }
 .tb:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+  outline: 2px solid var(--mail-soft);
+  outline-offset: 2px;
+}
+.tb-danger {
+  border-color: var(--mail-danger-border);
+  background: var(--mail-danger-bg);
+  color: var(--mail-danger);
 }
 .tb-danger:hover {
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  border-color: #dfa1a8;
+  background: #fde8ea;
+  color: #a92f38;
+}
+.tb-danger:active {
+  background: #f9dadd;
+  box-shadow: inset 0 1px 2px rgb(194 59 69 / 0.2);
 }
 .tb-sep {
   flex: none;
   width: 1px;
   height: 18px;
-  margin: 0 6px;
-  background: var(--el-border-color-lighter);
+  margin: 0 4px;
+  background: var(--mail-wash);
 }
 .thread-item {
   transition: box-shadow var(--mail-fast) var(--mail-ease);

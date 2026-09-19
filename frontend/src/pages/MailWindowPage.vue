@@ -69,13 +69,19 @@
       <div v-if="canWrite || deleteAction || menuAvailable" class="in-actions">
         <template v-if="canWrite">
           <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
-            <button type="button" class="tb" :aria-label="t('emails.reply')" @click="reply">↩</button>
+            <button type="button" class="tb" :aria-label="t('emails.reply')" @click="reply">
+              <MailActionIcon kind="reply" />
+            </button>
           </el-tooltip>
           <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
-            <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAll">↩↩</button>
+            <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAll">
+              <MailActionIcon kind="reply-all" />
+            </button>
           </el-tooltip>
           <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
-            <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forward">↪</button>
+            <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forward">
+              <MailActionIcon kind="forward" />
+            </button>
           </el-tooltip>
         </template>
         <!-- 删除在最右、隔一条线：前三颗是「继续这封信」，它是「结束这封信」。
@@ -204,6 +210,7 @@ import { printDocument } from '../lib/printDocument'
 import { useAuthStore } from '../stores/auth'
 import { replyAllRecipients } from '../lib/replyAll'
 import EmailComposer from '../components/EmailComposer.vue'
+import MailActionIcon from '../components/MailActionIcon.vue'
 import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
@@ -545,6 +552,8 @@ function initialOf(name: string) {
   max-width: 960px;
   margin: 0 auto;
   padding: 22px 26px 60px;
+  min-height: 100vh;
+  background: #ffffff;
 }
 .waiting {
   min-height: 240px;
@@ -656,49 +665,70 @@ function initialOf(name: string) {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 2px;
+  gap: 6px;
   margin-top: 14px;
 }
 .tb {
   display: grid;
   place-items: center;
   flex: none;
-  min-width: 34px;
-  height: 32px;
-  padding: 0 6px;
-  border: none;
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #b8c9dc;
   border-radius: 8px;
-  background: none;
-  color: var(--el-text-color-regular);
-  /* 箭头是字形，不是图标字体：字号大一档才和一行 14px 的正文视觉上等重。 */
-  font-size: 17px;
+  background: #ffffff;
+  color: var(--mail-primary);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgb(35 75 128 / 0.05);
   transition: background var(--mail-fast) var(--mail-ease),
-    color var(--mail-fast) var(--mail-ease);
+    border-color var(--mail-fast) var(--mail-ease),
+    color var(--mail-fast) var(--mail-ease),
+    box-shadow var(--mail-fast) var(--mail-ease),
+    transform var(--mail-fast) var(--mail-ease);
 }
 .tb:hover {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-primary);
+  background: var(--mail-wash);
+  border-color: var(--mail-soft);
+  color: var(--mail-medium);
+  box-shadow: 0 2px 6px rgb(35 75 128 / 0.12);
+}
+.tb:active {
+  transform: translateY(1px);
+  background: var(--mail-wash);
+  box-shadow: inset 0 1px 2px rgb(35 75 128 / 0.16);
 }
 .tb:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+  outline: 2px solid var(--mail-soft);
+  outline-offset: 2px;
 }
 .tb:disabled {
   opacity: 0.5;
   cursor: default;
 }
+.tb-danger {
+  border-color: var(--mail-danger-border);
+  background: var(--mail-danger-bg);
+  color: var(--mail-danger);
+}
 .tb-danger:hover {
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  border-color: #dfa1a8;
+  background: #fde8ea;
+  color: #a92f38;
+}
+.tb-danger:active {
+  background: #f9dadd;
+  box-shadow: inset 0 1px 2px rgb(194 59 69 / 0.2);
 }
 .tb-sep {
   flex: none;
   width: 1px;
   height: 18px;
-  margin: 0 6px;
-  background: var(--el-border-color-lighter);
+  margin: 0 4px;
+  background: var(--mail-wash);
 }
 .side-title {
   margin: 26px 0 10px;

@@ -476,13 +476,8 @@ function ariaFor(m: MailRow) {
     background var(--mail-fast) var(--mail-ease);
 }
 .row:hover {
-  /* Picked up off the ground: white and lifted together. The shadow alone was
-     enough while the rows were white and the page around them was too — there
-     was a colour to cast onto. Now the row is the same grey as everything
-     under it, and a shadow on a field its own colour barely registers, so the
-     lift gets the white it is lifting to. Still not a tint: white is the
-     absence of the ground, which leaves colour free to mean the one thing it
-     means in this list — a ticked row. */
+  /* A pale blue wash marks the row under the pointer without taking the list
+     away from its white reading surface. */
   background: var(--mail-row-hover);
   box-shadow: var(--mail-hover-shadow);
   z-index: 1;
