@@ -15,35 +15,62 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table :data="purchaseBatches" v-loading="loading">
-        <el-table-column :label="t('requirements.purchaseBatch')" min-width="230">
+      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" :expand-row-keys="expandedBatchKeys" v-loading="loading">
+        <el-table-column type="expand" width="1" class-name="hidden-native-expander">
+          <template #default="{ row }">
+            <div class="batch-product-hierarchy">
+              <section v-for="group in row.productGroups" :key="group.key" class="batch-product-group">
+                <button type="button" class="batch-product-heading" :aria-expanded="isBatchProductExpanded(row.key, group.key)" @click="toggleBatchProduct(row.key, group.key)">
+                  <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(row.key, group.key) }]"><ArrowDown /></el-icon>
+                  <strong>{{ group.name }}</strong>
+                  <span>{{ group.lines.length }} 种规格</span>
+                  <span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
+                </button>
+                <div v-show="isBatchProductExpanded(row.key, group.key)" class="batch-specifications">
+                  <div class="batch-specification-header"><span>产品编码</span><span>尺寸规格</span><span>数量 / 单位</span><span>售前报价参考</span><span>供应商</span></div>
+                  <article v-for="line in group.lines" :key="line.id" class="batch-specification-row">
+                    <span class="batch-specification-code">{{ line.productCode || '—' }}</span>
+                    <span class="batch-specification-size" :title="line.spec || line.productCode || '—'">{{ line.spec || line.productCode || '—' }}</span>
+                    <strong>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</strong>
+                    <span>{{ displaySourcePrice(line) }}</span>
+                    <span :title="line.supplierName || '—'">{{ line.supplierName || '—' }}</span>
+                  </article>
+                </div>
+              </section>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('requirements.purchaseBatch')" min-width="170">
           <template #default="{ row }">
             <div class="batch-no">{{ row.label }}</div>
             <div class="sub">{{ row.customerName || '—' }}</div>
+            <div class="sub batch-mobile-source">{{ row.sourceLabels || '—' }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.batchProducts')" min-width="300">
+        <el-table-column :label="t('requirements.batchProducts')" min-width="230">
           <template #default="{ row }">
-            <div class="batch-products">{{ row.productNames }}</div>
-            <div class="sub">{{ t('requirements.lineCount', { n: row.lines.length }) }}</div>
+            <button type="button" class="batch-product-summary batch-product-summary--stacked" :aria-expanded="isBatchExpanded(row.key)" @click.stop="toggleBatch(row)">
+              <span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span><el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchExpanded(row.key) }]"><ArrowDown /></el-icon></span>
+              <small class="batch-product-summary__mobile-meta">{{ row.requiredDate || '未填写到货日期' }} · {{ t('requirements.supplierCount', { n: row.supplierCount }) }}</small>
+            </button>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.batchSuppliers')" min-width="230">
+        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.batchSuppliers')" min-width="230">
           <template #default="{ row }">
-            <div>{{ row.supplierNames || '—' }}</div>
+            <div class="supplier-summary">{{ row.supplierNames || '—' }}</div>
             <div class="sub">{{ t('requirements.supplierCount', { n: row.supplierCount }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.requiredDate')" width="130">
+        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.requiredDate')" width="130">
           <template #default="{ row }">{{ row.requiredDate || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('requirements.fromContract')" min-width="180">
+        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.fromContract')" min-width="180">
           <template #default="{ row }">{{ row.sourceLabels || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" min-width="150">
+        <el-table-column :label="t('common.status')" min-width="105">
           <template #default="{ row }">{{ row.statusLabels || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
+        <el-table-column :label="t('common.actions')" min-width="125" align="center">
           <template #default="{ row }">
             <el-button :type="row.waitingRequote ? 'primary' : 'success'" plain @click="openBatchReview(row)">
               {{ row.waitingRequote ? t('requirements.reviewPendingRequote') : t('requirements.prepareOrder') }}
@@ -332,6 +359,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { del, get, post, postDownload, saveBlob } from '../api'
@@ -390,13 +418,19 @@ interface PurchaseBatch {
   key: string
   label: string
   customerName: string
-  productNames: string
   supplierNames: string
   supplierCount: number
   requiredDate: string
   sourceLabels: string
   statusLabels: string
   waitingRequote: boolean
+  productGroups: PurchaseProductGroup[]
+  lines: Requirement[]
+}
+
+interface PurchaseProductGroup {
+  key: string
+  name: string
   lines: Requirement[]
 }
 
@@ -439,22 +473,66 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
   }
   return [...grouped.entries()].map(([key, lines]) => {
     const supplierNames = [...new Set(lines.map((line) => line.supplierName).filter(Boolean))]
-    const productNames = [...new Set(lines.map((line) => line.productName).filter(Boolean))]
+    const productGroups = groupBatchProducts(lines)
     return {
       key,
       label: lines[0]?.quotationNo || lines[0]?.contractNo || t('requirements.manualBatch'),
       customerName: lines[0]?.customerName ?? '',
-      productNames: productNames.slice(0, 3).join('、') + (productNames.length > 3 ? ` +${productNames.length - 3}` : ''),
       supplierNames: supplierNames.join('、'),
       supplierCount: supplierNames.length,
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
       sourceLabels: [...new Set(lines.map((line) => line.source === 'MANUAL' ? t('requirements.manual') : line.contractNo).filter(Boolean))].join('、'),
       statusLabels: [...new Set(lines.map((line) => t(`requirements.statuses.${line.status}`)))].join('、'),
       waitingRequote: lines.some((line) => line.status === 'WAITING_REQUOTE'),
+      productGroups,
       lines,
     }
   })
 })
+const expandedBatchKeys = ref<string[]>([])
+const expandedBatchProductKeys = ref<string[]>([])
+function groupBatchProducts(lines: Requirement[]): PurchaseProductGroup[] {
+  const groups = new Map<string, PurchaseProductGroup>()
+  for (const line of lines) {
+    const name = line.productName.trim() || '—'
+    const key = name.toLocaleLowerCase()
+    const group = groups.get(key)
+    if (group) group.lines.push(line)
+    else groups.set(key, { key, name, lines: [line] })
+  }
+  return [...groups.values()]
+}
+function batchProductSummary(batch: PurchaseBatch): string {
+  const first = batch.productGroups[0]
+  if (!first) return '—'
+  const specificationCount = new Set(first.lines.map((line) => `${line.productCode}\u0000${line.spec}\u0000${line.uomCode}`)).size
+  return `${first.name} · ${specificationCount} 种规格`
+}
+function isBatchExpanded(key: string): boolean { return expandedBatchKeys.value.includes(key) }
+function toggleBatch(batch: PurchaseBatch) {
+  expandedBatchKeys.value = isBatchExpanded(batch.key) ? expandedBatchKeys.value.filter((key) => key !== batch.key) : [...expandedBatchKeys.value, batch.key]
+}
+function batchProductStateKey(batchKey: string, productKey: string): string { return `${batchKey}:${productKey}` }
+function isBatchProductExpanded(batchKey: string, productKey: string): boolean { return expandedBatchProductKeys.value.includes(batchProductStateKey(batchKey, productKey)) }
+function toggleBatchProduct(batchKey: string, productKey: string) {
+  const key = batchProductStateKey(batchKey, productKey)
+  expandedBatchProductKeys.value = isBatchProductExpanded(batchKey, productKey) ? expandedBatchProductKeys.value.filter((value) => value !== key) : [...expandedBatchProductKeys.value, key]
+}
+function formatQtyTwo(value: string): string {
+  const quantity = Number(value)
+  return Number.isFinite(quantity) ? quantity.toFixed(2) : value || '—'
+}
+function requirementQuantitySummary(lines: Requirement[]): string {
+  const totals = new Map<string, number>()
+  const unstructured: string[] = []
+  for (const line of lines) {
+    const quantity = Number(line.availableQty)
+    const unit = line.uomCode.trim()
+    if (Number.isFinite(quantity)) totals.set(unit, (totals.get(unit) || 0) + quantity)
+    else if (line.availableQty) unstructured.push(`${line.availableQty}${unit ? ` ${unit}` : ''}`)
+  }
+  return [...totals].map(([unit, total]) => `${total.toFixed(2)}${unit ? ` ${unit}` : ''}`).concat(unstructured).join('；') || '—'
+}
 const page = ref(1)
 const pageSize = 20
 // Outstanding work is what a buyer opens this page for; everything else is
@@ -944,6 +1022,101 @@ onMounted(load)
 .batch-products {
   line-height: 1.5;
 }
+.requirements-page :deep(.batch-hierarchy-table .hidden-native-expander .cell),
+.requirements-page :deep(.batch-hierarchy-table th:first-child .cell) {
+  display: none;
+  padding: 0;
+}
+.requirements-page :deep(.batch-hierarchy-table .el-table__expanded-cell) {
+  padding: 0 !important;
+}
+.batch-product-summary {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  color: #203747;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.batch-product-summary:hover,
+.batch-product-summary:focus-visible {
+  color: #0f719b;
+  background: #edf8fd;
+  outline: none;
+}
+.batch-product-summary--stacked { align-items: stretch; flex-direction: column; }
+.batch-product-summary__main { display: flex; align-items: center; min-width: 0; }
+.batch-product-summary__mobile-meta { display: none; margin-top: 3px; color: #718390; font-size: 11px; line-height: 1.35; }
+.batch-mobile-source { display: none; }
+.batch-product-summary__text,
+.supplier-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-product-summary__count {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  margin-left: 9px;
+  color: #1479a6;
+  background: #e7f6fc;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.batch-product-chevron {
+  flex: 0 0 auto;
+  margin-left: 9px;
+  color: #648395;
+  transition: transform .2s ease;
+}
+.batch-product-chevron.is-expanded { transform: rotate(180deg); }
+.batch-product-hierarchy { padding: 10px 14px 12px; background: #f7fbfd; }
+.batch-product-group { overflow: hidden; margin-bottom: 8px; background: #fff; border: 1px solid #dbe8ef; border-radius: 9px; }
+.batch-product-group:last-child { margin-bottom: 0; }
+.batch-product-heading {
+  display: grid;
+  grid-template-columns: 20px minmax(220px, 2fr) minmax(100px, .65fr) minmax(170px, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 14px;
+  color: #243f52;
+  background: #fff;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.batch-product-heading:hover,
+.batch-product-heading:focus-visible { background: #f1f8fb; outline: none; }
+.batch-product-heading .batch-product-chevron { margin-left: 0; }
+.batch-product-heading strong { overflow: hidden; color: #143d56; text-overflow: ellipsis; white-space: nowrap; }
+.batch-product-heading > span { color: #6b7f8d; font-size: 13px; }
+.batch-product-total { text-align: right; }
+.batch-specifications { border-top: 1px solid #e2edf2; }
+.batch-specification-header,
+.batch-specification-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .6fr) minmax(240px, 1.4fr) minmax(130px, .7fr) minmax(170px, 1fr) minmax(150px, .9fr);
+  gap: 18px;
+  align-items: center;
+  padding: 0 34px;
+}
+.batch-specification-header { min-height: 34px; color: #7a8b98; background: #f8fbfc; font-size: 12px; font-weight: 650; }
+.batch-specification-row { min-height: 58px; padding-top: 9px; padding-bottom: 9px; border-top: 1px solid #edf2f5; color: #426273; }
+.batch-specification-header + .batch-specification-row { border-top: 0; }
+.batch-specification-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-specification-row strong { color: #173f56; text-align: right; }
+.batch-specification-code { color: #607784; }
+.batch-specification-size { color: #334b5c; }
 .supplier-group {
   padding: 14px;
   margin-top: 14px;
@@ -1011,7 +1184,9 @@ onMounted(load)
 .batch-quote-form :deep(.el-form-item__label) { height:auto;padding-bottom:5px;color:#536773;font-size:13px;line-height:20px }
 .batch-quote-form .remark-field { margin-bottom:0 }
 .product-price-section { padding-bottom:12px }
-@media(max-width:800px){.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.quote-actions{position:static;margin-left:24px}}
+@media(max-width:1100px){.batch-product-heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.batch-specification-header,.batch-specification-row{grid-template-columns:minmax(100px,.6fr) minmax(190px,1.2fr) minmax(120px,.7fr) minmax(150px,1fr) minmax(130px,.9fr);padding-left:26px;padding-right:26px;gap:12px}}
+@media(max-width:900px){.requirements-page :deep(.batch-hierarchy-table .batch-secondary-column){display:none}.batch-product-summary__mobile-meta,.batch-mobile-source{display:block}.requirements-page :deep(.batch-hierarchy-table .el-table__body),.requirements-page :deep(.batch-hierarchy-table .el-table__header){width:100%!important}}
+@media(max-width:800px){.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.quote-actions{position:static;margin-left:24px}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
 .qty {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
