@@ -7,10 +7,10 @@
    <div class="toolbar list-toolbar"><el-input v-model="keyword" :placeholder="t(department?'inquiryWorkspace.departmentSearch':'inquiryWorkspace.search')" clearable @change="loadList"/><el-select v-model="state" clearable :placeholder="t('inquiryWorkspace.allStatuses')" @change="loadList"><el-option v-for="o in states" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-button @click="loadList">{{t('common.refresh')}}</el-button><el-button v-if="view==='SALES'&&canWrite" class="create-inquiry-action" type="primary" @click="openCreateDialog">{{t('inquiryWorkspace.uploadOrCreate')}}</el-button></div>
    <el-table v-if="view==='SALES'" class="inquiry-list-table inquiry-list-table--sales" :data="items" row-key="id" stripe :expand-row-keys="expandedInquiryIds">
     <el-table-column type="expand" width="1" class-name="hidden-native-expander">
-     <template #default="{row}"><div class="product-expansion"><article v-for="(product,index) in row.body.products" :key="product.id||index" class="expanded-product"><div class="expanded-product__heading"><span class="expanded-product__index">{{index+1}}</span><strong :title="product.product">{{product.product||'—'}}</strong></div><dl><div v-for="field in inquiryListFields(product,row.body.template?.fields||[])" :key="field.key"><dt>{{listFieldLabel(field)}}</dt><dd :title="field.value">{{field.value}}</dd></div></dl></article><div v-if="!row.body.products?.length" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</div></div></template>
+     <template #default="{row}"><div class="product-hierarchy"><section v-for="group in inquiryProductGroups(row)" :key="group.key" class="product-group"><button type="button" class="product-group__heading" :aria-expanded="isProductGroupExpanded(row.id,group.key)" @click="toggleProductGroup(row.id,group.key)"><el-icon class="product-group__chevron" :class="{'is-expanded':isProductGroupExpanded(row.id,group.key)}"><ArrowDown/></el-icon><strong>{{group.name}}</strong><span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span><span class="product-group__quantity">{{t('inquiryWorkspace.list.totalQuantity')}} {{groupedQuantity(group.products)}}</span></button><div v-show="isProductGroupExpanded(row.id,group.key)" class="specification-list"><div class="specification-list__header"><span>{{t('inquiryWorkspace.list.materialStandard')}}</span><span>{{t('inquiryWorkspace.list.sizeSpecification')}}</span><span>{{t('inquiryWorkspace.list.quantityUnit')}}</span></div><article v-for="specification in group.specifications" :key="specification.key" class="specification-row"><div class="specification-row__material" :title="materialSummary(specification.representative)">{{materialSummary(specification.representative)||'—'}}</div><div class="specification-row__size" :title="namedSpecification(specification.representative)">{{namedSpecification(specification.representative)}}</div><strong class="specification-row__quantity">{{groupedQuantity(specification.products)}}</strong><div v-if="specificationAuxiliaryFields(specification.representative,row.body.template?.fields||[]).length" class="specification-row__auxiliary"><span v-for="field in specificationAuxiliaryFields(specification.representative,row.body.template?.fields||[])" :key="field.key"><b>{{listFieldLabel(field)}}</b>{{field.value}}</span></div></article></div></section><div v-if="!row.body.products?.length" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</div></div></template>
     </el-table-column>
     <el-table-column :label="t('inquiryWorkspace.number')" min-width="160"><template #default="{row}"><span class="inquiry-number">{{displayInquiryNumber(row)}}</span></template></el-table-column>
-    <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="330"><template #default="{row}"><button type="button" class="product-summary" :aria-expanded="isInquiryExpanded(row.id)" @click.stop="toggleInquiryProducts(row)"><span class="product-summary__text" :title="productSummary(row.body.products?.[0])">{{productSummary(row.body.products?.[0])}}</span><span v-if="row.body.products?.length>1" class="product-summary__count">+{{row.body.products.length-1}}</span><el-icon class="product-summary__chevron" :class="{'is-expanded':isInquiryExpanded(row.id)}"><ArrowDown/></el-icon></button></template></el-table-column>
+    <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="330"><template #default="{row}"><button type="button" class="product-summary" :aria-expanded="isInquiryExpanded(row.id)" @click.stop="toggleInquiryProducts(row)"><span class="product-summary__text" :title="inquiryProductSummary(row)">{{inquiryProductSummary(row)}}</span><span v-if="inquiryProductGroups(row).length>1" class="product-summary__count">+{{inquiryProductGroups(row).length-1}}</span><el-icon class="product-summary__chevron" :class="{'is-expanded':isInquiryExpanded(row.id)}"><ArrowDown/></el-icon></button></template></el-table-column>
     <el-table-column :label="t('inquiryWorkspace.productCount')" min-width="90" align="center"><template #default="{row}">{{row.body.products?.length||0}}</template></el-table-column>
     <el-table-column :label="t('inquiryWorkspace.submittedAt')" min-width="155"><template #default="{row}">{{displayTime(row.submittedAt)}}</template></el-table-column>
     <el-table-column :label="t('common.status')" min-width="120"><template #default="{row}"><el-tag effect="light" :type="row.state==='WITHDRAWN'?'info':row.state==='INQUIRING'?'success':'warning'">{{stateLabel(row)}}</el-tag></template></el-table-column>
@@ -116,7 +116,7 @@ import type {InquiryTemplate} from '../lib/inquiryTemplates'
 import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type QuoteBody,type Product} from '../lib/inquiryWorkspace'
-import {inquiryListFields,productSummary,type InquiryListField} from '../lib/inquiryList'
+import {dimensionFields,groupedQuantity,groupInquiryProducts,materialSummary,specificationAuxiliaryFields,type InquiryListField} from '../lib/inquiryList'
 import {procurementQuoteCategories,procurementQuoteCategory,procurementQuoteCurrency} from '../lib/quoteClassification'
 const props=defineProps<{view:'SALES'|'QUOTATIONS'|'PROCUREMENT'|'LOGISTICS'}>()
 const {t,te,locale}=useI18n()
@@ -192,14 +192,21 @@ async function command(action:string,extra:object={}){const body={action,view:vi
 function offerStateLabel(id:string){const s=offerStates.value[id]?.status;return s==='CONFIRMED'?t('inquiryWorkspace.statuses.confirmed'):s==='QUOTED'?t('inquiryWorkspace.statuses.quoted'):t('inquiryWorkspace.statuses.waiting')}
 function listActionLabel(row:Inquiry){if(view.value==='PROCUREMENT')return t(row.procurementCount>0?'inquiryWorkspace.actions.factoryContinue':'inquiryWorkspace.actions.factoryNew');if(view.value==='LOGISTICS')return t(row.logisticsCount>0?'inquiryWorkspace.actions.logisticsContinue':'inquiryWorkspace.actions.logisticsNew');return t('inquiryWorkspace.actions.open')}
 const expandedInquiryIds=ref<string[]>([])
+const expandedProductKeys=ref<string[]>([])
 function isInquiryExpanded(id:string){return expandedInquiryIds.value.includes(id)}
 function toggleInquiryProducts(row:Inquiry){expandedInquiryIds.value=isInquiryExpanded(row.id)?expandedInquiryIds.value.filter(id=>id!==row.id):[...expandedInquiryIds.value,row.id]}
+function inquiryProductGroups(row:Inquiry){return groupInquiryProducts(row.body.products||[])}
+function inquiryProductSummary(row:Inquiry){const first=inquiryProductGroups(row)[0];return first?`${first.name} · ${t('inquiryWorkspace.list.specificationCount',{count:first.specifications.length})}`:'—'}
+function productGroupStateKey(inquiryId:string,groupKey:string){return `${inquiryId}:${groupKey}`}
+function isProductGroupExpanded(inquiryId:string,groupKey:string){return expandedProductKeys.value.includes(productGroupStateKey(inquiryId,groupKey))}
+function toggleProductGroup(inquiryId:string,groupKey:string){const key=productGroupStateKey(inquiryId,groupKey);expandedProductKeys.value=isProductGroupExpanded(inquiryId,groupKey)?expandedProductKeys.value.filter(value=>value!==key):[...expandedProductKeys.value,key]}
 function displayInquiryNumber(row:Inquiry){
  if(row.displayInquiryNo)return row.displayInquiryNo
  const match=/^SC-(\d{2})(\d{2})(\d{2})-(\d+)$/.exec(row.number||'')
  return match?`INQ-${match[1]}${match[2]}${match[3]}-${match[4].slice(-3).padStart(3,'0')}`:row.number
 }
 function listFieldLabel(field:InquiryListField){const key=`inquiryProducts.fields.${field.label}`;return te(key)?t(key):field.label}
+function namedSpecification(product:Product){const dimensions=dimensionFields(product);if(!dimensions.length)return product.specification.trim()||'—';return dimensions.map(field=>`${listFieldLabel(field).replace(/\s*[（(]mm[）)]/gi,'')} ${field.value}`).join(' × ')}
 async function handleListAction(action:string,row:Inquiry){
  if(action==='view'){await open(row);return}
  if(action!=='delete'||!auth.can('sales:inquiry:delete')||!row.canDelete)return
@@ -360,15 +367,26 @@ watch(view,()=>void initial())
 .product-summary__count { flex:0 0 auto; margin-left:9px; padding:2px 7px; color:#1479a6; background:#e7f6fc; border-radius:999px; font-size:12px; font-weight:650; }
 .product-summary__chevron { flex:0 0 auto; margin-left:9px; color:#618294; transition:transform .2s ease; }
 .product-summary__chevron.is-expanded { transform:rotate(180deg); }
-.product-expansion { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px 18px 14px 170px; background:#f7fbfd; }
-.expanded-product { min-width:0; padding:13px 15px; background:#fff; border:1px solid #dbe9f0; border-radius:10px; box-shadow:0 2px 8px rgba(31,65,91,.04); }
-.expanded-product__heading { display:flex; align-items:center; gap:9px; min-width:0; margin-bottom:11px; color:#183c52; }
-.expanded-product__heading strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.expanded-product__index { display:grid; flex:0 0 23px; place-items:center; width:23px; height:23px; color:#1479a6; background:#e8f6fc; border-radius:6px; font-size:12px; font-weight:700; }
-.expanded-product dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px 18px; margin:0; }
-.expanded-product dl>div { min-width:0; }
-.expanded-product dt { margin-bottom:3px; color:#7b8c99; font-size:12px; }
-.expanded-product dd { margin:0; overflow:hidden; color:#2d4050; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.product-hierarchy { padding:10px 18px 12px 170px; background:#f7fbfd; }
+.product-group { overflow:hidden; margin-bottom:8px; background:#fff; border:1px solid #dbe8ef; border-radius:9px; }
+.product-group:last-child { margin-bottom:0; }
+.product-group__heading { display:grid; grid-template-columns:20px minmax(180px,1fr) 110px minmax(160px,.7fr); align-items:center; width:100%; min-height:46px; padding:8px 14px; color:#243f52; background:#fff; border:0; font:inherit; text-align:left; cursor:pointer; transition:background-color .18s ease; }
+.product-group__heading:hover,.product-group__heading:focus-visible { background:#f1f8fb; outline:none; }
+.product-group__heading strong { overflow:hidden; color:#143d56; text-overflow:ellipsis; white-space:nowrap; }
+.product-group__heading>span { color:#6b7f8d; font-size:13px; }
+.product-group__quantity { text-align:right; }
+.product-group__chevron { color:#648395; transition:transform .2s ease; }
+.product-group__chevron.is-expanded { transform:rotate(180deg); }
+.specification-list { border-top:1px solid #e2edf2; }
+.specification-list__header,.specification-row { display:grid; grid-template-columns:minmax(190px,.8fr) minmax(300px,1.35fr) minmax(135px,.55fr); column-gap:22px; align-items:center; padding:0 38px; }
+.specification-list__header { min-height:34px; color:#7a8b98; background:#f8fbfc; font-size:12px; font-weight:650; }
+.specification-row { min-height:58px; padding-top:9px; padding-bottom:9px; border-top:1px solid #edf2f5; }
+.specification-list__header+.specification-row { border-top:0; }
+.specification-row__material,.specification-row__size { overflow:hidden; color:#334b5c; text-overflow:ellipsis; white-space:nowrap; }
+.specification-row__quantity { color:#173f56; text-align:right; white-space:nowrap; }
+.specification-row__auxiliary { display:flex; grid-column:1/-1; gap:5px 16px; flex-wrap:wrap; margin-top:7px; color:#718390; font-size:12px; }
+.specification-row__auxiliary span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.specification-row__auxiliary b { margin-right:5px; color:#536d7d; font-weight:600; }
 .empty-products { grid-column:1/-1; padding:18px; color:#8797a3; text-align:center; }
 .list-more-actions { min-width:108px; color:#176b87; border-color:#b7d8e5; background:#fff; }
 :global(.danger-menu-item) { color:#d34e4e!important; }
@@ -376,7 +394,7 @@ watch(view,()=>void initial())
 .inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain) { color:#159fdc; border-color:#9bdcff; background:#f4fbff; }
 .inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain:hover) { color:#141817; border-color:#4ac1ff; background:#4ac1ff; }
 .inquiry-workspace--operations .list-pagination { justify-content:flex-end; margin:0; }
-@media(max-width:1100px){.product-expansion{grid-template-columns:1fr;padding-left:18px}.expanded-product dl{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1100px){.product-hierarchy{padding-left:18px}.product-group__heading{grid-template-columns:20px minmax(150px,1fr) 90px minmax(130px,.7fr)}.specification-list__header,.specification-row{grid-template-columns:minmax(150px,.8fr) minmax(240px,1.35fr) minmax(120px,.55fr);padding-left:28px;padding-right:28px}}
 .inquiry-workspace :deep(.el-table) { border: 1px solid var(--line); border-radius: 12px; --el-table-header-bg-color: #f4f8fa; --el-table-header-text-color: #486174; --el-table-row-hover-bg-color: #f0f8fa; }
 .inquiry-workspace :deep(.el-table th.el-table__cell) { height: 48px; font-weight: 600; }
 .inquiry-workspace :deep(.el-table td.el-table__cell) { padding: 13px 0; color: #334155; }

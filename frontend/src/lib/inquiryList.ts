@@ -3,6 +3,8 @@ import type { TemplateField } from './inquiryTemplates'
 import { productTemplateValue } from './inquiryWorkspace'
 
 export interface InquiryListField { key:string; label:string; value:string }
+export interface InquirySpecificationGroup { key:string; products:Product[]; representative:Product }
+export interface InquiryProductGroup { key:string; name:string; products:Product[]; specifications:InquirySpecificationGroup[] }
 
 const value=(product:Product,key:string)=>productTemplateValue(product,key).trim()
 const withUnit=(raw:string,unit:string)=>raw && /[a-zA-Z一-鿿]/.test(raw) ? raw : raw ? `${raw}${unit}` : ''
@@ -11,18 +13,66 @@ export function materialSummary(product:Product):string {
   return [value(product,'material_standard'),value(product,'grade')].filter(Boolean).join(' ')
 }
 
+export function dimensionFields(product:Product):InquiryListField[] {
+  const candidates:[string,string][]=[
+    ['thickness',value(product,'thickness')||value(product,'custom.thickness_mm')],
+    ['wall_thickness',value(product,'wall_thickness')||value(product,'custom.wall_thickness_mm')],
+    ['width',value(product,'width')||value(product,'custom.width_mm')],
+    ['height',value(product,'height')||value(product,'custom.height_mm')],
+    ['diameter',value(product,'diameter')||value(product,'custom.diameter_mm')],
+    ['length_or_form',value(product,'length_or_form')],
+  ]
+  return candidates.filter(([,fieldValue])=>fieldValue).map(([key,fieldValue])=>({key,label:key,value:withUnit(fieldValue,' mm')}))
+}
+
 export function dimensionSummary(product:Product):string {
-  const thickness=value(product,'thickness')||value(product,'wall_thickness')||value(product,'custom.thickness_mm')||value(product,'custom.wall_thickness_mm')
-  const width=value(product,'width')||value(product,'custom.width_mm')
-  const diameter=value(product,'diameter')||value(product,'custom.diameter_mm')
-  const length=value(product,'length_or_form')
-  const dimensions=[thickness,width||diameter,length].filter(Boolean)
-  return dimensions.length>1?`${dimensions.join('×')}mm`:withUnit(dimensions[0]||'','mm')
+  return dimensionFields(product).map(field=>field.value).join(' × ')
 }
 
 export function productSummary(product:Product|undefined):string {
   if(!product)return '—'
   return [product.product.trim(),materialSummary(product),dimensionSummary(product)||product.specification.trim()].filter(Boolean).join(' / ')||'—'
+}
+
+function stableSpecificationKey(product:Product):string {
+  const custom=Object.fromEntries(Object.entries(product.customFields||{}).sort(([a],[b])=>a.localeCompare(b)))
+  return JSON.stringify({specification:product.specification,unit:product.unit,delivery:product.delivery,weight:product.weight,volume:product.volume,packaging:product.packaging,packageQuantity:product.packageQuantity||'',remark:product.remark,custom})
+}
+
+export function groupInquiryProducts(products:Product[]):InquiryProductGroup[] {
+  const groups=new Map<string,InquiryProductGroup>()
+  for(const product of products){
+    const name=product.product.trim()||'—',key=name.toLocaleLowerCase()
+    let group=groups.get(key)
+    if(!group){group={key,name,products:[],specifications:[]};groups.set(key,group)}
+    group.products.push(product)
+  }
+  for(const group of groups.values()){
+    const specifications=new Map<string,InquirySpecificationGroup>()
+    for(const product of group.products){
+      const key=stableSpecificationKey(product)
+      let specification=specifications.get(key)
+      if(!specification){specification={key,products:[],representative:product};specifications.set(key,specification)}
+      specification.products.push(product)
+    }
+    group.specifications=[...specifications.values()]
+  }
+  return [...groups.values()]
+}
+
+export function groupedQuantity(products:Product[]):string {
+  const totals=new Map<string,number>(),unstructured:string[]=[]
+  for(const product of products){
+    const quantity=Number(product.quantity.trim()),unit=product.unit.trim()
+    if(Number.isFinite(quantity))totals.set(unit,(totals.get(unit)||0)+quantity)
+    else if(product.quantity.trim())unstructured.push(`${product.quantity.trim()}${unit?` ${unit}`:''}`)
+  }
+  return [...totals.entries()].map(([unit,total])=>`${total.toFixed(2)}${unit?` ${unit}`:''}`).concat(unstructured).join('；')||'—'
+}
+
+export function specificationAuxiliaryFields(product:Product,fields:TemplateField[]=[]):InquiryListField[] {
+  const excluded=new Set(['material_standard','specification','quantity','quantity_unit','unit','thickness','wall_thickness','width','height','diameter','length_or_form','custom.thickness_mm','custom.wall_thickness_mm','custom.width_mm','custom.height_mm','custom.diameter_mm'])
+  return inquiryListFields(product,fields).filter(field=>excluded.has(field.key)===false)
 }
 
 export function inquiryListFields(product:Product,fields:TemplateField[]=[]):InquiryListField[] {
