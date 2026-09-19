@@ -186,3 +186,14 @@ export function passwordRules(password: string, context: readonly (string | unde
     { key: 'notIdentity', ok: borrowed === '', detail: borrowed || undefined },
   ]
 }
+
+/**
+ * 还没过的那几条——界面只在密码不合格时冒出来，而且只说差的，不把满足了的
+ * 也列一遍（2026-09-18 改的：整份清单常驻在输入框底下太吵）。
+ *
+ * 一个字都没打时返回空：那不是「错了」，是「还没开始」，不该跳出来催。
+ */
+export function unmetRules(password: string, context: readonly (string | undefined)[] = []): PasswordRule[] {
+  if (password === '') return []
+  return passwordRules(password, context).filter((r) => !r.ok)
+}
