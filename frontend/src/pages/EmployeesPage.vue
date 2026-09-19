@@ -399,6 +399,7 @@ import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 import { createEmployeeBody, updateEmployeeBody, validateEmployeeForm } from '../lib/iamForms'
 import PasswordRules from '../components/PasswordRules.vue'
 import { countryOptions } from '../lib/countries'
+import { batchRolesVerdict, singleRolesVerdict } from '../lib/roleAssignment'
 
 interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
@@ -624,6 +625,14 @@ async function openRoles(row: Employee) {
 }
 
 async function saveRoles() {
+  // 全取消偶尔是有意的（离职前收权），所以是问一句，不是拦死。
+  if (singleRolesVerdict(selectedRoles.value) === 'confirmClear') {
+    await ElMessageBox.confirm(
+      t('employees.rolesClearConfirm', { name: current.value?.name ?? '' }),
+      t('employees.confirmTitle'),
+      { type: 'warning' },
+    )
+  }
   saving.value = true
   try {
     await post(`/employees/${current.value?.id}/roles`, { roleIds: selectedRoles.value })
@@ -768,6 +777,20 @@ function openBatchRoles() {
 async function saveBatchRoles() {
   const targets = selected.value
   if (!targets.length) return
+  // 2026-09-18：替换模式、一个角色没勾、点了保存——四个销售的角色被清空。
+  // 规矩在 lib/roleAssignment：没勾不许存；替换会拿掉原有的，先确认。
+  const verdict = batchRolesVerdict(batchRolesMode.value, batchRoleIds.value)
+  if (verdict === 'pickOne') {
+    ElMessage.warning(t('employees.rolesPickOne'))
+    return
+  }
+  if (verdict === 'confirmReplace') {
+    await ElMessageBox.confirm(
+      t('employees.rolesReplaceConfirm', { n: targets.length }),
+      t('employees.confirmTitle'),
+      { type: 'warning' },
+    )
+  }
   saving.value = true
   try {
     let failed = 0
