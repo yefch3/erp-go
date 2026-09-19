@@ -310,7 +310,11 @@ func (q *Queries) GetSourcingShippingPlan(ctx context.Context, arg GetSourcingSh
 }
 
 const getSourcingShippingRequest = `-- name: GetSourcingShippingRequest :one
-SELECT id, tenant_id, case_id, requirement_version_no, status, case_no, case_title, customer_id, customer_name, sales_employee_id, sales_employee_name, destination_port, cargo_summary, requested_by, requested_by_name, requested_at, updated_at FROM sourcing_shipping_requests WHERE tenant_id=$1 AND case_id=$2
+SELECT r.id, r.tenant_id, r.case_id, r.requirement_version_no, r.status, r.case_no, r.case_title, r.customer_id, r.customer_name, r.sales_employee_id, r.sales_employee_name, r.destination_port, r.cargo_summary, r.requested_by, r.requested_by_name, r.requested_at, r.updated_at FROM sourcing_shipping_requests r
+WHERE r.tenant_id=$1 AND r.case_id=$2 AND r.status<>'CANCELLED'
+  AND EXISTS (SELECT 1 FROM sourcing_cases c
+              WHERE c.tenant_id=r.tenant_id AND c.id=r.case_id
+                AND c.deleted_at IS NULL AND c.status<>'CANCELLED')
 `
 
 type GetSourcingShippingRequestParams struct {
@@ -776,14 +780,17 @@ func (q *Queries) ListSourcingShippingPlans(ctx context.Context, arg ListSourcin
 }
 
 const listSourcingShippingRequests = `-- name: ListSourcingShippingRequests :many
-SELECT id, tenant_id, case_id, requirement_version_no, status, case_no, case_title, customer_id, customer_name, sales_employee_id, sales_employee_name, destination_port, cargo_summary, requested_by, requested_by_name, requested_at, updated_at,count(*) OVER() AS total FROM sourcing_shipping_requests
-WHERE tenant_id=$1
-  AND ($2::text='' OR status=$2::text)
-  AND ($3::text='' OR case_no ILIKE '%'||$3::text||'%'
-       OR case_title ILIKE '%'||$3::text||'%'
-       OR customer_name ILIKE '%'||$3::text||'%'
-       OR cargo_summary ILIKE '%'||$3::text||'%')
-ORDER BY CASE status WHEN 'REQUOTE_REQUIRED' THEN 0 WHEN 'WAITING_PARTICIPATION' THEN 1 WHEN 'QUOTING' THEN 2 WHEN 'MANAGER_REVIEW' THEN 3 ELSE 4 END,updated_at DESC
+SELECT r.id, r.tenant_id, r.case_id, r.requirement_version_no, r.status, r.case_no, r.case_title, r.customer_id, r.customer_name, r.sales_employee_id, r.sales_employee_name, r.destination_port, r.cargo_summary, r.requested_by, r.requested_by_name, r.requested_at, r.updated_at,count(*) OVER() AS total FROM sourcing_shipping_requests r
+WHERE r.tenant_id=$1 AND r.status<>'CANCELLED'
+  AND EXISTS (SELECT 1 FROM sourcing_cases c
+              WHERE c.tenant_id=r.tenant_id AND c.id=r.case_id
+                AND c.deleted_at IS NULL AND c.status<>'CANCELLED')
+  AND ($2::text='' OR r.status=$2::text)
+  AND ($3::text='' OR r.case_no ILIKE '%'||$3::text||'%'
+       OR r.case_title ILIKE '%'||$3::text||'%'
+       OR r.customer_name ILIKE '%'||$3::text||'%'
+       OR r.cargo_summary ILIKE '%'||$3::text||'%')
+ORDER BY CASE r.status WHEN 'REQUOTE_REQUIRED' THEN 0 WHEN 'WAITING_PARTICIPATION' THEN 1 WHEN 'QUOTING' THEN 2 WHEN 'MANAGER_REVIEW' THEN 3 ELSE 4 END,r.updated_at DESC
 LIMIT $5::int OFFSET $4::int
 `
 

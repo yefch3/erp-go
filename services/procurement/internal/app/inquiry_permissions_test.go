@@ -24,7 +24,7 @@ func (inquiryManagerAccess) VisibleEmployees(_ context.Context, id int64, _ stri
 }
 func (inquiryManagerAccess) HasPermission(ctx context.Context, id int64, p string) (bool, error) {
 	if id == 501 {
-		return strings.HasPrefix(p, "sales:"), nil
+		return true, nil
 	}
 	if id == 401 {
 		return p == "sales:inquiry:read" || p == "sales:inquiry:write" || p == "sales:inquiry:submit", nil
@@ -155,6 +155,37 @@ func TestInquiryManagerLifecycle(t *testing.T) {
 	if err == nil {
 		t.Fatal("administrator withdrew confirmed inquiry")
 	}
+	// Seed the independent procurement and shipping work queues. Deleting the
+	// inquiry must close these rows too, otherwise the same business document
+	// remains actionable outside the shared inquiry workspace.
+	_, err = pool.Exec(ctx, `INSERT INTO factory_rfqs(tenant_id,case_id,rfq_no,supplier_id,supplier_name,status,created_by,created_by_name)
+		VALUES($1,$2,'RFQ-DELETE-TEST',9001,'Delete test factory','SENT',201,'buyer')`, tenant, inquiryID(v.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO procurement_rework_requests(tenant_id,case_id,request_type,scope_type,reason,created_by,created_by_name)
+		VALUES($1,$2,'REQUOTE','ALL','delete cascade test',101,'sales')`, tenant, inquiryID(v.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shippingRequestID int64
+	err = pool.QueryRow(ctx, `INSERT INTO sourcing_shipping_requests(tenant_id,case_id,status,case_no,sales_employee_id,requested_by)
+		VALUES($1,$2,'QUOTING','DELETE-TEST',101,101)
+		ON CONFLICT(tenant_id,case_id) DO UPDATE SET status='QUOTING',updated_at=now()
+		RETURNING id`, tenant, inquiryID(v.ID)).Scan(&shippingRequestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO sourcing_shipping_options(tenant_id,request_id,carrier_forwarder,status,created_by)
+		VALUES($1,$2,'Delete test carrier','SUBMITTED',301)`, tenant, shippingRequestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO sourcing_shipping_rework_requests(tenant_id,case_id,request_type,scope_type,reason,created_by,created_by_name)
+		VALUES($1,$2,'REQUOTE','ALL','delete cascade test',101,'sales')`, tenant, inquiryID(v.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 401}, InquiryCommand{Action: "delete", View: "SALES", ID: v.ID}); err == nil {
 		t.Fatal("sales manager deleted inquiry without dedicated permission")
 	}
@@ -166,7 +197,37 @@ func TestInquiryManagerLifecycle(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT deleted_by_id,deleted_at FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, inquiryID(v.ID)).Scan(&deletedBy, &deletedAt); err != nil || deletedBy != 501 || deletedAt.IsZero() {
 		t.Fatalf("delete audit not retained: by=%d at=%v err=%v", deletedBy, deletedAt, err)
 	}
+	for table, query := range map[string]string{
+		"factory RFQ":        `SELECT count(*) FROM factory_rfqs WHERE tenant_id=$1 AND case_id=$2 AND status<>'CANCELLED'`,
+		"procurement rework": `SELECT count(*) FROM procurement_rework_requests WHERE tenant_id=$1 AND case_id=$2 AND status<>'CANCELLED'`,
+		"shipping request":   `SELECT count(*) FROM sourcing_shipping_requests WHERE tenant_id=$1 AND case_id=$2 AND status<>'CANCELLED'`,
+		"shipping option":    `SELECT count(*) FROM sourcing_shipping_options WHERE tenant_id=$1 AND request_id=$2 AND status<>'CANCELLED'`,
+		"shipping rework":    `SELECT count(*) FROM sourcing_shipping_rework_requests WHERE tenant_id=$1 AND case_id=$2 AND status<>'CANCELLED'`,
+	} {
+		foreignID := inquiryID(v.ID)
+		if table == "shipping option" {
+			foreignID = shippingRequestID
+		}
+		if err = pool.QueryRow(ctx, query, tenant, foreignID).Scan(&recorded); err != nil || recorded != 0 {
+			t.Fatalf("%s remained active after delete: count=%d err=%v", table, recorded, err)
+		}
+	}
 	if _, err = s.InquiryWorkspace(ctx, tenant, Operator{ID: 501}, InquiryCommand{Action: "get", View: "SALES", ID: v.ID}); err == nil {
 		t.Fatal("soft-deleted inquiry remained visible")
+	}
+	for _, view := range []string{"SALES", "PROCUREMENT", "LOGISTICS"} {
+		result, listErr := s.InquiryWorkspace(ctx, tenant, Operator{ID: 501}, InquiryCommand{Action: "list", View: view, Page: 1, Size: 20})
+		if listErr != nil {
+			t.Fatalf("list deleted inquiry in %s: %v", view, listErr)
+		}
+		if result.Total != 0 || len(result.Items) != 0 {
+			t.Fatalf("deleted inquiry remained in %s: total=%d items=%d", view, result.Total, len(result.Items))
+		}
+		if _, getErr := s.InquiryWorkspace(ctx, tenant, Operator{ID: 501}, InquiryCommand{Action: "get", View: view, ID: v.ID}); getErr == nil {
+			t.Fatalf("deleted inquiry detail remained accessible in %s", view)
+		}
+	}
+	if _, legacyErr := s.GetSourcingCase(ctx, tenant, inquiryID(v.ID)); legacyErr == nil {
+		t.Fatal("deleted inquiry remained accessible through legacy sourcing detail")
 	}
 }

@@ -963,8 +963,27 @@ func (s *Service) deleteInquiry(ctx context.Context, tenant int64, op Operator, 
 			}
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE sourcing_cases SET status='CANCELLED',deleted_at=now(),deleted_by_id=$3,deleted_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, op.ID, op.Name); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE sourcing_cases SET status='CANCELLED',handoff_status='CANCELLED',deleted_at=now(),deleted_by_id=$3,deleted_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, op.ID, op.Name); err != nil {
 			return err
+		}
+		// Closing the parent alone hides it from the shared inquiry workspace,
+		// but procurement and shipping also have independent task tables used by
+		// dashboards and older detail endpoints.  Cancel every still-active task
+		// in the same transaction so a deleted inquiry cannot remain actionable
+		// anywhere else.  Quotes and plans stay in place as audit history.
+		for _, statement := range []struct {
+			query string
+			args  []any
+		}{
+			{`UPDATE factory_rfqs SET status='CANCELLED',updated_at=now() WHERE tenant_id=$1 AND case_id=$2 AND status NOT IN ('CANCELLED','CLOSED')`, []any{tenant, id}},
+			{`UPDATE procurement_rework_requests SET status='CANCELLED',resolved_by=$3,resolved_by_name=$4,resolved_at=now(),resolution_note=CASE WHEN resolution_note='' THEN '来源询盘已删除' ELSE resolution_note END WHERE tenant_id=$1 AND case_id=$2 AND status='OPEN'`, []any{tenant, id, op.ID, op.Name}},
+			{`UPDATE sourcing_shipping_requests SET status='CANCELLED',updated_at=now() WHERE tenant_id=$1 AND case_id=$2 AND status<>'CANCELLED'`, []any{tenant, id}},
+			{`UPDATE sourcing_shipping_options SET status='CANCELLED' WHERE tenant_id=$1 AND request_id IN (SELECT id FROM sourcing_shipping_requests WHERE tenant_id=$1 AND case_id=$2) AND status<>'CANCELLED'`, []any{tenant, id}},
+			{`UPDATE sourcing_shipping_rework_requests SET status='CANCELLED',resolved_by=$3,resolved_by_name=$4,resolved_at=now(),resolution_note=CASE WHEN resolution_note='' THEN '来源询盘已删除' ELSE resolution_note END WHERE tenant_id=$1 AND case_id=$2 AND status='OPEN'`, []any{tenant, id, op.ID, op.Name}},
+		} {
+			if _, err := tx.Exec(ctx, statement.query, statement.args...); err != nil {
+				return err
+			}
 		}
 		return s.recordInquiryAction(ctx, tx, tenant, id, op, "delete")
 	})
