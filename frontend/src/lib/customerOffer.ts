@@ -31,6 +31,17 @@ export function procurementBasis(quotes:Quote[],productId:string){
 }
 export const offerSpecification=(line:Product)=>[...new Set([...(line.specification||'').split(' · '),...Object.values(line.customFields||{})].filter(Boolean))].join(' · ')
 
+// CFR keeps four decimal places in the calculation snapshot so later totals
+// can still use the original precision. The sales screens deliberately show
+// prices at two decimal places; formatting here keeps every CFR display in
+// sync without rewriting the stored value.
+export function formatCfrUnitPrice(value?:string){
+  const raw=(value??'').trim()
+  if(!raw)return''
+  const parsed=Number(raw)
+  return Number.isFinite(parsed)?parsed.toFixed(2):raw
+}
+
 export function offerProductTotal(lines:OfferLine[]){
   let cents=0n
   for(const line of lines){

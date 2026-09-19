@@ -243,7 +243,7 @@ export default {
     quoteComparisonCalculation: '报价比较与核算',
     inquiryTitle: '客户询盘', inquirySubtitle: '整理客户需求，提交询价并跟进处理进度。', quotationTitle: '客户报价', quotationSubtitle: '查看采购与物流已提交的报价。',
     templates: '询盘模板', fromMailbox: '从邮箱转入询盘', uploadOrCreate: '上传或新建客户询盘', manualEntry: '少量产品手工录入', search: '搜索编号、客户、产品或规格', departmentSearch: '搜索询盘编号、客户、产品或规格', allStatuses: '全部状态',
-    number: '询盘编号', customer: '客户', owner: '负责销售', productCount: '产品项数', totalQuantity: '总需求数量', weightVolume: '总重量 / 总体积', delivery: '交货要求', loadingPort: '装货港', destinationPort: '目的港', incoterm: '贸易条件', submittedFactoryQuotes: '已提交工厂报价', submittedLogisticsQuotes: '已提交物流报价', submittedAt: '提交时间',
+    number: '询盘编号', customer: '客户', owner: '负责销售', productCount: '产品项数', totalQuantity: '总需求数量', weightVolume: '总重量 / 总体积', delivery: '交货时间', loadingPort: '装货港', destinationPort: '目的港', incoterm: '贸易条件', submittedFactoryQuotes: '已提交工厂报价', submittedLogisticsQuotes: '已提交物流报价', submittedAt: '提交时间',
     statuses: { waiting: '待报价', quoted: '已报价', hasQuote: '已有报价', unsubmitted: '未提交', inquiring: '询价中', withdrawn: '已撤回', confirmed: '客户已确认' },
     actions: { open: '打开详情 →', factoryNew: '录入工厂报价', factoryContinue: '查看 / 继续报价', logisticsNew: '录入物流报价', logisticsContinue: '查看 / 继续报价' },
     systemTemplates: { default: '系统标准询盘模板', steelDetailed: '钢材详细尺寸模板' },
