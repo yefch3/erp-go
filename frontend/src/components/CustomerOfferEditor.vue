@@ -34,7 +34,7 @@
             <el-table-column v-if="group.value==='REPROCESSING_CNY'" min-width="115" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}<small>CNY / {{t('inquiryWorkspace.offer.pricingUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{row.price.factoryPrice||'—'}}</span></template></el-table-column>
             <el-table-column min-width="120" align="right"><template #header><span class="column-heading">{{t(supplierPriceLabel(group.value))}}<small>{{supplierPriceUnitLabel(group.value,group.currency)}}</small></span></template><template #default="{row}"><span class="number-cell">{{priceOf(row.price)}}</span></template></el-table-column>
             <el-table-column v-if="group.value!=='DIRECT_CFR_USD'" min-width="115" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.productFreightUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{selectionFor(row)?.productFreightUnitPrice||'—'}}</span></template></el-table-column>
-            <el-table-column min-width="115" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{selectionFor(row)?.cfrUnitPrice||'—'}}</span></template></el-table-column>
+            <el-table-column min-width="115" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{formatCfrUnitPrice(selectionFor(row)?.cfrUnitPrice)||'—'}}</span></template></el-table-column>
             <el-table-column :label="t('inquiryWorkspace.offer.deliveryDate')" min-width="108"><template #default="{row}">{{row.price.delivery||row.quote.body.delivery||'—'}}</template></el-table-column>
             <el-table-column :label="t('inquiryWorkspace.offer.details')" width="64" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.view')}}</el-button></template></el-table-column>
            </el-table>
@@ -46,7 +46,7 @@
       <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="300"><template #default="{row}"><div class="product-summary"><strong>{{row.productName}}</strong></div></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.specifications')" width="140" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.specificationCountValue',{count:row.specs.length})}}</template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.supplierQuoteCount')" width="150" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.supplierQuoteCountValue',{count:row.rows.length})}}</template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="360"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span>{{candidateLabel(row,candidate)}}</span><strong>{{selectionFor(candidate)?.cfrUnitPrice?`USD ${selectionFor(candidate)?.cfrUnitPrice} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div><span v-else>—</span></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="360"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span>{{candidateLabel(row,candidate)}}</span><strong>{{selectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(selectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div><span v-else>—</span></template></el-table-column>
      </el-table>
     </section>
     <section class="workspace-card logistics-panel">
@@ -71,7 +71,7 @@
       <el-table-column :label="t('inquiryWorkspace.offer.productSpec')" min-width="140" show-overflow-tooltip><template #default="{row}"><strong>{{row.product.product}}</strong><small class="spec">{{specification(row.product)||'—'}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.selectedSupplier')" min-width="140" show-overflow-tooltip><template #default="{row}">{{row.quote.body.company||'—'}}<small>{{t('inquiryWorkspace.offer.sourceVersion',{version:row.quote.version})}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.qtyUnit')" min-width="140"><template #default="{row}">{{row.product.quantity}} {{row.product.unit}}</template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.calculatedCustomerPrice')" min-width="150" align="right"><template #default="{row}"><strong class="money">USD {{initialCalculatedPrice(row)||'—'}}</strong><small>/ {{row.product.unit}}</small></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.calculatedCustomerPrice')" min-width="150" align="right"><template #default="{row}"><strong class="money">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}}</strong><small>/ {{row.product.unit}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.customerQuotePrice')" min-width="190"><template #default="{row}"><el-input v-model="negotiationFor(row).proposedPrice" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')"><template #prepend>USD</template></el-input></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.source')" width="88" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.viewSource')}}</el-button></template></el-table-column>
      </el-table>
@@ -128,7 +128,7 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {post,quietErrors,saveBlob} from '../api'
 import {productTemplateValue,type Quote,type Product,type Price} from '../lib/inquiryWorkspace'
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
-import {offerSpecification as specification} from '../lib/customerOffer'
+import {formatCfrUnitPrice,offerSpecification as specification} from '../lib/customerOffer'
 import {procurementQuoteCategories} from '../lib/quoteClassification'
 const props=defineProps<{caseId:string;sourceVersion?:string;mode:'compare'|'offer'}>()
 const emit=defineEmits<{navigate:[tab:string]}>()

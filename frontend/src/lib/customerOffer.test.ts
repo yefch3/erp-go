@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {applyProcurementFormulaInput,emptyCalculation,offerProductTotal,offerSpecification,procurementBasis,type OfferLine} from './customerOffer'
+import {applyProcurementFormulaInput,emptyCalculation,formatCfrUnitPrice,offerProductTotal,offerSpecification,procurementBasis,type OfferLine} from './customerOffer'
 import type {Quote} from './inquiryWorkspace'
 import {blankProduct} from './inquiryWorkspace'
 const line=():OfferLine=>({...blankProduct(),id:'p1',product:'钢管',specification:'60 mm',quantity:'3',unit:'MT',unitPrice:'12.35',calculatedPrice:'',factoryQuoteId:'',calculation:emptyCalculation(),customFields:{grade:'Q235'},amount:''})
@@ -25,5 +25,12 @@ describe('customer offer editing',()=>{
  })
  it('includes template specification values in summaries and searches',()=>{
   expect(offerSpecification(line())).toBe('60 mm · Q235')
+ })
+ it('shows CFR unit prices with exactly two decimal places without changing the stored value',()=>{
+  const stored='49.4118'
+  expect(formatCfrUnitPrice(stored)).toBe('49.41')
+  expect(formatCfrUnitPrice('110.0000')).toBe('110.00')
+  expect(formatCfrUnitPrice('')).toBe('')
+  expect(stored).toBe('49.4118')
  })
 })
