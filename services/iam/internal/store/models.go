@@ -56,6 +56,7 @@ type Employee struct {
 	Remark          string
 	Version         int32
 	AvatarKey       string
+	CountryCode     string
 }
 
 type EmployeeInvitation struct {

@@ -13,6 +13,8 @@ export interface EmployeeFormInput {
   hireDate: string
   leaveDate: string
   remark: string
+  // 负责哪个国家的市场，两位国家码；空 = 没填。员工邮箱监管的树按它分组。
+  countryCode: string
   version: number
   username: string
   initialPassword: string
@@ -73,6 +75,7 @@ function employeeSharedBody(form: EmployeeFormInput) {
     englishName: form.englishName,
     hireDate: form.hireDate,
     remark: form.remark,
+    countryCode: form.countryCode,
   }
 }
 

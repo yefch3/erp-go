@@ -681,6 +681,8 @@ export default {
     companyMailboxDialogTitle: 'Set up company mailbox',
     companyMailboxDialogHint: 'This is a company-owned mailbox assigned to this employee. You enter the password here and the system signs in once to verify it. The employee cannot change the password or unbind it, and it opens automatically when they sign in to the ERP. If one is already assigned, it is released (its mail history is kept).',
     edit: 'Edit employee', englishName: 'English name', hireDate: 'Hire date', leaveDate: 'Leave date', remark: 'Remark',
+    country: 'Country',
+    countryHint: "Which country's market this person works. Mailbox supervision groups people under it; leave it empty and they go under \"No country\"",
     allManagers: 'All managers', allRoles: 'All roles', employmentStatus: 'Employment', accountStatus: 'Account',
     accountUnopened: 'No account', changes: 'Change history', operator: 'Operator', noChanges: 'No changes yet', updated: 'Employee updated',
     noMailbox: '(no mailbox)',

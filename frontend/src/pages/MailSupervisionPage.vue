@@ -172,7 +172,6 @@ interface SupervisedEmployee {
   code: string
   mailboxes: number
   unread: number
-  customers: number
 }
 interface SupervisedCountry {
   countryCode: string

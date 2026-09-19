@@ -261,7 +261,7 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 const createEmployee = `-- name: CreateEmployee :one
 INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8::bigint, 0))
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key, country_code
 `
 
 type CreateEmployeeParams struct {
@@ -307,6 +307,7 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 		&i.Remark,
 		&i.Version,
 		&i.AvatarKey,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -672,7 +673,7 @@ func (q *Queries) GetDepartment(ctx context.Context, arg GetDepartmentParams) (D
 }
 
 const getEmployee = `-- name: GetEmployee :one
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, e.country_code, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
 FROM employees e
 JOIN departments d ON d.id = e.department_id
 LEFT JOIN employees m ON m.id = e.manager_id
@@ -704,6 +705,7 @@ type GetEmployeeRow struct {
 	Remark          string
 	Version         int32
 	AvatarKey       string
+	CountryCode     string
 	DepartmentName  string
 	ManagerName     string
 }
@@ -731,6 +733,7 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 		&i.Remark,
 		&i.Version,
 		&i.AvatarKey,
+		&i.CountryCode,
 		&i.DepartmentName,
 		&i.ManagerName,
 	)
@@ -1388,7 +1391,7 @@ func (q *Queries) ListEmployeeRoleIDs(ctx context.Context, arg ListEmployeeRoleI
 }
 
 const listEmployees = `-- name: ListEmployees :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, e.country_code, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id
@@ -1428,6 +1431,7 @@ type ListEmployeesRow struct {
 	Remark          string
 	Version         int32
 	AvatarKey       string
+	CountryCode     string
 	DepartmentName  string
 	ManagerName     string
 	Total           int64
@@ -1468,6 +1472,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.Remark,
 			&i.Version,
 			&i.AvatarKey,
+			&i.CountryCode,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
@@ -1483,7 +1488,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 }
 
 const listEmployeesFiltered = `-- name: ListEmployeesFiltered :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, e.country_code, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
@@ -1556,6 +1561,7 @@ type ListEmployeesFilteredRow struct {
 	Remark          string
 	Version         int32
 	AvatarKey       string
+	CountryCode     string
 	DepartmentName  string
 	ManagerName     string
 	Total           int64
@@ -1600,6 +1606,7 @@ func (q *Queries) ListEmployeesFiltered(ctx context.Context, arg ListEmployeesFi
 			&i.Remark,
 			&i.Version,
 			&i.AvatarKey,
+			&i.CountryCode,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
@@ -2344,7 +2351,7 @@ const setEmployeeAvatar = `-- name: SetEmployeeAvatar :one
 UPDATE employees
 SET avatar_key = $1::text, updated_at = now()
 WHERE tenant_id = $2::bigint AND id = $3::bigint
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key, country_code
 `
 
 type SetEmployeeAvatarParams struct {
@@ -2384,6 +2391,7 @@ func (q *Queries) SetEmployeeAvatar(ctx context.Context, arg SetEmployeeAvatarPa
 		&i.Remark,
 		&i.Version,
 		&i.AvatarKey,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -2582,12 +2590,13 @@ SET code = $1::text,
     hire_date = $9::date,
     leave_date = $10::date,
     remark = $11::text,
+    country_code = $12::text,
     version = version + 1,
     updated_at = now()
-WHERE tenant_id = $12::bigint
-  AND id = $13::bigint
-  AND version = $14::int
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+WHERE tenant_id = $13::bigint
+  AND id = $14::bigint
+  AND version = $15::int
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key, country_code
 `
 
 type UpdateEmployeeDetailsParams struct {
@@ -2602,6 +2611,7 @@ type UpdateEmployeeDetailsParams struct {
 	HireDate        pgtype.Date
 	LeaveDate       pgtype.Date
 	Remark          string
+	CountryCode     string
 	TenantID        int64
 	ID              int64
 	ExpectedVersion int32
@@ -2620,6 +2630,7 @@ func (q *Queries) UpdateEmployeeDetails(ctx context.Context, arg UpdateEmployeeD
 		arg.HireDate,
 		arg.LeaveDate,
 		arg.Remark,
+		arg.CountryCode,
 		arg.TenantID,
 		arg.ID,
 		arg.ExpectedVersion,
@@ -2645,6 +2656,7 @@ func (q *Queries) UpdateEmployeeDetails(ctx context.Context, arg UpdateEmployeeD
 		&i.Remark,
 		&i.Version,
 		&i.AvatarKey,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -2658,7 +2670,7 @@ SET english_name = $1::text,
 WHERE tenant_id = $3::bigint
   AND id = $4::bigint
   AND version = $5::int
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key, country_code
 `
 
 type UpdateOwnProfileParams struct {
@@ -2703,6 +2715,7 @@ func (q *Queries) UpdateOwnProfile(ctx context.Context, arg UpdateOwnProfilePara
 		&i.Remark,
 		&i.Version,
 		&i.AvatarKey,
+		&i.CountryCode,
 	)
 	return i, err
 }

@@ -220,6 +220,20 @@
           <el-form-item>
             <template #label>
               <span class="field-label">
+                {{ t('employees.country') }}
+                <el-tooltip :content="t('employees.countryHint')" placement="top">
+                  <span class="field-help" tabindex="0">?</span>
+                </el-tooltip>
+              </span>
+            </template>
+            <!-- 名字是浏览器按读者的语言给的（lib/countries），存的只是两位码。 -->
+            <el-select v-model="form.countryCode" clearable filterable style="width: 100%">
+              <el-option v-for="c in countryOptions(locale)" :key="c.code" :value="c.code" :label="c.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <span class="field-label">
                 {{ t('employees.manager') }}
                 <el-tooltip :content="t('employees.managerHint')" placement="top">
                   <span class="field-help" tabindex="0">?</span>
@@ -384,6 +398,7 @@ import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 import { createEmployeeBody, updateEmployeeBody, validateEmployeeForm } from '../lib/iamForms'
 import PasswordRules from '../components/PasswordRules.vue'
+import { countryOptions } from '../lib/countries'
 
 interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
@@ -410,16 +425,17 @@ interface Employee {
   hireDate: string
   leaveDate: string
   remark: string
+  countryCode: string
   version: number
 }
 
 const EMPTY_FORM = {
   code: '', name: '', departmentId: '', position: '', email: '', phone: '',
   username: '', initialPassword: '', managerId: '',
-  englishName: '', hireDate: '', leaveDate: '', remark: '', version: 0, id: '',
+  englishName: '', hireDate: '', leaveDate: '', remark: '', countryCode: '', version: 0, id: '',
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()

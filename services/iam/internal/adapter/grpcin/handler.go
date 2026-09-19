@@ -115,7 +115,8 @@ func (h *Handler) CreateEmployee(ctx context.Context, req *iamv1.CreateEmployeeR
 		Position: req.GetPosition(), Email: req.GetEmail(), Phone: req.GetPhone(),
 		Username: req.GetUsername(), InitialPassword: req.GetInitialPassword(),
 		ManagerID: req.GetManagerId(), EnglishName: req.GetEnglishName(),
-		HireDate: req.GetHireDate(), Remark: req.GetRemark(), OperatorID: op.EmployeeID,
+		HireDate: req.GetHireDate(), Remark: req.GetRemark(), CountryCode: req.GetCountryCode(),
+		OperatorID: op.EmployeeID,
 	})
 	if err != nil {
 		return nil, err
@@ -180,7 +181,7 @@ func (h *Handler) UpdateEmployee(ctx context.Context, req *iamv1.UpdateEmployeeR
 		DepartmentID: req.GetDepartmentId(), Position: req.GetPosition(), Email: req.GetEmail(),
 		Phone: req.GetPhone(), ManagerID: req.GetManagerId(), HireDate: req.GetHireDate(),
 		LeaveDate: req.GetLeaveDate(), Remark: req.GetRemark(), ExpectedVersion: req.GetExpectedVersion(),
-		OperatorID: op.EmployeeID,
+		CountryCode: req.GetCountryCode(), OperatorID: op.EmployeeID,
 	})
 	if err != nil {
 		return nil, err
@@ -414,7 +415,7 @@ func employeeRowToProto(e store.GetEmployeeRow, roleIDs []int64) *iamv1.Employee
 		RoleIds: roleIDs, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 		EmailVerified: e.EmailVerifiedAt.Valid,
 		EnglishName:   e.EnglishName, HireDate: dateText(e.HireDate), LeaveDate: dateText(e.LeaveDate),
-		Remark: e.Remark, Version: e.Version, AvatarKey: e.AvatarKey,
+		Remark: e.Remark, Version: e.Version, AvatarKey: e.AvatarKey, CountryCode: e.CountryCode,
 	}
 }
 
@@ -426,7 +427,7 @@ func employeeListRowToProto(e store.ListEmployeesFilteredRow, username string, i
 		Username: username, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 		EmailVerified: e.EmailVerifiedAt.Valid, InviteExpiresAt: inviteExpires,
 		HireDate: dateText(e.HireDate), LeaveDate: dateText(e.LeaveDate), Remark: e.Remark, Version: e.Version,
-		AvatarKey: e.AvatarKey,
+		AvatarKey: e.AvatarKey, CountryCode: e.CountryCode,
 	}
 }
 

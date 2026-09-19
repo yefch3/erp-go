@@ -13,7 +13,7 @@ const employee: EmployeeFormInput = {
   id: '9', code: 'E009', name: '测试员工', departmentId: '2', position: '会计',
   email: 'staff@example.com', phone: '+1 (212) 555-0100', managerId: '1',
   englishName: 'Tester', hireDate: '2026-08-01', leaveDate: '2026-08-31', remark: '备注',
-  version: 3, username: 'tester', initialPassword: 'tRuck-plum-92',
+  countryCode: 'US', version: 3, username: 'tester', initialPassword: 'tRuck-plum-92',
 }
 
 const department: DepartmentFormInput = {
@@ -25,14 +25,14 @@ describe('IAM 请求字段契约', () => {
   it('新增员工不携带编辑专用字段', () => {
     expect(Object.keys(createEmployeeBody(employee))).toEqual([
       'code', 'name', 'departmentId', 'position', 'email', 'phone', 'managerId',
-      'englishName', 'hireDate', 'remark', 'username', 'initialPassword',
+      'englishName', 'hireDate', 'remark', 'countryCode', 'username', 'initialPassword',
     ])
   })
 
   it('编辑员工不携带账号创建字段', () => {
     expect(Object.keys(updateEmployeeBody(employee))).toEqual([
       'code', 'name', 'departmentId', 'position', 'email', 'phone', 'managerId',
-      'englishName', 'hireDate', 'remark', 'leaveDate', 'expectedVersion',
+      'englishName', 'hireDate', 'remark', 'countryCode', 'leaveDate', 'expectedVersion',
     ])
   })
 
