@@ -9,7 +9,6 @@ import (
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
-	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
@@ -22,9 +21,8 @@ import (
 // 一次都会往登记簿写一行，写不进去就不给读——规矩写在
 // services/mail/internal/app/supervision.go 的文件头。
 //
-// 树在这一层拼，不在邮件服务里拼：国家长在客户身上（主数据），姓名长在员工
-// 身上（IAM），而信箱在邮件服务。三份数据分属三个服务，谁都不该为了画一棵树
-// 去读另一个服务的库。
+// 树在这一层拼，不在邮件服务里拼：姓名和国家长在员工身上（IAM），而信箱在
+// 邮件服务。两份数据分属两个服务，谁都不该为了画一棵树去读另一个服务的库。
 
 // supervisionEmployee 是树上的一个人。
 type supervisionEmployee struct {
@@ -33,7 +31,6 @@ type supervisionEmployee struct {
 	Code       string `json:"code"`
 	Mailboxes  int64  `json:"mailboxes"`
 	Unread     int64  `json:"unread"`
-	Customers  int64  `json:"customers"`
 }
 
 // supervisionCountry 是树上的一个国家。
@@ -65,11 +62,11 @@ func (s *Server) mailSupervisionTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 名字和工号从 IAM 来。**不用客户负责人表里那份姓名快照**：那是签约那天
-	// 存下的，改过名的人会在树上顶着旧名字，而树是给人看的。
-	// 存名字和工号两个字段，不存整个 proto 消息：proto 结构体里有锁，
-	// 按值拷进 map 会被 go vet 拦下，而这里要的本来就只有这两样。
-	type who struct{ name, code string }
+	// 名字、工号和国家都从 IAM 来。**不用客户负责人表里那份姓名快照**：那是
+	// 签约那天存下的，改过名的人会在树上顶着旧名字，而树是给人看的。
+	// 存三个字段，不存整个 proto 消息：proto 结构体里有锁，按值拷进 map 会被
+	// go vet 拦下，而这里要的本来就只有这三样。
+	type who struct{ name, code, country string }
 	names := map[int64]who{}
 	emps, err := s.Directory.ListEmployees(ctx, &iamv1.ListEmployeesRequest{
 		Page: &commonv1.PageRequest{Page: 1, PageSize: 500},
@@ -79,46 +76,25 @@ func (s *Server) mailSupervisionTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, e := range emps.GetEmployees() {
-		names[e.GetId()] = who{name: e.GetName(), code: e.GetCode()}
-	}
-	for id, row := range withMailbox {
-		if e, ok := names[id]; ok {
-			row.Name, row.Code = e.name, e.code
-		}
+		names[e.GetId()] = who{name: e.GetName(), code: e.GetCode(), country: e.GetCountryCode()}
 	}
 
-	// 国家从主数据来：一个人负责哪些国家的客户，他就在哪些国家下。
-	// 这一步失败不该让整棵树打不开——退回「未分配国家」一档，人照样点得进去。
+	// 国家是员工资料上的一条（2026-09-18 起）：他挂在哪个国家，就在哪个国家
+	// 下面，一个人只出现一次。原来按他名下客户所在国家推算——一个人名下客户
+	// 分布在几个国家就出现几次，没分到客户的人只能进「未分配」；老板要的是
+	// 员工自己的国家。没填的进「未分配国家」：他照样有信箱，照样可能是要看的
+	// 那个。
 	byCountry := map[string]map[int64]bool{}
-	assigned := map[int64]bool{}
-	if owners, err := s.Customers.ListOwnerCountries(ctx, &mdv1.ListOwnerCountriesRequest{}); err == nil {
-		for _, o := range owners.GetRows() {
-			row, ok := withMailbox[o.GetEmployeeId()]
-			if !ok {
-				continue // 没信箱的负责人不上树
-			}
-			code := o.GetCountryCode()
-			if code == "" {
-				continue // 客户没填国家，算作没分配
-			}
-			if byCountry[code] == nil {
-				byCountry[code] = map[int64]bool{}
-			}
-			byCountry[code][o.GetEmployeeId()] = true
-			assigned[o.GetEmployeeId()] = true
-			row.Customers += o.GetCustomerCount()
+	for id, row := range withMailbox {
+		code := ""
+		if e, ok := names[id]; ok {
+			row.Name, row.Code = e.name, e.code
+			code = e.country
 		}
-	} else {
-		s.Log.Warn("could not read owner countries; showing everyone as unassigned", "err", err)
-	}
-	// 一个客户都没分到的人也要有位置：他照样有信箱，照样可能是要看的那个。
-	for id := range withMailbox {
-		if !assigned[id] {
-			if byCountry[""] == nil {
-				byCountry[""] = map[int64]bool{}
-			}
-			byCountry[""][id] = true
+		if byCountry[code] == nil {
+			byCountry[code] = map[int64]bool{}
 		}
+		byCountry[code][id] = true
 	}
 
 	out := make([]supervisionCountry, 0, len(byCountry))

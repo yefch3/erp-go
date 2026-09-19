@@ -241,6 +241,7 @@ SET code = sqlc.arg(code)::text,
     hire_date = sqlc.narg(hire_date)::date,
     leave_date = sqlc.narg(leave_date)::date,
     remark = sqlc.arg(remark)::text,
+    country_code = sqlc.arg(country_code)::text,
     version = version + 1,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint

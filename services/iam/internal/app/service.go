@@ -380,11 +380,28 @@ func (s *Service) UpdateDepartment(ctx context.Context, tenantID int64, in Updat
 
 type CreateEmployeeInput struct {
 	Code, Name, EnglishName, Position, Email, Phone, HireDate, Remark string
-	DepartmentID                                                      int64
-	Username, InitialPassword                                         string // optional login account
+	// 负责哪个国家的市场，两位国家码；空 = 没填。员工邮箱监管的树按它分组。
+	CountryCode               string
+	DepartmentID              int64
+	Username, InitialPassword string // optional login account
 	// Who they report to; approval nodes can target it.
 	ManagerID  int64
 	OperatorID int64
+}
+
+// normalizeCountryCode 把国家码收拾成两个大写字母，或者空。
+//
+// 别的形状一律拒：这一列是拿来分组的，"us"、"US "、"USA" 混在一起就是三个
+// 组，而树上看不出它们本该是一个。
+func normalizeCountryCode(raw string) (string, error) {
+	code := strings.ToUpper(strings.TrimSpace(raw))
+	if code == "" {
+		return "", nil
+	}
+	if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+		return "", apierr.Invalid("IAM_EMP_COUNTRY_INVALID", "国家请从列表里选")
+	}
+	return code, nil
 }
 
 func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateEmployeeInput) (store.GetEmployeeRow, error) {
@@ -396,6 +413,11 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 	if err := validateEmployeeEmail(in.Email); err != nil {
 		return store.GetEmployeeRow{}, err
 	}
+	country, err := normalizeCountryCode(in.CountryCode)
+	if err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	in.CountryCode = country
 	if err := validateEmployeePhone(in.Phone); err != nil {
 		return store.GetEmployeeRow{}, err
 	}
@@ -445,13 +467,14 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")
 		}
 		id = emp.ID
-		if in.EnglishName != "" || in.HireDate != "" || in.Remark != "" {
+		if in.EnglishName != "" || in.HireDate != "" || in.Remark != "" || in.CountryCode != "" {
 			emp, err = q.UpdateEmployeeDetails(ctx, store.UpdateEmployeeDetailsParams{
 				Code: in.Code, Name: in.Name, EnglishName: strings.TrimSpace(in.EnglishName),
 				DepartmentID: in.DepartmentID, Position: strings.TrimSpace(in.Position),
 				Email: in.Email, Phone: strings.TrimSpace(in.Phone), ManagerID: in.ManagerID,
 				HireDate: hireDate, LeaveDate: pgtype.Date{}, Remark: strings.TrimSpace(in.Remark),
-				TenantID: tenantID, ID: emp.ID, ExpectedVersion: emp.Version,
+				CountryCode: in.CountryCode,
+				TenantID:    tenantID, ID: emp.ID, ExpectedVersion: emp.Version,
 			})
 			if err != nil {
 				return err
@@ -545,6 +568,8 @@ type UpdateEmployeeInput struct {
 	ExpectedVersion                                 int32
 	Code, Name, EnglishName, Position, Email, Phone string
 	HireDate, LeaveDate, Remark                     string
+	// 见 CreateEmployeeInput.CountryCode。
+	CountryCode string
 }
 
 // UpdateEmployee 保存员工资料并在服务端校验部门、主管循环、日期和并发版本。
@@ -557,6 +582,11 @@ func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateE
 	if err := validateEmployeeEmail(in.Email); err != nil {
 		return store.GetEmployeeRow{}, err
 	}
+	country, err := normalizeCountryCode(in.CountryCode)
+	if err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	in.CountryCode = country
 	if err := validateEmployeePhone(in.Phone); err != nil {
 		return store.GetEmployeeRow{}, err
 	}
@@ -608,7 +638,8 @@ func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateE
 			DepartmentID: in.DepartmentID, Position: strings.TrimSpace(in.Position),
 			Email: in.Email, Phone: strings.TrimSpace(in.Phone), ManagerID: in.ManagerID,
 			HireDate: hireDate, LeaveDate: leaveDate, Remark: strings.TrimSpace(in.Remark),
-			TenantID: tenantID, ID: in.ID, ExpectedVersion: in.ExpectedVersion,
+			CountryCode: in.CountryCode,
+			TenantID:    tenantID, ID: in.ID, ExpectedVersion: in.ExpectedVersion,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

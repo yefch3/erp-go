@@ -690,6 +690,8 @@ export default {
     companyMailboxDialogTitle: 'Configurar buzón de la empresa',
     companyMailboxDialogHint: 'Es un buzón de la empresa asignado a este empleado. La contraseña la introduces tú aquí y el sistema inicia sesión una vez para verificarla. El empleado no puede cambiarla ni desvincular el buzón, y se abre solo al entrar en el ERP. Si ya tenía uno, se retira (su historial de correo se conserva).',
     edit: 'Editar empleado', englishName: 'Nombre inglés', hireDate: 'Fecha de alta', leaveDate: 'Fecha de baja', remark: 'Notas',
+    country: 'País',
+    countryHint: 'De qué país es el mercado que atiende esta persona. La supervisión de buzones agrupa por él; si queda vacío, va bajo «Sin país»',
     allManagers: 'Todos los responsables', allRoles: 'Todos los roles', employmentStatus: 'Situación laboral', accountStatus: 'Cuenta',
     accountUnopened: 'Sin cuenta', changes: 'Historial de cambios', operator: 'Operador', noChanges: 'Sin cambios', updated: 'Empleado actualizado',
     noMailbox: '(sin buzón)',

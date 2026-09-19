@@ -682,6 +682,8 @@ export default {
     companyMailboxDialogTitle: '配置主邮箱',
     companyMailboxDialogHint: '这是公司的邮箱，分给这位员工使用。密码由你在这里输入，系统会先真的登录一次验证；员工不能改密码、不能解绑，登录 ERP 后自动开着。已经有一个的话，旧的会被收回（历史邮件保留）。',
     edit: '编辑员工', englishName: '英文名', hireDate: '入职日期', leaveDate: '离职日期', remark: '备注',
+    country: '国家',
+    countryHint: '这个员工负责哪个国家的市场。员工邮箱监管里按它把人分到各国下面；不填的进「未分配国家」',
     allManagers: '全部直属上级', allRoles: '全部角色', employmentStatus: '在职状态', accountStatus: '账号状态',
     accountUnopened: '无账号', changes: '变更记录', operator: '操作人', noChanges: '暂无变更记录', updated: '员工资料已更新',
     noMailbox: '（无邮箱）',

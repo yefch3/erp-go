@@ -419,6 +419,9 @@ message Employee {
   // the storage endpoint moves. What the object is called belongs to the
   // record; where it is served from belongs to the deployment.
   string avatar_key = 21;
+  // Which country's market this person works. ISO 3166-1 alpha-2, upper
+  // case, empty when not set. The mailbox supervision tree groups by it.
+  string country_code = 22;
 }
 
 // MyProfile is what an employee is shown about themselves.
@@ -561,6 +564,8 @@ message CreateEmployeeRequest {
   string english_name = 10;
   string hire_date = 11;
   string remark = 12;
+  // See Employee.country_code.
+  string country_code = 13;
 }
 
 message CreateEmployeeResponse {
@@ -604,6 +609,8 @@ message UpdateEmployeeRequest {
   string leave_date = 11;
   string remark = 12;
   int32 expected_version = 13;
+  // See Employee.country_code.
+  string country_code = 14;
 }
 
 message UpdateEmployeeResponse {
