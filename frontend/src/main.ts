@@ -7,6 +7,7 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import { router } from './router'
 import { i18n, bootLocale } from './i18n'
+import { installStaleBundleRecovery } from './lib/staleBundle'
 import { useAuthStore } from './stores/auth'
 
 const pinia = createPinia()
@@ -31,6 +32,9 @@ void bootLocale().then(async () => {
       // temporarily unavailable. Focus and interval refreshes retry later.
     }
   }
+  // 上线后还开着的旧标签页点新页面会拿不到文件；认出来就整页重载一次。
+  // 装在挂载之前，第一次跳转就在保护之下。见 lib/staleBundle.ts。
+  installStaleBundleRecovery(router)
   createApp(App).use(pinia).use(router).use(i18n).mount('#app')
   void auth.refreshProfile().catch(() => {})
 })
