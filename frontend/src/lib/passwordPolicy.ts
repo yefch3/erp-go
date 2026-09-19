@@ -186,3 +186,28 @@ export function passwordRules(password: string, context: readonly (string | unde
     { key: 'notIdentity', ok: borrowed === '', detail: borrowed || undefined },
   ]
 }
+
+/** 清单上一条的样子：还没开始查（○）、过了（✓）、没过（✕）。 */
+export type RuleState = 'idle' | 'ok' | 'bad'
+
+export interface RuleView {
+  key: PasswordRule['key']
+  state: RuleState
+  /** 没过时的补充，比如密码里撞上的是哪个词。 */
+  detail?: string
+}
+
+/**
+ * 界面上那份清单，连同每条该画什么记号。
+ *
+ * 一个字都没打时四条全是 idle——不打勾也不打叉。检查从打第一个字才开始：
+ * 空字符串确实「不是常见密码」，但在人还没写之前就给它打勾，看着像系统在
+ * 夸一个不存在的密码（2026-09-18 老板看了第一版说的）。
+ */
+export function ruleStates(password: string, context: readonly (string | undefined)[] = []): RuleView[] {
+  return passwordRules(password, context).map((r) => ({
+    key: r.key,
+    state: password === '' ? 'idle' : r.ok ? 'ok' : 'bad',
+    detail: password === '' ? undefined : r.detail,
+  }))
+}
