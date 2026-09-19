@@ -823,6 +823,7 @@ export default {
     enabledCount: '{n} habilitados', notEnabled: 'No habilitado', moduleDisabled: 'Este rol no puede usar este módulo',
     modulePreviewMore: '{preview} y {n} más', configureModule: 'Configurar módulo', viewModule: 'Ver detalles',
     modulePermissionHint: 'Selecciona las acciones que este rol puede realizar en este módulo.', selectAll: 'Habilitar todo', clearAll: 'Quitar todo', done: 'Listo',
+    permissionDependencyHint: 'Al guardar se añade automáticamente el acceso de lectura necesario para llegar a cada acción.',
     noScopeNeeded: 'Los alcances aparecen aquí después de habilitar un módulo de negocio.',
     superAdminFixed: 'Los superadministradores siempre tienen todos los permisos y alcances de datos empresariales. Otros empleados solo reciben este acceso si tienen este rol asignado.',
     dataScope: 'Alcance de datos',

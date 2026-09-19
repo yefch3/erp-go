@@ -119,3 +119,53 @@ func TestSetRoleDataScopePersistsAndAudits(t *testing.T) {
 		t.Fatalf("写入 ROLE 类型的变更日志失败: %v", err)
 	}
 }
+
+func TestGrantRolePermissionsAddsRequiredPageAccess(t *testing.T) {
+	pool, ctx := loginTestPool(t)
+	tenantID := seedCompany(t, ctx, pool, "权限依赖公司", "permission-deps@example.com", "pw-for-test-only")
+	svc := loginService(pool)
+
+	var roleID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO roles (tenant_id, code, name) VALUES ($1, 'RECEIVER', '收货测试') RETURNING id`,
+		tenantID).Scan(&roleID); err != nil {
+		t.Fatalf("播种角色: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, stmt := range []string{
+			`DELETE FROM role_permissions WHERE tenant_id = $1`,
+			`DELETE FROM directory_change_logs WHERE tenant_id = $1`,
+			`DELETE FROM roles WHERE tenant_id = $1`,
+		} {
+			if _, err := pool.Exec(ctx, stmt, tenantID); err != nil {
+				t.Errorf("清理 %q: %v", stmt, err)
+			}
+		}
+	})
+
+	if err := svc.GrantRolePermissions(ctx, tenantID, roleID, []string{"procurement:receipt:write"}); err != nil {
+		t.Fatalf("保存收货权限: %v", err)
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT p.code
+		FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+		WHERE rp.tenant_id = $1 AND rp.role_id = $2
+		ORDER BY p.code`, tenantID, roleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := map[string]bool{}
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			t.Fatal(err)
+		}
+		got[code] = true
+	}
+	for _, want := range []string{"procurement:receipt:write", "procurement:order:read"} {
+		if !got[want] {
+			t.Errorf("saved role misses %s: %v", want, got)
+		}
+	}
+}

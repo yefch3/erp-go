@@ -814,6 +814,7 @@ export default {
     enabledCount: '{n} enabled', notEnabled: 'Not enabled', moduleDisabled: 'This role cannot use this module',
     modulePreviewMore: '{preview}, plus {n} more', configureModule: 'Configure module', viewModule: 'View details',
     modulePermissionHint: 'Select the actions this role may perform in this module.', selectAll: 'Enable all', clearAll: 'Clear all', done: 'Done',
+    permissionDependencyHint: 'Saving automatically adds the read access required to reach an enabled action.',
     noScopeNeeded: 'Data scopes appear here after a business module is enabled.',
     superAdminFixed: 'Super administrators always have every feature permission and all business-data scopes. Other employees receive this access only when this role is actually assigned to them.',
     dataScope: 'Data scope',

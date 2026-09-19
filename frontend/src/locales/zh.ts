@@ -815,6 +815,7 @@ export default {
     enabledCount: '已启用 {n} 项', notEnabled: '未启用', moduleDisabled: '此角色不能使用该模块',
     modulePreviewMore: '{preview}，另有 {n} 项', configureModule: '配置此模块', viewModule: '查看详情',
     modulePermissionHint: '勾选这个角色在该模块中可以执行的操作。', selectAll: '全部启用', clearAll: '全部取消', done: '完成',
+    permissionDependencyHint: '保存时，系统会自动补齐进入页面所需的查看权限。',
     noScopeNeeded: '启用业务模块后，这里会显示对应的数据范围。',
     superAdminFixed: '超级管理员固定拥有全部功能权限和全部业务数据范围，不能删减。其他员工只有实际分配了该角色才拥有这些权限。',
     dataScope: '数据范围',

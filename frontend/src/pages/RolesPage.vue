@@ -128,7 +128,10 @@
 
     <el-dialog v-model="permissionDialogOpen" :title="activePermissionModuleLabel" width="620px">
       <div class="permission-dialog-head">
-        <span>{{ t('roles.modulePermissionHint') }}</span>
+        <div>
+          <span>{{ t('roles.modulePermissionHint') }}</span>
+          <small>{{ t('roles.permissionDependencyHint') }}</small>
+        </div>
         <div v-if="canEditSelected">
           <el-button link type="primary" @click="selectAllActiveModule">{{ t('roles.selectAll') }}</el-button>
           <el-button link @click="clearActiveModule">{{ t('roles.clearAll') }}</el-button>
@@ -566,6 +569,11 @@ onMounted(async () => {
   margin-bottom: 12px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.permission-dialog-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--el-color-info);
 }
 .dialog-permission-list {
   display: grid;
