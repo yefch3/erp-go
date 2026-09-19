@@ -80,10 +80,10 @@
            <div class="customer-specification-meta"><span>{{t('inquiryWorkspace.offer.candidates',{count:specGroup.rows.length})}}</span></div>
           </div>
           <el-table :data="specGroup.rows" class="customer-supplier-table" table-layout="fixed">
-           <el-table-column :label="t('inquiryWorkspace.offer.selectedSupplier')" min-width="160" show-overflow-tooltip><template #default="{row}"><strong>{{row.quote.body.company||'—'}}</strong></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.calculatedCustomerPrice')" min-width="170" align="right"><template #default="{row}"><strong class="money customer-price">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} <span>/ {{row.product.unit}}</span></strong></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.customerQuotePrice')" min-width="260"><template #default="{row}"><el-input v-model="negotiationFor(row).proposedPrice" class="customer-price-input" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.source')" width="104" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.viewSource')}}</el-button></template></el-table-column>
+           <el-table-column :label="t('inquiryWorkspace.offer.selectedSupplier')" min-width="240" show-overflow-tooltip><template #default="{row}"><strong>{{row.quote.body.company||'—'}}</strong></template></el-table-column>
+           <el-table-column :label="t('inquiryWorkspace.offer.calculatedCustomerPrice')" min-width="200" align="center"><template #default="{row}"><strong class="money customer-price">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} <span>/ {{row.product.unit}}</span></strong></template></el-table-column>
+           <el-table-column :label="t('inquiryWorkspace.offer.customerQuotePrice')" min-width="300" align="center"><template #default="{row}"><el-input v-model="negotiationFor(row).proposedPrice" class="customer-price-input" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></template></el-table-column>
+           <el-table-column :label="t('inquiryWorkspace.offer.source')" min-width="140" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.viewSource')}}</el-button></template></el-table-column>
           </el-table>
          </section>
         </div>
