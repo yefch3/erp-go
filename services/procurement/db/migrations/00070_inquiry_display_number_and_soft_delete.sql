@@ -37,6 +37,7 @@ CREATE UNIQUE INDEX sourcing_cases_display_inquiry_no_unique
 -- Every insertion path (manual entry, upload and mailbox intake) receives the
 -- same number.  The advisory transaction lock serializes allocation per
 -- tenant/day, while the unique index is the final database guarantee.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assign_sourcing_case_display_inquiry_no()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -64,6 +65,7 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER sourcing_cases_assign_display_inquiry_no
 BEFORE INSERT ON sourcing_cases
