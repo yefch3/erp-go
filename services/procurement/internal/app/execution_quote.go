@@ -16,6 +16,9 @@ type ExecutionSupplierQuote struct {
 	SupplierCode, SupplierName, Currency, UnitPrice string
 	ExpectedDate, PaymentTerms, ValidUntil, Remark  string
 	CreatedByName, CreatedAt, UpdatedAt             string
+	Selected                                        bool
+	SelectedByID                                    int64
+	SelectedByName, SelectedAt                      string
 }
 
 type SaveExecutionSupplierQuoteInput struct {
@@ -26,7 +29,7 @@ type SaveExecutionSupplierQuoteInput struct {
 func (s *Service) ListExecutionSupplierQuotes(ctx context.Context, tenantID, requirementID int64) ([]ExecutionSupplierQuote, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price::text,
 		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,
-		created_at::text,updated_at::text FROM purchase_execution_supplier_quotes
+		created_at::text,updated_at::text,selected,selected_by_id,selected_by_name,coalesce(selected_at::text,'') FROM purchase_execution_supplier_quotes
 		WHERE tenant_id=$1 AND requirement_id=$2 ORDER BY updated_at DESC,id DESC`, tenantID, requirementID)
 	if err != nil {
 		return nil, err
@@ -36,12 +39,51 @@ func (s *Service) ListExecutionSupplierQuotes(ctx context.Context, tenantID, req
 	for rows.Next() {
 		var q ExecutionSupplierQuote
 		if err := rows.Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice,
-			&q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt); err != nil {
+			&q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt,
+			&q.Selected, &q.SelectedByID, &q.SelectedByName, &q.SelectedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, q)
 	}
 	return out, rows.Err()
+}
+
+func (s *Service) SelectExecutionSupplierQuote(ctx context.Context, tenantID, requirementID, quoteID int64, op Operator) (ExecutionSupplierQuote, error) {
+	if requirementID == 0 || quoteID == 0 {
+		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_SELECTION_REQUIRED", "请选择最终工厂报价")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM purchase_requirements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, requirementID).Scan(&status); err == pgx.ErrNoRows {
+		return ExecutionSupplierQuote{}, apierr.NotFound("REQUIREMENT_NOT_FOUND", "采购需求不存在")
+	} else if err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if status != "WAITING_REQUOTE" {
+		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能再选择实单报价")
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3)`, tenantID, requirementID, quoteID).Scan(&exists); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if !exists {
+		return ExecutionSupplierQuote{}, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=FALSE,selected_by_id=0,selected_by_name='',selected_at=NULL WHERE tenant_id=$1 AND requirement_id=$2 AND selected`, tenantID, requirementID); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=TRUE,selected_by_id=$4,selected_by_name=$5,selected_at=now(),updated_at=now() WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3`, tenantID, requirementID, quoteID, op.ID, op.Name); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	s.nudge(ctx, tenantID)
+	return s.executionSupplierQuoteByID(ctx, tenantID, quoteID)
 }
 
 func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64, in SaveExecutionSupplierQuoteInput, op Operator) (ExecutionSupplierQuote, error) {
@@ -120,8 +162,9 @@ func (s *Service) DeleteExecutionSupplierQuote(ctx context.Context, tenantID, re
 func (s *Service) executionSupplierQuoteByID(ctx context.Context, tenantID, id int64) (ExecutionSupplierQuote, error) {
 	var q ExecutionSupplierQuote
 	err := s.pool.QueryRow(ctx, `SELECT id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price::text,
-		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,created_at::text,updated_at::text
-		FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice, &q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt)
+		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,created_at::text,updated_at::text,
+		selected,selected_by_id,selected_by_name,coalesce(selected_at::text,'')
+		FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice, &q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt, &q.Selected, &q.SelectedByID, &q.SelectedByName, &q.SelectedAt)
 	if err == pgx.ErrNoRows {
 		return q, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
 	}

@@ -119,6 +119,16 @@ func (s *Server) saveExecutionSupplierQuote(w http.ResponseWriter, r *http.Reque
 	s.writeProto(w, resp)
 }
 
+func (s *Server) selectExecutionSupplierQuote(w http.ResponseWriter, r *http.Request) {
+	quoteID, _ := strconv.ParseInt(chi.URLParam(r, "quoteId"), 10, 64)
+	resp, err := s.Requirements.SelectExecutionSupplierQuote(r.Context(), &prv1.SelectExecutionSupplierQuoteRequest{RequirementId: idFromPath(r), Id: quoteID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) deleteExecutionSupplierQuote(w http.ResponseWriter, r *http.Request) {
 	quoteID, _ := strconv.ParseInt(chi.URLParam(r, "quoteId"), 10, 64)
 	resp, err := s.Requirements.DeleteExecutionSupplierQuote(r.Context(), &prv1.DeleteExecutionSupplierQuoteRequest{RequirementId: idFromPath(r), Id: quoteID})

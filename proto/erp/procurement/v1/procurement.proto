@@ -411,6 +411,7 @@ service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
   rpc ListExecutionSupplierQuotes(ListExecutionSupplierQuotesRequest) returns (ListExecutionSupplierQuotesResponse);
   rpc SaveExecutionSupplierQuote(SaveExecutionSupplierQuoteRequest) returns (SaveExecutionSupplierQuoteResponse);
+  rpc SelectExecutionSupplierQuote(SelectExecutionSupplierQuoteRequest) returns (SelectExecutionSupplierQuoteResponse);
   rpc DeleteExecutionSupplierQuote(DeleteExecutionSupplierQuoteRequest) returns (DeleteExecutionSupplierQuoteResponse);
   // Export a versioned, identity-bearing workbook for selected open requirements.
   rpc ExportPurchaseTemplate(ExportPurchaseTemplateRequest) returns (ExportPurchaseTemplateResponse);
@@ -2925,6 +2926,10 @@ message ExecutionSupplierQuote {
   string created_by_name = 13;
   string created_at = 14;
   string updated_at = 15;
+  bool selected = 16;
+  int64 selected_by_id = 17;
+  string selected_by_name = 18;
+  string selected_at = 19;
 }
 message ListExecutionSupplierQuotesRequest { int64 requirement_id = 1; }
 message ListExecutionSupplierQuotesResponse { repeated ExecutionSupplierQuote quotes = 1; }
@@ -2940,6 +2945,8 @@ message SaveExecutionSupplierQuoteRequest {
   string remark = 9;
 }
 message SaveExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
+message SelectExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
+message SelectExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
 message DeleteExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
 message DeleteExecutionSupplierQuoteResponse {}
 

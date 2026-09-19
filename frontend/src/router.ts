@@ -110,6 +110,7 @@ export const router = createRouter({
         { path: 'procurement/sourcing/pending', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'procurement/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'procurement/sourcing/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'requirements/:batchKey', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'sourcing-cases', redirect: (to) => ({ path: '/procurement/sourcing', query: to.query }) },
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },

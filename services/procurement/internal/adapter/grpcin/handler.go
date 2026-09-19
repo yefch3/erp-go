@@ -71,7 +71,7 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 }
 
 func executionQuoteProto(q app.ExecutionSupplierQuote) *prv1.ExecutionSupplierQuote {
-	return &prv1.ExecutionSupplierQuote{Id: q.ID, RequirementId: q.RequirementID, SupplierId: q.SupplierID, SupplierCode: q.SupplierCode, SupplierName: q.SupplierName, Currency: q.Currency, UnitPrice: q.UnitPrice, ExpectedDate: q.ExpectedDate, PaymentTerms: q.PaymentTerms, ValidUntil: q.ValidUntil, Remark: q.Remark, CreatedById: q.CreatedByID, CreatedByName: q.CreatedByName, CreatedAt: q.CreatedAt, UpdatedAt: q.UpdatedAt}
+	return &prv1.ExecutionSupplierQuote{Id: q.ID, RequirementId: q.RequirementID, SupplierId: q.SupplierID, SupplierCode: q.SupplierCode, SupplierName: q.SupplierName, Currency: q.Currency, UnitPrice: q.UnitPrice, ExpectedDate: q.ExpectedDate, PaymentTerms: q.PaymentTerms, ValidUntil: q.ValidUntil, Remark: q.Remark, CreatedById: q.CreatedByID, CreatedByName: q.CreatedByName, CreatedAt: q.CreatedAt, UpdatedAt: q.UpdatedAt, Selected: q.Selected, SelectedById: q.SelectedByID, SelectedByName: q.SelectedByName, SelectedAt: q.SelectedAt}
 }
 
 func (h *Handler) ListExecutionSupplierQuotes(ctx context.Context, req *prv1.ListExecutionSupplierQuotesRequest) (*prv1.ListExecutionSupplierQuotesResponse, error) {
@@ -99,6 +99,18 @@ func (h *Handler) SaveExecutionSupplierQuote(ctx context.Context, req *prv1.Save
 		return nil, err
 	}
 	return &prv1.SaveExecutionSupplierQuoteResponse{Quote: executionQuoteProto(q)}, nil
+}
+
+func (h *Handler) SelectExecutionSupplierQuote(ctx context.Context, req *prv1.SelectExecutionSupplierQuoteRequest) (*prv1.SelectExecutionSupplierQuoteResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	q, err := h.svc.SelectExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SelectExecutionSupplierQuoteResponse{Quote: executionQuoteProto(q)}, nil
 }
 
 func (h *Handler) DeleteExecutionSupplierQuote(ctx context.Context, req *prv1.DeleteExecutionSupplierQuoteRequest) (*prv1.DeleteExecutionSupplierQuoteResponse, error) {

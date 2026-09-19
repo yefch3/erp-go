@@ -37,13 +37,13 @@ func TestExecutionRequoteReusesEditableSupplierDraft(t *testing.T) {
 		tenantID, contractID).Scan(&requirementID); err != nil {
 		t.Fatal(err)
 	}
-	for _, quote := range []struct {
+	for index, quote := range []struct {
 		price string
 		id    *int64
 	}{{"50", &firstQuoteID}, {"55", &revisedQuoteID}} {
 		if err = pool.QueryRow(ctx, `INSERT INTO purchase_execution_supplier_quotes
-			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price)
-			VALUES ($1,$2,6,'S6','测试工厂','CNY',$3) RETURNING id`, tenantID, requirementID, quote.price).Scan(quote.id); err != nil {
+			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price,selected)
+			VALUES ($1,$2,6,'S6','测试工厂','CNY',$3,$4) RETURNING id`, tenantID, requirementID, quote.price, index == 0).Scan(quote.id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -65,6 +65,9 @@ func TestExecutionRequoteReusesEditableSupplierDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET status='REJECTED',reject_reason='重新询价' WHERE id=$1`, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.SelectExecutionSupplierQuote(ctx, tenantID, requirementID, revisedQuoteID, op); err != nil {
 		t.Fatal(err)
 	}
 

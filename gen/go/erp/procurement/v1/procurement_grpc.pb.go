@@ -2382,6 +2382,7 @@ const (
 	RequirementService_ListRequirements_FullMethodName             = "/erp.procurement.v1.RequirementService/ListRequirements"
 	RequirementService_ListExecutionSupplierQuotes_FullMethodName  = "/erp.procurement.v1.RequirementService/ListExecutionSupplierQuotes"
 	RequirementService_SaveExecutionSupplierQuote_FullMethodName   = "/erp.procurement.v1.RequirementService/SaveExecutionSupplierQuote"
+	RequirementService_SelectExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/SelectExecutionSupplierQuote"
 	RequirementService_DeleteExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/DeleteExecutionSupplierQuote"
 	RequirementService_ExportPurchaseTemplate_FullMethodName       = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
 	RequirementService_CreateRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CreateRequirement"
@@ -2405,6 +2406,7 @@ type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error)
 	SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error)
+	SelectExecutionSupplierQuote(ctx context.Context, in *SelectExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error)
@@ -2455,6 +2457,16 @@ func (c *requirementServiceClient) SaveExecutionSupplierQuote(ctx context.Contex
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SaveExecutionSupplierQuoteResponse)
 	err := c.cc.Invoke(ctx, RequirementService_SaveExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) SelectExecutionSupplierQuote(ctx context.Context, in *SelectExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SelectExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SelectExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_SelectExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2554,6 +2566,7 @@ type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error)
 	SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error)
+	SelectExecutionSupplierQuote(context.Context, *SelectExecutionSupplierQuoteRequest) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error)
@@ -2588,6 +2601,9 @@ func (UnimplementedRequirementServiceServer) ListExecutionSupplierQuotes(context
 }
 func (UnimplementedRequirementServiceServer) SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveExecutionSupplierQuote not implemented")
+}
+func (UnimplementedRequirementServiceServer) SelectExecutionSupplierQuote(context.Context, *SelectExecutionSupplierQuoteRequest) (*SelectExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SelectExecutionSupplierQuote not implemented")
 }
 func (UnimplementedRequirementServiceServer) DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteExecutionSupplierQuote not implemented")
@@ -2684,6 +2700,24 @@ func _RequirementService_SaveExecutionSupplierQuote_Handler(srv interface{}, ctx
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).SaveExecutionSupplierQuote(ctx, req.(*SaveExecutionSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_SelectExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelectExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).SelectExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_SelectExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).SelectExecutionSupplierQuote(ctx, req.(*SelectExecutionSupplierQuoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2850,6 +2884,10 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SaveExecutionSupplierQuote",
 			Handler:    _RequirementService_SaveExecutionSupplierQuote_Handler,
+		},
+		{
+			MethodName: "SelectExecutionSupplierQuote",
+			Handler:    _RequirementService_SelectExecutionSupplierQuote_Handler,
 		},
 		{
 			MethodName: "DeleteExecutionSupplierQuote",

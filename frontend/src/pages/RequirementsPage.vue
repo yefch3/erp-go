@@ -1,7 +1,8 @@
 <template>
   <div class="requirements-page">
-    <WorkflowPageHeader :title="t('requirements.title')" :description="t('requirements.readOnlyHint')" />
+    <WorkflowPageHeader title="实单询价" description="财务放行后的采购任务，需要重新取得工厂报价并选定最终方案。" />
 
+    <template v-if="!detailBatchKey">
     <el-card shadow="never">
       <div class="filters">
         <el-input
@@ -15,50 +16,26 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" :expand-row-keys="expandedBatchKeys" v-loading="loading">
-        <el-table-column type="expand" width="1" class-name="hidden-native-expander">
-          <template #default="{ row }">
-            <div class="batch-product-hierarchy">
-              <section v-for="group in row.productGroups" :key="group.key" class="batch-product-group">
-                <button type="button" class="batch-product-heading" :aria-expanded="isBatchProductExpanded(row.key, group.key)" @click="toggleBatchProduct(row.key, group.key)">
-                  <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(row.key, group.key) }]"><ArrowDown /></el-icon>
-                  <strong>{{ group.name }}</strong>
-                  <span>{{ group.lines.length }} 种规格</span>
-                  <span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
-                </button>
-                <div v-show="isBatchProductExpanded(row.key, group.key)" class="batch-specifications">
-                  <div class="batch-specification-header"><span>产品编码</span><span>尺寸规格</span><span>数量 / 单位</span><span>售前报价参考</span><span>供应商</span></div>
-                  <article v-for="line in group.lines" :key="line.id" class="batch-specification-row">
-                    <span class="batch-specification-code">{{ line.productCode || '—' }}</span>
-                    <span class="batch-specification-size" :title="line.spec || line.productCode || '—'">{{ line.spec || line.productCode || '—' }}</span>
-                    <strong>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</strong>
-                    <span>{{ displaySourcePrice(line) }}</span>
-                    <span :title="line.supplierName || '—'">{{ line.supplierName || '—' }}</span>
-                  </article>
-                </div>
-              </section>
-            </div>
-          </template>
-        </el-table-column>
+      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading">
         <el-table-column :label="t('requirements.purchaseBatch')" min-width="170">
           <template #default="{ row }">
             <div class="batch-no">{{ row.label }}</div>
             <div class="sub">{{ row.customerName || '—' }}</div>
-            <div class="sub batch-mobile-source">{{ row.sourceLabels || '—' }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="t('requirements.batchProducts')" min-width="230">
           <template #default="{ row }">
-            <button type="button" class="batch-product-summary batch-product-summary--stacked" :aria-expanded="isBatchExpanded(row.key)" @click.stop="toggleBatch(row)">
-              <span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span><el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchExpanded(row.key) }]"><ArrowDown /></el-icon></span>
-              <small class="batch-product-summary__mobile-meta">{{ row.requiredDate || '未填写到货日期' }} · {{ t('requirements.supplierCount', { n: row.supplierCount }) }}</small>
-            </button>
+            <div class="batch-product-summary batch-product-summary--stacked">
+              <span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span>
+              <small>{{ row.productGroups.length }} 种产品 · {{ row.lines.length }} 种规格</small>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.batchSuppliers')" min-width="230">
+        <el-table-column label="实单报价进度" min-width="160">
           <template #default="{ row }">
-            <div class="supplier-summary">{{ row.supplierNames || '—' }}</div>
-            <div class="sub">{{ t('requirements.supplierCount', { n: row.supplierCount }) }}</div>
+            <span>进入详情查看进度</span>
+            <div class="sub">录入、比较并选定工厂报价</div>
+            <el-tag class="batch-mobile-stage" type="warning" effect="plain" size="small">待实单询价</el-tag>
           </template>
         </el-table-column>
         <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.requiredDate')" width="130">
@@ -67,14 +44,12 @@
         <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.fromContract')" min-width="180">
           <template #default="{ row }">{{ row.sourceLabels || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" min-width="105">
-          <template #default="{ row }">{{ row.statusLabels || '—' }}</template>
+        <el-table-column class-name="batch-status-column" label-class-name="batch-status-column" :label="t('common.status')" min-width="105">
+          <template #default><el-tag type="warning" effect="plain">待实单询价</el-tag></template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" min-width="125" align="center">
           <template #default="{ row }">
-            <el-button :type="row.waitingRequote ? 'primary' : 'success'" plain @click="openBatchReview(row)">
-              {{ row.waitingRequote ? t('requirements.reviewPendingRequote') : t('requirements.prepareOrder') }}
-            </el-button>
+            <el-button type="primary" plain @click="openBatchReview(row)">进入详情</el-button>
           </template>
         </el-table-column>
         <template #empty>{{ t('requirements.empty') }}</template>
@@ -89,91 +64,80 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </el-card>
+    </template>
 
-    <el-dialog v-model="batchReviewOpen" :title="activeBatch?.waitingRequote ? `实单询价 · ${activeBatch?.label}` : activeBatch?.label" width="min(1180px, 96vw)" destroy-on-close>
-      <template v-if="activeBatch?.waitingRequote">
+    <template v-else-if="activeBatch">
+      <div class="detail-back"><el-button @click="backToBatchList">← 返回实单询价</el-button></div>
+      <section class="inquiry-detail-hero">
+        <div><span>采购批次</span><h2>{{ activeBatch.label }}</h2><p>{{ activeBatch.customerName || '未填写客户' }} · 来源合同 {{ activeBatch.sourceLabels || '—' }}</p></div>
+        <el-tag type="warning" effect="light" size="large">{{ detailStageLabel }}</el-tag>
+      </section>
+      <el-card shadow="never" class="inquiry-detail-card">
         <div class="requote-summary">
           <div><span>客户</span><strong>{{ activeBatch.customerName || '—' }}</strong></div>
-          <div><span>产品</span><strong>{{ activeBatch.lines.length }} 项</strong></div>
+          <div><span>采购内容</span><strong>{{ activeBatch.productGroups.length }} 种产品 / {{ activeBatch.lines.length }} 种规格</strong></div>
           <div><span>要求到货</span><strong>{{ activeBatch.requiredDate || '—' }}</strong></div>
-          <div><span>最终报价</span><strong>{{ selectedCount }}/{{ activeBatch.lines.length }}</strong></div>
+          <div><span>处理进度</span><strong>已报价 {{ quotedLineCount }}/{{ activeBatch.lines.length }} · 已选 {{ selectedCount }}/{{ activeBatch.lines.length }}</strong></div>
         </div>
-        <el-alert type="info" :closable="false" show-icon class="alert" title="按工厂整份录入实单报价，再为每项产品选定一家。全部选定后生成采购订单草稿，草稿检查无误后再提交审批。" />
-        <div v-if="canOrder" class="batch-quote-toolbar">
-          <div><strong>工厂报价</strong><span>一次填写一家工厂对本批产品的报价</span></div>
-          <el-button type="primary" @click="openBatchQuoteEditor">＋ 添加一份工厂报价</el-button>
-        </div>
-        <section v-for="line in activeBatch.lines" :key="line.id" class="requote-product">
-          <header class="requote-product-head">
-            <div><strong>{{ line.productName }}</strong><span>{{ [line.productCode, line.spec].filter(Boolean).join(' · ') || '未填写规格' }}</span></div>
-            <div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ trimQty(line.availableQty) }} {{ line.uomCode }}</b></div>
-          </header>
-          <div class="presale-reference">
-            <span>售前参考</span>
-            <strong>{{ line.supplierName || '未带入工厂' }}</strong>
-            <span>{{ displaySourcePrice(line) }}</span>
-            <span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span>
-          </div>
-          <el-radio-group v-model="selectedQuote[line.id]" class="quote-options">
-            <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id)}]">
-              <el-radio :value="Number(quote.id)">
-                <span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ trimQty(quote.unitPrice) }}/{{ line.uomCode }}</b></span>
-              </el-radio>
-              <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
-              <div class="quote-actions"><el-button link type="primary" @click.stop="openQuoteEditor(line, quote)">编辑</el-button><el-button link type="danger" @click.stop="removeQuote(line, quote)">删除</el-button></div>
+        <el-tabs v-model="activeInquiryTab" class="inquiry-tabs">
+          <el-tab-pane :label="`工厂报价 ${quotedLineCount}/${activeBatch.lines.length}`" name="quotes">
+            <el-alert type="info" :closable="false" show-icon class="alert" title="售前报价只用于对照。本页录入合同执行阶段重新确认的工厂报价。" />
+            <div v-if="canOrder" class="batch-quote-toolbar">
+              <div><strong>工厂报价</strong><span>一次填写一家工厂对本批产品的报价，不供应的规格可留空</span></div>
+              <el-button type="primary" @click="openBatchQuoteEditor">＋ 添加一份工厂报价</el-button>
             </div>
-          </el-radio-group>
-          <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>暂无实单报价</span><small>点击上方“添加一份工厂报价”统一录入</small></div>
-        </section>
-      </template>
-      <template v-else>
-      <el-alert type="info" :closable="false" show-icon class="alert">{{ t('requirements.batchApprovalHint') }}</el-alert>
-      <section v-for="group in activeSupplierGroups" :key="group.key" class="supplier-group">
-        <div class="supplier-group-head">
-          <div>
-            <strong>{{ group.supplierName || '—' }}</strong>
-            <span v-if="group.factoryNames" class="sub supplier-factories">{{ group.factoryNames }}</span>
-          </div>
-          <el-button
-            v-if="canApprovalRequest && !activeBatch?.waitingRequote"
-            type="success"
-            plain
-            @click="goOrder(group.lines)"
-          >
-            {{ t('requirements.submitSupplierApproval', { n: group.lines.length }) }}
-          </el-button>
-        </div>
-        <el-table :data="group.lines" size="small" border>
-          <el-table-column :label="t('requirements.product')" min-width="260">
-            <template #default="{ row }">
-              <div class="prod">{{ row.productName }}</div>
-              <div class="sub">{{ row.spec || row.productCode || '—' }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('requirements.qty')" width="140" align="right">
-            <template #default="{ row }"><span class="qty">{{ trimQty(row.availableQty) }}</span> {{ row.uomCode }}</template>
-          </el-table-column>
-          <el-table-column :label="t('requirements.quoteSummary')" min-width="230">
-            <template #default="{ row }">
-              {{ row.sourceCurrency }} {{ row.sourceUnitPrice }} / {{ row.uomCode }}
-              <div class="sub">MOQ {{ row.moq || '—' }} · {{ row.leadTime || '—' }}</div>
-              <div class="sub">{{ row.sourcePaymentTerms || '—' }} · {{ row.sourceIncoterm || '—' }} · {{ row.sourceValidUntil || '—' }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('requirements.requiredDate')" width="130">
-            <template #default="{ row }">{{ row.requiredDate || t('requirements.setOnApproval') }}</template>
-          </el-table-column>
-          <el-table-column :label="t('common.actions')" width="90">
-            <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ common('detail') }}</el-button></template>
-          </el-table-column>
-        </el-table>
-      </section>
-      </template>
-      <template #footer>
-        <el-button @click="batchReviewOpen = false">{{ common('close') }}</el-button>
-        <el-button v-if="activeBatch?.waitingRequote && canOrder" type="primary" :disabled="selectedCount !== activeBatch.lines.length" :loading="saving" @click="createDraftOrders">生成采购订单草稿</el-button>
-      </template>
-    </el-dialog>
+            <section v-for="group in activeBatch.productGroups" :key="group.key" class="detail-product-group">
+              <button type="button" class="batch-product-heading" @click="toggleBatchProduct(activeBatch.key, group.key)">
+                <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(activeBatch.key, group.key) }]"><ArrowDown /></el-icon>
+                <strong>{{ group.name }}</strong><span>{{ group.lines.length }} 种规格</span><span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
+              </button>
+              <div v-show="isBatchProductExpanded(activeBatch.key, group.key)" class="detail-spec-list">
+                <article v-for="line in group.lines" :key="line.id" class="requote-product">
+                  <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>{{ line.productCode || '未填写产品编码' }}</span></div><div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></div></header>
+                  <div class="presale-reference"><span>售前参考</span><strong>{{ line.supplierName || '无售前供应商' }}</strong><span>{{ displaySourcePrice(line) }}</span><span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span></div>
+                  <div class="quote-options">
+                    <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:quote.selected}]">
+                      <span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span>
+                      <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
+                      <div v-if="canOrder" class="quote-actions"><el-button link type="primary" @click="openQuoteEditor(line, quote)">编辑</el-button><el-button link type="danger" @click="removeQuote(line, quote)">删除</el-button></div>
+                    </div>
+                  </div>
+                  <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>暂无实单报价</span><small>使用上方按钮统一录入工厂报价</small></div>
+                </article>
+              </div>
+            </section>
+            <div class="tab-next"><el-button type="primary" plain @click="activeInquiryTab='selection'">下一步：选定报价与生成订单</el-button></div>
+          </el-tab-pane>
+          <el-tab-pane :label="`选定报价与生成订单 ${selectedCount}/${activeBatch.lines.length}`" name="selection">
+            <el-alert type="info" :closable="false" show-icon class="alert" title="为每个规格选定一家工厂。系统会保存选择，并按供应商、币种、交货日期和付款条件拆分采购订单草稿。" />
+            <section v-for="group in activeBatch.productGroups" :key="group.key" class="detail-product-group">
+              <button type="button" class="batch-product-heading" @click="toggleBatchProduct(activeBatch.key, group.key)">
+                <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(activeBatch.key, group.key) }]"><ArrowDown /></el-icon>
+                <strong>{{ group.name }}</strong><span>{{ selectedLinesIn(group) }}/{{ group.lines.length }} 个规格已选</span><span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
+              </button>
+              <div v-show="isBatchProductExpanded(activeBatch.key, group.key)" class="detail-spec-list">
+                <article v-for="line in group.lines" :key="line.id" class="requote-product">
+                  <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>售前参考：{{ line.supplierName || '无' }} · {{ displaySourcePrice(line) }}</span></div><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></header>
+                  <el-radio-group v-model="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder" @change="(value:number|string|boolean|undefined) => persistQuoteSelection(line, Number(value))">
+                    <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id)}]">
+                      <el-radio :value="Number(quote.id)"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
+                      <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span><span v-if="quote.selectedByName">由 {{ quote.selectedByName }} 选定</span></div>
+                    </div>
+                  </el-radio-group>
+                  <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>尚无报价可选</span><small>请返回“工厂报价”录入</small></div>
+                </article>
+              </div>
+            </section>
+            <section v-if="selectedCount === activeBatch.lines.length" class="draft-preview">
+              <div><strong>采购订单草稿预览</strong><span>预计生成 {{ draftOrderGroups.length }} 张草稿，提交审批请在采购订单草稿页面完成。</span></div>
+              <div v-for="group in draftOrderGroups" :key="group.key" class="draft-preview-row"><strong>{{ group.supplierName }}</strong><span>{{ group.currency }} · {{ group.expectedDate || '未填写交期' }} · {{ group.lines.length }} 个规格</span></div>
+              <el-button v-if="canOrder" type="primary" :loading="saving" @click="createDraftOrders">生成 {{ draftOrderGroups.length }} 张采购订单草稿</el-button>
+            </section>
+          </el-tab-pane>
+        </el-tabs>
+      </el-card>
+    </template>
+    <el-card v-else shadow="never" v-loading="loading"><el-empty description="未找到这条实单询价"><el-button @click="backToBatchList">返回列表</el-button></el-empty></el-card>
 
     <el-dialog v-model="batchQuoteOpen" title="添加一份工厂报价" width="780px" class="batch-quote-dialog" destroy-on-close>
       <div class="batch-dialog-intro"><strong>整份录入，减少重复操作</strong><span>公共条件只填一次，下面分别填写这家工厂愿意供应的产品单价。</span></div>
@@ -357,11 +321,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { del, get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
@@ -434,28 +398,24 @@ interface PurchaseProductGroup {
   lines: Requirement[]
 }
 
-interface SupplierGroup {
-  key: string
-  supplierName: string
-  factoryNames: string
-  lines: Requirement[]
-}
-
 interface Supplier { id: string; code: string; name: string }
 interface ExecutionQuote {
   id: string; requirementId: string; supplierId: string; supplierCode: string; supplierName: string
   currency: string; unitPrice: string; expectedDate: string; paymentTerms: string; validUntil: string
   remark: string; createdByName: string; createdAt: string; updatedAt: string
+  selected: boolean; selectedById: string; selectedByName: string; selectedAt: string
 }
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const canWrite = auth.can('procurement:requirement:write')
 // Raising a requirement and committing money to a supplier are separate
 // permissions, so the ordering actions are gated separately too.
 const canOrder = auth.can('procurement:order:write')
-const canApprovalRequest = canOrder && auth.can('procurement:order:submit')
+const detailBatchKey = computed(() => String(route.params.batchKey ?? ''))
+const activeInquiryTab = ref<'quotes'|'selection'>('quotes')
 
 const rows = ref<Requirement[]>([])
 // 同一客户报价是一批采购业务；批次内仍保留产品行，便于按供应商拆分审批。
@@ -476,7 +436,7 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
     const productGroups = groupBatchProducts(lines)
     return {
       key,
-      label: lines[0]?.quotationNo || lines[0]?.contractNo || t('requirements.manualBatch'),
+      label: lines[0]?.contractNo || lines[0]?.quotationNo || t('requirements.manualBatch'),
       customerName: lines[0]?.customerName ?? '',
       supplierNames: supplierNames.join('、'),
       supplierCount: supplierNames.length,
@@ -489,7 +449,6 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
     }
   })
 })
-const expandedBatchKeys = ref<string[]>([])
 const expandedBatchProductKeys = ref<string[]>([])
 function groupBatchProducts(lines: Requirement[]): PurchaseProductGroup[] {
   const groups = new Map<string, PurchaseProductGroup>()
@@ -507,10 +466,6 @@ function batchProductSummary(batch: PurchaseBatch): string {
   if (!first) return '—'
   const specificationCount = new Set(first.lines.map((line) => `${line.productCode}\u0000${line.spec}\u0000${line.uomCode}`)).size
   return `${first.name} · ${specificationCount} 种规格`
-}
-function isBatchExpanded(key: string): boolean { return expandedBatchKeys.value.includes(key) }
-function toggleBatch(batch: PurchaseBatch) {
-  expandedBatchKeys.value = isBatchExpanded(batch.key) ? expandedBatchKeys.value.filter((key) => key !== batch.key) : [...expandedBatchKeys.value, batch.key]
 }
 function batchProductStateKey(batchKey: string, productKey: string): string { return `${batchKey}:${productKey}` }
 function isBatchProductExpanded(batchKey: string, productKey: string): boolean { return expandedBatchProductKeys.value.includes(batchProductStateKey(batchKey, productKey)) }
@@ -547,7 +502,6 @@ const createForm = reactive({ productId: 0, qty: '', requiredDate: '', remark: '
 const closing = ref<Requirement | null>(null)
 const closeReason = ref('')
 const selected = ref<Requirement[]>([])
-const batchReviewOpen = ref(false)
 const activeBatch = ref<PurchaseBatch | null>(null)
 const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
@@ -564,18 +518,25 @@ const quoteEditing = ref<ExecutionQuote | null>(null)
 const savingQuote = ref(false)
 const quoteForm = reactive<{supplierId:number|string|null;currency:string;unitPrice:string;expectedDate:string;paymentTerms:string;validUntil:string;remark:string}>({ supplierId: null, currency: 'CNY', unitPrice: '', expectedDate: '', paymentTerms: '', validUntil: '', remark: '' })
 const selectedCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => Number(selectedQuote[line.id]) > 0).length)
-const activeSupplierGroups = computed<SupplierGroup[]>(() => {
-  const grouped = new Map<string, Requirement[]>()
+const quotedLineCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => quotesFor(line.id).length > 0).length)
+const detailStageLabel = computed(() => {
+  const total = activeBatch.value?.lines.length ?? 0
+  if (!total || quotedLineCount.value === 0) return '待实单询价'
+  if (quotedLineCount.value < total) return '询价中'
+  if (selectedCount.value < total) return '待选择最终报价'
+  return '可生成采购草稿'
+})
+const draftOrderGroups = computed(() => {
+  const grouped = new Map<string, {key:string;supplierName:string;currency:string;expectedDate:string;paymentTerms:string;lines:{line:Requirement;quote:ExecutionQuote}[]}>()
   for (const line of activeBatch.value?.lines ?? []) {
-    const key = line.supplierId || line.supplierName || `UNASSIGNED-${line.id}`
-    grouped.set(key, [...(grouped.get(key) ?? []), line])
+    const quote = quotesFor(line.id).find((item) => Number(item.id) === Number(selectedQuote[line.id]))
+    if (!quote) continue
+    const key = [quote.supplierId, quote.currency, quote.expectedDate, quote.paymentTerms].join('|')
+    const group = grouped.get(key) ?? { key, supplierName:quote.supplierName, currency:quote.currency, expectedDate:quote.expectedDate, paymentTerms:quote.paymentTerms, lines:[] }
+    group.lines.push({ line, quote })
+    grouped.set(key, group)
   }
-  return [...grouped.entries()].map(([key, lines]) => ({
-    key,
-    supplierName: lines[0]?.supplierName ?? '',
-    factoryNames: [...new Set(lines.map((line) => line.factoryName).filter(Boolean))].join('、'),
-    lines: lines.filter(isOrderable),
-  })).filter((group) => group.lines.length > 0)
+  return [...grouped.values()]
 })
 const detailOpen = ref(false)
 const detail = ref<Requirement | null>(null)
@@ -596,14 +557,9 @@ async function load() {
     // 工厂这批只供得了 80 吨，剩下的 20 吨仍然是要买的活儿。从前这页只列
     // 「一点没买」的，一旦下了第一张单整批就从眼前消失了——等于告诉采购员
     // 这事办完了。剩下的得靠人记着，正是这类事情最容易掉的地方。
-    const pending = await Promise.all(
-      ['WAITING_REQUOTE', 'PENDING', 'PARTIALLY_ORDERED'].map((state) =>
-        get<{ requirements: Requirement[] }>(
-          '/requirements',
-          { page: page.value, page_size: pageSize, status: state, keyword: keyword.value },
-        ),
-      ),
-    )
+    const pending = await Promise.all([
+      get<{ requirements: Requirement[] }>('/requirements', { page: page.value, page_size: pageSize, status: 'WAITING_REQUOTE', keyword: keyword.value }),
+    ])
     const seen = new Set<string>()
     rows.value = pending.flatMap((result) => result.requirements ?? [])
       .filter((line) => Number(line.availableQty ?? 0) > 0)
@@ -612,6 +568,7 @@ async function load() {
         seen.add(line.id)
         return true
       })
+    await hydrateActiveBatchFromRoute()
   } finally {
     loading.value = false
   }
@@ -624,18 +581,40 @@ function reload() {
 
 async function openBatchReview(batch: PurchaseBatch) {
   activeBatch.value = batch
-  batchReviewOpen.value = true
-  if (!batch.waitingRequote) return
+  activeInquiryTab.value = 'quotes'
+  expandedBatchProductKeys.value = batch.productGroups[0] ? [batchProductStateKey(batch.key, batch.productGroups[0].key)] : []
+  await router.push({ path: `/requirements/${encodeURIComponent(batch.key)}` })
+  await loadBatchQuotes(batch)
+}
+
+async function hydrateActiveBatchFromRoute() {
+  if (!detailBatchKey.value) {
+    activeBatch.value = null
+    return
+  }
+  const batch = purchaseBatches.value.find((item) => item.key === detailBatchKey.value) ?? null
+  activeBatch.value = batch
+  if (!batch) return
+  if (!expandedBatchProductKeys.value.length && batch.productGroups[0]) expandedBatchProductKeys.value = [batchProductStateKey(batch.key, batch.productGroups[0].key)]
+  await loadBatchQuotes(batch)
+}
+
+async function loadBatchQuotes(batch: PurchaseBatch) {
   if (!suppliers.value.length) suppliers.value = (await get<{suppliers:Supplier[]}>('/suppliers', { page_size: 200, status: 'ACTIVE' })).suppliers ?? []
   await Promise.all(batch.lines.map(async (line) => {
     const result = await get<{quotes:ExecutionQuote[]}>(`/requirements/${line.id}/execution-quotes`)
     executionQuotes[line.id] = result.quotes ?? []
-    const current = Number(selectedQuote[line.id] ?? 0)
-    if (current && !executionQuotes[line.id].some((quote) => Number(quote.id) === current)) delete selectedQuote[line.id]
+    const persisted = executionQuotes[line.id].find((quote) => quote.selected)
+    if (persisted) selectedQuote[line.id] = Number(persisted.id)
+    else delete selectedQuote[line.id]
   }))
 }
 
+function backToBatchList() { router.push('/requirements') }
+
 function quotesFor(requirementId: string) { return executionQuotes[requirementId] ?? [] }
+function selectedLinesIn(group: PurchaseProductGroup) { return group.lines.filter((line) => Number(selectedQuote[line.id]) > 0).length }
+function formatMoney(value: string) { const amount = Number(value); return Number.isFinite(amount) ? amount.toFixed(2) : value || '—' }
 function displaySourcePrice(line: Requirement) {
   return Number(line.sourceUnitPrice) > 0 ? `${line.sourceCurrency || ''} ${trimQty(line.sourceUnitPrice)}/${line.uomCode}` : '未带入售前价格'
 }
@@ -681,7 +660,6 @@ async function saveBatchQuote() {
     results.forEach((result, index) => {
       const line = pricedLines[index]!
       executionQuotes[line.id] = [result.quote, ...quotesFor(line.id).filter((item) => item.id !== result.quote.id)]
-      selectedQuote[line.id] = Number(result.quote.id)
     })
     batchQuoteOpen.value = false
     ElMessage.success(`已保存这家工厂的 ${results.length} 项产品报价`)
@@ -716,10 +694,24 @@ async function saveQuote() {
     })
     const list = quotesFor(quoteLine.value.id).filter((item) => item.id !== result.quote.id)
     executionQuotes[quoteLine.value.id] = [result.quote, ...list]
-    selectedQuote[quoteLine.value.id] = Number(result.quote.id)
     quoteOpen.value = false
     ElMessage.success('实单工厂报价已保存')
   } finally { savingQuote.value = false }
+}
+
+async function persistQuoteSelection(line: Requirement, quoteID: number) {
+  if (!quoteID) return
+  const previous = quotesFor(line.id).find((quote) => quote.selected)
+  try {
+    const result = await post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes/${quoteID}/select`, {})
+    executionQuotes[line.id] = quotesFor(line.id).map((quote) => quote.id === result.quote.id ? result.quote : { ...quote, selected:false, selectedById:'0', selectedByName:'', selectedAt:'' })
+    selectedQuote[line.id] = quoteID
+    ElMessage.success(`已为“${line.productName}”保存最终报价`)
+  } catch (error) {
+    if (previous) selectedQuote[line.id] = Number(previous.id)
+    else delete selectedQuote[line.id]
+    throw error
+  }
 }
 async function removeQuote(line: Requirement, quote: ExecutionQuote) {
   await ElMessageBox.confirm(`删除「${quote.supplierName}」的这条报价？`, '删除报价', { type:'warning' })
@@ -732,25 +724,19 @@ async function removeQuote(line: Requirement, quote: ExecutionQuote) {
 async function createDraftOrders() {
   const batch = activeBatch.value
   if (!batch || selectedCount.value !== batch.lines.length) { ElMessage.warning('请先为每项产品选择最终工厂报价'); return }
-  const chosen = batch.lines.map((line) => ({ line, quote: quotesFor(line.id).find((quote) => Number(quote.id) === Number(selectedQuote[line.id]))! }))
-  const groups = new Map<string, typeof chosen>()
-  for (const item of chosen) {
-    const key = [item.quote.supplierId,item.quote.currency,item.quote.expectedDate,item.quote.paymentTerms].join('|')
-    groups.set(key,[...(groups.get(key) ?? []),item])
-  }
+  const groups = draftOrderGroups.value
   saving.value = true
   try {
-    for (const group of groups.values()) {
-      const quote = group[0]!.quote
+    for (const group of groups) {
+      const quote = group.lines[0]!.quote
       await post('/purchase-orders', {
         supplier_id:Number(quote.supplierId),currency:quote.currency,expected_date:quote.expectedDate,payable_due_date:'',
         remark:quote.paymentTerms,fulfillment_mode:'DIRECT_SHIP',delivery_location_type:'CUSTOM',delivery_address:'按外销合同约定',
         source_change_reason:'实单重新询价后选定工厂',
-        lines:group.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.unitPrice,execution_quote_id:Number(quote.id)})),
+        lines:group.lines.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.unitPrice,execution_quote_id:Number(quote.id)})),
       })
     }
-    ElMessage.success(`已生成 ${groups.size} 张采购订单草稿，请检查后提交审批`)
-    batchReviewOpen.value = false
+    ElMessage.success(`已生成 ${groups.length} 张采购订单草稿，请检查后提交审批`)
     await router.push({ path:'/purchase-orders', query:{ status:'DRAFT' } })
   } finally { saving.value = false }
 }
@@ -830,22 +816,6 @@ function canReopen(row: Requirement): boolean {
 
 function onSelect(rows: Requirement[]) {
   selected.value = rows
-}
-
-// The order itself is raised on the purchase-order page — one dialog, not two
-// that can drift apart. This carries the picked lines across so the buyer does
-// not have to find them again by product name.
-function goOrder(chosen?: Requirement[]) {
-  const picked = chosen ?? selected.value
-  const quoteRows = picked.filter((row) => row.source === 'CUSTOMER_QUOTATION')
-  if (quoteRows.length && quoteRows.some((row) => row.quotationId !== quoteRows[0].quotationId || row.supplierId !== quoteRows[0].supplierId)) {
-    ElMessage.warning('请一次只选择同一客户报价、同一供应商的明细')
-    return
-  }
-  batchReviewOpen.value = false
-  router.push({ path: '/purchase-orders', query: {
-    requirements: picked.map((r) => r.id).join(','), approval: '1',
-  } })
 }
 
 async function exportTemplate() {
@@ -959,11 +929,12 @@ const stopListening = onLive((event) => {
   if (event.type !== 'requirement.changed') return
   // Not while a dialog is open: swapping the numbers under somebody who is
   // halfway through filling in a form is worse than showing them stale ones.
-  if (createOpen.value || closeOpen.value || detailOpen.value || batchReviewOpen.value || templateImportOpen.value) return
+  if (createOpen.value || closeOpen.value || detailOpen.value || detailBatchKey.value || templateImportOpen.value) return
   load()
 })
 onUnmounted(stopListening)
 
+watch(() => route.params.batchKey, () => { hydrateActiveBatchFromRoute() })
 onMounted(load)
 </script>
 
@@ -1022,8 +993,7 @@ onMounted(load)
 .batch-products {
   line-height: 1.5;
 }
-.requirements-page :deep(.batch-hierarchy-table .hidden-native-expander .cell),
-.requirements-page :deep(.batch-hierarchy-table th:first-child .cell) {
+.requirements-page :deep(.batch-hierarchy-table .hidden-native-expander .cell) {
   display: none;
   padding: 0;
 }
@@ -1131,6 +1101,37 @@ onMounted(load)
   gap: 16px;
   margin-bottom: 12px;
 }
+.detail-back { margin-bottom: 12px; }
+.inquiry-detail-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 14px;
+  border: 1px solid #cfe4ee;
+  border-radius: 14px;
+  background: linear-gradient(110deg, #f0faff 0%, #f7fdf9 100%);
+}
+.inquiry-detail-hero span { color: #648091; font-size: 12px; }
+.inquiry-detail-hero h2 { margin: 5px 0 3px; color: #113c55; font-size: 23px; }
+.inquiry-detail-hero p { margin: 0; color: #607787; font-size: 13px; }
+.inquiry-detail-card :deep(.el-card__body) { padding: 18px 20px 24px; }
+.inquiry-tabs :deep(.el-tabs__header) { margin-bottom: 18px; }
+.inquiry-tabs :deep(.el-tabs__item) { height: 46px; padding: 0 24px; color: #527084; font-weight: 650; }
+.inquiry-tabs :deep(.el-tabs__item.is-active) { color: #0d779d; }
+.detail-product-group { overflow: hidden; margin-top: 10px; border: 1px solid #dce8ee; border-radius: 10px; background: #fff; }
+.detail-product-group .batch-product-heading { border: 0; }
+.detail-spec-list { padding: 0 12px 12px; border-top: 1px solid #e7eff3; background: #f8fbfc; }
+.detail-spec-list .requote-product { margin-top: 12px; }
+.tab-next { display: flex; justify-content: flex-end; margin-top: 18px; }
+.draft-preview { padding: 16px; margin-top: 18px; border: 1px solid #bfe1d4; border-radius: 10px; background: #f5fcf9; }
+.draft-preview > div:first-child { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.draft-preview > div:first-child strong { color: #174d45; }
+.draft-preview > div:first-child span { color: #687f7b; font-size: 13px; }
+.draft-preview-row { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(260px, 1.3fr); gap: 16px; padding: 9px 12px; border-top: 1px solid #dfeee8; color: #506b66; }
+.draft-preview-row strong { color: #204f48; }
+.draft-preview > .el-button { display: block; margin: 16px 0 0 auto; }
 .supplier-factories {
   margin-left: 10px;
 }
@@ -1186,7 +1187,9 @@ onMounted(load)
 .product-price-section { padding-bottom:12px }
 @media(max-width:1100px){.batch-product-heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.batch-specification-header,.batch-specification-row{grid-template-columns:minmax(100px,.6fr) minmax(190px,1.2fr) minmax(120px,.7fr) minmax(150px,1fr) minmax(130px,.9fr);padding-left:26px;padding-right:26px;gap:12px}}
 @media(max-width:900px){.requirements-page :deep(.batch-hierarchy-table .batch-secondary-column){display:none}.batch-product-summary__mobile-meta,.batch-mobile-source{display:block}.requirements-page :deep(.batch-hierarchy-table .el-table__body),.requirements-page :deep(.batch-hierarchy-table .el-table__header){width:100%!important}}
-@media(max-width:800px){.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.quote-actions{position:static;margin-left:24px}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
+@media(min-width:801px){.batch-mobile-stage{display:none}}
+@media(max-width:800px){.requirements-page :deep(.batch-hierarchy-table .batch-status-column){display:none}.batch-mobile-stage{display:inline-flex;margin-top:5px}}
+@media(max-width:800px){.inquiry-detail-hero{align-items:flex-start;flex-direction:column}.draft-preview>div:first-child{flex-direction:column}.draft-preview-row{grid-template-columns:1fr}.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.quote-actions{position:static;margin-left:24px}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
 .qty {
   font-variant-numeric: tabular-nums;
   font-weight: 600;

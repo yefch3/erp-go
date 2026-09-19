@@ -270,13 +270,14 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			}
 			var quoteRequirementID, quoteSupplierID int64
 			var quoteCurrency, quotePrice string
-			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,unit_price::text FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice); err == pgx.ErrNoRows {
+			var quoteSelected bool
+			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,unit_price::text,selected FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice, &quoteSelected); err == pgx.ErrNoRows {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_NOT_FOUND", "所选实单报价不存在，请刷新后重试")
 			} else if err != nil {
 				return head, err
 			}
 			quotedPrice, err := decimal.NewFromString(quotePrice)
-			if err != nil || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
+			if err != nil || !quoteSelected || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_MISMATCH", "采购订单草稿必须使用实单询价中选定的工厂、币种和单价")
 			}
 		}
