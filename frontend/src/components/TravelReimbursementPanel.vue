@@ -49,18 +49,20 @@ import {computed,onMounted,reactive,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {get,patch,post} from '../api'
 import {useAuthStore} from '../stores/auth'
+import {getActionableApproval} from '../lib/approvalAction'
 type Claim=Record<string,any>
-const auth=useAuthStore(),rows=ref<Claim[]>([]),approvalTasks=ref<Record<string,string>>({}),loading=ref(false),saving=ref(false),formOpen=ref(false),payOpen=ref(false),editing=ref<Claim|null>(null),paying=ref<Claim|null>(null),picked=ref<File[]>([]),fileCategory=ref('INVOICE')
+const auth=useAuthStore(),rows=ref<Claim[]>([]),approvalTasks=ref<Record<string,string>>({}),approvalOverrides=ref<Record<string,boolean>>({}),loading=ref(false),saving=ref(false),formOpen=ref(false),payOpen=ref(false),editing=ref<Claim|null>(null),paying=ref<Claim|null>(null),picked=ref<File[]>([]),fileCategory=ref('INVOICE')
 const myID=computed(()=>String(auth.employeeId||localStorage.getItem('employeeId')||'')),canManage=auth.can('procurement:reimbursement:manage'),currencies=['CNY','USD','EUR','GBP','JPY','HKD','CAD','AUD']
 const form=reactive({tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''}),pay=reactive({paidAt:new Date().toISOString().slice(0,10),paymentAccount:'',paymentReference:''})
 const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务负责人审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
 const fileType:Record<string,string>={INVOICE:'发票',RECEIPT:'收据',ITINERARY:'行程单',PAYMENT_PROOF:'付款凭证',OTHER:'其他'}
 const statusType=(s:string):'success'|'danger'|'warning'|'info'|undefined=>s==='PAID'?'success':s==='REJECTED'?'danger':s==='PENDING_PAYMENT'?'warning':s==='DRAFT'?'info':undefined
-async function load(){loading.value=true;try{const [claims,todos]=await Promise.all([get<{items:Claim[]}>('/travel-reimbursements'),get<{todos:{task:{id:string},instance:{bizId:string}}[]}>('/approvals/todos',{biz_type:'TRAVEL_REIMBURSEMENT',page:1,page_size:200})]);rows.value=claims.items||[];approvalTasks.value=Object.fromEntries((todos.todos||[]).map(x=>[String(x.instance.bizId),String(x.task.id)]))}finally{loading.value=false}}
+async function load(){loading.value=true;try{const claims=await get<{items:Claim[]}>('/travel-reimbursements');rows.value=claims.items||[];approvalTasks.value={};approvalOverrides.value={};const pending=rows.value.filter(row=>['PENDING_DEPARTMENT_CONFIRMATION','PENDING_FINANCE_APPROVAL'].includes(row.status));const resolved=await Promise.all(pending.map(async row=>[String(row.id),await getActionableApproval('TRAVEL_REIMBURSEMENT',row.id)] as const));for(const [id,action] of resolved){if(action){approvalTasks.value[id]=action.taskId;approvalOverrides.value[id]=action.override}}}finally{loading.value=false}}
 const taskFor=(row:Claim)=>approvalTasks.value[String(row.id)]||''
+const overrideFor=(row:Claim)=>Boolean(approvalOverrides.value[String(row.id)])
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 async function reloadUntilStatusChanges(id:string,previousStatus:string){for(let attempt=0;attempt<8;attempt++){await load();if(rows.value.find(item=>String(item.id)===String(id))?.status!==previousStatus)return;await delay(300)}}
-async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
+async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(!overrideFor(row)&&action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
 function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
 function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{tripStart:row.tripStart,tripEnd:row.tripEnd,origin:row.origin,destination:row.destination,purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
 function pickFiles(e:Event){picked.value=Array.from((e.target as HTMLInputElement).files||[])}

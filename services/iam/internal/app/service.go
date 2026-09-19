@@ -874,13 +874,30 @@ func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int
 	if role.Code == "SUPER_ADMIN" {
 		return apierr.Invalid("IAM_ROLE_SUPER_ADMIN_LOCKED", "超级管理员固定拥有全部功能权限，不能删减")
 	}
-	ids, err := s.q.GetPermissionIDsByCodes(ctx, codes)
+	permissions, err := s.q.ListPermissions(ctx)
 	if err != nil {
 		return err
 	}
-	if len(ids) != len(codes) {
+	known := make(map[string]bool, len(permissions))
+	permissionIDs := make(map[string]int64, len(permissions))
+	for _, permission := range permissions {
+		known[permission.Code] = true
+		permissionIDs[permission.Code] = permission.ID
+	}
+	for _, code := range codes {
+		if known[code] {
+			continue
+		}
 		return apierr.Invalid("IAM_PERMISSION_UNKNOWN", "存在未知的权限编码").
-			WithMeta("requested", fmt.Sprint(len(codes)), "matched", fmt.Sprint(len(ids)))
+			WithMeta("permission_code", code)
+	}
+	// Operations always carry the read/page capabilities needed to reach
+	// them.  Enforce this here, not only in the role editor, because imports,
+	// scripts and future clients use the same API.
+	codes = expandPermissionCodes(codes, known)
+	ids := make([]int64, 0, len(codes))
+	for _, code := range codes {
+		ids = append(ids, permissionIDs[code])
 	}
 	var operatorID int64
 	if len(operatorIDs) > 0 {

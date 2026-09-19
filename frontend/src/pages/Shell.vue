@@ -412,7 +412,7 @@
         </div>
       </el-header>
       <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
-        <router-view :key="`${route.path}:${pageInstanceKey}`" />
+        <router-view :key="`${route.path}:${pageInstanceKey}:${auth.permissionRevision}`" />
       </el-main>
     </el-container>
 
@@ -873,7 +873,11 @@ function pullShippingReminders() {
 
 // One stream for the whole session, opened once the user is inside the shell
 // and closed when they leave it.
-const permissionRefreshIntervalMs = 60_000
+// A newly granted permission cannot trigger a 403 because its button is still
+// hidden. Poll often enough that an administrator's change becomes visible
+// while the employee keeps this tab open; focus/visibility still refresh it
+// immediately when they return to the ERP.
+const permissionRefreshIntervalMs = 15_000
 let permissionRefreshTimer: number | undefined
 
 function refreshPermissionCache() {

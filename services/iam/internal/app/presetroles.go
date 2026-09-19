@@ -75,7 +75,9 @@ var presetRoles = []presetRole{
 		},
 		Scopes: []presetScope{
 			{"export", "ALL"}, {"mail", "SELF"},
-			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
+			// 物流负责全公司的采购收货，不是采购单上的 buyer。这里若为 SELF，
+			// 它虽然有“采购收货”按钮权限，却看不到任何待收货采购单。
+			{"procurement_order", "ALL"}, {"procurement_requirement", "SELF"},
 			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"},
 		},
 	},
@@ -98,6 +100,7 @@ var presetRoles = []presetRole{
 			"export:shipment:read",
 			"fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
+			"procurement:order:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",
 			"procurement:reimbursement:manage",
@@ -119,6 +122,7 @@ var presetRoles = []presetRole{
 			"approval:task:act", "export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read", "fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
+			"procurement:order:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write", "procurement:reimbursement:manage",
 			"shipping:document:download", "shipping:document:view", "shipping:schedule:read",
@@ -140,7 +144,9 @@ var presetRoles = []presetRole{
 			"quality:task:request",
 		},
 		Scopes: []presetScope{
-			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
+			// 采购需求是一张共享待办池，采购员需要从全公司的需求中合并下单；
+			// 采购单仍按 buyer 隔离，避免普通采购员互相修改采购单。
+			{"procurement_order", "SELF"}, {"procurement_requirement", "ALL"},
 			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
 	},
@@ -163,7 +169,9 @@ var presetRoles = []presetRole{
 			"quality:task:request",
 		},
 		Scopes: []presetScope{
-			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
+			// 采购经理需要审批团队采购单并统筹全部采购需求；SELF 会让分配给
+			// 他的审批任务存在，但进入具体单据后因看不到数据而失败。
+			{"procurement_order", "ALL"}, {"procurement_requirement", "ALL"},
 			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
 	},

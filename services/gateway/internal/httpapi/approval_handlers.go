@@ -40,6 +40,34 @@ func (s *Server) mySubmittedApprovals(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) actionableApprovalTask(w http.ResponseWriter, r *http.Request) {
+	bizID, _ := strconv.ParseInt(r.URL.Query().Get("biz_id"), 10, 64)
+	resp, err := s.Approval.ActionableTask(r.Context(), &apv1.ActionableTaskRequest{
+		BizType: r.URL.Query().Get("biz_type"), BizId: bizID,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// employeePendingApprovals is the administrator's read-only view used by
+// the employee access diagnostic.  It is intentionally a different route
+// from /approvals/todos: personal todos derive the employee from the token,
+// while this route is guarded with approval:instance:read and names the
+// employee being investigated.
+func (s *Server) employeePendingApprovals(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Approval.AdminEmployeeTodos(r.Context(), &apv1.AdminEmployeeTodosRequest{
+		EmployeeId: idFromPath(r), Page: pageFromQuery(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // actBody is the JSON shape of a decision; action is a word, not a number,
 // so the API stays readable without the proto enum.
 type actBody struct {

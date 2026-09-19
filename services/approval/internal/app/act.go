@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -65,12 +66,12 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 			action = ActionReturn
 		}
 	}
-	// Normally only the assignee may decide. Purchase orders are the one
-	// exception: a tenant's highest-privilege administrator must be able to
-	// unblock a pending purchase even when its historical task belongs to a
-	// departed or misconfigured approver. The gateway still requires the
-	// approval:task:act permission, and the event below records actorID rather
-	// than pretending the original assignee acted.
+	// Normally only the assignee may decide. A tenant's SUPER_ADMIN is the
+	// recovery boundary for every document type: they must be able to unblock
+	// a historical task assigned to somebody who left or was misconfigured.
+	// The gateway still requires approval:task:act, self-approval rules above
+	// still apply, and the event records actorID rather than pretending the
+	// original assignee acted.
 	if task.AssigneeID != actorID {
 		override, err := s.canSuperAdminOverride(ctx, inst.BizType, actorID)
 		if err != nil {
@@ -212,7 +213,7 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 }
 
 func (s *Service) canSuperAdminOverride(ctx context.Context, bizType string, actorID int64) (bool, error) {
-	if bizType != "PURCHASE_ORDER" || actorID == 0 || s.dir == nil {
+	if strings.TrimSpace(bizType) == "" || actorID == 0 || s.dir == nil {
 		return false, nil
 	}
 	members, found, err := s.dir.RoleMembersByCode(ctx, superAdminRoleCode)

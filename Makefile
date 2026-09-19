@@ -160,6 +160,10 @@ check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
 check-duplicate-routes: ## Refuse two handlers on the same method + path (chi overwrites silently)
 	sh scripts/check-duplicate-routes.sh
 
+.PHONY: check-permissions
+check-permissions: ## Keep IAM catalogue, gateway guards, frontend checks and role presets aligned
+	python3 scripts/audit-permissions.py
+
 .PHONY: audit-mail
 audit-mail: ## Check stored mail against its invariants (needs a running database)
 	sh scripts/audit-mail.sh
@@ -191,7 +195,7 @@ frontend-ci: ## Type-check and build the frontend, and run its unit tests (FRONT
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes check-compose-env check-ci-scope frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes check-permissions check-compose-env check-ci-scope frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 # ------------------------------------------------------------ CI 的范围

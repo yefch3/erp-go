@@ -133,6 +133,130 @@
             </el-dialog>
           </el-tab-pane>
 
+          <el-tab-pane v-if="canDiagnose" :label="t('employees.accessDiagnostic')" name="access">
+            <el-alert
+              :title="t('employees.accessDiagnosticHint')"
+              type="info"
+              :closable="false"
+              show-icon
+              class="diagnostic-intro"
+            />
+            <div v-loading="diagnosticLoading">
+              <template v-if="diagnostic">
+                <div class="diagnostic-summary">
+                  <div class="diagnostic-stat">
+                    <span>{{ t('employees.effectiveAccount') }}</span>
+                    <strong>{{ diagnostic.username || t('employees.noAccount') }}</strong>
+                  </div>
+                  <div class="diagnostic-stat">
+                    <span>{{ t('employees.effectiveRoles') }}</span>
+                    <strong>{{ diagnostic.roles.filter((r) => r.status === 'ACTIVE').length }}</strong>
+                  </div>
+                  <div class="diagnostic-stat">
+                    <span>{{ t('employees.effectivePermissions') }}</span>
+                    <strong>{{ diagnostic.permissionCount }}</strong>
+                  </div>
+                  <div class="diagnostic-stat">
+                    <span>{{ t('employees.pendingApprovals') }}</span>
+                    <strong>{{ canReadApprovalDiagnostics ? pendingApprovalTotal : '—' }}</strong>
+                  </div>
+                </div>
+
+                <div class="finding-list">
+                  <el-alert
+                    v-for="finding in diagnostic.findings"
+                    :key="`${finding.code}:${finding.message}`"
+                    :title="finding.message"
+                    :description="finding.action"
+                    :type="findingType(finding.severity)"
+                    :closable="false"
+                    show-icon
+                  />
+                </div>
+
+                <section class="diagnostic-section">
+                  <h3>{{ t('employees.effectiveRoles') }}</h3>
+                  <el-space wrap>
+                    <el-tag
+                      v-for="role in diagnostic.roles"
+                      :key="role.id"
+                      :type="role.status === 'ACTIVE' ? (role.code === 'SUPER_ADMIN' ? 'success' : 'info') : 'danger'"
+                      effect="plain"
+                    >
+                      {{ role.name }} · {{ role.status === 'ACTIVE' ? t('employees.roleEffective') : t('employees.roleInactive') }}
+                    </el-tag>
+                    <span v-if="!diagnostic.roles.length">—</span>
+                  </el-space>
+                </section>
+
+                <section class="diagnostic-section">
+                  <h3>{{ t('employees.effectiveScopes') }}</h3>
+                  <el-table :data="diagnostic.scopes" size="small" border>
+                    <el-table-column :label="t('employees.businessModule')" min-width="180">
+                      <template #default="{ row }">{{ scopeModuleLabel(row.module) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('employees.effectiveScope')" min-width="150">
+                      <template #default="{ row }">
+                        <el-tag :type="row.all ? 'success' : 'info'" effect="plain">{{ scopeLabel(row.scopeType) }}</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column :label="t('employees.scopeSource')" min-width="170">
+                      <template #default="{ row }">
+                        {{ row.configured ? t('employees.scopeConfigured') : t('employees.scopeDefaultSelf') }}
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+
+                <section class="diagnostic-section">
+                  <h3>{{ t('employees.effectivePermissions') }}</h3>
+                  <el-collapse>
+                    <el-collapse-item
+                      v-for="group in diagnostic.permissions"
+                      :key="group.module"
+                      :title="`${permissionModuleLabel(group.module)}（${group.codes.length}）`"
+                    >
+                      <el-space wrap>
+                        <el-tag v-for="code in group.codes" :key="code" effect="plain">{{ code }}</el-tag>
+                      </el-space>
+                    </el-collapse-item>
+                  </el-collapse>
+                </section>
+
+                <section v-if="canReadApprovalDiagnostics" class="diagnostic-section">
+                  <div class="section-heading">
+                    <h3>{{ t('employees.pendingApprovalDetails') }}</h3>
+                    <span>{{ t('employees.pendingApprovalHint') }}</span>
+                  </div>
+                  <el-table :data="pendingApprovals" size="small" border :empty-text="t('employees.noPendingApprovals')">
+                    <el-table-column :label="t('employees.document')" min-width="180">
+                      <template #default="{ row }">
+                        <strong>{{ row.instance.bizNo || `#${row.instance.bizId}` }}</strong>
+                        <div class="muted">{{ approvalBizLabel(row.instance.bizType) }}</div>
+                      </template>
+                    </el-table-column>
+                    <el-table-column :label="t('employees.approvalNode')" prop="task.nodeName" min-width="150" />
+                    <el-table-column :label="t('employees.submittedBy')" prop="instance.submitterName" min-width="120" />
+                    <el-table-column :label="t('employees.waitingSince')" min-width="150">
+                      <template #default="{ row }">{{ formatTime(row.task.createdAt) }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      v-if="diagnostic.canRecoverApprovals && canActApproval"
+                      :label="common('actions')"
+                      width="150"
+                      fixed="right"
+                    >
+                      <template #default="{ row }">
+                        <el-button link type="success" @click="recoverApproval(row, 'APPROVE')">{{ t('employees.emergencyApprove') }}</el-button>
+                        <el-button link type="warning" @click="recoverApproval(row, 'RETURN')">{{ t('employees.emergencyReturn') }}</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+              </template>
+            </div>
+          </el-tab-pane>
+
           <el-tab-pane :label="t('employees.changes')" name="changes">
             <el-timeline v-if="changes.length">
               <el-timeline-item
@@ -167,7 +291,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import MailboxCredentialsForm from '../components/MailboxCredentialsForm.vue'
@@ -179,6 +303,9 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const canWrite = computed(() => auth.can('iam:employee:write'))
+const canDiagnose = computed(() => auth.can('iam:employee:read') && auth.can('iam:role:read'))
+const canReadApprovalDiagnostics = computed(() => auth.can('approval:instance:read'))
+const canActApproval = computed(() => auth.can('approval:task:act'))
 
 interface Employee {
   id: string
@@ -212,6 +339,34 @@ interface Change {
   createdAt: string
 }
 
+interface AccessFinding {
+  code: string
+  severity: string
+  message: string
+  action?: string
+}
+
+interface AccessDiagnostic {
+  employeeId: string
+  employeeName: string
+  employeeStatus: string
+  username: string
+  managerId: string
+  managerName: string
+  superAdmin: boolean
+  canRecoverApprovals: boolean
+  roles: { id: string; code: string; name: string; status: string }[]
+  permissionCount: number
+  permissions: { module: string; codes: string[] }[]
+  scopes: { module: string; scopeType: string; configured: boolean; visibleCount: number; all: boolean }[]
+  findings: AccessFinding[]
+}
+
+interface PendingApproval {
+  task: { id: string; nodeName: string; createdAt: string }
+  instance: { id: string; bizType: string; bizId: string; bizNo: string; submitterName: string }
+}
+
 const loading = ref(false)
 const employee = ref<Employee | null>(null)
 const changes = ref<Change[]>([])
@@ -219,6 +374,10 @@ const roleNames = ref<string[]>([])
 const reports = ref<{ id: string; name: string }[]>([])
 const avatarUrl = ref('')
 const tab = ref('basic')
+const diagnostic = ref<AccessDiagnostic | null>(null)
+const diagnosticLoading = ref(false)
+const pendingApprovals = ref<PendingApproval[]>([])
+const pendingApprovalTotal = ref(0)
 const viewportWidth = ref(window.innerWidth)
 const columns = computed(() => (viewportWidth.value < 620 ? 1 : 2))
 
@@ -269,6 +428,9 @@ async function load() {
   changes.value = []
   reports.value = []
   avatarUrl.value = ''
+  diagnostic.value = null
+  pendingApprovals.value = []
+  pendingApprovalTotal.value = 0
   try {
     // 详情和变更记录一起取。角色名和下属是锦上添花，单独取并且**失败不拦**——
     // 因为一个人的资料打不开，和「他有几个下属」查不出来，严重程度差着量级。
@@ -285,6 +447,7 @@ async function load() {
     loading.value = false
   }
   void loadExtras(id)
+  if (tab.value === 'access') void loadAccessDiagnostic()
 }
 
 async function loadExtras(id: string) {
@@ -315,6 +478,98 @@ async function loadExtras(id: string) {
   if (avatars.status === 'fulfilled') {
     avatarUrl.value = avatars.value.urls?.[id] ?? ''
   }
+}
+
+async function loadAccessDiagnostic() {
+  if (!canDiagnose.value || !employeeID.value) return
+  diagnosticLoading.value = true
+  diagnostic.value = null
+  pendingApprovals.value = []
+  pendingApprovalTotal.value = 0
+  try {
+    const requests: Promise<unknown>[] = [
+      get<AccessDiagnostic>(`/employees/${employeeID.value}/access-diagnostic`),
+    ]
+    if (canReadApprovalDiagnostics.value) {
+      requests.push(get<{ todos: PendingApproval[]; meta: { total: string } }>(
+        `/employees/${employeeID.value}/pending-approvals`,
+        { page: 1, page_size: 100 },
+        quietErrors,
+      ))
+    }
+    const settled = await Promise.allSettled(requests)
+    if (settled[0].status === 'fulfilled') diagnostic.value = settled[0].value as AccessDiagnostic
+    if (settled[1]?.status === 'fulfilled') {
+      const approvals = settled[1].value as { todos: PendingApproval[]; meta: { total: string } }
+      pendingApprovals.value = approvals.todos ?? []
+      pendingApprovalTotal.value = Number(approvals.meta?.total ?? pendingApprovals.value.length)
+      if (diagnostic.value && pendingApprovalTotal.value > 0 && diagnostic.value.employeeStatus !== 'ACTIVE') {
+        diagnostic.value.findings.unshift({
+          code: 'INACTIVE_APPROVER_TASKS',
+          severity: 'error',
+          message: t('employees.inactiveApproverTasks', { n: pendingApprovalTotal.value }),
+          action: t('employees.inactiveApproverTasksAction'),
+        })
+      }
+    }
+  } finally {
+    diagnosticLoading.value = false
+  }
+}
+
+function findingType(severity: string): 'success' | 'warning' | 'info' | 'error' {
+  if (severity === 'error') return 'error'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'success') return 'success'
+  return 'info'
+}
+
+function scopeLabel(scope: string): string {
+  const labels: Record<string, string> = {
+    SELF: t('roles.scopes.SELF'), DEPT: t('roles.scopes.DEPT'),
+    DEPT_AND_SUB: t('roles.scopes.DEPT_AND_SUB'), ALL: t('roles.scopes.ALL'),
+    CUSTOM: t('employees.scopeCustom'),
+  }
+  return labels[scope] ?? scope
+}
+
+function scopeModuleLabel(module: string): string {
+  const labels: Record<string, string> = {
+    export: t('roles.scopeExport'), procurement_sourcing: t('roles.scopeSourcing'),
+    procurement_order: t('roles.scopeOrder'), procurement_requirement: t('roles.scopeRequirement'),
+    shipping: t('roles.scopeShipping'), quality: t('roles.scopeQuality'), mail: t('roles.scopeMail'),
+  }
+  return labels[module] ?? module
+}
+
+function permissionModuleLabel(module: string): string {
+  return String(t(`roles.modules.${module}`)) === `roles.modules.${module}` ? module : t(`roles.modules.${module}`)
+}
+
+function approvalBizLabel(bizType: string): string {
+  const labels: Record<string, string> = {
+    CONTRACT: t('flows.biz.CONTRACT'), PURCHASE_ORDER: t('flows.biz.PURCHASE_ORDER'),
+    PURCHASE_ORDER_CHANGE: t('flows.biz.PURCHASE_ORDER_CHANGE'),
+    TRAVEL_REIMBURSEMENT: t('flows.biz.TRAVEL_REIMBURSEMENT'),
+  }
+  return labels[bizType] ?? bizType
+}
+
+async function recoverApproval(row: PendingApproval, action: 'APPROVE' | 'RETURN') {
+  const verb = action === 'APPROVE' ? t('employees.emergencyApprove') : t('employees.emergencyReturn')
+  const { value } = await ElMessageBox.prompt(
+    t('employees.recoveryConfirm', { action: verb, no: row.instance.bizNo || `#${row.instance.bizId}` }),
+    t('employees.recoveryTitle'),
+    {
+      type: 'warning',
+      inputPlaceholder: t('employees.recoveryReason'),
+      inputValidator: (v) => Boolean(String(v ?? '').trim()) || t('employees.recoveryReasonRequired'),
+      confirmButtonText: verb,
+    },
+  )
+  await post(`/approvals/tasks/${row.task.id}/act`, { action, comment: String(value).trim() })
+  ElMessage.success(t('employees.recoveryDone'))
+  await loadAccessDiagnostic()
 }
 
 // 有登录名就是已激活，理由见列表页同一处的注释。
@@ -351,6 +606,9 @@ function edit() {
 // 换人时重新加载。点上级、点下属都是在同一个组件里换 :id，
 // 不 watch 的话页面会停在上一个人身上——而地址栏已经变了。
 watch(employeeID, load)
+watch(tab, (value) => {
+  if (value === 'access' && !diagnostic.value) void loadAccessDiagnostic()
+})
 onMounted(() => {
   window.addEventListener('resize', onResize)
   load()
@@ -415,5 +673,74 @@ function onResize() {
   font-size: 13px;
   line-height: 1.6;
   color: var(--el-text-color-secondary);
+}
+
+.diagnostic-intro {
+  margin-bottom: 14px;
+}
+
+.diagnostic-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.diagnostic-stat {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+
+.diagnostic-stat span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.diagnostic-stat strong {
+  display: block;
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnostic-section {
+  margin-top: 20px;
+}
+
+.diagnostic-section h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading span {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 760px) {
+  .diagnostic-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .section-heading {
+    display: block;
+  }
 }
 </style>

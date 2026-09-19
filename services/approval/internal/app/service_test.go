@@ -30,14 +30,16 @@ func TestPreferOtherApprovers(t *testing.T) {
 	}
 }
 
-func TestSuperAdminOverrideIsLimitedToPurchaseOrders(t *testing.T) {
+func TestSuperAdminCanRecoverAnyApproval(t *testing.T) {
 	svc := &Service{dir: stubDirectory{byCode: map[string][]int64{
 		superAdminRoleCode: {500},
 	}}}
 
-	allowed, err := svc.canSuperAdminOverride(t.Context(), "PURCHASE_ORDER", 500)
-	if err != nil || !allowed {
-		t.Fatalf("最高权限管理员应能接管采购单审批: allowed=%v err=%v", allowed, err)
+	for _, bizType := range []string{"PURCHASE_ORDER", "CONTRACT", "TRAVEL_REIMBURSEMENT"} {
+		allowed, err := svc.canSuperAdminOverride(t.Context(), bizType, 500)
+		if err != nil || !allowed {
+			t.Fatalf("最高权限管理员应能接管 %s 审批: allowed=%v err=%v", bizType, allowed, err)
+		}
 	}
 	for _, tc := range []struct {
 		name    string
@@ -45,7 +47,7 @@ func TestSuperAdminOverrideIsLimitedToPurchaseOrders(t *testing.T) {
 		actorID int64
 	}{
 		{name: "普通员工不能接管采购单", bizType: "PURCHASE_ORDER", actorID: 600},
-		{name: "管理员不能越权审批其他单据", bizType: "CONTRACT", actorID: 500},
+		{name: "空业务类型不允许接管", bizType: "", actorID: 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			allowed, err := svc.canSuperAdminOverride(t.Context(), tc.bizType, tc.actorID)

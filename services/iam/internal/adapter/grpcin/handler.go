@@ -132,7 +132,23 @@ func (h *Handler) GetEmployee(ctx context.Context, req *iamv1.GetEmployeeRequest
 	if err != nil {
 		return nil, err
 	}
-	return &iamv1.GetEmployeeResponse{Employee: employeeRowToProto(emp, roleIDs)}, nil
+	out := employeeRowToProto(emp, roleIDs)
+	// The detail page needs the same account state as the employee list.  It
+	// used to omit these two lookups, so an activated employee appeared as
+	// “account unopened” as soon as an administrator opened their details.
+	accounts, err := h.svc.ListAccounts(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	pending, err := h.svc.PendingInvitations(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out.Username = accounts[emp.ID]
+	if due, waiting := pending[emp.ID]; waiting {
+		out.InviteExpiresAt = due.Unix()
+	}
+	return &iamv1.GetEmployeeResponse{Employee: out}, nil
 }
 
 func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesRequest) (*iamv1.ListEmployeesResponse, error) {

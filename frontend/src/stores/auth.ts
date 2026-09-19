@@ -48,6 +48,11 @@ export const useAuthStore = defineStore('auth', {
     // 现取一遍，代价是一个请求。
     avatarUrl: '',
     permissions: JSON.parse(localStorage.getItem('permissions') ?? '[]') as string[],
+    // Pages that cache a permission check during setup need to be mounted
+    // again when an administrator changes this employee's roles. The shell
+    // includes this revision in its router-view key, so a live permission
+    // refresh updates both navigation and the actions inside the open page.
+    permissionRevision: 0,
     // Persisted so a refresh mid-obligation does not shake the debt off —
     // the shell keeps its blocking dialog up until the change happens.
     mustChangePassword: localStorage.getItem('mustChangePassword') === '1',
@@ -112,8 +117,12 @@ export const useAuthStore = defineStore('auth', {
         // A slow response from an older session must not paint permissions
         // over a different person who signed in while it was in flight.
         if (!this.isLoggedIn || this.employeeId !== employeeID) return
-        this.permissions = data.permissionCodes ?? []
+        const next = [...new Set(data.permissionCodes ?? [])].sort()
+        const current = [...new Set(this.permissions)].sort()
+        const changed = next.length !== current.length || next.some((code, index) => code !== current[index])
+        this.permissions = next
         localStorage.setItem('permissions', JSON.stringify(this.permissions))
+        if (changed) this.permissionRevision += 1
       })().finally(() => {
         permissionRefreshInFlight = null
       })

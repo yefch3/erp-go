@@ -999,6 +999,7 @@ const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import { getActionableApproval } from '../lib/approvalAction'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
@@ -1516,15 +1517,15 @@ async function createDirect() {
 }
 const acceptedOffer=computed(()=>{try{return JSON.parse(detail.value?.acceptedOfferJson||'null') as {contact:string;transports:{quoteId:string;title:string;currency:string;price:string;accepted:boolean;quantities:Record<string,string>}[];lines:{id:string;product:string;unit:string}[]}|null}catch{return null}})
 function allocatedProducts(quantities:Record<string,string>){return Object.entries(quantities||{}).map(([id,qty])=>{const line=acceptedOffer.value?.lines.find(l=>l.id===id);return `${line?.product||id}: ${qty} ${line?.unit||''}`}).join('；')}
-const myConfirmationTask=ref(''),supplementOpen=ref(false),supplementForm=reactive({externalContractNo:'',due:''})
+const myConfirmationTask=ref(''),myConfirmationOverride=ref(false),supplementOpen=ref(false),supplementForm=reactive({externalContractNo:'',due:''})
 async function loadMyConfirmation(id:string){
- myConfirmationTask.value='';if(!auth.can('approval:task:act'))return
- let page=1,total=0;do{const data=await get<{todos:{task:{id:string};instance:{bizId:string}}[];meta:{total:string}}>('/approvals/todos',{biz_type:'CONTRACT',page,page_size:100});total=Number(data.meta.total);myConfirmationTask.value=data.todos.find(t=>t.instance.bizId===id)?.task.id||'';page++}while(!myConfirmationTask.value&&(page-1)*100<total)
+ myConfirmationTask.value='';myConfirmationOverride.value=false
+ const action=await getActionableApproval('CONTRACT',id);myConfirmationTask.value=action?.taskId||'';myConfirmationOverride.value=Boolean(action?.override)
 }
 async function confirmContract(action:'APPROVE'|'RETURN'){
  if(!detail.value||!myConfirmationTask.value)return
- let comment='';if(action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value}else{await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
- await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(detail.value?.contract.status!=='PENDING_APPROVAL')break;await new Promise(r=>setTimeout(r,500))}await load()
+ let comment='';if(!myConfirmationOverride.value&&action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value.trim()}else if(!myConfirmationOverride.value){await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
+ await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';myConfirmationOverride.value=false;ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(detail.value?.contract.status!=='PENDING_APPROVAL')break;await new Promise(r=>setTimeout(r,500))}await load()
 }
 function openSupplement(){if(!detail.value)return;supplementForm.externalContractNo=detail.value.contract.externalContractNo||'';supplementForm.due=detail.value.contract.receivableDueDate||'';supplementOpen.value=true}
 async function saveSupplement(){if(!detail.value)return;await put(`/contracts/${detail.value.contract.id}`,{externalContractNo:supplementForm.externalContractNo,terms:{receivableDueDate:supplementForm.due}});supplementOpen.value=false;await openDetail(detail.value.contract.id);await load()}

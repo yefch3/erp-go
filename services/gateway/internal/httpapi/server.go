@@ -250,6 +250,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:department:read")).Get("/api/departments/{id}/changes", s.listDepartmentChanges)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees", s.listEmployees)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
+		// Read-only explanation of the employee's effective roles, feature
+		// permissions and data scopes.  Both directory and role visibility are
+		// required because the response joins those two administrative views.
+		r.With(s.perm("iam:employee:read"), s.perm("iam:role:read")).
+			Get("/api/employees/{id}/access-diagnostic", s.diagnoseEmployeeAccess)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
 		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}", s.updateEmployee)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/changes", s.listEmployeeChanges)
@@ -664,7 +669,6 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks/{id}", s.getQualityTask)
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/start", s.startQualityTask)
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/rounds", s.submitQualityRound)
-		r.With(s.perm("quality:release:decide")).Post("/api/quality/tasks/{id}/release", s.decideQualityRelease)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files/presign", s.presignQualityFile)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files", s.registerQualityFile)
 
@@ -768,6 +772,10 @@ func (s *Server) Router() http.Handler {
 		// 真正执行通过、驳回或退回仍由下面的动作权限控制。
 		r.Get("/api/approvals/todos", s.myTodos)
 		r.Get("/api/approvals/submitted", s.mySubmittedApprovals)
+		// Concrete business pages ask the approval service whether the caller
+		// may act. This covers the assigned approver and SUPER_ADMIN takeover
+		// without exposing company-wide approval history to the browser.
+		r.Get("/api/approvals/actionable-task", s.actionableApprovalTask)
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
@@ -779,6 +787,10 @@ func (s *Server) Router() http.Handler {
 		// manager without any power to approve anything.
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances", s.listApprovalInstances)
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
+		// Used by the employee access diagnostic to find approvals stranded on
+		// a departed or misconfigured employee.
+		r.With(s.perm("approval:instance:read")).
+			Get("/api/employees/{id}/pending-approvals", s.employeePendingApprovals)
 		// Correspondence. Reading is scoped by the notification data scope —
 		// the permission only says "may open the mail module at all", the
 		// scope decides whose mail comes back.

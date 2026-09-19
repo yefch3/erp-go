@@ -49,6 +49,62 @@ func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizTy
 	return rows, total, nil
 }
 
+// ActionableTask returns the current pending task for one business document
+// only when actorID is allowed to decide it. Keeping this decision in the
+// approval service prevents every business page from implementing a slightly
+// different version of "is this user the approver or the highest admin?".
+func (s *Service) ActionableTask(ctx context.Context, tenantID, actorID int64, bizType string, bizID int64) (store.ApprovalTask, store.ApprovalInstance, bool, error) {
+	if bizType == "" || bizID == 0 {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false,
+			apierr.Invalid("AP_BIZ_REQUIRED", "单据类型和 ID 必填")
+	}
+	instances, err := s.ListInstances(ctx, tenantID, bizType, bizID)
+	if err != nil {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, err
+	}
+	var running store.ApprovalInstance
+	for _, inst := range instances {
+		if inst.Status == statusRunning {
+			running = inst
+			break
+		}
+	}
+	if running.ID == 0 {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, nil
+	}
+	// A reimbursement submitter never gets an approval action for their own
+	// claim, including when they also hold SUPER_ADMIN.
+	if running.BizType == "TRAVEL_REIMBURSEMENT" && running.SubmitterID == actorID {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, nil
+	}
+	tasks, err := s.q.ListTasksByInstance(ctx, store.ListTasksByInstanceParams{
+		TenantID: tenantID, InstanceID: running.ID,
+	})
+	if err != nil {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, err
+	}
+	var firstPending store.ApprovalTask
+	for _, task := range tasks {
+		if task.Status != taskPending {
+			continue
+		}
+		if firstPending.ID == 0 {
+			firstPending = task
+		}
+		if task.AssigneeID == actorID {
+			return task, running, false, nil
+		}
+	}
+	if firstPending.ID == 0 {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, nil
+	}
+	override, err := s.canSuperAdminOverride(ctx, running.BizType, actorID)
+	if err != nil || !override {
+		return store.ApprovalTask{}, store.ApprovalInstance{}, false, err
+	}
+	return firstPending, running, true, nil
+}
+
 // MySubmitted 查询当前员工本人发起的审批实例。员工编号来自认证后的 gRPC
 // 元数据，不接受 HTTP 查询参数，因此不能借此读取其他员工发起的单据。
 func (s *Service) MySubmitted(ctx context.Context, tenantID, submitterID int64, bizType, status, keyword string, page, size int32) ([]store.ListMySubmittedInstancesRow, int64, error) {
