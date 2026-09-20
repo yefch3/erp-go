@@ -16,7 +16,7 @@
       </div>
       <el-table :data="pagedRows" v-loading="loading" @row-click="openDetail">
         <el-table-column v-for="column in handoffColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
-          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="handoffColumns.dragging.value===column.key" @start="handoffColumns.start(column.key,$event)" @drop="handoffColumns.move(column.key,$event)" @end="handoffColumns.finish" /></template>
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="handoffColumns.canMoveLeft(column.key)" :can-move-right="handoffColumns.canMoveRight(column.key)" @move-left="handoffColumns.moveBy(column.key,-1)" @move-right="handoffColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
             <span v-if="column.key==='contractNo'" class="contract-no">{{ row.contractNo }}</span>
             <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
@@ -123,7 +123,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { del, get, post } from '../api'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 const approvalTaskId = ref('')
@@ -142,7 +142,7 @@ const handoffColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'amount',label:t('shipping.d4Amount'),width:140,align:'right'},
  {key:'status',label:t('common.status'),width:145,align:'center'},
 ])
-const handoffColumns=useTableColumnOrder(computed(()=>`shipping:${mode.value}`),handoffColumnDefaults)
+const handoffColumns=useTableColumnOrder(computed(()=>mode.value==='orders'?'shipping-order-list':'shipping-inquiry-list'),handoffColumnDefaults)
 const contractAndDelegatedStatuses=['APPROVED','CONTRACT_UPLOADED','CONTRACT_VERIFIED','PAYMENT_REQUESTED']
 const statuses=computed(()=>mode.value==='orders'?['DRAFT','PENDING_APPROVAL','CONTRACT_AND_DELEGATED']:['WAITING_REQUOTE','RETURNED']), currencies=['USD','CNY','EUR','GBP','CAD','AUD','HKD']
 const form=reactive({finalForwarderId:0,finalForwarderName:'',actualCarrierId:0,actualCarrierName:'',finalServiceOption:'',finalCurrency:'USD',finalFreightAmount:'',finalEtd:'',finalEta:'',paymentTerms:'',forwarderContractNo:'',remark:''})

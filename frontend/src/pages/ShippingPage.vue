@@ -38,7 +38,7 @@
             <div class="table-scroll">
               <el-table :data="rows" v-loading="loading" @row-dblclick="detail">
                 <el-table-column v-for="column in scheduleColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
-                  <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="scheduleColumns.dragging.value===column.key" @start="scheduleColumns.start(column.key,$event)" @drop="scheduleColumns.move(column.key,$event)" @end="scheduleColumns.finish" /></template>
+                  <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="scheduleColumns.canMoveLeft(column.key)" :can-move-right="scheduleColumns.canMoveRight(column.key)" @move-left="scheduleColumns.moveBy(column.key,-1)" @move-right="scheduleColumns.moveBy(column.key,1)" /></template>
                   <template #default="{ row }">
                     <el-link v-if="column.key==='scheduleNo'" type="primary" @click="detail(row)">{{ row.scheduleNo }}</el-link>
                     <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
@@ -80,7 +80,7 @@ import { get, post } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ShippingScheduleDialog, { type ContractShippingHandoff } from '../components/ShippingScheduleDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { SHIPPING_STATUSES, shippingStatusLabel, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
 import { useAuthStore } from '../stores/auth'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
@@ -100,7 +100,7 @@ const scheduleColumnDefaults = computed<TableColumnDefinition[]>(() => [
   { key: 'status', label: t('common.status'), width: 105 },
   { key: 'responsible', label: t('shipping.responsible'), width: 115, showOverflowTooltip: true },
 ])
-const scheduleColumns = useTableColumnOrder('shipping:schedules', scheduleColumnDefaults)
+const scheduleColumns = useTableColumnOrder('shipping-schedule-list', scheduleColumnDefaults)
 const rows = ref<ShippingSchedule[]>([])
 const loading = ref(false)
 const total = ref(0)

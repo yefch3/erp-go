@@ -28,7 +28,7 @@
 
       <el-table :data="rows" v-loading="loading" class="orders-table">
         <el-table-column v-for="column in orderColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
-          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="orderColumns.dragging.value===column.key" @start="orderColumns.start(column.key,$event)" @drop="orderColumns.move(column.key,$event)" @end="orderColumns.finish" /></template>
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="orderColumns.canMoveLeft(column.key)" :can-move-right="orderColumns.canMoveRight(column.key)" @move-left="orderColumns.moveBy(column.key,-1)" @move-right="orderColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
            <template v-if="column.key==='poNo'">
             <div class="prod">{{ row.poNo }}</div>
@@ -584,7 +584,7 @@ import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Order {
@@ -704,7 +704,7 @@ const orderColumnDefaults = computed<TableColumnDefinition[]>(() => [
   { key: 'expectedDate', label: t('orders.requiredArrivalDate'), minWidth: 145, align: 'center' },
   { key: 'status', label: t('common.status'), minWidth: 170, align: 'center' },
 ])
-const orderColumns = useTableColumnOrder('procurement:purchase-orders', orderColumnDefaults)
+const orderColumns = useTableColumnOrder('purchase-order-list', orderColumnDefaults)
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')

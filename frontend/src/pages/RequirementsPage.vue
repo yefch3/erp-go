@@ -19,7 +19,7 @@
 
       <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading" @row-dblclick="openBatchReview">
         <el-table-column v-for="column in requirementColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
-          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="requirementColumns.dragging.value===column.key" @start="requirementColumns.start(column.key,$event)" @drop="requirementColumns.move(column.key,$event)" @end="requirementColumns.finish" /></template>
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="requirementColumns.canMoveLeft(column.key)" :can-move-right="requirementColumns.canMoveRight(column.key)" @move-left="requirementColumns.moveBy(column.key,-1)" @move-right="requirementColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
             <template v-if="column.key==='batch'"><div class="batch-no">{{ row.label }}</div><div class="sub">{{ row.customerName || '—' }}</div></template>
             <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked"><span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span><small>{{ row.productGroups.length }} 种产品 · {{ row.lines.length }} 种规格</small></div>
@@ -345,7 +345,7 @@ import { purchaseBatchKey } from '../lib/requirements'
 import { calculateExecutionReferencePrice, executionTradeTermFormula, type ExecutionCategoryCalculation } from '../lib/executionQuoteCalculation'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Requirement {
@@ -434,7 +434,7 @@ const requirementColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'contract',label:t('requirements.fromContract'),minWidth:180,className:'batch-secondary-column',showOverflowTooltip:true},
  {key:'status',label:t('common.status'),minWidth:110,className:'batch-status-column'},
 ])
-const requirementColumns=useTableColumnOrder('procurement:requirements',requirementColumnDefaults)
+const requirementColumns=useTableColumnOrder('purchase-requirement-list',requirementColumnDefaults)
 const router = useRouter()
 const route = useRoute()
 const canWrite = auth.can('procurement:requirement:write')

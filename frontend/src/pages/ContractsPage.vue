@@ -24,7 +24,7 @@
 
       <el-table :data="contracts" v-loading="loading" class="contract-list-table">
         <el-table-column v-for="column in contractColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.key==='amount'?'contract-list-amount':''" :show-overflow-tooltip="column.showOverflowTooltip">
-          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="contractColumns.dragging.value===column.key" @start="contractColumns.start(column.key,$event)" @drop="contractColumns.move(column.key,$event)" @end="contractColumns.finish" /></template>
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="contractColumns.canMoveLeft(column.key)" :can-move-right="contractColumns.canMoveRight(column.key)" @move-left="contractColumns.moveBy(column.key,-1)" @move-right="contractColumns.moveBy(column.key,1)" /></template>
           <template #default="{row}">
             <el-button v-if="column.key==='contractNo'" link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button>
             <span v-else-if="column.key==='externalNo'">{{row.externalContractNo||'—'}}</span>
@@ -999,7 +999,7 @@ import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { getActionableApproval } from '../lib/approvalAction'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
@@ -1175,7 +1175,7 @@ const contractColumnDefaults=computed<TableColumnDefinition[]>(()=>[
   {key:'status',label:t('common.status'),minWidth:115},
   {key:'updatedAt',label:t('contracts.updatedAt'),minWidth:175},
 ])
-const contractColumns=useTableColumnOrder('sales:contracts',contractColumnDefaults)
+const contractColumns=useTableColumnOrder('sales-contract-list',contractColumnDefaults)
 
 const contracts = ref<Contract[]>([])
 const products = ref<Product[]>([])

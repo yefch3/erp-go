@@ -13,7 +13,7 @@
      </template>
     </el-table-column>
     <el-table-column v-for="column in listColumnOrder.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
-     <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="listColumnOrder.dragging.value===column.key" @start="listColumnOrder.start(column.key,$event)" @drop="listColumnOrder.move(column.key,$event)" @end="listColumnOrder.finish"/></template>
+     <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="listColumnOrder.canMoveLeft(column.key)" :can-move-right="listColumnOrder.canMoveRight(column.key)" @move-left="listColumnOrder.moveBy(column.key,-1)" @move-right="listColumnOrder.moveBy(column.key,1)"/></template>
      <template #default="{row}">
       <span v-if="column.key==='number'" class="inquiry-number">{{displayInquiryNumber(row)}}</span>
       <span v-else-if="column.key==='customerShort'">{{customerShortName(row)}}</span>
@@ -156,7 +156,7 @@ import {get,post,saveBlob} from '../api'
 import {isAxiosError} from 'axios'
 import InquiryProducts from '../components/InquiryProducts.vue'
 import CustomerOfferEditor from '../components/CustomerOfferEditor.vue'
-import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import {onLive} from '../live'
 import {useAuthStore} from '../stores/auth'
@@ -182,7 +182,7 @@ const listColumnDefaults=computed<TableColumnDefinition[]>(()=>{
  if(view.value==='PROCUREMENT')return[common.number,{key:'productDetails',label:t('inquiryWorkspace.list.productDetails'),minWidth:240},{key:'productCount',label:t('inquiryWorkspace.productCount'),width:95,align:'center',className:'hierarchy-secondary-column'},{key:'quoteCount',label:t('inquiryWorkspace.submittedFactoryQuotes'),minWidth:145,className:'hierarchy-secondary-column'},{key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:120,className:'hierarchy-secondary-column'},common.submittedAt,common.status]
  return[common.number,{key:'customer',label:t('inquiryWorkspace.customer'),minWidth:170,showOverflowTooltip:true},{key:'owner',label:t('inquiryWorkspace.owner'),minWidth:110},{key:'productCount',label:t('inquiryWorkspace.productCount'),width:95,align:'center'},{key:'totalQuantity',label:t('inquiryWorkspace.totalQuantity'),minWidth:125},{key:'weightVolume',label:t('inquiryWorkspace.weightVolume'),minWidth:170},{key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:120},{key:'loadingPort',label:t('inquiryWorkspace.loadingPort'),minWidth:120},{key:'destinationPort',label:t('inquiryWorkspace.destinationPort'),minWidth:120},{key:'incoterm',label:t('inquiryWorkspace.incoterm'),minWidth:105},{key:'quoteCount',label:t('inquiryWorkspace.submittedLogisticsQuotes'),minWidth:135},common.submittedAt,{...common.status,minWidth:130}]
 })
-const listColumnOrder=useTableColumnOrder(computed(()=>`inquiry-workspace:${view.value.toLowerCase()}`),listColumnDefaults)
+const listColumnOrder=useTableColumnOrder(computed(()=>({SALES:'inquiry-list',QUOTATIONS:'customer-quotation-list',PROCUREMENT:'procurement-sourcing-list',LOGISTICS:'logistics-sourcing-list'} as const)[view.value]),listColumnDefaults)
 const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(20),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
 const refreshSuspended=ref(false),refreshErrorShown=ref(false)
 const moreOpen=ref(false)

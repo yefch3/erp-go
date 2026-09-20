@@ -1,6 +1,6 @@
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { moveTableColumn, normalizeTableColumnOrder } from '../lib/tableColumnOrder'
+import { moveTableColumnBy, normalizeTableColumnOrder, preferenceColumnOrder, tableColumnPreferenceStorageKey, type TableColumnPreference } from '../lib/tableColumnOrder'
 
 export interface TableColumnDefinition {
   key: string
@@ -15,40 +15,38 @@ export interface TableColumnDefinition {
 export function useTableColumnOrder(storageID: MaybeRefOrGetter<string>, defaults: MaybeRefOrGetter<TableColumnDefinition[]>) {
   const auth = useAuthStore()
   const order = ref<string[]>([])
-  const dragging = ref('')
-  const storageKey = computed(() => `erp:table-columns:v1:${auth.employeeId || 'anonymous'}:${toValue(storageID)}`)
+  const userId = computed(() => String(auth.employeeId || 'anonymous'))
+  const pageKey = computed(() => toValue(storageID))
+  const storageKey = computed(() => tableColumnPreferenceStorageKey(userId.value, pageKey.value))
+  const legacyStorageKey = computed(() => tableColumnPreferenceStorageKey(userId.value, pageKey.value, 1))
 
   function load() {
     const columns = toValue(defaults)
     let saved: unknown = []
-    try { saved = JSON.parse(localStorage.getItem(storageKey.value) || '[]') } catch { saved = [] }
-    order.value = normalizeTableColumnOrder(saved, columns)
+    try {
+      const current = localStorage.getItem(storageKey.value)
+      const legacy = localStorage.getItem(legacyStorageKey.value)
+      saved = JSON.parse(current || legacy || '[]')
+    } catch { saved = [] }
+    order.value = normalizeTableColumnOrder(preferenceColumnOrder(saved), columns)
   }
 
   function persist() {
-    localStorage.setItem(storageKey.value, JSON.stringify(order.value))
+    const preference: TableColumnPreference = { version: 2, userId: userId.value, pageKey: pageKey.value, columnOrder: order.value, updatedAt: new Date().toISOString() }
+    try { localStorage.setItem(storageKey.value, JSON.stringify(preference)) } catch { /* defaults remain usable when browser storage is unavailable */ }
   }
 
-  function start(key: string, event: DragEvent) {
-    dragging.value = key
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', key)
-    }
-  }
-
-  function move(target: string, event?: DragEvent) {
-    event?.preventDefault()
-    const source = dragging.value || event?.dataTransfer?.getData('text/plain') || ''
-    const next = moveTableColumn(order.value, source, target)
+  function moveBy(key: string, direction: -1 | 1) {
+    const next = moveTableColumnBy(order.value, key, direction)
     if (next === order.value) return
     order.value = next
-    dragging.value = ''
     persist()
   }
 
-  function finish() { dragging.value = '' }
-  function reset() { order.value = toValue(defaults).map(column => column.key); persist() }
+  function reset() {
+    order.value = toValue(defaults).map(column => column.key)
+    try { localStorage.removeItem(storageKey.value); localStorage.removeItem(legacyStorageKey.value) } catch { /* in-memory defaults still apply */ }
+  }
 
   const columns = computed(() => {
     const source = toValue(defaults)
@@ -56,7 +54,9 @@ export function useTableColumnOrder(storageID: MaybeRefOrGetter<string>, default
     return normalizeTableColumnOrder(order.value, source).flatMap(key => byKey.get(key) || [])
   })
   const customized = computed(() => order.value.join('|') !== toValue(defaults).map(column => column.key).join('|'))
+  const canMoveLeft = (key: string) => order.value.indexOf(key) > 0
+  const canMoveRight = (key: string) => { const index = order.value.indexOf(key); return index >= 0 && index < order.value.length - 1 }
 
   watch([storageKey, () => toValue(defaults).map(column => column.key).join('|')], load, { immediate: true })
-  return { columns, customized, dragging, start, move, finish, reset }
+  return { columns, customized, moveBy, canMoveLeft, canMoveRight, reset, storageKey }
 }
