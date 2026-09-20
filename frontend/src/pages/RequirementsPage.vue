@@ -16,7 +16,7 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading">
+      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading" @row-dblclick="openBatchReview">
         <el-table-column :label="t('requirements.purchaseBatch')" min-width="170">
           <template #default="{ row }">
             <div class="batch-no">{{ row.label }}</div>
@@ -79,7 +79,7 @@
           <div><span>要求到货</span><strong>{{ activeBatch.requiredDate || '—' }}</strong></div>
           <div><span>处理进度</span><strong>已报价 {{ quotedLineCount }}/{{ activeBatch.lines.length }} · 已选 {{ selectedCount }}/{{ activeBatch.lines.length }}</strong></div>
         </div>
-        <el-tabs v-model="activeInquiryTab" class="inquiry-tabs">
+        <el-tabs ref="inquiryTabsRef" v-model="activeInquiryTab" class="inquiry-tabs" @tab-change="onInquiryTabChange">
           <el-tab-pane :label="`工厂报价 ${quotedLineCount}/${activeBatch.lines.length}`" name="quotes">
             <el-alert type="info" :closable="false" show-icon class="alert" title="售前报价只用于对照。本页录入合同执行阶段重新确认的工厂报价。" />
             <div v-if="canOrder" class="batch-quote-toolbar">
@@ -98,40 +98,67 @@
                   <div class="quote-options">
                     <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:quote.selected}]">
                       <span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span>
-                      <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
-                      <div v-if="canOrder" class="quote-actions"><el-button link type="primary" @click="openQuoteEditor(line, quote)">编辑</el-button><el-button link type="danger" @click="removeQuote(line, quote)">删除</el-button></div>
+                      <div class="quote-meta"><el-tag size="small" effect="plain">{{ quoteCategoryLabel(quote.quoteCategory) }}</el-tag><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
+                      <div v-if="canOrder" class="quote-actions"><el-button link type="primary" @click="openQuoteEditor(line, quote)">编辑</el-button><el-button v-if="!quote.calculatedUnitPrice" link type="danger" @click="removeQuote(line, quote)">删除</el-button></div>
                     </div>
                   </div>
                   <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>暂无实单报价</span><small>使用上方按钮统一录入工厂报价</small></div>
                 </article>
               </div>
             </section>
-            <div class="tab-next"><el-button type="primary" plain @click="activeInquiryTab='selection'">下一步：选定报价与生成订单</el-button></div>
+            <div class="tab-next"><el-button type="primary" plain @click="goToSelection">下一步：选定报价与生成订单</el-button></div>
           </el-tab-pane>
           <el-tab-pane :label="`选定报价与生成订单 ${selectedCount}/${activeBatch.lines.length}`" name="selection">
-            <el-alert type="info" :closable="false" show-icon class="alert" title="为每个规格选定一家工厂。系统会保存选择，并按供应商、币种、交货日期和付款条件拆分采购订单草稿。" />
-            <section v-for="group in activeBatch.productGroups" :key="group.key" class="detail-product-group">
-              <button type="button" class="batch-product-heading" @click="toggleBatchProduct(activeBatch.key, group.key)">
-                <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(activeBatch.key, group.key) }]"><ArrowDown /></el-icon>
-                <strong>{{ group.name }}</strong><span>{{ selectedLinesIn(group) }}/{{ group.lines.length }} 个规格已选</span><span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
-              </button>
-              <div v-show="isBatchProductExpanded(activeBatch.key, group.key)" class="detail-spec-list">
-                <article v-for="line in group.lines" :key="line.id" class="requote-product">
-                  <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>售前参考：{{ line.supplierName || '无' }} · {{ displaySourcePrice(line) }}</span></div><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></header>
-                  <el-radio-group v-model="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder" @change="(value:number|string|boolean|undefined) => persistQuoteSelection(line, Number(value))">
-                    <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id)}]">
-                      <el-radio :value="Number(quote.id)"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
-                      <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span><span v-if="quote.selectedByName">由 {{ quote.selectedByName }} 选定</span></div>
-                    </div>
-                  </el-radio-group>
-                  <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>尚无报价可选</span><small>请返回“工厂报价”录入</small></div>
-                </article>
+            <div class="selection-step-heading">
+              <div><span>第二步</span><strong>选定最终工厂报价</strong><small>逐个规格确认供应商与执行价格，可勾选自己负责的部分分批生成采购订单草稿。</small></div>
+              <el-button @click="goToQuotes">返回工厂报价</el-button>
+            </div>
+            <el-alert type="info" :closable="false" show-icon class="alert" title="报价按价格口径、产品和规格分层。先选工厂报价，只核算被选中的报价；可分批生成自己负责的采购草稿。" />
+            <section v-for="category in executionCategoryGroups" :key="category.key" class="pricing-category">
+              <header :class="['pricing-category__head',{'is-empty':!category.lineCount}]" @click="toggleTradeTerm(category.key,category.lineCount)"><div><el-icon v-if="category.lineCount" :class="['trade-term-chevron',{ 'is-expanded':isTradeTermExpanded(category.key) }]"><ArrowDown /></el-icon><span class="pricing-category__eyebrow">贸易条款</span><strong>{{ quoteCategoryLabel(category.key) }}</strong><span>{{ category.lineCount ? `${category.products.length} 种产品 · ${category.lineCount} 种规格` : '暂无报价' }}</span></div><el-tag v-if="category.lineCount" effect="plain">已核算 {{ category.calculatedCount }}/{{ category.lineCount }}</el-tag></header>
+              <div v-if="category.lineCount" v-show="isTradeTermExpanded(category.key)" class="category-calculation" @click.stop>
+                <div class="category-formula"><span>核算公式</span><strong>{{ categoryFormula(category.key) }}</strong><small>I = 1 + 年利率 × 计息天数 ÷ 360；当前采购阶段暂不计入物流费用。</small></div>
+                <div class="category-inputs">
+                  <label v-if="categoryNeedsFx(category.key)">汇率<el-input v-model="categoryCalculation(category.key).exchangeRate" placeholder="1 USD 可兑换多少 CNY" /></label>
+                  <label v-if="categoryNeedsInland(category.key)">产品内陆运费单价<el-input v-model="categoryCalculation(category.key).inlandFreight" placeholder="CNY / 计价单位" /></label>
+                  <label v-if="categoryNeedsPort(category.key)">港区港杂费单价<el-input v-model="categoryCalculation(category.key).portCharge" placeholder="CNY / 计价单位" /></label>
+                  <label v-if="category.key==='REPROCESSING_CNY'">损耗单价<el-input v-model="categoryCalculation(category.key).loss" placeholder="CNY / 计价单位" /></label>
+                  <label>年利率<el-input v-model="categoryCalculation(category.key).interestRate" placeholder="例如 6"><template #append>%</template></el-input></label>
+                  <label>计息天数<el-input v-model="categoryCalculation(category.key).interestDays" placeholder="例如 60"><template #append>天</template></el-input></label>
+                </div>
               </div>
+              <section v-for="group in (isTradeTermExpanded(category.key) ? category.products : [])" :key="`${category.key}:${group.key}`" class="detail-product-group">
+                <button type="button" class="batch-product-heading" @click="toggleBatchProduct(activeBatch.key, `${category.key}:${group.key}`)">
+                  <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(activeBatch.key, `${category.key}:${group.key}`) }]"><ArrowDown /></el-icon>
+                  <strong>{{ group.name }}</strong><span>{{ group.lines.length }} 个规格</span><span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
+                </button>
+                <div v-show="isBatchProductExpanded(activeBatch.key, `${category.key}:${group.key}`)" class="detail-spec-list">
+                  <article v-for="line in group.lines" :key="`${category.key}:${line.id}`" class="requote-product">
+                    <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>售前参考：{{ displaySourcePrice(line) }}</span></div><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></header>
+                    <el-radio-group v-model="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder" @change="(value:number|string|boolean|undefined) => persistQuoteSelection(line, Number(value))">
+                      <div v-for="quote in quotesForCategory(line.id, category.key)" :key="quote.id" :class="['quote-option', 'selection-quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id)}]">
+                        <el-radio :value="Number(quote.id)"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
+                        <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.selectedByName">由 {{ quote.selectedByName }} 选定</span></div>
+                        <div v-if="Number(selectedQuote[line.id])===Number(quote.id)" class="quote-calculation">
+                          <div class="calculation-result"><span>核算价</span><strong>{{ quote.calculatedUnitPrice ? `USD ${formatMoney(quote.calculatedUnitPrice)}/${line.uomCode}` : '待核算' }}</strong><el-button size="small" type="primary" plain :loading="calculatingQuoteId===quote.id" @click.stop="calculateSelectedQuote(line, quote)">计算</el-button></div>
+                        </div>
+                      </div>
+                    </el-radio-group>
+                    <el-checkbox v-if="selectedCalculatedQuote(line)?.quoteCategory === category.key" v-model="draftIncluded[line.id]" class="draft-include">加入本次草稿 · 负责人 {{ selectedCalculatedQuote(line)?.selectedByName || '当前采购员' }}</el-checkbox>
+                  </article>
+                </div>
+              </section>
             </section>
-            <section v-if="selectedCount === activeBatch.lines.length" class="draft-preview">
-              <div><strong>采购订单草稿预览</strong><span>预计生成 {{ draftOrderGroups.length }} 张草稿，提交审批请在采购订单草稿页面完成。</span></div>
+            <el-empty v-if="!executionCategoryGroups.length" description="暂无已分类的实单报价，请先返回录入报价" />
+            <section class="draft-preview">
+              <div><strong>生成采购订单草稿</strong><span v-if="draftOrderGroups.length">已选择 {{ draftLineCount }} 个规格，预计生成 {{ draftOrderGroups.length }} 张草稿。</span><span v-else>勾选已核算的规格后，可在这里上传资料并生成草稿。</span></div>
               <div v-for="group in draftOrderGroups" :key="group.key" class="draft-preview-row"><strong>{{ group.supplierName }}</strong><span>{{ group.currency }} · {{ group.expectedDate || '未填写交期' }} · {{ group.lines.length }} 个规格</span></div>
-              <el-button v-if="canOrder" type="primary" :loading="saving" @click="createDraftOrders">生成 {{ draftOrderGroups.length }} 张采购订单草稿</el-button>
+              <section class="execution-files">
+                <header><div><strong>本次订单采购资料</strong><span>资料将在生成草稿时写入你的采购订单，仅订单负责人、部门领导和最高权限账户可见。</span></div><label v-if="canOrder" class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择资料</label></header>
+                <div v-if="pendingDraftFiles.length" class="execution-file-list"><div v-for="(file,index) in pendingDraftFiles" :key="`${file.name}:${file.size}:${index}`"><span><strong>{{ file.name }}</strong><small>{{ formatFileSize(String(file.size)) }} · 待随草稿上传</small></span><span class="execution-file-actions"><el-button link type="primary" @click="previewPendingFile(file)">预览</el-button><el-button link type="danger" @click="pendingDraftFiles.splice(index,1)">移除</el-button></span></div></div>
+                <span v-else class="draft-file-empty">未选择资料，可直接生成草稿</span>
+              </section>
+              <el-button v-if="canOrder" type="primary" :loading="saving" @click="createDraftOrders">{{ draftOrderGroups.length ? `生成所选 ${draftOrderGroups.length} 张采购订单草稿` : '生成采购订单草稿' }}</el-button>
             </section>
           </el-tab-pane>
         </el-tabs>
@@ -147,6 +174,7 @@
           <div class="batch-common-grid">
             <el-form-item label="工厂" required class="field-wide"><el-select v-model="batchQuoteForm.supplierId" filterable allow-create default-first-option clearable placeholder="输入新工厂名称或选择已有工厂" style="width:100%"><el-option v-for="supplier in suppliers" :key="supplier.id" :value="Number(supplier.id)" :label="`${supplier.code} · ${supplier.name}`" /></el-select></el-form-item>
             <el-form-item label="币种" required><el-select v-model="batchQuoteForm.currency" filterable allow-create default-first-option style="width:100%" @change="batchQuoteForm.currency=String(batchQuoteForm.currency).trim().toUpperCase()"><el-option v-for="currency in currencyOptions" :key="currency" :value="currency" /></el-select></el-form-item>
+            <el-form-item label="贸易条款" required><el-select v-model="batchQuoteForm.quoteCategory" placeholder="选择贸易条款" style="width:100%" @change="(value:string)=>batchQuoteForm.currency=categoryCurrency(value)"><el-option v-for="item in quoteCategoryOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
             <el-form-item label="预计交货日期"><el-date-picker v-model="batchQuoteForm.expectedDate" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
             <el-form-item label="报价有效期"><el-date-picker v-model="batchQuoteForm.validUntil" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
             <el-form-item label="付款条件" required class="field-wide"><el-select v-model="batchQuoteForm.paymentTerms" filterable allow-create default-first-option clearable placeholder="输入自定义条款或选择常用付款条件" style="width:100%"><el-option v-for="term in paymentTermOptions" :key="term" :label="term" :value="term" /></el-select></el-form-item>
@@ -169,10 +197,13 @@
       <template #footer><el-button @click="batchQuoteOpen=false">取消</el-button><el-button type="primary" :loading="savingBatchQuote" @click="saveBatchQuote">保存本次报价</el-button></template>
     </el-dialog>
 
+    <FilePreviewDialog v-model="filePreviewOpen" :source="filePreviewSource" :title="filePreviewTitle" :content-type="filePreviewType" />
+
     <el-dialog v-model="quoteOpen" :title="`编辑工厂报价 · ${quoteLine?.productName || ''}`" width="620px" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item label="工厂" required><el-select v-model="quoteForm.supplierId" filterable allow-create default-first-option clearable placeholder="输入新工厂名称或选择已有工厂" style="width:100%"><el-option v-for="supplier in suppliers" :key="supplier.id" :value="Number(supplier.id)" :label="`${supplier.code} · ${supplier.name}`" /></el-select></el-form-item>
         <el-form-item label="报价" required><div class="price-row"><el-select v-model="quoteForm.currency" filterable allow-create default-first-option @change="quoteForm.currency=String(quoteForm.currency).trim().toUpperCase()"><el-option v-for="currency in currencyOptions" :key="currency" :value="currency" /></el-select><el-input v-model="quoteForm.unitPrice" placeholder="单价" /></div></el-form-item>
+        <el-form-item label="贸易条款" required><el-select v-model="quoteForm.quoteCategory" style="width:100%" @change="(value:string)=>quoteForm.currency=categoryCurrency(value)"><el-option v-for="item in quoteCategoryOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="预计交货日期"><el-date-picker v-model="quoteForm.expectedDate" value-format="YYYY-MM-DD" clearable /></el-form-item>
         <el-form-item label="付款条件" required><el-select v-model="quoteForm.paymentTerms" filterable allow-create default-first-option clearable placeholder="输入自定义条款或选择常用付款条件" style="width:100%"><el-option v-for="term in paymentTermOptions" :key="term" :label="term" :value="term" /></el-select></el-form-item>
         <el-form-item label="报价有效期"><el-date-picker v-model="quoteForm.validUntil" value-format="YYYY-MM-DD" clearable /></el-form-item>
@@ -321,16 +352,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { del, get, post, postDownload, saveBlob } from '../api'
+import { del, download, get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
+import { calculateExecutionReferencePrice, executionTradeTermFormula, type ExecutionCategoryCalculation } from '../lib/executionQuoteCalculation'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 
 interface Requirement {
   id: string
@@ -404,6 +437,8 @@ interface ExecutionQuote {
   currency: string; unitPrice: string; expectedDate: string; paymentTerms: string; validUntil: string
   remark: string; createdByName: string; createdAt: string; updatedAt: string
   selected: boolean; selectedById: string; selectedByName: string; selectedAt: string
+  quoteCategory: string; incoterm: string; calculatedUnitPrice: string; calculationInput: string
+  calculatedAt: string; calculatedById: string; calculatedByName: string
 }
 
 const { t } = useI18n()
@@ -416,6 +451,7 @@ const canWrite = auth.can('procurement:requirement:write')
 const canOrder = auth.can('procurement:order:write')
 const detailBatchKey = computed(() => String(route.params.batchKey ?? ''))
 const activeInquiryTab = ref<'quotes'|'selection'>('quotes')
+const inquiryTabsRef = ref<{ $el?: HTMLElement } | null>(null)
 
 const rows = ref<Requirement[]>([])
 // 同一客户报价是一批采购业务；批次内仍保留产品行，便于按供应商拆分审批。
@@ -506,38 +542,58 @@ const activeBatch = ref<PurchaseBatch | null>(null)
 const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
 const paymentTermOptions = ['T/T', '30%预付款，70%发货前付清', '信用证 L/C', '货到付款', '月结 30 天', '月结 60 天']
+const quoteCategoryOptions = [
+  {value:'FOB_USD',label:'FOB USD'},{value:'FOB_CNY',label:'FOB CNY'},{value:'ALL_IN_PORT_CNY',label:'一票到港 CNY'},
+  {value:'EX_FACTORY_CNY',label:'出厂价 CNY'},{value:'REPROCESSING_CNY',label:'再加工 CNY'},{value:'DIRECT_CFR_USD',label:'工厂直接报价 CFR USD'},
+]
 const executionQuotes = reactive<Record<string, ExecutionQuote[]>>({})
 const selectedQuote = reactive<Record<string, number>>({})
 const batchQuoteOpen = ref(false)
 const savingBatchQuote = ref(false)
-const batchQuoteForm = reactive<{supplierId:number|string|null;currency:string;expectedDate:string;paymentTerms:string;validUntil:string;remark:string}>({ supplierId: null, currency: 'CNY', expectedDate: '', paymentTerms: '', validUntil: '', remark: '' })
+const batchQuoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', quoteCategory:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
 const batchQuotePrices = reactive<Record<string, string>>({})
 const quoteOpen = ref(false)
 const quoteLine = ref<Requirement | null>(null)
 const quoteEditing = ref<ExecutionQuote | null>(null)
 const savingQuote = ref(false)
-const quoteForm = reactive<{supplierId:number|string|null;currency:string;unitPrice:string;expectedDate:string;paymentTerms:string;validUntil:string;remark:string}>({ supplierId: null, currency: 'CNY', unitPrice: '', expectedDate: '', paymentTerms: '', validUntil: '', remark: '' })
+const quoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', unitPrice:'', quoteCategory:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
+const draftIncluded = reactive<Record<string, boolean>>({})
+const categoryCalculations = reactive<Record<string, ExecutionCategoryCalculation>>({})
+const expandedTradeTerms = reactive<Record<string, boolean>>({})
+const calculatingQuoteId = ref('')
+const pendingDraftFiles = ref<File[]>([])
+const filePreviewOpen = ref(false)
+const filePreviewSource = ref<File | null>(null)
+const filePreviewTitle = ref('')
+const filePreviewType = ref('')
 const selectedCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => Number(selectedQuote[line.id]) > 0).length)
 const quotedLineCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => quotesFor(line.id).length > 0).length)
+const calculatedSelectedCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => !!selectedCalculatedQuote(line)).length)
+const executionCategoryGroups = computed(() => quoteCategoryOptions.map((option) => {
+  const lines = (activeBatch.value?.lines ?? []).filter((line) => quotesForCategory(line.id, option.value).length)
+  return { key:option.value, products:groupBatchProducts(lines), lineCount:lines.length, calculatedCount:lines.filter((line) => quotesForCategory(line.id, option.value).some((quote) => quote.selected && !!quote.calculatedUnitPrice)).length }
+}).sort((a,b) => Number(b.lineCount>0)-Number(a.lineCount>0)))
 const detailStageLabel = computed(() => {
   const total = activeBatch.value?.lines.length ?? 0
   if (!total || quotedLineCount.value === 0) return '待实单询价'
   if (quotedLineCount.value < total) return '询价中'
-  if (selectedCount.value < total) return '待选择最终报价'
-  return '可生成采购草稿'
+  if (selectedCount.value === 0) return '待选择最终报价'
+  if (calculatedSelectedCount.value < selectedCount.value) return '已选择，待核算'
+  return '可分批生成采购草稿'
 })
 const draftOrderGroups = computed(() => {
   const grouped = new Map<string, {key:string;supplierName:string;currency:string;expectedDate:string;paymentTerms:string;lines:{line:Requirement;quote:ExecutionQuote}[]}>()
   for (const line of activeBatch.value?.lines ?? []) {
     const quote = quotesFor(line.id).find((item) => Number(item.id) === Number(selectedQuote[line.id]))
-    if (!quote) continue
-    const key = [quote.supplierId, quote.currency, quote.expectedDate, quote.paymentTerms].join('|')
+    if (!quote || !quote.calculatedUnitPrice || !draftIncluded[line.id] || String(quote.selectedById) !== String(auth.employeeId)) continue
+    const key = [quote.selectedById, quote.supplierId, quote.currency, quote.quoteCategory, quote.expectedDate, quote.paymentTerms].join('|')
     const group = grouped.get(key) ?? { key, supplierName:quote.supplierName, currency:quote.currency, expectedDate:quote.expectedDate, paymentTerms:quote.paymentTerms, lines:[] }
     group.lines.push({ line, quote })
     grouped.set(key, group)
   }
   return [...grouped.values()]
 })
+const draftLineCount = computed(() => draftOrderGroups.value.reduce((total, group) => total + group.lines.length, 0))
 const detailOpen = ref(false)
 const detail = ref<Requirement | null>(null)
 const covering = ref<CoveringOrder[]>([])
@@ -587,6 +643,28 @@ async function openBatchReview(batch: PurchaseBatch) {
   await loadBatchQuotes(batch)
 }
 
+function routeInquiryStep(): 'quotes'|'selection' {
+  return route.query.step === 'selection' ? 'selection' : 'quotes'
+}
+
+async function replaceInquiryStep(step: 'quotes'|'selection', scrollToTabs = false) {
+  activeInquiryTab.value = step
+  const query = { ...route.query }
+  if (step === 'selection') query.step = 'selection'
+  else delete query.step
+  await router.replace({ path: route.path, query })
+  if (!scrollToTabs) return
+  await nextTick()
+  inquiryTabsRef.value?.$el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function goToSelection() { return replaceInquiryStep('selection', true) }
+function goToQuotes() { return replaceInquiryStep('quotes', true) }
+function onInquiryTabChange(value: string | number) {
+  const step = value === 'selection' ? 'selection' : 'quotes'
+  if (routeInquiryStep() !== step) void replaceInquiryStep(step)
+}
+
 async function hydrateActiveBatchFromRoute() {
   if (!detailBatchKey.value) {
     activeBatch.value = null
@@ -595,6 +673,7 @@ async function hydrateActiveBatchFromRoute() {
   const batch = purchaseBatches.value.find((item) => item.key === detailBatchKey.value) ?? null
   activeBatch.value = batch
   if (!batch) return
+  activeInquiryTab.value = routeInquiryStep()
   if (!expandedBatchProductKeys.value.length && batch.productGroups[0]) expandedBatchProductKeys.value = [batchProductStateKey(batch.key, batch.productGroups[0].key)]
   await loadBatchQuotes(batch)
 }
@@ -605,21 +684,80 @@ async function loadBatchQuotes(batch: PurchaseBatch) {
     const result = await get<{quotes:ExecutionQuote[]}>(`/requirements/${line.id}/execution-quotes`)
     executionQuotes[line.id] = result.quotes ?? []
     const persisted = executionQuotes[line.id].find((quote) => quote.selected)
-    if (persisted) selectedQuote[line.id] = Number(persisted.id)
-    else delete selectedQuote[line.id]
+    if (persisted) {
+      selectedQuote[line.id] = Number(persisted.id)
+      draftIncluded[line.id] = !!persisted.calculatedUnitPrice && String(persisted.selectedById) === String(auth.employeeId)
+    } else {
+      delete selectedQuote[line.id]
+      draftIncluded[line.id] = false
+    }
   }))
+  for (const key of Object.keys(expandedTradeTerms)) delete expandedTradeTerms[key]
+  for (const option of quoteCategoryOptions) expandedTradeTerms[option.value] = batch.lines.some((line) => quotesForCategory(line.id, option.value).length > 0)
+  for (const key of Object.keys(categoryCalculations)) delete categoryCalculations[key]
+  for (const option of quoteCategoryOptions) {
+    const savedQuote = batch.lines.flatMap((line) => quotesForCategory(line.id, option.value)).find((quote) => quote.calculationInput && quote.calculationInput !== '{}')
+    if (!savedQuote) continue
+    try { Object.assign(categoryCalculation(option.value), JSON.parse(savedQuote.calculationInput)) } catch { /* keep clean defaults */ }
+  }
+  pendingDraftFiles.value = []
 }
 
 function backToBatchList() { router.push('/requirements') }
 
 function quotesFor(requirementId: string) { return executionQuotes[requirementId] ?? [] }
+function quotesForCategory(requirementId: string, category: string) { return quotesFor(requirementId).filter((quote) => quote.quoteCategory === category) }
+function quoteCategoryLabel(value: string) { return quoteCategoryOptions.find((item) => item.value === value)?.label ?? (value || '未设置贸易条款') }
+function categoryCurrency(value:string) { return ['FOB_USD','DIRECT_CFR_USD'].includes(value) ? 'USD' : 'CNY' }
+function categoryNeedsFx(value: string) { return ['FOB_CNY','ALL_IN_PORT_CNY','EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
+function categoryNeedsPort(value: string) { return ['ALL_IN_PORT_CNY','EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
+function categoryNeedsInland(value: string) { return ['EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
+function categoryCalculation(category: string) {
+  if (!categoryCalculations[category]) categoryCalculations[category] = { exchangeRate:'', portCharge:'', inlandFreight:'', loss:'', interestRate:'', interestDays:'' }
+  return categoryCalculations[category]!
+}
+function isTradeTermExpanded(category: string) { return !!expandedTradeTerms[category] }
+function toggleTradeTerm(category: string, lineCount = 1) { if (lineCount) expandedTradeTerms[category] = !expandedTradeTerms[category] }
+function categoryFormula(category: string) {
+  return executionTradeTermFormula[category] ?? '—'
+}
+function selectedCalculatedQuote(line: Requirement) { return quotesFor(line.id).find((quote) => quote.selected && !!quote.calculatedUnitPrice) }
+async function calculateSelectedQuote(line: Requirement, quote: ExecutionQuote) {
+  if (!quote.selected) { ElMessage.warning('请先选中这份报价'); return }
+  if (!quote.quoteCategory) { ElMessage.warning('这份旧报价没有贸易条款，不能参与核算'); return }
+  const input = categoryCalculation(quote.quoteCategory)
+  let result = 0
+  try { result = calculateExecutionReferencePrice(quote.quoteCategory, quote.unitPrice, input) }
+  catch (error) { ElMessage.warning(error instanceof Error ? error.message : '核算参数无效'); return }
+  calculatingQuoteId.value = quote.id
+  try {
+    const response = await post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes`, {
+      id:Number(quote.id),supplier_id:Number(quote.supplierId),currency:quote.currency,unit_price:quote.unitPrice,quote_category:quote.quoteCategory,incoterm:'',
+      expected_date:quote.expectedDate,payment_terms:quote.paymentTerms,valid_until:quote.validUntil,remark:quote.remark,calculated_unit_price:result.toFixed(6),calculation_input:JSON.stringify(input),
+    })
+    executionQuotes[line.id] = quotesFor(line.id).map((item) => item.id === quote.id ? response.quote : item)
+    draftIncluded[line.id] = true
+    ElMessage.success(`已核算 ${quote.supplierName} 的所选报价`)
+  } finally { calculatingQuoteId.value = '' }
+}
 function selectedLinesIn(group: PurchaseProductGroup) { return group.lines.filter((line) => Number(selectedQuote[line.id]) > 0).length }
 function formatMoney(value: string) { const amount = Number(value); return Number.isFinite(amount) ? amount.toFixed(2) : value || '—' }
+function formatFileSize(value: string) { const size=Number(value); return size>=1048576?`${(size/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(size/1024))} KB` }
+function selectDraftFiles(event: Event) {
+  const input=event.target as HTMLInputElement, files=[...(input.files??[])]; input.value=''
+  for(const file of files){if(file.size>10*1024*1024){ElMessage.warning(`${file.name} 超过 10 MB`);continue}pendingDraftFiles.value.push(file)}
+}
+function previewPendingFile(file: File) {
+  filePreviewSource.value = file
+  filePreviewTitle.value = file.name
+  filePreviewType.value = file.type
+  filePreviewOpen.value = true
+}
 function displaySourcePrice(line: Requirement) {
   return Number(line.sourceUnitPrice) > 0 ? `${line.sourceCurrency || ''} ${trimQty(line.sourceUnitPrice)}/${line.uomCode}` : '未带入售前价格'
 }
 function openBatchQuoteEditor() {
-  Object.assign(batchQuoteForm, { supplierId:null,currency:'CNY',expectedDate:'',paymentTerms:'',validUntil:'',remark:'' })
+  Object.assign(batchQuoteForm, { supplierId:null,currency:'CNY',quoteCategory:'',expectedDate:'',paymentTerms:'',validUntil:'',remark:'' })
   for (const key of Object.keys(batchQuotePrices)) delete batchQuotePrices[key]
   for (const line of activeBatch.value?.lines ?? []) batchQuotePrices[line.id] = ''
   batchQuoteOpen.value = true
@@ -636,8 +774,8 @@ async function resolveSupplier(value: number|string|null, currency: string, paym
 }
 async function saveBatchQuote() {
   const pricedLines = (activeBatch.value?.lines ?? []).filter((line) => String(batchQuotePrices[line.id] ?? '').trim() !== '')
-  if (!batchQuoteForm.supplierId || !batchQuoteForm.paymentTerms.trim() || !pricedLines.length) {
-    ElMessage.warning('请选择工厂、填写付款条件，并至少填写一个产品单价')
+  if (!batchQuoteForm.supplierId || !batchQuoteForm.quoteCategory || !batchQuoteForm.paymentTerms.trim() || !pricedLines.length) {
+    ElMessage.warning('请选择工厂和贸易条款，填写付款条件，并至少填写一个产品单价')
     return
   }
   batchQuoteForm.currency = batchQuoteForm.currency.trim().toUpperCase()
@@ -655,7 +793,7 @@ async function saveBatchQuote() {
     batchQuoteForm.supplierId = supplierId
     const results = await Promise.all(pricedLines.map((line) => post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes`, {
       id:0,supplier_id:supplierId,currency:batchQuoteForm.currency,unit_price:batchQuotePrices[line.id],
-      expected_date:batchQuoteForm.expectedDate,payment_terms:batchQuoteForm.paymentTerms,valid_until:batchQuoteForm.validUntil,remark:batchQuoteForm.remark,
+      quote_category:batchQuoteForm.quoteCategory,incoterm:'',expected_date:batchQuoteForm.expectedDate,payment_terms:batchQuoteForm.paymentTerms,valid_until:batchQuoteForm.validUntil,remark:batchQuoteForm.remark,
     })))
     results.forEach((result, index) => {
       const line = pricedLines[index]!
@@ -670,13 +808,13 @@ function openQuoteEditor(line: Requirement, quote: ExecutionQuote) {
   quoteEditing.value = quote
   Object.assign(quoteForm, {
     supplierId:Number(quote.supplierId),currency:quote.currency,unitPrice:quote.unitPrice,expectedDate:quote.expectedDate,
-    paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark,
+    quoteCategory:quote.quoteCategory,paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark,
   })
   quoteOpen.value = true
 }
 async function saveQuote() {
-  if (!quoteLine.value || !quoteForm.supplierId || !(Number(quoteForm.unitPrice)>0) || !quoteForm.paymentTerms.trim()) {
-    ElMessage.warning('请填写工厂、有效单价和付款条件')
+  if (!quoteLine.value || !quoteForm.supplierId || !(Number(quoteForm.unitPrice)>0) || !quoteForm.quoteCategory || !quoteForm.paymentTerms.trim()) {
+    ElMessage.warning('请填写工厂、贸易条款、有效单价和付款条件')
     return
   }
   quoteForm.currency = quoteForm.currency.trim().toUpperCase()
@@ -690,7 +828,7 @@ async function saveQuote() {
     quoteForm.supplierId = supplierId
     const result = await post<{quote:ExecutionQuote}>(`/requirements/${quoteLine.value.id}/execution-quotes`, {
       id:Number(quoteEditing.value?.id ?? 0),supplier_id:supplierId,currency:quoteForm.currency,unit_price:quoteForm.unitPrice,
-      expected_date:quoteForm.expectedDate,payment_terms:quoteForm.paymentTerms,valid_until:quoteForm.validUntil,remark:quoteForm.remark,
+      quote_category:quoteForm.quoteCategory,incoterm:'',expected_date:quoteForm.expectedDate,payment_terms:quoteForm.paymentTerms,valid_until:quoteForm.validUntil,remark:quoteForm.remark,
     })
     const list = quotesFor(quoteLine.value.id).filter((item) => item.id !== result.quote.id)
     executionQuotes[quoteLine.value.id] = [result.quote, ...list]
@@ -706,6 +844,7 @@ async function persistQuoteSelection(line: Requirement, quoteID: number) {
     const result = await post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes/${quoteID}/select`, {})
     executionQuotes[line.id] = quotesFor(line.id).map((quote) => quote.id === result.quote.id ? result.quote : { ...quote, selected:false, selectedById:'0', selectedByName:'', selectedAt:'' })
     selectedQuote[line.id] = quoteID
+    draftIncluded[line.id] = !!result.quote.calculatedUnitPrice
     ElMessage.success(`已为“${line.productName}”保存最终报价`)
   } catch (error) {
     if (previous) selectedQuote[line.id] = Number(previous.id)
@@ -723,21 +862,34 @@ async function removeQuote(line: Requirement, quote: ExecutionQuote) {
 
 async function createDraftOrders() {
   const batch = activeBatch.value
-  if (!batch || selectedCount.value !== batch.lines.length) { ElMessage.warning('请先为每项产品选择最终工厂报价'); return }
+  if (!batch) return
   const groups = draftOrderGroups.value
+  if (!groups.length) { ElMessage.warning('请先选定并核算报价，然后勾选要生成草稿的规格'); return }
   saving.value = true
+  let createdCount = 0
   try {
     for (const group of groups) {
       const quote = group.lines[0]!.quote
-      await post('/purchase-orders', {
+      const created = await post<{id:string}>('/purchase-orders', {
         supplier_id:Number(quote.supplierId),currency:quote.currency,expected_date:quote.expectedDate,payable_due_date:'',
-        remark:quote.paymentTerms,fulfillment_mode:'DIRECT_SHIP',delivery_location_type:'CUSTOM',delivery_address:'按外销合同约定',
+        remark:[quote.paymentTerms, `贸易条款：${quoteCategoryLabel(quote.quoteCategory)}`].filter(Boolean).join('；'),fulfillment_mode:'DIRECT_SHIP',delivery_location_type:'CUSTOM',delivery_address:'按外销合同约定',
         source_change_reason:'实单重新询价后选定工厂',
-        lines:group.lines.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.unitPrice,execution_quote_id:Number(quote.id)})),
+        lines:group.lines.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.calculatedUnitPrice,execution_quote_id:Number(quote.id)})),
       })
+      createdCount += 1
+      for (const file of pendingDraftFiles.value) {
+        await post(`/purchase-orders/${created.id}/draft-files`, {file_name:file.name,content_type:file.type||'application/octet-stream',file_data:await fileBase64(file)})
+      }
     }
+    pendingDraftFiles.value = []
     ElMessage.success(`已生成 ${groups.length} 张采购订单草稿，请检查后提交审批`)
     await router.push({ path:'/purchase-orders', query:{ status:'DRAFT' } })
+  } catch {
+    if (createdCount > 0) {
+      ElMessage.error(`已有 ${createdCount} 张草稿生成，但采购资料上传未完成；修复后可直接重试，不会重复生成草稿`)
+    } else {
+      ElMessage.error('采购订单草稿生成失败，请稍后重试')
+    }
   } finally { saving.value = false }
 }
 
@@ -935,6 +1087,7 @@ const stopListening = onLive((event) => {
 onUnmounted(stopListening)
 
 watch(() => route.params.batchKey, () => { hydrateActiveBatchFromRoute() })
+watch(() => route.query.step, () => { activeInquiryTab.value = routeInquiryStep() })
 onMounted(load)
 </script>
 
@@ -1101,6 +1254,7 @@ onMounted(load)
   gap: 16px;
   margin-bottom: 12px;
 }
+.requirements-page :deep(.batch-hierarchy-table .el-table__row) { cursor: pointer; }
 .detail-back { margin-bottom: 12px; }
 .inquiry-detail-hero {
   display: flex;
@@ -1125,7 +1279,59 @@ onMounted(load)
 .detail-spec-list { padding: 0 12px 12px; border-top: 1px solid #e7eff3; background: #f8fbfc; }
 .detail-spec-list .requote-product { margin-top: 12px; }
 .tab-next { display: flex; justify-content: flex-end; margin-top: 18px; }
-.draft-preview { padding: 16px; margin-top: 18px; border: 1px solid #bfe1d4; border-radius: 10px; background: #f5fcf9; }
+.selection-step-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid #d4e7ef;
+  border-radius: 10px;
+  background: #f4faff;
+}
+.selection-step-heading > div { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 3px 10px; }
+.selection-step-heading span { color: #1782ad; font-size: 12px; font-weight: 650; }
+.selection-step-heading strong { color: #163f57; font-size: 17px; }
+.selection-step-heading small { grid-column: 2; color: #667f8e; line-height: 1.5; }
+.pricing-category { margin: 9px 0; overflow: hidden; border: 1px solid #c9dce8; border-radius: 10px; background: #fff; }
+.pricing-category__head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 7px 14px; background: #edf6fa; border-bottom: 1px solid #d7e6ee; cursor: pointer; }
+.pricing-category__head:hover { background: #e7f3f8; }
+.pricing-category__head.is-empty { min-height: 38px; border-bottom:0; background:#f7fafb; cursor:default; }
+.pricing-category__head.is-empty:hover { background:#f7fafb; }
+.pricing-category__head>div { display: flex; align-items: baseline; gap: 11px; }
+.pricing-category__head strong { color: #23485d; font-size: 15px; font-weight:600; }
+.pricing-category__head span { color: #6a8290; font-size: 13px; }
+.pricing-category__head .pricing-category__eyebrow { color: #4b7b92; font-size: 11px; font-weight: 500; letter-spacing: .03em; }
+.trade-term-chevron { flex:0 0 auto; color:#5f8193; transition:transform .18s ease; }
+.trade-term-chevron.is-expanded { transform:rotate(180deg); }
+.category-calculation { display: grid; grid-template-columns: minmax(340px,1.15fr) minmax(500px,2fr); gap: 14px; padding: 10px 14px; border-bottom: 1px solid #e0eaf0; background: #f9fcfd; }
+.category-formula { display: flex; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; }
+.category-formula>span { color: #27789c; font-size: 12px; font-weight: 500; }
+.category-formula>strong { color: #294b5e; font-size: 14px; font-weight:600; line-height: 1.45; }
+.category-formula>small { color: #718591; line-height: 1.45; }
+.category-inputs { display: grid; grid-template-columns: repeat(3,minmax(145px,1fr)); gap: 8px; align-items: end; }
+.category-inputs label { display: flex; flex-direction: column; gap: 5px; color: #496879; font-size: 12px; font-weight: 600; }
+.category-empty { padding: 16px 18px; color: #8a9aa4; text-align: center; background: #fff; }
+.pricing-category .detail-product-group { margin: 0; border-width: 0 0 1px; border-radius: 0; }
+.pricing-category .detail-product-group:last-child { border-bottom: 0; }
+.quote-calculation { margin: 0; padding: 0; border: 0; background: transparent; }
+.calculation-result { display: flex; align-items: center; justify-content: flex-end; gap: 7px; margin: 0; color: #607b8a; font-size: 11px; white-space: nowrap; }
+.calculation-result strong { color: #17617a; font-size: 13px; font-weight:600; }
+.draft-include { margin: 10px 0 0 24px; }
+.execution-files { margin: 10px 0; padding: 10px 12px; border: 1px solid #d7e5ed; border-radius: 8px; background: #fbfdfe; }
+.execution-files>header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.execution-files>header>div { display:flex; flex-direction:column; gap:4px; }
+.execution-files>header span { color:#708591; font-size:13px; }
+.file-pick { padding:8px 15px; border:1px solid #75b9d8; border-radius:7px; color:#0879aa; cursor:pointer; white-space:nowrap; background:#fff; }
+.file-pick input { display:none; }
+.execution-file-list { margin-top:12px; border-top:1px solid #e2ebf0; }
+.execution-file-list>div { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 2px; border-bottom:1px solid #edf2f5; }
+.execution-file-list>div>span:first-child { display:flex; flex-direction:column; gap:3px; }
+.execution-file-list small { color:#7a8e99; }
+.execution-file-actions { display:flex; align-items:center; white-space:nowrap; }
+.draft-file-empty { display:block;margin-top:8px;color:#8a9aa4;font-size:12px; }
+.draft-preview { padding: 13px 14px; margin-top: 14px; border: 1px solid #bfe1d4; border-radius: 10px; background: #f7fcfa; }
 .draft-preview > div:first-child { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .draft-preview > div:first-child strong { color: #174d45; }
 .draft-preview > div:first-child span { color: #687f7b; font-size: 13px; }
@@ -1148,24 +1354,29 @@ onMounted(load)
 .batch-price-line strong,.batch-price-line span { display:block }
 .batch-price-line strong { color:#173a4d }
 .batch-price-line span { margin-top:3px;color:#66727d;font-size:12px }
-.requote-product { margin-top:12px;padding:14px 16px;border:1px solid #dfeaf0;border-radius:10px;background:#fff }
+.requote-product { margin-top:9px;padding:10px 12px;border:1px solid #dfeaf0;border-radius:9px;background:#fff }
 .requote-product-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:10px }
-.requote-product-head strong { display:block;color:#173a4d;font-size:16px }
+.requote-product-head strong { display:block;color:#29495b;font-size:15px;font-weight:600 }
 .requote-product-head span { display:block;margin-top:3px;color:#66727d;font-size:12px }
 .requote-product-status { display:flex;align-items:center;gap:12px }
 .requote-product-status span { margin:0;padding:3px 8px;border-radius:999px;background:#effaf5;color:#16846f;font-size:12px }
-.requote-product-status b { color:#087f6f;font-weight:650 }
+.requote-product-status b { color:#167565;font-weight:600 }
 .presale-reference { display:flex;gap:12px;align-items:center;padding:9px 11px;margin-bottom:10px;border-radius:7px;background:#f5f7fa;color:#66727d;font-size:12px }
 .presale-reference>span:first-child { color:#8793a1;font-weight:600 }
 .presale-reference strong { color:#344563 }
 .quote-options { display:block;width:100% }
-.quote-option { position:relative;padding:11px 92px 11px 12px;margin-bottom:8px;border:1px solid #e1e8ed;border-radius:8px;background:#fff }
+.quote-option { position:relative;padding:9px 84px 9px 10px;margin-bottom:6px;border:1px solid #e1e8ed;border-radius:8px;background:#fff }
 .quote-option.selected { border-color:#4ac1ff;background:#f3fbff;box-shadow:0 0 0 1px rgb(74 193 255 / 12%) }
 .quote-option :deep(.el-radio) { width:100%;height:auto;margin-right:0 }
 .quote-option :deep(.el-radio__label) { flex:1 }
-.quote-main { display:flex;justify-content:space-between;gap:14px;color:#24323a }
-.quote-main b { color:#087f6f;font-variant-numeric:tabular-nums }
+.quote-main { display:flex;justify-content:space-between;gap:14px;color:#24323a;font-size:14px }
+.quote-main strong,.quote-main b { font-weight:600 }
+.quote-main b { color:#167565;font-size:13px;font-variant-numeric:tabular-nums }
 .quote-meta { display:flex;gap:16px;margin:6px 0 0 24px;color:#66727d;font-size:12px }
+.selection-quote-option { display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;padding:7px 10px }
+.selection-quote-option :deep(.el-radio) { grid-column:1/-1 }
+.selection-quote-option .quote-meta { grid-column:1;margin-top:4px;font-size:11px }
+.selection-quote-option .quote-calculation { grid-column:2;align-self:center }
 .quote-actions { position:absolute;right:12px;top:9px;display:flex;gap:5px }
 .quote-empty { display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border:1px dashed #d7e4ea;border-radius:8px;background:#fafcfd;color:#60717c }
 .quote-empty span { font-size:13px;font-weight:600 }
@@ -1185,11 +1396,11 @@ onMounted(load)
 .batch-quote-form :deep(.el-form-item__label) { height:auto;padding-bottom:5px;color:#536773;font-size:13px;line-height:20px }
 .batch-quote-form .remark-field { margin-bottom:0 }
 .product-price-section { padding-bottom:12px }
-@media(max-width:1100px){.batch-product-heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.batch-specification-header,.batch-specification-row{grid-template-columns:minmax(100px,.6fr) minmax(190px,1.2fr) minmax(120px,.7fr) minmax(150px,1fr) minmax(130px,.9fr);padding-left:26px;padding-right:26px;gap:12px}}
+@media(max-width:1100px){.category-calculation{grid-template-columns:1fr}.category-inputs{grid-template-columns:repeat(2,minmax(150px,1fr))}.batch-product-heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.batch-specification-header,.batch-specification-row{grid-template-columns:minmax(100px,.6fr) minmax(190px,1.2fr) minmax(120px,.7fr) minmax(150px,1fr) minmax(130px,.9fr);padding-left:26px;padding-right:26px;gap:12px}}
 @media(max-width:900px){.requirements-page :deep(.batch-hierarchy-table .batch-secondary-column){display:none}.batch-product-summary__mobile-meta,.batch-mobile-source{display:block}.requirements-page :deep(.batch-hierarchy-table .el-table__body),.requirements-page :deep(.batch-hierarchy-table .el-table__header){width:100%!important}}
 @media(min-width:801px){.batch-mobile-stage{display:none}}
 @media(max-width:800px){.requirements-page :deep(.batch-hierarchy-table .batch-status-column){display:none}.batch-mobile-stage{display:inline-flex;margin-top:5px}}
-@media(max-width:800px){.inquiry-detail-hero{align-items:flex-start;flex-direction:column}.draft-preview>div:first-child{flex-direction:column}.draft-preview-row{grid-template-columns:1fr}.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.quote-actions{position:static;margin-left:24px}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
+@media(max-width:800px){.pricing-category__head{align-items:flex-start;flex-direction:column;gap:8px}.pricing-category__head>div{align-items:flex-start;flex-direction:column;gap:4px}.category-calculation{grid-template-columns:1fr;padding:12px}.category-inputs{grid-template-columns:1fr}.execution-files>header{align-items:flex-start;flex-direction:column}.inquiry-detail-hero{align-items:flex-start;flex-direction:column}.draft-preview>div:first-child{flex-direction:column}.draft-preview-row{grid-template-columns:1fr}.requote-summary{grid-template-columns:repeat(2,1fr)}.batch-quote-toolbar,.batch-dialog-intro{align-items:flex-start;flex-direction:column}.batch-common-grid,.batch-price-line{grid-template-columns:1fr}.batch-common-grid .field-wide{grid-column:auto}.requote-product-status{align-items:flex-end;flex-direction:column;gap:4px}.quote-empty{align-items:flex-start;flex-direction:column;gap:3px}.presale-reference,.quote-main,.quote-meta{align-items:flex-start;flex-direction:column;gap:4px}.quote-option{padding-right:12px}.selection-quote-option{display:block}.selection-quote-option .quote-calculation{margin:6px 0 0 24px}.calculation-result{justify-content:flex-start}.quote-actions{position:static;margin-left:24px}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
 .qty {
   font-variant-numeric: tabular-nums;
   font-weight: 600;

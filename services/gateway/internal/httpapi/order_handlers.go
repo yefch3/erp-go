@@ -37,6 +37,48 @@ func (s *Server) getOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listOrderDraftFiles(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListOrderDraftFiles(r.Context(), &prv1.ListOrderDraftFilesRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) uploadOrderDraftFile(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UploadOrderDraftFileRequest{}
+	if !s.decodeBodyLimit(w, r, req, 14<<20) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.UploadOrderDraftFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) downloadOrderDraftFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	resp, err := s.Orders.DownloadOrderDraftFile(r.Context(), &prv1.DownloadOrderDraftFileRequest{Id: idFromPath(r), FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", resp.GetContentType())
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	_, _ = w.Write(resp.GetFileData())
+}
+func (s *Server) deleteOrderDraftFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	resp, err := s.Orders.DeleteOrderDraftFile(r.Context(), &prv1.DeleteOrderDraftFileRequest{Id: idFromPath(r), FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateOrderRequest{}
 	if !s.decodeBody(w, r, req) {

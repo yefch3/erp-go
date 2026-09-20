@@ -254,6 +254,16 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <section v-if="detailDraftFiles.length" class="order-draft-files">
+        <div class="side-title">采购资料</div>
+        <div v-for="file in detailDraftFiles" :key="file.id" class="order-draft-file">
+          <span><strong>{{ file.fileName }}</strong><small>{{ formatDraftFileSize(file.sizeBytes) }} · {{ file.uploadedByName }} · {{ formatTime(file.uploadedAt) }}</small></span>
+          <span><el-button link type="primary" :loading="previewingDraftFileId===file.id" @click="previewDraftFile(file)">预览</el-button><el-button link type="primary" @click="downloadDraftFile(file)">下载</el-button><el-button v-if="canWrite && detail?.status==='DRAFT'" link type="danger" @click="deleteDraftFile(file)">删除</el-button></span>
+        </div>
+      </section>
+
+      <FilePreviewDialog v-model="draftFilePreviewOpen" :source="draftFilePreviewSource" :title="draftFilePreviewTitle" :content-type="draftFilePreviewType" />
+
       <el-table :data="detailItems" size="small">
         <el-table-column :label="t('orders.product')" min-width="180">
           <template #default="{ row }">
@@ -572,13 +582,14 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { download, get, post, put, quietErrors, saveBlob } from '../api'
+import { del, download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 
 interface Order {
   id: string
@@ -651,6 +662,7 @@ interface Receipt {
   totalQty: string
   receivedAt: string
 }
+interface OrderDraftFile { id:string; poId:string; fileName:string; contentType:string; sizeBytes:string; uploadedByName:string; uploadedAt:string }
 interface Requirement {
   id: string
   contractNo: string
@@ -733,6 +745,12 @@ const detailOpen = ref(false)
 const detail = ref<Order | null>(null)
 const detailItems = ref<OrderItem[]>([])
 const detailReceipts = ref<Receipt[]>([])
+const detailDraftFiles = ref<OrderDraftFile[]>([])
+const draftFilePreviewOpen = ref(false)
+const draftFilePreviewSource = ref<Blob | null>(null)
+const draftFilePreviewTitle = ref('')
+const draftFilePreviewType = ref('')
+const previewingDraftFileId = ref('')
 interface QualityDetail {id:string;taskNo:string;status:string;lines:Array<{productName:string;requestedQty:string;qualifiedQty:string;uomCode:string;finalResult:string;issueDescription:string}>;files:Array<{id:string;fileName:string;downloadUrl:string}>;procurementHandlingStatus:string;procurementHandlingAction:string;procurementHandlingNote:string;procurementHandledByName:string}
 const qualityDetails=ref<QualityDetail[]>([])
 const qualityAction=reactive<Record<string,string>>({})
@@ -1301,13 +1319,28 @@ function selectOrderWarehouse(id: number) {
 }
 
 async function openDetail(row: Order) {
-  const [d,q] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`)])
+  const [d,q,f] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`),get<{files:OrderDraftFile[]}>(`/purchase-orders/${row.id}/draft-files`)])
   detail.value = d.order
   detailItems.value = d.items ?? []
   detailReceipts.value = d.receipts ?? []
   qualityDetails.value=q.tasks??[]
+  detailDraftFiles.value=f.files??[]
   detailOpen.value = true
 }
+function formatDraftFileSize(value:string){const size=Number(value);return size>=1048576?`${(size/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(size/1024))} KB`}
+async function downloadDraftFile(file:OrderDraftFile){if(!detail.value)return;const result=await download(`/purchase-orders/${detail.value.id}/draft-files/${file.id}/download`);saveBlob(result.blob,result.fileName||file.fileName)}
+async function previewDraftFile(file:OrderDraftFile){
+  if(!detail.value)return
+  previewingDraftFileId.value=file.id
+  try{
+    const result=await download(`/purchase-orders/${detail.value.id}/draft-files/${file.id}/download`)
+    draftFilePreviewSource.value=result.blob
+    draftFilePreviewTitle.value=result.fileName||file.fileName
+    draftFilePreviewType.value=file.contentType||result.blob.type
+    draftFilePreviewOpen.value=true
+  }finally{previewingDraftFileId.value=''}
+}
+async function deleteDraftFile(file:OrderDraftFile){if(!detail.value)return;await ElMessageBox.confirm(`删除资料“${file.fileName}”？`,'删除资料',{type:'warning'});await del(`/purchase-orders/${detail.value.id}/draft-files/${file.id}`);detailDraftFiles.value=detailDraftFiles.value.filter(item=>item.id!==file.id);ElMessage.success('采购资料已删除')}
 function qualityOverallLabel(task:QualityDetail){if(task.lines.every(l=>l.finalResult==='PASS'))return '合格';if(task.lines.some(l=>l.finalResult==='FAIL'))return '不合格';return '部分合格'}
 function qualityResultType(task:QualityDetail){return task.lines.every(l=>l.finalResult==='PASS')?'success':task.lines.some(l=>l.finalResult==='FAIL')?'danger':'warning'}
 function qualityActionLabel(v:string){return ({REWORK:'返工',REPLACEMENT:'换货',CANCEL_SHORTAGE:'取消缺少数量'} as Record<string,string>)[v]||v}
@@ -1801,6 +1834,12 @@ onMounted(async () => {
 .desc {
   margin-bottom: 14px;
 }
+.order-draft-files { margin:14px 0 10px; padding:10px 12px; border:1px solid #dce7ed; border-radius:8px; background:#fafcfd; }
+.order-draft-files .side-title { margin:0 0 5px; font-size:14px; font-weight:600; color:#29495b; }
+.order-draft-file { display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 2px;border-top:1px solid #edf2f5; }
+.order-draft-file>span:first-child { display:flex;flex-direction:column;gap:2px;min-width:0; }
+.order-draft-file strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344f5d;font-weight:500; }
+.order-draft-file small { color:#7b8d97;font-size:12px; }
 .pager {
   margin-top: 14px;
   justify-content: flex-end;

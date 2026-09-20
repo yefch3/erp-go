@@ -640,6 +640,10 @@ func (s *Server) Router() http.Handler {
 		// supplier are different jobs, and often different people.
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/draft-files", s.listOrderDraftFiles)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/draft-files", s.uploadOrderDraftFile)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/draft-files/{fileId}/download", s.downloadOrderDraftFile)
+		r.With(s.perm("procurement:order:write")).Delete("/api/purchase-orders/{id}/draft-files/{fileId}", s.deleteOrderDraftFile)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/preview", s.previewOrderImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/template-imports/preview", s.previewPurchaseTemplateImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)

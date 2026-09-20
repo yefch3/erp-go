@@ -211,6 +211,58 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 	return &prv1.GetOrderResponse{Order: outOrder, Items: outItems, Receipts: outReceipts}, nil
 }
 
+func orderDraftFileProto(f app.OrderDraftFile) *prv1.OrderDraftFile {
+	return &prv1.OrderDraftFile{Id: f.ID, PoId: f.POID, FileName: f.FileName, ContentType: f.ContentType, SizeBytes: f.SizeBytes, UploadedById: f.UploadedByID, UploadedByName: f.UploadedByName, UploadedAt: f.UploadedAt}
+}
+
+func (h *OrderHandler) ListOrderDraftFiles(ctx context.Context, req *prv1.ListOrderDraftFilesRequest) (*prv1.ListOrderDraftFilesResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	files, err := h.svc.ListOrderDraftFiles(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.OrderDraftFile, 0, len(files))
+	for _, f := range files {
+		out = append(out, orderDraftFileProto(f))
+	}
+	return &prv1.ListOrderDraftFilesResponse{Files: out}, nil
+}
+
+func (h *OrderHandler) UploadOrderDraftFile(ctx context.Context, req *prv1.UploadOrderDraftFileRequest) (*prv1.UploadOrderDraftFileResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	f, err := h.svc.UploadOrderDraftFile(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileName(), req.GetContentType(), req.GetFileData(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.UploadOrderDraftFileResponse{File: orderDraftFileProto(f)}, nil
+}
+
+func (h *OrderHandler) DownloadOrderDraftFile(ctx context.Context, req *prv1.DownloadOrderDraftFileRequest) (*prv1.DownloadOrderDraftFileResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	name, contentType, data, err := h.svc.DownloadOrderDraftFile(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.DownloadOrderDraftFileResponse{FileName: name, ContentType: contentType, FileData: data}, nil
+}
+
+func (h *OrderHandler) DeleteOrderDraftFile(ctx context.Context, req *prv1.DeleteOrderDraftFileRequest) (*prv1.DeleteOrderDraftFileResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	if err := h.svc.DeleteOrderDraftFile(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetFileId()); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteOrderDraftFileResponse{}, nil
+}
+
 func applyOrderContractState(out *prv1.PurchaseOrder, v app.OrderContractState) {
 	out.BusinessType = v.BusinessType
 	out.SourceBusinessId = v.SourceBusinessID
