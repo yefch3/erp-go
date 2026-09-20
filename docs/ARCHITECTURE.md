@@ -299,14 +299,14 @@ export: 出货计划 status = PENDING_STOCK
 - **本位币为 USD**（业务确认）：所有 `base_amount` 均为折 USD 金额；`fx_base_currency` 默认 `'USD'`；采购、船期费用等 CNY 单据经各自汇率快照折 USD 进入报表与汇兑损益
 - 附件类列（`file_path` / `bank_slip_path` / `voucher_path`）统一存**对象存储 key**（`bucket/object-key`），不存本地路径；存储后端走 S3 兼容接口（本地 MinIO，云端换 S3/OSS 只改 endpoint 配置）
 
-### 多租户约定（预留）
+### 多租户约定
 
-按「预留多租户」设计（业务确认）：当前单租户运行（`tenant_id = 1`），但结构从第一天支持多租户，避免事后为每张表补列、改唯一键的灾难性改造。
+系统按多租户模式运行。租户来自登录会话和服务间签名上下文，不允许由业务代码猜测，也不存在默认的 1 号租户。
 
-- 每张业务表带 `tenant_id BIGINT NOT NULL DEFAULT 1`
+- 每张业务表带 `tenant_id BIGINT NOT NULL`，**不得设置默认值**；漏传租户必须让写入失败
 - **所有业务唯一键必须包含 tenant_id**：`UNIQUE (tenant_id, quote_no)` 而非 `UNIQUE (quote_no)`；取号表主键为 `(tenant_id, biz_type, period_key)`
 - 复合索引以 `tenant_id` 开头
-- JWT 携带 `tenant_id`，gateway 写入 gRPC metadata `x-tenant-id`，服务端拦截器注入 context，所有查询强制带租户过滤
+- JWT 携带 `tenant_id`，gateway 写入 gRPC metadata `x-tenant-id`，服务端拦截器注入 context，所有查询强制带租户过滤；公开方法缺少租户时保持 0，绝不回退为某个真实租户
 - Kafka 事件 payload 携带 `tenant_id`
 - 阶段 0 的 CI 加迁移检查脚本：扫描所有 `CREATE TABLE`，缺 `tenant_id` 直接失败
 - 阶段 8 可选启用 PostgreSQL Row Level Security 作为第二道防线
@@ -3633,7 +3633,7 @@ Message-ID: <{message_key}@{发信域名}>
 -- 状态机、重试、数据范围规则全都不一样。
 CREATE TABLE email_inbound (
     id             BIGSERIAL PRIMARY KEY,
-    tenant_id      BIGINT NOT NULL DEFAULT 1,
+    tenant_id      BIGINT NOT NULL,
     message_id     TEXT NOT NULL,          -- 对方那封信自己的 Message-ID
     in_reply_to    TEXT NOT NULL DEFAULT '',
     references_ids TEXT[] NOT NULL DEFAULT '{}',
@@ -4677,7 +4677,7 @@ ENTRYPOINT ["/app"]
 | 4 | 退税申报周期 | **按月**汇总申报 | `tax_refund_declarations`（5.6.6） |
 | 5 | 信用证不符点改单 | **需要独立审批** | `lc_amendments.status`；biz_type `LC_AMENDMENT` |
 | 6 | 数据范围自定义部门 | 枚举预留，**暂不实现** | `role_data_scopes` 注释 |
-| 7 | 部署形态 | **预留多租户**（当前单租户运行） | 公共约定「多租户约定」 |
+| 7 | 部署形态 | **多租户运行**；所有业务数据按会话租户隔离 | 公共约定「多租户约定」 |
 | 8 | 附件存储 | **MinIO（S3 兼容）**，云端换 S3/OSS 只改配置 | 公共约定；8.1 infra compose |
 | 9 | 汇率源 | **仅免费 API（frankfurter.app）实时抓取**（2026-07-27 变更：取消手工录入，异常检测移至抓取时） | 5.4 说明 |
 | 10 | 变更重签期间存量业务 | **继续执行，冲突预警**，不自动取消 | 5.6.2 不变量 |

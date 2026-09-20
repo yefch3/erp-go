@@ -34,11 +34,16 @@ func OperatorFromContext(ctx context.Context) (Operator, bool) {
 	return op, ok
 }
 
-// TenantID returns the tenant for the request, defaulting to 1 so that
-// single-tenant operation needs no special casing anywhere else.
+// TenantID returns the tenant carried by the authenticated request.
+//
+// Zero deliberately means "there is no tenant". Public RPCs such as login
+// are allowed to run before a tenant is known, and turning that absence into
+// tenant 1 would let an accidental tenant-scoped query read the first
+// company's data. Authenticated RPCs are rejected by the interceptor before
+// they reach a handler when the tenant is missing.
 func TenantID(ctx context.Context) int64 {
 	if op, ok := OperatorFromContext(ctx); ok && op.TenantID > 0 {
 		return op.TenantID
 	}
-	return 1
+	return 0
 }

@@ -189,6 +189,10 @@ message LoginResponse {
   // by this person. The session is real but owes an immediate change — the
   // frontend blocks everything else until it happens.
   bool must_change_password = 5;
+  // The company selected by the globally unique login account. Clients use
+  // it to scope harmless local preferences; authorization still comes only
+  // from the signed session cookie.
+  int64 tenant_id = 6;
 }
 
 message InviteEmployeeRequest {
@@ -456,6 +460,8 @@ message MyProfile {
   // record in the meantime. Same lock UpdateEmployee uses.
   int32 version = 13;
   bool email_verified = 14;
+  // Returned from the authenticated context rather than a client parameter.
+  int64 tenant_id = 16;
 }
 
 // OrgMember 是组织架构图上的一个人。
