@@ -28,12 +28,28 @@ type Event struct {
 
 // Append writes the event inside the caller's transaction. This is the only
 // legal way to publish: it makes the DB change and the event atomic.
+//
+// TenantID is required, and a missing one is an error rather than a default.
+//
+// It used to default to 1. That is the shape of a bug this codebase has
+// already paid for once: iam migration 00055 left tenant_id out of an INSERT
+// column list, the column's own DEFAULT 1 filled it in, and three companies'
+// sales roles silently lost two permissions for three weeks (fixed by 00081).
+// Here the same trap is one line of Go away — a caller who omits the field
+// gets int64's zero value, and nothing complains. The consumer on the other
+// side acts on the envelope's tenant, not on anything inside the payload, so
+// a letter stamped with the wrong company writes to the wrong company's
+// inventory, orders and contracts without a single error anywhere.
+//
+// Refusing costs the person who forgot one failing test; defaulting costs
+// somebody else a week of forensics months later.
 func Append(ctx context.Context, tx pgx.Tx, e Event) error {
 	if e.AggregateType == "" || e.AggregateID == "" || e.EventType == "" {
 		return fmt.Errorf("outbox: aggregate_type, aggregate_id and event_type are required")
 	}
-	if e.TenantID == 0 {
-		e.TenantID = 1
+	if e.TenantID <= 0 {
+		return fmt.Errorf("outbox: tenant_id is required (%s/%s %s)",
+			e.AggregateType, e.AggregateID, e.EventType)
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload, trace_id)
