@@ -75,18 +75,21 @@ func (s *Service) SelectExecutionSupplierQuote(ctx context.Context, tenantID, re
 	if status != "WAITING_REQUOTE" {
 		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能再选择实单报价")
 	}
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3)`, tenantID, requirementID, quoteID).Scan(&exists); err != nil {
-		return ExecutionSupplierQuote{}, err
-	}
-	if !exists {
+	var alreadySelected bool
+	if err := tx.QueryRow(ctx, `SELECT selected FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3 FOR UPDATE`, tenantID, requirementID, quoteID).Scan(&alreadySelected); err == pgx.ErrNoRows {
 		return ExecutionSupplierQuote{}, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
+	} else if err != nil {
+		return ExecutionSupplierQuote{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=FALSE,selected_by_id=0,selected_by_name='',selected_at=NULL WHERE tenant_id=$1 AND requirement_id=$2 AND selected`, tenantID, requirementID); err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=TRUE,selected_by_id=$4,selected_by_name=$5,selected_at=now(),updated_at=now() WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3`, tenantID, requirementID, quoteID, op.ID, op.Name); err != nil {
-		return ExecutionSupplierQuote{}, err
+	// Clicking the current choice again clears it. This lets a purchaser correct
+	// an accidental choice without selecting a different supplier first.
+	if !alreadySelected {
+		if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=TRUE,selected_by_id=$4,selected_by_name=$5,selected_at=now(),updated_at=now() WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3`, tenantID, requirementID, quoteID, op.ID, op.Name); err != nil {
+			return ExecutionSupplierQuote{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return ExecutionSupplierQuote{}, err

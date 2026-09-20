@@ -135,27 +135,26 @@
                 <div v-show="isBatchProductExpanded(activeBatch.key, `${category.key}:${group.key}`)" class="detail-spec-list">
                   <article v-for="line in group.lines" :key="`${category.key}:${line.id}`" class="requote-product">
                     <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>售前参考：{{ displaySourcePrice(line) }}</span></div><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></header>
-                    <el-radio-group v-model="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder" @change="(value:number|string|boolean|undefined) => persistQuoteSelection(line, Number(value))">
-                      <div v-for="quote in quotesForCategory(line.id, category.key)" :key="quote.id" :class="['quote-option', 'selection-quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id)}]">
-                        <el-radio :value="Number(quote.id)"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
+                    <el-radio-group :model-value="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder">
+                      <div v-for="quote in quotesForCategory(line.id, category.key)" :key="quote.id" :class="['quote-option', 'selection-quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id), 'is-saving':selectingQuoteId===quote.id}]" @click="canOrder && toggleQuoteSelection(line, quote)">
+                        <el-radio :value="Number(quote.id)" :disabled="!canOrder"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
                         <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.selectedByName">由 {{ quote.selectedByName }} 选定</span></div>
                         <div v-if="Number(selectedQuote[line.id])===Number(quote.id)" class="quote-calculation">
                           <div class="calculation-result"><span>核算价</span><strong>{{ quote.calculatedUnitPrice ? `USD ${formatMoney(quote.calculatedUnitPrice)}/${line.uomCode}` : '待核算' }}</strong><el-button size="small" type="primary" plain :loading="calculatingQuoteId===quote.id" @click.stop="calculateSelectedQuote(line, quote)">计算</el-button></div>
                         </div>
                       </div>
                     </el-radio-group>
-                    <el-checkbox v-if="selectedCalculatedQuote(line)?.quoteCategory === category.key" v-model="draftIncluded[line.id]" class="draft-include">加入本次草稿 · 负责人 {{ selectedCalculatedQuote(line)?.selectedByName || '当前采购员' }}</el-checkbox>
                   </article>
                 </div>
               </section>
             </section>
             <el-empty v-if="!executionCategoryGroups.length" description="暂无已分类的实单报价，请先返回录入报价" />
             <section class="draft-preview">
-              <div><strong>生成采购订单草稿</strong><span v-if="draftOrderGroups.length">已选择 {{ draftLineCount }} 个规格，预计生成 {{ draftOrderGroups.length }} 张草稿。</span><span v-else>勾选已核算的规格后，可在这里上传资料并生成草稿。</span></div>
+              <div><strong>生成采购订单草稿</strong><span v-if="draftOrderGroups.length">已选择 {{ draftLineCount }} 个规格，预计生成 {{ draftOrderGroups.length }} 张草稿。</span><span v-else>选定并核算报价后，可在这里上传资料并生成草稿。</span></div>
               <div v-for="group in draftOrderGroups" :key="group.key" class="draft-preview-row"><strong>{{ group.supplierName }}</strong><span>{{ group.currency }} · {{ group.expectedDate || '未填写交期' }} · {{ group.lines.length }} 个规格</span></div>
               <section class="execution-files">
-                <header><div><strong>本次订单采购资料</strong><span>资料将在生成草稿时写入你的采购订单，仅订单负责人、部门领导和最高权限账户可见。</span></div><label v-if="canOrder" class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择资料</label></header>
-                <div v-if="pendingDraftFiles.length" class="execution-file-list"><div v-for="(file,index) in pendingDraftFiles" :key="`${file.name}:${file.size}:${index}`"><span><strong>{{ file.name }}</strong><small>{{ formatFileSize(String(file.size)) }} · 待随草稿上传</small></span><span class="execution-file-actions"><el-button link type="primary" @click="previewPendingFile(file)">预览</el-button><el-button link type="danger" @click="pendingDraftFiles.splice(index,1)">移除</el-button></span></div></div>
+                <header><div><strong>本次订单采购资料</strong><span>随草稿写入采购订单，仅负责人、部门领导和最高权限账户可见。</span></div><div class="execution-file-toolbar"><small v-if="pendingDraftFiles.length">{{ pendingDraftFiles.length }} 个文件</small><label v-if="canOrder" class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择资料</label></div></header>
+                <div v-if="pendingDraftFiles.length" class="execution-file-list"><div v-for="(file,index) in pendingDraftFiles" :key="`${file.name}:${file.size}:${index}`"><span class="execution-file-name" :title="file.name"><strong>{{ file.name }}</strong><small>{{ formatFileSize(String(file.size)) }} · 待上传</small></span><span class="execution-file-actions"><el-button size="small" link type="primary" @click="previewPendingFile(file)">预览</el-button><el-button size="small" link type="danger" @click="pendingDraftFiles.splice(index,1)">移除</el-button></span></div></div>
                 <span v-else class="draft-file-empty">未选择资料，可直接生成草稿</span>
               </section>
               <el-button v-if="canOrder" type="primary" :loading="saving" @click="createDraftOrders">{{ draftOrderGroups.length ? `生成所选 ${draftOrderGroups.length} 张采购订单草稿` : '生成采购订单草稿' }}</el-button>
@@ -557,10 +556,10 @@ const quoteLine = ref<Requirement | null>(null)
 const quoteEditing = ref<ExecutionQuote | null>(null)
 const savingQuote = ref(false)
 const quoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', unitPrice:'', quoteCategory:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
-const draftIncluded = reactive<Record<string, boolean>>({})
 const categoryCalculations = reactive<Record<string, ExecutionCategoryCalculation>>({})
 const expandedTradeTerms = reactive<Record<string, boolean>>({})
 const calculatingQuoteId = ref('')
+const selectingQuoteId = ref('')
 const pendingDraftFiles = ref<File[]>([])
 const filePreviewOpen = ref(false)
 const filePreviewSource = ref<File | null>(null)
@@ -585,7 +584,7 @@ const draftOrderGroups = computed(() => {
   const grouped = new Map<string, {key:string;supplierName:string;currency:string;expectedDate:string;paymentTerms:string;lines:{line:Requirement;quote:ExecutionQuote}[]}>()
   for (const line of activeBatch.value?.lines ?? []) {
     const quote = quotesFor(line.id).find((item) => Number(item.id) === Number(selectedQuote[line.id]))
-    if (!quote || !quote.calculatedUnitPrice || !draftIncluded[line.id] || String(quote.selectedById) !== String(auth.employeeId)) continue
+    if (!quote || !quote.calculatedUnitPrice || String(quote.selectedById) !== String(auth.employeeId)) continue
     const key = [quote.selectedById, quote.supplierId, quote.currency, quote.quoteCategory, quote.expectedDate, quote.paymentTerms].join('|')
     const group = grouped.get(key) ?? { key, supplierName:quote.supplierName, currency:quote.currency, expectedDate:quote.expectedDate, paymentTerms:quote.paymentTerms, lines:[] }
     group.lines.push({ line, quote })
@@ -686,10 +685,8 @@ async function loadBatchQuotes(batch: PurchaseBatch) {
     const persisted = executionQuotes[line.id].find((quote) => quote.selected)
     if (persisted) {
       selectedQuote[line.id] = Number(persisted.id)
-      draftIncluded[line.id] = !!persisted.calculatedUnitPrice && String(persisted.selectedById) === String(auth.employeeId)
     } else {
       delete selectedQuote[line.id]
-      draftIncluded[line.id] = false
     }
   }))
   for (const key of Object.keys(expandedTradeTerms)) delete expandedTradeTerms[key]
@@ -736,7 +733,6 @@ async function calculateSelectedQuote(line: Requirement, quote: ExecutionQuote) 
       expected_date:quote.expectedDate,payment_terms:quote.paymentTerms,valid_until:quote.validUntil,remark:quote.remark,calculated_unit_price:result.toFixed(6),calculation_input:JSON.stringify(input),
     })
     executionQuotes[line.id] = quotesFor(line.id).map((item) => item.id === quote.id ? response.quote : item)
-    draftIncluded[line.id] = true
     ElMessage.success(`已核算 ${quote.supplierName} 的所选报价`)
   } finally { calculatingQuoteId.value = '' }
 }
@@ -837,20 +833,26 @@ async function saveQuote() {
   } finally { savingQuote.value = false }
 }
 
-async function persistQuoteSelection(line: Requirement, quoteID: number) {
-  if (!quoteID) return
+async function toggleQuoteSelection(line: Requirement, quote: ExecutionQuote) {
+  if (selectingQuoteId.value) return
+  const quoteID = Number(quote.id)
   const previous = quotesFor(line.id).find((quote) => quote.selected)
+  selectingQuoteId.value = quote.id
   try {
     const result = await post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes/${quoteID}/select`, {})
-    executionQuotes[line.id] = quotesFor(line.id).map((quote) => quote.id === result.quote.id ? result.quote : { ...quote, selected:false, selectedById:'0', selectedByName:'', selectedAt:'' })
-    selectedQuote[line.id] = quoteID
-    draftIncluded[line.id] = !!result.quote.calculatedUnitPrice
-    ElMessage.success(`已为“${line.productName}”保存最终报价`)
+    executionQuotes[line.id] = quotesFor(line.id).map((item) => item.id === result.quote.id ? result.quote : { ...item, selected:false, selectedById:'0', selectedByName:'', selectedAt:'' })
+    if (result.quote.selected) {
+      selectedQuote[line.id] = quoteID
+      ElMessage.success(`已为“${line.productName}”保存最终报价`)
+    } else {
+      delete selectedQuote[line.id]
+      ElMessage.success(`已取消“${line.productName}”的最终报价`)
+    }
   } catch (error) {
     if (previous) selectedQuote[line.id] = Number(previous.id)
     else delete selectedQuote[line.id]
     throw error
-  }
+  } finally { selectingQuoteId.value = '' }
 }
 async function removeQuote(line: Requirement, quote: ExecutionQuote) {
   await ElMessageBox.confirm(`删除「${quote.supplierName}」的这条报价？`, '删除报价', { type:'warning' })
@@ -1318,26 +1320,29 @@ onMounted(load)
 .quote-calculation { margin: 0; padding: 0; border: 0; background: transparent; }
 .calculation-result { display: flex; align-items: center; justify-content: flex-end; gap: 7px; margin: 0; color: #607b8a; font-size: 11px; white-space: nowrap; }
 .calculation-result strong { color: #17617a; font-size: 13px; font-weight:600; }
-.draft-include { margin: 10px 0 0 24px; }
-.execution-files { margin: 10px 0; padding: 10px 12px; border: 1px solid #d7e5ed; border-radius: 8px; background: #fbfdfe; }
+.execution-files { margin: 7px 0; padding: 8px 10px; border: 1px solid #d7e5ed; border-radius: 7px; background: #fbfdfe; }
 .execution-files>header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.execution-files>header>div { display:flex; flex-direction:column; gap:4px; }
-.execution-files>header span { color:#708591; font-size:13px; }
-.file-pick { padding:8px 15px; border:1px solid #75b9d8; border-radius:7px; color:#0879aa; cursor:pointer; white-space:nowrap; background:#fff; }
+.execution-files>header>div:first-child { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.execution-files>header strong { color:#294a58; font-size:13px; font-weight:600; }
+.execution-files>header span { color:#708591; font-size:11px; }
+.execution-file-toolbar { display:flex; align-items:center; gap:9px; white-space:nowrap; }
+.execution-file-toolbar small { color:#708591; font-size:11px; }
+.file-pick { padding:5px 10px; border:1px solid #75b9d8; border-radius:6px; color:#0879aa; cursor:pointer; white-space:nowrap; background:#fff; font-size:12px; line-height:1.2; }
 .file-pick input { display:none; }
-.execution-file-list { margin-top:12px; border-top:1px solid #e2ebf0; }
-.execution-file-list>div { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 2px; border-bottom:1px solid #edf2f5; }
-.execution-file-list>div>span:first-child { display:flex; flex-direction:column; gap:3px; }
-.execution-file-list small { color:#7a8e99; }
+.execution-file-list { max-height:144px; margin-top:7px; overflow-y:auto; border-top:1px solid #e2ebf0; }
+.execution-file-list>div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; min-height:34px; padding:4px 2px; border-bottom:1px solid #edf2f5; }
+.execution-file-name { display:flex; min-width:0; align-items:baseline; gap:8px; }
+.execution-file-name strong { min-width:0; overflow:hidden; color:#294a58; font-size:12px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.execution-file-list small { flex:none; color:#7a8e99; font-size:11px; }
 .execution-file-actions { display:flex; align-items:center; white-space:nowrap; }
-.draft-file-empty { display:block;margin-top:8px;color:#8a9aa4;font-size:12px; }
-.draft-preview { padding: 13px 14px; margin-top: 14px; border: 1px solid #bfe1d4; border-radius: 10px; background: #f7fcfa; }
-.draft-preview > div:first-child { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.draft-preview > div:first-child strong { color: #174d45; }
-.draft-preview > div:first-child span { color: #687f7b; font-size: 13px; }
-.draft-preview-row { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(260px, 1.3fr); gap: 16px; padding: 9px 12px; border-top: 1px solid #dfeee8; color: #506b66; }
-.draft-preview-row strong { color: #204f48; }
-.draft-preview > .el-button { display: block; margin: 16px 0 0 auto; }
+.draft-file-empty { display:block;margin-top:5px;color:#8a9aa4;font-size:11px; }
+.draft-preview { padding: 9px 11px; margin-top: 10px; border: 1px solid #bfe1d4; border-radius: 8px; background: #f7fcfa; font-size:12px; }
+.draft-preview > div:first-child { display: flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:6px; }
+.draft-preview > div:first-child strong { color:#174d45; font-size:14px; font-weight:600; }
+.draft-preview > div:first-child span { color:#687f7b; font-size:11px; }
+.draft-preview-row { display:grid; grid-template-columns:minmax(140px,.7fr) minmax(220px,1.3fr); gap:12px; padding:5px 9px; border-top:1px solid #dfeee8; color:#506b66; font-size:12px; }
+.draft-preview-row strong { color:#204f48; font-weight:600; }
+.draft-preview > .el-button { display:block; margin:8px 0 0 auto; }
 .supplier-factories {
   margin-left: 10px;
 }
@@ -1367,6 +1372,7 @@ onMounted(load)
 .quote-options { display:block;width:100% }
 .quote-option { position:relative;padding:9px 84px 9px 10px;margin-bottom:6px;border:1px solid #e1e8ed;border-radius:8px;background:#fff }
 .quote-option.selected { border-color:#4ac1ff;background:#f3fbff;box-shadow:0 0 0 1px rgb(74 193 255 / 12%) }
+.quote-option.is-saving { cursor:wait; opacity:.72; }
 .quote-option :deep(.el-radio) { width:100%;height:auto;margin-right:0 }
 .quote-option :deep(.el-radio__label) { flex:1 }
 .quote-main { display:flex;justify-content:space-between;gap:14px;color:#24323a;font-size:14px }
