@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -165,56 +164,6 @@ func run(log *slog.Logger) error {
 		log.Warn("OPENAI_API_KEY is not set — mail-to-Excel conversion is unavailable")
 	} else {
 		log.Info("mail-to-Excel conversion is available", "model", cfg.OpenAIModel)
-	}
-
-	// 一次性修补的入口。
-	//
-	// 做成子命令而不是启动时自动跑：这活儿只该跑一次。挂在启动上的一次性
-	// 修补会变成每次重启都扫一遍全表，还会永远重试那些本来就补不了的行。
-	// 跑完、确认过之后，这个分支连同 app/repairattachmentkeys.go 一起删。
-	//   /app repair-attachment-keys [--apply] [--tenant N] [--message N] [--limit N]
-	// 不加 --apply 就是只看不动。分步走：先 --message 挑一封，再 --tenant
-	// 放开一家公司，最后全量。
-	if len(os.Args) > 1 && os.Args[1] == "repair-attachment-keys" {
-		opt := app.RepairOptions{DryRun: true}
-		args := os.Args[2:]
-		for i := 0; i < len(args); i++ {
-			num := func() int64 {
-				if i+1 < len(args) {
-					i++
-					n, _ := strconv.ParseInt(args[i], 10, 64)
-					return n
-				}
-				return 0
-			}
-			switch args[i] {
-			case "--apply":
-				opt.DryRun = false
-			case "--tenant":
-				opt.TenantID = num()
-			case "--message":
-				opt.InboundID = num()
-			case "--limit":
-				opt.Limit = int(num())
-			default:
-				return fmt.Errorf("repair-attachment-keys: 不认识的参数 %q", args[i])
-			}
-		}
-		rep, err := svc.RepairInboundAttachmentKeys(ctx, opt)
-		if err != nil {
-			return err
-		}
-		mode := "只看不动（加 --apply 才真改）"
-		if !opt.DryRun {
-			mode = "已写入"
-		}
-		log.Info("附件位置修补", "模式", mode, "公司", opt.TenantID, "限定信", opt.InboundID,
-			"要补的信", rep.MessagesSeen, "补了的信", rep.MessagesRepaired,
-			"补回的文件", rep.FilesRestored, "跳过的信", rep.MessagesSkipped)
-		for _, p := range rep.Problems {
-			log.Warn("跳过", "原因", p)
-		}
-		return nil
 	}
 
 	// Which provider actually puts mail on the wire is configuration, not
