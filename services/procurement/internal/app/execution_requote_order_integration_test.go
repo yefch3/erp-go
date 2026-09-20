@@ -77,6 +77,20 @@ func TestExecutionRequoteReusesEditableSupplierDraft(t *testing.T) {
 	if _, err = svc.SelectExecutionSupplierQuote(ctx, tenantID, requirementID, revisedQuoteID, op); err != nil {
 		t.Fatal(err)
 	}
+	cleared, err := svc.SelectExecutionSupplierQuote(ctx, tenantID, requirementID, revisedQuoteID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Selected || cleared.SelectedByID != 0 {
+		t.Fatalf("clicking selected quote should clear it, got %#v", cleared)
+	}
+	selectedAgain, err := svc.SelectExecutionSupplierQuote(ctx, tenantID, requirementID, revisedQuoteID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !selectedAgain.Selected || selectedAgain.SelectedByID != op.ID {
+		t.Fatalf("clicking cleared quote should select it again, got %#v", selectedAgain)
+	}
 
 	revised, err := svc.CreateOrder(ctx, tenantID, input("55", revisedQuoteID), op)
 	if err != nil {
