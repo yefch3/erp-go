@@ -994,7 +994,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		return err
 	}
 
-	for _, a := range parsed.Attachments {
+	for i, a := range parsed.Attachments {
 		key := ""
 		switch {
 		case a.Oversized:
@@ -1006,7 +1006,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 				"account", acct.AccountID, "file", a.FileName,
 				"size", a.TrueSize, "limit", maxAttachmentBytes)
 		case s.files != nil:
-			key = fmt.Sprintf("mail/inbound/%d/%d/att/%d-%s", tenantID, acct.AccountID, id, safeName(a.FileName))
+			key = inboundAttachmentKey(tenantID, acct.AccountID, id, i, a.FileName)
 			if err := s.putRaw(ctx, key, a.Data); err != nil {
 				s.log.Warn("could not store an incoming attachment", "file", a.FileName, "err", err)
 				key = ""
@@ -1262,6 +1262,33 @@ func truncate(s string, n int) string {
 func safeName(s string) string {
 	repl := strings.NewReplacer("/", "_", "\\", "_", "..", "_", " ", "_")
 	return truncate(repl.Replace(s), 80)
+}
+
+// inboundAttachmentKey is where one incoming attachment's bytes live.
+//
+// The index is in here because **object storage silently replaces whatever
+// was at a key**, and mail clients name embedded pictures from a tiny pool:
+// image.png, image001.png, image.jpg. A message carrying a screenshot and a
+// signature logo — an ordinary forwarded shipping update — has two parts
+// called image.png, and the key used to be built from the message id and the
+// file name alone. Both parts resolved to one key, the second Put overwrote
+// the first, and the row for the first still pointed at it. The body then
+// showed the 4 KB logo stretched into the 600px slot where a 149 KB vessel
+// screenshot belonged, with nothing logged and nothing to notice.
+//
+// 2026-09-20 in production: 461 colliding keys, 1,015 files overwritten, 909
+// of them body images. `image.png` alone accounted for 178 of the groups.
+//
+// The index rather than a hash of the bytes: it is stable (re-parsing the
+// same message yields the same key, which is what lets the repair land the
+// file exactly where a fresh sync would), costs no read of the content, and
+// keeps the file name visible in the key for anyone poking at storage.
+//
+// Position within the message is enough for uniqueness because the message
+// id is already in the key and a message cannot have two first attachments.
+func inboundAttachmentKey(tenantID, accountID, inboundID int64, index int, fileName string) string {
+	return fmt.Sprintf("mail/inbound/%d/%d/att/%d-%d-%s",
+		tenantID, accountID, inboundID, index+1, safeName(fileName))
 }
 
 // NewsWaiter is the optional push side of a mailbox: an adapter that can hold
