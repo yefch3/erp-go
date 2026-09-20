@@ -541,6 +541,8 @@ export default {
     duplicateTitle: 'Possible duplicate master data', duplicateWarning: '{count} similar record(s) were found. Review them before saving:', duplicateMore: 'and {count} more', saveAnyway: 'Save anyway', backToEdit: 'Back to edit',
     close: 'Close',
     refresh: 'Refresh',
+    dragColumnHint: 'Drag left or right to reorder columns',
+    restoreColumnOrder: 'Restore default column order',
     view: 'View',
     detail: 'Detail',
     logout: 'Sign out',

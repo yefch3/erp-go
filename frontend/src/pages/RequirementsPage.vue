@@ -14,40 +14,22 @@
           @clear="reload"
         />
         <el-button @click="reload">{{ t('common.query') }}</el-button>
+        <el-button v-if="requirementColumns.customized.value" link @click="requirementColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
 
       <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading" @row-dblclick="openBatchReview">
-        <el-table-column :label="t('requirements.purchaseBatch')" min-width="170">
+        <el-table-column v-for="column in requirementColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
+          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="requirementColumns.dragging.value===column.key" @start="requirementColumns.start(column.key,$event)" @drop="requirementColumns.move(column.key,$event)" @end="requirementColumns.finish" /></template>
           <template #default="{ row }">
-            <div class="batch-no">{{ row.label }}</div>
-            <div class="sub">{{ row.customerName || '—' }}</div>
+            <template v-if="column.key==='batch'"><div class="batch-no">{{ row.label }}</div><div class="sub">{{ row.customerName || '—' }}</div></template>
+            <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked"><span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span><small>{{ row.productGroups.length }} 种产品 · {{ row.lines.length }} 种规格</small></div>
+            <template v-else-if="column.key==='progress'"><span>进入详情查看进度</span><div class="sub">录入、比较并选定工厂报价</div><el-tag class="batch-mobile-stage" type="warning" effect="plain" size="small">待实单询价</el-tag></template>
+            <span v-else-if="column.key==='requiredDate'">{{ row.requiredDate || '—' }}</span>
+            <span v-else-if="column.key==='contract'">{{ row.sourceLabels || '—' }}</span>
+            <el-tag v-else-if="column.key==='status'" type="warning" effect="plain">待实单询价</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.batchProducts')" min-width="230">
-          <template #default="{ row }">
-            <div class="batch-product-summary batch-product-summary--stacked">
-              <span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span>
-              <small>{{ row.productGroups.length }} 种产品 · {{ row.lines.length }} 种规格</small>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="实单报价进度" min-width="160">
-          <template #default="{ row }">
-            <span>进入详情查看进度</span>
-            <div class="sub">录入、比较并选定工厂报价</div>
-            <el-tag class="batch-mobile-stage" type="warning" effect="plain" size="small">待实单询价</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.requiredDate')" width="130">
-          <template #default="{ row }">{{ row.requiredDate || '—' }}</template>
-        </el-table-column>
-        <el-table-column class-name="batch-secondary-column" label-class-name="batch-secondary-column" :label="t('requirements.fromContract')" min-width="180">
-          <template #default="{ row }">{{ row.sourceLabels || '—' }}</template>
-        </el-table-column>
-        <el-table-column class-name="batch-status-column" label-class-name="batch-status-column" :label="t('common.status')" min-width="105">
-          <template #default><el-tag type="warning" effect="plain">待实单询价</el-tag></template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" min-width="125" align="center">
+        <el-table-column :label="t('common.actions')" min-width="125" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" plain @click="openBatchReview(row)">进入详情</el-button>
           </template>
@@ -363,6 +345,8 @@ import { purchaseBatchKey } from '../lib/requirements'
 import { calculateExecutionReferencePrice, executionTradeTermFormula, type ExecutionCategoryCalculation } from '../lib/executionQuoteCalculation'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
+import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Requirement {
   id: string
@@ -442,6 +426,15 @@ interface ExecutionQuote {
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const requirementColumnDefaults=computed<TableColumnDefinition[]>(()=>[
+ {key:'batch',label:t('requirements.purchaseBatch'),minWidth:170},
+ {key:'products',label:t('requirements.batchProducts'),minWidth:240},
+ {key:'progress',label:'实单报价进度',minWidth:160},
+ {key:'requiredDate',label:t('requirements.requiredDate'),width:130,className:'batch-secondary-column'},
+ {key:'contract',label:t('requirements.fromContract'),minWidth:180,className:'batch-secondary-column',showOverflowTooltip:true},
+ {key:'status',label:t('common.status'),minWidth:110,className:'batch-status-column'},
+])
+const requirementColumns=useTableColumnOrder('procurement:requirements',requirementColumnDefaults)
 const router = useRouter()
 const route = useRoute()
 const canWrite = auth.can('procurement:requirement:write')

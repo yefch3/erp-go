@@ -542,6 +542,8 @@ export default {
     duplicateTitle: '可能存在重复资料', duplicateWarning: '发现 {count} 条相似资料，请确认后再保存：', duplicateMore: '另有 {count} 条', saveAnyway: '仍然保存', backToEdit: '返回修改',
     close: '关闭',
     refresh: '刷新',
+    dragColumnHint: '按住并左右拖动调整列顺序',
+    restoreColumnOrder: '恢复默认列顺序',
     view: '查看',
     detail: '详情',
     logout: '退出登录',

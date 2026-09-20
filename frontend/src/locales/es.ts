@@ -550,6 +550,8 @@ export default {
     duplicateTitle: 'Posibles datos duplicados', duplicateWarning: 'Se encontraron {count} registros similares. Revísalos antes de guardar:', duplicateMore: 'y {count} más', saveAnyway: 'Guardar de todos modos', backToEdit: 'Volver a editar',
     close: 'Cerrar',
     refresh: 'Actualizar',
+    dragColumnHint: 'Arrastra a izquierda o derecha para reordenar columnas',
+    restoreColumnOrder: 'Restablecer orden de columnas',
     view: 'Ver',
     detail: 'Detalle',
     logout: 'Cerrar sesión',

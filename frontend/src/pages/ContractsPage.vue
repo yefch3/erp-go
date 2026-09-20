@@ -19,24 +19,22 @@
         </el-select>
         <el-select v-model="ownerFilter" clearable filterable :placeholder="t('contracts.responsibleSales')" style="width: 220px" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
+        <el-button v-if="contractColumns.customized.value" link @click="contractColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
 
       <el-table :data="contracts" v-loading="loading" class="contract-list-table">
-        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" min-width="190" show-overflow-tooltip><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
-        <el-table-column :label="t('contracts.externalContractNo')" min-width="160" show-overflow-tooltip><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
-        <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" show-overflow-tooltip />
-        <el-table-column :label="t('contracts.amount')" width="170" align="right" class-name="contract-list-amount" show-overflow-tooltip>
-          <template #default="{ row }"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.owner')" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" min-width="120">
-          <template #default="{ row }">
-            <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
+        <el-table-column v-for="column in contractColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.key==='amount'?'contract-list-amount':''" :show-overflow-tooltip="column.showOverflowTooltip">
+          <template #header><DraggableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :dragging="contractColumns.dragging.value===column.key" @start="contractColumns.start(column.key,$event)" @drop="contractColumns.move(column.key,$event)" @end="contractColumns.finish" /></template>
+          <template #default="{row}">
+            <el-button v-if="column.key==='contractNo'" link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button>
+            <span v-else-if="column.key==='externalNo'">{{row.externalContractNo||'—'}}</span>
+            <span v-else-if="column.key==='customer'">{{row.customerName||'—'}}</span>
+            <template v-else-if="column.key==='amount'"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
+            <span v-else-if="column.key==='owner'">{{ row.salesEmployee || '—' }}</span>
+            <el-tag v-else-if="column.key==='status'" size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
+            <span v-else-if="column.key==='updatedAt'" class="list-time">{{ formatListTime(row.updatedAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('contracts.updatedAt')" min-width="190"><template #default="{row}"><span class="list-time">{{ formatListTime(row.updatedAt) }}</span></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="110" fixed="right" align="center"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
       </el-table>
 
@@ -1001,6 +999,8 @@ import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { getActionableApproval } from '../lib/approvalAction'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import DraggableTableHeader from '../components/DraggableTableHeader.vue'
+import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
 interface Contract {
@@ -1166,6 +1166,16 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('export:contract:write')
+const contractColumnDefaults=computed<TableColumnDefinition[]>(()=>[
+  {key:'contractNo',label:t('contracts.systemContractNo'),minWidth:185,showOverflowTooltip:true},
+  {key:'externalNo',label:t('contracts.externalContractNo'),minWidth:155,showOverflowTooltip:true},
+  {key:'customer',label:t('contracts.customer'),minWidth:155,showOverflowTooltip:true},
+  {key:'amount',label:t('contracts.amount'),width:160,align:'right',showOverflowTooltip:true},
+  {key:'owner',label:t('contracts.owner'),minWidth:135,showOverflowTooltip:true},
+  {key:'status',label:t('common.status'),minWidth:115},
+  {key:'updatedAt',label:t('contracts.updatedAt'),minWidth:175},
+])
+const contractColumns=useTableColumnOrder('sales:contracts',contractColumnDefaults)
 
 const contracts = ref<Contract[]>([])
 const products = ref<Product[]>([])
