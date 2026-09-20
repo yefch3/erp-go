@@ -29,6 +29,7 @@
               <el-input v-model="filter.portOfDischarge" clearable :placeholder="t('shipping.dischargePort')" />
               <el-button @click="more = !more">{{ t('shipping.dateFilters') }}</el-button>
               <el-button type="primary" @click="search">{{ t('common.query') }}</el-button>
+              <el-button v-if="scheduleColumns.customized.value" link @click="scheduleColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
             </div>
             <div v-if="more" class="date-filters">
               <span>预计离港（ETD）</span><el-date-picker v-model="filter.etdRange" type="daterange" value-format="YYYY-MM-DD" range-separator="—" />
@@ -36,15 +37,20 @@
             </div>
             <div class="table-scroll">
               <el-table :data="rows" v-loading="loading" @row-dblclick="detail">
-                <el-table-column :label="t('shipping.scheduleNo')" width="180"><template #default="{ row }"><el-link type="primary" @click="detail(row)">{{ row.scheduleNo }}</el-link></template></el-table-column>
-                <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="140" />
-                <el-table-column :label="t('shipping.vesselVoyage')" min-width="160"><template #default="{ row }">{{ row.vesselName }} / {{ row.voyageNo }}</template></el-table-column>
-                <el-table-column label="路线" min-width="170"><template #default="{ row }">{{ row.portOfLoading }} → {{ row.portOfDischarge }}</template></el-table-column>
-                <el-table-column prop="eta" label="最新预计到港（ETA）" width="175" />
-                <el-table-column prop="currentProgress" label="当前进度" min-width="150" />
-                <el-table-column label="提醒" min-width="180"><template #default="{ row }"><el-tag v-if="departureNotice(row)" type="warning" class="change-tag">{{departureNotice(row)}}</el-tag><el-tag v-if="row.delayDays > 0" :type="row.delayDays >= 4 ? 'danger' : 'warning'" class="change-tag">到港延后 {{ row.delayDays }} 天</el-tag><el-tag v-if="row.hasTemporaryCall" type="warning" class="change-tag">临时挂港</el-tag><span v-if="!row.delayDays && !row.hasTemporaryCall && !departureNotice(row)">—</span></template></el-table-column>
-                <el-table-column :label="t('common.status')" width="110"><template #default="{ row }"><el-tag :type="statusTag(row.status)">{{ shippingStatusLabel(row,t) }}</el-tag></template></el-table-column>
-                <el-table-column prop="responsibleName" :label="t('shipping.responsible')" width="120" />
+                <el-table-column v-for="column in scheduleColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
+                  <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="scheduleColumns.canMoveLeft(column.key)" :can-move-right="scheduleColumns.canMoveRight(column.key)" @move-left="scheduleColumns.moveBy(column.key,-1)" @move-right="scheduleColumns.moveBy(column.key,1)" /></template>
+                  <template #default="{ row }">
+                    <el-link v-if="column.key==='scheduleNo'" type="primary" @click="detail(row)">{{ row.scheduleNo }}</el-link>
+                    <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
+                    <span v-else-if="column.key==='vesselVoyage'">{{ row.vesselName }} / {{ row.voyageNo }}</span>
+                    <span v-else-if="column.key==='route'">{{ row.portOfLoading }} → {{ row.portOfDischarge }}</span>
+                    <span v-else-if="column.key==='eta'">{{ row.eta || '—' }}</span>
+                    <span v-else-if="column.key==='progress'">{{ row.currentProgress || '—' }}</span>
+                    <template v-else-if="column.key==='notice'"><el-tag v-if="departureNotice(row)" type="warning" class="change-tag">{{departureNotice(row)}}</el-tag><el-tag v-if="row.delayDays > 0" :type="row.delayDays >= 4 ? 'danger' : 'warning'" class="change-tag">到港延后 {{ row.delayDays }} 天</el-tag><el-tag v-if="row.hasTemporaryCall" type="warning" class="change-tag">临时挂港</el-tag><span v-if="!row.delayDays && !row.hasTemporaryCall && !departureNotice(row)">—</span></template>
+                    <el-tag v-else-if="column.key==='status'" :type="statusTag(row.status)">{{ shippingStatusLabel(row,t) }}</el-tag>
+                    <span v-else-if="column.key==='responsible'">{{ row.responsibleName || '—' }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column v-if="auth.can('shipping:schedule:write')" :label="t('common.actions')" fixed="right" width="125" align="center"><template #default="{ row }">
                   <el-dropdown trigger="click" @command="handleRowAction($event, row)">
                     <el-button type="primary" plain @click.stop>{{ t('orders.moreActions') }} ▾</el-button>
@@ -74,13 +80,27 @@ import { get, post } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ShippingScheduleDialog, { type ContractShippingHandoff } from '../components/ShippingScheduleDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { SHIPPING_STATUSES, shippingStatusLabel, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
 import { useAuthStore } from '../stores/auth'
+import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const scheduleColumnDefaults = computed<TableColumnDefinition[]>(() => [
+  { key: 'scheduleNo', label: t('shipping.scheduleNo'), width: 170 },
+  { key: 'customer', label: t('shipping.customer'), minWidth: 140, showOverflowTooltip: true },
+  { key: 'vesselVoyage', label: t('shipping.vesselVoyage'), minWidth: 155, showOverflowTooltip: true },
+  { key: 'route', label: '路线', minWidth: 165, showOverflowTooltip: true },
+  { key: 'eta', label: '最新预计到港（ETA）', width: 170 },
+  { key: 'progress', label: '当前进度', minWidth: 140, showOverflowTooltip: true },
+  { key: 'notice', label: '提醒', minWidth: 170 },
+  { key: 'status', label: t('common.status'), width: 105 },
+  { key: 'responsible', label: t('shipping.responsible'), width: 115, showOverflowTooltip: true },
+])
+const scheduleColumns = useTableColumnOrder('shipping-schedule-list', scheduleColumnDefaults)
 const rows = ref<ShippingSchedule[]>([])
 const loading = ref(false)
 const total = ref(0)

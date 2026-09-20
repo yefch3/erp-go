@@ -23,37 +23,30 @@
           @clear="reload"
         />
         <el-button @click="reload">{{ t('common.query') }}</el-button>
+        <el-button v-if="orderColumns.customized.value" link @click="orderColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
 
       <el-table :data="rows" v-loading="loading" class="orders-table">
-        <el-table-column :label="t('orders.poNo')" min-width="180">
+        <el-table-column v-for="column in orderColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="orderColumns.canMoveLeft(column.key)" :can-move-right="orderColumns.canMoveRight(column.key)" @move-left="orderColumns.moveBy(column.key,-1)" @move-right="orderColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
+           <template v-if="column.key==='poNo'">
             <div class="prod">{{ row.poNo }}</div>
             <div class="sub">{{ formatTime(row.createdAt) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.supplier')" min-width="180">
-          <template #default="{ row }">
+           </template>
+           <template v-else-if="column.key==='supplier'">
             <div>{{ row.supplierName }}</div>
             <div class="sub">{{ t('orders.buyer') }} {{ row.buyerName || '—' }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.purchaseBatch')" min-width="180">
-          <template #default="{ row }">
+           </template>
+           <template v-else-if="column.key==='batch'">
             <div>{{ row.sourceQuotationNo || '—' }}</div>
             <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.amount')" min-width="180" align="right" header-align="right">
-          <template #default="{ row }">
+           </template>
+           <template v-else-if="column.key==='amount'">
             <span class="num money">{{ row.currency }} {{ row.totalAmount }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.requiredArrivalDate')" min-width="180" align="center" header-align="center">
-          <template #default="{ row }">{{ row.expectedDate || '—' }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" min-width="180" align="center">
-          <template #default="{ row }">
+           </template>
+           <template v-else-if="column.key==='expectedDate'">{{ row.expectedDate || '—' }}</template>
+           <template v-else-if="column.key==='status'">
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
               {{ orderStatusLabel(row) }}
             </el-tag>
@@ -66,6 +59,7 @@
             <div v-if="row.rejectReason || row.cancelReason" class="sub reason">
               {{ row.rejectReason || row.cancelReason }}
             </div>
+           </template>
           </template>
         </el-table-column>
         <!-- 每种状态的行操作都统一收进有明确文字的按钮。 -->
@@ -590,6 +584,8 @@ import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
+import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Order {
   id: string
@@ -700,6 +696,15 @@ interface Execution { confirmations: SupplierConfirmation[]; milestones: Product
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const orderColumnDefaults = computed<TableColumnDefinition[]>(() => [
+  { key: 'poNo', label: t('orders.poNo'), minWidth: 170 },
+  { key: 'supplier', label: t('orders.supplier'), minWidth: 180 },
+  { key: 'batch', label: t('orders.purchaseBatch'), minWidth: 175 },
+  { key: 'amount', label: t('orders.amount'), minWidth: 155, align: 'right' },
+  { key: 'expectedDate', label: t('orders.requiredArrivalDate'), minWidth: 145, align: 'center' },
+  { key: 'status', label: t('common.status'), minWidth: 170, align: 'center' },
+])
+const orderColumns = useTableColumnOrder('purchase-order-list', orderColumnDefaults)
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')

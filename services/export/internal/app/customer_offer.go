@@ -73,6 +73,13 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if !allowed {
 		return "", apierr.Permission("OFFER_PERMISSION", "没有客户报价权限")
 	}
+	canWrite := allowed
+	if !write {
+		canWrite, err = access.HasPermission(ctx, op.EmployeeID, "export:quotation:write")
+		if err != nil {
+			return "", err
+		}
+	}
 	if cmd.Action == "summaries" {
 		return s.offerSummaries(ctx, op)
 	}
@@ -86,15 +93,19 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if source.State != "INQUIRING" {
 		return "", apierr.Conflict("OFFER_WITHDRAWN", "询盘尚未提交或已撤回")
 	}
-	owner := offerID(source.OwnerID) == op.EmployeeID
-	if write && !owner {
-		return "", apierr.Permission("OFFER_OWNER", "只有负责销售可以修改或确认客户报价")
+	visible, err := s.visibleTo(ctx, Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return "", err
+	}
+	ownerVisible := allowedOwner(visible, offerID(source.OwnerID))
+	if write && !ownerVisible {
+		return "", apierr.Permission("OFFER_OWNER", "只有负责销售或其授权领导可以修改或确认客户报价")
 	}
 	view, err := s.readOffer(ctx, op.TenantID, id, source)
 	if err != nil {
 		return "", err
 	}
-	view.CanEdit = owner && view.Status != "CONFIRMED"
+	view.CanEdit = canWrite && ownerVisible && view.Status != "CONFIRMED"
 	if (view.Body.CategoryWorkflow || cmd.Body.CategoryWorkflow) && cmd.Action == "confirm" {
 		return "", apierr.Invalid("OFFER_CATEGORY_FORMULA_PENDING", "分类公式尚未配置，请先保存和核对候选方案")
 	}
