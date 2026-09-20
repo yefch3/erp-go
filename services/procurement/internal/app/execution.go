@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pdffont"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/pkg/xlsx"
@@ -423,7 +424,16 @@ func (s *Service) SaveProductionMilestone(ctx context.Context, tenantID, poID in
 			}
 			if command.RowsAffected() > 0 {
 				payload, _ := json.Marshal(map[string]any{"po_id": poID, "po_no": head.PoNo, "node": milestone.Node, "planned_date": milestone.PlannedDate, "buyer_id": head.BuyerID, "buyer_name": head.BuyerName, "related_contracts": contracts})
-				if _, err := tx.Exec(ctx, `INSERT INTO outbox_events (tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES ($1,'PURCHASE_ORDER',$2,'procurement.production.delayed',$3)`, tenantID, strconv.FormatInt(poID, 10), payload); err != nil {
+				// 走 outbox.Append，不自己拼 INSERT：那条语句绕过了
+				// Append 里「没有 tenant_id 就拒发」那道闸，而绕过去的写法
+				// 正是这个仓库栽过的那一跤（见 pkg/outbox/outbox.go 的注释）。
+				// 一个写入口，一道闸。
+				if err := outbox.Append(ctx, tx, outbox.Event{
+					TenantID: tenantID, AggregateType: "PURCHASE_ORDER",
+					AggregateID: strconv.FormatInt(poID, 10),
+					EventType:   "procurement.production.delayed",
+					Payload:     payload,
+				}); err != nil {
 					return err
 				}
 			}
