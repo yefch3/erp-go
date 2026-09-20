@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -16,17 +17,28 @@ type ExecutionSupplierQuote struct {
 	SupplierCode, SupplierName, Currency, UnitPrice string
 	ExpectedDate, PaymentTerms, ValidUntil, Remark  string
 	CreatedByName, CreatedAt, UpdatedAt             string
+	Selected                                        bool
+	SelectedByID                                    int64
+	SelectedByName, SelectedAt                      string
+	QuoteCategory, Incoterm, CalculatedUnitPrice    string
+	CalculationInput, CalculatedAt                  string
+	CalculatedByID                                  int64
+	CalculatedByName                                string
 }
 
 type SaveExecutionSupplierQuoteInput struct {
 	ID, RequirementID, SupplierID                                       int64
 	Currency, UnitPrice, ExpectedDate, PaymentTerms, ValidUntil, Remark string
+	QuoteCategory, Incoterm, CalculatedUnitPrice, CalculationInput      string
 }
+
+var executionQuoteCategories = map[string]bool{"FOB_USD": true, "FOB_CNY": true, "ALL_IN_PORT_CNY": true, "EX_FACTORY_CNY": true, "REPROCESSING_CNY": true, "DIRECT_CFR_USD": true}
 
 func (s *Service) ListExecutionSupplierQuotes(ctx context.Context, tenantID, requirementID int64) ([]ExecutionSupplierQuote, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price::text,
 		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,
-		created_at::text,updated_at::text FROM purchase_execution_supplier_quotes
+		created_at::text,updated_at::text,selected,selected_by_id,selected_by_name,coalesce(selected_at::text,''),quote_category,incoterm,
+		coalesce(calculated_unit_price::text,''),calculation_input::text,coalesce(calculated_at::text,''),calculated_by_id,calculated_by_name FROM purchase_execution_supplier_quotes
 		WHERE tenant_id=$1 AND requirement_id=$2 ORDER BY updated_at DESC,id DESC`, tenantID, requirementID)
 	if err != nil {
 		return nil, err
@@ -36,12 +48,51 @@ func (s *Service) ListExecutionSupplierQuotes(ctx context.Context, tenantID, req
 	for rows.Next() {
 		var q ExecutionSupplierQuote
 		if err := rows.Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice,
-			&q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt); err != nil {
+			&q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt,
+			&q.Selected, &q.SelectedByID, &q.SelectedByName, &q.SelectedAt, &q.QuoteCategory, &q.Incoterm, &q.CalculatedUnitPrice, &q.CalculationInput, &q.CalculatedAt, &q.CalculatedByID, &q.CalculatedByName); err != nil {
 			return nil, err
 		}
 		out = append(out, q)
 	}
 	return out, rows.Err()
+}
+
+func (s *Service) SelectExecutionSupplierQuote(ctx context.Context, tenantID, requirementID, quoteID int64, op Operator) (ExecutionSupplierQuote, error) {
+	if requirementID == 0 || quoteID == 0 {
+		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_SELECTION_REQUIRED", "请选择最终工厂报价")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM purchase_requirements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, requirementID).Scan(&status); err == pgx.ErrNoRows {
+		return ExecutionSupplierQuote{}, apierr.NotFound("REQUIREMENT_NOT_FOUND", "采购需求不存在")
+	} else if err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if status != "WAITING_REQUOTE" {
+		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能再选择实单报价")
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3)`, tenantID, requirementID, quoteID).Scan(&exists); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if !exists {
+		return ExecutionSupplierQuote{}, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=FALSE,selected_by_id=0,selected_by_name='',selected_at=NULL WHERE tenant_id=$1 AND requirement_id=$2 AND selected`, tenantID, requirementID); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET selected=TRUE,selected_by_id=$4,selected_by_name=$5,selected_at=now(),updated_at=now() WHERE tenant_id=$1 AND requirement_id=$2 AND id=$3`, tenantID, requirementID, quoteID, op.ID, op.Name); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ExecutionSupplierQuote{}, err
+	}
+	s.nudge(ctx, tenantID)
+	return s.executionSupplierQuoteByID(ctx, tenantID, quoteID)
 }
 
 func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64, in SaveExecutionSupplierQuoteInput, op Operator) (ExecutionSupplierQuote, error) {
@@ -63,6 +114,21 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 		return ExecutionSupplierQuote{}, err
 	}
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+	in.QuoteCategory = strings.ToUpper(strings.TrimSpace(in.QuoteCategory))
+	// quote_category is the single trade-term choice for this workflow.  The
+	// older free-text incoterm slot is kept on the wire for compatibility but
+	// is deliberately cleared so two competing classifications cannot drift.
+	in.Incoterm = ""
+	if !executionQuoteCategories[in.QuoteCategory] {
+		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CATEGORY_REQUIRED", "请选择贸易条款")
+	}
+	expectedCurrency := "CNY"
+	if in.QuoteCategory == "FOB_USD" || in.QuoteCategory == "DIRECT_CFR_USD" {
+		expectedCurrency = "USD"
+	}
+	if in.Currency != expectedCurrency {
+		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CATEGORY_CURRENCY", "报价币种与所选贸易条款不一致")
+	}
 	if in.Currency == "" {
 		in.Currency = supplier.Currency
 	}
@@ -80,16 +146,28 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	if strings.TrimSpace(in.PaymentTerms) == "" {
 		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_PAYMENT_TERMS_REQUIRED", "请填写付款条件")
 	}
+	var calculated *decimal.Decimal
+	if strings.TrimSpace(in.CalculatedUnitPrice) != "" {
+		value, parseErr := decimal.NewFromString(in.CalculatedUnitPrice)
+		if parseErr != nil || value.LessThanOrEqual(decimal.Zero) {
+			return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CALCULATION_INVALID", "核算单价必须大于 0")
+		}
+		if !json.Valid([]byte(in.CalculationInput)) {
+			return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CALCULATION_INPUT_INVALID", "核算参数无效")
+		}
+		calculated = &value
+	}
 	var id int64
 	if in.ID == 0 {
 		err = s.pool.QueryRow(ctx, `INSERT INTO purchase_execution_supplier_quotes
-			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price,expected_date,payment_terms,valid_until,remark,created_by_id,created_by_name)
-			VALUES($1,$2,$3,$4,$5,$6,$7::numeric,nullif($8,'')::date,$9,nullif($10,'')::date,$11,$12,$13) RETURNING id`,
-			tenantID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), op.ID, op.Name).Scan(&id)
+			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price,expected_date,payment_terms,valid_until,remark,created_by_id,created_by_name,quote_category,incoterm)
+			VALUES($1,$2,$3,$4,$5,$6,$7::numeric,nullif($8,'')::date,$9,nullif($10,'')::date,$11,$12,$13,$14,$15) RETURNING id`,
+			tenantID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), op.ID, op.Name, in.QuoteCategory, strings.TrimSpace(in.Incoterm)).Scan(&id)
 	} else {
 		command, updateErr := s.pool.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET supplier_id=$4,supplier_code=$5,supplier_name=$6,currency=$7,unit_price=$8::numeric,
-			expected_date=nullif($9,'')::date,payment_terms=$10,valid_until=nullif($11,'')::date,remark=$12,updated_at=now()
-			WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, in.ID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark))
+			expected_date=nullif($9,'')::date,payment_terms=$10,valid_until=nullif($11,'')::date,remark=$12,quote_category=$13,incoterm=$14,
+			calculated_unit_price=NULL,calculation_input='{}',calculated_at=NULL,calculated_by_id=0,calculated_by_name='',updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, in.ID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), in.QuoteCategory, strings.TrimSpace(in.Incoterm))
 		if updateErr != nil {
 			return ExecutionSupplierQuote{}, updateErr
 		}
@@ -101,11 +179,23 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	if err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
+	if calculated != nil {
+		if _, err = s.pool.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET calculated_unit_price=$3::numeric,calculation_input=$4::jsonb,calculated_at=now(),calculated_by_id=$5,calculated_by_name=$6,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, calculated.String(), in.CalculationInput, op.ID, op.Name); err != nil {
+			return ExecutionSupplierQuote{}, err
+		}
+	}
 	s.nudge(ctx, tenantID)
 	return s.executionSupplierQuoteByID(ctx, tenantID, id)
 }
 
 func (s *Service) DeleteExecutionSupplierQuote(ctx context.Context, tenantID, requirementID, quoteID int64) error {
+	var used bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_order_items WHERE tenant_id=$1 AND execution_quote_id=$2)`, tenantID, quoteID).Scan(&used); err != nil {
+		return err
+	}
+	if used {
+		return apierr.Conflict("EXECUTION_QUOTE_IN_USE", "该报价已生成采购订单，需保留作为订单核价记录")
+	}
 	command, err := s.pool.Exec(ctx, `DELETE FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, quoteID, requirementID)
 	if err != nil {
 		return err
@@ -120,8 +210,9 @@ func (s *Service) DeleteExecutionSupplierQuote(ctx context.Context, tenantID, re
 func (s *Service) executionSupplierQuoteByID(ctx context.Context, tenantID, id int64) (ExecutionSupplierQuote, error) {
 	var q ExecutionSupplierQuote
 	err := s.pool.QueryRow(ctx, `SELECT id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price::text,
-		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,created_at::text,updated_at::text
-		FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice, &q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt)
+		coalesce(expected_date::text,''),payment_terms,coalesce(valid_until::text,''),remark,created_by_id,created_by_name,created_at::text,updated_at::text,
+		selected,selected_by_id,selected_by_name,coalesce(selected_at::text,''),quote_category,incoterm,coalesce(calculated_unit_price::text,''),calculation_input::text,coalesce(calculated_at::text,''),calculated_by_id,calculated_by_name
+		FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&q.ID, &q.RequirementID, &q.SupplierID, &q.SupplierCode, &q.SupplierName, &q.Currency, &q.UnitPrice, &q.ExpectedDate, &q.PaymentTerms, &q.ValidUntil, &q.Remark, &q.CreatedByID, &q.CreatedByName, &q.CreatedAt, &q.UpdatedAt, &q.Selected, &q.SelectedByID, &q.SelectedByName, &q.SelectedAt, &q.QuoteCategory, &q.Incoterm, &q.CalculatedUnitPrice, &q.CalculationInput, &q.CalculatedAt, &q.CalculatedByID, &q.CalculatedByName)
 	if err == pgx.ErrNoRows {
 		return q, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
 	}

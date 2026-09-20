@@ -268,15 +268,16 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			if p.executionQuoteID == 0 {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_REQUIRED", "请先在实单询价中选择工厂报价")
 			}
-			var quoteRequirementID, quoteSupplierID int64
+			var quoteRequirementID, quoteSupplierID, quoteSelectedByID int64
 			var quoteCurrency, quotePrice string
-			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,unit_price::text FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice); err == pgx.ErrNoRows {
+			var quoteSelected, quoteCalculated bool
+			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,coalesce(calculated_unit_price,unit_price)::text,selected,selected_by_id,calculated_unit_price IS NOT NULL FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice, &quoteSelected, &quoteSelectedByID, &quoteCalculated); err == pgx.ErrNoRows {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_NOT_FOUND", "所选实单报价不存在，请刷新后重试")
 			} else if err != nil {
 				return head, err
 			}
 			quotedPrice, err := decimal.NewFromString(quotePrice)
-			if err != nil || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
+			if err != nil || !quoteSelected || quoteSelectedByID != op.ID || !quoteCalculated || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_MISMATCH", "采购订单草稿必须使用实单询价中选定的工厂、币种和单价")
 			}
 		}
@@ -443,15 +444,21 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	}
 	for _, r := range reqs {
 		p := want[r.ID]
-		if _, err := q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
+		itemID, err := q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
 			TenantID: tenantID, PoID: head.ID, RequirementID: r.ID,
 			ProductID: r.ProductID, SkuID: r.SkuID,
 			ProductCode: r.ProductCode, ProductName: r.ProductName, Spec: r.Spec,
 			UomID: r.UomID, UomCode: r.UomCode,
 			Qty: p.qty.String(), UnitPrice: p.price.String(),
 			Amount: p.qty.Mul(p.price).StringFixed(2),
-		}); err != nil {
+		})
+		if err != nil {
 			return head, err
+		}
+		if p.executionQuoteID > 0 {
+			if _, err = tx.Exec(ctx, `UPDATE purchase_order_items SET execution_quote_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, itemID, p.executionQuoteID); err != nil {
+				return head, err
+			}
 		}
 	}
 	return head, nil
@@ -1066,15 +1073,18 @@ type OrderFilter struct {
 }
 
 func (s *Service) ListOrders(ctx context.Context, tenantID int64, f OrderFilter, page, size int32, operators ...Operator) ([]store.ListPurchaseOrdersRow, int64, error) {
-	// Purchase orders are the shared execution ledger of the procurement
-	// team. Anyone who passed the endpoint's procurement:order:read permission
-	// sees every order in the tenant; buyer_id remains ownership information,
-	// not a list-visibility fence. Write actions keep their own authorization.
-	_ = operators
+	visible := Visibility{All: true, ScopeType: "ALL"}
+	if len(operators) > 0 {
+		var err error
+		visible, err = s.visibleOrdersTo(ctx, operators[0])
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListPurchaseOrders(ctx, store.ListPurchaseOrdersParams{
 		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword, Unsent: f.Unsent,
-		ScopeAll: true,
+		ScopeAll: visible.All, BuyerIds: visible.EmployeeIDs,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {

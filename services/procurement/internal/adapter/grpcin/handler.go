@@ -71,7 +71,7 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 }
 
 func executionQuoteProto(q app.ExecutionSupplierQuote) *prv1.ExecutionSupplierQuote {
-	return &prv1.ExecutionSupplierQuote{Id: q.ID, RequirementId: q.RequirementID, SupplierId: q.SupplierID, SupplierCode: q.SupplierCode, SupplierName: q.SupplierName, Currency: q.Currency, UnitPrice: q.UnitPrice, ExpectedDate: q.ExpectedDate, PaymentTerms: q.PaymentTerms, ValidUntil: q.ValidUntil, Remark: q.Remark, CreatedById: q.CreatedByID, CreatedByName: q.CreatedByName, CreatedAt: q.CreatedAt, UpdatedAt: q.UpdatedAt}
+	return &prv1.ExecutionSupplierQuote{Id: q.ID, RequirementId: q.RequirementID, SupplierId: q.SupplierID, SupplierCode: q.SupplierCode, SupplierName: q.SupplierName, Currency: q.Currency, UnitPrice: q.UnitPrice, ExpectedDate: q.ExpectedDate, PaymentTerms: q.PaymentTerms, ValidUntil: q.ValidUntil, Remark: q.Remark, CreatedById: q.CreatedByID, CreatedByName: q.CreatedByName, CreatedAt: q.CreatedAt, UpdatedAt: q.UpdatedAt, Selected: q.Selected, SelectedById: q.SelectedByID, SelectedByName: q.SelectedByName, SelectedAt: q.SelectedAt, QuoteCategory: q.QuoteCategory, Incoterm: q.Incoterm, CalculatedUnitPrice: q.CalculatedUnitPrice, CalculationInput: q.CalculationInput, CalculatedAt: q.CalculatedAt, CalculatedById: q.CalculatedByID, CalculatedByName: q.CalculatedByName}
 }
 
 func (h *Handler) ListExecutionSupplierQuotes(ctx context.Context, req *prv1.ListExecutionSupplierQuotesRequest) (*prv1.ListExecutionSupplierQuotesResponse, error) {
@@ -94,11 +94,23 @@ func (h *Handler) SaveExecutionSupplierQuote(ctx context.Context, req *prv1.Save
 		return nil, err
 	}
 	op, _ := grpcx.OperatorFromContext(ctx)
-	q, err := h.svc.SaveExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), app.SaveExecutionSupplierQuoteInput{ID: req.GetId(), RequirementID: req.GetRequirementId(), SupplierID: req.GetSupplierId(), Currency: req.GetCurrency(), UnitPrice: req.GetUnitPrice(), ExpectedDate: req.GetExpectedDate(), PaymentTerms: req.GetPaymentTerms(), ValidUntil: req.GetValidUntil(), Remark: req.GetRemark()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	q, err := h.svc.SaveExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), app.SaveExecutionSupplierQuoteInput{ID: req.GetId(), RequirementID: req.GetRequirementId(), SupplierID: req.GetSupplierId(), Currency: req.GetCurrency(), UnitPrice: req.GetUnitPrice(), ExpectedDate: req.GetExpectedDate(), PaymentTerms: req.GetPaymentTerms(), ValidUntil: req.GetValidUntil(), Remark: req.GetRemark(), QuoteCategory: req.GetQuoteCategory(), Incoterm: req.GetIncoterm(), CalculatedUnitPrice: req.GetCalculatedUnitPrice(), CalculationInput: req.GetCalculationInput()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
 	return &prv1.SaveExecutionSupplierQuoteResponse{Quote: executionQuoteProto(q)}, nil
+}
+
+func (h *Handler) SelectExecutionSupplierQuote(ctx context.Context, req *prv1.SelectExecutionSupplierQuoteRequest) (*prv1.SelectExecutionSupplierQuoteResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	q, err := h.svc.SelectExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SelectExecutionSupplierQuoteResponse{Quote: executionQuoteProto(q)}, nil
 }
 
 func (h *Handler) DeleteExecutionSupplierQuote(ctx context.Context, req *prv1.DeleteExecutionSupplierQuoteRequest) (*prv1.DeleteExecutionSupplierQuoteResponse, error) {
@@ -109,6 +121,54 @@ func (h *Handler) DeleteExecutionSupplierQuote(ctx context.Context, req *prv1.De
 		return nil, err
 	}
 	return &prv1.DeleteExecutionSupplierQuoteResponse{}, nil
+}
+
+func executionInquiryFileProto(f app.ExecutionInquiryFile) *prv1.ExecutionInquiryFile {
+	return &prv1.ExecutionInquiryFile{Id: f.ID, RequirementId: f.RequirementID, FileName: f.FileName, ContentType: f.ContentType, SizeBytes: f.SizeBytes, UploadedById: f.UploadedByID, UploadedByName: f.UploadedByName, UploadedAt: f.UploadedAt}
+}
+func (h *Handler) ListExecutionInquiryFiles(ctx context.Context, req *prv1.ListExecutionInquiryFilesRequest) (*prv1.ListExecutionInquiryFilesResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	rows, err := h.svc.ListExecutionInquiryFiles(ctx, grpcx.TenantID(ctx), req.GetRequirementId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.ExecutionInquiryFile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, executionInquiryFileProto(row))
+	}
+	return &prv1.ListExecutionInquiryFilesResponse{Files: out}, nil
+}
+func (h *Handler) UploadExecutionInquiryFile(ctx context.Context, req *prv1.UploadExecutionInquiryFileRequest) (*prv1.UploadExecutionInquiryFileResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	f, err := h.svc.UploadExecutionInquiryFile(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetFileName(), req.GetContentType(), req.GetFileData(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.UploadExecutionInquiryFileResponse{File: executionInquiryFileProto(f)}, nil
+}
+func (h *Handler) DownloadExecutionInquiryFile(ctx context.Context, req *prv1.DownloadExecutionInquiryFileRequest) (*prv1.DownloadExecutionInquiryFileResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	name, content, data, err := h.svc.DownloadExecutionInquiryFile(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.DownloadExecutionInquiryFileResponse{FileName: name, ContentType: content, FileData: data}, nil
+}
+func (h *Handler) DeleteExecutionInquiryFile(ctx context.Context, req *prv1.DeleteExecutionInquiryFileRequest) (*prv1.DeleteExecutionInquiryFileResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	if err := h.svc.DeleteExecutionInquiryFile(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId()); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteExecutionInquiryFileResponse{}, nil
 }
 
 func (h *Handler) ExportPurchaseTemplate(ctx context.Context, req *prv1.ExportPurchaseTemplateRequest) (*prv1.ExportPurchaseTemplateResponse, error) {

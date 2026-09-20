@@ -15,4 +15,12 @@ describe('purchaseBatchKey', () => {
     expect(purchaseBatchKey({ id: '1', quotationId: '27', contractId: '4' }))
       .toBe(purchaseBatchKey({ id: '2', quotationId: '27', contractId: '5' }))
   })
+
+  it('keeps execution inquiries from different contracts separate', () => {
+    const first = purchaseBatchKey({ id: '1', quotationId: '27', contractId: '4', status: 'WAITING_REQUOTE' })
+    const second = purchaseBatchKey({ id: '2', quotationId: '27', contractId: '5', status: 'WAITING_REQUOTE' })
+
+    expect(first).toBe('CONTRACT-ID:4')
+    expect(second).toBe('CONTRACT-ID:5')
+  })
 })

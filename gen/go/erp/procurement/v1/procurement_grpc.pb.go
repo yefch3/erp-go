@@ -2382,7 +2382,12 @@ const (
 	RequirementService_ListRequirements_FullMethodName             = "/erp.procurement.v1.RequirementService/ListRequirements"
 	RequirementService_ListExecutionSupplierQuotes_FullMethodName  = "/erp.procurement.v1.RequirementService/ListExecutionSupplierQuotes"
 	RequirementService_SaveExecutionSupplierQuote_FullMethodName   = "/erp.procurement.v1.RequirementService/SaveExecutionSupplierQuote"
+	RequirementService_SelectExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/SelectExecutionSupplierQuote"
 	RequirementService_DeleteExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/DeleteExecutionSupplierQuote"
+	RequirementService_ListExecutionInquiryFiles_FullMethodName    = "/erp.procurement.v1.RequirementService/ListExecutionInquiryFiles"
+	RequirementService_UploadExecutionInquiryFile_FullMethodName   = "/erp.procurement.v1.RequirementService/UploadExecutionInquiryFile"
+	RequirementService_DownloadExecutionInquiryFile_FullMethodName = "/erp.procurement.v1.RequirementService/DownloadExecutionInquiryFile"
+	RequirementService_DeleteExecutionInquiryFile_FullMethodName   = "/erp.procurement.v1.RequirementService/DeleteExecutionInquiryFile"
 	RequirementService_ExportPurchaseTemplate_FullMethodName       = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
 	RequirementService_CreateRequirement_FullMethodName            = "/erp.procurement.v1.RequirementService/CreateRequirement"
 	RequirementService_GetRequirement_FullMethodName               = "/erp.procurement.v1.RequirementService/GetRequirement"
@@ -2405,7 +2410,12 @@ type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error)
 	SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error)
+	SelectExecutionSupplierQuote(ctx context.Context, in *SelectExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error)
+	ListExecutionInquiryFiles(ctx context.Context, in *ListExecutionInquiryFilesRequest, opts ...grpc.CallOption) (*ListExecutionInquiryFilesResponse, error)
+	UploadExecutionInquiryFile(ctx context.Context, in *UploadExecutionInquiryFileRequest, opts ...grpc.CallOption) (*UploadExecutionInquiryFileResponse, error)
+	DownloadExecutionInquiryFile(ctx context.Context, in *DownloadExecutionInquiryFileRequest, opts ...grpc.CallOption) (*DownloadExecutionInquiryFileResponse, error)
+	DeleteExecutionInquiryFile(ctx context.Context, in *DeleteExecutionInquiryFileRequest, opts ...grpc.CallOption) (*DeleteExecutionInquiryFileResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2461,10 +2471,60 @@ func (c *requirementServiceClient) SaveExecutionSupplierQuote(ctx context.Contex
 	return out, nil
 }
 
+func (c *requirementServiceClient) SelectExecutionSupplierQuote(ctx context.Context, in *SelectExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SelectExecutionSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SelectExecutionSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, RequirementService_SelectExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *requirementServiceClient) DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteExecutionSupplierQuoteResponse)
 	err := c.cc.Invoke(ctx, RequirementService_DeleteExecutionSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) ListExecutionInquiryFiles(ctx context.Context, in *ListExecutionInquiryFilesRequest, opts ...grpc.CallOption) (*ListExecutionInquiryFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExecutionInquiryFilesResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ListExecutionInquiryFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) UploadExecutionInquiryFile(ctx context.Context, in *UploadExecutionInquiryFileRequest, opts ...grpc.CallOption) (*UploadExecutionInquiryFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadExecutionInquiryFileResponse)
+	err := c.cc.Invoke(ctx, RequirementService_UploadExecutionInquiryFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) DownloadExecutionInquiryFile(ctx context.Context, in *DownloadExecutionInquiryFileRequest, opts ...grpc.CallOption) (*DownloadExecutionInquiryFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadExecutionInquiryFileResponse)
+	err := c.cc.Invoke(ctx, RequirementService_DownloadExecutionInquiryFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) DeleteExecutionInquiryFile(ctx context.Context, in *DeleteExecutionInquiryFileRequest, opts ...grpc.CallOption) (*DeleteExecutionInquiryFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteExecutionInquiryFileResponse)
+	err := c.cc.Invoke(ctx, RequirementService_DeleteExecutionInquiryFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2554,7 +2614,12 @@ type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error)
 	SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error)
+	SelectExecutionSupplierQuote(context.Context, *SelectExecutionSupplierQuoteRequest) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error)
+	ListExecutionInquiryFiles(context.Context, *ListExecutionInquiryFilesRequest) (*ListExecutionInquiryFilesResponse, error)
+	UploadExecutionInquiryFile(context.Context, *UploadExecutionInquiryFileRequest) (*UploadExecutionInquiryFileResponse, error)
+	DownloadExecutionInquiryFile(context.Context, *DownloadExecutionInquiryFileRequest) (*DownloadExecutionInquiryFileResponse, error)
+	DeleteExecutionInquiryFile(context.Context, *DeleteExecutionInquiryFileRequest) (*DeleteExecutionInquiryFileResponse, error)
 	// Export a versioned, identity-bearing workbook for selected open requirements.
 	ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
@@ -2589,8 +2654,23 @@ func (UnimplementedRequirementServiceServer) ListExecutionSupplierQuotes(context
 func (UnimplementedRequirementServiceServer) SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveExecutionSupplierQuote not implemented")
 }
+func (UnimplementedRequirementServiceServer) SelectExecutionSupplierQuote(context.Context, *SelectExecutionSupplierQuoteRequest) (*SelectExecutionSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SelectExecutionSupplierQuote not implemented")
+}
 func (UnimplementedRequirementServiceServer) DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteExecutionSupplierQuote not implemented")
+}
+func (UnimplementedRequirementServiceServer) ListExecutionInquiryFiles(context.Context, *ListExecutionInquiryFilesRequest) (*ListExecutionInquiryFilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListExecutionInquiryFiles not implemented")
+}
+func (UnimplementedRequirementServiceServer) UploadExecutionInquiryFile(context.Context, *UploadExecutionInquiryFileRequest) (*UploadExecutionInquiryFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadExecutionInquiryFile not implemented")
+}
+func (UnimplementedRequirementServiceServer) DownloadExecutionInquiryFile(context.Context, *DownloadExecutionInquiryFileRequest) (*DownloadExecutionInquiryFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadExecutionInquiryFile not implemented")
+}
+func (UnimplementedRequirementServiceServer) DeleteExecutionInquiryFile(context.Context, *DeleteExecutionInquiryFileRequest) (*DeleteExecutionInquiryFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteExecutionInquiryFile not implemented")
 }
 func (UnimplementedRequirementServiceServer) ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExportPurchaseTemplate not implemented")
@@ -2688,6 +2768,24 @@ func _RequirementService_SaveExecutionSupplierQuote_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RequirementService_SelectExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelectExecutionSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).SelectExecutionSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_SelectExecutionSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).SelectExecutionSupplierQuote(ctx, req.(*SelectExecutionSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _RequirementService_DeleteExecutionSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteExecutionSupplierQuoteRequest)
 	if err := dec(in); err != nil {
@@ -2702,6 +2800,78 @@ func _RequirementService_DeleteExecutionSupplierQuote_Handler(srv interface{}, c
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).DeleteExecutionSupplierQuote(ctx, req.(*DeleteExecutionSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_ListExecutionInquiryFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecutionInquiryFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ListExecutionInquiryFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ListExecutionInquiryFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ListExecutionInquiryFiles(ctx, req.(*ListExecutionInquiryFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_UploadExecutionInquiryFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadExecutionInquiryFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).UploadExecutionInquiryFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_UploadExecutionInquiryFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).UploadExecutionInquiryFile(ctx, req.(*UploadExecutionInquiryFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_DownloadExecutionInquiryFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadExecutionInquiryFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).DownloadExecutionInquiryFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_DownloadExecutionInquiryFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).DownloadExecutionInquiryFile(ctx, req.(*DownloadExecutionInquiryFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_DeleteExecutionInquiryFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteExecutionInquiryFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).DeleteExecutionInquiryFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_DeleteExecutionInquiryFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).DeleteExecutionInquiryFile(ctx, req.(*DeleteExecutionInquiryFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2852,8 +3022,28 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RequirementService_SaveExecutionSupplierQuote_Handler,
 		},
 		{
+			MethodName: "SelectExecutionSupplierQuote",
+			Handler:    _RequirementService_SelectExecutionSupplierQuote_Handler,
+		},
+		{
 			MethodName: "DeleteExecutionSupplierQuote",
 			Handler:    _RequirementService_DeleteExecutionSupplierQuote_Handler,
+		},
+		{
+			MethodName: "ListExecutionInquiryFiles",
+			Handler:    _RequirementService_ListExecutionInquiryFiles_Handler,
+		},
+		{
+			MethodName: "UploadExecutionInquiryFile",
+			Handler:    _RequirementService_UploadExecutionInquiryFile_Handler,
+		},
+		{
+			MethodName: "DownloadExecutionInquiryFile",
+			Handler:    _RequirementService_DownloadExecutionInquiryFile_Handler,
+		},
+		{
+			MethodName: "DeleteExecutionInquiryFile",
+			Handler:    _RequirementService_DeleteExecutionInquiryFile_Handler,
 		},
 		{
 			MethodName: "ExportPurchaseTemplate",
@@ -2893,6 +3083,10 @@ const (
 	PurchaseOrderService_ReplayFailedEvent_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
 	PurchaseOrderService_ListOrders_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
 	PurchaseOrderService_GetOrder_FullMethodName                          = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
+	PurchaseOrderService_ListOrderDraftFiles_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/ListOrderDraftFiles"
+	PurchaseOrderService_UploadOrderDraftFile_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/UploadOrderDraftFile"
+	PurchaseOrderService_DownloadOrderDraftFile_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/DownloadOrderDraftFile"
+	PurchaseOrderService_DeleteOrderDraftFile_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DeleteOrderDraftFile"
 	PurchaseOrderService_PreviewOrderImport_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
 	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
 	PurchaseOrderService_ConfirmOrderImport_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
@@ -2999,6 +3193,10 @@ type PurchaseOrderServiceClient interface {
 	ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error)
 	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
+	ListOrderDraftFiles(ctx context.Context, in *ListOrderDraftFilesRequest, opts ...grpc.CallOption) (*ListOrderDraftFilesResponse, error)
+	UploadOrderDraftFile(ctx context.Context, in *UploadOrderDraftFileRequest, opts ...grpc.CallOption) (*UploadOrderDraftFileResponse, error)
+	DownloadOrderDraftFile(ctx context.Context, in *DownloadOrderDraftFileRequest, opts ...grpc.CallOption) (*DownloadOrderDraftFileResponse, error)
+	DeleteOrderDraftFile(ctx context.Context, in *DeleteOrderDraftFileRequest, opts ...grpc.CallOption) (*DeleteOrderDraftFileResponse, error)
 	// Preview persists the rows the employee reviewed but does not allocate a
 	// purchase-order number or change a requirement.
 	PreviewOrderImport(ctx context.Context, in *PreviewOrderImportRequest, opts ...grpc.CallOption) (*PreviewOrderImportResponse, error)
@@ -3202,6 +3400,46 @@ func (c *purchaseOrderServiceClient) GetOrder(ctx context.Context, in *GetOrderR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_GetOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListOrderDraftFiles(ctx context.Context, in *ListOrderDraftFilesRequest, opts ...grpc.CallOption) (*ListOrderDraftFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOrderDraftFilesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListOrderDraftFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UploadOrderDraftFile(ctx context.Context, in *UploadOrderDraftFileRequest, opts ...grpc.CallOption) (*UploadOrderDraftFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadOrderDraftFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UploadOrderDraftFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) DownloadOrderDraftFile(ctx context.Context, in *DownloadOrderDraftFileRequest, opts ...grpc.CallOption) (*DownloadOrderDraftFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadOrderDraftFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DownloadOrderDraftFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) DeleteOrderDraftFile(ctx context.Context, in *DeleteOrderDraftFileRequest, opts ...grpc.CallOption) (*DeleteOrderDraftFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteOrderDraftFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DeleteOrderDraftFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4104,6 +4342,10 @@ type PurchaseOrderServiceServer interface {
 	ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error)
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
+	ListOrderDraftFiles(context.Context, *ListOrderDraftFilesRequest) (*ListOrderDraftFilesResponse, error)
+	UploadOrderDraftFile(context.Context, *UploadOrderDraftFileRequest) (*UploadOrderDraftFileResponse, error)
+	DownloadOrderDraftFile(context.Context, *DownloadOrderDraftFileRequest) (*DownloadOrderDraftFileResponse, error)
+	DeleteOrderDraftFile(context.Context, *DeleteOrderDraftFileRequest) (*DeleteOrderDraftFileResponse, error)
 	// Preview persists the rows the employee reviewed but does not allocate a
 	// purchase-order number or change a requirement.
 	PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error)
@@ -4284,6 +4526,18 @@ func (UnimplementedPurchaseOrderServiceServer) ListOrders(context.Context, *List
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListOrderDraftFiles(context.Context, *ListOrderDraftFilesRequest) (*ListOrderDraftFilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOrderDraftFiles not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UploadOrderDraftFile(context.Context, *UploadOrderDraftFileRequest) (*UploadOrderDraftFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadOrderDraftFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DownloadOrderDraftFile(context.Context, *DownloadOrderDraftFileRequest) (*DownloadOrderDraftFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadOrderDraftFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DeleteOrderDraftFile(context.Context, *DeleteOrderDraftFileRequest) (*DeleteOrderDraftFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteOrderDraftFile not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreviewOrderImport not implemented")
@@ -4638,6 +4892,78 @@ func _PurchaseOrderService_GetOrder_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).GetOrder(ctx, req.(*GetOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListOrderDraftFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrderDraftFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListOrderDraftFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListOrderDraftFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListOrderDraftFiles(ctx, req.(*ListOrderDraftFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_UploadOrderDraftFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadOrderDraftFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UploadOrderDraftFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UploadOrderDraftFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UploadOrderDraftFile(ctx, req.(*UploadOrderDraftFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_DownloadOrderDraftFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadOrderDraftFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DownloadOrderDraftFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DownloadOrderDraftFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DownloadOrderDraftFile(ctx, req.(*DownloadOrderDraftFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_DeleteOrderDraftFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteOrderDraftFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DeleteOrderDraftFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DeleteOrderDraftFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DeleteOrderDraftFile(ctx, req.(*DeleteOrderDraftFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6248,6 +6574,22 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetOrder",
 			Handler:    _PurchaseOrderService_GetOrder_Handler,
+		},
+		{
+			MethodName: "ListOrderDraftFiles",
+			Handler:    _PurchaseOrderService_ListOrderDraftFiles_Handler,
+		},
+		{
+			MethodName: "UploadOrderDraftFile",
+			Handler:    _PurchaseOrderService_UploadOrderDraftFile_Handler,
+		},
+		{
+			MethodName: "DownloadOrderDraftFile",
+			Handler:    _PurchaseOrderService_DownloadOrderDraftFile_Handler,
+		},
+		{
+			MethodName: "DeleteOrderDraftFile",
+			Handler:    _PurchaseOrderService_DeleteOrderDraftFile_Handler,
 		},
 		{
 			MethodName: "PreviewOrderImport",

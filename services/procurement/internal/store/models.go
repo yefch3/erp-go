@@ -382,23 +382,47 @@ type ProcurementReworkRequest struct {
 	ResolutionNote      string
 }
 
+type PurchaseExecutionInquiryFile struct {
+	ID             int64
+	TenantID       int64
+	RequirementID  int64
+	FileName       string
+	ContentType    string
+	SizeBytes      int64
+	FileData       []byte
+	UploadedByID   int64
+	UploadedByName string
+	UploadedAt     pgtype.Timestamptz
+}
+
 type PurchaseExecutionSupplierQuote struct {
-	ID            int64
-	TenantID      int64
-	RequirementID int64
-	SupplierID    int64
-	SupplierCode  string
-	SupplierName  string
-	Currency      string
-	UnitPrice     pgtype.Numeric
-	ExpectedDate  pgtype.Date
-	PaymentTerms  string
-	ValidUntil    pgtype.Date
-	Remark        string
-	CreatedByID   int64
-	CreatedByName string
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID                  int64
+	TenantID            int64
+	RequirementID       int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	Currency            string
+	UnitPrice           pgtype.Numeric
+	ExpectedDate        pgtype.Date
+	PaymentTerms        string
+	ValidUntil          pgtype.Date
+	Remark              string
+	CreatedByID         int64
+	CreatedByName       string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	Selected            bool
+	SelectedByID        int64
+	SelectedByName      string
+	SelectedAt          pgtype.Timestamptz
+	QuoteCategory       string
+	Incoterm            string
+	CalculatedUnitPrice pgtype.Numeric
+	CalculationInput    []byte
+	CalculatedAt        pgtype.Timestamptz
+	CalculatedByID      int64
+	CalculatedByName    string
 }
 
 type PurchaseInspection struct {
@@ -488,6 +512,19 @@ type PurchaseOrder struct {
 	PaymentRequestedByName   string
 }
 
+type PurchaseOrderDraftFile struct {
+	ID             int64
+	TenantID       int64
+	PoID           int64
+	FileName       string
+	ContentType    string
+	SizeBytes      int64
+	FileData       []byte
+	UploadedByID   int64
+	UploadedByName string
+	UploadedAt     pgtype.Timestamptz
+}
+
 type PurchaseOrderDueChange struct {
 	ID            int64
 	TenantID      int64
@@ -498,6 +535,13 @@ type PurchaseOrderDueChange struct {
 	ChangedByID   int64
 	ChangedByName string
 	CreatedAt     pgtype.Timestamptz
+}
+
+type PurchaseOrderExecutionFile struct {
+	TenantID int64
+	PoID     int64
+	FileID   int64
+	LinkedAt pgtype.Timestamptz
 }
 
 type PurchaseOrderImport struct {
@@ -519,21 +563,22 @@ type PurchaseOrderImport struct {
 }
 
 type PurchaseOrderItem struct {
-	ID            int64
-	TenantID      int64
-	PoID          int64
-	RequirementID int64
-	ProductID     int64
-	SkuID         *int64
-	ProductCode   string
-	ProductName   string
-	Spec          string
-	UomID         int64
-	UomCode       string
-	Qty           pgtype.Numeric
-	UnitPrice     pgtype.Numeric
-	Amount        pgtype.Numeric
-	ReceivedQty   pgtype.Numeric
+	ID               int64
+	TenantID         int64
+	PoID             int64
+	RequirementID    int64
+	ProductID        int64
+	SkuID            *int64
+	ProductCode      string
+	ProductName      string
+	Spec             string
+	UomID            int64
+	UomCode          string
+	Qty              pgtype.Numeric
+	UnitPrice        pgtype.Numeric
+	Amount           pgtype.Numeric
+	ReceivedQty      pgtype.Numeric
+	ExecutionQuoteID *int64
 }
 
 type PurchaseOrderPaymentClosure struct {

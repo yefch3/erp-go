@@ -411,7 +411,12 @@ service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
   rpc ListExecutionSupplierQuotes(ListExecutionSupplierQuotesRequest) returns (ListExecutionSupplierQuotesResponse);
   rpc SaveExecutionSupplierQuote(SaveExecutionSupplierQuoteRequest) returns (SaveExecutionSupplierQuoteResponse);
+  rpc SelectExecutionSupplierQuote(SelectExecutionSupplierQuoteRequest) returns (SelectExecutionSupplierQuoteResponse);
   rpc DeleteExecutionSupplierQuote(DeleteExecutionSupplierQuoteRequest) returns (DeleteExecutionSupplierQuoteResponse);
+  rpc ListExecutionInquiryFiles(ListExecutionInquiryFilesRequest) returns (ListExecutionInquiryFilesResponse);
+  rpc UploadExecutionInquiryFile(UploadExecutionInquiryFileRequest) returns (UploadExecutionInquiryFileResponse);
+  rpc DownloadExecutionInquiryFile(DownloadExecutionInquiryFileRequest) returns (DownloadExecutionInquiryFileResponse);
+  rpc DeleteExecutionInquiryFile(DeleteExecutionInquiryFileRequest) returns (DeleteExecutionInquiryFileResponse);
   // Export a versioned, identity-bearing workbook for selected open requirements.
   rpc ExportPurchaseTemplate(ExportPurchaseTemplateRequest) returns (ExportPurchaseTemplateResponse);
   // Raise an exceptional requirement by hand, independent of a contract.
@@ -607,6 +612,10 @@ service PurchaseOrderService {
 
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc ListOrderDraftFiles(ListOrderDraftFilesRequest) returns (ListOrderDraftFilesResponse);
+  rpc UploadOrderDraftFile(UploadOrderDraftFileRequest) returns (UploadOrderDraftFileResponse);
+  rpc DownloadOrderDraftFile(DownloadOrderDraftFileRequest) returns (DownloadOrderDraftFileResponse);
+  rpc DeleteOrderDraftFile(DeleteOrderDraftFileRequest) returns (DeleteOrderDraftFileResponse);
   // Preview persists the rows the employee reviewed but does not allocate a
   // purchase-order number or change a requirement.
   rpc PreviewOrderImport(PreviewOrderImportRequest) returns (PreviewOrderImportResponse);
@@ -2925,6 +2934,17 @@ message ExecutionSupplierQuote {
   string created_by_name = 13;
   string created_at = 14;
   string updated_at = 15;
+  bool selected = 16;
+  int64 selected_by_id = 17;
+  string selected_by_name = 18;
+  string selected_at = 19;
+  string quote_category = 20;
+  string incoterm = 21;
+  string calculated_unit_price = 22;
+  string calculation_input = 23;
+  string calculated_at = 24;
+  int64 calculated_by_id = 25;
+  string calculated_by_name = 26;
 }
 message ListExecutionSupplierQuotesRequest { int64 requirement_id = 1; }
 message ListExecutionSupplierQuotesResponse { repeated ExecutionSupplierQuote quotes = 1; }
@@ -2938,10 +2958,25 @@ message SaveExecutionSupplierQuoteRequest {
   string payment_terms = 7;
   string valid_until = 8;
   string remark = 9;
+  string quote_category = 10;
+  string incoterm = 11;
+  string calculated_unit_price = 12;
+  string calculation_input = 13;
 }
 message SaveExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
+message SelectExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
+message SelectExecutionSupplierQuoteResponse { ExecutionSupplierQuote quote = 1; }
 message DeleteExecutionSupplierQuoteRequest { int64 requirement_id = 1; int64 id = 2; }
 message DeleteExecutionSupplierQuoteResponse {}
+message ExecutionInquiryFile { int64 id = 1; int64 requirement_id = 2; string file_name = 3; string content_type = 4; int64 size_bytes = 5; int64 uploaded_by_id = 6; string uploaded_by_name = 7; string uploaded_at = 8; }
+message ListExecutionInquiryFilesRequest { int64 requirement_id = 1; }
+message ListExecutionInquiryFilesResponse { repeated ExecutionInquiryFile files = 1; }
+message UploadExecutionInquiryFileRequest { int64 requirement_id = 1; string file_name = 2; string content_type = 3; bytes file_data = 4; }
+message UploadExecutionInquiryFileResponse { ExecutionInquiryFile file = 1; }
+message DownloadExecutionInquiryFileRequest { int64 requirement_id = 1; int64 id = 2; }
+message DownloadExecutionInquiryFileResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+message DeleteExecutionInquiryFileRequest { int64 requirement_id = 1; int64 id = 2; }
+message DeleteExecutionInquiryFileResponse {}
 
 message TravelReimbursement {
   int64 id = 1;
@@ -3028,3 +3063,24 @@ message MarkTravelReimbursementPaidRequest { int64 id = 1; string paid_at = 2; s
 message MarkTravelReimbursementPaidResponse { TravelReimbursement reimbursement = 1; }
 message ReverseTravelReimbursementPaymentRequest { int64 id = 1; string reason = 2; }
 message ReverseTravelReimbursementPaymentResponse { TravelReimbursement reimbursement = 1; }
+
+// Private supporting files uploaded while one buyer creates a purchase-order
+// draft. Visibility follows the order's buyer scope.
+message OrderDraftFile {
+  int64 id = 1;
+  int64 po_id = 2;
+  string file_name = 3;
+  string content_type = 4;
+  int64 size_bytes = 5;
+  int64 uploaded_by_id = 6;
+  string uploaded_by_name = 7;
+  string uploaded_at = 8;
+}
+message ListOrderDraftFilesRequest { int64 id = 1; }
+message ListOrderDraftFilesResponse { repeated OrderDraftFile files = 1; }
+message UploadOrderDraftFileRequest { int64 id = 1; string file_name = 2; string content_type = 3; bytes file_data = 4; }
+message UploadOrderDraftFileResponse { OrderDraftFile file = 1; }
+message DownloadOrderDraftFileRequest { int64 id = 1; int64 file_id = 2; }
+message DownloadOrderDraftFileResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+message DeleteOrderDraftFileRequest { int64 id = 1; int64 file_id = 2; }
+message DeleteOrderDraftFileResponse {}

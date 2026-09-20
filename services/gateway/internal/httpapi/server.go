@@ -554,6 +554,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}/execution-quotes", s.listExecutionSupplierQuotes)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/execution-suppliers/resolve", s.resolveExecutionSupplier)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/{id}/execution-quotes", s.saveExecutionSupplierQuote)
+		r.With(s.perm("procurement:order:write")).Post("/api/requirements/{id}/execution-quotes/{quoteId}/select", s.selectExecutionSupplierQuote)
 		r.With(s.perm("procurement:order:write")).Delete("/api/requirements/{id}/execution-quotes/{quoteId}", s.deleteExecutionSupplierQuote)
 		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:order:write")).Post("/api/requirements/purchase-template/export", s.exportPurchaseTemplate)
 		r.Post("/api/inquiry-workspace", s.inquiryWorkspace)
@@ -639,15 +640,15 @@ func (s *Server) Router() http.Handler {
 		// supplier are different jobs, and often different people.
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/draft-files", s.listOrderDraftFiles)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/draft-files", s.uploadOrderDraftFile)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/draft-files/{fileId}/download", s.downloadOrderDraftFile)
+		r.With(s.perm("procurement:order:write")).Delete("/api/purchase-orders/{id}/draft-files/{fileId}", s.deleteOrderDraftFile)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/preview", s.previewOrderImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/template-imports/preview", s.previewPurchaseTemplateImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)
-		// 待采购页面的确认会直接形成公司采购承诺，因此创建接口同时要求
-		// 建单和审批权限，避免绕过唯一的人工审批入口。
-		r.With(
-			s.perm("procurement:order:write"),
-			s.perm("procurement:order:submit"),
-		).Post("/api/purchase-orders", s.createOrder)
+		// 创建只形成草稿；真正进入公司审批流程由下面独立的 submit 接口控制。
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract/presign", s.presignOrderContract)
