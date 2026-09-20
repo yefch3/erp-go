@@ -89,11 +89,10 @@
         </div>
        </template>
       </el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="260"><template #default="{row}"><div class="product-summary"><strong>{{row.productName}}</strong></div></template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.qtyUnit')" width="160" align="center"><template #default="{row}"><strong class="customer-product-quantity">{{productGroupQuantity(row)}}</strong></template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.specifications')" width="140" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.specificationCountValue',{count:row.specs.length})}}</template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.selectedSupplier')" width="150" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.candidates',{count:row.rows.length})}}</template></el-table-column>
-     </el-table>
+       <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="260"><template #default="{row}"><div class="product-summary"><strong>{{row.productName}}</strong></div></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.offer.qtyUnit')" width="160" align="center"><template #default="{row}"><strong class="customer-product-quantity">{{productGroupQuantity(row)}}</strong></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="330" align="center"><template #default="{row}"><div class="selected-cfr-list"><span v-for="candidate in row.rows" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span>{{candidateLabel(row,candidate)}}</span><strong>{{customerSelectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(customerSelectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div></template></el-table-column>
+      </el-table>
     </section>
     <section class="document-panel"><div><h3>{{t('inquiryWorkspace.offer.customerQuotationDocument')}}</h3><p>{{t('inquiryWorkspace.offer.documentHint')}}</p></div><div class="document-actions"><label>{{t('inquiryWorkspace.offer.documentLanguage')}}<el-select v-model="offer.body.documentLanguage" :disabled="!editable"><el-option v-for="option in documentLanguages" :key="option.value" :value="option.value" :label="option.label"/></el-select></label><el-tooltip :content="documentTooltip"><span><el-button :disabled="!canGenerateDocument" :loading="busy" type="primary" @click="generateDocument">{{t('inquiryWorkspace.offer.generateDocument')}}</el-button></span></el-tooltip></div></section>
    </template>
