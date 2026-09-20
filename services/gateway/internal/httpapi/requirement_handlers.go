@@ -139,48 +139,6 @@ func (s *Server) deleteExecutionSupplierQuote(w http.ResponseWriter, r *http.Req
 	s.writeProto(w, resp)
 }
 
-func (s *Server) listExecutionInquiryFiles(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Requirements.ListExecutionInquiryFiles(r.Context(), &prv1.ListExecutionInquiryFilesRequest{RequirementId: idFromPath(r)})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-func (s *Server) uploadExecutionInquiryFile(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.UploadExecutionInquiryFileRequest{}
-	if !s.decodeBodyLimit(w, r, req, 14<<20) {
-		return
-	}
-	req.RequirementId = idFromPath(r)
-	resp, err := s.Requirements.UploadExecutionInquiryFile(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-func (s *Server) downloadExecutionInquiryFile(w http.ResponseWriter, r *http.Request) {
-	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
-	resp, err := s.Requirements.DownloadExecutionInquiryFile(r.Context(), &prv1.DownloadExecutionInquiryFileRequest{RequirementId: idFromPath(r), Id: fileID})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", resp.GetContentType())
-	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
-	_, _ = w.Write(resp.GetFileData())
-}
-func (s *Server) deleteExecutionInquiryFile(w http.ResponseWriter, r *http.Request) {
-	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
-	resp, err := s.Requirements.DeleteExecutionInquiryFile(r.Context(), &prv1.DeleteExecutionInquiryFileRequest{RequirementId: idFromPath(r), Id: fileID})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
 func (s *Server) createRequirement(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateRequirementRequest{}
 	if !s.decodeBody(w, r, req) {
