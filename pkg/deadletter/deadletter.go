@@ -34,6 +34,9 @@ func New(pool *pgxpool.Pool, consumerGroup string) *Store {
 // Keyed the same way dedupe is, so parking twice is not an error: a
 // redelivery after an offset commit failed must not fail here as well.
 func (s *Store) Park(ctx context.Context, tenantID int64, dedupeKey, topic, eventType, aggregateID string, payload []byte, reason string) error {
+	if tenantID <= 0 {
+		return fmt.Errorf("deadletter: tenant_id is required (%s/%s)", topic, dedupeKey)
+	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO failed_events (
 			tenant_id, event_id, consumer_group, topic, event_type,
@@ -56,7 +59,7 @@ func (s *Store) Park(ctx context.Context, tenantID int64, dedupeKey, topic, even
 const DDL = `
 CREATE TABLE IF NOT EXISTS failed_events (
     id             BIGSERIAL    PRIMARY KEY,
-    tenant_id      BIGINT       NOT NULL DEFAULT 1,
+    tenant_id      BIGINT       NOT NULL,
     event_id       VARCHAR(200) NOT NULL,
     consumer_group VARCHAR(100) NOT NULL,
     topic          VARCHAR(200) NOT NULL DEFAULT '',

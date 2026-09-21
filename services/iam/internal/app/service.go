@@ -75,6 +75,7 @@ func errTooManyAttempts(wait time.Duration) error {
 type LoginResult struct {
 	Token            string
 	ExpiresInSeconds int64
+	TenantID         int64
 	Employee         store.GetEmployeeRow
 	PermissionCodes  []string
 	// The password that just worked was typed by an administrator. The
@@ -182,6 +183,7 @@ func (s *Service) Login(ctx context.Context, account, password string) (*LoginRe
 	return &LoginResult{
 		Token:              token,
 		ExpiresInSeconds:   int64(s.jwtTTL.Seconds()),
+		TenantID:           tenantID,
 		Employee:           emp,
 		PermissionCodes:    perms,
 		MustChangePassword: u.MustChangePassword,

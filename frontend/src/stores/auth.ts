@@ -10,6 +10,7 @@ interface Employee {
 
 interface SessionProfile extends Employee {
   avatarUrl?: string
+  tenantId: string
 }
 
 interface LoginData {
@@ -17,6 +18,7 @@ interface LoginData {
   expiresInSeconds: string
   employee: Employee
   permissionCodes: string[]
+  tenantId: string
   // True when the password that just worked was typed by an administrator,
   // not chosen by this person. The session is real but owes an immediate
   // change; the shell blocks everything else until it happens.
@@ -38,6 +40,7 @@ export const useAuthStore = defineStore('auth', {
     // scope decides what is listed; ownership decides what can be acted on,
     // and the two are deliberately not the same set.
     employeeId: localStorage.getItem('employeeId') ?? '',
+    tenantId: localStorage.getItem('tenantId') ?? '',
     employeeName: localStorage.getItem('employeeName') ?? '',
     employeeDepartment: localStorage.getItem('employeeDepartment') ?? '',
     // The address they signed in with. The mailbox gate shows it rather than
@@ -77,12 +80,14 @@ export const useAuthStore = defineStore('auth', {
       // nothing a script hooked into fetch could have captured either.
       const data = await post<LoginData>('/auth/login', { account, password }, quietErrors)
       this.employeeId = data.employee.id
+      this.tenantId = String(data.tenantId ?? '')
       this.employeeName = data.employee.name
       this.employeeEmail = data.employee.email ?? ''
       this.employeeDepartment = data.employee.departmentName ?? ''
       this.permissions = data.permissionCodes
       this.mustChangePassword = data.mustChangePassword === true
       localStorage.setItem('employeeId', data.employee.id)
+      localStorage.setItem('tenantId', this.tenantId)
       localStorage.setItem('employeeName', data.employee.name)
       localStorage.setItem('employeeEmail', data.employee.email ?? '')
       localStorage.setItem('employeeDepartment', data.employee.departmentName ?? '')
@@ -135,11 +140,13 @@ export const useAuthStore = defineStore('auth', {
       if (!this.isLoggedIn || this.employeeId !== employeeID || !data.profile?.id) return
       const profile = data.profile
       this.employeeId = String(profile.id)
+      this.tenantId = String(profile.tenantId ?? '')
       this.employeeName = profile.name ?? ''
       this.employeeEmail = profile.email ?? ''
       this.employeeDepartment = profile.departmentName ?? ''
       this.avatarUrl = profile.avatarUrl ?? ''
       localStorage.setItem('employeeId', this.employeeId)
+      localStorage.setItem('tenantId', this.tenantId)
       localStorage.setItem('employeeName', this.employeeName)
       localStorage.setItem('employeeEmail', this.employeeEmail)
       localStorage.setItem('employeeDepartment', this.employeeDepartment)
@@ -162,6 +169,7 @@ export const useAuthStore = defineStore('auth', {
       post('/auth/logout', {}, quietErrors).catch(() => {})
       this.$reset()
       localStorage.removeItem('employeeId')
+      localStorage.removeItem('tenantId')
       localStorage.removeItem('employeeName')
       localStorage.removeItem('employeeEmail')
       localStorage.removeItem('employeeDepartment')
