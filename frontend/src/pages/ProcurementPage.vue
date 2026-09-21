@@ -7,8 +7,8 @@
       </div>
     </header>
     <section class="metrics">
-      <router-link to="/procurement/sourcing/pending" class="metric metric--teal"><span>待开始询价</span><strong>{{ metrics.reviewing }}</strong><small>销售已复核，等待开始工厂询价</small></router-link>
-      <router-link to="/procurement/sourcing" class="metric"><span>售前询价</span><strong>{{ metrics.sourcing }}</strong><small>客户询盘的工厂询价、比价与成本方案</small></router-link>
+      <router-link to="/procurement/sourcing/pending" class="metric metric--teal"><span>待开始询价</span><strong>{{ metrics.reviewing }}</strong><small>销售已复核，等待开始供应商询价</small></router-link>
+      <router-link to="/procurement/sourcing" class="metric"><span>售前询价</span><strong>{{ metrics.sourcing }}</strong><small>客户询盘的供应商询价、比价与成本方案</small></router-link>
       <router-link to="/requirements" class="metric"><span>{{ t('procurementWorkbench.requirementMetric') }}</span><strong>{{ metrics.requirements }}</strong><small>{{ t('procurementWorkbench.requirementMetricHint') }}</small></router-link>
       <!-- 数字要有行动含义（B4）：不是「一共多少单」，而是「几单等你批、
            几单等你发」——各自点进去就是筛好的列表。 -->

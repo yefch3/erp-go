@@ -21,14 +21,15 @@ import (
 type Service struct {
 	pool *pgxpool.Pool
 	q    *store.Queries
-	// Object storage for certificate scans; nil until UseFiles, and the
-	// file endpoints refuse cleanly without it.
-	files Files
+	// Object storage for customer and supplier documents; nil until UseFiles.
+	files documentFiles
 }
 
 func New(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool, q: store.New(pool)}
 }
+
+func (s *Service) UseFiles(files documentFiles) { s.files = files }
 
 // ---------------------------------------------------------------- customers
 
@@ -610,8 +611,7 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 	return sp, err
 }
 
-// DeactivateSupplier 在同一事务内停用供应商，并把仍可用于新业务的下属工厂暂停合作。
-// 已经停用或暂停的工厂保持原状态；未来重新启用供应商时也不会自动恢复工厂。
+// DeactivateSupplier 在同一事务内停用供应商并记录原因。
 func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64, operatorName string, reasons ...string) error {
 	reason := ""
 	if len(reasons) > 0 {
@@ -633,34 +633,6 @@ func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operator
 			return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已停用")
 		}
 
-		factories, err := q.ListFactories(ctx, store.ListFactoriesParams{
-			TenantID: tenantID, Status: "ALL", SupplierID: id, PageSize: 10000,
-		})
-		if err != nil {
-			return err
-		}
-		paused := 0
-		for _, factory := range factories {
-			if factory.Status != "PREPARING" && factory.Status != "COOPERATING" {
-				continue
-			}
-			after, err := q.UpdateFactory(ctx, store.UpdateFactoryParams{
-				TenantID: tenantID, ID: factory.ID, SupplierID: factory.SupplierID,
-				NameZh: factory.NameZh, NameEn: factory.NameEn, ShortName: factory.ShortName,
-				CountryCode: factory.CountryCode, Timezone: factory.Timezone,
-				StateProvince: factory.StateProvince, City: factory.City, District: factory.District,
-				PostalCode: factory.PostalCode, Address: factory.Address, Status: "SUSPENDED",
-				Remark: factory.Remark, OperatorID: operatorID,
-			})
-			if err != nil {
-				return err
-			}
-			if err := recordFactoryChange(ctx, q, tenantID, factory.ID, "CASCADE", "PROFILE", "所属供应商停用，工厂自动暂停合作", factory, after, operatorID, operatorName); err != nil {
-				return err
-			}
-			paused++
-		}
-
 		n, err := q.DeactivateSupplier(ctx, store.DeactivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
 		if err != nil {
 			return err
@@ -673,9 +645,6 @@ func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operator
 			return err
 		}
 		summary := "停用供应商"
-		if paused > 0 {
-			summary = "停用供应商并联动暂停下属工厂"
-		}
 		if strings.TrimSpace(reason) != "" {
 			summary += "：" + strings.TrimSpace(reason)
 		}

@@ -38,7 +38,6 @@ var permissionDependencies = map[string][]string{
 	"mail:suppression:write": {"mail:email:read"},
 
 	"masterdata:customer:write": {"masterdata:customer:read"},
-	"masterdata:factory:write":  {"masterdata:factory:read"},
 	"masterdata:port:write":     {"masterdata:port:read"},
 	"masterdata:supplier:write": {"masterdata:supplier:read"},
 

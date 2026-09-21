@@ -133,7 +133,7 @@ var presetRoles = []presetRole{
 		Code: "BUYER", Name: "采购专员",
 		Description: "询价、匹配采购需求、维护采购单草稿并提交审批",
 		Permissions: []string{
-			"masterdata:factory:read", "masterdata:supplier:read",
+			"masterdata:supplier:read",
 			"procurement:exception:write",
 			"procurement:order:read", "procurement:order:send",
 			"procurement:order:submit", "procurement:order:write",
@@ -155,7 +155,7 @@ var presetRoles = []presetRole{
 		Description: "管理采购询价、例外需求、采购单审批与取消",
 		Permissions: []string{
 			"approval:task:act",
-			"masterdata:factory:read", "masterdata:supplier:read",
+			"masterdata:supplier:read",
 			"procurement:exception:write",
 			"procurement:order:cancel", "procurement:order:read",
 			"procurement:order:send", "procurement:order:submit", "procurement:order:write",

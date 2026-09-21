@@ -58,7 +58,6 @@ func TestOptionsSeedDefaultsForANewTenant(t *testing.T) {
 		"PAYMENT_METHOD": 4, "TRADE_TERM": 5, "SHIPPING_EXCEPTION": 3,
 		"CUSTOMER_TYPE": 5, "CUSTOMER_SOURCE": 5, "CUSTOMER_OWNER_RESPONSIBILITY": 5,
 		"SUPPLIER_BUSINESS_TYPE": 6, "SUPPLIER_OWNER_RESPONSIBILITY": 4,
-		"FACTORY_OWNER_RESPONSIBILITY": 4,
 	}
 	for cat, n := range want {
 		if cats[cat] != n {

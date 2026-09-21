@@ -73,12 +73,6 @@ var defaultOptions = []struct {
 		{"FINANCE", "财务", 3},
 		{"LOGISTICS", "物流", 4},
 	}},
-	{"FACTORY_OWNER_RESPONSIBILITY", []defaultOption{
-		{"PROCUREMENT", "采购", 1},
-		{"FOLLOW_UP", "跟单", 2},
-		{"QUALITY", "质检", 3},
-		{"LOGISTICS", "物流", 4},
-	}},
 }
 
 type defaultOption struct {

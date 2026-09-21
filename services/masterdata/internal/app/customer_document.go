@@ -104,8 +104,8 @@ func (s *Service) SaveCustomerDocument(ctx context.Context, tenantID int64, in C
 	if err := s.AuthorizeCustomer(ctx, tenantID, in.CustomerID); err != nil {
 		return 0, err
 	}
-	files, ok := s.files.(documentFiles)
-	if !ok {
+	files := s.files
+	if files == nil {
 		return 0, apierr.Conflict("MD_FILES_UNAVAILABLE", "文件存储未配置")
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -179,8 +179,8 @@ func (s *Service) GetCustomerDocumentFile(ctx context.Context, tenantID, custome
 	if err != nil {
 		return "", "", nil, err
 	}
-	files, ok := s.files.(documentFiles)
-	if !ok {
+	files := s.files
+	if files == nil {
 		return "", "", nil, apierr.Conflict("MD_FILES_UNAVAILABLE", "文件存储未配置")
 	}
 	reader, err := files.Get(ctx, key)
