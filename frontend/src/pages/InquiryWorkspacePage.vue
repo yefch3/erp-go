@@ -167,6 +167,7 @@ import {buildInquiryProductsXlsx,exportableInquiryFields,safeInquiryExportName} 
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type QuoteBody,type Product} from '../lib/inquiryWorkspace'
 import {dimensionFields,groupedQuantity,groupInquiryProducts,materialSummary,specificationAuxiliaryFields,type InquiryListField} from '../lib/inquiryList'
 import {procurementQuoteCategories,procurementQuoteCategory,procurementQuoteCurrency} from '../lib/quoteClassification'
+import {afterFailure,afterSuccess,idleGate,mayAttempt,shouldWarn,type RefreshGate} from '../lib/refreshBackoff'
 import {useTableColumnOrder,type TableColumnDefinition} from '../composables/useTableColumnOrder'
 const props=defineProps<{view:'SALES'|'QUOTATIONS'|'PROCUREMENT'|'LOGISTICS'}>()
 const {t,te,locale}=useI18n()
@@ -184,7 +185,13 @@ const listColumnDefaults=computed<TableColumnDefinition[]>(()=>{
 })
 const listColumnOrder=useTableColumnOrder(computed(()=>({SALES:'inquiry-list',QUOTATIONS:'customer-quotation-list',PROCUREMENT:'procurement-sourcing-list',LOGISTICS:'logistics-sourcing-list'} as const)[view.value]),listColumnDefaults)
 const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(20),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
-const refreshSuspended=ref(false),refreshErrorShown=ref(false)
+// 自动刷新的重试状态，见 lib/refreshBackoff。
+//
+// 从前这里是一个 refreshSuspended 布尔：失败一次就永久置真，再没有任何东西
+// 会把它翻回来，人只能手动刷。在中国大陆掉线率大约 0.2%，可每掉一次就废掉
+// 那个会话的自动刷新——0.2% 的抖动被放大成「一整天看不到新数据」。
+// 现在改成退避重试：失败了等一会儿再试，等待一次比一次长，成功一次就归零。
+const refreshGate=ref<RefreshGate>(idleGate())
 const moreOpen=ref(false)
 interface CustomerOption {value:string;id:string;code:string;name:string;shortName:string}
 interface ContactOption {value:string;id:string;name:string;department:string;title:string;email:string;isPrimary:boolean}
@@ -290,20 +297,26 @@ async function loadList(){
  const r=await command('list',{page:page.value,size:size.value,keyword:keyword.value,state:state.value});if(request!==listRequest)return;items.value=r.items;total.value=r.total
 }
 
-function showRefreshError(){if(refreshErrorShown.value)return;refreshErrorShown.value=true;ElMessage.error(t('inquiryWorkspace.messages.refreshFailed'))}
+// 失败之后记一次，并决定要不要弹提示。只在**第一次**失败时弹：之后一直在
+// 后台退避重试，每次都弹的话，网络不好的那半小时里人会收到一串一模一样的
+// 红条，反而盖住真正要看的东西。恢复之后再坏会重新提醒——那是新的一轮。
+function noteRefreshFailure(){
+ refreshGate.value=afterFailure(refreshGate.value,Date.now())
+ if(shouldWarn(refreshGate.value))ElMessage.error(t('inquiryWorkspace.messages.refreshFailed'))
+}
 async function reload(){
  try{
   if(item.value?.id){const r=await command('get',{id:item.value.id});item.value=normalizeInquiry(r.item)}else await loadList()
-  refreshSuspended.value=false;refreshErrorShown.value=false
+  refreshGate.value=afterSuccess()
  }catch(e){
   if(isAxiosError(e)&&[403,404].includes(e.response?.status||0)){item.value=null;preview.value=null;await router.replace({query:{}});await loadList();return}
-  refreshSuspended.value=true;showRefreshError()
+  noteRefreshFailure()
  }
 }
  function initialDetailTab(){return view.value==='SALES'||view.value==='QUOTATIONS'?'overview':'products'}
 function normalizeQuote(q:Quote){q.body.prices??=[];q.body.freightRates??=[];q.body.charges??=[];q.body.exchangeRates??={};q.body.totals??={};q.body.totalUsd??='';q.body.otherChargesTotalUsd??=q.body.totalUsd||'';q.body.quoteCategory??='';q.body.incoterm??='';q.body.cargoIds??=[];q.body.attachments??=[];return q}
 function normalizeInquiry(inquiry:Inquiry|undefined):Inquiry|null{if(!inquiry)return null;inquiry.body.title??='';inquiry.body.customerId??='';inquiry.body.contactId??='';inquiry.body.products??=[];inquiry.body.attachments??=[];inquiry.quotes??=[];inquiry.quotes.forEach(normalizeQuote);inquiry.body.products.forEach(product=>{product.customFields??={}});return inquiry}
-async function open(r:Inquiry){editor.value=null;detailTab.value=initialDetailTab();const out=await command('get',{id:r.id});item.value=normalizeInquiry(out.item);refreshSuspended.value=false;refreshErrorShown.value=false;await router.replace({query:{...route.query,id:r.id}})}
+async function open(r:Inquiry){editor.value=null;detailTab.value=initialDetailTab();const out=await command('get',{id:r.id});item.value=normalizeInquiry(out.item);refreshGate.value=afterSuccess();await router.replace({query:{...route.query,id:r.id}})}
 async function openFromRow(row:Inquiry,_column:unknown,event:MouseEvent){const target=event.target instanceof Element?event.target:null;if(target?.closest('button,a,input,textarea,select,.el-checkbox,.el-select,.el-date-editor,.el-dropdown,.el-table__expanded-cell'))return;await open(row)}
 async function back(){if(editor.value||basicInfoEditable.value){await ElMessageBox.confirm(t('inquiryWorkspace.messages.backConfirm'),t('inquiryWorkspace.messages.notice'))}item.value=null;editor.value=null;await router.replace({query:{}});await loadList()}
 function templateSnapshot(template:InquiryTemplate):InquiryTemplateSnapshot{return{id:template.id,templateCode:template.templateCode,version:template.version,name:template.name,fields:(template.fields||[]).map(field=>({...field})).sort((a,b)=>a.sortOrder-b.sortOrder)}}
@@ -405,10 +418,18 @@ async function saveQuote(submit:boolean){if(!item.value||!editor.value)return;if
 async function download(key:string){if(!item.value)return;const r=await post<{url:string}>('/inquiry-workspace',{action:'download',view:view.value,id:item.value.id,fileKey:key});window.open(r.url,'_blank','noopener')}
 async function storeAttachment(file:File,quote:boolean){if(!item.value)return;if(file.size>8*1024*1024)throw new Error(t('inquiryWorkspace.messages.fileTooLarge'));if(!item.value.id)await save(false);if(!item.value)return;const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});const r=await command('upload',{id:item.value.id,revision:item.value.revision,fileName:file.name,fileData:data});if(!r.attachment)throw new Error(t('inquiryWorkspace.messages.attachmentMissing'));if(quote&&editor.value){editor.value.body.attachments??=[];editor.value.body.attachments.push(r.attachment)}else{item.value.body.attachments??=[];item.value.body.attachments.push(r.attachment)}}
 async function upload(e:Event,quote:boolean){const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file||!item.value)return;try{await storeAttachment(file,quote);ElMessage.success(t('inquiryWorkspace.messages.attachmentUploaded'))}catch(error){ElMessage.error(error instanceof Error?error.message:t('inquiryWorkspace.messages.attachmentFailed'))}finally{input.value=''}}
-async function initial(){item.value=null;editor.value=null;detailTab.value=initialDetailTab();state.value='';page.value=1;refreshSuspended.value=false;refreshErrorShown.value=false;const routeID=String(route.params.id||route.query.id||''),id=canonicalInquiryRouteID(routeID);if(id){if(id!==routeID&&route.query.id!==undefined)await router.replace({query:{...route.query,id}});const r=await command('get',{id});item.value=normalizeInquiry(r.item)}else await loadList()}
-const stopLive=onLive(e=>{if(e.type==='requirement.changed'&&!refreshSuspended.value&&!editor.value&&!basicInfoEditable.value&&!busy.value)void reload()})
+async function initial(){item.value=null;editor.value=null;detailTab.value=initialDetailTab();state.value='';page.value=1;refreshGate.value=afterSuccess();const routeID=String(route.params.id||route.query.id||''),id=canonicalInquiryRouteID(routeID);if(id){if(id!==routeID&&route.query.id!==undefined)await router.replace({query:{...route.query,id}});const r=await command('get',{id});item.value=normalizeInquiry(r.item)}else await loadList()}
+// 手上正在改东西的时候不要重拉，会把人填了一半的内容冲掉。退避窗口没过也
+// 不拉。这一串条件两处共用（定时器和实时推送），所以只写一次——两边不一致
+// 的样子是「推送来的时候会冲掉输入，定时器来的时候不会」。
+function canAutoRefresh(){return mayAttempt(refreshGate.value,Date.now())&&!editor.value&&!basicInfoEditable.value&&!busy.value}
+const stopLive=onLive(e=>{if(e.type==='requirement.changed'&&canAutoRefresh())void reload()})
 let timer:ReturnType<typeof setInterval>|undefined
-onMounted(()=>{void (async()=>{try{await loadTemplates();await initial()}catch{refreshSuspended.value=true;showRefreshError()}})();timer=setInterval(()=>{if(!refreshSuspended.value&&!editor.value&&!basicInfoEditable.value&&!busy.value)void reload()},5000)})
+// 定时器**一直按 5 秒醒**，退不退避由 canAutoRefresh 里那个时间点说了算。
+// 不去改定时器本身的间隔：改间隔要 clearInterval 再 setInterval，而那正是
+// 「某一次忘了重新装上，于是再也不刷新了」的经典写法——这一页刚从那个坑里
+// 爬出来，不必换个姿势再掉一次。
+onMounted(()=>{void (async()=>{try{await loadTemplates();await initial()}catch{noteRefreshFailure()}})();timer=setInterval(()=>{if(canAutoRefresh())void reload()},5000)})
 onUnmounted(()=>{stopLive();if(timer)clearInterval(timer)})
 watch(view,()=>void initial())
 </script>
