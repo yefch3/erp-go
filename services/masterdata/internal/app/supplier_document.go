@@ -16,19 +16,6 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 )
 
-type supplierAccessKey struct{}
-
-// WithSupplierAccess receives the current employee from the authenticated RPC
-// boundary. Zero is reserved for the existing highest system role.
-func WithSupplierAccess(ctx context.Context, employeeID int64) context.Context {
-	return context.WithValue(ctx, supplierAccessKey{}, employeeID)
-}
-
-func supplierAccessEmployee(ctx context.Context) int64 {
-	id, _ := ctx.Value(supplierAccessKey{}).(int64)
-	return id
-}
-
 type SupplierDocument struct {
 	ID, SupplierID, DocumentID, SizeBytes                                                    int64
 	Version, RemindDays                                                                      int32
@@ -49,18 +36,9 @@ const supplierDocumentOwnerPredicate = `($3::bigint=0 OR EXISTS(SELECT 1 FROM su
  AND (o.start_date IS NULL OR o.start_date<=CURRENT_DATE) AND (o.end_date IS NULL OR o.end_date>=CURRENT_DATE)))`
 const supplierDocumentCurrentPredicate = `NOT EXISTS(SELECT 1 FROM supplier_documents newer WHERE newer.tenant_id=d.tenant_id AND newer.document_id=d.document_id AND newer.version>d.version AND newer.deleted_at IS NULL)`
 
-func (s *Service) supplierExists(ctx context.Context, tenantID, supplierID int64) error {
-	var id int64
-	err := s.pool.QueryRow(ctx, `SELECT id FROM suppliers WHERE tenant_id=$1 AND id=$2`, tenantID, supplierID).Scan(&id)
-	if err == pgx.ErrNoRows {
-		return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在")
-	}
-	return err
-}
-
 func (s *Service) ListSupplierDocuments(ctx context.Context, tenantID, supplierID, employeeID int64, reminders bool) ([]SupplierDocument, error) {
 	if supplierID > 0 {
-		if err := s.supplierExists(ctx, tenantID, supplierID); err != nil {
+		if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
 			return nil, err
 		}
 	}
@@ -68,8 +46,8 @@ func (s *Service) ListSupplierDocuments(ctx context.Context, tenantID, supplierI
  COALESCE(d.expires_on::text,''),d.remind_days,d.reminder_enabled,d.uploaded_by_name,d.created_at,COALESCE(NULLIF(s.name_zh,''),NULLIF(s.name_en,''),s.name),
  `+supplierDocumentCurrentPredicate+`, NOT EXISTS(SELECT 1 FROM supplier_document_reads rr WHERE rr.tenant_id=d.tenant_id AND rr.revision_id=d.id AND rr.employee_id=$4)
  FROM supplier_documents d JOIN suppliers s ON s.tenant_id=d.tenant_id AND s.id=d.supplier_id
- WHERE d.deleted_at IS NULL AND d.tenant_id=$1 AND ($2::bigint=0 OR d.supplier_id=$2)
- AND (NOT $5::boolean OR (`+supplierDocumentOwnerPredicate+` AND s.status='ACTIVE' AND d.reminder_enabled AND d.expires_on IS NOT NULL
+ WHERE d.deleted_at IS NULL AND d.tenant_id=$1 AND ($2::bigint=0 OR d.supplier_id=$2) AND `+supplierDocumentOwnerPredicate+`
+ AND (NOT $5::boolean OR (s.status='ACTIVE' AND d.reminder_enabled AND d.expires_on IS NOT NULL
  AND d.expires_on-d.remind_days<=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date AND `+supplierDocumentCurrentPredicate+`))
  ORDER BY d.document_id DESC,d.version DESC`, tenantID, supplierID, supplierAccessEmployee(ctx), employeeID, reminders)
 	if err != nil {
@@ -112,6 +90,9 @@ func validateSupplierDocument(in SupplierDocumentInput) error {
 
 func (s *Service) SaveSupplierDocument(ctx context.Context, tenantID int64, in SupplierDocumentInput) (int64, error) {
 	if err := validateSupplierDocument(in); err != nil {
+		return 0, err
+	}
+	if err := s.AuthorizeSupplier(ctx, tenantID, in.SupplierID); err != nil {
 		return 0, err
 	}
 	files := s.files
@@ -176,7 +157,7 @@ func (s *Service) SaveSupplierDocument(ctx context.Context, tenantID int64, in S
 }
 
 func (s *Service) GetSupplierDocumentFile(ctx context.Context, tenantID, supplierID, revisionID int64) (string, string, []byte, error) {
-	if err := s.supplierExists(ctx, tenantID, supplierID); err != nil {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
 		return "", "", nil, err
 	}
 	var key, name, kind string
@@ -204,7 +185,7 @@ func (s *Service) GetSupplierDocumentFile(ctx context.Context, tenantID, supplie
 }
 
 func (s *Service) DeleteSupplierDocument(ctx context.Context, tenantID, supplierID, revisionID int64) error {
-	if err := s.supplierExists(ctx, tenantID, supplierID); err != nil {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
 		return err
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE supplier_documents SET deleted_at=now() WHERE tenant_id=$1 AND supplier_id=$2 AND deleted_at IS NULL AND document_id=(SELECT document_id FROM supplier_documents WHERE tenant_id=$1 AND supplier_id=$2 AND id=$3)`, tenantID, supplierID, revisionID)

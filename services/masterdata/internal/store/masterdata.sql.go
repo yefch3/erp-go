@@ -2880,17 +2880,25 @@ func (q *Queries) ListSupplierContacts(ctx context.Context, arg ListSupplierCont
 }
 
 const listSupplierCountries = `-- name: ListSupplierCountries :many
-SELECT country_code, count(*) AS supplier_count
-FROM suppliers
-WHERE tenant_id = $1
-  AND ($2::boolean OR status = 'ACTIVE')
-GROUP BY country_code
-ORDER BY country_code
+SELECT s.country_code, count(*) AS supplier_count
+FROM suppliers s
+WHERE s.tenant_id = $1
+  AND ($2::boolean OR s.status = 'ACTIVE')
+  AND ($3::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=$3 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
+GROUP BY s.country_code
+ORDER BY s.country_code
 `
 
 type ListSupplierCountriesParams struct {
-	TenantID        int64
-	IncludeInactive bool
+	TenantID         int64
+	IncludeInactive  bool
+	AccessEmployeeID int64
 }
 
 type ListSupplierCountriesRow struct {
@@ -2899,7 +2907,7 @@ type ListSupplierCountriesRow struct {
 }
 
 func (q *Queries) ListSupplierCountries(ctx context.Context, arg ListSupplierCountriesParams) ([]ListSupplierCountriesRow, error) {
-	rows, err := q.db.Query(ctx, listSupplierCountries, arg.TenantID, arg.IncludeInactive)
+	rows, err := q.db.Query(ctx, listSupplierCountries, arg.TenantID, arg.IncludeInactive, arg.AccessEmployeeID)
 	if err != nil {
 		return nil, err
 	}
@@ -2983,19 +2991,27 @@ WHERE s.tenant_id = $1
   AND ($6::text = '' OR s.name ILIKE '%' || $6 || '%'
        OR s.name_zh ILIKE '%' || $6 || '%' OR s.name_en ILIKE '%' || $6 || '%'
        OR s.short_name ILIKE '%' || $6 || '%' OR s.code ILIKE '%' || $6 || '%')
+  AND ($7::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=$7 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY s.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type ListSuppliersParams struct {
-	TenantID     int64
-	Status       string
-	CountryCode  string
-	BusinessType string
-	OwnerID      int64
-	Keyword      string
-	PageOffset   int32
-	PageSize     int32
+	TenantID         int64
+	Status           string
+	CountryCode      string
+	BusinessType     string
+	OwnerID          int64
+	Keyword          string
+	AccessEmployeeID int64
+	PageOffset       int32
+	PageSize         int32
 }
 
 type ListSuppliersRow struct {
@@ -3039,6 +3055,7 @@ func (q *Queries) ListSuppliers(ctx context.Context, arg ListSuppliersParams) ([
 		arg.BusinessType,
 		arg.OwnerID,
 		arg.Keyword,
+		arg.AccessEmployeeID,
 		arg.PageOffset,
 		arg.PageSize,
 	)
@@ -3251,30 +3268,38 @@ func (q *Queries) SupplierCodeExists(ctx context.Context, arg SupplierCodeExists
 }
 
 const supplierDuplicateCandidates = `-- name: SupplierDuplicateCandidates :many
-SELECT id, code, coalesce(nullif(name_zh, ''), nullif(name_en, ''), name)::text AS name,
-       tax_id, contact_email
-FROM suppliers
-WHERE tenant_id = $1
-  AND ($2::bigint = 0 OR id <> $2)
+SELECT s.id, s.code, coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name)::text AS name,
+       s.tax_id, s.contact_email
+FROM suppliers s
+WHERE s.tenant_id = $1
+  AND ($2::bigint = 0 OR s.id <> $2)
   AND (
     ($3::text <> '' AND (
-      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) = lower(btrim($3)) OR
-      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) LIKE '%' || lower(btrim($3)) || '%' OR
-      lower(btrim($3)) LIKE '%' || lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) || '%'
+      lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) = lower(btrim($3)) OR
+      lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) LIKE '%' || lower(btrim($3)) || '%' OR
+      lower(btrim($3)) LIKE '%' || lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) || '%'
     ))
-    OR ($4::text <> '' AND lower(btrim(tax_id)) = lower(btrim($4)))
-    OR ($5::text <> '' AND lower(btrim(contact_email)) = lower(btrim($5)))
+    OR ($4::text <> '' AND lower(btrim(s.tax_id)) = lower(btrim($4)))
+    OR ($5::text <> '' AND lower(btrim(s.contact_email)) = lower(btrim($5)))
   )
-ORDER BY id
+  AND ($6::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=$6 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
+ORDER BY s.id
 LIMIT 10
 `
 
 type SupplierDuplicateCandidatesParams struct {
-	TenantID  int64
-	ExcludeID int64
-	Name      string
-	TaxID     string
-	Email     string
+	TenantID         int64
+	ExcludeID        int64
+	Name             string
+	TaxID            string
+	Email            string
+	AccessEmployeeID int64
 }
 
 type SupplierDuplicateCandidatesRow struct {
@@ -3292,6 +3317,7 @@ func (q *Queries) SupplierDuplicateCandidates(ctx context.Context, arg SupplierD
 		arg.Name,
 		arg.TaxID,
 		arg.Email,
+		arg.AccessEmployeeID,
 	)
 	if err != nil {
 		return nil, err

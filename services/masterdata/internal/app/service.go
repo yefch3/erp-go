@@ -550,12 +550,24 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 			return translateUnique(err, "MD_SUPPLIER_CODE_TAKEN", "供应商编码已存在")
 		}
 		out = sp
+		if in.OperatorID > 0 {
+			if _, err := q.CreateSupplierOwner(ctx, store.CreateSupplierOwnerParams{
+				TenantID: tenantID, SupplierID: out.ID, EmployeeID: in.OperatorID,
+				EmployeeName: supplierOwnerDisplayName(in.OperatorID, in.OperatorName), ResponsibilityCode: "PROCUREMENT",
+				IsPrimary: true, OperatorID: in.OperatorID,
+			}); err != nil {
+				return err
+			}
+		}
 		return recordSupplierChange(ctx, q, tenantID, out.ID, "CREATE", "PROFILE", "新增供应商："+out.Name, nil, out, in.OperatorID, in.OperatorName)
 	})
 	return out, err
 }
 
 func (s *Service) GetSupplier(ctx context.Context, tenantID, id int64) (store.Supplier, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, id); err != nil {
+		return store.Supplier{}, err
+	}
 	sp, err := s.q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
 	if err != nil && errors.Is(err, pgx.ErrNoRows) {
 		return store.Supplier{}, apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在")
@@ -568,7 +580,8 @@ func (s *Service) ListSuppliers(ctx context.Context, tenantID int64, keyword, st
 	rows, err := s.q.ListSuppliers(ctx, store.ListSuppliersParams{
 		TenantID: tenantID, Status: status, CountryCode: strings.ToUpper(strings.TrimSpace(countryCode)),
 		BusinessType: strings.ToUpper(strings.TrimSpace(businessType)), OwnerID: ownerID, Keyword: keyword,
-		PageSize: size, PageOffset: (page - 1) * size,
+		AccessEmployeeID: supplierAccessEmployee(ctx),
+		PageSize:         size, PageOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -581,6 +594,9 @@ func (s *Service) ListSuppliers(ctx context.Context, tenantID int64, keyword, st
 }
 
 func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in SupplierInput) (store.Supplier, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, id); err != nil {
+		return store.Supplier{}, err
+	}
 	if err := normalizeSupplierInput(&in); err != nil {
 		return store.Supplier{}, err
 	}
@@ -613,6 +629,12 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 
 // DeactivateSupplier 在同一事务内停用供应商并记录原因。
 func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64, operatorName string, reasons ...string) error {
+	if supplierAccessEmployee(ctx) != 0 {
+		return apierr.Permission("MD_SUPPLIER_DELETE_DENIED", "只有最高权限用户可以删除供应商")
+	}
+	if err := s.AuthorizeSupplier(ctx, tenantID, id); err != nil {
+		return err
+	}
 	reason := ""
 	if len(reasons) > 0 {
 		reason = reasons[0]
@@ -751,6 +773,9 @@ func (s *Service) ActivateCustomer(ctx context.Context, tenantID, id, operatorID
 }
 
 func (s *Service) ActivateSupplier(ctx context.Context, tenantID, id, operatorID int64, audit ...string) error {
+	if err := s.AuthorizeSupplier(ctx, tenantID, id); err != nil {
+		return err
+	}
 	operatorName, reason := "", ""
 	if len(audit) > 0 {
 		operatorName = audit[0]
