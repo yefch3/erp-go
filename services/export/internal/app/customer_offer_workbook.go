@@ -42,10 +42,13 @@ func buildOfferWorkbook(number string, body OfferBody, lines []offerWorkbookLine
 		labels.headers,
 	}
 	formulas := make(map[string]xlsx.Formula, len(lines)+1)
+	numbers := make(map[string]string, len(lines)*2)
 	firstDataRow := len(rows) + 1
 	for index, line := range lines {
 		rowNumber := len(rows) + 1
 		rows = append(rows, []string{strconv.Itoa(index + 1), line.product, line.specification, line.quantity, line.unit, line.unitPrice, line.amount, line.remark})
+		numbers[fmt.Sprintf("D%d", rowNumber)] = line.quantity
+		numbers[fmt.Sprintf("F%d", rowNumber)] = line.unitPrice
 		formulas[fmt.Sprintf("G%d", rowNumber)] = xlsx.Formula{Expression: fmt.Sprintf("D%d*F%d", rowNumber, rowNumber), CachedValue: line.amount}
 	}
 	totalRow := len(rows) + 1
@@ -53,7 +56,7 @@ func buildOfferWorkbook(number string, body OfferBody, lines []offerWorkbookLine
 	if len(lines) > 0 {
 		formulas[fmt.Sprintf("G%d", totalRow)] = xlsx.Formula{Expression: fmt.Sprintf("SUM(G%d:G%d)", firstDataRow, totalRow-1), CachedValue: total}
 	}
-	return xlsx.BuildWithFormulas(labels.sheet, rows, formulas)
+	return xlsx.BuildWithFormulasAndNumbers(labels.sheet, rows, formulas, numbers)
 }
 
 func offerWorkbook(view OfferView) ([]byte, error) {

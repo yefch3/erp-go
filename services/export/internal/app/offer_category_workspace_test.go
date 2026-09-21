@@ -1,8 +1,11 @@
 package app
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/sgao19/erp-go/pkg/xlsx"
@@ -70,6 +73,32 @@ func TestCategoryOfferWorkbookUsesLanguageAndSelectedCustomerPrices(t *testing.T
 	if rows[7][5] != "15.2500" || rows[7][6] != "305.00" || rows[8][6] != "305.00" {
 		t.Fatalf("workbook price/amount/total = %q/%q/%q", rows[7][5], rows[7][6], rows[8][6])
 	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range zr.File {
+		if file.Name != "xl/worksheets/sheet1.xml" {
+			continue
+		}
+		reader, openErr := file.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		xmlData, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		sheet := string(xmlData)
+		for _, want := range []string{`<c r="D8" s="2"><v>20</v></c>`, `<c r="F8" s="2"><v>15.2500</v></c>`} {
+			if !strings.Contains(sheet, want) {
+				t.Fatalf("customer quotation numeric cell missing %s: %s", want, sheet)
+			}
+		}
+		return
+	}
+	t.Fatal("customer quotation worksheet missing")
 }
 
 func TestCategoryWorkspaceCalculatesFOBUSDFromProductFreightUnitPrice(t *testing.T) {
