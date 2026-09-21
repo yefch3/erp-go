@@ -60,27 +60,42 @@ proxy_pass http://127.0.0.1:8080;
 
 | 谁写的 | 内容 | 在哪 |
 |---|---|---|
-| 我们 | 转发规则、代理头、HSTS、SSE 处理 | **`deploy/host-nginx.conf`**（仓库） |
+| 我们 | 转发规则、代理头、HSTS、SSE 处理、**gzip** | **`deploy/host-nginx.conf`**（仓库） |
+| 我们 | 访问日志的格式（带耗时） | **`deploy/host-nginx-log.conf`**（仓库） |
 | certbot | `listen 443 ssl http2`、证书路径、80→443 跳转 | 只在服务器上 |
 
 服务器上的落点：
 
 ```
 /etc/nginx/snippets/erp-app.conf     ← deploy/host-nginx.conf 的副本
-/etc/nginx/sites-enabled/erp         ← certbot 管，443 块里 include 上面那个
+/etc/nginx/conf.d/erp-timing.conf    ← deploy/host-nginx-log.conf 的副本
+/etc/nginx/sites-enabled/erp         ← certbot 管，443 块里 include 上面第一个
 ```
+
+**为什么我们这半又分成两个文件**：`log_format` 这条指令**只能写在 http 块里**，
+而 `erp-app.conf` 是 include 进 443 的 server 块的——写进去 nginx 起不来。
+`conf.d/` 则由发行版 `nginx.conf` 的 http 块自动带进去，正好是它该待的地方。
+gzip 两处都合法，放在 server 那份里，跟转发规则待在一起。
 
 **为什么不整份进仓库**：certbot 的 `installer = nginx`，它会改写 `sites-enabled/erp`
 （那些 `# managed by Certbot` 就是它写的）。整份抄进来的话，certbot 一动就和仓库
 对不上，而一个看着权威、实际过期的文件比没有文件更坏。拆开之后仓库那份是**逐字
 为真**的——certbot 碰不到 snippets 目录。
 
-**重建机器时**：装完 nginx 和 certbot 之后，把 `deploy/host-nginx.conf` 放到
-`/etc/nginx/snippets/erp-app.conf`，然后在 certbot 生成的 443 server 块里加一行：
+**重建机器时**：装完 nginx 和 certbot 之后，把两份都放过去——
+`deploy/host-nginx.conf` → `/etc/nginx/snippets/erp-app.conf`，
+`deploy/host-nginx-log.conf` → `/etc/nginx/conf.d/erp-timing.conf`，
+然后在 certbot 生成的 443 server 块里加一行：
 
 ```nginx
 include /etc/nginx/snippets/erp-app.conf;
 ```
+
+（`conf.d/` 那份不用加 include，发行版的 `nginx.conf` 自己会带上。）
+
+**漏掉 gzip 那一段会怎样**：站点照常能用，只是所有 JS、CSS 和 API 的 JSON 都变成
+不压缩传输——从美国访问几乎看不出来，从中国大陆则会把一次 300 KB 的接口拖到
+十几秒、触发前端的超时。2026-09-21 之前生产上就是这个状态，见那一节的注释。
 
 `nginx -t` 通过再 `systemctl reload nginx`。**顺序不能反**——先 reload 再发现语法
 错，站点就已经挂了。
