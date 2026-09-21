@@ -99,6 +99,7 @@ WHERE q.tenant_id = sqlc.arg(tenant_id)::bigint
                       WHERE c.tenant_id = q.tenant_id
                         AND c.quotation_id = q.id
                         AND c.status <> 'CANCELLED'))
+  AND (sqlc.arg(customer_access_all)::boolean OR q.customer_id=ANY(sqlc.arg(customer_access_ids)::bigint[]))
 ORDER BY q.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 

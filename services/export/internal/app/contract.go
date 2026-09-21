@@ -613,6 +613,9 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 		// contract exists but is none of their business is itself a leak.
 		return ContractView{}, apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
 	}
+	if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
+		return ContractView{}, err
+	}
 	return view, nil
 }
 
@@ -621,6 +624,9 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 // not, because being asked to sign off on a contract is precisely not
 // permission to rewrite it first.
 func (s *Service) mustOwnContract(ctx context.Context, op Operator, view ContractView) error {
+	if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
+		return err
+	}
 	if op.ID <= 0 || op.ID != view.Contract.SalesEmployeeID {
 		return apierr.Permission("EX_CONTRACT_NOT_OWNER", "只有负责销售可以修改或执行合同")
 	}
@@ -699,7 +705,12 @@ func (s *Service) ListContracts(ctx context.Context, tenantID int64, keyword str
 	if len(owners) > 0 {
 		ownerID = owners[0]
 	}
-	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{
+	customerIDs, customerAll, err := s.visibleCustomers(ctx, op.ID)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs,
+
 		SalesEmployeeID: ownerID, TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
 		InvolvedIds: s.involvedIn(ctx, op, BizTypeContract),

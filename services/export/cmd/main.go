@@ -113,7 +113,7 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool, app.Deps{
 		OfferSource: grpcout.NewOfferSource(prConn),
-		Customers:   grpcout.NewCustomers(mdConn),
+		Customers:   grpcout.NewCustomers(mdConn, iamConn),
 		Products:    grpcout.NewProducts(pdConn),
 		Rates:       grpcout.NewRates(fxConn),
 		Numbering:   grpcout.NewNumbering(mdConn),

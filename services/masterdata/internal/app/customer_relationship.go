@@ -246,6 +246,18 @@ func (s *Service) ListCustomerOwners(ctx context.Context, tenantID, customerID i
 // ListCustomerIDsOwnedByEmployees 返回给定员工当前有效负责的客户 ID。
 // 跨模块的数据范围只需要 ID，不应把客户敏感资料复制到其他服务。
 func (s *Service) ListCustomerIDsOwnedByEmployees(ctx context.Context, tenantID int64, employeeIDs []int64) ([]int64, error) {
+	if actor := customerAccessEmployee(ctx); actor != 0 {
+		found := false
+		for _, id := range employeeIDs {
+			if id == actor {
+				found = true
+			}
+		}
+		if !found {
+			return []int64{}, nil
+		}
+		employeeIDs = []int64{actor}
+	}
 	if len(employeeIDs) == 0 {
 		return []int64{}, nil
 	}

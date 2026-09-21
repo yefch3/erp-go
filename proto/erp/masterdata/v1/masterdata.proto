@@ -7,6 +7,14 @@ import "erp/common/v1/pagination.proto";
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 service CustomerService {
+  rpc GetCustomerBasic(GetCustomerBasicRequest) returns (CustomerBasicResponse);
+  rpc SaveCustomerBasic(SaveCustomerBasicRequest) returns (CustomerBasicResponse);
+  rpc DeleteCustomerDocument(DeleteCustomerDocumentRequest) returns (DeleteCustomerDocumentResponse);
+  rpc ListCustomerDocuments(ListCustomerDocumentsRequest) returns (ListCustomerDocumentsResponse);
+  rpc SaveCustomerDocument(SaveCustomerDocumentRequest) returns (SaveCustomerDocumentResponse);
+  rpc GetCustomerDocumentFile(GetCustomerDocumentFileRequest) returns (GetCustomerDocumentFileResponse);
+  rpc ListCustomerDocumentReminders(ListCustomerDocumentRemindersRequest) returns (ListCustomerDocumentsResponse);
+  rpc MarkCustomerDocumentRemindersRead(MarkCustomerDocumentRemindersReadRequest) returns (MarkCustomerDocumentRemindersReadResponse);
   rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse);
   rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
   rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
@@ -739,12 +747,23 @@ message CustomerImportRow {
   string credit_grade = 31;
   int64 owner_employee_id = 32;
   string owner_name = 33;
+  string company_phone = 34;
+  string fax_number = 35;
+  string company_email = 36;
+  string archive_creator = 37;
+  string country_region = 38;
+  repeated int64 owner_employee_ids = 39;
+  repeated string owner_names = 40;
+  string customer_action = 41;
+  string contact_action = 42;
+  int32 source_line = 43;
 }
 
 message ImportCustomersRequest {
   repeated CustomerImportRow rows = 1;
   bool dry_run = 2;
   repeated CustomerImportFieldMapping custom_field_mappings = 3;
+  bool template_mode = 4;
 }
 
 message CustomerImportVerdict {
@@ -753,6 +772,8 @@ message CustomerImportVerdict {
   string name = 3;
   bool ok = 4;
   string reason = 5;
+  bool existing_customer = 6;
+  bool duplicate_contact = 7;
 }
 
 message ImportCustomersResponse {
@@ -1282,3 +1303,50 @@ message CustomerImportFieldMapping {
   string display_name = 3;
   repeated string aliases = 4;
 }
+
+message CustomerDocument {
+  int64 id = 1;
+  int64 customer_id = 2;
+  int64 document_id = 3;
+  int32 version = 4;
+  string title = 5;
+  string remark = 6;
+  string file_name = 7;
+  string content_type = 8;
+  int64 size_bytes = 9;
+  string expires_on = 10;
+  int32 remind_days = 11;
+  bool reminder_enabled = 12;
+  string uploaded_by_name = 13;
+  string created_at = 14;
+  bool current = 15;
+  string customer_name = 16;
+  bool unread = 17;
+}
+message ListCustomerDocumentsRequest { int64 customer_id = 1; }
+message ListCustomerDocumentsResponse { repeated CustomerDocument documents = 1; }
+message SaveCustomerDocumentRequest {
+  int64 customer_id = 1;
+  // Zero creates a new document; otherwise this must be the current revision.
+  int64 replaces_id = 2;
+  string title = 3;
+  string remark = 4;
+  string file_name = 5;
+  bytes content = 6;
+  string expires_on = 7;
+  int32 remind_days = 8;
+  bool reminder_enabled = 9;
+}
+message SaveCustomerDocumentResponse { int64 id = 1; }
+message GetCustomerDocumentFileRequest { int64 customer_id = 1; int64 revision_id = 2; }
+message GetCustomerDocumentFileResponse { string file_name = 1; string content_type = 2; bytes content = 3; }
+message ListCustomerDocumentRemindersRequest {}
+message MarkCustomerDocumentRemindersReadRequest { repeated int64 ids = 1; }
+message MarkCustomerDocumentRemindersReadResponse { int64 marked = 1; }
+
+message DeleteCustomerDocumentRequest { int64 customer_id = 1; int64 revision_id = 2; }
+message DeleteCustomerDocumentResponse {}
+
+message GetCustomerBasicRequest { int64 customer_id = 1; }
+message SaveCustomerBasicRequest { int64 customer_id = 1; CustomerImportRow basic = 2; }
+message CustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }

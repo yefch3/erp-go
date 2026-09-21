@@ -131,6 +131,38 @@ func (s *Server) importCustomers(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	// Resolve every supplied owner ID in the authenticated tenant, never trust Excel names.
+	owners := map[int64]string{}
+	for _, row := range req.GetRows() {
+		ids := row.GetOwnerEmployeeIds()
+		if len(ids) == 0 && row.GetOwnerEmployeeId() > 0 {
+			ids = []int64{row.GetOwnerEmployeeId()}
+		}
+		row.OwnerEmployeeIds = ids
+		row.OwnerNames = nil
+		for _, id := range ids {
+			name, found := owners[id]
+			if !found {
+				employee, err := s.Directory.GetEmployee(r.Context(), &iamv1.GetEmployeeRequest{Id: id})
+				if err != nil {
+					s.writeGRPCError(w, err)
+					return
+				}
+				if employee.GetEmployee().GetStatus() != "ACTIVE" {
+					s.writeGRPCError(w, apierr.Invalid("MD_OWNER_EMPLOYEE_INACTIVE", "只能选择本公司在职员工作为客户负责人"))
+					return
+				}
+				name = employee.GetEmployee().GetName()
+				owners[id] = name
+			}
+			row.OwnerNames = append(row.OwnerNames, name)
+		}
+		if len(ids) == 1 {
+			row.OwnerEmployeeId = ids[0]
+			row.OwnerName = row.OwnerNames[0]
+		}
+	}
+
 	resp, err := s.Customers.ImportCustomers(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

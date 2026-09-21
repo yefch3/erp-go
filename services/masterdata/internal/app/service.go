@@ -255,6 +255,14 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 			return translateUnique(err, "MD_CUSTOMER_CODE_TAKEN", "客户编码已存在")
 		}
 		out = c
+		if in.OperatorID > 0 {
+			if _, err := q.CreateCustomerOwner(ctx, store.CreateCustomerOwnerParams{
+				TenantID: tenantID, CustomerID: c.ID, EmployeeID: in.OperatorID,
+				EmployeeName: in.OperatorName, ResponsibilityCode: "SALES", IsPrimary: true, OperatorID: in.OperatorID,
+			}); err != nil {
+				return err
+			}
+		}
 		return replaceContacts(ctx, q, tenantID, c.ID, in.Contacts)
 	})
 	if err != nil {
@@ -265,6 +273,9 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 }
 
 func (s *Service) GetCustomer(ctx context.Context, tenantID, id int64) (store.Customer, []store.CustomerContact, error) {
+	if err := s.AuthorizeCustomer(ctx, tenantID, id); err != nil {
+		return store.Customer{}, nil, err
+	}
 	c, err := s.q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -286,7 +297,7 @@ func (s *Service) ListCustomers(ctx context.Context, tenantID int64, keyword, st
 			return nil, 0, err
 		}
 	}
-	rows, err := s.q.ListCustomers(ctx, store.ListCustomersParams{
+	rows, err := s.q.ListCustomers(ctx, store.ListCustomersParams{AccessEmployeeID: customerAccessEmployee(ctx),
 		TenantID: tenantID, Status: status, CountryCode: countryCode, Keyword: keyword,
 		CustomerType:   strings.ToUpper(strings.TrimSpace(customerType)),
 		BusinessStatus: strings.ToUpper(strings.TrimSpace(businessStatus)), Tag: strings.TrimSpace(tag),
@@ -390,6 +401,9 @@ func (s *Service) UpdateCustomerProfile(ctx context.Context, tenantID, id int64,
 }
 
 func (s *Service) DeactivateCustomer(ctx context.Context, tenantID, id, operatorID int64, audit ...string) error {
+	if customerAccessEmployee(ctx) != 0 {
+		return apierr.Permission("MD_CUSTOMER_DELETE_DENIED", "只有最高权限用户可以删除客户")
+	}
 	operatorName, reason := "", ""
 	if len(audit) > 0 {
 		operatorName = audit[0]
@@ -810,7 +824,7 @@ func (s *Service) ListMailingContacts(ctx context.Context, tenantID int64, keywo
 	if customerIDs == nil {
 		customerIDs = []int64{}
 	}
-	return s.q.ListMailingContacts(ctx, store.ListMailingContactsParams{
+	return s.q.ListMailingContacts(ctx, store.ListMailingContactsParams{AccessEmployeeID: customerAccessEmployee(ctx),
 		TenantID: tenantID, Keyword: keyword, CustomerIds: customerIDs,
 	})
 }
@@ -820,7 +834,7 @@ func (s *Service) ListMailingContacts(ctx context.Context, tenantID int64, keywo
 // 老板端的员工邮箱监管用它排左栏。不分页：一家公司的业务员就那么些，而
 // 调用方要的是整棵树，分页只会让它自己再拼一遍。
 func (s *Service) ListOwnerCountries(ctx context.Context, tenantID int64) ([]store.ListOwnerCountriesRow, error) {
-	return s.q.ListOwnerCountries(ctx, tenantID)
+	return s.q.ListOwnerCountries(ctx, store.ListOwnerCountriesParams{TenantID: tenantID, AccessEmployeeID: customerAccessEmployee(ctx)})
 }
 
 // CountryGroup is one country and how big a send to it would be.
@@ -838,7 +852,7 @@ type CountryGroup struct {
 // it differs per reader, and every browser already ships the translations —
 // so the code travels and the screen decides what to call it.
 func (s *Service) ListCustomerCountries(ctx context.Context, tenantID int64, status string) ([]CountryGroup, error) {
-	rows, err := s.q.ListCustomerCountries(ctx, store.ListCustomerCountriesParams{TenantID: tenantID, Status: status})
+	rows, err := s.q.ListCustomerCountries(ctx, store.ListCustomerCountriesParams{AccessEmployeeID: customerAccessEmployee(ctx), TenantID: tenantID, Status: status})
 	if err != nil {
 		return nil, err
 	}
@@ -883,7 +897,7 @@ func (s *Service) ContactsInCountry(ctx context.Context, tenantID int64, code st
 		return nil, err
 	}
 	if primaryOnly {
-		rows, err := s.q.ContactsInCountry(ctx, store.ContactsInCountryParams{
+		rows, err := s.q.ContactsInCountry(ctx, store.ContactsInCountryParams{AccessEmployeeID: customerAccessEmployee(ctx),
 			TenantID: tenantID, CountryCode: code,
 		})
 		if err != nil {
@@ -901,7 +915,7 @@ func (s *Service) ContactsInCountry(ctx context.Context, tenantID int64, code st
 		}
 		return out, nil
 	}
-	rows, err := s.q.AllContactsInCountry(ctx, store.AllContactsInCountryParams{
+	rows, err := s.q.AllContactsInCountry(ctx, store.AllContactsInCountryParams{AccessEmployeeID: customerAccessEmployee(ctx),
 		TenantID: tenantID, CountryCode: code,
 	})
 	if err != nil {

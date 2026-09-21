@@ -41,7 +41,7 @@ func (s *Service) CheckCustomerDuplicates(ctx context.Context, tenantID int64, n
 	if name == "" && taxID == "" && email == "" {
 		return nil, nil
 	}
-	rows, err := s.q.CustomerDuplicateCandidates(ctx, store.CustomerDuplicateCandidatesParams{
+	rows, err := s.q.CustomerDuplicateCandidates(ctx, store.CustomerDuplicateCandidatesParams{AccessEmployeeID: customerAccessEmployee(ctx),
 		TenantID: tenantID, Name: name, TaxID: taxID, Email: email, ExcludeID: excludeID,
 	})
 	if err != nil {

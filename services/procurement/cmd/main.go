@@ -105,6 +105,7 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool, app.Deps{
 		InquiryDocuments: grpcout.NewInquiryDocuments(exportConn),
+		Customers:        grpcout.NewCustomerAccess(mdConn, iamConn),
 		Log:              log,
 		Numbering:        grpcout.NewNumbering(mdConn),
 		Approvals:        grpcout.NewApprovals(apConn),

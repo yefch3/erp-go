@@ -125,6 +125,7 @@ type ApprovalSubmission struct {
 
 // Deps are the outside services procurement talks to.
 type Deps struct {
+	Customers        CustomerAccess
 	InquiryDocuments InquiryDocuments
 	Numbering        Numbering
 	Approvals        Approvals
@@ -144,6 +145,7 @@ type Deps struct {
 }
 
 type Service struct {
+	customers        CustomerAccess
 	inquiryDocuments InquiryDocuments
 	pool             *pgxpool.Pool
 	q                *store.Queries
@@ -170,6 +172,7 @@ type Service struct {
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
+		customers:        d.Customers,
 		inquiryDocuments: d.InquiryDocuments,
 		pool:             pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,

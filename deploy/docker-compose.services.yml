@@ -79,6 +79,7 @@ services:
       args: { SERVICE: masterdata }
     image: erp-go/masterdata:dev
     environment:
+      IAM_ADDR: iam:9001
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_masterdata:erp_masterdata_pw@postgres:5432/erp_masterdata?sslmode=disable
       GRPC_PORT: "9002"

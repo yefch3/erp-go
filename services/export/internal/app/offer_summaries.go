@@ -12,7 +12,11 @@ func (s *Service) offerSummaries(ctx context.Context, op grpcx.Operator) (string
 	if err != nil {
 		return "", err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT case_id,CASE WHEN confirmed_at IS NULL THEN 'QUOTED' ELSE 'CONFIRMED' END,COALESCE(to_char(confirmed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'') FROM customer_offers WHERE tenant_id=$1 AND ($2 OR updated_by=$3 OR updated_by=ANY($4::bigint[]))`, op.TenantID, visible.All, op.EmployeeID, visible.EmployeeIDs)
+	customerIDs, customerAll, err := s.visibleCustomers(ctx, op.EmployeeID)
+	if err != nil {
+		return "", err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT case_id,CASE WHEN confirmed_at IS NULL THEN 'QUOTED' ELSE 'CONFIRMED' END,COALESCE(to_char(confirmed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'') FROM customer_offers WHERE tenant_id=$1 AND ($5 OR body->>'customerId'=ANY(SELECT unnest($6::bigint[])::text)) AND ($2 OR updated_by=$3 OR updated_by=ANY($4::bigint[]))`, op.TenantID, visible.All, op.EmployeeID, visible.EmployeeIDs, customerAll, customerIDs)
 	if err != nil {
 		return "", err
 	}

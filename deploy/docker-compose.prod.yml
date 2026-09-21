@@ -68,6 +68,7 @@ services:
         awslogs-stream: masterdata
     image: ghcr.io/yefch3/erp-go/masterdata:${ERP_SHA}
     environment:
+      IAM_ADDR: iam:9001
       DB_DSN: ${MASTERDATA_DB_DSN:?set in deploy/.env}
       # Factory certificate scans go to the shared bucket.
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}

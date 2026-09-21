@@ -336,6 +336,7 @@ const reminderSourceOptions = computed<HomeReminderSource[]>(() => [
   ...(auth.can('export:receipt:read') ? ['RECEIVABLE' as const] : []),
   ...(auth.can('shipping:schedule:read') ? ['ARRIVAL' as const, 'BL' as const] : []),
   'SHIPPING_ACTION',
+  ...(auth.can('masterdata:customer:read') ? ['CUSTOMER_DOCUMENT' as const] : []),
 ])
 const statusOptions = computed(() => activeTab.value === 'handled'
   ? ['APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'SKIPPED']

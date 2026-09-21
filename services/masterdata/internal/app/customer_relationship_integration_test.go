@@ -206,6 +206,10 @@ func TestCustomerImportRoutesKnownFieldsToCustomerModules(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM customer_owners WHERE tenant_id=1 AND customer_id IN (SELECT id FROM customers WHERE tenant_id=1 AND code='B2-ROUTED-IMPORT')")
 		_, _ = pool.Exec(ctx, "DELETE FROM customers WHERE tenant_id=1 AND code='B2-ROUTED-IMPORT'")
 	}()
+	var ownerCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM customer_owners o JOIN customers c ON c.tenant_id=o.tenant_id AND c.id=o.customer_id WHERE c.tenant_id=1 AND c.code='B2-ROUTED-IMPORT' AND o.status='ACTIVE' AND o.employee_id IN (9,77)`).Scan(&ownerCount); err != nil || ownerCount != 2 {
+		t.Fatalf("import must preserve selected owner and assign creator: count=%d err=%v", ownerCount, err)
+	}
 	var contactName, contactMobile, address, postalCode, ownerName, grade string
 	err = pool.QueryRow(ctx, `
 		SELECT cc.name, cc.mobile, ca.address_line, ca.postal_code, co.employee_name, c.credit_grade
@@ -213,7 +217,7 @@ func TestCustomerImportRoutesKnownFieldsToCustomerModules(t *testing.T) {
 		JOIN customer_contacts cc ON cc.tenant_id=c.tenant_id AND cc.customer_id=c.id AND cc.status='ACTIVE'
 		JOIN customer_addresses ca ON ca.tenant_id=c.tenant_id AND ca.customer_id=c.id AND ca.status='ACTIVE'
 		JOIN customer_owners co ON co.tenant_id=c.tenant_id AND co.customer_id=c.id AND co.status='ACTIVE'
-		WHERE c.tenant_id=1 AND c.code='B2-ROUTED-IMPORT'`).Scan(&contactName, &contactMobile, &address, &postalCode, &ownerName, &grade)
+		WHERE c.tenant_id=1 AND c.code='B2-ROUTED-IMPORT' AND co.employee_id=77`).Scan(&contactName, &contactMobile, &address, &postalCode, &ownerName, &grade)
 	if err != nil {
 		t.Fatal(err)
 	}

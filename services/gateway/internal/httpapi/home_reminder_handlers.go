@@ -9,6 +9,7 @@ import (
 	"time"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
 
@@ -147,6 +148,30 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if s.Customers != nil {
+		allowed, checkErr := s.hasPermission(r, "masterdata:customer:read")
+		if checkErr != nil {
+			sources = append(sources, homeReminderSourceState{Source: "CUSTOMER_DOCUMENT", Message: "客户资料权限检查失败"})
+		} else if allowed {
+			resp, err := s.Customers.ListCustomerDocumentReminders(r.Context(), &mdv1.ListCustomerDocumentRemindersRequest{})
+			if err != nil {
+				sources = append(sources, homeReminderSourceState{Source: "CUSTOMER_DOCUMENT", Message: "客户资料提醒暂时不可用"})
+			} else {
+				sources = append(sources, homeReminderSourceState{Source: "CUSTOMER_DOCUMENT", Available: true})
+				for _, d := range resp.GetDocuments() {
+					timing := classifyHomeReminderDate(d.ExpiresOn, today)
+					if timing == "REMINDER" {
+						timing = "UPCOMING"
+					}
+					items = append(items, homeReminderItem{Key: "CUSTOMER_DOCUMENT:" + strconv.FormatInt(d.Id, 10), Source: "CUSTOMER_DOCUMENT", SourceID: strconv.FormatInt(d.Id, 10), Title: "客户资料到期：" + d.Title, Content: d.CustomerName + "，请检查并更换有效资料", BizNo: d.CustomerName, DueAt: d.ExpiresOn, CreatedAt: d.CreatedAt, Unread: d.Unread, Timing: timing, DetailURL: "/basic/customers/" + strconv.FormatInt(d.CustomerId, 10) + "?tab=documents"})
+					if d.Unread {
+						summary.Unread++
+					}
+					addHomeReminderTiming(&summary, timing)
+				}
+			}
+		}
+	}
 	items = filterAndSortHomeReminders(items, r)
 	page, pageSize := homeReminderPageParams(r)
 	total := len(items)
@@ -254,6 +279,19 @@ func (s *Server) markHomeRemindersRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if s.Customers != nil && (input.Source == "" || input.Source == "ALL" || input.Source == "CUSTOMER_DOCUMENT") {
+		allowed, err := s.hasPermission(r, "masterdata:customer:read")
+		if err != nil || !allowed {
+			sourceErrors = append(sourceErrors, homeReminderSourceState{Source: "CUSTOMER_DOCUMENT", Message: "无客户资料读取权限"})
+		} else {
+			resp, err := s.Customers.MarkCustomerDocumentRemindersRead(r.Context(), &mdv1.MarkCustomerDocumentRemindersReadRequest{Ids: ids})
+			if err != nil {
+				sourceErrors = append(sourceErrors, homeReminderSourceState{Source: "CUSTOMER_DOCUMENT", Message: "资料提醒标记失败"})
+			} else {
+				marked += resp.GetMarked()
+			}
+		}
+	}
 	s.writeJSON(w, map[string]any{"marked": marked, "sources": sourceErrors})
 }
 

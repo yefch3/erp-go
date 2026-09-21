@@ -1,5 +1,5 @@
 export type HomeReminderTiming = 'OVERDUE' | 'UPCOMING' | 'REMINDER'
-export type HomeReminderSource = 'RECEIVABLE' | 'ARRIVAL' | 'BL' | 'SHIPPING_ACTION'
+export type HomeReminderSource = 'RECEIVABLE' | 'ARRIVAL' | 'BL' | 'SHIPPING_ACTION' | 'CUSTOMER_DOCUMENT'
 
 export interface HomeReminder {
   key: string
