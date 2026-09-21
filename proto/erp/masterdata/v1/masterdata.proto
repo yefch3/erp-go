@@ -7,13 +7,13 @@ import "erp/common/v1/pagination.proto";
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 service CustomerService {
-  rpc GetCustomerBasic(GetCustomerBasicRequest) returns (CustomerBasicResponse);
-  rpc SaveCustomerBasic(SaveCustomerBasicRequest) returns (CustomerBasicResponse);
+  rpc GetCustomerBasic(GetCustomerBasicRequest) returns (GetCustomerBasicResponse);
+  rpc SaveCustomerBasic(SaveCustomerBasicRequest) returns (SaveCustomerBasicResponse);
   rpc DeleteCustomerDocument(DeleteCustomerDocumentRequest) returns (DeleteCustomerDocumentResponse);
   rpc ListCustomerDocuments(ListCustomerDocumentsRequest) returns (ListCustomerDocumentsResponse);
   rpc SaveCustomerDocument(SaveCustomerDocumentRequest) returns (SaveCustomerDocumentResponse);
   rpc GetCustomerDocumentFile(GetCustomerDocumentFileRequest) returns (GetCustomerDocumentFileResponse);
-  rpc ListCustomerDocumentReminders(ListCustomerDocumentRemindersRequest) returns (ListCustomerDocumentsResponse);
+  rpc ListCustomerDocumentReminders(ListCustomerDocumentRemindersRequest) returns (ListCustomerDocumentRemindersResponse);
   rpc MarkCustomerDocumentRemindersRead(MarkCustomerDocumentRemindersReadRequest) returns (MarkCustomerDocumentRemindersReadResponse);
   rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse);
   rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
@@ -1341,6 +1341,7 @@ message SaveCustomerDocumentResponse { int64 id = 1; }
 message GetCustomerDocumentFileRequest { int64 customer_id = 1; int64 revision_id = 2; }
 message GetCustomerDocumentFileResponse { string file_name = 1; string content_type = 2; bytes content = 3; }
 message ListCustomerDocumentRemindersRequest {}
+message ListCustomerDocumentRemindersResponse { repeated CustomerDocument documents = 1; }
 message MarkCustomerDocumentRemindersReadRequest { repeated int64 ids = 1; }
 message MarkCustomerDocumentRemindersReadResponse { int64 marked = 1; }
 
@@ -1349,4 +1350,5 @@ message DeleteCustomerDocumentResponse {}
 
 message GetCustomerBasicRequest { int64 customer_id = 1; }
 message SaveCustomerBasicRequest { int64 customer_id = 1; CustomerImportRow basic = 2; }
-message CustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }
+message GetCustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }
+message SaveCustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }

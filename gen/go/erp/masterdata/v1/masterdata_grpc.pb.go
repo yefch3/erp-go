@@ -66,13 +66,13 @@ const (
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceClient interface {
-	GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*CustomerBasicResponse, error)
-	SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*CustomerBasicResponse, error)
+	GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error)
+	SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(ctx context.Context, in *DeleteCustomerDocumentRequest, opts ...grpc.CallOption) (*DeleteCustomerDocumentResponse, error)
 	ListCustomerDocuments(ctx context.Context, in *ListCustomerDocumentsRequest, opts ...grpc.CallOption) (*ListCustomerDocumentsResponse, error)
 	SaveCustomerDocument(ctx context.Context, in *SaveCustomerDocumentRequest, opts ...grpc.CallOption) (*SaveCustomerDocumentResponse, error)
 	GetCustomerDocumentFile(ctx context.Context, in *GetCustomerDocumentFileRequest, opts ...grpc.CallOption) (*GetCustomerDocumentFileResponse, error)
-	ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentsResponse, error)
+	ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentRemindersResponse, error)
 	MarkCustomerDocumentRemindersRead(ctx context.Context, in *MarkCustomerDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...grpc.CallOption) (*CreateCustomerResponse, error)
 	GetCustomer(ctx context.Context, in *GetCustomerRequest, opts ...grpc.CallOption) (*GetCustomerResponse, error)
@@ -126,9 +126,9 @@ func NewCustomerServiceClient(cc grpc.ClientConnInterface) CustomerServiceClient
 	return &customerServiceClient{cc}
 }
 
-func (c *customerServiceClient) GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*CustomerBasicResponse, error) {
+func (c *customerServiceClient) GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CustomerBasicResponse)
+	out := new(GetCustomerBasicResponse)
 	err := c.cc.Invoke(ctx, CustomerService_GetCustomerBasic_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -136,9 +136,9 @@ func (c *customerServiceClient) GetCustomerBasic(ctx context.Context, in *GetCus
 	return out, nil
 }
 
-func (c *customerServiceClient) SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*CustomerBasicResponse, error) {
+func (c *customerServiceClient) SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CustomerBasicResponse)
+	out := new(SaveCustomerBasicResponse)
 	err := c.cc.Invoke(ctx, CustomerService_SaveCustomerBasic_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -186,9 +186,9 @@ func (c *customerServiceClient) GetCustomerDocumentFile(ctx context.Context, in 
 	return out, nil
 }
 
-func (c *customerServiceClient) ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentsResponse, error) {
+func (c *customerServiceClient) ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentRemindersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListCustomerDocumentsResponse)
+	out := new(ListCustomerDocumentRemindersResponse)
 	err := c.cc.Invoke(ctx, CustomerService_ListCustomerDocumentReminders_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -513,13 +513,13 @@ func (c *customerServiceClient) ContactsInCountry(ctx context.Context, in *Conta
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceServer interface {
-	GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*CustomerBasicResponse, error)
-	SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*CustomerBasicResponse, error)
+	GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error)
+	SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error)
 	ListCustomerDocuments(context.Context, *ListCustomerDocumentsRequest) (*ListCustomerDocumentsResponse, error)
 	SaveCustomerDocument(context.Context, *SaveCustomerDocumentRequest) (*SaveCustomerDocumentResponse, error)
 	GetCustomerDocumentFile(context.Context, *GetCustomerDocumentFileRequest) (*GetCustomerDocumentFileResponse, error)
-	ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentsResponse, error)
+	ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentRemindersResponse, error)
 	MarkCustomerDocumentRemindersRead(context.Context, *MarkCustomerDocumentRemindersReadRequest) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(context.Context, *CreateCustomerRequest) (*CreateCustomerResponse, error)
 	GetCustomer(context.Context, *GetCustomerRequest) (*GetCustomerResponse, error)
@@ -573,10 +573,10 @@ type CustomerServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCustomerServiceServer struct{}
 
-func (UnimplementedCustomerServiceServer) GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*CustomerBasicResponse, error) {
+func (UnimplementedCustomerServiceServer) GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerBasic not implemented")
 }
-func (UnimplementedCustomerServiceServer) SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*CustomerBasicResponse, error) {
+func (UnimplementedCustomerServiceServer) SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveCustomerBasic not implemented")
 }
 func (UnimplementedCustomerServiceServer) DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error) {
@@ -591,7 +591,7 @@ func (UnimplementedCustomerServiceServer) SaveCustomerDocument(context.Context, 
 func (UnimplementedCustomerServiceServer) GetCustomerDocumentFile(context.Context, *GetCustomerDocumentFileRequest) (*GetCustomerDocumentFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerDocumentFile not implemented")
 }
-func (UnimplementedCustomerServiceServer) ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentsResponse, error) {
+func (UnimplementedCustomerServiceServer) ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentRemindersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerDocumentReminders not implemented")
 }
 func (UnimplementedCustomerServiceServer) MarkCustomerDocumentRemindersRead(context.Context, *MarkCustomerDocumentRemindersReadRequest) (*MarkCustomerDocumentRemindersReadResponse, error) {

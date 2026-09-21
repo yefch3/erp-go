@@ -19,10 +19,10 @@ func (h *Handler) ListCustomerDocuments(ctx context.Context, r *mdv1.ListCustome
 	rows, err := h.svc.ListCustomerDocuments(ctx, op.TenantID, r.CustomerId, op.EmployeeID, false)
 	return documentsResponse(rows), err
 }
-func (h *Handler) ListCustomerDocumentReminders(ctx context.Context, r *mdv1.ListCustomerDocumentRemindersRequest) (*mdv1.ListCustomerDocumentsResponse, error) {
+func (h *Handler) ListCustomerDocumentReminders(ctx context.Context, r *mdv1.ListCustomerDocumentRemindersRequest) (*mdv1.ListCustomerDocumentRemindersResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	rows, err := h.svc.ListCustomerDocuments(ctx, op.TenantID, 0, op.EmployeeID, true)
-	return documentsResponse(rows), err
+	return &mdv1.ListCustomerDocumentRemindersResponse{Documents: documentsResponse(rows).Documents}, err
 }
 func (h *Handler) SaveCustomerDocument(ctx context.Context, r *mdv1.SaveCustomerDocumentRequest) (*mdv1.SaveCustomerDocumentResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
