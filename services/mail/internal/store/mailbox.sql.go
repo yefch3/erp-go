@@ -276,6 +276,52 @@ func (q *Queries) CountMailFolderChildren(ctx context.Context, arg CountMailFold
 	return column_1, err
 }
 
+const countMessagesByView = `-- name: CountMessagesByView :one
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
+  AND NOT is_bounce
+  AND CASE
+        WHEN $4::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $4::text
+      END
+  AND (NOT $5::boolean OR NOT is_read)
+  AND ($6::text = ''
+       OR subject ILIKE '%' || $6::text || '%'
+       OR from_email ILIKE '%' || $6::text || '%'
+       OR from_name ILIKE '%' || $6::text || '%')
+`
+
+type CountMessagesByViewParams struct {
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	Keyword    string
+}
+
+// 信的封数，不是会话数：分页器数的必须和列表显示的是同一批，否则底下
+// 写着「共 300 封」而列表是另一个长度。
+func (q *Queries) CountMessagesByView(ctx context.Context, arg CountMessagesByViewParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMessagesByView,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.View,
+		arg.UnreadOnly,
+		arg.Keyword,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingFlagOps = `-- name: CountPendingFlagOps :one
 SELECT count(*)::bigint FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
@@ -2522,6 +2568,261 @@ func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailbox
 			&i.Username,
 			&i.SecretEnc,
 			&i.KeyVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesByView = `-- name: ListMessagesByView :many
+SELECT id, from_email, from_name, subject, snippet, thread_key,
+       is_read, is_starred, has_attachments, is_answered,
+       received_at, sent_at
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
+  AND NOT is_bounce
+  AND CASE
+        WHEN $4::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $4::text
+      END
+  -- 「只看未读」在这一档里问的是这一封读没读，不是「这条会话里还有没有
+  -- 没读的」。两种含义都对，各自对应各自的行。
+  AND (NOT $5::boolean OR NOT is_read)
+  -- 在这个视图里按词筛。合并档那边这件事要另开一条查询（mail_thread_view
+  -- 预计算不出「含这个词的会话」），单封档不用——一行就是一封信，条件直接
+  -- 加在行上。所以这一条同时顶替了那边的两条。
+  AND ($6::text = ''
+       OR subject ILIKE '%' || $6::text || '%'
+       OR from_email ILIKE '%' || $6::text || '%'
+       OR from_name ILIKE '%' || $6::text || '%')
+  -- 游标和会话列表**形状完全一样**：(received_at, id)。两边都按 received_at
+  -- 排，所以拨动开关时手里那个游标仍然指着一个说得通的位置。不过前端换档时
+  -- 还是回到第一页——一行的含义变了，停在原处没有意义。
+  AND ($7::timestamptz IS NULL
+       OR (received_at, id) < ($7::timestamptz, $8::bigint))
+ORDER BY received_at DESC, id DESC
+LIMIT $9::int
+`
+
+type ListMessagesByViewParams struct {
+	TenantID   int64
+	OwnerID    int64
+	AccountID  *int64
+	View       string
+	UnreadOnly bool
+	Keyword    string
+	CursorAt   pgtype.Timestamptz
+	CursorID   int64
+	RowLimit   int32
+}
+
+type ListMessagesByViewRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	IsAnswered     bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+}
+
+// 同一份收件箱列表，**一行一封**，不合并会话（mail_list_prefs.list_mode
+// = 'MESSAGE'）。263 和 Foxmail 的样子，也是 Gmail 关掉对话模式后的样子。
+//
+// 不读 mail_thread_view：那张表存的是「每条会话的最新一封、共几封、有没有
+// 未读」，全是关于一组信的事实。一行一封要的正是没有这些聚合的原始行，
+// 直接读 email_inbound 反而更短、更快——单封模式不需要任何预计算。
+//
+// 走的还是 email_inbound_owner_idx (tenant_id, owner_id, received_at DESC)。
+// **没有为它新建索引**：00033 删掉的那个是建在 coalesce(sent_at, received_at)
+// 上的，那是当年另一条按别的表达式排序的查询要的形状，不是这一条要的。
+// 按 received_at 排和会话列表是同一个口径，现成的索引正好顺着读。
+//
+// 视图那一段照抄 ListInboundThreads，一个字不改：一封信属于哪个视图只能有
+// 一处说了算（mail_view_of，00034/00056），两份列表各写一套的样子是同一封
+// 信在合并档里在收件箱、在单封档里不在——而且两边都不报错。
+func (q *Queries) ListMessagesByView(ctx context.Context, arg ListMessagesByViewParams) ([]ListMessagesByViewRow, error) {
+	rows, err := q.db.Query(ctx, listMessagesByView,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.View,
+		arg.UnreadOnly,
+		arg.Keyword,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMessagesByViewRow
+	for rows.Next() {
+		var i ListMessagesByViewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.IsAnswered,
+			&i.ReceivedAt,
+			&i.SentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesByViewSorted = `-- name: ListMessagesByViewSorted :many
+SELECT x.id, x.from_email, x.from_name, x.subject, x.snippet, x.thread_key,
+       x.is_read, x.is_starred, x.has_attachments, x.is_answered,
+       x.received_at, x.sent_at, x.raw_size, x.sort_key
+FROM (
+    SELECT id, from_email, from_name, subject, snippet, thread_key,
+           is_read, is_starred, has_attachments, is_answered,
+           received_at, sent_at, raw_size,
+           (CASE WHEN $1::boolean
+                   THEN CASE WHEN is_starred = ($2::text = 'desc')
+                             THEN '1' ELSE '0' END
+                   ELSE '' END
+            || CASE WHEN $3::boolean
+                    THEN CASE WHEN (NOT is_read) = ($2::text = 'desc')
+                              THEN '1' ELSE '0' END
+                    ELSE '' END
+            || CASE $4::text
+                 WHEN 'from'    THEN lower(coalesce(nullif(from_name, ''), from_email))
+                 WHEN 'subject' THEN lower(subject)
+                 WHEN 'size'    THEN lpad(raw_size::text, 20, '0')
+                 ELSE to_char(received_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+               END)::text                 AS sort_key
+    FROM email_inbound
+    WHERE tenant_id = $5::bigint
+      AND owner_id = $6::bigint
+      AND ($7::bigint IS NULL
+           OR account_id = $7::bigint)
+      AND NOT is_bounce
+      AND CASE
+            WHEN $8::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $8::text
+          END
+      AND (NOT $9::boolean OR NOT is_read)
+) x
+WHERE ($10::text IS NULL
+       OR CASE WHEN $2::text = 'asc'
+               THEN (x.sort_key, x.id) > ($10::text, $11::bigint)
+               ELSE (x.sort_key, x.id) < ($10::text, $11::bigint)
+          END)
+ORDER BY CASE WHEN $2::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN $2::text = 'asc' THEN x.id END ASC,
+         x.sort_key DESC, x.id DESC
+LIMIT $12::int
+`
+
+type ListMessagesByViewSortedParams struct {
+	StarFirst   bool
+	SortDir     string
+	UnreadFirst bool
+	SortBy      string
+	TenantID    int64
+	OwnerID     int64
+	AccountID   *int64
+	View        string
+	UnreadOnly  bool
+	CursorKey   *string
+	CursorID    int64
+	RowLimit    int32
+}
+
+type ListMessagesByViewSortedRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	IsAnswered     bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	RawSize        int64
+	SortKey        string
+}
+
+// 一行一封，按人点的那一列排。和 ListThreadsByViewSorted 是同一套排序键
+// 的做法（定宽前缀 + 统一成一段文本），理由见那一条的注释，这里不重复。
+//
+// 唯一的区别是聚合没了：会话档里「发件人」「大小」取的是**最后一封**的，
+// 单封档里就是这一封自己的。星标和未读同理——不再是 any_starred/any_unread，
+// 而是这一行的 is_starred / NOT is_read。
+func (q *Queries) ListMessagesByViewSorted(ctx context.Context, arg ListMessagesByViewSortedParams) ([]ListMessagesByViewSortedRow, error) {
+	rows, err := q.db.Query(ctx, listMessagesByViewSorted,
+		arg.StarFirst,
+		arg.SortDir,
+		arg.UnreadFirst,
+		arg.SortBy,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.View,
+		arg.UnreadOnly,
+		arg.CursorKey,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMessagesByViewSortedRow
+	for rows.Next() {
+		var i ListMessagesByViewSortedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.IsAnswered,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.RawSize,
+			&i.SortKey,
 		); err != nil {
 			return nil, err
 		}

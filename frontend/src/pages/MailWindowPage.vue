@@ -209,6 +209,12 @@ import { del, download, get, post, quietErrors, saveBlob } from '../api'
 import { printDocument } from '../lib/printDocument'
 import { useAuthStore } from '../stores/auth'
 import { replyAllRecipients } from '../lib/replyAll'
+import {
+  DEFAULT_LIST_MODE,
+  mergesThreads,
+  normalizeListMode,
+  type MailListMode,
+} from '../lib/mailListMode'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailActionIcon from '../components/MailActionIcon.vue'
 import MailBody from '../components/MailBody.vue'
@@ -337,6 +343,11 @@ onMounted(async () => {
     // 而这封信本身已经摆在屏幕上了，不该因为一条次要请求变成一页错误。
     void loadBoxes()
     void loadFolders(Number(d.mail.accountId ?? 0))
+    // 这个人的列表是按会话合并的还是一封一行。这一页不画列表，但下面
+    // 的归档/删除要照这一档来——合并档下删的是整条会话，单封档下只删
+    // 这一封。**await 它**，和上面两条不同：拿不到就按合并档走，而那
+    // 时人点删除会删掉他不想删的东西。
+    await loadListMode()
   } catch {
     // 信被删了、id 不是自己的、或者信箱这会儿是锁着的。分不出是哪一种，
     // 也不该猜——一句「打不开，回主窗口看看」比一个白屏诚实。
@@ -369,13 +380,30 @@ async function loadFolders(accountId: number) {
   }
 }
 
-// 标记类动作：已读/未读、归档、挪进回收站、还原、不是垃圾。整条会话一起，
-// 和主窗口一样。gone = 做完这封信就不在这一格了，窗口关掉。
+// 这个人的列表是按会话合并的还是一封一行（见 lib/mailListMode）。
+//
+// 这一页不画列表，要它只为一件事：下面那几个动作该作用在整条会话上还是
+// 只作用在这一封。问不到就按合并档走——一直以来的样子。
+const listMode = ref<MailListMode>(DEFAULT_LIST_MODE)
+const mergeThreads = computed(() => mergesThreads(listMode.value))
+
+async function loadListMode() {
+  try {
+    const d = await get<{ listMode?: string }>('/mail-list-mode', undefined, quietErrors)
+    listMode.value = normalizeListMode(d.listMode)
+  } catch {
+    // 见上。
+  }
+}
+
+// 标记类动作：已读/未读、归档、挪进回收站、还原、不是垃圾。作用范围跟着
+// 这个人的列表档位走，和主窗口一样：合并档下整条会话一起，单封档下只这
+// 一封。gone = 做完这封信就不在这一格了，窗口关掉。
 async function mark(flags: Record<string, boolean>, opts: { gone: boolean }) {
   if (!mail.value || busy.value) return
   busy.value = true
   try {
-    await post(`/inbound-mails/${mail.value.id}/mark`, { ...flags, wholeThread: true })
+    await post(`/inbound-mails/${mail.value.id}/mark`, { ...flags, wholeThread: mergeThreads.value })
     notify(opts.gone)
     if (opts.gone) leave()
   } catch {
@@ -399,7 +427,7 @@ async function purge() {
   }
   busy.value = true
   try {
-    await del(`/inbound-mails/${mail.value.id}?whole_thread=true`)
+    await del(`/inbound-mails/${mail.value.id}?whole_thread=${mergeThreads.value}`)
     ElMessage.success(t('emails.purged'))
     notify(true)
     leave()

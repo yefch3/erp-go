@@ -821,6 +821,21 @@
               >
                 {{ t('emails.sortBar.unreadFirst') }}
               </el-dropdown-item>
+              <!-- 合并会话 / 一封一行。也是**开关**，所以和上面两条一样画
+                   对钩，不是单选。
+                   放这个菜单里是因为它回答的正是这个菜单在回答的问题——
+                   「这份列表怎么排」；而它一天里被点的次数比排序还少，不值得
+                   在那一排已经挤满的按钮里再占一格。
+                   和上面所有项不同的是：它**存在服务端**，刷新、换电脑都还在
+                   （见 lib/mailListMode）。 -->
+              <el-dropdown-item
+                v-if="canSortTop"
+                divided
+                command="mode:toggle"
+                :class="{ 'sort-on': !mergeThreads }"
+              >
+                {{ t('emails.sortBar.messageMode') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -1451,6 +1466,13 @@ import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
+import {
+  DEFAULT_LIST_MODE,
+  mergesThreads,
+  normalizeListMode,
+  toggledListMode,
+  type MailListMode,
+} from '../lib/mailListMode'
 import { attachmentHintKey } from '../lib/attachmentHint'
 import { plainTextToHtml } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
@@ -1830,6 +1852,13 @@ const sortFields = computed<SortField[]>(() => {
 // 排序菜单点了一项：`by:size`、`dir:asc`。规则（换一列用那一列的自然方向、
 // 方向是菜单里明写的两项）在 lib/mailSort 里，那儿测得到。
 function onSortCommand(cmd: string) {
+  // 合并/单封不走 sortFromCommand：它不是排序，也不进地址栏——它存在服务端。
+  // 混进那一族的后果是 sortParam 会把它编进地址栏，而地址栏里的值和服务端
+  // 存的值从此可以不一致。
+  if (cmd === 'mode:toggle') {
+    void toggleListMode()
+    return
+  }
   const next = sortFromCommand(listSort.value, cmd)
   pushState({ sort: sortParam(next), top: topParam(next) })
 }
@@ -1840,12 +1869,19 @@ const canSortTop = computed(() => sortFields.value.length > 0 && isInboundView.v
 // 「排序：日期 ↓ ★●」比「排序：日期 ↓ 星标优先 未读优先」活得久得多。
 // 符号看不出是什么意思，所以鼠标停上去有一句话。
 const topBadge = computed(
-  () => (listSort.value.starFirst ? '★' : '') + (listSort.value.unreadFirst ? '●' : ''),
+  () =>
+    (listSort.value.starFirst ? '★' : '') +
+    (listSort.value.unreadFirst ? '●' : '') +
+    // 单封档也在按钮上留记号，和上面两个同一条理由：菜单一点就关，这个
+    // 状态只活在菜单里的话，人看着一份「怎么每封都分开了」的列表，而按钮
+    // 上只写着「排序：日期 ↓」——那才是最难查的那种。
+    (mergeThreads.value ? '' : '封'),
 )
 const topBadgeTitle = computed(() => {
   const names: string[] = []
   if (listSort.value.starFirst) names.push(t('emails.sortBar.starFirst'))
   if (listSort.value.unreadFirst) names.push(t('emails.sortBar.unreadFirst'))
+  if (!mergeThreads.value) names.push(t('emails.sortBar.messageMode'))
   return names.join(' · ')
 })
 
@@ -1867,6 +1903,56 @@ const unreadOnly = ref(false)
 const canFilterUnread = computed(() => isInboundView.value && !isSearching.value)
 function toggleUnreadOnly() {
   pushState({ unread: !unreadOnly.value })
+}
+// ------------------------------------------------ 合并会话 / 一封一行 ---
+// 收件箱列表一行代表什么：一条会话，还是一封信。见 lib/mailListMode。
+//
+// **不进地址栏**，和排序、筛选不一样：那些是"这一次我想怎么看"，这个是
+// "我一直想怎么看"，存在服务端、跟着人走（迁移 00073）。
+//
+// 值永远来自服务端：每次拉列表的回包里带着当前档位，页面打开时另外问一次
+// （只看已发送的人不拉收件箱列表，但点开一封信时也要知道该不该显示往来）。
+// 前端不自己维护这个状态——一行代表什么决定了点删除会删掉多少，前端和服务
+// 端在这件事上对不上的后果是删多了信。
+const listMode = ref<MailListMode>(DEFAULT_LIST_MODE)
+// 会话要不要合起来。三处用它：角标、删除/归档传不传 wholeThread、详情页
+// 底下那段往来。三处必须是同一个答案。
+const mergeThreads = computed(() => mergesThreads(listMode.value))
+
+async function loadListMode() {
+  try {
+    const d = await get<{ listMode?: string }>('/mail-list-mode')
+    listMode.value = normalizeListMode(d.listMode)
+  } catch {
+    // 问不到就按合并档走——一直以来的样子。为一个显示偏好把整页拦下来
+    // 是不划算的。
+  }
+}
+
+const switchingListMode = ref(false)
+// 换档。存完**重新从第一页拉**：一行的含义变了，停在原来那个位置没有意义，
+// 而且手里那个游标指的是另一种行。
+async function toggleListMode() {
+  if (switchingListMode.value) return
+  switchingListMode.value = true
+  try {
+    const next = toggledListMode(listMode.value)
+    const d = await put<{ listMode?: string }>('/mail-list-mode', { listMode: next })
+    listMode.value = normalizeListMode(d.listMode)
+    // 回到第一页，和改排序、改筛选时做的是同一件事（见 applyRoute 里那段）。
+    // 换档之后一行的含义变了，手里那个「走到哪了」记的是上一份名单里的位置;
+    // 不清的话往下滚会拿它去要下一页。
+    loadedPages.value = 1
+    moreFailed.value = false
+    tableCursor.value = ''
+    tablePageCursors.value = []
+    // 打开着的那封信要重新读一次：合并档下要补上底下那段往来，单封档下
+    // 要把它收掉。不重读的话，换完档屏幕上还是上一档的样子。
+    if (openedInbound.value) void loadThread(openedInbound.value)
+    await load()
+  } finally {
+    switchingListMode.value = false
+  }
 }
 // ------------------------------------------------ 往下滚就接着加载 ---
 // 邮件列表（收件箱那一族、搜索结果、已发送）往下接；待处理和已定时是表格，
@@ -2521,6 +2607,13 @@ const signaturesOpen = ref(false)
 const templatesOpen = ref(false)
 
 onMounted(async () => {
+  // 列表按会话合并还是一封一行。**不 await**：它只影响怎么画，不影响能不能
+  // 画，拿它挡住开箱那一串是把一个显示偏好放到了关键路径上。
+  //
+  // 收件箱列表的回包里也带着这一档，所以这一次主要是为「只看已发送」的人
+  // 问的——他们不拉收件箱列表，但点开一封信时也要知道该不该显示底下那段
+  // 往来。要不要解锁信箱和这件事无关，所以放在最前面。
+  void loadListMode()
   // Back from Google's login page. On success the fresh grant is verified
   // right away, so binding and entering the mailbox is one motion instead of
   // a redirect followed by a second button.
@@ -3231,6 +3324,7 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
         meta: { total: string }
         unreadCount: number
         nextCursor: string
+        listMode?: string
       }>('/inbound-mails', {
         page_size: pageSize,
         keyword: keyword.value,
@@ -3257,6 +3351,9 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
       total.value = Number(d.meta?.total ?? 0)
       unreadCount.value = Number(d.unreadCount ?? 0)
       nextCursor.value = d.nextCursor ?? ''
+      // 这些行是按会话合的还是一封一行，以回包为准。在别处（另一个标签页）
+      // 改了档时，这边下一次拉列表就跟上了——而不是拿着旧档位去删东西。
+      listMode.value = normalizeListMode(d.listMode)
     } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       // 过期的一次不许落盘，见 loadSeq。
@@ -3449,6 +3546,12 @@ async function loadThread(mail: InboundMail) {
   threadItems.value = []
   expandedThread.value = new Set()
   expandedTurnDetails.value = new Set()
+  // 单封档下不拉往来：选了「每封信都是单独的」，那从哪边点进来都只该看到
+  // 这一封。底下那块靠 threadItems.length > 1 显示，清空就等于收起来。
+  //
+  // **已发送那一侧也走这里**（openSentRow 最后跳的是同一个详情页），所以
+  // 一个开关同时管住了收发两边——不会出现一边散一边合。
+  if (!mergeThreads.value) return
   if (!mail.threadKey) return
   try {
     // id 一起带上：一个人可以绑多个信箱，同一条会话可能同时落在两个箱里
@@ -3833,8 +3936,12 @@ async function bulkUnsuppress() {
 // selected mails do not open twenty connections at once.
 // 勾选多封后的「移动到」。一次请求，服务端按来源文件夹分组、一组一次 MOVE，
 // 而不是像 bulkMark 那样逐封打接口：每封信各登录一次邮箱服务器，网易会限流。
-// 整条会话一起挪（wholeThread）——列表一行就是一条会话，只挪最新那封会把
-// 行留在原地、少一封。
+// 整条会话一起挪（wholeThread）——合并档下列表一行就是一条会话，只挪最新
+// 那封会把行留在原地、少一封。
+//
+// **单封档下它是 false**：那时一行就是一封信，挪的、删的、标的就该只有它。
+// 这一条上下八处调用共用同一个 mergeThreads，理由见 lib/mailListMode：其中
+// 任何一处漏掉，样子都是人想删一封、结果整串都没了。
 // ---------------------------------------------------- 拖邮件到文件夹
 
 // 手上正拖着的那几封，以及它们属于哪些信箱。左栏据此决定哪些文件夹亮起来。
@@ -3868,7 +3975,7 @@ async function onDropMails(_accountId: number, target: DropTarget) {
       const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
         ids,
         folderId: String(target.folderId),
-        wholeThread: true,
+        wholeThread: mergeThreads.value,
       })
       const moved = Number(d.moved ?? 0)
       const failed = d.failedIds?.length ?? 0
@@ -3878,7 +3985,7 @@ async function onDropMails(_accountId: number, target: DropTarget) {
       // 一封一条请求，和 bulkMark 同一个做法：标记接口是按单封设计的，
       // inChunks 控着并发不把网关打满。
       const failed = await inChunks(ids, (id) =>
-        post(`/inbound-mails/${id}/mark`, { ...target.flags, wholeThread: true }, quietErrors),
+        post(`/inbound-mails/${id}/mark`, { ...target.flags, wholeThread: mergeThreads.value }, quietErrors),
       )
       reportBulk(ids.length, failed, t('emails.bulkDone', { n: ids.length - failed }))
     }
@@ -3902,7 +4009,7 @@ async function bulkMoveTo(folderId: number) {
     const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
       ids: rows.map((r) => r.id),
       folderId: String(folderId),
-      wholeThread: true,
+      wholeThread: mergeThreads.value,
     })
     const moved = Number(d.moved ?? 0)
     const failed = d.failedIds?.length ?? 0
@@ -3924,7 +4031,7 @@ async function bulkMark(flags: Record<string, boolean>) {
   bulkBusy.value = true
   try {
     const failed = await inChunks(rows, (row) =>
-      post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true }, quietErrors),
+      post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: mergeThreads.value }, quietErrors),
     )
     reportBulk(rows.length, failed, t('emails.bulkDone', { n: rows.length - failed }))
   } finally {
@@ -3948,7 +4055,7 @@ async function bulkPurge() {
   bulkBusy.value = true
   try {
     const failed = await inChunks(rows, (row) =>
-      del(`/inbound-mails/${row.id}?whole_thread=true`, undefined, quietErrors),
+      del(`/inbound-mails/${row.id}?whole_thread=${mergeThreads.value}`, undefined, quietErrors),
     )
     reportBulk(rows.length, failed, t('emails.purgedN', { n: rows.length - failed }))
   } finally {
@@ -4000,7 +4107,7 @@ async function toggleStar(row: MailRow) {
     // them all or the star would come straight back on the next load.
     await post(`/inbound-mails/${row.id}/mark`, {
       starred: row.isStarred,
-      wholeThread: true,
+      wholeThread: mergeThreads.value,
     })
   } catch {
     row.isStarred = !row.isStarred
@@ -4018,7 +4125,7 @@ async function markOpened(flags: Record<string, boolean>) {
   if (!openedInbound.value) return
   await post(`/inbound-mails/${openedInbound.value.id}/mark`, {
     ...flags,
-    wholeThread: true,
+    wholeThread: mergeThreads.value,
   })
   pushState({ mail: '' })
   load()
@@ -4035,7 +4142,7 @@ async function purgeOpened() {
     confirmButtonText: t('emails.purge'),
   })
   // Whole conversation, matching the trash list's one-row-per-conversation.
-  await del(`/inbound-mails/${openedInbound.value.id}?whole_thread=true`)
+  await del(`/inbound-mails/${openedInbound.value.id}?whole_thread=${mergeThreads.value}`)
   ElMessage.success(t('emails.purged'))
   pushState({ mail: '' })
   load()

@@ -409,6 +409,13 @@ type MailHost struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type MailListPref struct {
+	TenantID   int64
+	EmployeeID int64
+	ListMode   string
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type MailSendCounter struct {
 	TenantID  int64
 	AccountID int64

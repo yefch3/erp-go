@@ -66,6 +66,8 @@ const (
 	EmailService_VerifyMailAccess_FullMethodName             = "/erp.mail.v1.EmailService/VerifyMailAccess"
 	EmailService_CompleteGoogleOAuth_FullMethodName          = "/erp.mail.v1.EmailService/CompleteGoogleOAuth"
 	EmailService_ListInbound_FullMethodName                  = "/erp.mail.v1.EmailService/ListInbound"
+	EmailService_GetMailListMode_FullMethodName              = "/erp.mail.v1.EmailService/GetMailListMode"
+	EmailService_SetMailListMode_FullMethodName              = "/erp.mail.v1.EmailService/SetMailListMode"
 	EmailService_SearchMail_FullMethodName                   = "/erp.mail.v1.EmailService/SearchMail"
 	EmailService_GetInbound_FullMethodName                   = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
@@ -220,6 +222,13 @@ type EmailServiceClient interface {
 	// have almost nothing in common: one is a delivery attempt with retries and
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(ctx context.Context, in *ListInboundRequest, opts ...grpc.CallOption) (*ListInboundResponse, error)
+	// 收件箱列表按会话合并还是一行一封，这个人自己的选择。
+	//
+	// 单开一对 rpc 而不是只在 ListInboundResponse 上回一个字段，是因为有两个
+	// 屏幕根本不拉收件箱列表：只看已发送的人，和单独开一封信的那个窗口。
+	// 它们也要知道该不该显示底下那段往来。
+	GetMailListMode(ctx context.Context, in *GetMailListModeRequest, opts ...grpc.CallOption) (*GetMailListModeResponse, error)
+	SetMailListMode(ctx context.Context, in *SetMailListModeRequest, opts ...grpc.CallOption) (*SetMailListModeResponse, error)
 	// Search across every folder, rather than inside the one being viewed.
 	SearchMail(ctx context.Context, in *SearchMailRequest, opts ...grpc.CallOption) (*SearchMailResponse, error)
 	GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error)
@@ -821,6 +830,26 @@ func (c *emailServiceClient) ListInbound(ctx context.Context, in *ListInboundReq
 	return out, nil
 }
 
+func (c *emailServiceClient) GetMailListMode(ctx context.Context, in *GetMailListModeRequest, opts ...grpc.CallOption) (*GetMailListModeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMailListModeResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetMailListMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SetMailListMode(ctx context.Context, in *SetMailListModeRequest, opts ...grpc.CallOption) (*SetMailListModeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetMailListModeResponse)
+	err := c.cc.Invoke(ctx, EmailService_SetMailListMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) SearchMail(ctx context.Context, in *SearchMailRequest, opts ...grpc.CallOption) (*SearchMailResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchMailResponse)
@@ -1325,6 +1354,13 @@ type EmailServiceServer interface {
 	// have almost nothing in common: one is a delivery attempt with retries and
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error)
+	// 收件箱列表按会话合并还是一行一封，这个人自己的选择。
+	//
+	// 单开一对 rpc 而不是只在 ListInboundResponse 上回一个字段，是因为有两个
+	// 屏幕根本不拉收件箱列表：只看已发送的人，和单独开一封信的那个窗口。
+	// 它们也要知道该不该显示底下那段往来。
+	GetMailListMode(context.Context, *GetMailListModeRequest) (*GetMailListModeResponse, error)
+	SetMailListMode(context.Context, *SetMailListModeRequest) (*SetMailListModeResponse, error)
 	// Search across every folder, rather than inside the one being viewed.
 	SearchMail(context.Context, *SearchMailRequest) (*SearchMailResponse, error)
 	GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error)
@@ -1596,6 +1632,12 @@ func (UnimplementedEmailServiceServer) CompleteGoogleOAuth(context.Context, *Com
 }
 func (UnimplementedEmailServiceServer) ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) GetMailListMode(context.Context, *GetMailListModeRequest) (*GetMailListModeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMailListMode not implemented")
+}
+func (UnimplementedEmailServiceServer) SetMailListMode(context.Context, *SetMailListModeRequest) (*SetMailListModeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetMailListMode not implemented")
 }
 func (UnimplementedEmailServiceServer) SearchMail(context.Context, *SearchMailRequest) (*SearchMailResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchMail not implemented")
@@ -2581,6 +2623,42 @@ func _EmailService_ListInbound_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_GetMailListMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMailListModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetMailListMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetMailListMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetMailListMode(ctx, req.(*GetMailListModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SetMailListMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMailListModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SetMailListMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SetMailListMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SetMailListMode(ctx, req.(*SetMailListModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_SearchMail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchMailRequest)
 	if err := dec(in); err != nil {
@@ -3477,6 +3555,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInbound",
 			Handler:    _EmailService_ListInbound_Handler,
+		},
+		{
+			MethodName: "GetMailListMode",
+			Handler:    _EmailService_GetMailListMode_Handler,
+		},
+		{
+			MethodName: "SetMailListMode",
+			Handler:    _EmailService_SetMailListMode_Handler,
 		},
 		{
 			MethodName: "SearchMail",

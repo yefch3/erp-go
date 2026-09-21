@@ -127,6 +127,13 @@ service EmailService {
   // have almost nothing in common: one is a delivery attempt with retries and
   // a provider verdict, the other is a document somebody sent us.
   rpc ListInbound(ListInboundRequest) returns (ListInboundResponse);
+  // 收件箱列表按会话合并还是一行一封，这个人自己的选择。
+  //
+  // 单开一对 rpc 而不是只在 ListInboundResponse 上回一个字段，是因为有两个
+  // 屏幕根本不拉收件箱列表：只看已发送的人，和单独开一封信的那个窗口。
+  // 它们也要知道该不该显示底下那段往来。
+  rpc GetMailListMode(GetMailListModeRequest) returns (GetMailListModeResponse);
+  rpc SetMailListMode(SetMailListModeRequest) returns (SetMailListModeResponse);
   // Search across every folder, rather than inside the one being viewed.
   rpc SearchMail(SearchMailRequest) returns (SearchMailResponse);
   rpc GetInbound(GetInboundRequest) returns (GetInboundResponse);
@@ -494,6 +501,34 @@ message ListInboundResponse {
   int32 unread_count = 3;
   // Feed back as cursor to get the next page. Empty means this was the last.
   string next_cursor = 4;
+  // 这一页的行是什么：THREAD = 一行一条会话，MESSAGE = 一行一封信。
+  //
+  // **服务端报出来的，不是调用方传进来的。** 一行代表什么决定了在它上面
+  // 点删除会删掉多少东西——一条会话还是一封信。让前端自己记着当前是哪一
+  // 档，就留下一个「它以为是 A、服务端按 B 给的」的缝，而那种错的样子是
+  // 人想删一封、结果整串都没了。所以这一档跟着数据一起回来。
+  //
+  // 空串 = 换版本那几秒里的旧服务端，按 THREAD 处理（一直以来的样子）。
+  string list_mode = 5;
+}
+
+message GetMailListModeRequest {}
+
+message SetMailListModeRequest {
+  // THREAD | MESSAGE。别的值报错而不是退回默认：人点了保存、屏幕没变、
+  // 又没有任何提示，是最难查的那一种。
+  string list_mode = 1;
+}
+
+// 两条 rpc 各自一个响应体，内容一样。buf 的规矩是一个 message 不许当两条
+// rpc 的响应——共用一个的代价是将来其中一条要多回一个字段时，另一条也跟着
+// 多出一个它永远不填的字段。
+message GetMailListModeResponse {
+  string list_mode = 1;
+}
+
+message SetMailListModeResponse {
+  string list_mode = 1;
 }
 
 message GetInboundRequest {

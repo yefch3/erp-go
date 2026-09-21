@@ -100,6 +100,13 @@ type InboundPage struct {
 	// Empty when this is the last page. Opaque to the caller: it encodes the
 	// sort position of the final row, not an offset.
 	NextCursor string
+	// 这一页是按会话合并的还是一行一封（见 ListMode）。
+	//
+	// **由服务端报出来，不由调用方传进来**：合并与否决定了这些行的含义——
+	// 一行代表一条会话时，点删除要删整条；代表一封信时只删这一封。让前端
+	// 自己记着当前是哪一档，就多出一个「它以为是 A、服务端按 B 给的」的
+	// 缺口，而那种错的样子是删多了信。
+	Mode ListMode
 }
 
 // threadRow is one conversation as the list needs it, from whichever of the
@@ -145,6 +152,38 @@ func threadRowsFromSorted(rows []store.ListThreadsByViewSortedRow) []threadRow {
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
 			IsAnswered:  r.IsAnswered,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+			RawSize: r.RawSize, SortKey: r.SortKey,
+		})
+	}
+	return out
+}
+
+// 单封档的两条。ThreadCount 给 1 而不是留零值：这一行确实代表一封信，而
+// 「0 封」不是任何东西的真话。徽标的门槛是大于 1，所以两种写法在屏幕上
+// 一样——区别只在哪一个日后读起来不会让人愣一下。
+func threadRowsFromMessages(rows []store.ListMessagesByViewRow) []threadRow {
+	out := make([]threadRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, threadRow{
+			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
+			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
+			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			IsAnswered:  r.IsAnswered,
+			ThreadCount: 1, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+		})
+	}
+	return out
+}
+
+func threadRowsFromMessagesSorted(rows []store.ListMessagesByViewSortedRow) []threadRow {
+	out := make([]threadRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, threadRow{
+			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
+			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
+			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			IsAnswered:  r.IsAnswered,
+			ThreadCount: 1, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
 			RawSize: r.RawSize, SortKey: r.SortKey,
 		})
 	}
@@ -228,9 +267,64 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	// one, the set of conversations depends on the search term, so it has to
 	// be worked out per request, which is what the older query does. Search
 	// is rare and its own screen; the plain list is loaded all day.
+	// 合并还是一封一行，由这个人自己的设置说了算（见 ListMode）。读的是
+	// 一张按主键取一行的小表，和下面那条列表查询比可以忽略不计。
+	mode := s.ListMode(ctx, tenantID, ownerID)
+
 	var rows []threadRow
 	var total int64
 	switch {
+	// ---- 单封档。两条就够，比合并档少一条：合并档要为「带关键词」另开一
+	// 条查询，是因为 mail_thread_view 预计算不出「含这个词的会话」；一行
+	// 一封没有这个问题，条件直接加在行上。
+	case !mode.merged() && sort.isDefault():
+		at, id, err := decodeCursor(cursor)
+		if err != nil {
+			return InboundPage{}, err
+		}
+		flat, err := s.q.ListMessagesByView(ctx, store.ListMessagesByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			Keyword: keyword,
+			// 带关键词时「只看未读」不生效，和合并档一样（那边带关键词走的
+			// 是另一条根本没有这个参数的查询）。同一个开关在两档里含义不同
+			// 的话，人换一次档就得重新学一遍。
+			UnreadOnly: unreadOnly && keyword == "",
+			CursorAt:   at, CursorID: id, RowLimit: size,
+		})
+		if err != nil {
+			return InboundPage{}, err
+		}
+		rows = threadRowsFromMessages(flat)
+		if total, err = s.q.CountMessagesByView(ctx, store.CountMessagesByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			Keyword: keyword, UnreadOnly: unreadOnly && keyword == "",
+		}); err != nil {
+			return InboundPage{}, err
+		}
+	case !mode.merged():
+		// 排序版。走到这里 keyword 必然是空的——上面那道
+		// errSortNotWithKeyword 已经把「带词又排序」挡掉了。
+		key, id, err := decodeSortCursor(cursor, sort)
+		if err != nil {
+			return InboundPage{}, err
+		}
+		sorted, err := s.q.ListMessagesByViewSorted(ctx, store.ListMessagesByViewSortedParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			SortBy: sort.By, SortDir: sort.Dir,
+			StarFirst: sort.StarFirst, UnreadFirst: sort.UnreadFirst,
+			CursorKey: key, CursorID: id, RowLimit: size, UnreadOnly: unreadOnly,
+		})
+		if err != nil {
+			return InboundPage{}, err
+		}
+		rows = threadRowsFromMessagesSorted(sorted)
+		if total, err = s.q.CountMessagesByView(ctx, store.CountMessagesByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			UnreadOnly: unreadOnly,
+		}); err != nil {
+			return InboundPage{}, err
+		}
+	// ---- 合并档，一直以来的三条。
 	case keyword == "" && sort.isDefault():
 		at, id, err := decodeCursor(cursor)
 		if err != nil {
@@ -325,7 +419,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		out = append(out, v)
 	}
 
-	page := InboundPage{Mails: out, Total: total, Unread: int32(unread)}
+	page := InboundPage{Mails: out, Total: total, Unread: int32(unread), Mode: mode}
 	// A short page is the end of the list. A full one might be, and offering
 	// a next page that turns out empty is a smaller sin than hiding mail.
 	if int32(len(out)) == size && size > 0 {

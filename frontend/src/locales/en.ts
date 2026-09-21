@@ -1937,6 +1937,7 @@ export default {
       current: 'Sort: {name}',
       starFirst: 'Starred first',
       unreadFirst: 'Unread first',
+      messageMode: 'Show each message separately',
     },
     colGrip: {
       rail: 'Folder column width',

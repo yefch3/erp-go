@@ -834,6 +834,33 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 收件箱列表按会话合并还是一行一封，这个人自己的选择。
+//
+// 单独一条路而不是只从 /inbound-mails 的回包里读，是因为有两个屏幕根本不拉
+// 收件箱列表：只看已发送的人，和单独开一封信的那个窗口。它们也要知道该不该
+// 显示底下那段往来。
+func (s *Server) getMailListMode(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.GetMailListMode(r.Context(), &mailv1.GetMailListModeRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) setMailListMode(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.SetMailListModeRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.SetMailListMode(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
 	// id 是「从哪一封信点进来的」，决定读哪个信箱那一份。旧前端不发，
 	// 那时 0 表示不限定——部署顺序是后端先发前端后发，这条路必须留着。

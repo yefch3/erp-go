@@ -985,8 +985,24 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 	}
 	return &mailv1.ListInboundResponse{
 		Mails: out, UnreadCount: p.Unread, NextCursor: p.NextCursor,
-		Meta: &commonv1.PageMeta{Total: p.Total},
+		Meta: &commonv1.PageMeta{Total: p.Total}, ListMode: string(p.Mode),
 	}, nil
+}
+
+// GetMailListMode / SetMailListMode：收件箱列表按会话合并还是一行一封。
+func (h *Handler) GetMailListMode(ctx context.Context, _ *mailv1.GetMailListModeRequest) (*mailv1.GetMailListModeResponse, error) {
+	op := operator(ctx)
+	mode := h.svc.ListMode(ctx, grpcx.TenantID(ctx), op.ID)
+	return &mailv1.GetMailListModeResponse{ListMode: string(mode)}, nil
+}
+
+func (h *Handler) SetMailListMode(ctx context.Context, req *mailv1.SetMailListModeRequest) (*mailv1.SetMailListModeResponse, error) {
+	op := operator(ctx)
+	mode, err := h.svc.SetListMode(ctx, grpcx.TenantID(ctx), op.ID, req.GetListMode())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SetMailListModeResponse{ListMode: string(mode)}, nil
 }
 
 func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest) (*mailv1.SearchMailResponse, error) {
