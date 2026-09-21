@@ -64,7 +64,8 @@ func run(log *slog.Logger) error {
 	}
 	defer iamConn.Close()
 	h := grpcin.New(svc)
-	srv := grpc.NewServer(grpcx.ServerInterceptors(log), grpc.MaxRecvMsgSize(12<<20), grpc.MaxSendMsgSize(12<<20), grpc.ChainUnaryInterceptor(h.CustomerAccess(iamv1.NewAccessServiceClient(iamConn))))
+	accessClient := iamv1.NewAccessServiceClient(iamConn)
+	srv := grpc.NewServer(grpcx.ServerInterceptors(log), grpc.MaxRecvMsgSize(12<<20), grpc.MaxSendMsgSize(12<<20), grpc.ChainUnaryInterceptor(h.CustomerAccess(accessClient), h.SupplierAccess(accessClient)))
 	mdv1.RegisterCustomerServiceServer(srv, h)
 	mdv1.RegisterSupplierServiceServer(srv, h)
 	mdv1.RegisterPortServiceServer(srv, h)

@@ -4,10 +4,6 @@
       <div><h2>{{ t('suppliers.title') }}</h2><p>{{ t('suppliers.subtitle') }}</p></div>
       <div v-if="auth.can('masterdata:supplier:write')" class="head-actions"><el-button @click="importOpen=true">{{ t('suppliers.bulkImport') }}</el-button><el-button type="primary" @click="openCreate">{{ t('suppliers.create') }}</el-button></div>
     </div>
-    <div class="mode-tabs">
-      <button class="active" type="button">{{ t('suppliers.suppliers') }}</button>
-      <button type="button" @click="router.push('/basic/suppliers/factories')">{{ t('suppliers.factories') }}</button>
-    </div>
     <div class="workspace">
       <el-card class="country-panel" shadow="never">
         <h3>{{ t('suppliers.countryGroups') }}</h3>
@@ -29,9 +25,16 @@
           <el-table-column :label="t('suppliers.country')" width="150"><template #default="{row}">{{ row.countryCode ? countryName(row.countryCode, locale) : '—' }}</template></el-table-column>
           <el-table-column :label="t('suppliers.businessType')" min-width="180"><template #default="{row}"><el-tag v-for="v in row.businessTypes" :key="v" size="small" effect="plain">{{ optionLabel(v) }}</el-tag></template></el-table-column>
           <el-table-column :label="t('suppliers.owners')" min-width="150" prop="ownerNames" />
-          <el-table-column :label="t('suppliers.factoryCount')" width="90" prop="factoryCount" />
           <el-table-column :label="t('common.status')" width="90"><template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'">{{ row.status==='ACTIVE'?t('common.active'):t('common.inactive') }}</el-tag></template></el-table-column>
-          <el-table-column :label="t('common.actions')" width="165" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row)">{{ t('suppliers.view') }}</el-button><el-button v-if="auth.can('masterdata:supplier:write')" link :type="row.status==='ACTIVE'?'danger':'success'" @click="toggleStatus(row)">{{ row.status==='ACTIVE'?t('common.deactivate'):t('common.activate') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}">
+            <el-dropdown trigger="click" @command="(command:string)=>handleAction(command,row)">
+              <el-button>更多操作 <span class="caret">▼</span></el-button>
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item command="view">{{ t('suppliers.view') }}</el-dropdown-item>
+                <el-dropdown-item v-if="canDelete" command="delete" divided class="danger-item">删除</el-dropdown-item>
+              </el-dropdown-menu></template>
+            </el-dropdown>
+          </template></el-table-column>
         </el-table>
         <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
       </el-card>
@@ -53,30 +56,30 @@
       </el-form>
       <template #footer><el-button @click="dialogOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button></template>
     </el-dialog>
-    <SupplierFactoryImportDialog v-model="importOpen" kind="supplier" @imported="refreshAll" />
+    <SupplierImportDialog v-model="importOpen" @imported="refreshAll" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post } from '../api'
-import SupplierFactoryImportDialog from '../components/SupplierFactoryImportDialog.vue'
+import SupplierImportDialog from '../components/SupplierImportDialog.vue'
 import { countryName, countryOptions } from '../lib/countries'
 import { businessRoleLabel } from '../lib/masterDataDisplay'
 import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
 import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
-import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
 import { useAuthStore } from '../stores/auth'
 
-interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string;shortName:string;countryCode:string;businessTypes:string[];ownerNames:string;factoryCount:string;status:string }
+interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string;shortName:string;countryCode:string;businessTypes:string[];ownerNames:string;status:string }
 interface CountryGroup { countryCode:string;count:string }
 interface OptionItem { code:string;label:string }
 const { t, locale } = useI18n(); const route=useRoute(); const router=useRouter(); const auth=useAuthStore()
 const rows=ref<Supplier[]>([]), countries=ref<CountryGroup[]>([]), businessOptions=ref<OptionItem[]>([]), paymentOptions=ref<OptionItem[]>([])
 const keyword=ref(queryText(route.query.keyword)), countryCode=ref(queryText(route.query.country)), businessType=ref(queryText(route.query.business_type)), status=ref(queryText(route.query.status)), loading=ref(false), saving=ref(false), dialogOpen=ref(false), importOpen=ref(false)
+const canDelete=ref(false)
 const page=ref(queryPage(route.query.page)), pageSize=20, total=ref(0)
 const empty={code:'',name:'',nameZh:'',nameEn:'',shortName:'',country:'',countryCode:'',currency:'USD',businessTypes:['GENERAL'],taxId:'',paymentTerm:'',registeredAddress:'',address:'',remark:''}
 const form=reactive({...empty})
@@ -93,11 +96,12 @@ function changePage(v:number){page.value=v;load()}
 function openCreate(){Object.assign(form,empty,{businessTypes:['GENERAL']});dialogOpen.value=true}
 function openDetail(r:Supplier){router.push(`/basic/suppliers/${r.id}`)}
 async function refreshAll(){await Promise.all([load(),loadGroups()])}
-async function toggleStatus(row:Supplier){const deactivating=row.status==='ACTIVE';try{const reason=deactivating?await confirmDeactivation(`/suppliers/${row.id}/deactivation-impact`,displayName(row),t):await promptActivationReason(displayName(row),t);if(deactivating)await del(`/suppliers/${row.id}`,{reason});else await post(`/suppliers/${row.id}/activate`,{reason});ElMessage.success(deactivating?t('suppliers.deactivatedWithFactories'):t('suppliers.activatedFactoriesRemainPaused'));await refreshAll()}catch{/* 用户取消或接口错误时保持当前状态。 */}}
+async function handleAction(command:string,row:Supplier){if(command==='view'){openDetail(row);return}if(command==='delete')await deleteSupplier(row)}
+async function deleteSupplier(row:Supplier){try{await ElMessageBox.confirm('确定删除该供应商吗？','删除供应商',{confirmButtonText:'确定',cancelButtonText:'取消',type:'warning'});await del(`/suppliers/${row.id}`,{reason:'最高权限用户删除供应商'});ElMessage.success('供应商已删除');await refreshAll()}catch{/* 用户取消或接口错误时保持当前状态。 */}}
 async function save(){if(!form.nameZh.trim()&&!form.nameEn.trim()){ElMessage.warning(t('suppliers.nameRequired'));return}saving.value=true;try{const duplicates=await get<any>('/suppliers/duplicates',{name:form.nameZh||form.nameEn,tax_id:form.taxId});await confirmPossibleDuplicates(duplicates.candidates||[],t);await post('/suppliers',{...form,name:form.nameZh||form.nameEn,country:form.countryCode});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 取消重复确认或接口错误时保留表单，便于用户复核。 */}finally{saving.value=false}}
-onMounted(async()=>{try{const [,business,payment]=await Promise.all([Promise.all([load(),loadGroups()]),get<any>('/options',{category:'SUPPLIER_BUSINESS_TYPE'}),get<any>('/options',{category:'PAYMENT_METHOD'})]);businessOptions.value=business.options||[];paymentOptions.value=payment.options||[]}catch{/* 各请求已由全局拦截器提示。 */}})
+onMounted(async()=>{try{const [,business,payment,access]=await Promise.all([Promise.all([load(),loadGroups()]),get<any>('/options',{category:'SUPPLIER_BUSINESS_TYPE'}),get<any>('/options',{category:'PAYMENT_METHOD'}),get<any>('/suppliers/access')]);businessOptions.value=business.options||[];paymentOptions.value=payment.options||[];canDelete.value=Boolean(access.canDelete)}catch{/* 各请求已由全局拦截器提示。 */}})
 </script>
 
 <style scoped>
-.supplier-page{--navy:#18324a;--teal:#147d7b}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.page-head h2{margin:0;color:var(--navy)}.page-head p{margin:6px 0 0;color:#778899}.mode-tabs{display:flex;gap:8px;margin-bottom:14px}.mode-tabs button{border:1px solid #d8e1e8;background:#fff;padding:9px 20px;border-radius:10px;color:#536575;cursor:pointer}.mode-tabs button.active{background:var(--navy);color:#fff;border-color:var(--navy)}.workspace{display:grid;grid-template-columns:225px 1fr;gap:16px}.country-panel h3{margin:2px 0 12px;color:var(--navy)}.country-panel button{width:100%;display:flex;justify-content:space-between;border:0;background:transparent;padding:10px 12px;border-radius:9px;color:#526372;cursor:pointer}.country-panel button.active{background:#e6f4f2;color:var(--teal)}.country-panel b{background:#edf1f4;border-radius:12px;padding:1px 9px}.filters{display:flex;gap:10px;margin-bottom:16px}.filters .el-input{max-width:280px}.filters .el-select{width:165px}.name-cell{display:flex;flex-direction:column}.name-cell small{color:#8b99a5}.el-tag+.el-tag{margin-left:5px}.pager{justify-content:flex-end;margin-top:18px}.form-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}.form-grid .full{grid-column:1/-1}.form-grid .code-notice{margin-bottom:18px}.form-grid :deep(.el-select){width:100%}@media(max-width:900px){.workspace{grid-template-columns:1fr}.country-panel{display:none}.filters{flex-wrap:wrap}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}}
+.supplier-page{--navy:#18324a;--teal:#147d7b}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.page-head h2{margin:0;color:var(--navy)}.page-head p{margin:6px 0 0;color:#778899}.workspace{display:grid;grid-template-columns:225px 1fr;gap:16px}.country-panel h3{margin:2px 0 12px;color:var(--navy)}.country-panel button{width:100%;display:flex;justify-content:space-between;border:0;background:transparent;padding:10px 12px;border-radius:9px;color:#526372;cursor:pointer}.country-panel button.active{background:#e6f4f2;color:var(--teal)}.country-panel b{background:#edf1f4;border-radius:12px;padding:1px 9px}.filters{display:flex;gap:10px;margin-bottom:16px}.filters .el-input{max-width:280px}.filters .el-select{width:165px}.name-cell{display:flex;flex-direction:column}.name-cell small{color:#8b99a5}.el-tag+.el-tag{margin-left:5px}.pager{justify-content:flex-end;margin-top:18px}.form-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}.form-grid .full{grid-column:1/-1}.form-grid .code-notice{margin-bottom:18px}.form-grid :deep(.el-select){width:100%}.caret{font-size:10px;margin-left:5px}.danger-item{color:#f56c6c}@media(max-width:900px){.workspace{grid-template-columns:1fr}.country-panel{display:none}.filters{flex-wrap:wrap}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}}
 </style>

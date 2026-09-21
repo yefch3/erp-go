@@ -172,6 +172,30 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if s.Suppliers != nil {
+		allowed, checkErr := s.hasPermission(r, "masterdata:supplier:read")
+		if checkErr != nil {
+			sources = append(sources, homeReminderSourceState{Source: "SUPPLIER_DOCUMENT", Message: "供应商资料权限检查失败"})
+		} else if allowed {
+			resp, err := s.Suppliers.ListSupplierDocumentReminders(r.Context(), &mdv1.ListSupplierDocumentRemindersRequest{})
+			if err != nil {
+				sources = append(sources, homeReminderSourceState{Source: "SUPPLIER_DOCUMENT", Message: "供应商资料提醒暂时不可用"})
+			} else {
+				sources = append(sources, homeReminderSourceState{Source: "SUPPLIER_DOCUMENT", Available: true})
+				for _, d := range resp.GetDocuments() {
+					timing := classifyHomeReminderDate(d.ExpiresOn, today)
+					if timing == "REMINDER" {
+						timing = "UPCOMING"
+					}
+					items = append(items, homeReminderItem{Key: "SUPPLIER_DOCUMENT:" + strconv.FormatInt(d.Id, 10), Source: "SUPPLIER_DOCUMENT", SourceID: strconv.FormatInt(d.Id, 10), Title: "供应商资料到期：" + d.Title, Content: d.SupplierName + "，请检查并更新有效资料", BizNo: d.SupplierName, DueAt: d.ExpiresOn, CreatedAt: d.CreatedAt, Unread: d.Unread, Timing: timing, DetailURL: "/basic/suppliers/" + strconv.FormatInt(d.SupplierId, 10) + "?tab=documents"})
+					if d.Unread {
+						summary.Unread++
+					}
+					addHomeReminderTiming(&summary, timing)
+				}
+			}
+		}
+	}
 	items = filterAndSortHomeReminders(items, r)
 	page, pageSize := homeReminderPageParams(r)
 	total := len(items)
@@ -290,6 +314,16 @@ func (s *Server) markHomeRemindersRead(w http.ResponseWriter, r *http.Request) {
 			} else {
 				marked += resp.GetMarked()
 			}
+		}
+	}
+	if s.Suppliers != nil && (input.Source == "" || input.Source == "ALL" || input.Source == "SUPPLIER_DOCUMENT") {
+		allowed, err := s.hasPermission(r, "masterdata:supplier:read")
+		if err != nil || !allowed {
+			sourceErrors = append(sourceErrors, homeReminderSourceState{Source: "SUPPLIER_DOCUMENT", Message: "无供应商资料读取权限"})
+		} else if resp, err := s.Suppliers.MarkSupplierDocumentRemindersRead(r.Context(), &mdv1.MarkSupplierDocumentRemindersReadRequest{Ids: ids}); err != nil {
+			sourceErrors = append(sourceErrors, homeReminderSourceState{Source: "SUPPLIER_DOCUMENT", Message: "供应商资料提醒标记失败"})
+		} else {
+			marked += resp.GetMarked()
 		}
 	}
 	s.writeJSON(w, map[string]any{"marked": marked, "sources": sourceErrors})

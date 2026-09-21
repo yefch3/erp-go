@@ -456,7 +456,9 @@ func (h *Handler) ImportSuppliers(ctx context.Context, req *mdv1.ImportSuppliers
 		rows[i] = app.SupplierImportRow{RowNumber: row.GetRowNumber(), Code: row.GetCode(), NameZh: row.GetNameZh(),
 			NameEn: row.GetNameEn(), ShortName: row.GetShortName(), CountryCode: row.GetCountryCode(), Currency: row.GetCurrency(),
 			PaymentTerm: row.GetPaymentTerm(), BusinessTypes: row.GetBusinessTypes(), ContactName: row.GetContactName(),
-			ContactPhone: row.GetContactPhone(), ContactEmail: row.GetContactEmail(), Address: row.GetAddress(), Remark: row.GetRemark()}
+			ContactPhone: row.GetContactPhone(), ContactEmail: row.GetContactEmail(), Address: row.GetAddress(), Remark: row.GetRemark(),
+			TaxID: row.GetTaxId(), RegisteredAddress: row.GetRegisteredAddress(), ContactDepartment: row.GetContactDepartment(),
+			ContactTitle: row.GetContactTitle(), ContactIsPrimary: row.GetContactIsPrimary(), ContactRemark: row.GetContactRemark()}
 	}
 	ready, imported, issues, err := h.svc.ImportSuppliers(ctx, grpcx.TenantID(ctx), rows, req.GetConfirm(), operatorID(ctx), operatorName(ctx))
 	if err != nil {

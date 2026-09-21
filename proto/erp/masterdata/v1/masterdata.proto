@@ -125,6 +125,12 @@ service SupplierService {
   rpc ImportSuppliers(ImportSuppliersRequest) returns (ImportSuppliersResponse);
   rpc CheckSupplierDuplicates(CheckSupplierDuplicatesRequest) returns (CheckSupplierDuplicatesResponse);
   rpc GetSupplierDeactivationImpact(GetSupplierDeactivationImpactRequest) returns (GetSupplierDeactivationImpactResponse);
+  rpc ListSupplierDocuments(ListSupplierDocumentsRequest) returns (ListSupplierDocumentsResponse);
+  rpc SaveSupplierDocument(SaveSupplierDocumentRequest) returns (SaveSupplierDocumentResponse);
+  rpc GetSupplierDocumentFile(GetSupplierDocumentFileRequest) returns (GetSupplierDocumentFileResponse);
+  rpc DeleteSupplierDocument(DeleteSupplierDocumentRequest) returns (DeleteSupplierDocumentResponse);
+  rpc ListSupplierDocumentReminders(ListSupplierDocumentRemindersRequest) returns (ListSupplierDocumentRemindersResponse);
+  rpc MarkSupplierDocumentRemindersRead(MarkSupplierDocumentRemindersReadRequest) returns (MarkSupplierDocumentRemindersReadResponse);
   rpc ListFactories(ListFactoriesRequest) returns (ListFactoriesResponse);
   rpc GetFactory(GetFactoryRequest) returns (GetFactoryResponse);
   rpc CreateFactory(CreateFactoryRequest) returns (CreateFactoryResponse);
@@ -1087,6 +1093,12 @@ message SupplierImportRow {
   string contact_email = 12;
   string address = 13;
   string remark = 14;
+  string tax_id = 15;
+  string registered_address = 16;
+  string contact_department = 17;
+  string contact_title = 18;
+  bool contact_is_primary = 19;
+  string contact_remark = 20;
 }
 
 message FactoryImportRow {
@@ -1352,3 +1364,27 @@ message GetCustomerBasicRequest { int64 customer_id = 1; }
 message SaveCustomerBasicRequest { int64 customer_id = 1; CustomerImportRow basic = 2; }
 message GetCustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }
 message SaveCustomerBasicResponse { CustomerImportRow basic = 1; int64 tenant_id = 2; }
+
+message SupplierDocument {
+  int64 id = 1; int64 supplier_id = 2; int64 document_id = 3; int32 version = 4;
+  string title = 5; string remark = 6; string file_name = 7; string content_type = 8;
+  int64 size_bytes = 9; string expires_on = 10; int32 remind_days = 11;
+  bool reminder_enabled = 12; string uploaded_by_name = 13; string created_at = 14;
+  bool current = 15; string supplier_name = 16; bool unread = 17;
+}
+message ListSupplierDocumentsRequest { int64 supplier_id = 1; }
+message ListSupplierDocumentsResponse { repeated SupplierDocument documents = 1; }
+message SaveSupplierDocumentRequest {
+  int64 supplier_id = 1; int64 replaces_id = 2; string title = 3; string remark = 4;
+  string file_name = 5; bytes content = 6; string expires_on = 7;
+  int32 remind_days = 8; bool reminder_enabled = 9;
+}
+message SaveSupplierDocumentResponse { int64 id = 1; }
+message GetSupplierDocumentFileRequest { int64 supplier_id = 1; int64 revision_id = 2; }
+message GetSupplierDocumentFileResponse { string file_name = 1; string content_type = 2; bytes content = 3; }
+message DeleteSupplierDocumentRequest { int64 supplier_id = 1; int64 revision_id = 2; }
+message DeleteSupplierDocumentResponse {}
+message ListSupplierDocumentRemindersRequest {}
+message ListSupplierDocumentRemindersResponse { repeated SupplierDocument documents = 1; }
+message MarkSupplierDocumentRemindersReadRequest { repeated int64 ids = 1; }
+message MarkSupplierDocumentRemindersReadResponse { int64 marked = 1; }
