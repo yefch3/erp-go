@@ -2,6 +2,9 @@ package grpcout
 
 import (
 	"context"
+	"strings"
+
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -25,6 +28,30 @@ func (c *CustomerAccess) Check(ctx context.Context, id int64) (string, error) {
 		return "", apierr.Invalid("MD_CUSTOMER_INACTIVE", "客户已停用")
 	}
 	return resp.GetCustomer().GetName(), nil
+}
+func (c *CustomerAccess) ResolveByName(ctx context.Context, name string) (int64, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, "", nil
+	}
+	resp, err := c.customers.ListCustomers(ctx, &mdv1.ListCustomersRequest{
+		Page:    &commonv1.PageRequest{Page: 1, PageSize: 100},
+		Keyword: name,
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	var id int64
+	var canonical string
+	for _, customer := range resp.GetCustomers() {
+		if strings.EqualFold(strings.TrimSpace(customer.GetName()), name) {
+			if id != 0 {
+				return 0, "", nil
+			}
+			id, canonical = customer.GetId(), customer.GetName()
+		}
+	}
+	return id, canonical, nil
 }
 func (c *CustomerAccess) VisibleIDs(ctx context.Context, actor int64) ([]int64, bool, error) {
 	scope, err := c.access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: actor, Module: "customer"})

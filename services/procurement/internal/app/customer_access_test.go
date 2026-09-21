@@ -5,6 +5,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -22,6 +23,12 @@ func (f *inquiryCustomerFixture) VisibleIDs(context.Context, int64) ([]int64, bo
 		return []int64{10}, false, nil
 	}
 	return nil, false, nil
+}
+func (f *inquiryCustomerFixture) ResolveByName(_ context.Context, name string) (int64, string, error) {
+	if f.allowed && name == "Canonical" {
+		return 10, "Canonical", nil
+	}
+	return 0, "", nil
 }
 func TestInquiryRejectsForgedCustomerBeforeWriting(t *testing.T) {
 	s := &Service{customers: &inquiryCustomerFixture{allowed: true}}
@@ -90,5 +97,38 @@ func TestInquiryCustomerRemovalIntegration(t *testing.T) {
 	other, err := s.InquiryWorkspace(ctx, tenant+1, op, InquiryCommand{Action: "list", View: "SALES"})
 	if err != nil || other.Total != 0 {
 		t.Fatal("cross-tenant inquiry leak")
+	}
+}
+
+func TestLegacyInquiryCustomerNameIsLinkedAutomatically(t *testing.T) {
+	dsn := os.Getenv("CUSTOMER_PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("CUSTOMER_PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenant := time.Now().UnixNano() / 1000
+	s := New(pool, Deps{Customers: &inquiryCustomerFixture{allowed: true}, Scopes: inquiryManagerAccess{}})
+	var id int64
+	err = pool.QueryRow(ctx, `INSERT INTO sourcing_cases(tenant_id,case_no,owner_id,owner_name,status,handoff_status,customer_id,customer_name,inquiry_body) VALUES($1,'LEGACY-CUSTOMER',101,'Sales','REVIEWING','WAITING_ACCEPTANCE',0,'Canonical','{"customer":"Canonical","products":[]}'::jsonb) RETURNING id`, tenant).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM sourcing_cases WHERE tenant_id=$1", tenant) })
+
+	result, err := s.InquiryWorkspace(ctx, tenant, Operator{ID: 101, Name: "Sales"}, InquiryCommand{Action: "get", View: "SALES", ID: strconv.FormatInt(id, 10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Item == nil || result.Item.Body.CustomerID != "10" || result.Item.Body.Customer != "Canonical" {
+		t.Fatalf("legacy customer was not hydrated: %+v", result.Item)
+	}
+	var customerID int64
+	if err = pool.QueryRow(ctx, "SELECT customer_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&customerID); err != nil || customerID != 10 {
+		t.Fatalf("legacy link was not persisted: id=%d err=%v", customerID, err)
 	}
 }

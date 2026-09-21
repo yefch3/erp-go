@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"github.com/sgao19/erp-go/pkg/xlsx"
 )
 
 func categoryWorkspaceFixture() (OfferBody, OfferInquiry) {
@@ -40,6 +42,33 @@ func TestCategoryOfferPDFUsesSelectedCustomerPrices(t *testing.T) {
 	calculated.CustomerSelections[0].CFRUnitPrice = ""
 	if _, err := categoryOfferPDF(OfferView{Body: calculated, Source: source}); err == nil {
 		t.Fatal("generated quotation without an initial or adjusted customer price")
+	}
+}
+
+func TestCategoryOfferWorkbookUsesLanguageAndSelectedCustomerPrices(t *testing.T) {
+	body, source := categoryWorkspaceFixture()
+	body.CategorySelections = body.CategorySelections[:1]
+	calculated, err := prepareOffer(body, source, nil, true, "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageOfferSelections(&calculated, source)
+	calculated.Customer = "Customer"
+	calculated.DocumentLanguage = "EN"
+	calculated.Negotiations[0].ProposedPrice = "15.25"
+	data, err := categoryOfferWorkbook(OfferView{Body: calculated, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := xlsx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0][0] != "CUSTOMER QUOTATION" || rows[6][1] != "Product" {
+		t.Fatalf("workbook did not use English labels: %#v / %#v", rows[0], rows[6])
+	}
+	if rows[7][5] != "15.2500" || rows[7][6] != "305.00" || rows[8][6] != "305.00" {
+		t.Fatalf("workbook price/amount/total = %q/%q/%q", rows[7][5], rows[7][6], rows[8][6])
 	}
 }
 

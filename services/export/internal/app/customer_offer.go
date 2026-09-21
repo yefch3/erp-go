@@ -59,7 +59,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		return "", apierr.Permission("OFFER_ACCESS", "报价权限校验不可用")
 	}
 	write := cmd.Action == "save" || cmd.Action == "stage_selections" || cmd.Action == "calculate" || cmd.Action == "calculate_all" || cmd.Action == "confirm"
-	if cmd.Action != "get" && cmd.Action != "pdf" && cmd.Action != "summaries" && !write {
+	if cmd.Action != "get" && cmd.Action != "pdf" && cmd.Action != "xlsx" && cmd.Action != "summaries" && !write {
 		return "", apierr.Invalid("OFFER_ACTION", "不支持的报价操作")
 	}
 	permission := "export:quotation:read"
@@ -140,6 +140,26 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		}
 		out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.pdf", "fileData": data})
 		return string(out), nil
+	case "xlsx":
+		if view.Revision == 0 {
+			return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
+		}
+		var data []byte
+		if view.Body.CategoryWorkflow {
+			data, err = categoryOfferWorkbook(view)
+		} else {
+			if view.Status != "CONFIRMED" {
+				if err := validateOfferPricing(view.Body, source); err != nil {
+					return "", err
+				}
+			}
+			data, err = offerWorkbook(view)
+		}
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.xlsx", "fileData": data})
+		return string(out), nil
 	case "confirm":
 		if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
 			return "", err
@@ -167,6 +187,12 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		if cmd.Revision != view.Revision {
 			return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后再保存")
 		}
+		// Customer selection belongs to the inquiry header. It is carried into
+		// the quotation automatically and cannot be replaced from this step.
+		cmd.Body.CustomerID = source.Body.CustomerID
+		cmd.Body.Customer = source.Body.Customer
+		cmd.Body.ContactID = source.Body.ContactID
+		cmd.Body.Contact = source.Body.Contact
 		if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
 			return "", err
 		}
@@ -272,6 +298,13 @@ func (s *Service) readOffer(ctx context.Context, tenant, id int64, source OfferI
 	if err = json.Unmarshal(body, &out.Body); err != nil {
 		return out, err
 	}
+	// The inquiry is the authority for the customer association. Older offer
+	// drafts may predate customer IDs, so hydrate them from the repaired inquiry
+	// instead of asking the user to choose the same customer again here.
+	out.Body.CustomerID = source.Body.CustomerID
+	out.Body.Customer = source.Body.Customer
+	out.Body.ContactID = source.Body.ContactID
+	out.Body.Contact = source.Body.Contact
 	out.Status = "QUOTED"
 	if contract > 0 {
 		out.Status = "CONFIRMED"

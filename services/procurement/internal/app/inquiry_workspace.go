@@ -450,8 +450,9 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	var raw []byte
 	var status, handoff string
 	var owner int64
-	var source, templateID int64
-	err := s.pool.QueryRow(ctx, `SELECT id::text,case_no,display_inquiry_no,owner_id,owner_name,status,handoff_status,inquiry_revision,coalesce(inquiry_submitted_at::text,''),inquiry_body,source_mail_id,inquiry_template_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' AND deleted_at IS NULL`, tenant, id).Scan(&v.ID, &v.Number, &v.DisplayInquiryNo, &owner, &v.Owner, &status, &handoff, &v.Revision, &v.SubmittedAt, &raw, &source, &templateID)
+	var source, templateID, customerID, contactID int64
+	var customerName, contactName string
+	err := s.pool.QueryRow(ctx, `SELECT id::text,case_no,display_inquiry_no,owner_id,owner_name,status,handoff_status,inquiry_revision,coalesce(inquiry_submitted_at::text,''),inquiry_body,source_mail_id,inquiry_template_id,customer_id,customer_name,contact_id,contact_name FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' AND deleted_at IS NULL`, tenant, id).Scan(&v.ID, &v.Number, &v.DisplayInquiryNo, &owner, &v.Owner, &status, &handoff, &v.Revision, &v.SubmittedAt, &raw, &source, &templateID, &customerID, &customerName, &contactID, &contactName)
 	if err == pgx.ErrNoRows {
 		return nil, apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
 	}
@@ -462,17 +463,35 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	v.SourceMailID = strconv.FormatInt(source, 10)
 	v.State = inquiryState(status, handoff)
 	if view == "SALES" || view == "QUOTATIONS" {
+		if err = s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
+			return nil, err
+		}
 		if s.customers != nil {
-			var customerID int64
-			if err := s.pool.QueryRow(ctx, "SELECT customer_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&customerID); err != nil {
-				return nil, err
+			if customerID == 0 && strings.TrimSpace(customerName) != "" {
+				if resolver, ok := s.customers.(CustomerNameResolver); ok {
+					resolvedID, resolvedName, resolveErr := resolver.ResolveByName(ctx, customerName)
+					if resolveErr != nil {
+						return nil, resolveErr
+					}
+					if resolvedID > 0 {
+						tag, updateErr := s.pool.Exec(ctx, `UPDATE sourcing_cases SET customer_id=$3,customer_name=$4 WHERE tenant_id=$1 AND id=$2 AND customer_id=0`, tenant, id, resolvedID, resolvedName)
+						if updateErr != nil {
+							return nil, updateErr
+						}
+						if tag.RowsAffected() == 1 {
+							customerID, customerName = resolvedID, resolvedName
+						} else if scanErr := s.pool.QueryRow(ctx, `SELECT customer_id,customer_name FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&customerID, &customerName); scanErr != nil {
+							return nil, scanErr
+						}
+					}
+				}
+				if customerID == 0 {
+					return nil, apierr.Invalid("INQUIRY_CUSTOMER_REQUIRED", "当前询盘的历史客户名称无法唯一关联客户资料，请先在询盘基本信息中修正")
+				}
 			}
 			if err := s.checkInquiryCustomer(ctx, customerID); err != nil {
 				return nil, err
 			}
-		}
-		if err = s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
-			return nil, err
 		}
 	} else if v.State != "INQUIRING" {
 		return nil, apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
@@ -526,6 +545,14 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 			}
 			v.Body.Products = append(v.Body.Products, InquiryProduct{ID: strconv.FormatInt(l.ID, 10), Product: l.Product, Specification: strings.Join(compactStrings([]string{l.MaterialStandard, l.Grade, l.Thickness, l.Width, l.LengthOrForm, l.SurfaceRequirement}), " · "), Quantity: l.Quantity, Unit: l.QuantityUnit, Delivery: l.Delivery, Packaging: l.Packaging, Remark: l.Remarks, CustomFields: values})
 		}
+	}
+	if customerID > 0 {
+		v.Body.CustomerID = strconv.FormatInt(customerID, 10)
+		v.Body.Customer = customerName
+	}
+	if contactID > 0 {
+		v.Body.ContactID = strconv.FormatInt(contactID, 10)
+		v.Body.Contact = contactName
 	}
 	if v.Body.Template == nil && templateID > 0 {
 		v.Body.Template = &InquiryTemplateSnapshot{ID: strconv.FormatInt(templateID, 10)}
