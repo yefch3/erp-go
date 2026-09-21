@@ -52,7 +52,7 @@ func (s *Service) ListCustomerDocuments(ctx context.Context, tenantID, customerI
 		}
 	}
 	rows, err := s.pool.Query(ctx, `SELECT d.id,d.customer_id,d.document_id,d.version,d.title,d.remark,d.file_name,d.content_type,d.size_bytes,
- COALESCE(d.expires_on::text,''),d.remind_days,d.reminder_enabled,d.uploaded_by_name,d.created_at,c.name,
+ COALESCE(d.expires_on::text,''),d.remind_days,d.reminder_enabled,d.uploaded_by_name,d.created_at,COALESCE(NULLIF(btrim(c.short_name),''),c.name),
  `+documentCurrentPredicate+`, NOT EXISTS(SELECT 1 FROM customer_document_reads rr WHERE rr.tenant_id=d.tenant_id AND rr.revision_id=d.id AND rr.employee_id=$4)
  FROM customer_documents d JOIN customers c ON c.tenant_id=d.tenant_id AND c.id=d.customer_id
  WHERE d.deleted_at IS NULL AND d.tenant_id=$1 AND ($2::bigint=0 OR d.customer_id=$2) AND `+documentOwnerPredicate+`

@@ -75,7 +75,7 @@
         <el-table-column :label="t('execution.contract')" min-width="190" fixed>
           <template #default="{ row }">
             <router-link :to="`/contracts?id=${row.contractId}`" class="doc-link">{{ row.contractNo }}</router-link>
-            <div class="sub">{{ row.customerName }}</div>
+            <div class="sub">{{ executionCustomerName(row) }}</div>
           </template>
         </el-table-column>
 
@@ -142,6 +142,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../api'
+import { customerDisplayName } from '../lib/customerDisplay'
 
 const { t } = useI18n()
 
@@ -177,7 +178,14 @@ interface Board {
   shippingAvailable: boolean
 }
 
+interface CustomerOption { id: string; name: string; shortName?: string }
+const customers = ref<CustomerOption[]>([])
 const rows = ref<Row[]>([])
+function executionCustomerName(row: Row) {
+  const customer = customers.value.find(item => String(item.id) === String(row.customerId))
+    ?? customers.value.find(item => item.name.trim() === row.customerName?.trim())
+  return customer ? customerDisplayName(customer) : (row.customerName || '—')
+}
 const total = ref(0)
 const page = ref(1)
 const pageSize = 50
@@ -321,7 +329,8 @@ function reload() {
   loadMetrics()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try { customers.value = (await get<{ customers: CustomerOption[] }>('/customers', { page_size: 200, status: 'ACTIVE' })).customers ?? [] } catch { customers.value = [] }
   load()
   loadMetrics()
 })

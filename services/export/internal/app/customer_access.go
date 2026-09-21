@@ -39,6 +39,6 @@ func (s *Service) validateOfferCustomer(ctx context.Context, body *OfferBody) er
 	if customer.Status != "ACTIVE" {
 		return apierr.Invalid("MD_CUSTOMER_INACTIVE", "客户已停用")
 	}
-	body.Customer = customer.Name
+	body.Customer = customerDisplayName(customer)
 	return nil
 }

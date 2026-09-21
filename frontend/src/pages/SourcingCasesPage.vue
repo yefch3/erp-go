@@ -250,7 +250,7 @@
 
     <el-dialog v-model="customerMapOpen" :title="t('sourcing.mapCustomer')" width="520px" append-to-body>
       <el-alert type="warning" :closable="false" show-icon class="review-hint">{{ t('sourcing.mapCustomerHint') }}</el-alert>
-      <el-select v-model="mappedCustomerId" filterable style="width:100%"><el-option v-for="customer in customers" :key="customer.id" :value="customer.id" :label="`${customer.code} · ${customer.name}`" /></el-select>
+      <el-select v-model="mappedCustomerId" filterable style="width:100%"><el-option v-for="customer in customers" :key="customer.id" :value="customer.id" :label="customerOptionLabel(customer)" /></el-select>
       <template #footer><el-button @click="customerMapOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :disabled="!mappedCustomerId" @click="submitMappedCustomer">{{ t('common.confirm') }}</el-button></template>
     </el-dialog>
   </div>
@@ -263,6 +263,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
 import { useAuthStore } from '../stores/auth'
+import { customerOptionLabel } from '../lib/customerDisplay'
 
 interface ExtractedLine {
   product: string; materialStandard: string; grade: string; thickness: string
@@ -283,7 +284,7 @@ interface CostCharge { chargeType: string; basis: string; amount: string; curren
 interface CostScenario { id: string; scenarioNo: string; currency: string; status: string; productTotal: string; chargeTotal: string; landedTotal: string; marginTotal: string; customerTotal: string; customerQuotationId?: string; customerQuoteNo?: string; lines?: CostScenarioLine[] }
 interface Product { id: string; code: string; name: string; nameEn?: string; brand?: string; description?: string; baseUomId: string }
 interface Sku { id: string; code: string; spec: string; status: string }
-interface Customer { id: string; code: string; name: string }
+interface Customer { id: string; code: string; name: string; shortName?: string }
 
 const { t } = useI18n()
 const route = useRoute()

@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,16 +19,24 @@ import (
 // Customer is the slice of a customer this service needs. Export never reads
 // masterdata's tables; it asks, and copies what it must display later.
 type Customer struct {
-	ID       int64
-	Name     string
-	Address  string
-	Currency string
-	Status   string
-	Contacts []Contact
+	ID        int64
+	Name      string
+	ShortName string
+	Address   string
+	Currency  string
+	Status    string
+	Contacts  []Contact
 }
 
 // Contact is one person at the customer; the quotation records which of them
 // it is addressed to, and where it would be sent.
+func customerDisplayName(customer Customer) string {
+	if name := strings.TrimSpace(customer.ShortName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(customer.Name)
+}
+
 type Contact struct {
 	ID        int64
 	Name      string

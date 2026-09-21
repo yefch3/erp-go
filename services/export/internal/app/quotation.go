@@ -256,7 +256,7 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 		var err error
 		id, err = q.CreateQuotation(ctx, store.CreateQuotationParams{
 			TenantID: tenantID, QuoteNo: quoteNo, CustomerID: customer.ID,
-			CustomerName: customer.Name,
+			CustomerName: customerDisplayName(customer),
 			ContactID:    contact.ID, ContactName: contact.Name, ContactEmail: contact.Email,
 			Currency: in.Currency, Incoterm: orDefault(in.Incoterm, "FOB"),
 			PortOfLoading: in.PortOfLoading, PortOfDischarge: in.PortOfDischarge,
@@ -375,7 +375,7 @@ func (s *Service) UpdateQuotation(ctx context.Context, tenantID, id int64, in Qu
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		rows, err := q.UpdateQuotationHeader(ctx, store.UpdateQuotationHeaderParams{
-			TenantID: tenantID, ID: id, CustomerID: customer.ID, CustomerName: customer.Name,
+			TenantID: tenantID, ID: id, CustomerID: customer.ID, CustomerName: customerDisplayName(customer),
 			ContactID: contact.ID, ContactName: contact.Name, ContactEmail: contact.Email,
 			Currency: orDefault(in.Currency, current.Currency), Incoterm: orDefault(in.Incoterm, "FOB"),
 			PortOfLoading: in.PortOfLoading, PortOfDischarge: in.PortOfDischarge,

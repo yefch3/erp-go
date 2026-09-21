@@ -1547,6 +1547,7 @@ import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
 import CustomerSelect from '../components/masterdata/CustomerSelect.vue'
+import { customerDisplayName } from '../lib/customerDisplay'
 import {
   Box,
   CircleClose,
@@ -4911,8 +4912,8 @@ function sourcingContactLabel(contact: SourcingCustomerContact) {
   return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
 }
 
-async function selectSourcingCustomer(customer?: { id: string | number; name: string }) {
-  sourcingForm.customerName = customer?.name || ''
+async function selectSourcingCustomer(customer?: { id: string | number; name: string; shortName?: string }) {
+  sourcingForm.customerName = customerDisplayName(customer)
   sourcingForm.contactId = ''
   sourcingContacts.value = []
   const customerId = String(customer?.id ?? sourcingForm.customerId ?? '')

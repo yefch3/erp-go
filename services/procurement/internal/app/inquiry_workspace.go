@@ -485,12 +485,16 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 						}
 					}
 				}
-				if customerID == 0 {
-					return nil, apierr.Invalid("INQUIRY_CUSTOMER_REQUIRED", "当前询盘的历史客户名称无法唯一关联客户资料，请先在询盘基本信息中修正")
-				}
 			}
-			if err := s.checkInquiryCustomer(ctx, customerID); err != nil {
-				return nil, err
+			if customerID > 0 {
+				currentCustomerName, checkErr := s.customers.Check(ctx, customerID)
+				if checkErr != nil {
+					return nil, checkErr
+				}
+				if strings.TrimSpace(currentCustomerName) != "" {
+					// 列表和详情使用当前客户主档简称。数据库中的历史快照不改写。
+					customerName = strings.TrimSpace(currentCustomerName)
+				}
 			}
 		}
 	} else if v.State != "INQUIRING" {

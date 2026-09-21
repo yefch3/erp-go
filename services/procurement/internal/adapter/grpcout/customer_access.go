@@ -16,6 +16,16 @@ type CustomerAccess struct {
 	access    iamv1.AccessServiceClient
 }
 
+func customerSnapshotName(customer *mdv1.Customer) string {
+	if customer == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(customer.GetShortName()); name != "" {
+		return name
+	}
+	return strings.TrimSpace(customer.GetName())
+}
+
 func NewCustomerAccess(md, iam *grpc.ClientConn) *CustomerAccess {
 	return &CustomerAccess{customers: mdv1.NewCustomerServiceClient(md), access: iamv1.NewAccessServiceClient(iam)}
 }
@@ -27,7 +37,7 @@ func (c *CustomerAccess) Check(ctx context.Context, id int64) (string, error) {
 	if resp.GetCustomer().GetStatus() != "ACTIVE" {
 		return "", apierr.Invalid("MD_CUSTOMER_INACTIVE", "客户已停用")
 	}
-	return resp.GetCustomer().GetName(), nil
+	return customerSnapshotName(resp.GetCustomer()), nil
 }
 func (c *CustomerAccess) ResolveByName(ctx context.Context, name string) (int64, string, error) {
 	name = strings.TrimSpace(name)
@@ -44,11 +54,11 @@ func (c *CustomerAccess) ResolveByName(ctx context.Context, name string) (int64,
 	var id int64
 	var canonical string
 	for _, customer := range resp.GetCustomers() {
-		if strings.EqualFold(strings.TrimSpace(customer.GetName()), name) {
+		if strings.EqualFold(strings.TrimSpace(customer.GetName()), name) || strings.EqualFold(strings.TrimSpace(customer.GetShortName()), name) {
 			if id != 0 {
 				return 0, "", nil
 			}
-			id, canonical = customer.GetId(), customer.GetName()
+			id, canonical = customer.GetId(), customerSnapshotName(customer)
 		}
 	}
 	return id, canonical, nil

@@ -146,7 +146,7 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), &prv1.CreateCaseRequest{
-		Title: title, CustomerId: customerID, CustomerName: customer.GetName(),
+		Title: title, CustomerId: customerID, CustomerName: customerSnapshotName(customer),
 		ContactId: contactID, ContactName: contact.GetName(), ContactEmail: contact.GetEmail(),
 		// -1 表示手工上传；摘要用于阻止同一文件被重复导入。
 		SourceMailId: -1, SourceAttachmentId: inquiryFingerprint(data), Lines: lines,

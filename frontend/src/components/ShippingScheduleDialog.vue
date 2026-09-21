@@ -5,7 +5,7 @@
         <el-col :span="12"><el-form-item :label="t('shipping.contractNo')"><el-input v-model="form.contractNo" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.customer')">
           <el-input v-if="schedule || handoff" :model-value="form.customerName" disabled />
-          <CustomerSelect v-else-if="auth.can('masterdata:customer:read')" v-model="form.customerId" @selected="customer=>form.customerName=customer?.name||''" />
+          <CustomerSelect v-else-if="auth.can('masterdata:customer:read')" v-model="form.customerId" @selected="customer=>form.customerName=customerDisplayName(customer)" />
           <el-input v-else v-model="form.customerName" :placeholder="t('shipping.customer')" />
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.carrier')">
@@ -71,6 +71,7 @@ import { useAuthStore } from '../stores/auth'
 import type { ShippingReminderPreference, ShippingSchedule } from '../shipping'
 import { portTimezoneOptions } from '../lib/portOptions'
 import CustomerSelect from './masterdata/CustomerSelect.vue'
+import { customerDisplayName } from '../lib/customerDisplay'
 import EmployeeSelect from './masterdata/EmployeeSelect.vue'
 import PortSelect, { type PortOption } from './masterdata/PortSelect.vue'
 

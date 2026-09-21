@@ -2,10 +2,24 @@ package httpapi
 
 import (
 	"context"
+	"strings"
 
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 )
+
+// customerSnapshotName is the name used by operational screens and snapshots.
+// The legal/full customer name remains available in master data and documents
+// that explicitly require it.
+func customerSnapshotName(customer *mdv1.Customer) string {
+	if customer == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(customer.GetShortName()); name != "" {
+		return name
+	}
+	return strings.TrimSpace(customer.GetName())
+}
 
 // resolveActiveCustomer 校验客户仍可用于新业务，并返回权威主数据供调用方保存名称快照。
 func (s *Server) resolveActiveCustomer(ctx context.Context, id int64) (*mdv1.Customer, error) {
