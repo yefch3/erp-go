@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -26,7 +27,7 @@ const (
 // opens in Excel, LibreOffice and Numbers and deliberately contains no macros,
 // external links or formulas.
 func Build(sheetName string, rows [][]string) ([]byte, error) {
-	return BuildWithFormulas(sheetName, rows, nil)
+	return build(sheetName, rows, nil, nil)
 }
 
 // Formula is a trusted, server-authored spreadsheet formula and its cached
@@ -41,6 +42,17 @@ type Formula struct {
 // explicitly addressed cells with trusted formulas. Formula references use
 // Excel notation such as H5.
 func BuildWithFormulas(sheetName string, rows [][]string, formulas map[string]Formula) ([]byte, error) {
+	return build(sheetName, rows, formulas, nil)
+}
+
+// BuildWithFormulasAndNumbers also writes explicitly addressed cells as real
+// spreadsheet numbers. Their display format keeps useful decimal places while
+// suppressing trailing zeroes. Callers must only mark trusted numeric fields.
+func BuildWithFormulasAndNumbers(sheetName string, rows [][]string, formulas map[string]Formula, numbers map[string]string) ([]byte, error) {
+	return build(sheetName, rows, formulas, numbers)
+}
+
+func build(sheetName string, rows [][]string, formulas map[string]Formula, numbers map[string]string) ([]byte, error) {
 	if len(rows) == 0 || len(rows) > MaxRows {
 		return nil, fmt.Errorf("xlsx rows out of range: %d", len(rows))
 	}
@@ -62,7 +74,7 @@ func BuildWithFormulas(sheetName string, rows [][]string, formulas map[string]Fo
 		"[Content_Types].xml":        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
 		"_rels/.rels":                `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
 		"xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
-		"xl/styles.xml":              `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`,
+		"xl/styles.xml":              `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.####"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`,
 	}
 	var workbook bytes.Buffer
 	workbook.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="`)
@@ -84,10 +96,21 @@ func BuildWithFormulas(sheetName string, rows [][]string, formulas map[string]Fo
 				if strings.TrimSpace(formula.Expression) == "" {
 					return nil, fmt.Errorf("xlsx formula is empty at %s", ref)
 				}
-				sheet.WriteString(`<c r="` + ref + `"><f>`)
+				sheet.WriteString(`<c r="` + ref + `" s="2"><f>`)
 				escape(&sheet, formula.Expression)
 				sheet.WriteString(`</f><v>`)
 				escape(&sheet, formula.CachedValue)
+				sheet.WriteString(`</v></c>`)
+				continue
+			}
+			if number, ok := numbers[ref]; ok {
+				number = strings.TrimSpace(number)
+				parsed, parseErr := strconv.ParseFloat(number, 64)
+				if parseErr != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+					return nil, fmt.Errorf("xlsx number is invalid at %s", ref)
+				}
+				sheet.WriteString(`<c r="` + ref + `" s="2"><v>`)
+				escape(&sheet, number)
 				sheet.WriteString(`</v></c>`)
 				continue
 			}
