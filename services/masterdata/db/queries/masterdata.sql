@@ -315,21 +315,28 @@ ORDER BY c.id
 LIMIT 10;
 
 -- name: SupplierDuplicateCandidates :many
-SELECT id, code, coalesce(nullif(name_zh, ''), nullif(name_en, ''), name)::text AS name,
-       tax_id, contact_email
-FROM suppliers
-WHERE tenant_id = sqlc.arg(tenant_id)
-  AND (sqlc.arg(exclude_id)::bigint = 0 OR id <> sqlc.arg(exclude_id))
+SELECT s.id, s.code, coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name)::text AS name,
+       s.tax_id, s.contact_email
+FROM suppliers s
+WHERE s.tenant_id = sqlc.arg(tenant_id)
+  AND (sqlc.arg(exclude_id)::bigint = 0 OR s.id <> sqlc.arg(exclude_id))
   AND (
     (sqlc.arg(name)::text <> '' AND (
-      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) = lower(btrim(sqlc.arg(name))) OR
-      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
-      lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) || '%'
+      lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) = lower(btrim(sqlc.arg(name))) OR
+      lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
+      lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name))) || '%'
     ))
-    OR (sqlc.arg(tax_id)::text <> '' AND lower(btrim(tax_id)) = lower(btrim(sqlc.arg(tax_id))))
-    OR (sqlc.arg(email)::text <> '' AND lower(btrim(contact_email)) = lower(btrim(sqlc.arg(email))))
+    OR (sqlc.arg(tax_id)::text <> '' AND lower(btrim(s.tax_id)) = lower(btrim(sqlc.arg(tax_id))))
+    OR (sqlc.arg(email)::text <> '' AND lower(btrim(s.contact_email)) = lower(btrim(sqlc.arg(email))))
   )
-ORDER BY id
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
+ORDER BY s.id
 LIMIT 10;
 
 -- name: CustomerCodeExists :one
@@ -431,6 +438,13 @@ WHERE s.tenant_id = sqlc.arg(tenant_id)
   AND (sqlc.arg(keyword)::text = '' OR s.name ILIKE '%' || sqlc.arg(keyword) || '%'
        OR s.name_zh ILIKE '%' || sqlc.arg(keyword) || '%' OR s.name_en ILIKE '%' || sqlc.arg(keyword) || '%'
        OR s.short_name ILIKE '%' || sqlc.arg(keyword) || '%' OR s.code ILIKE '%' || sqlc.arg(keyword) || '%')
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY s.id DESC
 LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
 
@@ -448,12 +462,19 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id)
 RETURNING *;
 
 -- name: ListSupplierCountries :many
-SELECT country_code, count(*) AS supplier_count
-FROM suppliers
-WHERE tenant_id = sqlc.arg(tenant_id)
-  AND (sqlc.arg(include_inactive)::boolean OR status = 'ACTIVE')
-GROUP BY country_code
-ORDER BY country_code;
+SELECT s.country_code, count(*) AS supplier_count
+FROM suppliers s
+WHERE s.tenant_id = sqlc.arg(tenant_id)
+  AND (sqlc.arg(include_inactive)::boolean OR s.status = 'ACTIVE')
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM supplier_owners access_owner
+      WHERE access_owner.tenant_id=s.tenant_id AND access_owner.supplier_id=s.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
+GROUP BY s.country_code
+ORDER BY s.country_code;
 
 -- name: ListSupplierContacts :many
 SELECT * FROM supplier_contacts

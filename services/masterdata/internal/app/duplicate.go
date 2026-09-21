@@ -69,6 +69,7 @@ func (s *Service) CheckSupplierDuplicates(ctx context.Context, tenantID int64, n
 	}
 	rows, err := s.q.SupplierDuplicateCandidates(ctx, store.SupplierDuplicateCandidatesParams{
 		TenantID: tenantID, Name: name, TaxID: taxID, Email: email, ExcludeID: excludeID,
+		AccessEmployeeID: supplierAccessEmployee(ctx),
 	})
 	if err != nil {
 		return nil, err

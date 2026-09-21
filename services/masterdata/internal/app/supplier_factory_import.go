@@ -117,6 +117,15 @@ func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []Su
 			if err != nil {
 				return fmt.Errorf("第 %d 行写入失败: %w", group.row.RowNumber, err)
 			}
+			if operatorID > 0 {
+				if _, err := q.CreateSupplierOwner(ctx, store.CreateSupplierOwnerParams{
+					TenantID: tenantID, SupplierID: created.ID, EmployeeID: operatorID,
+					EmployeeName: supplierOwnerDisplayName(operatorID, operatorName), ResponsibilityCode: "PROCUREMENT",
+					IsPrimary: true, OperatorID: operatorID,
+				}); err != nil {
+					return fmt.Errorf("供应商 %s 负责人写入失败: %w", in.Code, err)
+				}
+			}
 			if err := recordSupplierChange(ctx, q, tenantID, created.ID, "IMPORT", "PROFILE", "批量导入供应商", nil, created, operatorID, operatorName); err != nil {
 				return err
 			}

@@ -13,5 +13,5 @@ func (s *Server) supplierAccessCapabilities(w http.ResponseWriter, r *http.Reque
 		s.writeGRPCError(w, err)
 		return
 	}
-	s.writeJSON(w, map[string]any{"canDelete": scope.GetAll(), "tenantId": op.TenantID})
+	s.writeJSON(w, map[string]any{"canDelete": scope.GetAll(), "canManageOwners": scope.GetAll(), "tenantId": op.TenantID})
 }

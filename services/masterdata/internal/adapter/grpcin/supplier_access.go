@@ -12,11 +12,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-// SupplierAccess supplies the authenticated employee scope to document
-// reminders and enforces the highest-role-only supplier deletion rule.
+// SupplierAccess applies tenant-scoped supplier ownership to every supplier RPC.
 func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
-		if !strings.HasPrefix(info.FullMethod, "/erp.masterdata.v1.SupplierService/") {
+		partyReq, isPartyReq := req.(interface {
+			GetPartyType() string
+			GetPartyId() int64
+		})
+		isSupplierRPC := strings.HasPrefix(info.FullMethod, "/erp.masterdata.v1.SupplierService/")
+		if isPartyReq && strings.EqualFold(partyReq.GetPartyType(), "SUPPLIER") {
+			isSupplierRPC = true
+		}
+		if !isSupplierRPC {
 			return next(ctx, req)
 		}
 		op, ok := grpcx.OperatorFromContext(ctx)
@@ -34,6 +41,26 @@ func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 		ctx = app.WithSupplierAccess(ctx, employeeID)
 		if _, deleting := req.(*mdv1.DeactivateSupplierRequest); deleting && employeeID != 0 {
 			return nil, apierr.Permission("MD_SUPPLIER_DELETE_DENIED", "只有最高权限用户可以删除供应商")
+		}
+		switch req.(type) {
+		case *mdv1.CreateSupplierOwnerRequest, *mdv1.UpdateSupplierOwnerRequest, *mdv1.DeactivateSupplierOwnerRequest:
+			if employeeID != 0 {
+				return nil, apierr.Permission("MD_SUPPLIER_OWNER_MANAGE_DENIED", "只有最高权限用户可以管理供应商负责人")
+			}
+		}
+
+		var supplierID int64
+		if isPartyReq {
+			supplierID = partyReq.GetPartyId()
+		} else if r, ok := req.(interface{ GetSupplierId() int64 }); ok {
+			supplierID = r.GetSupplierId()
+		} else if r, ok := req.(interface{ GetId() int64 }); ok {
+			supplierID = r.GetId()
+		}
+		if supplierID > 0 {
+			if err := h.svc.AuthorizeSupplier(ctx, op.TenantID, supplierID); err != nil {
+				return nil, err
+			}
 		}
 		return next(ctx, req)
 	}

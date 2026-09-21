@@ -75,7 +75,7 @@ func normalizePartyOwner(in *PartyOwnerInput) (pgtype.Date, pgtype.Date, error) 
 }
 
 func (s *Service) ListSupplierCountries(ctx context.Context, tenantID int64, includeInactive bool) ([]store.ListSupplierCountriesRow, error) {
-	return s.q.ListSupplierCountries(ctx, store.ListSupplierCountriesParams{TenantID: tenantID, IncludeInactive: includeInactive})
+	return s.q.ListSupplierCountries(ctx, store.ListSupplierCountriesParams{TenantID: tenantID, IncludeInactive: includeInactive, AccessEmployeeID: supplierAccessEmployee(ctx)})
 }
 
 func (s *Service) ListSupplierContacts(ctx context.Context, tenantID, supplierID int64, includeInactive bool) ([]store.SupplierContact, error) {
@@ -86,6 +86,9 @@ func (s *Service) ListSupplierContacts(ctx context.Context, tenantID, supplierID
 }
 
 func (s *Service) CreateSupplierContact(ctx context.Context, tenantID, supplierID int64, in PartyContactInput) (store.SupplierContact, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return store.SupplierContact{}, err
+	}
 	if err := normalizePartyContact(&in); err != nil {
 		return store.SupplierContact{}, err
 	}
@@ -111,6 +114,9 @@ func (s *Service) CreateSupplierContact(ctx context.Context, tenantID, supplierI
 }
 
 func (s *Service) UpdateSupplierContact(ctx context.Context, tenantID, supplierID, id int64, in PartyContactInput) (store.SupplierContact, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return store.SupplierContact{}, err
+	}
 	if err := normalizePartyContact(&in); err != nil {
 		return store.SupplierContact{}, err
 	}
@@ -136,6 +142,9 @@ func (s *Service) UpdateSupplierContact(ctx context.Context, tenantID, supplierI
 }
 
 func (s *Service) DeactivateSupplierContact(ctx context.Context, tenantID, supplierID, id, operatorID int64, operatorName string) error {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return err
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		n, err := q.DeactivateSupplierContact(ctx, store.DeactivateSupplierContactParams{TenantID: tenantID, SupplierID: supplierID, ID: id, OperatorID: operatorID})
@@ -150,9 +159,18 @@ func (s *Service) DeactivateSupplierContact(ctx context.Context, tenantID, suppl
 }
 
 func (s *Service) ListSupplierOwners(ctx context.Context, tenantID, supplierID int64, includeInactive bool) ([]store.SupplierOwner, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return nil, err
+	}
 	return s.q.ListSupplierOwners(ctx, store.ListSupplierOwnersParams{TenantID: tenantID, SupplierID: supplierID, IncludeInactive: includeInactive})
 }
 func (s *Service) CreateSupplierOwner(ctx context.Context, tenantID, supplierID int64, in PartyOwnerInput) (store.SupplierOwner, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return store.SupplierOwner{}, err
+	}
+	if supplierAccessEmployee(ctx) != 0 {
+		return store.SupplierOwner{}, apierr.Permission("MD_SUPPLIER_OWNER_MANAGE_DENIED", "只有最高权限用户可以管理供应商负责人")
+	}
 	start, end, err := normalizePartyOwner(&in)
 	if err != nil {
 		return store.SupplierOwner{}, err
@@ -174,6 +192,12 @@ func (s *Service) CreateSupplierOwner(ctx context.Context, tenantID, supplierID 
 	return out, err
 }
 func (s *Service) UpdateSupplierOwner(ctx context.Context, tenantID, supplierID, id int64, in PartyOwnerInput) (store.SupplierOwner, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return store.SupplierOwner{}, err
+	}
+	if supplierAccessEmployee(ctx) != 0 {
+		return store.SupplierOwner{}, apierr.Permission("MD_SUPPLIER_OWNER_MANAGE_DENIED", "只有最高权限用户可以管理供应商负责人")
+	}
 	start, end, err := normalizePartyOwner(&in)
 	if err != nil {
 		return store.SupplierOwner{}, err
@@ -195,6 +219,12 @@ func (s *Service) UpdateSupplierOwner(ctx context.Context, tenantID, supplierID,
 	return out, err
 }
 func (s *Service) DeactivateSupplierOwner(ctx context.Context, tenantID, supplierID, id, operatorID int64, operatorName string) error {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return err
+	}
+	if supplierAccessEmployee(ctx) != 0 {
+		return apierr.Permission("MD_SUPPLIER_OWNER_MANAGE_DENIED", "只有最高权限用户可以管理供应商负责人")
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		n, err := q.DeactivateSupplierOwner(ctx, store.DeactivateSupplierOwnerParams{TenantID: tenantID, SupplierID: supplierID, ID: id, OperatorID: operatorID})
@@ -208,5 +238,8 @@ func (s *Service) DeactivateSupplierOwner(ctx context.Context, tenantID, supplie
 	})
 }
 func (s *Service) ListSupplierChanges(ctx context.Context, tenantID, supplierID int64) ([]store.SupplierChangeLog, error) {
+	if err := s.AuthorizeSupplier(ctx, tenantID, supplierID); err != nil {
+		return nil, err
+	}
 	return s.q.ListSupplierChanges(ctx, store.ListSupplierChangesParams{TenantID: tenantID, SupplierID: supplierID})
 }
