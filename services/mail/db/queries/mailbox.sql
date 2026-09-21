@@ -1718,6 +1718,131 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   -- 是同一批，否则底下写着「共 300 封」而列表只有 3 行。
   AND (NOT sqlc.arg(unread_only)::boolean OR any_unread);
 
+-- name: ListMessagesByView :many
+-- 同一份收件箱列表，**一行一封**，不合并会话（mail_list_prefs.list_mode
+-- = 'MESSAGE'）。263 和 Foxmail 的样子，也是 Gmail 关掉对话模式后的样子。
+--
+-- 不读 mail_thread_view：那张表存的是「每条会话的最新一封、共几封、有没有
+-- 未读」，全是关于一组信的事实。一行一封要的正是没有这些聚合的原始行，
+-- 直接读 email_inbound 反而更短、更快——单封模式不需要任何预计算。
+--
+-- 走的还是 email_inbound_owner_idx (tenant_id, owner_id, received_at DESC)。
+-- **没有为它新建索引**：00033 删掉的那个是建在 coalesce(sent_at, received_at)
+-- 上的，那是当年另一条按别的表达式排序的查询要的形状，不是这一条要的。
+-- 按 received_at 排和会话列表是同一个口径，现成的索引正好顺着读。
+--
+-- 视图那一段照抄 ListInboundThreads，一个字不改：一封信属于哪个视图只能有
+-- 一处说了算（mail_view_of，00034/00056），两份列表各写一套的样子是同一封
+-- 信在合并档里在收件箱、在单封档里不在——而且两边都不报错。
+SELECT id, from_email, from_name, subject, snippet, thread_key,
+       is_read, is_starred, has_attachments, is_answered,
+       received_at, sent_at
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
+  AND NOT is_bounce
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
+      END
+  -- 「只看未读」在这一档里问的是这一封读没读，不是「这条会话里还有没有
+  -- 没读的」。两种含义都对，各自对应各自的行。
+  AND (NOT sqlc.arg(unread_only)::boolean OR NOT is_read)
+  -- 在这个视图里按词筛。合并档那边这件事要另开一条查询（mail_thread_view
+  -- 预计算不出「含这个词的会话」），单封档不用——一行就是一封信，条件直接
+  -- 加在行上。所以这一条同时顶替了那边的两条。
+  AND (sqlc.arg(keyword)::text = ''
+       OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
+  -- 游标和会话列表**形状完全一样**：(received_at, id)。两边都按 received_at
+  -- 排，所以拨动开关时手里那个游标仍然指着一个说得通的位置。不过前端换档时
+  -- 还是回到第一页——一行的含义变了，停在原处没有意义。
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (received_at, id) < (sqlc.narg(cursor_at)::timestamptz, sqlc.arg(cursor_id)::bigint))
+ORDER BY received_at DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListMessagesByViewSorted :many
+-- 一行一封，按人点的那一列排。和 ListThreadsByViewSorted 是同一套排序键
+-- 的做法（定宽前缀 + 统一成一段文本），理由见那一条的注释，这里不重复。
+--
+-- 唯一的区别是聚合没了：会话档里「发件人」「大小」取的是**最后一封**的，
+-- 单封档里就是这一封自己的。星标和未读同理——不再是 any_starred/any_unread，
+-- 而是这一行的 is_starred / NOT is_read。
+SELECT x.id, x.from_email, x.from_name, x.subject, x.snippet, x.thread_key,
+       x.is_read, x.is_starred, x.has_attachments, x.is_answered,
+       x.received_at, x.sent_at, x.raw_size, x.sort_key
+FROM (
+    SELECT id, from_email, from_name, subject, snippet, thread_key,
+           is_read, is_starred, has_attachments, is_answered,
+           received_at, sent_at, raw_size,
+           (CASE WHEN sqlc.arg(star_first)::boolean
+                   THEN CASE WHEN is_starred = (sqlc.arg(sort_dir)::text = 'desc')
+                             THEN '1' ELSE '0' END
+                   ELSE '' END
+            || CASE WHEN sqlc.arg(unread_first)::boolean
+                    THEN CASE WHEN (NOT is_read) = (sqlc.arg(sort_dir)::text = 'desc')
+                              THEN '1' ELSE '0' END
+                    ELSE '' END
+            || CASE sqlc.arg(sort_by)::text
+                 WHEN 'from'    THEN lower(coalesce(nullif(from_name, ''), from_email))
+                 WHEN 'subject' THEN lower(subject)
+                 WHEN 'size'    THEN lpad(raw_size::text, 20, '0')
+                 ELSE to_char(received_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+               END)::text                 AS sort_key
+    FROM email_inbound
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+      AND owner_id = sqlc.arg(owner_id)::bigint
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR account_id = sqlc.narg(account_id)::bigint)
+      AND NOT is_bounce
+      AND CASE
+            WHEN sqlc.arg(view)::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
+          END
+      AND (NOT sqlc.arg(unread_only)::boolean OR NOT is_read)
+) x
+WHERE (sqlc.narg(cursor_key)::text IS NULL
+       OR CASE WHEN sqlc.arg(sort_dir)::text = 'asc'
+               THEN (x.sort_key, x.id) > (sqlc.narg(cursor_key)::text, sqlc.arg(cursor_id)::bigint)
+               ELSE (x.sort_key, x.id) < (sqlc.narg(cursor_key)::text, sqlc.arg(cursor_id)::bigint)
+          END)
+ORDER BY CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN x.id END ASC,
+         x.sort_key DESC, x.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: CountMessagesByView :one
+-- 信的封数，不是会话数：分页器数的必须和列表显示的是同一批，否则底下
+-- 写着「共 300 封」而列表是另一个长度。
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
+  AND NOT is_bounce
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
+      END
+  AND (NOT sqlc.arg(unread_only)::boolean OR NOT is_read)
+  AND (sqlc.arg(keyword)::text = ''
+       OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
+
 -- name: ListThreadAttachments :many
 -- 整条会话的附件，一次取回，两个方向。
 --

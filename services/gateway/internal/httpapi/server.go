@@ -845,6 +845,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write")).Post("/api/email-templates", s.createEmailTemplate)
 		r.With(s.perm("mail:email:write")).Put("/api/email-templates/{id}", s.updateEmailTemplate)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-templates/{id}", s.deleteEmailTemplate)
+		// 列表按会话合并还是一行一封。和签名、模板同一档：个人的东西，
+		// 读写各自跟着 read / write，**不要 requireMailUnlock**——这不是
+		// 信箱里的内容，而且页面一打开就要知道该怎么画列表，那时人还没
+		// 解锁任何一个箱。
+		r.With(s.perm("mail:email:read")).Get("/api/mail-list-mode", s.getMailListMode)
+		r.With(s.perm("mail:email:write")).Put("/api/mail-list-mode", s.setMailListMode)
 		// The suppression list is shared by everybody's sends, so maintaining
 		// it is administrative work rather than part of composing a mail.
 		// Attachments and inline images. Uploading is part of composing, so

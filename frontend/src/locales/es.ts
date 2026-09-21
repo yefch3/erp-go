@@ -1943,6 +1943,7 @@ export default {
       current: 'Orden: {name}',
       starFirst: 'Destacados primero',
       unreadFirst: 'No leídos primero',
+      messageMode: 'Mostrar cada mensaje por separado',
     },
     colGrip: {
       rail: 'Ancho de la columna de carpetas',
