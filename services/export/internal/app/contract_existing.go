@@ -198,7 +198,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 		var err error
 		contractID, err = q.CreateExistingContract(ctx, store.CreateExistingContractParams{
 			TenantID: tenantID, ContractNo: contractNo, ExternalContractNo: strings.TrimSpace(in.ExternalContractNo),
-			CustomerID: customer.ID, CustomerName: customer.Name, SalesEmployeeID: ownerID, SalesEmployee: ownerName,
+			CustomerID: customer.ID, CustomerName: customerDisplayName(customer), SalesEmployeeID: ownerID, SalesEmployee: ownerName,
 			ReceivableDueDate: in.Terms.ReceivableDueDate, OpeningReceivedAmount: openingReceived.StringFixed(2),
 			FilePending: false, SignedDate: in.SignedDate, EffectiveDate: in.EffectiveDate, CreatedBy: op.ID,
 		})
@@ -223,7 +223,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 
 		event := contractEffectiveEvent{
 			ContractID: contractID, ContractNo: contractNo, VersionID: versionID, VersionNo: 1,
-			CustomerID: customer.ID, CustomerName: customer.Name, Currency: in.Currency,
+			CustomerID: customer.ID, CustomerName: customerDisplayName(customer), Currency: in.Currency,
 			TotalAmount: total.StringFixed(2), DeliveryDate: terms.DeliveryDate, Incoterm: terms.Incoterm,
 			PortOfDischarge: terms.PortOfDischarge,
 			SalesEmployeeID: ownerID, SalesEmployee: ownerName,

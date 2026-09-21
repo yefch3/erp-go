@@ -204,7 +204,7 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 			s.writeGRPCError(w, e)
 			return
 		}
-		req.CustomerName = customer.GetName()
+		req.CustomerName = customerSnapshotName(customer)
 		if req.GetContactId() > 0 {
 			_, contact, e := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
 			if e != nil {

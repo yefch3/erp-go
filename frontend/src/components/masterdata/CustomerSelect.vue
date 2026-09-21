@@ -13,14 +13,15 @@
     @focus="load('')"
     @update:model-value="change"
   >
-    <el-option v-for="item in options" :key="item.id" :value="item.id" :label="`${item.code} · ${item.name}`" />
+    <el-option v-for="item in options" :key="item.id" :value="item.id" :label="customerOptionLabel(item)" />
   </el-select>
 </template>
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../../api'
-export interface CustomerOption { id:string; code:string; name:string; status:string }
+import { customerOptionLabel } from '../../lib/customerDisplay'
+export interface CustomerOption { id:string; code:string; name:string; shortName:string; status:string }
 defineProps<{modelValue:string|number;placeholder?:string}>()
 const emit=defineEmits<{ 'update:modelValue':[string|number]; selected:[CustomerOption|undefined] }>()
 const {t}=useI18n();const loading=ref(false);const options=ref<CustomerOption[]>([])

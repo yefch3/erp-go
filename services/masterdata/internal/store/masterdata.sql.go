@@ -90,7 +90,7 @@ SELECT
     cc.email,
     cc.is_primary,
     c.id            AS customer_id,
-    c.name          AS customer_name,
+    COALESCE(NULLIF(btrim(c.short_name), ''), c.name)::text AS customer_name,
     c.country,
     c.country_code,
     cc.language,
@@ -111,7 +111,7 @@ WHERE c.tenant_id = $1::bigint
         AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
         AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
   ))
-ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
+ORDER BY COALESCE(NULLIF(btrim(c.short_name), ''), c.name), cc.is_primary DESC, cc.sort_order, cc.id
 `
 
 type AllContactsInCountryParams struct {
@@ -291,7 +291,7 @@ SELECT DISTINCT ON (c.id)
     cc.email,
     cc.is_primary,
     c.id            AS customer_id,
-    c.name          AS customer_name,
+    COALESCE(NULLIF(btrim(c.short_name), ''), c.name)::text AS customer_name,
     c.country,
     c.country_code,
     cc.language,
@@ -2541,7 +2541,8 @@ WITH hits AS (
       AND cc.email <> ''
       AND cc.status = 'ACTIVE'
       AND cc.email_permission = 'ALLOWED'
-      AND c.name ILIKE '%' || $2::text || '%'
+      AND (c.name ILIKE '%' || $2::text || '%'
+           OR c.short_name ILIKE '%' || $2::text || '%')
 )
 SELECT
     cc.id           AS contact_id,
@@ -2550,7 +2551,7 @@ SELECT
     cc.email,
     cc.is_primary,
     c.id            AS customer_id,
-    c.name          AS customer_name,
+    COALESCE(NULLIF(btrim(c.short_name), ''), c.name)::text AS customer_name,
     c.country,
     c.country_code,
     cc.language,
@@ -2575,7 +2576,7 @@ WHERE cc.tenant_id = $1::bigint
         AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
         AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
   ))
-ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
+ORDER BY COALESCE(NULLIF(btrim(c.short_name), ''), c.name), cc.is_primary DESC, cc.sort_order, cc.id
 LIMIT 500
 `
 

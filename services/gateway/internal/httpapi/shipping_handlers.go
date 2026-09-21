@@ -52,7 +52,7 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		if err != nil {
 			return err
 		}
-		in.CustomerName = customer.GetName()
+		in.CustomerName = customerSnapshotName(customer)
 	}
 	if !fromHandoff && in.GetCarrierId() > 0 {
 		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())

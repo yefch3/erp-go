@@ -49,7 +49,7 @@
         <el-form-item :label="t('procurementIntakes.inquiryTitle')"><el-input v-model="uploadForm.title" :placeholder="t('procurementIntakes.titleAuto')" /></el-form-item>
         <el-form-item :label="t('procurementIntakes.customer')" required>
           <el-select v-model="uploadForm.customerId" filterable :loading="customersLoading" :placeholder="t('procurementIntakes.customerPlaceholder')" style="width:100%" @change="loadUploadContacts">
-            <el-option v-for="item in customers" :key="item.id" :value="item.id" :label="`${item.code} · ${item.name}`" />
+            <el-option v-for="item in customers" :key="item.id" :value="item.id" :label="customerOptionLabel(item)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('procurementIntakes.contact')" required>
@@ -151,6 +151,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { download, get, http, post, put, saveBlob, type Envelope } from '../api'
 import { isDialogDismissed } from '../lib/dialogActions'
+import { customerOptionLabel } from '../lib/customerDisplay'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
 import { useAuthStore } from '../stores/auth'
 
@@ -158,7 +159,7 @@ interface Extracted { product: string; materialStandard: string; grade: string; 
 interface IntakeLine { id: string; lineNo: number; decision: string; extracted: Extracted }
 interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; inquiryTemplateId?: string; handoffStatus?: string; returnReason?: string; returnFields?: string[]; requirementVersionNo?: number; lines?: IntakeLine[] }
 interface TemplateField { fieldKey: string; displayName: string; isRequired: boolean; sortOrder: number }
-interface CustomerOption { id: string; code: string; name: string }
+interface CustomerOption { id: string; code: string; name: string; shortName?: string }
 interface CustomerContactOption { id: string; name: string; department: string; title: string; email: string; isPrimary: boolean }
 
 const { t } = useI18n()

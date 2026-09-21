@@ -23,7 +23,7 @@
 
       <el-table :data="quotations" v-loading="loading">
         <el-table-column prop="quoteNo" :label="t('quotations.quoteNo')" width="150" />
-        <el-table-column prop="customerName" :label="t('quotations.customer')" min-width="160" />
+        <el-table-column :label="t('quotations.customer')" min-width="160"><template #default="{ row }">{{ quotationCustomerName(row) }}</template></el-table-column>
         <el-table-column :label="t('quotations.amount')" width="140" align="right">
           <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
         </el-table-column>
@@ -83,7 +83,7 @@
         <div class="grid">
           <el-form-item :label="t('quotations.customer')" required>
             <el-select v-model="form.customerId" filterable style="width: 100%">
-              <el-option v-for="c in customers" :key="c.id" :value="c.id" :label="`${c.code} · ${c.name}`" />
+              <el-option v-for="c in customers" :key="c.id" :value="c.id" :label="customerOptionLabel(c)" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('quotations.contact')">
@@ -222,13 +222,14 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
+import { customerDisplayName, customerOptionLabel } from '../lib/customerDisplay'
 
 // 防重键：报价单重复一张，客户会收到两份一样的报价。
 const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
-interface Customer { id: string; code: string; name: string }
+interface Customer { id: string; code: string; name: string; shortName?: string }
 interface Contact { id: string; name: string; email: string; isPrimary: boolean }
 interface Product { id: string; code: string; name: string }
 interface OptionItem { code: string; label: string }
@@ -310,6 +311,10 @@ const canWrite = auth.can('export:quotation:write')
 
 const quotations = ref<Quotation[]>([])
 const customers = ref<Customer[]>([])
+function quotationCustomerName(row: Quotation) {
+  const customer = customers.value.find(item => String(item.id) === String(row.customerId))
+  return customer ? customerDisplayName(customer) : (row.customerName || '—')
+}
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Quotation | null>(null)

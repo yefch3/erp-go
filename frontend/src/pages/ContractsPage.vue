@@ -28,7 +28,7 @@
           <template #default="{row}">
             <el-button v-if="column.key==='contractNo'" link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button>
             <span v-else-if="column.key==='externalNo'">{{row.externalContractNo||'—'}}</span>
-            <span v-else-if="column.key==='customer'">{{row.customerName||'—'}}</span>
+            <span v-else-if="column.key==='customer'">{{contractCustomerName(row)}}</span>
             <template v-else-if="column.key==='amount'"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
             <span v-else-if="column.key==='owner'">{{ row.salesEmployee || '—' }}</span>
             <el-tag v-else-if="column.key==='status'" size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
@@ -74,7 +74,7 @@
               v-for="c in customers"
               :key="c.id"
               :value="Number(c.id)"
-              :label="`${c.code} · ${c.name}`"
+              :label="customerOptionLabel(c)"
             />
           </el-select>
           <el-select v-model="directForm.currency" style="width: 110px; margin-left: 12px">
@@ -998,6 +998,7 @@ import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { getActionableApproval } from '../lib/approvalAction'
+import { customerDisplayName, customerOptionLabel } from '../lib/customerDisplay'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
@@ -1008,6 +1009,7 @@ interface Contract {
   id: string
   contractNo: string
   quoteNo: string
+  customerId: string
   customerName: string
   currentVersionId: string
   status: string
@@ -1214,7 +1216,12 @@ const saving = ref(false)
 const detailOpen = ref(false)
 const directOpen = ref(false)
 const existingEditOpen = ref(false)
-const customers = ref<{ id: string; code: string; name: string }[]>([])
+const customers = ref<{ id: string; code: string; name: string; shortName?: string }[]>([])
+function contractCustomerName(row: Contract) {
+  const customer = customers.value.find(item => String(item.id) === String(row.customerId))
+    ?? customers.value.find(item => item.name.trim() === row.customerName?.trim())
+  return customer ? customerDisplayName(customer) : (row.customerName || '—')
+}
 const contractPorts = ref<ContractPort[]>([])
 const canReadPorts = auth.can('masterdata:port:read')
 
@@ -1989,6 +1996,7 @@ function formatListTime(value: string): string {
 
 onMounted(async () => {
   await loadContractOwners()
+  if (auth.can('masterdata:customer:read')) await searchCustomers('')
   load()
   // Approval reads the contract's product snapshot; catalog access is optional.
   if (auth.can('product:product:read')) {

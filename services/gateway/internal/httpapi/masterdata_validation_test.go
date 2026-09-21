@@ -20,7 +20,7 @@ type activeCustomerClientStub struct {
 }
 
 func (s activeCustomerClientStub) GetCustomer(context.Context, *mdv1.GetCustomerRequest, ...grpc.CallOption) (*mdv1.GetCustomerResponse, error) {
-	return &mdv1.GetCustomerResponse{Customer: &mdv1.Customer{Id: 7, Name: "测试客户", Status: s.status}}, nil
+	return &mdv1.GetCustomerResponse{Customer: &mdv1.Customer{Id: 7, Name: "测试客户", ShortName: "测试简称", Status: s.status}}, nil
 }
 func (s activeCustomerClientStub) ListCustomerContacts(context.Context, *mdv1.ListCustomerContactsRequest, ...grpc.CallOption) (*mdv1.ListCustomerContactsResponse, error) {
 	return &mdv1.ListCustomerContactsResponse{Contacts: s.contacts}, nil
@@ -152,7 +152,7 @@ func TestCreateSourcingCaseOptionalContactAndMasterdataSnapshots(t *testing.T) {
 		if sourcing.got.GetCustomerId() != 7 {
 			t.Fatalf("客户 id 该原样传下去，实际 %d", sourcing.got.GetCustomerId())
 		}
-		if sourcing.got.GetCustomerName() != "测试客户" {
+		if sourcing.got.GetCustomerName() != "测试简称" {
 			t.Fatalf("名字该来自主数据而不是调用方，实际 %q", sourcing.got.GetCustomerName())
 		}
 		if sourcing.got.GetContactId() != 11 || sourcing.got.GetContactName() != "王经理" || sourcing.got.GetContactEmail() != "wang@example.com" {

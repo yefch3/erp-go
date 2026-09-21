@@ -105,7 +105,7 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 			// enforces one contract per quotation is partial, so rows with no
 			// quotation do not collide with each other.
 			QuotationID: 0, QuoteNo: "",
-			CustomerID: customer.ID, CustomerName: customer.Name,
+			CustomerID: customer.ID, CustomerName: customerDisplayName(customer),
 			SalesEmployeeID: op.ID, SalesEmployee: op.Name,
 			// 应收到期日跟着条款一起进来，落在合同主表上。**从报价生成合同
 			// 那条路（contract.go）也有同样一句**——两条建合同的路，谁漏了
