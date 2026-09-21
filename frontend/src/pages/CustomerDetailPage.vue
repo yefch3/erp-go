@@ -22,9 +22,6 @@
           }}</el-tag>
         </div>
       </div>
-      <div v-if="canWrite" class="hero-actions">
-        <el-button @click="openTemplateBasic">编辑基础资料</el-button>
-      </div>
     </section>
 
     <div class="tab-order-tools"><el-button v-if="tabOrder.customized.value" link type="primary" @click="tabOrder.reset">恢复默认顺序</el-button></div>
@@ -39,7 +36,7 @@
 <template v-if="tab.key === 'documents'">
         <CustomerDocuments v-if="activeTab === 'documents'" :customer-id="id" :can-write="canWrite" />
       </template>
-<template v-if="tab.key === 'basic'"><CustomerBasicInfo v-if="activeTab === 'basic'" :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @navigate="navigateCustomerTab" />
+<template v-if="tab.key === 'basic'"><CustomerBasicInfo v-if="activeTab === 'basic'" :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @navigate="navigateCustomerTab" @edit-contact="openContact" @edit-owner="openOwner" />
  <el-collapse style="margin-top:20px"><el-collapse-item title="其他已有资料" name="legacy"><el-button v-if="canWrite" link type="primary" @click="openProfile">编辑其他资料</el-button><p>英文名称：{{ customer.englishName || '—' }}　官网：{{ customer.website || '—' }}</p><p>备注：{{ customer.remark || '—' }}</p><InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
             <div v-for="field in visibleCustomFields" :key="field.fieldKey" class="custom-info-row">
               <span>{{ field.displayName }}</span>
@@ -310,32 +307,6 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="basicOpen" title="编辑基础资料" width="620px">
-      <el-form :model="basicForm" label-width="100px">
-        <el-form-item label="客户名称" required
-          ><el-input v-model="basicForm.name"
-        /></el-form-item>
-        <el-form-item label="注册国家"
-          ><el-select
-            v-model="basicForm.countryCode"
-            filterable
-            clearable
-            style="width: 100%"
-            ><el-option
-              v-for="c in countryChoices"
-              :key="c.code"
-              :label="c.name"
-              :value="c.code" /></el-select
-        ></el-form-item>
-      </el-form
-      ><template #footer
-        ><el-button @click="basicOpen = false">取消</el-button
-        ><el-button type="primary" :loading="saving" @click="saveBasic"
-          >保存</el-button
-        ></template
-      >
-    </el-dialog>
-
     <el-dialog v-model="taxOpen" title="编辑税务资料" width="680px">
       <el-form :model="taxForm" label-width="110px" class="two-col-form">
         <el-form-item label="注册名称">
@@ -538,10 +509,12 @@
 
     <el-dialog
       v-model="contactOpen"
+      append-to-body
+      top="5vh"
       :title="contactEditing ? '编辑联系人' : '新增联系人'"
-      width="680px"
+      width="min(680px, 94vw)"
     >
-      <el-form :model="contactForm" label-width="100px" class="two-col-form">
+      <el-form :model="contactForm" label-width="100px" class="two-col-form" style="max-height:68vh;overflow-y:auto">
         <el-form-item label="姓名" required
           ><el-input v-model="contactForm.name" /></el-form-item
         ><el-form-item label="主要联系人"
@@ -610,8 +583,10 @@
 
     <el-dialog
       v-model="ownerOpen"
+      append-to-body
+      top="5vh"
       :title="ownerEditing ? '编辑客户负责人' : '添加客户负责人'"
-      width="560px"
+      width="min(560px, 94vw)"
     >
       <el-form :model="ownerForm" label-width="110px">
         <el-form-item label="在职员工" required
@@ -664,7 +639,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, defineComponent, h, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
@@ -770,8 +745,7 @@ const types = ref<any[]>([]),
   responsibilities = ref<any[]>([]),
   employees = ref<any[]>([]);
 const countryChoices = computed(() => countryOptions("zh-CN"));
-const basicOpen = ref(false),
-  taxOpen = ref(false),
+const taxOpen = ref(false),
   creditOpen = ref(false),
   profileOpen = ref(false),
   customerFieldOpen = ref(false),
@@ -781,8 +755,7 @@ const basicOpen = ref(false),
 const addressEditing = ref<string | null>(null),
   contactEditing = ref<string | null>(null),
   ownerEditing = ref<string | null>(null);
-const basicForm = reactive<any>({}),
-  taxForm = reactive<any>({}),
+const taxForm = reactive<any>({}),
   creditForm = reactive<any>({}),
   profileForm = reactive<any>({}),
   customerFieldForm = reactive<any>({ fieldKey: "", displayName: "", aliases: [], sortOrder: 0 }),
@@ -899,7 +872,6 @@ const layoutTenant = ref("");
 const templateBasic = ref<InstanceType<typeof CustomerBasicInfo> | null>(null);
 const tabOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-detail-tabs`, [{"key": "documents", "label": "客户资料"}, {"key": "basic", "label": "基本资料"}, {"key": "addresses", "label": "地址与税务"}, {"key": "contacts", "label": "联系人"}, {"key": "credit", "label": "结算信用"}, {"key": "owners", "label": "负责人"}, {"key": "changes", "label": "变更记录"}]);
 async function navigateCustomerTab(tab: string) { activeTab.value = tab; await loadTab(tab); }
-async function openTemplateBasic() { activeTab.value = "basic"; await nextTick(); templateBasic.value?.open(); }
 async function loadCustomer() {
   const [d, fields] = await Promise.all([
     get<any>(`/customers/${id}`),
@@ -941,31 +913,6 @@ async function loadTab(name: any) {
   if (name === "changes") await loadChanges();
 }
 
-function openBasic() {
-  Object.assign(basicForm, {
-    name: customer.value.name,
-    countryCode: customer.value.countryCode,
-    currency: customer.value.currency,
-    paymentTerm: customer.value.paymentTerm,
-    remark: customer.value.remark,
-  });
-  basicOpen.value = true;
-}
-async function saveBasic() {
-  if (!basicForm.name) {
-    ElMessage.warning("客户名称必填");
-    return;
-  }
-  saving.value = true;
-  try {
-    await put(`/customers/${id}`, basicForm);
-    basicOpen.value = false;
-    await loadCustomer();
-    ElMessage.success("基础资料已保存");
-  } finally {
-    saving.value = false;
-  }
-}
 function openTax() {
   const c = customer.value;
   Object.assign(taxForm, {
@@ -1239,6 +1186,7 @@ async function saveContact() {
       : await post(`/customers/${id}/contacts`, body);
     contactOpen.value = false;
     await loadContacts();
+    await templateBasic.value?.load();
     ElMessage.success("联系人已保存");
   } finally {
     saving.value = false;
@@ -1316,6 +1264,7 @@ async function saveOwner() {
     }
     ownerOpen.value = false;
     await loadOwners();
+    await templateBasic.value?.load();
     ElMessage.success("负责人已保存");
   } finally {
     saving.value = false;
