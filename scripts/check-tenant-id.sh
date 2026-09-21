@@ -67,7 +67,13 @@ for dir in services/*/db/migrations; do
       continue
     fi
     [ "$enforce" -eq 1 ] || continue
-    if awk 'tolower($0) ~ /tenant_id/ && tolower($0) ~ /default/ { found=1 } END { exit(found ? 0 : 1) }' "$f"; then
+    # DROP DEFAULT 不算：它恰好也把 tenant_id 和 default 写在同一行上，而它
+    # 做的正是这条规则想要的事。不排除的话，一条正经的
+    # `ALTER COLUMN tenant_id DROP DEFAULT` 会被这条规则自己判成违规——
+    # 实测过，会。
+    if awk 'tolower($0) ~ /tenant_id/ && tolower($0) ~ /default/ &&
+            tolower($0) !~ /drop[[:space:]]+default/ { found=1 }
+            END { exit(found ? 0 : 1) }' "$f"; then
       echo "FORBIDDEN tenant_id default after explicit-tenant migration: $f"
       fail=1
     fi
