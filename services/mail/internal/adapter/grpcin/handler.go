@@ -481,6 +481,28 @@ func (h *Handler) PresignAttachment(ctx context.Context, req *mailv1.PresignAtta
 	}, nil
 }
 
+func (h *Handler) PreviewDraftAttachments(
+	ctx context.Context, req *mailv1.PreviewDraftAttachmentsRequest,
+) (*mailv1.PreviewDraftAttachmentsResponse, error) {
+	refs := make([]app.DraftAttachmentRef, 0, len(req.GetFiles()))
+	for _, f := range req.GetFiles() {
+		refs = append(refs, app.DraftAttachmentRef{FileKey: f.GetFileKey(), FileName: f.GetFileName()})
+	}
+	files, err := h.svc.PreviewDraftAttachments(ctx, grpcx.TenantID(ctx), refs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.DraftAttachmentLinks, 0, len(files))
+	for _, a := range files {
+		out = append(out, &mailv1.DraftAttachmentLinks{
+			FileKey: a.FileKey, FileName: a.FileName, ContentType: a.ContentType,
+			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
+			PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind,
+		})
+	}
+	return &mailv1.PreviewDraftAttachmentsResponse{Files: out}, nil
+}
+
 func (h *Handler) RegisterAttachment(ctx context.Context, req *mailv1.RegisterAttachmentRequest) (*mailv1.RegisterAttachmentResponse, error) {
 	a, err := h.svc.RegisterAttachment(ctx, grpcx.TenantID(ctx),
 		req.GetCampaignId(), req.GetFileName(), req.GetFileKey(), operator(ctx))

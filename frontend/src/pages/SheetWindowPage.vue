@@ -76,7 +76,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { get } from '../api'
+import { get, post } from '../api'
 import { parseTableFile, type DirectWorkbook } from '../lib/attachmentExcel'
 
 // 画多少。上限是浏览器的力气，不是格式的限制：2000 行 × 60 列已经是 12 万个
@@ -121,32 +121,61 @@ const failureKey = computed(() => {
 
 const sheet = computed(() => book.value?.sheets.find((s) => s.name === active.value) ?? null)
 
+// 这一页有两个来路，取到的都是同一样东西：文件名 + 下载地址。
+//
+//   /mail/<信>/sheet/<附件>       收到的附件：按信找
+//   /attachment/sheet?key=&name=  写信窗口里还没发出去的附件：按 key 找
+//
+// 后者没有信可找——草稿的附件要到发送那一刻才登记。授权在服务端按 key 的
+// 前缀判（见 mail/internal/app/draftattachment.go）。
+async function loadDraftByKey(key: string, name: string) {
+  const d = await post<{ files: { fileName: string; fileSize?: string; downloadUrl?: string }[] }>(
+    '/email-attachments/preview',
+    { files: [{ fileKey: key, fileName: name }] },
+  )
+  const f = d.files?.[0]
+  if (!f) {
+    notHere.value = true
+    throw new Error('no such draft attachment')
+  }
+  return { fileName: f.fileName || name, fileSize: f.fileSize, downloadUrl: f.downloadUrl }
+}
+
+// 收到的附件：按「哪封信的哪个附件」找。
+async function loadFromMail(mailId: string, attId: string) {
+  const d = await get<{ mail: { subject?: string; attachments?: Attachment[] } }>(
+    `/inbound-mails/${mailId}`,
+  )
+  const file = d.mail.attachments?.find((a) => String(a.id) === attId)
+  if (!file) {
+    notHere.value = true
+    throw new Error('no such attachment on this mail')
+  }
+  return { fileName: file.fileName, fileSize: file.fileSize, downloadUrl: file.downloadUrl }
+}
+
 onMounted(async () => {
-  const mailId = String(route.params.id || '')
-  const attId = String(route.params.att || '')
+  const draftKey = String(route.query.key || '')
   try {
-    const d = await get<{ mail: { subject?: string; attachments?: Attachment[] } }>(
-      `/inbound-mails/${mailId}`,
-    )
-    const file = d.mail.attachments?.find((a) => String(a.id) === attId)
-    if (!file) {
-      notHere.value = true
-      throw new Error('no such attachment on this mail')
-    }
-    if (!file.downloadUrl) throw new Error('attachment has no download url')
-    fileName.value = file.fileName
-    downloadUrl.value = file.downloadUrl
-    document.title = file.fileName
-    if (Number(file.fileSize) > MAX_BYTES) {
+    // 两个来路，取到的是同一样东西；往下只有一条路。
+    const f = draftKey
+      ? await loadDraftByKey(draftKey, String(route.query.name || ''))
+      : await loadFromMail(String(route.params.id || ''), String(route.params.att || ''))
+
+    if (!f.downloadUrl) throw new Error('attachment has no download url')
+    fileName.value = f.fileName
+    downloadUrl.value = f.downloadUrl
+    document.title = f.fileName
+    if (Number(f.fileSize ?? 0) > MAX_BYTES) {
       tooBig.value = true
       failed.value = true
       return
     }
 
     // 原文件的字节，从签名地址直接取——和「下载」那颗按钮拿的是同一份东西。
-    const resp = await fetch(file.downloadUrl)
+    const resp = await fetch(f.downloadUrl)
     if (!resp.ok) throw new Error(`attachment fetch failed: ${resp.status}`)
-    const parsed = await parseTableFile(file.fileName, await resp.arrayBuffer(), {
+    const parsed = await parseTableFile(f.fileName, await resp.arrayBuffer(), {
       maxRows: MAX_ROWS,
       maxColumns: MAX_COLUMNS,
       maxSheets: MAX_SHEETS,

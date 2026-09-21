@@ -1929,6 +1929,7 @@ export default {
     bccLabel: 'CCO',
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
+    previewUnavailable: 'Este adjunto no se puede abrir aquí; descárgalo para verlo',
     downloadAll: 'Descargar todo ({n})',
     sortBar: {
       label: 'Ordenar',
