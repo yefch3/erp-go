@@ -843,7 +843,6 @@ function moduleEntrance(path: string): string {
   if (path.startsWith('/shipping/sourcing')) return '/shipping/sourcing'
   if (/^\/shipping\/[^/]+$/.test(path)) return '/shipping/schedules'
   if (path.startsWith('/basic/customers/')) return '/basic/customers'
-  if (path.startsWith('/basic/suppliers/factories/')) return '/basic/suppliers/factories'
   if (path.startsWith('/basic/suppliers/')) return '/basic/suppliers'
   if (/^\/basic\/employees\/\d+$/.test(path)) return '/basic/employees'
   return '/todos'

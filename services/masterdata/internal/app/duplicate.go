@@ -86,26 +86,3 @@ func (s *Service) CheckSupplierDuplicates(ctx context.Context, tenantID int64, n
 	}
 	return out, nil
 }
-
-// CheckFactoryDuplicates 只在同一供应商下比较工厂名称和地址。
-func (s *Service) CheckFactoryDuplicates(ctx context.Context, tenantID, supplierID int64, name, address string, excludeID int64) ([]DuplicateCandidate, error) {
-	name, address = strings.TrimSpace(name), strings.TrimSpace(address)
-	if supplierID == 0 || name == "" {
-		return nil, nil
-	}
-	rows, err := s.q.FactoryDuplicateCandidates(ctx, store.FactoryDuplicateCandidatesParams{
-		TenantID: tenantID, SupplierID: supplierID, Name: name, Address: address, ExcludeID: excludeID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]DuplicateCandidate, len(rows))
-	for i, row := range rows {
-		fields := nameMatches(row.Name, name)
-		if sameText(row.Address, address) {
-			fields = append(fields, "ADDRESS")
-		}
-		out[i] = DuplicateCandidate{ID: row.ID, Code: row.Code, Name: row.Name, SupplierID: row.SupplierID, SupplierName: row.SupplierName, Address: row.Address, MatchFields: fields}
-	}
-	return out, nil
-}

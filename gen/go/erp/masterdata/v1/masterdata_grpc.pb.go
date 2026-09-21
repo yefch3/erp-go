@@ -1705,49 +1705,55 @@ var CreditRatingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SupplierService_CreateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/CreateSupplier"
-	SupplierService_GetSupplier_FullMethodName                   = "/erp.masterdata.v1.SupplierService/GetSupplier"
-	SupplierService_ListSuppliers_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListSuppliers"
-	SupplierService_UpdateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
-	SupplierService_DeactivateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
-	SupplierService_ActivateSupplier_FullMethodName              = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
-	SupplierService_ListSupplierCountries_FullMethodName         = "/erp.masterdata.v1.SupplierService/ListSupplierCountries"
-	SupplierService_ListSupplierContacts_FullMethodName          = "/erp.masterdata.v1.SupplierService/ListSupplierContacts"
-	SupplierService_CreateSupplierContact_FullMethodName         = "/erp.masterdata.v1.SupplierService/CreateSupplierContact"
-	SupplierService_UpdateSupplierContact_FullMethodName         = "/erp.masterdata.v1.SupplierService/UpdateSupplierContact"
-	SupplierService_DeactivateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/DeactivateSupplierContact"
-	SupplierService_ListSupplierOwners_FullMethodName            = "/erp.masterdata.v1.SupplierService/ListSupplierOwners"
-	SupplierService_CreateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
-	SupplierService_UpdateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
-	SupplierService_DeactivateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
-	SupplierService_ListSupplierChanges_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
-	SupplierService_ImportSuppliers_FullMethodName               = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
-	SupplierService_CheckSupplierDuplicates_FullMethodName       = "/erp.masterdata.v1.SupplierService/CheckSupplierDuplicates"
-	SupplierService_GetSupplierDeactivationImpact_FullMethodName = "/erp.masterdata.v1.SupplierService/GetSupplierDeactivationImpact"
-	SupplierService_ListFactories_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListFactories"
-	SupplierService_GetFactory_FullMethodName                    = "/erp.masterdata.v1.SupplierService/GetFactory"
-	SupplierService_CreateFactory_FullMethodName                 = "/erp.masterdata.v1.SupplierService/CreateFactory"
-	SupplierService_UpdateFactory_FullMethodName                 = "/erp.masterdata.v1.SupplierService/UpdateFactory"
-	SupplierService_ListFactoryCountries_FullMethodName          = "/erp.masterdata.v1.SupplierService/ListFactoryCountries"
-	SupplierService_ListFactoryContacts_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListFactoryContacts"
-	SupplierService_CreateFactoryContact_FullMethodName          = "/erp.masterdata.v1.SupplierService/CreateFactoryContact"
-	SupplierService_UpdateFactoryContact_FullMethodName          = "/erp.masterdata.v1.SupplierService/UpdateFactoryContact"
-	SupplierService_DeactivateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/DeactivateFactoryContact"
-	SupplierService_ListFactoryOwners_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListFactoryOwners"
-	SupplierService_CreateFactoryOwner_FullMethodName            = "/erp.masterdata.v1.SupplierService/CreateFactoryOwner"
-	SupplierService_UpdateFactoryOwner_FullMethodName            = "/erp.masterdata.v1.SupplierService/UpdateFactoryOwner"
-	SupplierService_DeactivateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/DeactivateFactoryOwner"
-	SupplierService_ListFactoryCapabilities_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryCapabilities"
-	SupplierService_CreateFactoryCapability_FullMethodName       = "/erp.masterdata.v1.SupplierService/CreateFactoryCapability"
-	SupplierService_DeleteFactoryCapability_FullMethodName       = "/erp.masterdata.v1.SupplierService/DeleteFactoryCapability"
-	SupplierService_ListFactoryCertificates_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryCertificates"
-	SupplierService_CreateFactoryCertificate_FullMethodName      = "/erp.masterdata.v1.SupplierService/CreateFactoryCertificate"
-	SupplierService_DeleteFactoryCertificate_FullMethodName      = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
-	SupplierService_PresignFactoryCertificateFile_FullMethodName = "/erp.masterdata.v1.SupplierService/PresignFactoryCertificateFile"
-	SupplierService_ListFactoryChanges_FullMethodName            = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
-	SupplierService_ImportFactories_FullMethodName               = "/erp.masterdata.v1.SupplierService/ImportFactories"
-	SupplierService_CheckFactoryDuplicates_FullMethodName        = "/erp.masterdata.v1.SupplierService/CheckFactoryDuplicates"
-	SupplierService_GetFactoryDeactivationImpact_FullMethodName  = "/erp.masterdata.v1.SupplierService/GetFactoryDeactivationImpact"
+	SupplierService_CreateSupplier_FullMethodName                    = "/erp.masterdata.v1.SupplierService/CreateSupplier"
+	SupplierService_GetSupplier_FullMethodName                       = "/erp.masterdata.v1.SupplierService/GetSupplier"
+	SupplierService_ListSuppliers_FullMethodName                     = "/erp.masterdata.v1.SupplierService/ListSuppliers"
+	SupplierService_UpdateSupplier_FullMethodName                    = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
+	SupplierService_DeactivateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
+	SupplierService_ActivateSupplier_FullMethodName                  = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
+	SupplierService_ListSupplierCountries_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListSupplierCountries"
+	SupplierService_ListSupplierContacts_FullMethodName              = "/erp.masterdata.v1.SupplierService/ListSupplierContacts"
+	SupplierService_CreateSupplierContact_FullMethodName             = "/erp.masterdata.v1.SupplierService/CreateSupplierContact"
+	SupplierService_UpdateSupplierContact_FullMethodName             = "/erp.masterdata.v1.SupplierService/UpdateSupplierContact"
+	SupplierService_DeactivateSupplierContact_FullMethodName         = "/erp.masterdata.v1.SupplierService/DeactivateSupplierContact"
+	SupplierService_ListSupplierOwners_FullMethodName                = "/erp.masterdata.v1.SupplierService/ListSupplierOwners"
+	SupplierService_CreateSupplierOwner_FullMethodName               = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
+	SupplierService_UpdateSupplierOwner_FullMethodName               = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
+	SupplierService_DeactivateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
+	SupplierService_ListSupplierChanges_FullMethodName               = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
+	SupplierService_ImportSuppliers_FullMethodName                   = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
+	SupplierService_CheckSupplierDuplicates_FullMethodName           = "/erp.masterdata.v1.SupplierService/CheckSupplierDuplicates"
+	SupplierService_GetSupplierDeactivationImpact_FullMethodName     = "/erp.masterdata.v1.SupplierService/GetSupplierDeactivationImpact"
+	SupplierService_ListSupplierDocuments_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListSupplierDocuments"
+	SupplierService_SaveSupplierDocument_FullMethodName              = "/erp.masterdata.v1.SupplierService/SaveSupplierDocument"
+	SupplierService_GetSupplierDocumentFile_FullMethodName           = "/erp.masterdata.v1.SupplierService/GetSupplierDocumentFile"
+	SupplierService_DeleteSupplierDocument_FullMethodName            = "/erp.masterdata.v1.SupplierService/DeleteSupplierDocument"
+	SupplierService_ListSupplierDocumentReminders_FullMethodName     = "/erp.masterdata.v1.SupplierService/ListSupplierDocumentReminders"
+	SupplierService_MarkSupplierDocumentRemindersRead_FullMethodName = "/erp.masterdata.v1.SupplierService/MarkSupplierDocumentRemindersRead"
+	SupplierService_ListFactories_FullMethodName                     = "/erp.masterdata.v1.SupplierService/ListFactories"
+	SupplierService_GetFactory_FullMethodName                        = "/erp.masterdata.v1.SupplierService/GetFactory"
+	SupplierService_CreateFactory_FullMethodName                     = "/erp.masterdata.v1.SupplierService/CreateFactory"
+	SupplierService_UpdateFactory_FullMethodName                     = "/erp.masterdata.v1.SupplierService/UpdateFactory"
+	SupplierService_ListFactoryCountries_FullMethodName              = "/erp.masterdata.v1.SupplierService/ListFactoryCountries"
+	SupplierService_ListFactoryContacts_FullMethodName               = "/erp.masterdata.v1.SupplierService/ListFactoryContacts"
+	SupplierService_CreateFactoryContact_FullMethodName              = "/erp.masterdata.v1.SupplierService/CreateFactoryContact"
+	SupplierService_UpdateFactoryContact_FullMethodName              = "/erp.masterdata.v1.SupplierService/UpdateFactoryContact"
+	SupplierService_DeactivateFactoryContact_FullMethodName          = "/erp.masterdata.v1.SupplierService/DeactivateFactoryContact"
+	SupplierService_ListFactoryOwners_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListFactoryOwners"
+	SupplierService_CreateFactoryOwner_FullMethodName                = "/erp.masterdata.v1.SupplierService/CreateFactoryOwner"
+	SupplierService_UpdateFactoryOwner_FullMethodName                = "/erp.masterdata.v1.SupplierService/UpdateFactoryOwner"
+	SupplierService_DeactivateFactoryOwner_FullMethodName            = "/erp.masterdata.v1.SupplierService/DeactivateFactoryOwner"
+	SupplierService_ListFactoryCapabilities_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListFactoryCapabilities"
+	SupplierService_CreateFactoryCapability_FullMethodName           = "/erp.masterdata.v1.SupplierService/CreateFactoryCapability"
+	SupplierService_DeleteFactoryCapability_FullMethodName           = "/erp.masterdata.v1.SupplierService/DeleteFactoryCapability"
+	SupplierService_ListFactoryCertificates_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListFactoryCertificates"
+	SupplierService_CreateFactoryCertificate_FullMethodName          = "/erp.masterdata.v1.SupplierService/CreateFactoryCertificate"
+	SupplierService_DeleteFactoryCertificate_FullMethodName          = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
+	SupplierService_PresignFactoryCertificateFile_FullMethodName     = "/erp.masterdata.v1.SupplierService/PresignFactoryCertificateFile"
+	SupplierService_ListFactoryChanges_FullMethodName                = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
+	SupplierService_ImportFactories_FullMethodName                   = "/erp.masterdata.v1.SupplierService/ImportFactories"
+	SupplierService_CheckFactoryDuplicates_FullMethodName            = "/erp.masterdata.v1.SupplierService/CheckFactoryDuplicates"
+	SupplierService_GetFactoryDeactivationImpact_FullMethodName      = "/erp.masterdata.v1.SupplierService/GetFactoryDeactivationImpact"
 )
 
 // SupplierServiceClient is the client API for SupplierService service.
@@ -1773,6 +1779,12 @@ type SupplierServiceClient interface {
 	ImportSuppliers(ctx context.Context, in *ImportSuppliersRequest, opts ...grpc.CallOption) (*ImportSuppliersResponse, error)
 	CheckSupplierDuplicates(ctx context.Context, in *CheckSupplierDuplicatesRequest, opts ...grpc.CallOption) (*CheckSupplierDuplicatesResponse, error)
 	GetSupplierDeactivationImpact(ctx context.Context, in *GetSupplierDeactivationImpactRequest, opts ...grpc.CallOption) (*GetSupplierDeactivationImpactResponse, error)
+	ListSupplierDocuments(ctx context.Context, in *ListSupplierDocumentsRequest, opts ...grpc.CallOption) (*ListSupplierDocumentsResponse, error)
+	SaveSupplierDocument(ctx context.Context, in *SaveSupplierDocumentRequest, opts ...grpc.CallOption) (*SaveSupplierDocumentResponse, error)
+	GetSupplierDocumentFile(ctx context.Context, in *GetSupplierDocumentFileRequest, opts ...grpc.CallOption) (*GetSupplierDocumentFileResponse, error)
+	DeleteSupplierDocument(ctx context.Context, in *DeleteSupplierDocumentRequest, opts ...grpc.CallOption) (*DeleteSupplierDocumentResponse, error)
+	ListSupplierDocumentReminders(ctx context.Context, in *ListSupplierDocumentRemindersRequest, opts ...grpc.CallOption) (*ListSupplierDocumentRemindersResponse, error)
+	MarkSupplierDocumentRemindersRead(ctx context.Context, in *MarkSupplierDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkSupplierDocumentRemindersReadResponse, error)
 	ListFactories(ctx context.Context, in *ListFactoriesRequest, opts ...grpc.CallOption) (*ListFactoriesResponse, error)
 	GetFactory(ctx context.Context, in *GetFactoryRequest, opts ...grpc.CallOption) (*GetFactoryResponse, error)
 	CreateFactory(ctx context.Context, in *CreateFactoryRequest, opts ...grpc.CallOption) (*CreateFactoryResponse, error)
@@ -1993,6 +2005,66 @@ func (c *supplierServiceClient) GetSupplierDeactivationImpact(ctx context.Contex
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetSupplierDeactivationImpactResponse)
 	err := c.cc.Invoke(ctx, SupplierService_GetSupplierDeactivationImpact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListSupplierDocuments(ctx context.Context, in *ListSupplierDocumentsRequest, opts ...grpc.CallOption) (*ListSupplierDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierDocumentsResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) SaveSupplierDocument(ctx context.Context, in *SaveSupplierDocumentRequest, opts ...grpc.CallOption) (*SaveSupplierDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveSupplierDocumentResponse)
+	err := c.cc.Invoke(ctx, SupplierService_SaveSupplierDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) GetSupplierDocumentFile(ctx context.Context, in *GetSupplierDocumentFileRequest, opts ...grpc.CallOption) (*GetSupplierDocumentFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSupplierDocumentFileResponse)
+	err := c.cc.Invoke(ctx, SupplierService_GetSupplierDocumentFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeleteSupplierDocument(ctx context.Context, in *DeleteSupplierDocumentRequest, opts ...grpc.CallOption) (*DeleteSupplierDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSupplierDocumentResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeleteSupplierDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListSupplierDocumentReminders(ctx context.Context, in *ListSupplierDocumentRemindersRequest, opts ...grpc.CallOption) (*ListSupplierDocumentRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierDocumentRemindersResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierDocumentReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) MarkSupplierDocumentRemindersRead(ctx context.Context, in *MarkSupplierDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkSupplierDocumentRemindersReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkSupplierDocumentRemindersReadResponse)
+	err := c.cc.Invoke(ctx, SupplierService_MarkSupplierDocumentRemindersRead_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2262,6 +2334,12 @@ type SupplierServiceServer interface {
 	ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error)
 	CheckSupplierDuplicates(context.Context, *CheckSupplierDuplicatesRequest) (*CheckSupplierDuplicatesResponse, error)
 	GetSupplierDeactivationImpact(context.Context, *GetSupplierDeactivationImpactRequest) (*GetSupplierDeactivationImpactResponse, error)
+	ListSupplierDocuments(context.Context, *ListSupplierDocumentsRequest) (*ListSupplierDocumentsResponse, error)
+	SaveSupplierDocument(context.Context, *SaveSupplierDocumentRequest) (*SaveSupplierDocumentResponse, error)
+	GetSupplierDocumentFile(context.Context, *GetSupplierDocumentFileRequest) (*GetSupplierDocumentFileResponse, error)
+	DeleteSupplierDocument(context.Context, *DeleteSupplierDocumentRequest) (*DeleteSupplierDocumentResponse, error)
+	ListSupplierDocumentReminders(context.Context, *ListSupplierDocumentRemindersRequest) (*ListSupplierDocumentRemindersResponse, error)
+	MarkSupplierDocumentRemindersRead(context.Context, *MarkSupplierDocumentRemindersReadRequest) (*MarkSupplierDocumentRemindersReadResponse, error)
 	ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error)
 	GetFactory(context.Context, *GetFactoryRequest) (*GetFactoryResponse, error)
 	CreateFactory(context.Context, *CreateFactoryRequest) (*CreateFactoryResponse, error)
@@ -2354,6 +2432,24 @@ func (UnimplementedSupplierServiceServer) CheckSupplierDuplicates(context.Contex
 }
 func (UnimplementedSupplierServiceServer) GetSupplierDeactivationImpact(context.Context, *GetSupplierDeactivationImpactRequest) (*GetSupplierDeactivationImpactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierDeactivationImpact not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierDocuments(context.Context, *ListSupplierDocumentsRequest) (*ListSupplierDocumentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierDocuments not implemented")
+}
+func (UnimplementedSupplierServiceServer) SaveSupplierDocument(context.Context, *SaveSupplierDocumentRequest) (*SaveSupplierDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveSupplierDocument not implemented")
+}
+func (UnimplementedSupplierServiceServer) GetSupplierDocumentFile(context.Context, *GetSupplierDocumentFileRequest) (*GetSupplierDocumentFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierDocumentFile not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeleteSupplierDocument(context.Context, *DeleteSupplierDocumentRequest) (*DeleteSupplierDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteSupplierDocument not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierDocumentReminders(context.Context, *ListSupplierDocumentRemindersRequest) (*ListSupplierDocumentRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierDocumentReminders not implemented")
+}
+func (UnimplementedSupplierServiceServer) MarkSupplierDocumentRemindersRead(context.Context, *MarkSupplierDocumentRemindersReadRequest) (*MarkSupplierDocumentRemindersReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkSupplierDocumentRemindersRead not implemented")
 }
 func (UnimplementedSupplierServiceServer) ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFactories not implemented")
@@ -2786,6 +2882,114 @@ func _SupplierService_GetSupplierDeactivationImpact_Handler(srv interface{}, ctx
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SupplierServiceServer).GetSupplierDeactivationImpact(ctx, req.(*GetSupplierDeactivationImpactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListSupplierDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierDocuments(ctx, req.(*ListSupplierDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_SaveSupplierDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveSupplierDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).SaveSupplierDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_SaveSupplierDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).SaveSupplierDocument(ctx, req.(*SaveSupplierDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_GetSupplierDocumentFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSupplierDocumentFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).GetSupplierDocumentFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_GetSupplierDocumentFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).GetSupplierDocumentFile(ctx, req.(*GetSupplierDocumentFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeleteSupplierDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSupplierDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeleteSupplierDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeleteSupplierDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeleteSupplierDocument(ctx, req.(*DeleteSupplierDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListSupplierDocumentReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierDocumentRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierDocumentReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierDocumentReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierDocumentReminders(ctx, req.(*ListSupplierDocumentRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_MarkSupplierDocumentRemindersRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkSupplierDocumentRemindersReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).MarkSupplierDocumentRemindersRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_MarkSupplierDocumentRemindersRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).MarkSupplierDocumentRemindersRead(ctx, req.(*MarkSupplierDocumentRemindersReadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3304,6 +3508,30 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSupplierDeactivationImpact",
 			Handler:    _SupplierService_GetSupplierDeactivationImpact_Handler,
+		},
+		{
+			MethodName: "ListSupplierDocuments",
+			Handler:    _SupplierService_ListSupplierDocuments_Handler,
+		},
+		{
+			MethodName: "SaveSupplierDocument",
+			Handler:    _SupplierService_SaveSupplierDocument_Handler,
+		},
+		{
+			MethodName: "GetSupplierDocumentFile",
+			Handler:    _SupplierService_GetSupplierDocumentFile_Handler,
+		},
+		{
+			MethodName: "DeleteSupplierDocument",
+			Handler:    _SupplierService_DeleteSupplierDocument_Handler,
+		},
+		{
+			MethodName: "ListSupplierDocumentReminders",
+			Handler:    _SupplierService_ListSupplierDocumentReminders_Handler,
+		},
+		{
+			MethodName: "MarkSupplierDocumentRemindersRead",
+			Handler:    _SupplierService_MarkSupplierDocumentRemindersRead_Handler,
 		},
 		{
 			MethodName: "ListFactories",

@@ -48,8 +48,6 @@ export const router = createRouter({
         { path: 'basic/employees/:id(\\d+)', component: () => import('./pages/EmployeeDetailPage.vue') },
         { path: 'basic/ports', component: () => import('./pages/PortsPage.vue') },
         { path: 'basic/suppliers', component: () => import('./pages/SuppliersPage.vue') },
-        { path: 'basic/suppliers/factories', component: () => import('./pages/FactoriesPage.vue') },
-        { path: 'basic/suppliers/factories/:id', component: () => import('./pages/FactoryDetailPage.vue') },
         { path: 'basic/suppliers/:id', component: () => import('./pages/SupplierDetailPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
         // 客户询盘、报价接收与部门报价使用独立页面视角。

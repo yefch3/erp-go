@@ -428,6 +428,34 @@ type SupplierContact struct {
 	UpdatedBy  int64
 }
 
+type SupplierDocument struct {
+	ID              int64
+	TenantID        int64
+	SupplierID      int64
+	DocumentID      int64
+	Version         int32
+	Title           string
+	Remark          string
+	FileKey         string
+	FileName        string
+	ContentType     string
+	SizeBytes       int64
+	ExpiresOn       pgtype.Date
+	RemindDays      int32
+	ReminderEnabled bool
+	UploadedBy      int64
+	UploadedByName  string
+	CreatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+}
+
+type SupplierDocumentRead struct {
+	TenantID   int64
+	RevisionID int64
+	EmployeeID int64
+	ReadAt     pgtype.Timestamptz
+}
+
 type SupplierOwner struct {
 	ID                 int64
 	TenantID           int64

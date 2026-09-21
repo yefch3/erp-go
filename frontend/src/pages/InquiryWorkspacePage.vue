@@ -379,11 +379,11 @@ async function procurementCompanySearch(query=''){
  procurementCompanyLoading.value=true
  try{
   const [factories,suppliers]=await Promise.allSettled([
-   get<{factories:{nameZh?:string;nameEn?:string;name?:string}[]}>('/factories',{keyword:query,page:1,page_size:50}),
+   get<{suppliers:{nameZh?:string;nameEn?:string;name?:string}[]}>('/suppliers',{keyword:query,page:1,page_size:50,status:'ACTIVE'}),
    get<{suppliers:{name:string}[]}>('/suppliers',{keyword:query,page:1,page_size:50,status:'ACTIVE'}),
   ])
   const names=[
-   ...(factories.status==='fulfilled'?(factories.value.factories||[]).flatMap(row=>[row.nameZh,row.nameEn,row.name]):[]),
+   ...(factories.status==='fulfilled'?(factories.value.suppliers||[]).flatMap(row=>[row.nameZh,row.nameEn,row.name]):[]),
    ...(suppliers.status==='fulfilled'?(suppliers.value.suppliers||[]).map(row=>row.name):[]),
   ].map(value=>(value||'').trim()).filter(Boolean)
   procurementCompanyOptions.value=[...new Set(names)].map(value=>({label:value,value}))
@@ -396,7 +396,7 @@ async function portSearch(query=''){
   portOptions.value=(data.ports||[]).map(port=>{const value=(port.nameZh||port.nameEn||port.unlocode||'').trim();return{value,label:[port.unlocode,port.nameZh||port.nameEn,port.countryCode].filter(Boolean).join(' · ')||value}}).filter(option=>option.value)
  }catch{portOptions.value=[]}finally{portLoading.value=false}
 }
-async function companySuggestions(query:string,done:(items:{value:string}[])=>void){try{const factory=view.value==='PROCUREMENT';const r=await get<{factories?:{nameZh?:string;name?:string}[];suppliers?:{name:string}[]}>(factory?'/factories':'/suppliers',{keyword:query,page:1,page_size:50});done((factory?r.factories||[]:r.suppliers||[]).map(x=>({value:('nameZh' in x?x.nameZh:x.name)||x.name||''})).filter(x=>x.value!==''))}catch{done([])}}
+async function companySuggestions(query:string,done:(items:{value:string}[])=>void){try{const r=await get<{suppliers?:{nameZh?:string;nameEn?:string;name?:string}[]}>('/suppliers',{keyword:query,page:1,page_size:50,status:'ACTIVE'});done((r.suppliers||[]).map(x=>({value:x.nameZh||x.nameEn||x.name||''})).filter(x=>x.value!==''))}catch{done([])}}
 function freightRateFor(productId:string){return editor.value?.body.freightRates.find(rate=>rate.productId===productId)}
 function toggleFreightProduct(product:Product,selected:boolean){if(!editor.value)return;if(selected){if(!freightRateFor(product.id))editor.value.body.freightRates.push({productId:product.id,price:'',currency:editor.value.body.currency||'USD',unit:product.unit||'MT',remark:''})}else editor.value.body.freightRates=editor.value.body.freightRates.filter(rate=>rate.productId!==product.id);editor.value.body.cargoIds=editor.value.body.freightRates.map(rate=>rate.productId)}
 function chargeAllocationChanged(row:{allocationType?:string;productId?:string}){if(row.allocationType!=='DIRECT')row.productId=''}

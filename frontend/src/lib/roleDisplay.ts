@@ -84,7 +84,6 @@ const resources: Record<string, Record<'en' | 'es', string>> = {
   'mail:export': { en: 'export records', es: 'registros de exportación' },
   'mail:suppression': { en: 'suppression list', es: 'lista de exclusión' },
   'masterdata:customer': { en: 'customers', es: 'clientes' },
-  'masterdata:factory': { en: 'factories', es: 'fábricas' },
   'masterdata:port': { en: 'ports', es: 'puertos' },
   'masterdata:supplier': { en: 'suppliers', es: 'proveedores' },
   'procurement:exception': { en: 'purchase receipt exceptions', es: 'incidencias de recepción' },

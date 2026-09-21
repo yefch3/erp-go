@@ -29,7 +29,7 @@ type Visibility struct {
 func (s *Service) VisibleEmployees(ctx context.Context, tenantID, employeeID int64, module string) (Visibility, error) {
 	// Customer access follows the existing owner relation, never a department
 	// scope or document creator. Only the system's highest role bypasses it.
-	if module == "customer" {
+	if module == "customer" || module == "supplier" {
 		var all bool
 		err := s.pool.QueryRow(ctx, `SELECT EXISTS (
 			SELECT 1 FROM employee_roles er JOIN roles r ON r.id=er.role_id AND r.tenant_id=er.tenant_id

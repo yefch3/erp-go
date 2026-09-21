@@ -40,13 +40,6 @@ func (s *Service) DeactivationImpact(ctx context.Context, tenantID int64, entity
 		specs = []spec{
 			{"purchase_orders", "PURCHASE_ORDER", "未结束的采购单", `SELECT count(*) FROM purchase_orders WHERE tenant_id=$1 AND supplier_id=$2 AND status NOT IN ('RECEIVED','CANCELLED')`},
 			{"factory_rfqs", "FACTORY_RFQ", "未结束的询价", `SELECT count(*) FROM factory_rfqs WHERE tenant_id=$1 AND supplier_id=$2 AND status NOT IN ('CLOSED','CANCELLED')`},
-			{"factories", "AVAILABLE_FACTORY", "将联动暂停的工厂", `SELECT count(*) FROM factories WHERE tenant_id=$1 AND supplier_id=$2 AND status IN ('PREPARING','COOPERATING')`},
-		}
-	case "FACTORY":
-		specs = []spec{
-			{"factory_contacts", "FACTORY_CONTACT", "有效联系人", `SELECT count(*) FROM factory_contacts WHERE tenant_id=$1 AND factory_id=$2 AND status='ACTIVE'`},
-			{"factory_owners", "FACTORY_OWNER", "有效负责人", `SELECT count(*) FROM factory_owners WHERE tenant_id=$1 AND factory_id=$2 AND status='ACTIVE'`},
-			{"factory_capabilities", "FACTORY_CAPABILITY", "产能资料", `SELECT count(*) FROM factory_capabilities WHERE tenant_id=$1 AND factory_id=$2`},
 		}
 	case "PORT":
 		specs = []spec{

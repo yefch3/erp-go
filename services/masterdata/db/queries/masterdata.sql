@@ -332,29 +332,6 @@ WHERE tenant_id = sqlc.arg(tenant_id)
 ORDER BY id
 LIMIT 10;
 
--- name: FactoryDuplicateCandidates :many
-SELECT f.id, f.code, f.supplier_id,
-       coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name)::text AS supplier_name,
-       coalesce(nullif(f.name_zh, ''), f.name_en)::text AS name, f.address
-FROM factories f
-JOIN suppliers s ON s.tenant_id = f.tenant_id AND s.id = f.supplier_id
-WHERE f.tenant_id = sqlc.arg(tenant_id)
-  AND f.supplier_id = sqlc.arg(supplier_id)
-  AND (sqlc.arg(exclude_id)::bigint = 0 OR f.id <> sqlc.arg(exclude_id))
-  AND sqlc.arg(name)::text <> ''
-  AND (
-    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) = lower(btrim(sqlc.arg(name))) OR
-    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
-    lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) || '%'
-  )
-  AND (
-    sqlc.arg(address)::text = '' OR f.address = '' OR
-    lower(regexp_replace(btrim(f.address), '[[:space:]]+', '', 'g')) =
-      lower(regexp_replace(btrim(sqlc.arg(address)), '[[:space:]]+', '', 'g'))
-  )
-ORDER BY f.id
-LIMIT 10;
-
 -- name: CustomerCodeExists :one
 SELECT EXISTS(
     SELECT 1 FROM customers WHERE tenant_id = sqlc.arg(tenant_id) AND code = sqlc.arg(code)
@@ -439,7 +416,7 @@ SELECT EXISTS (
 
 -- name: ListSuppliers :many
 SELECT s.*,
-       (SELECT count(*) FROM factories f WHERE f.tenant_id = s.tenant_id AND f.supplier_id = s.id AND f.status <> 'INACTIVE') AS factory_count,
+       0::bigint AS factory_count,
        COALESCE((SELECT string_agg(so.employee_name, '、' ORDER BY so.is_primary DESC, so.id)
           FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id AND so.status = 'ACTIVE'), ''::text)::text AS owner_names,
        count(*) OVER () AS total
@@ -540,105 +517,6 @@ VALUES (sqlc.arg(tenant_id), sqlc.arg(supplier_id), sqlc.arg(action), sqlc.arg(s
 -- name: ListSupplierChanges :many
 SELECT * FROM supplier_change_logs WHERE tenant_id=sqlc.arg(tenant_id) AND supplier_id=sqlc.arg(supplier_id)
 ORDER BY created_at DESC, id DESC LIMIT 200;
-
--- name: ListFactories :many
-SELECT f.*, s.code AS supplier_code, s.name AS supplier_name,
- COALESCE((SELECT string_agg(fo.employee_name, '、' ORDER BY fo.is_primary DESC, fo.id)
-  FROM factory_owners fo WHERE fo.tenant_id=f.tenant_id AND fo.factory_id=f.id AND fo.status='ACTIVE'), ''::text)::text AS owner_names,
- count(*) OVER () AS total
-FROM factories f JOIN suppliers s ON s.tenant_id=f.tenant_id AND s.id=f.supplier_id
-WHERE f.tenant_id=sqlc.arg(tenant_id)
- AND (sqlc.arg(status)::text='ALL' OR (sqlc.arg(status)::text='' AND f.status<>'INACTIVE') OR f.status=sqlc.arg(status)::text)
- AND (sqlc.arg(country_code)::text='' OR f.country_code=sqlc.arg(country_code)::text)
- AND (sqlc.arg(city)::text='' OR f.city ILIKE '%' || sqlc.arg(city)::text || '%')
- AND (sqlc.arg(supplier_id)::bigint=0 OR f.supplier_id=sqlc.arg(supplier_id)::bigint)
- AND (sqlc.arg(owner_id)::bigint=0 OR EXISTS (SELECT 1 FROM factory_owners fo WHERE fo.tenant_id=f.tenant_id AND fo.factory_id=f.id AND fo.employee_id=sqlc.arg(owner_id)::bigint AND fo.status='ACTIVE'))
- AND (sqlc.arg(product_category)::text='' OR EXISTS (
-   SELECT 1 FROM factory_capabilities fc
-   WHERE fc.tenant_id=f.tenant_id AND fc.factory_id=f.id
-     AND fc.product_category ILIKE '%' || sqlc.arg(product_category)::text || '%'))
- AND (sqlc.arg(keyword)::text='' OR f.code ILIKE '%' || sqlc.arg(keyword)::text || '%' OR f.name_zh ILIKE '%' || sqlc.arg(keyword)::text || '%' OR f.name_en ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY f.id DESC LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
-
--- name: GetFactory :one
-SELECT * FROM factories WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id);
-
--- name: FactoryCodeExists :one
-SELECT EXISTS (
-  SELECT 1 FROM factories
-  WHERE tenant_id = sqlc.arg(tenant_id) AND upper(code) = upper(sqlc.arg(code))
-);
-
--- name: CreateFactory :one
-INSERT INTO factories (tenant_id,supplier_id,code,name_zh,name_en,short_name,country_code,timezone,state_province,city,district,postal_code,address,status,remark,created_by,updated_by)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(supplier_id),sqlc.arg(code),sqlc.arg(name_zh),sqlc.arg(name_en),sqlc.arg(short_name),
- sqlc.arg(country_code),sqlc.arg(timezone),sqlc.arg(state_province),sqlc.arg(city),sqlc.arg(district),sqlc.arg(postal_code),
- sqlc.arg(address),sqlc.arg(status),sqlc.arg(remark),sqlc.arg(operator_id),sqlc.arg(operator_id)) RETURNING *;
-
--- name: UpdateFactory :one
-UPDATE factories SET supplier_id=sqlc.arg(supplier_id),name_zh=sqlc.arg(name_zh),name_en=sqlc.arg(name_en),short_name=sqlc.arg(short_name),
- country_code=sqlc.arg(country_code),timezone=sqlc.arg(timezone),state_province=sqlc.arg(state_province),city=sqlc.arg(city),district=sqlc.arg(district),
- postal_code=sqlc.arg(postal_code),address=sqlc.arg(address),status=sqlc.arg(status),remark=sqlc.arg(remark),updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id) RETURNING *;
-
--- name: ListFactoryCountries :many
-SELECT country_code,count(*) AS factory_count FROM factories WHERE tenant_id=sqlc.arg(tenant_id)
- AND (sqlc.arg(include_inactive)::boolean OR status<>'INACTIVE') GROUP BY country_code ORDER BY country_code;
-
--- name: ListFactoryContacts :many
-SELECT * FROM factory_contacts WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id)
- AND (sqlc.arg(include_inactive)::boolean OR status='ACTIVE') ORDER BY is_primary DESC,id;
--- name: CreateFactoryContact :one
-INSERT INTO factory_contacts (tenant_id,factory_id,name,department,title,phone,email,is_primary,remark,created_by,updated_by)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_id),sqlc.arg(name),sqlc.arg(department),sqlc.arg(title),sqlc.arg(phone),sqlc.arg(email),sqlc.arg(is_primary),sqlc.arg(remark),sqlc.arg(operator_id),sqlc.arg(operator_id)) RETURNING *;
--- name: UpdateFactoryContact :one
-UPDATE factory_contacts SET name=sqlc.arg(name),department=sqlc.arg(department),title=sqlc.arg(title),phone=sqlc.arg(phone),email=sqlc.arg(email),is_primary=sqlc.arg(is_primary),remark=sqlc.arg(remark),updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id) RETURNING *;
--- name: DeactivateFactoryContact :execrows
-UPDATE factory_contacts SET status='INACTIVE',is_primary=false,updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id) AND status='ACTIVE';
--- name: ClearFactoryPrimaryContact :exec
-UPDATE factory_contacts SET is_primary=false,updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND status='ACTIVE' AND id<>sqlc.arg(except_id);
-
--- name: ListFactoryOwners :many
-SELECT * FROM factory_owners WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id)
- AND (sqlc.arg(include_inactive)::boolean OR status='ACTIVE') ORDER BY is_primary DESC,id;
--- name: CreateFactoryOwner :one
-INSERT INTO factory_owners (tenant_id,factory_id,employee_id,employee_name,responsibility_code,is_primary,start_date,end_date,created_by,updated_by)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_id),sqlc.arg(employee_id),sqlc.arg(employee_name),sqlc.arg(responsibility_code),sqlc.arg(is_primary),sqlc.narg(start_date),sqlc.narg(end_date),sqlc.arg(operator_id),sqlc.arg(operator_id)) RETURNING *;
--- name: UpdateFactoryOwner :one
-UPDATE factory_owners SET employee_id=sqlc.arg(employee_id),employee_name=sqlc.arg(employee_name),responsibility_code=sqlc.arg(responsibility_code),is_primary=sqlc.arg(is_primary),start_date=sqlc.narg(start_date),end_date=sqlc.narg(end_date),updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id) RETURNING *;
--- name: DeactivateFactoryOwner :execrows
-UPDATE factory_owners SET status='INACTIVE',is_primary=false,updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id) AND status='ACTIVE';
--- name: ClearFactoryPrimaryOwner :exec
-UPDATE factory_owners SET is_primary=false,updated_by=sqlc.arg(operator_id),updated_at=now()
-WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND status='ACTIVE' AND id<>sqlc.arg(except_id);
-
--- name: ListFactoryCapabilities :many
-SELECT * FROM factory_capabilities WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) ORDER BY id;
--- name: CreateFactoryCapability :one
-INSERT INTO factory_capabilities (tenant_id,factory_id,product_category,process,monthly_capacity,capacity_unit,moq,lead_time_days,period_label,confirmed_on,remark,created_by,updated_by)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_id),sqlc.arg(product_category),sqlc.arg(process),sqlc.arg(monthly_capacity),sqlc.arg(capacity_unit),sqlc.arg(moq),sqlc.arg(lead_time_days),sqlc.arg(period_label),sqlc.narg(confirmed_on),sqlc.arg(remark),sqlc.arg(operator_id),sqlc.arg(operator_id)) RETURNING *;
--- name: DeleteFactoryCapability :execrows
-DELETE FROM factory_capabilities WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id);
-
--- name: ListFactoryCertificates :many
-SELECT * FROM factory_certificates WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) ORDER BY expires_on NULLS LAST,id;
--- name: CreateFactoryCertificate :one
-INSERT INTO factory_certificates (tenant_id,factory_id,name,certificate_no,issued_on,expires_on,status,file_key,remark,created_by,updated_by)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_id),sqlc.arg(name),sqlc.arg(certificate_no),sqlc.narg(issued_on),sqlc.narg(expires_on),sqlc.arg(status),sqlc.arg(file_key),sqlc.arg(remark),sqlc.arg(operator_id),sqlc.arg(operator_id)) RETURNING *;
--- name: DeleteFactoryCertificate :execrows
-DELETE FROM factory_certificates WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id) AND id=sqlc.arg(id);
-
--- name: CreateFactoryChange :exec
-INSERT INTO factory_change_logs (tenant_id,factory_id,action,section,summary,before_data,after_data,operator_id,operator_name)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_id),sqlc.arg(action),sqlc.arg(section),sqlc.arg(summary),sqlc.arg(before_data),sqlc.arg(after_data),sqlc.arg(operator_id),sqlc.arg(operator_name));
--- name: ListFactoryChanges :many
-SELECT * FROM factory_change_logs WHERE tenant_id=sqlc.arg(tenant_id) AND factory_id=sqlc.arg(factory_id)
-ORDER BY created_at DESC,id DESC LIMIT 200;
 
 -- name: DeactivateSupplier :execrows
 UPDATE suppliers SET status = 'INACTIVE', updated_by = $3, updated_at = now()
