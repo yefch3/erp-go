@@ -21,7 +21,7 @@ func (d2OfferScopes) VisibleEmployees(context.Context, int64, string) (Visibilit
 	return Visibility{All: true}, nil
 }
 func (d2OfferScopes) HasPermission(_ context.Context, id int64, code string) (bool, error) {
-	return id == 1 || id == 2 && code == "export:quotation:read", nil
+	return id == 1 || id == 3 || id == 2 && code == "export:quotation:read", nil
 }
 
 type d2OwnerScope struct{}
@@ -115,9 +115,13 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	body.Lines[0].Quantity = "60"
 	body.Lines[0].UnitPrice = "125"
 	if _, err := call(2, OfferCommand{Action: "save", CaseID: "901", Body: body}); err == nil {
-		t.Fatal("manager modified owner's quote")
+		t.Fatal("read-only employee modified owner's quote")
 	}
-	saved, err := call(1, OfferCommand{Action: "save", CaseID: "901", Body: body})
+	managerView, err := call(3, OfferCommand{Action: "get", CaseID: "901"})
+	if err != nil || !managerView.CanEdit {
+		t.Fatal("authorized manager cannot edit visible quote", managerView, err)
+	}
+	saved, err := call(3, OfferCommand{Action: "save", CaseID: "901", Body: body})
 	if err != nil {
 		t.Fatal(err)
 	}

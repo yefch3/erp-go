@@ -560,7 +560,7 @@ func (s *Server) Router() http.Handler {
 		r.Post("/api/inquiry-workspace", s.inquiryWorkspace)
 		r.Get("/api/inquiry-files", s.inquiryFile)
 		// 客户询盘由销售维护；客户选择项不因此开放完整客户档案菜单。
-		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options", s.listSourcingCustomerOptions)
+		r.With(s.perm("sales:inquiry:read")).Get("/api/sourcing-customer-options", s.listSourcingCustomerOptions)
 		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options/{id}/contacts", s.listSourcingCustomerContacts)
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries", s.listSourcingCases)
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}", s.getSourcingCase)

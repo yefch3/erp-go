@@ -63,8 +63,11 @@ func TestOfficePreviewConfigSignsAViewOnlyConfig(t *testing.T) {
 		}
 		return id
 	}
-	xlsx := attach("2026 报价单.xlsx", "att/quote")
-	zipped := attach("resources.zip", "att/quote")
+	// 两个附件各有各的位置。共用一个位置从 00071 起是写不进库的——那正是
+	// 2026-09-20 毁掉一批内嵌图的形状；这里要验的是「按文件名分流预览」，
+	// 和它们存在哪儿无关。
+	xlsx := attach("2026 报价单.xlsx", "att/quote-1")
+	zipped := attach("resources.zip", "att/quote-2")
 
 	// 列表上这一档标成 office：前端靠它决定点预览去哪儿。
 	got, err := svc.GetInbound(ctx, tenantID, me, mail)

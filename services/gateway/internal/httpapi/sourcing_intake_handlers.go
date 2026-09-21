@@ -24,9 +24,10 @@ import (
 const standardizedInquiryMaxBytes = 8 << 20
 
 type sourcingCustomerOption struct {
-	ID   string `json:"id"`
-	Code string `json:"code"`
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+	ShortName string `json:"shortName"`
 }
 
 type sourcingCustomerContactOption struct {
@@ -51,7 +52,7 @@ func (s *Server) listSourcingCustomerOptions(w http.ResponseWriter, r *http.Requ
 	items := make([]sourcingCustomerOption, 0, len(resp.GetCustomers()))
 	for _, customer := range resp.GetCustomers() {
 		items = append(items, sourcingCustomerOption{
-			ID: strconv.FormatInt(customer.GetId(), 10), Code: customer.GetCode(), Name: customer.GetName(),
+			ID: strconv.FormatInt(customer.GetId(), 10), Code: customer.GetCode(), Name: customer.GetName(), ShortName: customer.GetShortName(),
 		})
 	}
 	s.writeJSON(w, map[string]any{"customers": items})

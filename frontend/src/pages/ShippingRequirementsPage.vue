@@ -12,14 +12,20 @@
         <el-input v-model="keyword" :placeholder="t('shipping.executionInquirySearch')" clearable @keyup.enter="page = 1" />
         <el-select v-model="status" :placeholder="t('common.status')" clearable @change="load"><el-option v-for="item in statuses" :key="item" :label="statusLabel(item)" :value="item" /></el-select>
         <el-button @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button v-if="handoffColumns.customized.value" link @click="handoffColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
       <el-table :data="pagedRows" v-loading="loading" @row-click="openDetail">
-        <el-table-column :label="t('shipping.contractNo')" width="175"><template #default="{ row }"><span class="contract-no">{{ row.contractNo }}</span></template></el-table-column>
-        <el-table-column prop="customerName" :label="t('shipping.customer')" min-width="145" />
-        <el-table-column :label="t('shipping.route')" min-width="190"><template #default="{ row }">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</template></el-table-column>
-        <el-table-column :label="t('shipping.d4FinalParties')" min-width="210"><template #default="{ row }"><div>{{ row.finalForwarderName || t('shipping.d4NotConfirmed') }}</div><div class="sub">{{ row.actualCarrierName || row.carrierForwarder || '—' }}</div></template></el-table-column>
-        <el-table-column :label="t('shipping.d4Amount')" width="145" align="right"><template #default="{ row }"><span class="money">{{ row.finalCurrency || row.currency }} {{ row.finalFreightAmount || row.freightAmount }}</span></template></el-table-column>
-        <el-table-column :label="t('common.status')" width="150" align="center"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column v-for="column in handoffColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
+          <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="handoffColumns.canMoveLeft(column.key)" :can-move-right="handoffColumns.canMoveRight(column.key)" @move-left="handoffColumns.moveBy(column.key,-1)" @move-right="handoffColumns.moveBy(column.key,1)" /></template>
+          <template #default="{ row }">
+            <span v-if="column.key==='contractNo'" class="contract-no">{{ row.contractNo }}</span>
+            <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
+            <span v-else-if="column.key==='route'">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</span>
+            <template v-else-if="column.key==='parties'"><div>{{ row.finalForwarderName || t('shipping.d4NotConfirmed') }}</div><div class="sub">{{ row.actualCarrierName || row.carrierForwarder || '—' }}</div></template>
+            <span v-else-if="column.key==='amount'" class="money">{{ row.finalCurrency || row.currency }} {{ row.finalFreightAmount || row.freightAmount }}</span>
+            <el-tag v-else-if="column.key==='status'" :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.actions')" width="125" fixed="right" align="center"><template #default="{ row }"><el-button type="primary" plain @click.stop="handleRowAction(row)">{{ nextLabel(row) }}</el-button></template></el-table-column>
         <template #empty>{{ t('shipping.executionInquiryEmpty') }}</template>
       </el-table>
@@ -117,7 +123,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { del, get, post } from '../api'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { getActionableApproval } from '../lib/approvalAction'
+import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 const approvalTaskId = ref('')
 const approvalOverride = ref(false)
 const props=withDefaults(defineProps<{mode?:'inquiry'|'orders'}>(),{mode:'inquiry'}); const mode=computed(()=>props.mode)
@@ -126,6 +134,15 @@ interface Handoff { id:string;contractNo:string;customerName:string;batchNo:numb
 interface Party { id:string;name:string }
 interface RequoteOption { id:string;handoffId:string;forwarderId:string;forwarderName:string;actualCarrierId:string;actualCarrierName:string;serviceOption:string;currency:string;freightAmount:string;etd:string;eta:string;paymentTerms:string;remark:string;createdByName:string;createdAt:string;updatedAt:string }
 const { t }=useI18n(), route=useRoute(), router=useRouter(); const loading=ref(false),saving=ref(false),detailOpen=ref(false); const rows=ref<Handoff[]>([]),detail=ref<Handoff|null>(null),forwarders=ref<Party[]>([]),carriers=ref<Party[]>([]),requoteOptions=ref<RequoteOption[]>([]); const keyword=ref(''),status=ref(mode.value==='orders'?'DRAFT':''),page=ref(1),pageSize=ref(20),contractFile=ref<File|null>(null),selectedOptionId=ref(0),editingOptionId=ref(0)
+const handoffColumnDefaults=computed<TableColumnDefinition[]>(()=>[
+ {key:'contractNo',label:t('shipping.contractNo'),width:170},
+ {key:'customer',label:t('shipping.customer'),minWidth:145,showOverflowTooltip:true},
+ {key:'route',label:t('shipping.route'),minWidth:185,showOverflowTooltip:true},
+ {key:'parties',label:t('shipping.d4FinalParties'),minWidth:200},
+ {key:'amount',label:t('shipping.d4Amount'),width:140,align:'right'},
+ {key:'status',label:t('common.status'),width:145,align:'center'},
+])
+const handoffColumns=useTableColumnOrder(computed(()=>mode.value==='orders'?'shipping-order-list':'shipping-inquiry-list'),handoffColumnDefaults)
 const contractAndDelegatedStatuses=['APPROVED','CONTRACT_UPLOADED','CONTRACT_VERIFIED','PAYMENT_REQUESTED']
 const statuses=computed(()=>mode.value==='orders'?['DRAFT','PENDING_APPROVAL','CONTRACT_AND_DELEGATED']:['WAITING_REQUOTE','RETURNED']), currencies=['USD','CNY','EUR','GBP','CAD','AUD','HKD']
 const form=reactive({finalForwarderId:0,finalForwarderName:'',actualCarrierId:0,actualCarrierName:'',finalServiceOption:'',finalCurrency:'USD',finalFreightAmount:'',finalEtd:'',finalEta:'',paymentTerms:'',forwarderContractNo:'',remark:''})
