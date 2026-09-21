@@ -843,6 +843,7 @@ func (s *Server) Router() http.Handler {
 		// Attachments and inline images. Uploading is part of composing, so
 		// both ride on the send permission rather than a separate one.
 		r.With(s.perm("mail:email:write")).Post("/api/email-attachments/presign", s.presignMailAttachment)
+		r.With(s.perm("mail:email:write")).Post("/api/email-attachments/preview", s.previewDraftAttachments)
 		r.With(s.perm("mail:email:write")).Post("/api/email-attachments", s.registerMailAttachment)
 		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
 		// 粘贴表格时净化剪贴板里那份 HTML。要写权限：它服务的是写信。

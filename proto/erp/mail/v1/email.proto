@@ -72,6 +72,11 @@ service EmailService {
   // reports afterwards is never trusted - Register reads the real one back
   // out of storage, because a cap checked against a claim is not a cap.
   rpc PresignAttachment(PresignAttachmentRequest) returns (PresignAttachmentResponse);
+  // Signs look-at-it links for files the composer is holding but has not sent
+  // yet. Separate from the inbound attachment routes because a draft's file
+  // has no row to hang ownership off: it is authorised by its key sitting
+  // under this tenant's upload prefix, the same rule the send path uses.
+  rpc PreviewDraftAttachments(PreviewDraftAttachmentsRequest) returns (PreviewDraftAttachmentsResponse);
   rpc RegisterAttachment(RegisterAttachmentRequest) returns (RegisterAttachmentResponse);
   rpc ListAttachments(ListAttachmentsRequest) returns (ListAttachmentsResponse);
   rpc PresignImage(PresignImageRequest) returns (PresignImageResponse);
@@ -1622,6 +1627,37 @@ message PresignAttachmentResponse {
   string file_key = 1;
   string upload_url = 2;
   int32 expires_in_seconds = 3;
+}
+
+// 写信窗口里还没发出去的附件，要一份能看一眼的地址。
+message PreviewDraftAttachmentsRequest {
+  repeated DraftAttachmentRef files = 1;
+}
+
+message DraftAttachmentRef {
+  // 上传时服务端发下去的那个 key。授权就看它在不在本公司的上传前缀底下。
+  string file_key = 1;
+  // 原始文件名。对象的 key 里只留了扩展名，名字在浏览器手里——下载时要用它
+  // 当保存名，也用来判断是不是办公文档。
+  string file_name = 2;
+}
+
+message PreviewDraftAttachmentsResponse {
+  repeated DraftAttachmentLinks files = 1;
+}
+
+message DraftAttachmentLinks {
+  string file_key = 1;
+  string file_name = 2;
+  string content_type = 3;
+  int64 file_size = 4;
+  string download_url = 5;
+  // 同 InboundAttachment：填好了就能直接显示（图片、PDF）。
+  string preview_url = 6;
+  // "direct" / "" —— 语义与 InboundAttachment.preview_kind 一致。这里不产生
+  // "office"：在线 Office 的取件路径是按「哪封信的哪个附件」签的，草稿的附件
+  // 两样都还没有。Word/PPT 在这里就是只能下载。
+  string preview_kind = 7;
 }
 
 message RegisterAttachmentRequest {

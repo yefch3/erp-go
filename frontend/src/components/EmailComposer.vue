@@ -284,6 +284,15 @@
             >
               {{ a.fileName }} · {{ humanSize(a.size) }}
               <span v-if="linkedFlags[i]"> · {{ t('emails.asDownloadLink') }}</span>
+              <!-- 看一眼再发。转发带过来的附件自己没打开过，而发错附件是
+                   这类邮件里代价最高的手滑之一。能不能看由服务端签出来的
+                   地址决定，见 lib/draftAttachmentPreview。 -->
+              <button
+                type="button"
+                class="att-act"
+                :disabled="linksBusy === a.fileKey"
+                @click.stop="openDraftAttachment(a)"
+              >{{ t('emails.previewFile') }}</button>
             </el-tag>
           </div>
           <div v-if="linkedCount" class="var-hint big-files">
@@ -512,6 +521,11 @@ import {
 } from '../lib/zonedtime'
 import { escapeText, quotedBlock, type QuotedSource } from '../lib/quotedMail'
 import { addressesToLookUp, bookHitsFor, withBookDetails } from '../lib/replyContacts'
+import {
+  draftPreviewKind,
+  draftSheetHref,
+  type DraftAttachmentLinks,
+} from '../lib/draftAttachmentPreview'
 
 interface Signature {
   id: string
@@ -1326,6 +1340,42 @@ function humanSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// 点「预览」时才去要地址，不在上传时预取：签出来的地址是短命的，列表里每个
+// 附件都提前签一份，等于给没人看的附件也白签一次（和收信那边办公文档的做法
+// 一致，见 attachment.go 里那段注释）。
+const linksBusy = ref('')
+
+async function openDraftAttachment(a: PendingFile) {
+  linksBusy.value = a.fileKey
+  try {
+    const d = await post<{ files: DraftAttachmentLinks[] }>('/email-attachments/preview', {
+      files: [{ fileKey: a.fileKey, fileName: a.fileName }],
+    })
+    const file = d.files?.[0]
+    if (!file) throw new Error('no links')
+    switch (draftPreviewKind(file)) {
+      case 'direct':
+        window.open(file.previewUrl, '_blank', 'noopener')
+        return
+      case 'sheet':
+        window.open(draftSheetHref(file), '_blank', 'noopener')
+        return
+      default:
+        // 看不了就退成下载——人要的是"看看里面是什么"，下载一样能达到，
+        // 而一句「不支持预览」什么也不给，等于让他自己再想办法。
+        if (file.downloadUrl) {
+          window.open(file.downloadUrl, '_blank', 'noopener')
+          return
+        }
+        ElMessage.warning(t('emails.previewUnavailable'))
+    }
+  } catch {
+    ElMessage.error(t('emails.previewUnavailable'))
+  } finally {
+    linksBusy.value = ''
+  }
 }
 
 // Bytes go browser-to-bucket; only the key comes back. The file is not
@@ -2163,6 +2213,26 @@ function restoreFocus() {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+/* 标签里那颗「预览」。做成文字按钮而不是图标：一排附件里图标认不出来，
+   而这一颗的代价是开一个新标签页，值得说清楚是什么。 */
+.att-act {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.att-act:hover {
+  opacity: 1;
+}
+.att-act:disabled {
+  cursor: wait;
+  opacity: 0.4;
 }
 .egress {
   margin-top: 6px;

@@ -326,6 +326,24 @@ func (s *Server) listMailingContacts(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 写信窗口里还没发出去的附件，要一份能看一眼的地址。
+//
+// 不挂 requireMailUnlock：这几个文件是这个人自己刚从本机传上去的，还没进任何
+// 信箱——看自己手里的东西不该再问一次信箱密码。授权在邮件服务那边按 key 的
+// 前缀判，和发送时认这个 key 的是同一条界线。
+func (s *Server) previewDraftAttachments(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.PreviewDraftAttachmentsRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.PreviewDraftAttachments(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) presignMailAttachment(w http.ResponseWriter, r *http.Request) {
 	req := &mailv1.PresignAttachmentRequest{}
 	if !s.decodeBody(w, r, req) {

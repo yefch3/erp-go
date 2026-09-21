@@ -46,6 +46,7 @@ const (
 	EmailService_UpdateEmailTemplate_FullMethodName          = "/erp.mail.v1.EmailService/UpdateEmailTemplate"
 	EmailService_DeleteEmailTemplate_FullMethodName          = "/erp.mail.v1.EmailService/DeleteEmailTemplate"
 	EmailService_PresignAttachment_FullMethodName            = "/erp.mail.v1.EmailService/PresignAttachment"
+	EmailService_PreviewDraftAttachments_FullMethodName      = "/erp.mail.v1.EmailService/PreviewDraftAttachments"
 	EmailService_RegisterAttachment_FullMethodName           = "/erp.mail.v1.EmailService/RegisterAttachment"
 	EmailService_ListAttachments_FullMethodName              = "/erp.mail.v1.EmailService/ListAttachments"
 	EmailService_PresignImage_FullMethodName                 = "/erp.mail.v1.EmailService/PresignImage"
@@ -172,6 +173,11 @@ type EmailServiceClient interface {
 	// reports afterwards is never trusted - Register reads the real one back
 	// out of storage, because a cap checked against a claim is not a cap.
 	PresignAttachment(ctx context.Context, in *PresignAttachmentRequest, opts ...grpc.CallOption) (*PresignAttachmentResponse, error)
+	// Signs look-at-it links for files the composer is holding but has not sent
+	// yet. Separate from the inbound attachment routes because a draft's file
+	// has no row to hang ownership off: it is authorised by its key sitting
+	// under this tenant's upload prefix, the same rule the send path uses.
+	PreviewDraftAttachments(ctx context.Context, in *PreviewDraftAttachmentsRequest, opts ...grpc.CallOption) (*PreviewDraftAttachmentsResponse, error)
 	RegisterAttachment(ctx context.Context, in *RegisterAttachmentRequest, opts ...grpc.CallOption) (*RegisterAttachmentResponse, error)
 	ListAttachments(ctx context.Context, in *ListAttachmentsRequest, opts ...grpc.CallOption) (*ListAttachmentsResponse, error)
 	PresignImage(ctx context.Context, in *PresignImageRequest, opts ...grpc.CallOption) (*PresignImageResponse, error)
@@ -609,6 +615,16 @@ func (c *emailServiceClient) PresignAttachment(ctx context.Context, in *PresignA
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PresignAttachmentResponse)
 	err := c.cc.Invoke(ctx, EmailService_PresignAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) PreviewDraftAttachments(ctx context.Context, in *PreviewDraftAttachmentsRequest, opts ...grpc.CallOption) (*PreviewDraftAttachmentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDraftAttachmentsResponse)
+	err := c.cc.Invoke(ctx, EmailService_PreviewDraftAttachments_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1262,6 +1278,11 @@ type EmailServiceServer interface {
 	// reports afterwards is never trusted - Register reads the real one back
 	// out of storage, because a cap checked against a claim is not a cap.
 	PresignAttachment(context.Context, *PresignAttachmentRequest) (*PresignAttachmentResponse, error)
+	// Signs look-at-it links for files the composer is holding but has not sent
+	// yet. Separate from the inbound attachment routes because a draft's file
+	// has no row to hang ownership off: it is authorised by its key sitting
+	// under this tenant's upload prefix, the same rule the send path uses.
+	PreviewDraftAttachments(context.Context, *PreviewDraftAttachmentsRequest) (*PreviewDraftAttachmentsResponse, error)
 	RegisterAttachment(context.Context, *RegisterAttachmentRequest) (*RegisterAttachmentResponse, error)
 	ListAttachments(context.Context, *ListAttachmentsRequest) (*ListAttachmentsResponse, error)
 	PresignImage(context.Context, *PresignImageRequest) (*PresignImageResponse, error)
@@ -1515,6 +1536,9 @@ func (UnimplementedEmailServiceServer) DeleteEmailTemplate(context.Context, *Del
 }
 func (UnimplementedEmailServiceServer) PresignAttachment(context.Context, *PresignAttachmentRequest) (*PresignAttachmentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PresignAttachment not implemented")
+}
+func (UnimplementedEmailServiceServer) PreviewDraftAttachments(context.Context, *PreviewDraftAttachmentsRequest) (*PreviewDraftAttachmentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewDraftAttachments not implemented")
 }
 func (UnimplementedEmailServiceServer) RegisterAttachment(context.Context, *RegisterAttachmentRequest) (*RegisterAttachmentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterAttachment not implemented")
@@ -2193,6 +2217,24 @@ func _EmailService_PresignAttachment_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).PresignAttachment(ctx, req.(*PresignAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_PreviewDraftAttachments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDraftAttachmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).PreviewDraftAttachments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_PreviewDraftAttachments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).PreviewDraftAttachments(ctx, req.(*PreviewDraftAttachmentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3355,6 +3397,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PresignAttachment",
 			Handler:    _EmailService_PresignAttachment_Handler,
+		},
+		{
+			MethodName: "PreviewDraftAttachments",
+			Handler:    _EmailService_PreviewDraftAttachments_Handler,
 		},
 		{
 			MethodName: "RegisterAttachment",

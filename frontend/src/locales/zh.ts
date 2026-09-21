@@ -1918,6 +1918,7 @@ export default {
     bccLabel: '密送',
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
+    previewUnavailable: '这个附件打不开，请下载后查看',
     downloadAll: '下载全部（{n}）',
     sortBar: {
       label: '排序',
