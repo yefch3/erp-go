@@ -44,7 +44,9 @@ func (h *Handler) GetMyProfile(ctx context.Context, _ *iamv1.GetMyProfileRequest
 	if err != nil {
 		return nil, err
 	}
-	return &iamv1.GetMyProfileResponse{Profile: myProfileToProto(view)}, nil
+	profile := myProfileToProto(view)
+	profile.TenantId = op.TenantID
+	return &iamv1.GetMyProfileResponse{Profile: profile}, nil
 }
 
 func (h *Handler) UpdateMyProfile(ctx context.Context, req *iamv1.UpdateMyProfileRequest) (*iamv1.UpdateMyProfileResponse, error) {

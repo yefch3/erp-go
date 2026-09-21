@@ -66,7 +66,7 @@ func Append(ctx context.Context, tx pgx.Tx, e Event) error {
 const DDL = `
 CREATE TABLE IF NOT EXISTS outbox_events (
     id             BIGSERIAL PRIMARY KEY,
-    tenant_id      BIGINT      NOT NULL DEFAULT 1,
+    tenant_id      BIGINT      NOT NULL,
     aggregate_type TEXT        NOT NULL,
     aggregate_id   TEXT        NOT NULL,
     event_type     TEXT        NOT NULL,

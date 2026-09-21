@@ -43,6 +43,7 @@ func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.Lo
 	return &iamv1.LoginResponse{
 		AccessToken:        res.Token,
 		ExpiresInSeconds:   res.ExpiresInSeconds,
+		TenantId:           res.TenantID,
 		Employee:           employeeRowToProto(res.Employee, nil),
 		PermissionCodes:    res.PermissionCodes,
 		MustChangePassword: res.MustChangePassword,

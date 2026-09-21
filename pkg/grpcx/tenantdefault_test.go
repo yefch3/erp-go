@@ -112,6 +112,16 @@ func TestLoginPassesWithoutATenant(t *testing.T) {
 	}
 }
 
+func TestTenantIDNeverDefaultsToTheFirstTenant(t *testing.T) {
+	if got := TenantID(context.Background()); got != 0 {
+		t.Fatalf("tenantless context resolved to tenant %d; want 0", got)
+	}
+	ctx := WithOperator(context.Background(), Operator{TenantID: 37})
+	if got := TenantID(ctx); got != 37 {
+		t.Fatalf("authenticated tenant changed to %d; want 37", got)
+	}
+}
+
 func TestACallWithATenantNeverWarns(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, nil))
