@@ -14,6 +14,13 @@ type CustomerAccess interface {
 	VisibleIDs(context.Context, int64) ([]int64, bool, error)
 }
 
+// CustomerNameResolver is optional so in-process fixtures and older adapters
+// keep working. Production uses it to repair legacy inquiries which saved a
+// customer name before customer_id became mandatory.
+type CustomerNameResolver interface {
+	ResolveByName(context.Context, string) (int64, string, error)
+}
+
 func (s *Service) checkInquiryCustomer(ctx context.Context, customerID int64) error {
 	if s.customers == nil || customerID == 0 {
 		return nil
