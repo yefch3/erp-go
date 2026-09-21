@@ -9,8 +9,10 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
@@ -56,8 +58,13 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool)
 	svc.UseFiles(filestore.New(files))
-	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
+	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+	if err != nil {
+		return err
+	}
+	defer iamConn.Close()
 	h := grpcin.New(svc)
+	srv := grpc.NewServer(grpcx.ServerInterceptors(log), grpc.MaxRecvMsgSize(12<<20), grpc.MaxSendMsgSize(12<<20), grpc.ChainUnaryInterceptor(h.CustomerAccess(iamv1.NewAccessServiceClient(iamConn))))
 	mdv1.RegisterCustomerServiceServer(srv, h)
 	mdv1.RegisterSupplierServiceServer(srv, h)
 	mdv1.RegisterPortServiceServer(srv, h)

@@ -6,6 +6,7 @@ import "os"
 type Config struct {
 	DSN      string
 	GRPCPort string
+	IAMAddr  string
 	// Object storage for factory certificate scans. MinIO in dev, S3 in
 	// production — same API, only the endpoint differs.
 	MinioEndpoint       string
@@ -20,6 +21,7 @@ func Load() Config {
 	return Config{
 		DSN:                 env("DB_DSN", "postgres://erp_masterdata:erp_masterdata_pw@localhost:5433/erp_masterdata?sslmode=disable"),
 		GRPCPort:            env("GRPC_PORT", "9002"),
+		IAMAddr:             env("IAM_ADDR", "localhost:9001"),
 		MinioEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
 		MinioPublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
 		MinioAccessKey:      env("MINIO_ACCESS_KEY", "erp"),

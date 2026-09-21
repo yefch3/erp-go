@@ -23,62 +23,31 @@
         </div>
       </div>
       <div v-if="canWrite" class="hero-actions">
-        <el-button @click="openBasic">编辑基础资料</el-button>
+        <el-button @click="openTemplateBasic">编辑基础资料</el-button>
       </div>
     </section>
 
+    <div class="tab-order-tools"><el-button v-if="tabOrder.customized.value" link type="primary" @click="tabOrder.reset">恢复默认顺序</el-button></div>
     <el-tabs
       v-if="customer"
       v-model="activeTab"
       class="detail-tabs"
       @tab-change="loadTab"
     >
-      <el-tab-pane label="基本资料" name="basic">
-        <div class="tab-stack">
-          <section class="content-section">
-            <SectionHead
-              title="基础信息"
-              :action="canWrite ? '完善详细资料' : ''"
-              @action="openProfile"
-            />
-            <div class="card-grid">
-          <InfoCard title="客户概况" icon="企">
-            <InfoRow label="客户简称" :value="customer.shortName" />
-            <InfoRow label="英文名称" :value="customer.englishName" />
-            <InfoRow
-              label="客户类型"
-              :value="optionLabel(types, customer.customerType)"
-                />
-                <InfoRow label="所属行业" :value="customer.industry" />
-                <InfoRow
-                  label="业务状态"
-                  :value="businessLabel(customer.businessStatus)"
-                />
-                <InfoRow
-                  label="客户来源"
-              :value="optionLabel(sources, customer.source)"
-            />
-          </InfoCard>
-          <InfoCard title="沟通信息" icon="联">
-            <InfoRow label="官网" :value="customer.website" />
-            <InfoRow label="主要语言" :value="customer.primaryLanguage" />
-            <InfoRow label="所在时区" :value="customer.timezone" />
-            <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
-            <InfoRow label="备注" :value="customer.remark" />
-          </InfoCard>
-          <InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
+      <el-tab-pane v-for="tab in tabOrder.columns.value" :key="tab.key" :name="tab.key">
+<template #label><ReorderableTableHeader :label="tab.label" hint="调整标签顺序" move-left-label="左移" move-right-label="右移" :can-move-left="!!layoutTenant && tabOrder.canMoveLeft(tab.key)" :can-move-right="!!layoutTenant && tabOrder.canMoveRight(tab.key)" @move-left="tabOrder.moveBy(tab.key, -1)" @move-right="tabOrder.moveBy(tab.key, 1)" /></template>
+<template v-if="tab.key === 'documents'">
+        <CustomerDocuments v-if="activeTab === 'documents'" :customer-id="id" :can-write="canWrite" />
+      </template>
+<template v-if="tab.key === 'basic'"><CustomerBasicInfo v-if="activeTab === 'basic'" :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @navigate="navigateCustomerTab" />
+ <el-collapse style="margin-top:20px"><el-collapse-item title="其他已有资料" name="legacy"><el-button v-if="canWrite" link type="primary" @click="openProfile">编辑其他资料</el-button><p>英文名称：{{ customer.englishName || '—' }}　官网：{{ customer.website || '—' }}</p><p>备注：{{ customer.remark || '—' }}</p><InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
             <div v-for="field in visibleCustomFields" :key="field.fieldKey" class="custom-info-row">
               <span>{{ field.displayName }}</span>
               <strong>{{ field.value || '—' }}</strong>
               <el-button v-if="canWrite" link type="primary" @click="openCustomerField(field)">修改字段名</el-button>
             </div>
-          </InfoCard>
-            </div>
-          </section>
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="地址与税务" name="addresses">
+          </InfoCard></el-collapse-item></el-collapse></template>
+<template v-if="tab.key === 'addresses'">
         <div class="tab-stack">
           <section class="content-section">
             <SectionHead
@@ -147,9 +116,8 @@
         </div>
           </section>
         </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="联系人" name="contacts">
+      </template>
+<template v-if="tab.key === 'contacts'">
         <div class="tab-stack">
           <section class="content-section">
         <SectionHead
@@ -218,9 +186,8 @@
         </div>
           </section>
         </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="结算信用" name="credit">
+      </template>
+<template v-if="tab.key === 'credit'">
         <div class="tab-stack">
           <section class="content-section">
         <SectionHead
@@ -266,9 +233,8 @@
         />
           </section>
         </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="负责人" name="owners">
+      </template>
+<template v-if="tab.key === 'owners'">
         <div class="tab-stack">
           <section class="content-section">
         <SectionHead
@@ -316,9 +282,8 @@
         </div>
           </section>
         </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="变更记录" name="changes">
+      </template>
+<template v-if="tab.key === 'changes'">
         <div class="tab-stack">
           <section class="content-section">
         <SectionHead title="客户资料变更记录" :count="changeTotal" />
@@ -341,6 +306,7 @@
         </el-timeline>
           </section>
         </div>
+      </template>
       </el-tab-pane>
     </el-tabs>
 
@@ -651,6 +617,8 @@
         <el-form-item label="在职员工" required
           ><el-select
             v-model="ownerForm.employeeId"
+            :key="ownerEditing || 'new-owner'"
+            :multiple="!ownerEditing"
             :disabled="!!ownerEditing"
             filterable
             style="width: 100%"
@@ -696,10 +664,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref } from "vue";
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
+import CustomerBasicInfo from "../components/CustomerBasicInfo.vue";
+import ReorderableTableHeader from "../components/ReorderableTableHeader.vue";
+import { useTableColumnOrder } from "../composables/useTableColumnOrder";
+import CustomerDocuments from "../components/CustomerDocuments.vue";
 import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
 import { isSystemCustomerFieldDefinition } from "../lib/customerImport";
@@ -780,7 +752,7 @@ function onRated(grade: string) {
 }
 const loading = ref(true),
   saving = ref(false),
-  activeTab = ref("basic");
+  activeTab = ref(route.query.tab === "documents" ? "documents" : "basic");
 const customer = ref<any>(null),
   customerFieldDefinitions = ref<any[]>([]),
   addresses = ref<any[]>([]),
@@ -923,6 +895,11 @@ function formatTime(v: string) {
   return v ? new Date(v).toLocaleString("zh-CN") : "—";
 }
 
+const layoutTenant = ref("");
+const templateBasic = ref<InstanceType<typeof CustomerBasicInfo> | null>(null);
+const tabOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-detail-tabs`, [{"key": "documents", "label": "客户资料"}, {"key": "basic", "label": "基本资料"}, {"key": "addresses", "label": "地址与税务"}, {"key": "contacts", "label": "联系人"}, {"key": "credit", "label": "结算信用"}, {"key": "owners", "label": "负责人"}, {"key": "changes", "label": "变更记录"}]);
+async function navigateCustomerTab(tab: string) { activeTab.value = tab; await loadTab(tab); }
+async function openTemplateBasic() { activeTab.value = "basic"; await nextTick(); templateBasic.value?.open(); }
 async function loadCustomer() {
   const [d, fields] = await Promise.all([
     get<any>(`/customers/${id}`),
@@ -1291,7 +1268,7 @@ async function openOwner(item?: any) {
               : [],
         }
       : {
-          employeeId: "",
+          employeeId: [],
           responsibilityCode: "SALES",
           isPrimary: false,
           dates: [],
@@ -1310,7 +1287,7 @@ async function openOwner(item?: any) {
   ownerOpen.value = true;
 }
 async function saveOwner() {
-  if (!ownerForm.employeeId || !ownerForm.responsibilityCode) {
+  if (!ownerForm.employeeId || (Array.isArray(ownerForm.employeeId) && !ownerForm.employeeId.length) || !ownerForm.responsibilityCode) {
     ElMessage.warning("请选择员工和职责");
     return;
   }
@@ -1325,9 +1302,18 @@ async function saveOwner() {
         isPrimary: !!ownerForm.isPrimary,
       },
     };
-    ownerEditing.value
-      ? await put(`/customers/${id}/owners/${ownerEditing.value}`, body)
-      : await post(`/customers/${id}/owners`, body);
+    if (ownerEditing.value) {
+      await put(`/customers/${id}/owners/${ownerEditing.value}`, body);
+    } else {
+      const employeeIds = [...ownerForm.employeeId];
+      for (const [index, employeeId] of employeeIds.entries()) {
+        await post(`/customers/${id}/owners`, {
+          owner: { ...body.owner, employeeId, isPrimary: body.owner.isPrimary && index === 0 },
+        });
+        // Keep only unsaved selections if a later request fails.
+        ownerForm.employeeId = ownerForm.employeeId.filter((value: string) => value !== employeeId);
+      }
+    }
     ownerOpen.value = false;
     await loadOwners();
     ElMessage.success("负责人已保存");
@@ -1341,11 +1327,16 @@ async function removeOwner(item: any) {
     "移除负责人",
   );
   await del(`/customers/${id}/owners/${item.id}`);
+  if (String(item.employeeId) === String(auth.employeeId)) {
+    await router.push('/basic/customers');
+    return;
+  }
   await loadOwners();
 }
 
 onMounted(async () => {
   try {
+    layoutTenant.value = String((await get<any>("/customers/access")).tenantId);
     const [, , typeData, sourceData, paymentData, respData] = await Promise.all(
       [
         loadCustomer(),
@@ -1360,6 +1351,7 @@ onMounted(async () => {
     sources.value = sourceData.options || [];
     paymentOptions.value = paymentData.options || [];
     responsibilities.value = respData.options || [];
+    await loadTab(activeTab.value);
   } finally {
     loading.value = false;
   }

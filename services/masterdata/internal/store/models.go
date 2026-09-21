@@ -60,6 +60,10 @@ type Customer struct {
 	BusinessStatus   string
 	CreditGrade      string
 	CreditGradedAt   pgtype.Timestamptz
+	CompanyPhone     string
+	FaxNumber        string
+	CompanyEmail     string
+	ArchiveCreator   string
 }
 
 type CustomerAddress struct {
@@ -128,6 +132,34 @@ type CustomerCustomFieldValue struct {
 	UpdatedBy  int64
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type CustomerDocument struct {
+	ID              int64
+	TenantID        int64
+	CustomerID      int64
+	DocumentID      int64
+	Version         int32
+	Title           string
+	Remark          string
+	FileKey         string
+	FileName        string
+	ContentType     string
+	SizeBytes       int64
+	ExpiresOn       pgtype.Date
+	RemindDays      int32
+	ReminderEnabled bool
+	UploadedBy      int64
+	UploadedByName  string
+	CreatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+}
+
+type CustomerDocumentRead struct {
+	TenantID   int64
+	RevisionID int64
+	EmployeeID int64
+	ReadAt     pgtype.Timestamptz
 }
 
 type CustomerFieldDefinition struct {

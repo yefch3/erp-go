@@ -94,7 +94,14 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)
       SELECT 1 FROM customer_owners co WHERE co.tenant_id = c.tenant_id AND co.customer_id = c.id
         AND co.employee_id = sqlc.arg(owner_employee_id) AND co.status = 'ACTIVE'
   ))
-  AND (sqlc.arg(keyword)::text = '' OR c.name ILIKE '%' || sqlc.arg(keyword) || '%' OR c.code ILIKE '%' || sqlc.arg(keyword) || '%')
+  AND (sqlc.arg(keyword)::text = '' OR c.name ILIKE '%' || sqlc.arg(keyword) || '%' OR c.short_name ILIKE '%' || sqlc.arg(keyword) || '%' OR c.code ILIKE '%' || sqlc.arg(keyword) || '%')
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id DESC
 LIMIT sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);
 
@@ -297,6 +304,13 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)
         AND lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)))
     ))
   )
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id
 LIMIT 10;
 
@@ -727,6 +741,13 @@ WHERE cc.tenant_id = sqlc.arg(tenant_id)::bigint
       cardinality(sqlc.arg(customer_ids)::bigint[]) = 0
       OR c.id = ANY(sqlc.arg(customer_ids)::bigint[])
   )
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
 LIMIT 500;
 
@@ -759,6 +780,13 @@ LEFT JOIN customer_contacts cc
    AND cc.status = 'ACTIVE' AND cc.email_permission = 'ALLOWED'
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(status)::text = 'ALL' OR c.status = 'ACTIVE')
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 GROUP BY c.country_code
 ORDER BY count(DISTINCT c.id) DESC, c.country_code;
 
@@ -794,6 +822,13 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND cc.email <> ''
   AND cc.status = 'ACTIVE'
   AND cc.email_permission = 'ALLOWED'
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id;
 
 -- name: AllContactsInCountry :many
@@ -824,6 +859,13 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND cc.email <> ''
   AND cc.status = 'ACTIVE'
   AND cc.email_permission = 'ALLOWED'
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id;
 
 -- name: RecordCreditRating :one
@@ -918,5 +960,12 @@ JOIN customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
 WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
   AND o.status = 'ACTIVE'
   AND c.status = 'ACTIVE'
+  AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=sqlc.arg(access_employee_id) AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 GROUP BY o.employee_id, c.country_code
 ORDER BY c.country_code, employee_name;

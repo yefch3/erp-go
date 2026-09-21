@@ -27,6 +27,23 @@ type Visibility struct {
 // thought about yet should reveal the least, not the most; the alternative
 // fails open, which is how "we forgot to configure it" turns into a leak.
 func (s *Service) VisibleEmployees(ctx context.Context, tenantID, employeeID int64, module string) (Visibility, error) {
+	// Customer access follows the existing owner relation, never a department
+	// scope or document creator. Only the system's highest role bypasses it.
+	if module == "customer" {
+		var all bool
+		err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM employee_roles er JOIN roles r ON r.id=er.role_id AND r.tenant_id=er.tenant_id
+			JOIN employees e ON e.id=er.employee_id AND e.tenant_id=er.tenant_id
+			WHERE er.tenant_id=$1 AND er.employee_id=$2 AND r.code='SUPER_ADMIN'
+			AND r.status='ACTIVE' AND e.status='ACTIVE')`, tenantID, employeeID).Scan(&all)
+		if err != nil {
+			return Visibility{}, err
+		}
+		if all {
+			return Visibility{All: true, ScopeType: "ALL"}, nil
+		}
+		return Visibility{EmployeeIDs: []int64{employeeID}, ScopeType: "SELF"}, nil
+	}
 	scope, err := s.q.WidestDataScope(ctx, store.WidestDataScopeParams{
 		TenantID: tenantID, EmployeeID: employeeID, Module: module,
 	})

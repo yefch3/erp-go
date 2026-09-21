@@ -156,6 +156,7 @@ func (s *Server) Router() http.Handler {
 		// 挂在认证之后：防重的键按「哪家公司的哪个人」隔离，身份得先有。
 		r.Use(s.idempotent)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/access", s.customerAccessCapabilities)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers", s.createCustomer)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/countries", s.listCustomerCountryGroups)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/duplicates", s.checkCustomerDuplicates)
@@ -163,6 +164,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/fields/{fieldKey}", s.saveCustomerField)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/import", s.importCustomers)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/basic", s.getCustomerBasic)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/basic", s.saveCustomerBasic)
 		// 信用评级（E3）。读跟着各自主数据的读权限走；打分要写权限——
 		// 评级是对外授信和下单的依据，不是备注。
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/credit-ratings", s.listCustomerCreditRatings)
@@ -182,6 +185,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/contacts", s.createCustomerContact)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/contacts/{contactId}", s.updateCustomerContact)
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/contacts/{contactId}", s.deactivateCustomerContact)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/documents", s.listCustomerDocuments)
+		r.With(s.perm("masterdata:customer:read")).Delete("/api/customers/{id}/documents/{revisionId}", s.deleteCustomerDocument)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/documents", s.saveCustomerDocument)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/documents/{revisionId}/file", s.getCustomerDocumentFile)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/owners", s.listCustomerOwners)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/owners", s.createCustomerOwner)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/owners/{ownerId}", s.updateCustomerOwner)

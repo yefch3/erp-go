@@ -104,12 +104,20 @@ WHERE c.tenant_id = $1::bigint
   AND cc.email <> ''
   AND cc.status = 'ACTIVE'
   AND cc.email_permission = 'ALLOWED'
+  AND ($3::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$3 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
 type AllContactsInCountryParams struct {
-	TenantID    int64
-	CountryCode string
+	TenantID         int64
+	CountryCode      string
+	AccessEmployeeID int64
 }
 
 type AllContactsInCountryRow struct {
@@ -133,7 +141,7 @@ type AllContactsInCountryRow struct {
 // no way to switch it off from a parameter. Two queries that each do one thing
 // beat one that changes shape.
 func (q *Queries) AllContactsInCountry(ctx context.Context, arg AllContactsInCountryParams) ([]AllContactsInCountryRow, error) {
-	rows, err := q.db.Query(ctx, allContactsInCountry, arg.TenantID, arg.CountryCode)
+	rows, err := q.db.Query(ctx, allContactsInCountry, arg.TenantID, arg.CountryCode, arg.AccessEmployeeID)
 	if err != nil {
 		return nil, err
 	}
@@ -341,12 +349,20 @@ WHERE c.tenant_id = $1::bigint
   AND cc.email <> ''
   AND cc.status = 'ACTIVE'
   AND cc.email_permission = 'ALLOWED'
+  AND ($3::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$3 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
 type ContactsInCountryParams struct {
-	TenantID    int64
-	CountryCode string
+	TenantID         int64
+	CountryCode      string
+	AccessEmployeeID int64
 }
 
 type ContactsInCountryRow struct {
@@ -374,7 +390,7 @@ type ContactsInCountryRow struct {
 // fallback is the first contact by the same order the address book shows, and
 // DISTINCT ON gives exactly one row per customer either way.
 func (q *Queries) ContactsInCountry(ctx context.Context, arg ContactsInCountryParams) ([]ContactsInCountryRow, error) {
-	rows, err := q.db.Query(ctx, contactsInCountry, arg.TenantID, arg.CountryCode)
+	rows, err := q.db.Query(ctx, contactsInCountry, arg.TenantID, arg.CountryCode, arg.AccessEmployeeID)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +475,7 @@ VALUES (
     $25, $26,
     $27, $28, $29, $29
 )
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at, company_phone, fax_number, company_email, archive_creator
 `
 
 type CreateCustomerParams struct {
@@ -568,6 +584,10 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.BusinessStatus,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.CompanyPhone,
+		&i.FaxNumber,
+		&i.CompanyEmail,
+		&i.ArchiveCreator,
 	)
 	return i, err
 }
@@ -1435,16 +1455,24 @@ WHERE c.tenant_id = $1
         AND lower(btrim(cc.email)) = lower(btrim($5))
     ))
   )
+  AND ($6::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$6 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id
 LIMIT 10
 `
 
 type CustomerDuplicateCandidatesParams struct {
-	TenantID  int64
-	ExcludeID int64
-	Name      string
-	TaxID     string
-	Email     string
+	TenantID         int64
+	ExcludeID        int64
+	Name             string
+	TaxID            string
+	Email            string
+	AccessEmployeeID int64
 }
 
 type CustomerDuplicateCandidatesRow struct {
@@ -1462,6 +1490,7 @@ func (q *Queries) CustomerDuplicateCandidates(ctx context.Context, arg CustomerD
 		arg.Name,
 		arg.TaxID,
 		arg.Email,
+		arg.AccessEmployeeID,
 	)
 	if err != nil {
 		return nil, err
@@ -1856,7 +1885,7 @@ func (q *Queries) FactoryDuplicateCandidates(ctx context.Context, arg FactoryDup
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at FROM customers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at, company_phone, fax_number, company_email, archive_creator FROM customers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetCustomerParams struct {
@@ -1905,6 +1934,10 @@ func (q *Queries) GetCustomer(ctx context.Context, arg GetCustomerParams) (Custo
 		&i.BusinessStatus,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.CompanyPhone,
+		&i.FaxNumber,
+		&i.CompanyEmail,
+		&i.ArchiveCreator,
 	)
 	return i, err
 }
@@ -2655,13 +2688,21 @@ LEFT JOIN customer_contacts cc
    AND cc.status = 'ACTIVE' AND cc.email_permission = 'ALLOWED'
 WHERE c.tenant_id = $1::bigint
   AND ($2::text = 'ALL' OR c.status = 'ACTIVE')
+  AND ($3::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$3 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 GROUP BY c.country_code
 ORDER BY count(DISTINCT c.id) DESC, c.country_code
 `
 
 type ListCustomerCountriesParams struct {
-	TenantID int64
-	Status   string
+	TenantID         int64
+	Status           string
+	AccessEmployeeID int64
 }
 
 type ListCustomerCountriesRow struct {
@@ -2683,7 +2724,7 @@ type ListCustomerCountriesRow struct {
 // the ones somebody has to go and fix, and a list that hides them is a list
 // that never gets fixed.
 func (q *Queries) ListCustomerCountries(ctx context.Context, arg ListCustomerCountriesParams) ([]ListCustomerCountriesRow, error) {
-	rows, err := q.db.Query(ctx, listCustomerCountries, arg.TenantID, arg.Status)
+	rows, err := q.db.Query(ctx, listCustomerCountries, arg.TenantID, arg.Status, arg.AccessEmployeeID)
 	if err != nil {
 		return nil, err
 	}
@@ -2879,7 +2920,7 @@ func (q *Queries) ListCustomerOwners(ctx context.Context, arg ListCustomerOwners
 }
 
 const listCustomers = `-- name: ListCustomers :many
-SELECT c.id, c.tenant_id, c.code, c.name, c.country, c.address, c.currency, c.payment_term, c.remark, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by, c.country_code, c.short_name, c.english_name, c.customer_type, c.industry, c.source, c.tags, c.website, c.primary_language, c.timezone, c.registered_name, c.registration_no, c.tax_id, c.invoice_title, c.invoice_tax_no, c.invoice_remark, c.payment_days, c.credit_limit_minor, c.credit_currency, c.credit_status, c.business_status, c.credit_grade, c.credit_graded_at,
+SELECT c.id, c.tenant_id, c.code, c.name, c.country, c.address, c.currency, c.payment_term, c.remark, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by, c.country_code, c.short_name, c.english_name, c.customer_type, c.industry, c.source, c.tags, c.website, c.primary_language, c.timezone, c.registered_name, c.registration_no, c.tax_id, c.invoice_title, c.invoice_tax_no, c.invoice_remark, c.payment_days, c.credit_limit_minor, c.credit_currency, c.credit_status, c.business_status, c.credit_grade, c.credit_graded_at, c.company_phone, c.fax_number, c.company_email, c.archive_creator,
   COALESCE((SELECT cc.name FROM customer_contacts cc
             WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id AND cc.status = 'ACTIVE'
             ORDER BY cc.is_primary DESC, cc.sort_order, cc.id LIMIT 1), ''::text)::text AS primary_contact_name,
@@ -2901,22 +2942,30 @@ WHERE c.tenant_id = $1
       SELECT 1 FROM customer_owners co WHERE co.tenant_id = c.tenant_id AND co.customer_id = c.id
         AND co.employee_id = $7 AND co.status = 'ACTIVE'
   ))
-  AND ($8::text = '' OR c.name ILIKE '%' || $8 || '%' OR c.code ILIKE '%' || $8 || '%')
+  AND ($8::text = '' OR c.name ILIKE '%' || $8 || '%' OR c.short_name ILIKE '%' || $8 || '%' OR c.code ILIKE '%' || $8 || '%')
+  AND ($9::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$9 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.id DESC
-LIMIT $10 OFFSET $9
+LIMIT $11 OFFSET $10
 `
 
 type ListCustomersParams struct {
-	TenantID        int64
-	Status          string
-	CountryCode     string
-	CustomerType    string
-	BusinessStatus  string
-	Tag             string
-	OwnerEmployeeID int64
-	Keyword         string
-	OffsetCount     int32
-	LimitCount      int32
+	TenantID         int64
+	Status           string
+	CountryCode      string
+	CustomerType     string
+	BusinessStatus   string
+	Tag              string
+	OwnerEmployeeID  int64
+	Keyword          string
+	AccessEmployeeID int64
+	OffsetCount      int32
+	LimitCount       int32
 }
 
 type ListCustomersRow struct {
@@ -2957,6 +3006,10 @@ type ListCustomersRow struct {
 	BusinessStatus     string
 	CreditGrade        string
 	CreditGradedAt     pgtype.Timestamptz
+	CompanyPhone       string
+	FaxNumber          string
+	CompanyEmail       string
+	ArchiveCreator     string
 	PrimaryContactName string
 	OwnerNames         string
 	Total              int64
@@ -2972,6 +3025,7 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 		arg.Tag,
 		arg.OwnerEmployeeID,
 		arg.Keyword,
+		arg.AccessEmployeeID,
 		arg.OffsetCount,
 		arg.LimitCount,
 	)
@@ -3020,6 +3074,10 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.BusinessStatus,
 			&i.CreditGrade,
 			&i.CreditGradedAt,
+			&i.CompanyPhone,
+			&i.FaxNumber,
+			&i.CompanyEmail,
+			&i.ArchiveCreator,
 			&i.PrimaryContactName,
 			&i.OwnerNames,
 			&i.Total,
@@ -3458,14 +3516,22 @@ WHERE cc.tenant_id = $1::bigint
       cardinality($3::bigint[]) = 0
       OR c.id = ANY($3::bigint[])
   )
+  AND ($4::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$4 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
 LIMIT 500
 `
 
 type ListMailingContactsParams struct {
-	TenantID    int64
-	Keyword     string
-	CustomerIds []int64
+	TenantID         int64
+	Keyword          string
+	CustomerIds      []int64
+	AccessEmployeeID int64
 }
 
 type ListMailingContactsRow struct {
@@ -3493,7 +3559,12 @@ type ListMailingContactsRow struct {
 // Contacts without an email are left out rather than returned greyed: a
 // picker row you cannot pick is noise. Deactivated customers likewise.
 func (q *Queries) ListMailingContacts(ctx context.Context, arg ListMailingContactsParams) ([]ListMailingContactsRow, error) {
-	rows, err := q.db.Query(ctx, listMailingContacts, arg.TenantID, arg.Keyword, arg.CustomerIds)
+	rows, err := q.db.Query(ctx, listMailingContacts,
+		arg.TenantID,
+		arg.Keyword,
+		arg.CustomerIds,
+		arg.AccessEmployeeID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -3606,9 +3677,21 @@ JOIN customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
 WHERE o.tenant_id = $1::bigint
   AND o.status = 'ACTIVE'
   AND c.status = 'ACTIVE'
+  AND ($2::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners access_owner
+      WHERE access_owner.tenant_id=c.tenant_id AND access_owner.customer_id=c.id
+        AND access_owner.employee_id=$2 AND access_owner.status='ACTIVE'
+        AND (access_owner.start_date IS NULL OR access_owner.start_date <= CURRENT_DATE)
+        AND (access_owner.end_date IS NULL OR access_owner.end_date >= CURRENT_DATE)
+  ))
 GROUP BY o.employee_id, c.country_code
 ORDER BY c.country_code, employee_name
 `
+
+type ListOwnerCountriesParams struct {
+	TenantID         int64
+	AccessEmployeeID int64
+}
 
 type ListOwnerCountriesRow struct {
 	EmployeeID    int64
@@ -3628,8 +3711,8 @@ type ListOwnerCountriesRow struct {
 //
 // 只算在职的负责关系和还在用的客户：停掉的客户不该把一个人钉在一个他早就
 // 不做的市场上。国家为空的（客户没填国家）照样回，调用方归到「未分配」。
-func (q *Queries) ListOwnerCountries(ctx context.Context, tenantID int64) ([]ListOwnerCountriesRow, error) {
-	rows, err := q.db.Query(ctx, listOwnerCountries, tenantID)
+func (q *Queries) ListOwnerCountries(ctx context.Context, arg ListOwnerCountriesParams) ([]ListOwnerCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listOwnerCountries, arg.TenantID, arg.AccessEmployeeID)
 	if err != nil {
 		return nil, err
 	}
@@ -4189,7 +4272,7 @@ SET name = $1, country = $2,
     currency = $5, payment_term = $6,
     remark = $7, updated_by = $8, updated_at = now()
 WHERE tenant_id = $9 AND id = $10
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at, company_phone, fax_number, company_email, archive_creator
 `
 
 type UpdateCustomerParams struct {
@@ -4257,6 +4340,10 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.BusinessStatus,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.CompanyPhone,
+		&i.FaxNumber,
+		&i.CompanyEmail,
+		&i.ArchiveCreator,
 	)
 	return i, err
 }
@@ -4516,7 +4603,7 @@ SET short_name = $1, english_name = $2,
     business_status = $19, updated_by = $20,
     updated_at = now()
 WHERE tenant_id = $21 AND id = $22
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at, company_phone, fax_number, company_email, archive_creator
 `
 
 type UpdateCustomerProfileParams struct {
@@ -4609,6 +4696,10 @@ func (q *Queries) UpdateCustomerProfile(ctx context.Context, arg UpdateCustomerP
 		&i.BusinessStatus,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.CompanyPhone,
+		&i.FaxNumber,
+		&i.CompanyEmail,
+		&i.ArchiveCreator,
 	)
 	return i, err
 }

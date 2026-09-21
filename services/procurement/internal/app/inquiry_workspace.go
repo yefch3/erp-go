@@ -462,6 +462,15 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 	v.SourceMailID = strconv.FormatInt(source, 10)
 	v.State = inquiryState(status, handoff)
 	if view == "SALES" || view == "QUOTATIONS" {
+		if s.customers != nil {
+			var customerID int64
+			if err := s.pool.QueryRow(ctx, "SELECT customer_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&customerID); err != nil {
+				return nil, err
+			}
+			if err := s.checkInquiryCustomer(ctx, customerID); err != nil {
+				return nil, err
+			}
+		}
 		if err = s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
 			return nil, err
 		}
@@ -589,7 +598,15 @@ func (s *Service) listInquiryWorkspace(ctx context.Context, tenant int64, op Ope
 			return InquiryResult{}, err
 		}
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND status<>'CANCELLED' AND deleted_at IS NULL AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR display_inquiry_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES")
+	customerAll := true
+	var customerIDs []int64
+	if (in.View == "SALES" || in.View == "QUOTATIONS") && s.customers != nil {
+		customerIDs, customerAll, err = s.customers.VisibleIDs(ctx, op.ID)
+		if err != nil {
+			return InquiryResult{}, err
+		}
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND ($6 OR customer_id=0 OR customer_id=ANY($7::bigint[])) AND status<>'CANCELLED' AND deleted_at IS NULL AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR display_inquiry_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES", customerAll, customerIDs)
 	if err != nil {
 		return InquiryResult{}, err
 	}
@@ -702,6 +719,18 @@ func validateInquiryBody(b InquiryBody, submit bool) error {
 }
 
 func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
+	if err := s.validateInquiryCustomer(ctx, &in.Body); err != nil {
+		return InquiryResult{}, err
+	}
+	if inquiryID(in.ID) > 0 && s.customers != nil {
+		var customerID int64
+		if err := s.pool.QueryRow(ctx, "SELECT customer_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2", tenant, inquiryID(in.ID)).Scan(&customerID); err != nil {
+			return InquiryResult{}, err
+		}
+		if err := s.checkInquiryCustomer(ctx, customerID); err != nil {
+			return InquiryResult{}, err
+		}
+	}
 	if err := s.prepareInquiryTemplate(ctx, tenant, &in.Body); err != nil {
 		return InquiryResult{}, err
 	}
@@ -788,6 +817,18 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 }
 
 func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
+	if err := s.validateInquiryCustomer(ctx, &in.Body); err != nil {
+		return InquiryResult{}, err
+	}
+	if inquiryID(in.ID) > 0 && s.customers != nil {
+		var customerID int64
+		if err := s.pool.QueryRow(ctx, "SELECT customer_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2", tenant, inquiryID(in.ID)).Scan(&customerID); err != nil {
+			return InquiryResult{}, err
+		}
+		if err := s.checkInquiryCustomer(ctx, customerID); err != nil {
+			return InquiryResult{}, err
+		}
+	}
 	id := inquiryID(in.ID)
 	if id == 0 {
 		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "询盘不存在")

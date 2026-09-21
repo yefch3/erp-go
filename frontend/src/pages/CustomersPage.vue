@@ -51,43 +51,37 @@
         <el-button @click="load">{{ t('common.query') }}</el-button>
         <el-select v-model="customerType" clearable :placeholder="t('customers.type')" class="filter-select" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
         <el-select v-model="businessStatus" clearable :placeholder="t('customers.businessStatus')" class="filter-select" @change="changeFilters"><el-option :label="t('customers.statusProspect')" value="PROSPECT"/><el-option :label="t('customers.statusCooperating')" value="COOPERATING"/><el-option :label="t('customers.statusPaused')" value="PAUSED"/><el-option :label="t('customers.statusInactive')" value="INACTIVE"/></el-select>
+        <el-button v-if="columnOrder.customized.value" link type="primary" @click="columnOrder.reset">恢复默认列顺序</el-button>
         <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
       </div>
 
       <el-table class="customer-table" :data="customers" v-loading="loading" @row-click="openDetail">
-        <el-table-column :label="t('customers.name')" min-width="190">
-          <template #default="{row}">
+        <el-table-column v-for="column in columnOrder.columns.value" :key="column.key" :min-width="column.minWidth">
+<template #header><ReorderableTableHeader :label="column.label" hint="调整列顺序" move-left-label="左移" move-right-label="右移" :can-move-left="!!layoutTenant && columnOrder.canMoveLeft(column.key)" :can-move-right="!!layoutTenant && columnOrder.canMoveRight(column.key)" @move-left="columnOrder.moveBy(column.key, -1)" @move-right="columnOrder.moveBy(column.key, 1)" /></template>
+<template #default="{ row }">
+<template v-if="column.key === 'name'">
             <button class="customer-identity" type="button" @click.stop="openDetail(row)">
               <strong>{{ row.name }}</strong>
               <span>{{ row.code }}<template v-if="row.shortName || row.englishName"> · {{ row.shortName || row.englishName }}</template></span>
             </button>
           </template>
-        </el-table-column>
-        <el-table-column :label="t('customers.country')" min-width="100">
-          <template #default="{ row }">
-            <span v-if="row.countryCode">{{ countryName(row.countryCode, locale) }}</span>
-            <span v-else-if="row.country" class="stale-country">{{ row.country }} · {{ t('customers.countryUnmapped') }}</span>
-            <span v-else class="muted">{{ t('customers.countryUnset') }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('customers.type')" min-width="100"><template #default="{row}">{{ optionLabel(typeOptions,row.customerType) }}</template></el-table-column>
-        <el-table-column :label="t('customers.primaryContact')" min-width="110"><template #default="{row}"><span :class="{ muted: !row.primaryContactName }">{{row.primaryContactName||'未维护'}}</span></template></el-table-column>
-        <el-table-column :label="t('customers.owners')" min-width="120"><template #default="{row}"><span v-if="row.owners?.length">{{row.owners.map((o:any)=>o.employeeName).join('、')}}</span><span v-else class="muted">未分配</span></template></el-table-column>
-        <el-table-column :label="t('common.status')" width="76">
-          <template #default="{ row }"><el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ row.status === 'ACTIVE' ? t('common.active') : t('common.inactive') }}</el-tag></template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" width="64" align="center">
-          <template #default="{ row }">
+<template v-if="column.key === 'country'"><span>{{ row.country || (row.countryCode ? countryName(row.countryCode, locale) : '未设置') }}</span></template>
+<template v-if="column.key === 'type'">{{ optionLabel(typeOptions,row.customerType) }}</template>
+<template v-if="column.key === 'contact'"><span :class="{ muted: !row.primaryContactName }">{{row.primaryContactName||'未维护'}}</span></template>
+<template v-if="column.key === 'owners'"><span v-if="row.owners?.length">{{row.owners.map((o:any)=>o.employeeName).join('、')}}</span><span v-else class="muted">未分配</span></template>
+<template v-if="column.key === 'status'"><el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ row.status === 'ACTIVE' ? t('common.active') : t('common.inactive') }}</el-tag></template>
+<template v-if="column.key === 'actions'">
             <el-dropdown v-if="auth.can('masterdata:customer:write')" trigger="click" @command="handleRowCommand(row, $event)">
               <el-button link type="primary" @click.stop>{{ t('common.more') }}</el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="view">{{ t('customers.viewDetails') }}</el-dropdown-item>
-                <el-dropdown-item :command="row.status === 'ACTIVE' ? 'deactivate' : 'activate'" :class="{ 'danger-action': row.status === 'ACTIVE' }">{{ row.status === 'ACTIVE' ? t('common.deactivate') : t('common.activate') }}</el-dropdown-item>
+                <el-dropdown-item v-if="canDelete && row.status === 'ACTIVE'" command="delete" class="danger-action">删除</el-dropdown-item>
+                <el-dropdown-item v-if="row.status !== 'ACTIVE'" command="activate">{{ t('common.activate') }}</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
             <el-button v-else link type="primary" @click.stop="openDetail(row)">{{ t('common.view') }}</el-button>
           </template>
-        </el-table-column>
+</template></el-table-column>
       </el-table>
 
       <div v-loading="loading" class="customer-cards">
@@ -108,7 +102,8 @@
             <el-button link type="primary" @click.stop>{{ t('common.more') }}</el-button>
             <template #dropdown><el-dropdown-menu>
               <el-dropdown-item command="view">{{ t('customers.viewDetails') }}</el-dropdown-item>
-              <el-dropdown-item :command="row.status === 'ACTIVE' ? 'deactivate' : 'activate'">{{ row.status === 'ACTIVE' ? t('common.deactivate') : t('common.activate') }}</el-dropdown-item>
+              <el-dropdown-item v-if="canDelete && row.status === 'ACTIVE'" command="delete" class="danger-action">删除</el-dropdown-item>
+                <el-dropdown-item v-if="row.status !== 'ACTIVE'" command="activate">{{ t('common.activate') }}</el-dropdown-item>
             </el-dropdown-menu></template>
           </el-dropdown>
         </article>
@@ -234,8 +229,10 @@
 </template>
 
 <script setup lang="ts">
+import ReorderableTableHeader from "../components/ReorderableTableHeader.vue"
+import { useTableColumnOrder } from "../composables/useTableColumnOrder"
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
@@ -246,7 +243,7 @@ import { validateCustomerContact, validateCustomerProfile } from '../lib/custome
 import { portTimezoneOptions } from '../lib/portOptions'
 import { useAuthStore } from '../stores/auth'
 import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
-import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
+import { promptActivationReason } from '../lib/masterDataLifecycle'
 import ImportCustomersDialog from '../components/ImportCustomersDialog.vue'
 
 interface Contact {
@@ -291,6 +288,9 @@ const router = useRouter()
 // sorting it by the reader's collation is the expensive part.
 const countries = computed(() => countryOptions(locale.value))
 const auth = useAuthStore()
+const canDelete = ref(false)
+const layoutTenant = ref('')
+const columnOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-list`, [{"key": "name", "label": "名称", "minWidth": 210}, {"key": "country", "label": "国家/地区", "minWidth": 150}, {"key": "type", "label": "客户类型", "minWidth": 140}, {"key": "contact", "label": "主要联系人", "minWidth": 150}, {"key": "owners", "label": "负责人", "minWidth": 170}, {"key": "status", "label": "状态", "minWidth": 130}, {"key": "actions", "label": "操作", "minWidth": 135}])
 const customers = ref<Customer[]>([])
 const countryGroups = ref<CountryGroup[]>([])
 const paymentOptions = ref<OptionItem[]>([])
@@ -393,7 +393,7 @@ function changeFilters(){page.value=1;load()}
 function openDetail(row:Customer){router.push(`/basic/customers/${row.id}`)}
 function handleRowCommand(row: Customer, command: string) {
   if (command === 'view') openDetail(row)
-  else if (command === 'deactivate') void deactivate(row)
+  else if (command === 'delete') void deleteCustomer(row)
   else if (command === 'activate') void activate(row)
 }
 function optionLabel(list:OptionItem[],code?:string){return list.find(o=>o.code===code)?.label||code||'—'}
@@ -495,11 +495,14 @@ async function save() {
   }
 }
 
-async function deactivate(row: Customer) {
-  const reason = await confirmDeactivation(`/customers/${row.id}/deactivation-impact`, row.name, t)
-  await del(`/customers/${row.id}`, { reason })
-  ElMessage.success(t('customers.deactivated'))
-  await Promise.all([load(), loadCountryGroups()])
+async function deleteCustomer(row: Customer) {
+  if (!canDelete.value) return
+  try {
+    await ElMessageBox.confirm('确定删除该客户吗？', '删除客户', { type: 'warning' })
+  } catch { return }
+  await del(`/customers/${row.id}`, { reason: '删除客户' })
+  ElMessage.success('客户已删除')
+  changeScope()
 }
 
 async function activate(row: Customer) {
@@ -510,6 +513,8 @@ async function activate(row: Customer) {
 }
 
 onMounted(async () => {
+  const access = await get<{ canDelete: boolean; tenantId: string }>('/customers/access')
+  canDelete.value = access.canDelete; layoutTenant.value = String(access.tenantId)
   await Promise.all([load(), loadCountryGroups()])
   paymentOptions.value = (
     await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })

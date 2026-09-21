@@ -105,6 +105,9 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	if err := s.checkCustomerAccess(ctx, offerID(view.Body.CustomerID)); err != nil {
+		return "", err
+	}
 	view.CanEdit = canWrite && ownerVisible && view.Status != "CONFIRMED"
 	if (view.Body.CategoryWorkflow || cmd.Body.CategoryWorkflow) && cmd.Action == "confirm" {
 		return "", apierr.Invalid("OFFER_CATEGORY_FORMULA_PENDING", "分类公式尚未配置，请先保存和核对候选方案")
@@ -138,6 +141,9 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.pdf", "fileData": data})
 		return string(out), nil
 	case "confirm":
+		if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
+			return "", err
+		}
 		if view.Status != "CONFIRMED" {
 			if err := validateOfferPricing(view.Body, source); err != nil {
 				return "", err
@@ -160,6 +166,9 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		}
 		if cmd.Revision != view.Revision {
 			return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后再保存")
+		}
+		if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
+			return "", err
 		}
 		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
 		cmd.Body.CategoryWorkflow = cmd.Body.CategoryWorkflow || view.Body.CategoryWorkflow

@@ -1,6 +1,12 @@
 import { COUNTRY_CODES, countryOptions } from './countries'
 
+export const CUSTOMER_TEMPLATE_HEADERS = ['客户代码','客户名称','客户简称','所属地区','通信地址','邮政编码','公司电话','传真号码','电子信箱','建档人','客户类型','客户等级','客户来源','分管人','联系人姓名','联系人邮箱','联系人电话','联系人手机']
+
 export const CUSTOMER_IMPORT_FIELDS = [
+  { key: 'companyPhone', label: '公司电话', aliases: ['公司电话', 'company phone'] },
+  { key: 'faxNumber', label: '传真号码', aliases: ['传真号码', '传真', 'fax'] },
+  { key: 'companyEmail', label: '电子信箱', aliases: ['电子信箱', '公司邮箱', 'company email'] },
+  { key: 'archiveCreator', label: '建档人', aliases: ['建档人', 'archive creator'] },
   { key: 'code', label: '客户编码', aliases: ['编码', '客户代码', '客户编码', '客户编号', 'code', 'customer code', 'customer no'] },
   { key: 'name', label: '客户名称', required: true, aliases: ['名称', '客户名称', '公司名称', '公司', 'name', 'customer name', 'company', 'company name'] },
   { key: 'countryCode', label: '国家代码', aliases: ['国家代码', '国家编码', '国家', '地区代码', 'country code', 'country', 'country/region'] },
@@ -41,6 +47,11 @@ export interface CustomerImportEmployee { id: string | number; name: string; cod
 export interface CustomerImportRow extends Partial<Record<CustomerImportField, string>> {
   addressState?: string
   ownerEmployeeId?: string
+  ownerEmployeeIds?: string[]
+  ownerNames?: string[]
+  sourceLine?: number
+  customerAction?: string
+  contactAction?: string
   customFields?: Record<string, string>
 }
 export interface CustomerImportFieldMapping { sourceKey: string; fieldKey: string; displayName: string; aliases: string[] }
@@ -69,6 +80,7 @@ export function autoMapCustomerHeaders(headers: string[], customFields: Customer
   const used = new Set<string>()
   headers.forEach((header, index) => {
     const normalized = normalizeCustomerHeader(header)
+    if (!normalized) { mapping[index] = ''; return }
     const fixed = CUSTOMER_IMPORT_FIELDS.find(candidate => candidate.aliases.some(alias => normalizeCustomerHeader(alias) === normalized))
     let target = fixed ? `system:${fixed.key}` : ''
     if (!target) {
@@ -121,7 +133,7 @@ function normalizedPerson(value: string): string {
 }
 
 export function buildCustomerImportRows(sourceRows: string[][], mapping: CustomerImportMapping, employees: CustomerImportEmployee[] = []): CustomerImportRow[] {
-  return sourceRows.map(sourceRow => {
+  return sourceRows.map((sourceRow, index) => {
     const row: CustomerImportRow = {}
     const customFields: Record<string, string> = {}
     Object.entries(mapping).forEach(([columnText, target]) => {
@@ -130,19 +142,26 @@ export function buildCustomerImportRows(sourceRows: string[][], mapping: Custome
       const value = (sourceRow[column] ?? '').trim()
       if (target === 'system:countryRegion') {
         const resolved = resolveImportedCountry(value)
-        row.countryCode = resolved.countryCode
+        row.countryRegion = value
+        row.countryCode = /^[A-Z]{2}$/.test(resolved.countryCode) ? resolved.countryCode : ''
         row.addressState = resolved.state
       } else if (target.startsWith('system:')) row[target.slice(7) as CustomerImportField] = value
       else customFields[`column_${column}`] = value
     })
     if (row.ownerName) {
-      const key = normalizedPerson(row.ownerName)
-      const matches = employees.filter(employee => [employee.name, employee.code ?? '', employee.email ?? ''].some(value => normalizedPerson(value) === key))
-      if (matches.length === 1) row.ownerEmployeeId = String(matches[0].id)
+      const names = row.ownerName.split(/[;；、]/).map(v => v.trim()).filter(Boolean)
+      const selected = names.map(name => employees.filter(employee => [employee.name, employee.code ?? '', employee.email ?? ''].some(value => normalizedPerson(value) === normalizedPerson(name))))
+      if (selected.every(matches => matches.length === 1)) {
+        const unique = [...new Map(selected.map(matches => [String(matches[0].id), matches[0]])).values()]
+        row.ownerEmployeeIds = unique.map(employee => String(employee.id))
+        row.ownerNames = unique.map(employee => employee.name)
+        if (unique.length === 1) row.ownerEmployeeId = String(unique[0].id)
+      }
     }
     if (Object.keys(customFields).length) row.customFields = customFields
+    row.sourceLine = index + 2
     return row
-  }).filter(row => Object.entries(row).some(([key, value]) => key === 'customFields' ? Object.values(value as Record<string, string>).some(Boolean) : Boolean(value)))
+  }).filter(row => Object.entries(row).some(([key, value]) => key === 'sourceLine' ? false : key === 'customFields' ? Object.values(value as Record<string, string>).some(Boolean) : Boolean(value)))
 }
 
 export function buildCustomerImportFieldMappings(headers: string[], mapping: CustomerImportMapping, newFieldNames: Record<number, string>, customFields: CustomerFieldDefinition[]): CustomerImportFieldMapping[] {
@@ -152,4 +171,20 @@ export function buildCustomerImportFieldMappings(headers: string[], mapping: Cus
     const existing = target.startsWith('custom:') ? customFields.find(field => field.fieldKey === target.slice(7)) : undefined
     return [{ sourceKey: `column_${column}`, fieldKey: existing?.fieldKey ?? '', displayName: existing?.displayName ?? newFieldNames[column]?.trim() ?? headers[column]?.trim() ?? '', aliases: [headers[column]?.trim() ?? ''].filter(Boolean) }]
   })
+}
+
+// The original supplier-provided workbook has 17 columns. The ERP template
+// adds shortName after name; these are the only two accepted layouts.
+export function customerTemplateProblems(headers: string[]): string[] {
+  const clean = headers.map(header => header.trim())
+  const original = CUSTOMER_TEMPLATE_HEADERS.filter(header => header !== '客户简称')
+  const expected = clean.length === original.length ? original : CUSTOMER_TEMPLATE_HEADERS
+  if (clean.length !== expected.length || clean.some((header, i) => header !== expected[i])) {
+    return ['Excel 格式与固定模板不一致，请下载模板后填写，不要新增、删除、改名或调整列顺序']
+  }
+  return []
+}
+export function fixedCustomerTemplateMapping(headers: string[]): CustomerImportMapping {
+  if (customerTemplateProblems(headers).length) return {}
+  return autoMapCustomerHeaders(headers)
 }

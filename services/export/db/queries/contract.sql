@@ -112,6 +112,7 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.external_contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
+  AND (sqlc.arg(customer_access_all)::boolean OR c.customer_id=ANY(sqlc.arg(customer_access_ids)::bigint[]))
 ORDER BY c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 

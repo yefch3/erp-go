@@ -14,55 +14,34 @@ import (
 )
 
 type CustomerImportRow struct {
-	Code, Name, CountryCode, CustomerType, Currency, PaymentTerm   string
-	ContactName, ContactEmail, ContactPhone, ContactMobile, Remark string
-	Address, ShortName, EnglishName, Industry, Source, Tags        string
-	Website, PrimaryLanguage, Timezone                             string
-	RegisteredName, RegistrationNo, TaxID                          string
-	InvoiceTitle, InvoiceTaxNo, InvoiceRemark, BusinessStatus      string
-	PostalCode, AddressState, CreditGrade, OwnerName               string
-	OwnerEmployeeID                                                int64
-	CustomFields                                                   map[string]string
+	CompanyPhone, FaxNumber, CompanyEmail, ArchiveCreator, CountryRegion string
+	OwnerEmployeeIDs                                                     []int64
+	OwnerNames                                                           []string
+	CustomerAction, ContactAction                                        string
+	SourceLine                                                           int32
+	Code, Name, CountryCode, CustomerType, Currency, PaymentTerm         string
+	ContactName, ContactEmail, ContactPhone, ContactMobile, Remark       string
+	Address, ShortName, EnglishName, Industry, Source, Tags              string
+	Website, PrimaryLanguage, Timezone                                   string
+	RegisteredName, RegistrationNo, TaxID                                string
+	InvoiceTitle, InvoiceTaxNo, InvoiceRemark, BusinessStatus            string
+	PostalCode, AddressState, CreditGrade, OwnerName                     string
+	OwnerEmployeeID                                                      int64
+	CustomFields                                                         map[string]string
 }
 
 type CustomerImportVerdict struct {
-	Line               int32
-	Code, Name, Reason string
-	OK                 bool
+	ExistingCustomer, DuplicateContact bool
+	Line                               int32
+	Code, Name, Reason                 string
+	OK                                 bool
 }
 
 // ImportCustomers 的预检和写入共用同一个校验函数。只要有一行错误，正式导入就
 // 一行也不写，避免用户无法判断一批表格究竟成功了哪一半。
 func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []CustomerImportRow, mappings []CustomerImportFieldMapping, dryRun bool, operatorID int64, operatorName string) ([]CustomerImportVerdict, int32, error) {
-	seenSources := map[string]bool{}
-	seenTargets := map[string]bool{}
-	for _, mapping := range mappings {
-		mapping.SourceKey = strings.TrimSpace(mapping.SourceKey)
-		mapping.FieldKey = strings.TrimSpace(mapping.FieldKey)
-		mapping.DisplayName = strings.TrimSpace(mapping.DisplayName)
-		if mapping.SourceKey == "" || seenSources[mapping.SourceKey] {
-			return nil, 0, apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_MAPPING_INVALID", "动态字段映射重复或缺少来源标识")
-		}
-		seenSources[mapping.SourceKey] = true
-		if mapping.FieldKey == "" && mapping.DisplayName == "" {
-			return nil, 0, apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_NAME_REQUIRED", "新客户字段显示名称必填")
-		}
-		targetKey := mapping.FieldKey
-		if targetKey == "" {
-			targetKey = customerFieldKey(mapping.DisplayName)
-		}
-		if seenTargets[targetKey] {
-			return nil, 0, apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_MAPPING_DUPLICATE", "多个 Excel 列不能对应同一个客户字段")
-		}
-		seenTargets[targetKey] = true
-		if mapping.FieldKey != "" {
-			if _, err := s.q.GetCustomerFieldDefinitionByKey(ctx, store.GetCustomerFieldDefinitionByKeyParams{TenantID: tenantID, FieldKey: mapping.FieldKey}); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return nil, 0, apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_NOT_FOUND", "选择的客户字段不存在或已停用")
-				}
-				return nil, 0, err
-			}
-		}
+	if err := s.validateCustomerImportMappings(ctx, tenantID, mappings); err != nil {
+		return nil, 0, err
 	}
 	verdicts := make([]CustomerImportVerdict, len(rows))
 	seenCodes := map[string]bool{}
@@ -148,30 +127,9 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		resolvedFields := make(map[string]store.CustomerFieldDefinition, len(mappings))
-		for index, mapping := range mappings {
-			var definition store.CustomerFieldDefinition
-			var err error
-			if mapping.FieldKey != "" {
-				definition, err = q.GetCustomerFieldDefinitionByKey(ctx, store.GetCustomerFieldDefinitionByKeyParams{TenantID: tenantID, FieldKey: mapping.FieldKey})
-				if err == nil {
-					aliases := normalizeFieldAliases(append(append(definition.Aliases, mapping.Aliases...), mapping.DisplayName))
-					definition, err = q.UpdateCustomerFieldDefinition(ctx, store.UpdateCustomerFieldDefinitionParams{DisplayName: definition.DisplayName, Aliases: aliases, SortOrder: definition.SortOrder, OperatorID: operatorID, TenantID: tenantID, FieldKey: definition.FieldKey})
-				}
-			} else {
-				key := customerFieldKey(mapping.DisplayName)
-				definition, err = q.GetCustomerFieldDefinitionByKey(ctx, store.GetCustomerFieldDefinitionByKeyParams{TenantID: tenantID, FieldKey: key})
-				if errors.Is(err, pgx.ErrNoRows) {
-					definition, err = q.CreateCustomerFieldDefinition(ctx, store.CreateCustomerFieldDefinitionParams{TenantID: tenantID, FieldKey: key, DisplayName: mapping.DisplayName, Aliases: normalizeFieldAliases(append(mapping.Aliases, mapping.DisplayName)), SortOrder: int32(index + 100), OperatorID: operatorID})
-				} else if err == nil {
-					aliases := normalizeFieldAliases(append(append(definition.Aliases, mapping.Aliases...), mapping.DisplayName))
-					definition, err = q.UpdateCustomerFieldDefinition(ctx, store.UpdateCustomerFieldDefinitionParams{DisplayName: definition.DisplayName, Aliases: aliases, SortOrder: definition.SortOrder, OperatorID: operatorID, TenantID: tenantID, FieldKey: definition.FieldKey})
-				}
-			}
-			if err != nil {
-				return err
-			}
-			resolvedFields[mapping.SourceKey] = definition
+		resolvedFields, err := resolveImportFields(ctx, q, tenantID, operatorID, mappings)
+		if err != nil {
+			return err
 		}
 		for i, row := range rows {
 			code := strings.ToUpper(strings.TrimSpace(row.Code))
@@ -229,6 +187,14 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 					return fmt.Errorf("第 %d 行负责人写入失败: %w", i+2, err)
 				}
 			}
+			if operatorID > 0 && row.OwnerEmployeeID != operatorID {
+				if _, err := q.CreateCustomerOwner(ctx, store.CreateCustomerOwnerParams{
+					TenantID: tenantID, CustomerID: c.ID, EmployeeID: operatorID,
+					EmployeeName: operatorName, ResponsibilityCode: "SALES", IsPrimary: row.OwnerEmployeeID == 0, OperatorID: operatorID,
+				}); err != nil {
+					return err
+				}
+			}
 			for sourceKey, value := range row.CustomFields {
 				definition, ok := resolvedFields[sourceKey]
 				if !ok || strings.TrimSpace(value) == "" {
@@ -269,4 +235,39 @@ func defaultText(value, fallback string) string {
 func splitImportTags(value string) []string {
 	parts := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == '，' || r == ';' || r == '；' })
 	return normalizeFieldAliases(parts)
+}
+
+func (s *Service) validateCustomerImportMappings(ctx context.Context, tenantID int64, mappings []CustomerImportFieldMapping) error {
+	seenSources := map[string]bool{}
+	seenTargets := map[string]bool{}
+	for _, mapping := range mappings {
+		mapping.SourceKey = strings.TrimSpace(mapping.SourceKey)
+		mapping.FieldKey = strings.TrimSpace(mapping.FieldKey)
+		mapping.DisplayName = strings.TrimSpace(mapping.DisplayName)
+		if mapping.SourceKey == "" || seenSources[mapping.SourceKey] {
+			return apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_MAPPING_INVALID", "动态字段映射重复或缺少来源标识")
+		}
+		seenSources[mapping.SourceKey] = true
+		if mapping.FieldKey == "" && mapping.DisplayName == "" {
+			return apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_NAME_REQUIRED", "新客户字段显示名称必填")
+		}
+		targetKey := mapping.FieldKey
+		if targetKey == "" {
+			targetKey = customerFieldKey(mapping.DisplayName)
+		}
+		if seenTargets[targetKey] {
+			return apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_MAPPING_DUPLICATE", "多个 Excel 列不能对应同一个客户字段")
+		}
+		seenTargets[targetKey] = true
+		if mapping.FieldKey != "" {
+			if _, err := s.q.GetCustomerFieldDefinitionByKey(ctx, store.GetCustomerFieldDefinitionByKeyParams{TenantID: tenantID, FieldKey: mapping.FieldKey}); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return apierr.Invalid("MD_CUSTOMER_IMPORT_FIELD_NOT_FOUND", "选择的客户字段不存在或已停用")
+				}
+				return err
+			}
+		}
+	}
+
+	return nil
 }

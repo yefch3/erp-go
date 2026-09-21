@@ -458,6 +458,9 @@ func (s *Service) GetQuotationFor(ctx context.Context, tenantID, id int64, op Op
 		// is itself information.
 		return store.GetQuotationRow{}, nil, apierr.NotFound("EX_QUOTE_NOT_FOUND", "报价单不存在")
 	}
+	if err := s.checkCustomerAccess(ctx, q.CustomerID); err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
 	return q, items, nil
 }
 
@@ -492,7 +495,12 @@ func (s *Service) ListQuotations(ctx context.Context, tenantID int64, f Quotatio
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.q.ListQuotations(ctx, store.ListQuotationsParams{
+	customerIDs, customerAll, err := s.visibleCustomers(ctx, op.ID)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.q.ListQuotations(ctx, store.ListQuotationsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs,
+
 		TenantID: tenantID, Keyword: f.Keyword, CustomerID: f.CustomerID, Status: f.Status,
 		SourceSourcingCaseID: f.SourceSourcingCaseID,
 		WithoutContract:      f.WithoutContract,

@@ -19,36 +19,44 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName                     = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName                   = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_UpdateCustomerProfile_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
-	CustomerService_DeactivateCustomer_FullMethodName              = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
-	CustomerService_ListCustomerAddresses_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
-	CustomerService_CreateCustomerAddress_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
-	CustomerService_UpdateCustomerAddress_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
-	CustomerService_DeactivateCustomerAddress_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
-	CustomerService_ListCustomerContacts_FullMethodName            = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
-	CustomerService_CreateCustomerContact_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
-	CustomerService_UpdateCustomerContact_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
-	CustomerService_DeactivateCustomerContact_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
-	CustomerService_ListCustomerOwners_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
-	CustomerService_ListCustomerIdsByOwnerEmployees_FullMethodName = "/erp.masterdata.v1.CustomerService/ListCustomerIdsByOwnerEmployees"
-	CustomerService_CreateCustomerOwner_FullMethodName             = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
-	CustomerService_UpdateCustomerOwner_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
-	CustomerService_DeactivateCustomerOwner_FullMethodName         = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
-	CustomerService_ListCustomerChanges_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
-	CustomerService_ImportCustomers_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ImportCustomers"
-	CustomerService_ListCustomerFields_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListCustomerFields"
-	CustomerService_SaveCustomerField_FullMethodName               = "/erp.masterdata.v1.CustomerService/SaveCustomerField"
-	CustomerService_CheckCustomerDuplicates_FullMethodName         = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
-	CustomerService_GetCustomerDeactivationImpact_FullMethodName   = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
-	CustomerService_ListMailingContacts_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
-	CustomerService_ListOwnerCountries_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListOwnerCountries"
-	CustomerService_ListCustomerCountries_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
-	CustomerService_ContactsInCountry_FullMethodName               = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
+	CustomerService_GetCustomerBasic_FullMethodName                  = "/erp.masterdata.v1.CustomerService/GetCustomerBasic"
+	CustomerService_SaveCustomerBasic_FullMethodName                 = "/erp.masterdata.v1.CustomerService/SaveCustomerBasic"
+	CustomerService_DeleteCustomerDocument_FullMethodName            = "/erp.masterdata.v1.CustomerService/DeleteCustomerDocument"
+	CustomerService_ListCustomerDocuments_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerDocuments"
+	CustomerService_SaveCustomerDocument_FullMethodName              = "/erp.masterdata.v1.CustomerService/SaveCustomerDocument"
+	CustomerService_GetCustomerDocumentFile_FullMethodName           = "/erp.masterdata.v1.CustomerService/GetCustomerDocumentFile"
+	CustomerService_ListCustomerDocumentReminders_FullMethodName     = "/erp.masterdata.v1.CustomerService/ListCustomerDocumentReminders"
+	CustomerService_MarkCustomerDocumentRemindersRead_FullMethodName = "/erp.masterdata.v1.CustomerService/MarkCustomerDocumentRemindersRead"
+	CustomerService_CreateCustomer_FullMethodName                    = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName                       = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName                     = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName                    = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_UpdateCustomerProfile_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
+	CustomerService_DeactivateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListCustomerAddresses_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
+	CustomerService_CreateCustomerAddress_FullMethodName             = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
+	CustomerService_UpdateCustomerAddress_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
+	CustomerService_DeactivateCustomerAddress_FullMethodName         = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
+	CustomerService_ListCustomerContacts_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
+	CustomerService_CreateCustomerContact_FullMethodName             = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
+	CustomerService_UpdateCustomerContact_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
+	CustomerService_DeactivateCustomerContact_FullMethodName         = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
+	CustomerService_ListCustomerOwners_FullMethodName                = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
+	CustomerService_ListCustomerIdsByOwnerEmployees_FullMethodName   = "/erp.masterdata.v1.CustomerService/ListCustomerIdsByOwnerEmployees"
+	CustomerService_CreateCustomerOwner_FullMethodName               = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
+	CustomerService_UpdateCustomerOwner_FullMethodName               = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
+	CustomerService_DeactivateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
+	CustomerService_ListCustomerChanges_FullMethodName               = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
+	CustomerService_ImportCustomers_FullMethodName                   = "/erp.masterdata.v1.CustomerService/ImportCustomers"
+	CustomerService_ListCustomerFields_FullMethodName                = "/erp.masterdata.v1.CustomerService/ListCustomerFields"
+	CustomerService_SaveCustomerField_FullMethodName                 = "/erp.masterdata.v1.CustomerService/SaveCustomerField"
+	CustomerService_CheckCustomerDuplicates_FullMethodName           = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
+	CustomerService_GetCustomerDeactivationImpact_FullMethodName     = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
+	CustomerService_ListMailingContacts_FullMethodName               = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListOwnerCountries_FullMethodName                = "/erp.masterdata.v1.CustomerService/ListOwnerCountries"
+	CustomerService_ListCustomerCountries_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
+	CustomerService_ContactsInCountry_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -58,6 +66,14 @@ const (
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceClient interface {
+	GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error)
+	SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error)
+	DeleteCustomerDocument(ctx context.Context, in *DeleteCustomerDocumentRequest, opts ...grpc.CallOption) (*DeleteCustomerDocumentResponse, error)
+	ListCustomerDocuments(ctx context.Context, in *ListCustomerDocumentsRequest, opts ...grpc.CallOption) (*ListCustomerDocumentsResponse, error)
+	SaveCustomerDocument(ctx context.Context, in *SaveCustomerDocumentRequest, opts ...grpc.CallOption) (*SaveCustomerDocumentResponse, error)
+	GetCustomerDocumentFile(ctx context.Context, in *GetCustomerDocumentFileRequest, opts ...grpc.CallOption) (*GetCustomerDocumentFileResponse, error)
+	ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentRemindersResponse, error)
+	MarkCustomerDocumentRemindersRead(ctx context.Context, in *MarkCustomerDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...grpc.CallOption) (*CreateCustomerResponse, error)
 	GetCustomer(ctx context.Context, in *GetCustomerRequest, opts ...grpc.CallOption) (*GetCustomerResponse, error)
 	ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error)
@@ -108,6 +124,86 @@ type customerServiceClient struct {
 
 func NewCustomerServiceClient(cc grpc.ClientConnInterface) CustomerServiceClient {
 	return &customerServiceClient{cc}
+}
+
+func (c *customerServiceClient) GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCustomerBasicResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetCustomerBasic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveCustomerBasicResponse)
+	err := c.cc.Invoke(ctx, CustomerService_SaveCustomerBasic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) DeleteCustomerDocument(ctx context.Context, in *DeleteCustomerDocumentRequest, opts ...grpc.CallOption) (*DeleteCustomerDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteCustomerDocumentResponse)
+	err := c.cc.Invoke(ctx, CustomerService_DeleteCustomerDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerDocuments(ctx context.Context, in *ListCustomerDocumentsRequest, opts ...grpc.CallOption) (*ListCustomerDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerDocumentsResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) SaveCustomerDocument(ctx context.Context, in *SaveCustomerDocumentRequest, opts ...grpc.CallOption) (*SaveCustomerDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveCustomerDocumentResponse)
+	err := c.cc.Invoke(ctx, CustomerService_SaveCustomerDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) GetCustomerDocumentFile(ctx context.Context, in *GetCustomerDocumentFileRequest, opts ...grpc.CallOption) (*GetCustomerDocumentFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCustomerDocumentFileResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetCustomerDocumentFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerDocumentReminders(ctx context.Context, in *ListCustomerDocumentRemindersRequest, opts ...grpc.CallOption) (*ListCustomerDocumentRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerDocumentRemindersResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerDocumentReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) MarkCustomerDocumentRemindersRead(ctx context.Context, in *MarkCustomerDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkCustomerDocumentRemindersReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkCustomerDocumentRemindersReadResponse)
+	err := c.cc.Invoke(ctx, CustomerService_MarkCustomerDocumentRemindersRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *customerServiceClient) CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...grpc.CallOption) (*CreateCustomerResponse, error) {
@@ -417,6 +513,14 @@ func (c *customerServiceClient) ContactsInCountry(ctx context.Context, in *Conta
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceServer interface {
+	GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error)
+	SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error)
+	DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error)
+	ListCustomerDocuments(context.Context, *ListCustomerDocumentsRequest) (*ListCustomerDocumentsResponse, error)
+	SaveCustomerDocument(context.Context, *SaveCustomerDocumentRequest) (*SaveCustomerDocumentResponse, error)
+	GetCustomerDocumentFile(context.Context, *GetCustomerDocumentFileRequest) (*GetCustomerDocumentFileResponse, error)
+	ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentRemindersResponse, error)
+	MarkCustomerDocumentRemindersRead(context.Context, *MarkCustomerDocumentRemindersReadRequest) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(context.Context, *CreateCustomerRequest) (*CreateCustomerResponse, error)
 	GetCustomer(context.Context, *GetCustomerRequest) (*GetCustomerResponse, error)
 	ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error)
@@ -469,6 +573,30 @@ type CustomerServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCustomerServiceServer struct{}
 
+func (UnimplementedCustomerServiceServer) GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerBasic not implemented")
+}
+func (UnimplementedCustomerServiceServer) SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveCustomerBasic not implemented")
+}
+func (UnimplementedCustomerServiceServer) DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteCustomerDocument not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerDocuments(context.Context, *ListCustomerDocumentsRequest) (*ListCustomerDocumentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerDocuments not implemented")
+}
+func (UnimplementedCustomerServiceServer) SaveCustomerDocument(context.Context, *SaveCustomerDocumentRequest) (*SaveCustomerDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveCustomerDocument not implemented")
+}
+func (UnimplementedCustomerServiceServer) GetCustomerDocumentFile(context.Context, *GetCustomerDocumentFileRequest) (*GetCustomerDocumentFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerDocumentFile not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerDocumentReminders(context.Context, *ListCustomerDocumentRemindersRequest) (*ListCustomerDocumentRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerDocumentReminders not implemented")
+}
+func (UnimplementedCustomerServiceServer) MarkCustomerDocumentRemindersRead(context.Context, *MarkCustomerDocumentRemindersReadRequest) (*MarkCustomerDocumentRemindersReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkCustomerDocumentRemindersRead not implemented")
+}
 func (UnimplementedCustomerServiceServer) CreateCustomer(context.Context, *CreateCustomerRequest) (*CreateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomer not implemented")
 }
@@ -578,6 +706,150 @@ func RegisterCustomerServiceServer(s grpc.ServiceRegistrar, srv CustomerServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&CustomerService_ServiceDesc, srv)
+}
+
+func _CustomerService_GetCustomerBasic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCustomerBasicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetCustomerBasic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetCustomerBasic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetCustomerBasic(ctx, req.(*GetCustomerBasicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_SaveCustomerBasic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveCustomerBasicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).SaveCustomerBasic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_SaveCustomerBasic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).SaveCustomerBasic(ctx, req.(*SaveCustomerBasicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_DeleteCustomerDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteCustomerDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).DeleteCustomerDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_DeleteCustomerDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).DeleteCustomerDocument(ctx, req.(*DeleteCustomerDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerDocuments(ctx, req.(*ListCustomerDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_SaveCustomerDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveCustomerDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).SaveCustomerDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_SaveCustomerDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).SaveCustomerDocument(ctx, req.(*SaveCustomerDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_GetCustomerDocumentFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCustomerDocumentFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetCustomerDocumentFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetCustomerDocumentFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetCustomerDocumentFile(ctx, req.(*GetCustomerDocumentFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerDocumentReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerDocumentRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerDocumentReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerDocumentReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerDocumentReminders(ctx, req.(*ListCustomerDocumentRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_MarkCustomerDocumentRemindersRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkCustomerDocumentRemindersReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).MarkCustomerDocumentRemindersRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_MarkCustomerDocumentRemindersRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).MarkCustomerDocumentRemindersRead(ctx, req.(*MarkCustomerDocumentRemindersReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _CustomerService_CreateCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1127,6 +1399,38 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.masterdata.v1.CustomerService",
 	HandlerType: (*CustomerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetCustomerBasic",
+			Handler:    _CustomerService_GetCustomerBasic_Handler,
+		},
+		{
+			MethodName: "SaveCustomerBasic",
+			Handler:    _CustomerService_SaveCustomerBasic_Handler,
+		},
+		{
+			MethodName: "DeleteCustomerDocument",
+			Handler:    _CustomerService_DeleteCustomerDocument_Handler,
+		},
+		{
+			MethodName: "ListCustomerDocuments",
+			Handler:    _CustomerService_ListCustomerDocuments_Handler,
+		},
+		{
+			MethodName: "SaveCustomerDocument",
+			Handler:    _CustomerService_SaveCustomerDocument_Handler,
+		},
+		{
+			MethodName: "GetCustomerDocumentFile",
+			Handler:    _CustomerService_GetCustomerDocumentFile_Handler,
+		},
+		{
+			MethodName: "ListCustomerDocumentReminders",
+			Handler:    _CustomerService_ListCustomerDocumentReminders_Handler,
+		},
+		{
+			MethodName: "MarkCustomerDocumentRemindersRead",
+			Handler:    _CustomerService_MarkCustomerDocumentRemindersRead_Handler,
+		},
 		{
 			MethodName: "CreateCustomer",
 			Handler:    _CustomerService_CreateCustomer_Handler,

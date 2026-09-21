@@ -10,16 +10,20 @@ import (
 	"google.golang.org/grpc"
 
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/export/internal/app"
 )
 
-type Customers struct{ client mdv1.CustomerServiceClient }
+type Customers struct {
+	client mdv1.CustomerServiceClient
+	access iamv1.AccessServiceClient
+}
 
-func NewCustomers(conn *grpc.ClientConn) *Customers {
-	return &Customers{client: mdv1.NewCustomerServiceClient(conn)}
+func NewCustomers(conn *grpc.ClientConn, iam *grpc.ClientConn) *Customers {
+	return &Customers{client: mdv1.NewCustomerServiceClient(conn), access: iamv1.NewAccessServiceClient(iam)}
 }
 
 func (c *Customers) Get(ctx context.Context, id int64) (app.Customer, error) {
@@ -129,4 +133,19 @@ func (n *Numbering) Next(ctx context.Context, bizType string) (string, error) {
 		return "", err
 	}
 	return resp.GetNumber(), nil
+}
+
+func (c *Customers) VisibleIDs(ctx context.Context, actor int64) ([]int64, bool, error) {
+	scope, err := c.access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: actor, Module: "customer"})
+	if err != nil {
+		return nil, false, err
+	}
+	if scope.GetAll() {
+		return nil, true, nil
+	}
+	resp, err := c.client.ListCustomerIdsByOwnerEmployees(ctx, &mdv1.ListCustomerIdsByOwnerEmployeesRequest{EmployeeIds: []int64{actor}})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetCustomerIds(), false, nil
 }

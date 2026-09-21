@@ -17,7 +17,7 @@ describe('customer import column mapping', () => {
       [['Amy', 'ACME'], ['', '']],
       { 0: 'system:contactName', 1: 'system:name' },
     )
-    expect(rows).toEqual([{ contactName: 'Amy', name: 'ACME' }])
+    expect(rows).toEqual([{ contactName: 'Amy', name: 'ACME', sourceLine: 2 }])
   })
 
   it('requires a customer name column', () => {
@@ -45,7 +45,7 @@ describe('customer import column mapping', () => {
     expect(buildCustomerImportRows([
       ['TEST-1', '测试客户', '美国·加利福尼亚州', '100 Test Street', '94105', 'B', '系统管理员', 'Amy', 'amy@example.com', '+1-415-555-0103', '+1-415-555-0104'],
     ], mapping, [{ id: 9, name: '系统管理员' }])).toEqual([{
-      code: 'TEST-1', name: '测试客户', countryCode: 'US', addressState: '加利福尼亚州', address: '100 Test Street', postalCode: '94105',
+      sourceLine: 2, countryRegion: '美国·加利福尼亚州', ownerEmployeeIds: ['9'], ownerNames: ['系统管理员'], code: 'TEST-1', name: '测试客户', countryCode: 'US', addressState: '加利福尼亚州', address: '100 Test Street', postalCode: '94105',
       creditGrade: 'B', ownerName: '系统管理员', ownerEmployeeId: '9', contactName: 'Amy', contactEmail: 'amy@example.com',
       contactPhone: '+1-415-555-0103', contactMobile: '+1-415-555-0104',
     }])

@@ -5,6 +5,7 @@ package filestore
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/sgao19/erp-go/pkg/blobstore"
@@ -40,4 +41,12 @@ func (f *Files) PresignGet(ctx context.Context, key string) (string, error) {
 
 func (f *Files) Remove(ctx context.Context, key string) error {
 	return f.store.Remove(ctx, key)
+}
+
+func (f *Files) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) (string, error) {
+	return f.store.Put(ctx, key, r, size, contentType)
+}
+
+func (f *Files) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	return f.store.Get(ctx, key)
 }

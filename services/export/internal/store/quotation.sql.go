@@ -551,8 +551,9 @@ WHERE q.tenant_id = $1::bigint
                       WHERE c.tenant_id = q.tenant_id
                         AND c.quotation_id = q.id
                         AND c.status <> 'CANCELLED'))
+  AND ($9::boolean OR q.customer_id=ANY($10::bigint[]))
 ORDER BY q.id DESC
-LIMIT $10::int OFFSET $9::int
+LIMIT $12::int OFFSET $11::int
 `
 
 type ListQuotationsParams struct {
@@ -564,6 +565,8 @@ type ListQuotationsParams struct {
 	SourceSourcingCaseID int64
 	Keyword              string
 	WithoutContract      bool
+	CustomerAccessAll    bool
+	CustomerAccessIds    []int64
 	RowOffset            int32
 	RowLimit             int32
 }
@@ -603,6 +606,8 @@ func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) 
 		arg.SourceSourcingCaseID,
 		arg.Keyword,
 		arg.WithoutContract,
+		arg.CustomerAccessAll,
+		arg.CustomerAccessIds,
 		arg.RowOffset,
 		arg.RowLimit,
 	)

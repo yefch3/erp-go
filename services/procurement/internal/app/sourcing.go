@@ -76,6 +76,9 @@ type SourcingCaseView struct {
 type SourcingFilter struct{ Status, Keyword string }
 
 func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in NewSourcingCase, op Operator) (SourcingCaseView, error) {
+	if err := s.checkInquiryCustomer(ctx, in.CustomerID); err != nil {
+		return SourcingCaseView{}, err
+	}
 	if len(in.Lines) == 0 {
 		return SourcingCaseView{}, apierr.Invalid("SC_LINES_REQUIRED", "询价案件至少需要一条产品明细")
 	}
