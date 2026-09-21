@@ -482,7 +482,8 @@ type InboundAttachment struct {
 	//
 	// "direct"  preview_url 已经填好，直接显示（图片、PDF）。
 	// "office"  在线 Office 里打开：调 OfficePreviewConfig 拿配置。配了
-	//           OnlyOffice 时，Word / Excel / PPT 都是这一档。
+	//
+	//	OnlyOffice 时，Word / Excel / PPT 都是这一档。
 	//
 	// 从前还有 "convert"——先转成 PDF 再看。2026-09-14 连同 Gotenberg 一起
 	// 退役，**服务端不再产生这个值**；收到它的客户端该当成"不能预览"。
@@ -822,9 +823,9 @@ type SearchMailRequest struct {
 	// 只搜这个信箱。account_ids 之前的那一个，现在只在**换版本那几秒**里
 	// 起作用，两边都还发着、也都还读着：
 	//
-	//   新网关 + 旧服务：旧服务只认这一个，网关照发当前那个箱 —— 范围退回
-	//                    「只搜当前箱」，比范围突然放开安全。
-	//   旧网关 + 新服务：旧网关只发这一个，新服务把它当成单元素的 account_ids。
+	//	新网关 + 旧服务：旧服务只认这一个，网关照发当前那个箱 —— 范围退回
+	//	                 「只搜当前箱」，比范围突然放开安全。
+	//	旧网关 + 新服务：旧网关只发这一个，新服务把它当成单元素的 account_ids。
 	//
 	// 不标 deprecated：唯一的读取点是那条兼容分支，标了之后 staticcheck 会
 	// 在那儿报警，而压掉警告的注释比这段说明更没用。
