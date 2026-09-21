@@ -112,7 +112,11 @@ func TestCustomerBusinessListsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Exec(ctx, "DELETE FROM customer_offers WHERE tenant_id=$1", tenant)
+	defer func() {
+		if _, err := pool.Exec(ctx, "DELETE FROM customer_offers WHERE tenant_id=$1", tenant); err != nil {
+			t.Errorf("cleanup: %v", err)
+		}
+	}()
 	summaries, err := s.offerSummaries(ctx, grpcx.Operator{TenantID: tenant, EmployeeID: 1})
 	if err != nil || summaries != "{\"summaries\":{}}" {
 		t.Fatalf("summary leak: %s %v", summaries, err)

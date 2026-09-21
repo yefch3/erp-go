@@ -112,7 +112,7 @@ func (s *Service) SaveCustomerDocument(ctx context.Context, tenantID int64, in C
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	// Serialize revisions for a customer and reject replacements based on a stale version.
 	var exists int64
 	if err = tx.QueryRow(ctx, `SELECT id FROM customers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, in.CustomerID).Scan(&exists); err != nil {
@@ -217,7 +217,7 @@ func (s *Service) DeleteCustomerDocument(ctx context.Context, tenantID, customer
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var customer int64
 	if err = tx.QueryRow(ctx, `SELECT id FROM customers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, customerID).Scan(&customer); err != nil {
 		if err == pgx.ErrNoRows {

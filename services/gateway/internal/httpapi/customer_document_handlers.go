@@ -31,7 +31,11 @@ func (s *Server) saveCustomerDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
+		defer func() {
+			if err := r.MultipartForm.RemoveAll(); err != nil && s.Log != nil {
+				s.Log.Warn("customer upload temporary file cleanup failed", "err", err)
+			}
+		}()
 	}
 	days, err := strconv.ParseInt(r.FormValue("remindDays"), 10, 32)
 	if err != nil {
@@ -87,7 +91,7 @@ func (s *Server) getCustomerDocumentFile(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	w.Write(resp.Content)
+	_, _ = w.Write(resp.Content)
 }
 func documentPreviewType(kind string) bool {
 	switch kind {

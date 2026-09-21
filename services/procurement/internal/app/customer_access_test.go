@@ -56,7 +56,11 @@ func TestInquiryCustomerRemovalIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := result.Item.ID
-	defer pool.Exec(ctx, "DELETE FROM sourcing_cases WHERE tenant_id=$1", tenant)
+	defer func() {
+		if _, err := pool.Exec(ctx, "DELETE FROM sourcing_cases WHERE tenant_id=$1", tenant); err != nil {
+			t.Errorf("cleanup: %v", err)
+		}
+	}()
 	if result.Item.Body.Customer != "Canonical" {
 		t.Fatal("untrusted customer name persisted")
 	}
