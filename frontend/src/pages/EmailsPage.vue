@@ -829,8 +829,18 @@
               >
                 {{ t('emails.sortBar.unreadFirst') }}
               </el-dropdown-item>
-              <!-- 合并会话 / 一封一行。也是**开关**，所以和上面两条一样画
-                   对钩，不是单选。
+              <!-- 合并会话 / 一封一行。**两项并列的单选，不是一个开关。**
+
+                   原来是一个开关（一项，选中画对钩）。2026-09-22 一位同事
+                   反映「勾上了还是显示会话」，查日志发现他先开、两分钟后又
+                   关了——他打开菜单看见对钩，为了"确认一下"又点了一次，那一
+                   下正好把它关掉。点完除了列表悄悄变回去，没有任何东西说刚
+                   才是开了还是关了。
+
+                   改成两项就不会了：点已经选中的那一项什么也不发生，选中的
+                   是哪一项一眼看得见。紧挨着上面的「降序 / 升序」就是这个
+                   样子，同一个菜单里用同一种模式。
+
                    放这个菜单里是因为它回答的正是这个菜单在回答的问题——
                    「这份列表怎么排」；而它一天里被点的次数比排序还少，不值得
                    在那一排已经挤满的按钮里再占一格。
@@ -839,7 +849,14 @@
               <el-dropdown-item
                 v-if="canSortTop"
                 divided
-                command="mode:toggle"
+                command="mode:THREAD"
+                :class="{ 'sort-on': mergeThreads }"
+              >
+                {{ t('emails.sortBar.threadMode') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="canSortTop"
+                command="mode:MESSAGE"
                 :class="{ 'sort-on': !mergeThreads }"
               >
                 {{ t('emails.sortBar.messageMode') }}
@@ -1475,9 +1492,9 @@ import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import {
   DEFAULT_LIST_MODE,
+  listModeChange,
   mergesThreads,
   normalizeListMode,
-  toggledListMode,
   type MailListMode,
 } from '../lib/mailListMode'
 import { attachmentHintKey } from '../lib/attachmentHint'
@@ -1864,8 +1881,10 @@ function onSortCommand(cmd: string) {
   // 合并/单封不走 sortFromCommand：它不是排序，也不进地址栏——它存在服务端。
   // 混进那一族的后果是 sortParam 会把它编进地址栏，而地址栏里的值和服务端
   // 存的值从此可以不一致。
-  if (cmd === 'mode:toggle') {
-    void toggleListMode()
+  if (cmd.startsWith('mode:')) {
+    // 点已经选中的那一项要什么都不发生，判断在 lib/mailListMode，那儿测得到。
+    const next = listModeChange(listMode.value, cmd.slice('mode:'.length))
+    if (next) void setListMode(next)
     return
   }
   const next = sortFromCommand(listSort.value, cmd)
@@ -1941,11 +1960,14 @@ async function loadListMode() {
 const switchingListMode = ref(false)
 // 换档。存完**重新从第一页拉**：一行的含义变了，停在原来那个位置没有意义，
 // 而且手里那个游标指的是另一种行。
-async function toggleListMode() {
+async function setListMode(next: MailListMode) {
   if (switchingListMode.value) return
+  // 点的就是当前这一档：什么都不做。菜单里两项并列，点已经选中的那一项本来
+  // 就该没有反应——而不是把它取消掉。原来那个版本是一个开关，「再点一次确认
+  // 一下」正好把它关了，2026-09-22 有同事踩过。
+  if (next === listMode.value) return
   switchingListMode.value = true
   try {
-    const next = toggledListMode(listMode.value)
     const d = await put<{ listMode?: string }>('/mail-list-mode', { listMode: next })
     listMode.value = normalizeListMode(d.listMode)
     // 回到第一页，和改排序、改筛选时做的是同一件事（见 applyRoute 里那段）。
@@ -1959,6 +1981,15 @@ async function toggleListMode() {
     // 要把它收掉。不重读的话，换完档屏幕上还是上一档的样子。
     if (openedInbound.value) void loadThread(openedInbound.value)
     await load()
+    // 说一声换成了哪一档。
+    //
+    // 不说的话，唯一的反馈就是列表悄悄变了样子——而「刚才那一下到底点成了
+    // 什么」正是 2026-09-22 那次误会的起点。一句话比一个对钩说得清楚。
+    ElMessage.success(
+      t('emails.sortBar.modeSwitched', {
+        mode: t(mergeThreads.value ? 'emails.sortBar.threadMode' : 'emails.sortBar.messageMode'),
+      }),
+    )
   } finally {
     switchingListMode.value = false
   }

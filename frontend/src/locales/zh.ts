@@ -1935,7 +1935,7 @@ export default {
       // 合并会话 / 一封一行。菜单项上写的是**点下去会变成什么**，所以文案是
       // 「每封单独显示」而不是「会话模式」——前者说的是结果，后者要人先知道
       // 什么叫会话。
-      messageMode: '每封单独显示',
+      threadMode: '合并同一会话', messageMode: '每封单独显示', modeSwitched: '已切换为「{mode}」',
     },
     colGrip: {
       rail: '文件夹栏宽度',
