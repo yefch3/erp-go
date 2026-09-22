@@ -605,6 +605,7 @@ message CancelRequirementResponse {
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 service PurchaseOrderService {
+  rpc SaveHistoricalOrder(SaveHistoricalOrderRequest) returns (SaveHistoricalOrderResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
   // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
   rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
@@ -1121,6 +1122,13 @@ message PurchaseOrder {
   string contract_verified_by_name = 53;
   string payment_requested_at = 54;
   string payment_requested_by_name = 55;
+  bool historical = 56;
+  string original_date = 57;
+  string contact_name = 58;
+  string contact_phone = 59;
+  bool prices_complete = 60;
+  string recorded_by = 61;
+  string recorded_at = 62;
 }
 
 message PurchaseOrderItem {
@@ -3139,3 +3147,30 @@ message CreateQualityInspectionRequest {
 message CreateQualityInspectionResponse { QualityInspectionTask task = 1; }
 message UpdateQualityBasicsResponse { QualityInspectionTask task = 1; }
 message DeleteQualityTaskRequest { int64 id = 1; }
+message SaveHistoricalOrderRequest {
+ int64 id = 1;
+ int64 supplier_id = 2;
+ string po_no = 3;
+ string original_date = 4;
+ string currency = 5;
+ string expected_date = 6;
+ string contact_name = 7;
+ string contact_phone = 8;
+ string remark = 9;
+ string delivery_address = 10;
+ bool confirm = 11;
+ repeated HistoricalOrderLine lines = 12;
+ string payable_due_date = 13;
+}
+message HistoricalOrderLine {
+ int64 product_id = 7;
+ string product_code = 8;
+ int64 uom_id = 9;
+ int64 id = 1;
+ string product_name = 2;
+ string spec = 3;
+ string uom = 4;
+ string qty = 5;
+ string unit_price = 6;
+}
+message SaveHistoricalOrderResponse { int64 id = 1; string po_no = 2; string status = 3; }

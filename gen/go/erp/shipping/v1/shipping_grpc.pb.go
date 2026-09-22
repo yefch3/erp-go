@@ -19,6 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ShippingService_SaveManualShippingOrder_FullMethodName               = "/erp.shipping.v1.ShippingService/SaveManualShippingOrder"
+	ShippingService_LinkManualShippingContract_FullMethodName            = "/erp.shipping.v1.ShippingService/LinkManualShippingContract"
 	ShippingService_GetModuleStatus_FullMethodName                       = "/erp.shipping.v1.ShippingService/GetModuleStatus"
 	ShippingService_ListSchedules_FullMethodName                         = "/erp.shipping.v1.ShippingService/ListSchedules"
 	ShippingService_GetSchedule_FullMethodName                           = "/erp.shipping.v1.ShippingService/GetSchedule"
@@ -71,6 +73,8 @@ const (
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 type ShippingServiceClient interface {
+	SaveManualShippingOrder(ctx context.Context, in *SaveManualShippingOrderRequest, opts ...grpc.CallOption) (*SaveManualShippingOrderResponse, error)
+	LinkManualShippingContract(ctx context.Context, in *LinkManualShippingContractRequest, opts ...grpc.CallOption) (*LinkManualShippingContractResponse, error)
 	GetModuleStatus(ctx context.Context, in *GetModuleStatusRequest, opts ...grpc.CallOption) (*GetModuleStatusResponse, error)
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
 	GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error)
@@ -124,6 +128,26 @@ type shippingServiceClient struct {
 
 func NewShippingServiceClient(cc grpc.ClientConnInterface) ShippingServiceClient {
 	return &shippingServiceClient{cc}
+}
+
+func (c *shippingServiceClient) SaveManualShippingOrder(ctx context.Context, in *SaveManualShippingOrderRequest, opts ...grpc.CallOption) (*SaveManualShippingOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveManualShippingOrderResponse)
+	err := c.cc.Invoke(ctx, ShippingService_SaveManualShippingOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) LinkManualShippingContract(ctx context.Context, in *LinkManualShippingContractRequest, opts ...grpc.CallOption) (*LinkManualShippingContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LinkManualShippingContractResponse)
+	err := c.cc.Invoke(ctx, ShippingService_LinkManualShippingContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *shippingServiceClient) GetModuleStatus(ctx context.Context, in *GetModuleStatusRequest, opts ...grpc.CallOption) (*GetModuleStatusResponse, error) {
@@ -563,6 +587,8 @@ func (c *shippingServiceClient) MarkContractShippingPaymentRequested(ctx context
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 type ShippingServiceServer interface {
+	SaveManualShippingOrder(context.Context, *SaveManualShippingOrderRequest) (*SaveManualShippingOrderResponse, error)
+	LinkManualShippingContract(context.Context, *LinkManualShippingContractRequest) (*LinkManualShippingContractResponse, error)
 	GetModuleStatus(context.Context, *GetModuleStatusRequest) (*GetModuleStatusResponse, error)
 	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
 	GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error)
@@ -618,6 +644,12 @@ type ShippingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedShippingServiceServer struct{}
 
+func (UnimplementedShippingServiceServer) SaveManualShippingOrder(context.Context, *SaveManualShippingOrderRequest) (*SaveManualShippingOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveManualShippingOrder not implemented")
+}
+func (UnimplementedShippingServiceServer) LinkManualShippingContract(context.Context, *LinkManualShippingContractRequest) (*LinkManualShippingContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LinkManualShippingContract not implemented")
+}
 func (UnimplementedShippingServiceServer) GetModuleStatus(context.Context, *GetModuleStatusRequest) (*GetModuleStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetModuleStatus not implemented")
 }
@@ -766,6 +798,42 @@ func RegisterShippingServiceServer(s grpc.ServiceRegistrar, srv ShippingServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ShippingService_ServiceDesc, srv)
+}
+
+func _ShippingService_SaveManualShippingOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveManualShippingOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).SaveManualShippingOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_SaveManualShippingOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).SaveManualShippingOrder(ctx, req.(*SaveManualShippingOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_LinkManualShippingContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinkManualShippingContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).LinkManualShippingContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_LinkManualShippingContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).LinkManualShippingContract(ctx, req.(*LinkManualShippingContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ShippingService_GetModuleStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1549,6 +1617,14 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.shipping.v1.ShippingService",
 	HandlerType: (*ShippingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SaveManualShippingOrder",
+			Handler:    _ShippingService_SaveManualShippingOrder_Handler,
+		},
+		{
+			MethodName: "LinkManualShippingContract",
+			Handler:    _ShippingService_LinkManualShippingContract_Handler,
+		},
 		{
 			MethodName: "GetModuleStatus",
 			Handler:    _ShippingService_GetModuleStatus_Handler,

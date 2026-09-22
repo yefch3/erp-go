@@ -142,6 +142,9 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 		if meta, metaErr := h.svc.OrderContractState(ctx, grpcx.TenantID(ctx), r.ID); metaErr == nil {
 			applyOrderContractState(item, meta)
 		}
+		if err := h.applyHistoricalMeta(ctx, item); err != nil {
+			return nil, err
+		}
 		out = append(out, item)
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -207,6 +210,21 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 	}
 	if meta, metaErr := h.svc.OrderContractState(ctx, tenantID, head.ID); metaErr == nil {
 		applyOrderContractState(outOrder, meta)
+	}
+	if err := h.applyHistoricalMeta(ctx, outOrder); err != nil {
+		return nil, err
+	}
+	if outOrder.Historical {
+		for _, line := range outItems {
+			missing, err := h.svc.HistoricalPriceMissing(ctx, tenantID, line.Id)
+			if err != nil {
+				return nil, err
+			}
+			if missing {
+				line.UnitPrice = ""
+				line.Amount = ""
+			}
+		}
 	}
 	return &prv1.GetOrderResponse{Order: outOrder, Items: outItems, Receipts: outReceipts}, nil
 }

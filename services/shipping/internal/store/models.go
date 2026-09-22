@@ -73,6 +73,20 @@ type ContractShippingHandoffCargo struct {
 	Remark         string
 }
 
+type ManualShippingOrder struct {
+	HandoffID          int64
+	TenantID           int64
+	OrderNo            string
+	AmountMissing      bool
+	CreatedBy          int64
+	CreatedByName      string
+	CreatedAt          pgtype.Timestamptz
+	LinkedContractID   int64
+	OriginalContractNo string
+	LinkedBy           *int64
+	LinkedAt           pgtype.Timestamptz
+}
+
 type OutboxEvent struct {
 	ID            int64
 	TenantID      int64

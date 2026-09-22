@@ -504,6 +504,11 @@ func (s *Service) UpdateOrder(
 	in CreateOrderInput,
 	op Operator,
 ) (store.UpdatePurchaseOrderDraftRow, error) {
+	if m, e := s.HistoricalOrderMeta(ctx, tenantID, id); e != nil {
+		return store.UpdatePurchaseOrderDraftRow{}, e
+	} else if m.Historical {
+		return store.UpdatePurchaseOrderDraftRow{}, apierr.Conflict("PO_HISTORY_ENTRY_REQUIRED", "请使用历史补录编辑入口")
+	}
 	prepared, err := s.prepareOrder(ctx, in, true)
 	if err != nil {
 		return store.UpdatePurchaseOrderDraftRow{}, err
@@ -633,6 +638,11 @@ func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, err
 // SubmitOrder 将采购员确认完成的草稿提交给审批服务。
 // 提交只改变审批状态，不占用采购需求；只有审批通过后才正式计入已采购数量。
 func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operator) (string, int64, error) {
+	if m, e := s.HistoricalOrderMeta(ctx, tenantID, id); e != nil {
+		return "", 0, e
+	} else if m.Historical {
+		return "", 0, apierr.Conflict("PO_HISTORY_ENTRY_REQUIRED", "历史单请使用确认补录，不提交新单审批")
+	}
 	if err := s.checkContractExecution(ctx, tenantID, id); err != nil {
 		return "", 0, err
 	}
@@ -981,6 +991,13 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 		}
 		if err != nil {
 			return err
+		}
+		var historyPricesMissing bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historyPricesMissing); err != nil {
+			return err
+		}
+		if historyPricesMissing {
+			return apierr.Conflict("PO_PRICE_MISSING", "历史采购单价格尚未补齐，不能登记到货")
 		}
 		if head.Status != poOrdered && head.Status != poPartial {
 			return apierr.Conflict("PO_NOT_RECEIVABLE", "只有已下单的采购单可以收货").
