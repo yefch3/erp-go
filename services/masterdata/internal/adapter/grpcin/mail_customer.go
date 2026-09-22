@@ -26,23 +26,24 @@ func (h *Handler) MatchMailCustomer(ctx context.Context, r *mdv1.MatchMailCustom
 	}
 	return &mdv1.MatchMailCustomerResponse{Customers: convert(v.Customers), Suppliers: convert(v.Suppliers)}, nil
 }
-func mailLinkProto(v app.MailCustomerLink) *mdv1.MailCustomerLinkResponse {
+func mailLinkProto(v app.MailCustomerLink) *mdv1.GetMailCustomerLinkResponse {
 	if v.Customer.ID == 0 {
-		return &mdv1.MailCustomerLinkResponse{}
+		return &mdv1.GetMailCustomerLinkResponse{}
 	}
-	return &mdv1.MailCustomerLinkResponse{Customer: customerToProto(v.Customer, []store.CustomerContact{v.Contact}, nil), Contact: contactToProto(v.Contact), Email: v.Email}
+	return &mdv1.GetMailCustomerLinkResponse{Customer: customerToProto(v.Customer, []store.CustomerContact{v.Contact}, nil), Contact: contactToProto(v.Contact), Email: v.Email}
 }
-func (h *Handler) GetMailCustomerLink(ctx context.Context, r *mdv1.GetMailCustomerLinkRequest) (*mdv1.MailCustomerLinkResponse, error) {
+func (h *Handler) GetMailCustomerLink(ctx context.Context, r *mdv1.GetMailCustomerLinkRequest) (*mdv1.GetMailCustomerLinkResponse, error) {
 	v, err := h.svc.GetMailCustomerLink(ctx, grpcx.TenantID(ctx), r.InboundId)
 	if err != nil {
 		return nil, err
 	}
 	return mailLinkProto(v), nil
 }
-func (h *Handler) SaveMailCustomer(ctx context.Context, r *mdv1.SaveMailCustomerRequest) (*mdv1.MailCustomerLinkResponse, error) {
+func (h *Handler) SaveMailCustomer(ctx context.Context, r *mdv1.SaveMailCustomerRequest) (*mdv1.SaveMailCustomerResponse, error) {
 	v, err := h.svc.SaveMailCustomer(ctx, grpcx.TenantID(ctx), app.SaveMailCustomerInput{InboundID: r.InboundId, CustomerID: r.CustomerId, ContactID: r.ContactId, Action: r.Action, CompanyName: r.CompanyName, ContactName: r.ContactName, Email: r.Email, Phone: r.Phone, Website: r.Website, Address: r.Address, Remark: r.Remark, ConfirmSameName: r.ConfirmSameName, ConfirmSupplier: r.ConfirmSupplier, OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)})
 	if err != nil {
 		return nil, err
 	}
-	return mailLinkProto(v), nil
+	link := mailLinkProto(v)
+	return &mdv1.SaveMailCustomerResponse{Customer: link.Customer, Contact: link.Contact, Email: link.Email}, nil
 }

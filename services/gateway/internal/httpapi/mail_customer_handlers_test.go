@@ -34,11 +34,11 @@ type mailCustomerSaveStub struct {
 	tenant  int64
 }
 
-func (s *mailCustomerSaveStub) SaveMailCustomer(ctx context.Context, r *mdv1.SaveMailCustomerRequest, _ ...grpc.CallOption) (*mdv1.MailCustomerLinkResponse, error) {
+func (s *mailCustomerSaveStub) SaveMailCustomer(ctx context.Context, r *mdv1.SaveMailCustomerRequest, _ ...grpc.CallOption) (*mdv1.SaveMailCustomerResponse, error) {
 	s.request = r
 	op, _ := grpcx.OperatorFromContext(ctx)
 	s.tenant = op.TenantID
-	return &mdv1.MailCustomerLinkResponse{}, nil
+	return &mdv1.SaveMailCustomerResponse{}, nil
 }
 func TestMailCustomerSaveAuthorizesSourceAndOverridesBodyID(t *testing.T) {
 	for _, denied := range []bool{true, false} {

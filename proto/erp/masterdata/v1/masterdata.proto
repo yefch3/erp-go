@@ -8,8 +8,8 @@ import "erp/common/v1/pagination.proto";
 // reference customers by id and never copy-maintain them.
 service CustomerService {
   rpc MatchMailCustomer(MatchMailCustomerRequest) returns (MatchMailCustomerResponse);
-  rpc SaveMailCustomer(SaveMailCustomerRequest) returns (MailCustomerLinkResponse);
-  rpc GetMailCustomerLink(GetMailCustomerLinkRequest) returns (MailCustomerLinkResponse);
+  rpc SaveMailCustomer(SaveMailCustomerRequest) returns (SaveMailCustomerResponse);
+  rpc GetMailCustomerLink(GetMailCustomerLinkRequest) returns (GetMailCustomerLinkResponse);
   rpc GetCustomerBasic(GetCustomerBasicRequest) returns (GetCustomerBasicResponse);
   rpc SaveCustomerBasic(SaveCustomerBasicRequest) returns (SaveCustomerBasicResponse);
   rpc DeleteCustomerDocument(DeleteCustomerDocumentRequest) returns (DeleteCustomerDocumentResponse);
@@ -1456,7 +1456,13 @@ message SaveMailCustomerRequest {
   string request_key = 14;
 }
 message GetMailCustomerLinkRequest { int64 inbound_id = 1; }
-message MailCustomerLinkResponse {
+message GetMailCustomerLinkResponse {
+  Customer customer = 1;
+  Contact contact = 2;
+  string email = 3;
+}
+
+message SaveMailCustomerResponse {
   Customer customer = 1;
   Contact contact = 2;
   string email = 3;

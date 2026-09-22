@@ -71,8 +71,8 @@ const (
 // reference customers by id and never copy-maintain them.
 type CustomerServiceClient interface {
 	MatchMailCustomer(ctx context.Context, in *MatchMailCustomerRequest, opts ...grpc.CallOption) (*MatchMailCustomerResponse, error)
-	SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error)
-	GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error)
+	SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*SaveMailCustomerResponse, error)
+	GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*GetMailCustomerLinkResponse, error)
 	GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error)
 	SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(ctx context.Context, in *DeleteCustomerDocumentRequest, opts ...grpc.CallOption) (*DeleteCustomerDocumentResponse, error)
@@ -144,9 +144,9 @@ func (c *customerServiceClient) MatchMailCustomer(ctx context.Context, in *Match
 	return out, nil
 }
 
-func (c *customerServiceClient) SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error) {
+func (c *customerServiceClient) SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*SaveMailCustomerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MailCustomerLinkResponse)
+	out := new(SaveMailCustomerResponse)
 	err := c.cc.Invoke(ctx, CustomerService_SaveMailCustomer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -154,9 +154,9 @@ func (c *customerServiceClient) SaveMailCustomer(ctx context.Context, in *SaveMa
 	return out, nil
 }
 
-func (c *customerServiceClient) GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error) {
+func (c *customerServiceClient) GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*GetMailCustomerLinkResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MailCustomerLinkResponse)
+	out := new(GetMailCustomerLinkResponse)
 	err := c.cc.Invoke(ctx, CustomerService_GetMailCustomerLink_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -562,8 +562,8 @@ func (c *customerServiceClient) ContactsInCountry(ctx context.Context, in *Conta
 // reference customers by id and never copy-maintain them.
 type CustomerServiceServer interface {
 	MatchMailCustomer(context.Context, *MatchMailCustomerRequest) (*MatchMailCustomerResponse, error)
-	SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*MailCustomerLinkResponse, error)
-	GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*MailCustomerLinkResponse, error)
+	SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*SaveMailCustomerResponse, error)
+	GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*GetMailCustomerLinkResponse, error)
 	GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error)
 	SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error)
@@ -628,10 +628,10 @@ type UnimplementedCustomerServiceServer struct{}
 func (UnimplementedCustomerServiceServer) MatchMailCustomer(context.Context, *MatchMailCustomerRequest) (*MatchMailCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MatchMailCustomer not implemented")
 }
-func (UnimplementedCustomerServiceServer) SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*MailCustomerLinkResponse, error) {
+func (UnimplementedCustomerServiceServer) SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*SaveMailCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveMailCustomer not implemented")
 }
-func (UnimplementedCustomerServiceServer) GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*MailCustomerLinkResponse, error) {
+func (UnimplementedCustomerServiceServer) GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*GetMailCustomerLinkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailCustomerLink not implemented")
 }
 func (UnimplementedCustomerServiceServer) GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error) {
