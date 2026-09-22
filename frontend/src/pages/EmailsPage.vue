@@ -1516,6 +1516,7 @@ import {
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { attachmentExcelSource } from '../lib/attachmentExcelSource'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
+import { optionalSourcingContact } from '../lib/sourcingTransfer'
 import {
   base64ToBytes,
   excelPollAfterFailure,
@@ -5012,7 +5013,9 @@ async function createSourcingCaseFromExcel() {
       title: result.fileName.replace(/\.xlsx$/i, ''),
       customerId: sourcingForm.customerId,
       customerName: sourcingForm.customerName,
-      contactId: sourcingForm.contactId,
+      // protojson 的 int64 不接受空字符串。联系人可选时必须彻底省略字段，
+      // 不能把 el-select 的空值 "" 原样送到网关。
+      ...optionalSourcingContact(sourcingForm.contactId),
       sourceMailId: source.mailId,
       inquiryTemplateId: result.inquiryTemplateId || '0',
       inquiryTemplateCode: result.inquiryTemplateCode || '',
@@ -5288,7 +5291,12 @@ async function doUnsuppress(row: Suppression) {
      滚，那里它仍然真的在粘。 */
   align-self: flex-start;
   position: sticky;
-  top: 12px;
+  top: 0;
+  /* max-height 只会限制过长的内容，不会把短内容撑到底。邮箱数量少时左栏
+     因此只画到最后一个文件夹，和旁边两栏底边不齐。三栏都明确占满邮箱
+     工作区，内容超出后再在各自栏内滚动。 */
+  height: 100%;
+  box-sizing: border-box;
   /* 自己滚。信箱多、文件夹多的时候这一栏会比一屏长，而它 sticky 在顶上，
      长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。
 
@@ -5352,6 +5360,9 @@ async function doUnsuppress(row: Suppression) {
 .pane {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   /* One white surface for the list, tables, reading page and message frame.
@@ -5359,7 +5370,10 @@ async function doUnsuppress(row: Suppression) {
      below, which is correct — the list should respond to the width it can
      actually use. */
   background: var(--mail-ground);
-  padding: 14px 16px;
+  /* 左边文件夹栏一直到工作区底部；这里的底部内边距曾让邮件
+     列表和阅读区各提前 14px 结束，三栏底边看起来参差不齐。上、左、
+     右的留白保留，底部交给两个自身滚动的列直接贴齐工作区。 */
+  padding: 14px 16px 0;
   /* 这里从前建着一个名叫 mailbox 的 CSS 容器，给邮件行的「窄了就收」用。
      **它已经删了**，连同那几条规则一起——见 MailList.vue 里那段说明。
 
@@ -6110,12 +6124,13 @@ async function doUnsuppress(row: Suppression) {
    个分支，谁在前无所谓），这里用 order 把列表拉到左边——比搬动三百多行
    模板安全得多，而且以后哪一栏要挪位置也只是改一个数字。 */
 .panes {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   display: flex;
   /* 同上：3 + 10 + 3 = 从前那 16px。 */
   gap: 3px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 .list-col {
   order: 1;
@@ -6124,10 +6139,12 @@ async function doUnsuppress(row: Suppression) {
   /* 三栏各滚各的。原来只有阅读区自己滚，列表跟着整页走——读一封长信时
      往下滚，左边的列表就被顶出视野，那正是三栏要避免的事。 */
   position: sticky;
-  top: 12px;
+  top: 0;
   /* 100% 而不是 calc(100vh - 24px)，理由见 .rail 那段：按窗口算会比这三栏
      真正能站的地方高出一截，多出来的部分成了一段谁也不需要的「假滚动」。 */
+  height: 100%;
   max-height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
@@ -6138,10 +6155,12 @@ async function doUnsuppress(row: Suppression) {
   min-width: 0;
   /* 自己滚，别把整页拉长：左边列表要一直看得见，这正是三栏的意义。 */
   position: sticky;
-  top: 12px;
+  top: 0;
   /* 100% 而不是 calc(100vh - 24px)，理由见 .rail 那段：按窗口算会比这三栏
      真正能站的地方高出一截，多出来的部分成了一段谁也不需要的「假滚动」。 */
+  height: 100%;
   max-height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
@@ -6216,7 +6235,9 @@ async function doUnsuppress(row: Suppression) {
   /* 左栏在窄屏仍然 sticky、仍然自己滚，所以上限要给回一个按窗口算的数——
      这时它的父级是 auto 高，100% 解不出来。 */
   .rail {
+    height: auto;
     max-height: calc(100vh - 24px);
+    top: 12px;
   }
   .panes {
     display: block;

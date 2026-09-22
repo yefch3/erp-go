@@ -17,6 +17,38 @@ export interface MailCustomerDuplicateCandidate {
   matchFields?: string[]
 }
 
+export interface MailCustomerPrecheck {
+  emailOwner: MailCustomerDuplicateCandidate | null
+  existingCompany: MailCustomerDuplicateCandidate | null
+  suggestions: MailCustomerDuplicateCandidate[]
+}
+
+// The early check has three different meanings and the dialog must not blur
+// them together: an exact email means "already done", one exact company means
+// "add this person", and a similar name is only a suggestion for a human.
+export function classifyMailCustomerDuplicates(
+  candidates: MailCustomerDuplicateCandidate[],
+): MailCustomerPrecheck {
+  const emailOwner = candidates.find((candidate) =>
+    candidate.matchFields?.includes('EMAIL'),
+  ) ?? null
+  if (emailOwner) {
+    return {
+      emailOwner,
+      existingCompany: null,
+      suggestions: candidates.filter((candidate) => candidate.id !== emailOwner.id),
+    }
+  }
+  const existingCompany = existingCompanyForMailContact(candidates)
+  return {
+    emailOwner: null,
+    existingCompany,
+    suggestions: existingCompany
+      ? candidates.filter((candidate) => candidate.id !== existingCompany.id)
+      : candidates,
+  }
+}
+
 // Only an unambiguous company identity may absorb a new mail contact. Similar
 // names remain a human decision; automatically attaching there could put a
 // correspondent under the wrong legal entity.
