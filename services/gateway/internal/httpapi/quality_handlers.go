@@ -111,3 +111,62 @@ func (s *Server) recordQualityProcurementHandling(w http.ResponseWriter, r *http
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) listQualitySourceOrders(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListQualitySourceOrders(r.Context(), &prv1.ListQualitySourceOrdersRequest{Page: pageFromQuery(r), Keyword: r.URL.Query().Get("keyword")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) getQualitySourceOrder(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListQualitySourceOrders(r.Context(), &prv1.ListQualitySourceOrdersRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) createQualityInspection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ApplyQualityInspectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Orders.CreateQualityInspection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) qualityAccess(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.QualityAccess(r.Context(), &prv1.QualityAccessRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) updateQualityBasics(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateQualityBasicsRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.UpdateQualityBasics(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+func (s *Server) deleteQualityTask(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.DeleteQualityTask(r.Context(), &prv1.GetQualityInspectionTaskRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

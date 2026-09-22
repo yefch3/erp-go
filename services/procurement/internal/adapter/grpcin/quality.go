@@ -17,7 +17,7 @@ func qualityTime(v *time.Time) string {
 	return v.Format(time.RFC3339)
 }
 func qualityTaskProto(q app.QualityTask) *prv1.QualityInspectionTask {
-	out := &prv1.QualityInspectionTask{Id: q.ID, PoId: q.POID, TaskNo: q.TaskNo, PoNo: q.PONo, SupplierName: q.SupplierName, BatchNo: q.BatchNo, Status: q.Status, ExpectedDate: q.ExpectedDate, InspectionLocation: q.Location, ContactName: q.ContactName, ContactPhone: q.ContactPhone, Remark: q.Remark, RequestedByName: q.RequestedByName, RequestedAt: q.RequestedAt.Format(time.RFC3339), InspectorName: q.InspectorName, StartedAt: qualityTime(q.StartedAt), CompletedAt: qualityTime(q.CompletedAt), ProcurementHandlingStatus: q.ProcurementHandlingStatus, ProcurementHandlingAction: q.ProcurementHandlingAction, ProcurementHandlingNote: q.ProcurementHandlingNote, ProcurementHandledByName: q.ProcurementHandledByName, ProcurementHandledAt: qualityTime(q.ProcurementHandledAt)}
+	out := &prv1.QualityInspectionTask{Id: q.ID, Deletable: q.Deletable, PoId: q.POID, TaskNo: q.TaskNo, PoNo: q.PONo, SupplierName: q.SupplierName, BatchNo: q.BatchNo, Status: q.Status, ExpectedDate: q.ExpectedDate, InspectionLocation: q.Location, ContactName: q.ContactName, ContactPhone: q.ContactPhone, Remark: q.Remark, RequestedByName: q.RequestedByName, RequestedAt: q.RequestedAt.Format(time.RFC3339), InspectorName: q.InspectorName, StartedAt: qualityTime(q.StartedAt), CompletedAt: qualityTime(q.CompletedAt), ProcurementHandlingStatus: q.ProcurementHandlingStatus, ProcurementHandlingAction: q.ProcurementHandlingAction, ProcurementHandlingNote: q.ProcurementHandlingNote, ProcurementHandledByName: q.ProcurementHandledByName, ProcurementHandledAt: qualityTime(q.ProcurementHandledAt)}
 	for _, l := range q.Lines {
 		out.Lines = append(out.Lines, &prv1.QualityInspectionTaskLine{Id: l.ID, PoItemId: l.POItemID, ProductName: l.ProductName, Spec: l.Spec, UomCode: l.UOM, OrderedQty: l.OrderedQty, RequestedQty: l.RequestedQty, QualifiedQty: l.QualifiedQty, UnresolvedQty: l.UnresolvedQty, FinalResult: l.FinalResult, IssueDescription: l.IssueDescription, HandlingSuggestion: l.HandlingSuggestion, ApprovedReleaseQty: l.ApprovedReleaseQty, ReleaseDecidedByName: l.ReleaseDecidedByName, ReleaseDecidedAt: qualityTime(l.ReleaseDecidedAt)})
 	}
@@ -165,4 +165,48 @@ func (h *OrderHandler) RecordQualityProcurementHandling(ctx context.Context, req
 		return nil, err
 	}
 	return &prv1.RecordQualityProcurementHandlingResponse{Task: qualityTaskProto(q)}, nil
+}
+
+func (h *OrderHandler) ListQualitySourceOrders(ctx context.Context, req *prv1.ListQualitySourceOrdersRequest) (*prv1.ListQualitySourceOrdersResponse, error) {
+	rows, total, err := h.svc.ListQualitySourceOrders(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetKeyword(), req.GetPage().GetPage(), req.GetPage().GetPageSize(), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.ListQualitySourceOrdersResponse{Meta: &commonv1.PageMeta{Total: total}}
+	for _, row := range rows {
+		o := &prv1.QualitySourceOrder{Id: row.ID, PoNo: row.PONo, SupplierName: row.SupplierName, ExistingTaskId: row.ExistingTaskID}
+		for _, l := range row.Lines {
+			o.Lines = append(o.Lines, &prv1.QualitySourceLine{ProductName: l.ProductName, Spec: l.Spec, UomCode: l.UOM, Qty: l.Qty})
+		}
+		out.Orders = append(out.Orders, o)
+	}
+	return out, nil
+}
+func (h *OrderHandler) CreateQualityInspection(ctx context.Context, req *prv1.ApplyQualityInspectionRequest) (*prv1.ApplyQualityInspectionResponse, error) {
+	q, err := h.svc.CreateQualityInspection(ctx, grpcx.TenantID(ctx), app.ApplyQualityInput{POID: req.GetPoId(), ExpectedDate: req.GetExpectedDate(), Location: req.GetInspectionLocation(), ContactName: req.GetContactName(), ContactPhone: req.GetContactPhone(), Remark: req.GetRemark()}, currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ApplyQualityInspectionResponse{Task: qualityTaskProto(q)}, nil
+}
+
+func (h *OrderHandler) QualityAccess(ctx context.Context, req *prv1.QualityAccessRequest) (*prv1.QualityAccessResponse, error) {
+	allowed, err := h.svc.CanDeleteQualityTask(ctx, currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.QualityAccessResponse{CanDelete: allowed}, nil
+}
+func (h *OrderHandler) UpdateQualityBasics(ctx context.Context, req *prv1.UpdateQualityBasicsRequest) (*prv1.GetQualityInspectionTaskResponse, error) {
+	q, err := h.svc.UpdateQualityBasics(ctx, grpcx.TenantID(ctx), req.GetId(), app.ApplyQualityInput{ExpectedDate: req.GetExpectedDate(), Location: req.GetInspectionLocation(), ContactName: req.GetContactName(), ContactPhone: req.GetContactPhone(), Remark: req.GetRemark()}, currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetQualityInspectionTaskResponse{Task: qualityTaskProto(q)}, nil
+}
+func (h *OrderHandler) DeleteQualityTask(ctx context.Context, req *prv1.GetQualityInspectionTaskRequest) (*prv1.DeleteQualityTaskResponse, error) {
+	if err := h.svc.DeleteQualityTask(ctx, grpcx.TenantID(ctx), req.GetId(), currentOp(ctx)); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteQualityTaskResponse{}, nil
 }

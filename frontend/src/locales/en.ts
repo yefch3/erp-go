@@ -94,6 +94,23 @@ export default {
     todo: ' (coming soon)',
   },
   quality: {
+moreActions: "More actions",
+editBasics: "Edit basic information",
+deleteTask: "Delete inspection",
+deleteConfirm: "Delete this inspection? You can create another from the original purchase order.",
+deleted: "Inspection deleted",
+basicsSaved: "Basic information saved",
+
+    create: "New inspection",
+    sourceSearch: "Search purchase order or supplier",
+    openExisting: "Open inspection",
+    noSourceOrders: "No eligible purchase orders",
+    existingHint: "This order already has an inspection. Open it to process or reinspect.",
+    sourceSpec: "Specification",
+    sourceUnit: "Unit",
+    requirements: "Inspection requirements / notes",
+    created: "Inspection ready",
+
 	taskLevel:'Inspection file',
 	apply:'Request inspection', applyTitle:'Request pre-shipment inspection', applyHint:'Each purchase order has one whole-order inspection task covering every product and the full ordered quantity. Partial or failed results are handled and reinspected in the same task.', orderedQty:'Ordered quantity', applyQty:'This inspection', contactName:'Site contact', contactPhone:'Contact phone', submitApplication:'Submit whole-order inspection', pickQty:'The order has no products to inspect', applied:'Whole-order inspection task submitted',
     title:'Quality Inspection', subtitle:'Procurement requests a factory inspection when goods are ready; Quality records every inspection and reinspection in one task.', pending:'Pending', completed:'Completed', search:'Search task, purchase order or factory', taskNo:'Inspection task', poNo:'Purchase order', factory:'Factory / supplier', batch:'Batch', expectedDate:'Planned date', process:'Process', empty:'No inspection tasks', location:'Inspection location', requestedBy:'Requested by', readOnlyHint:'Inspection tasks, files and history are available only to the Quality department.', products:'Products and quantities', productsHint:'Summary of this batch, qualified quantities and quantities still due for reinspection.', product:'Product / specification', requestedQty:'This batch', qualifiedQty:'Qualified', unresolvedQty:'Reinspection due', result:'Inspection result', releaseQty:'Approved to ship', saveRelease:'Save partial release decision', startTitle:'Accept task', startHint:'The current Quality inspector will record this round and its evidence.', start:'Start inspection', reinspect:'Record reinspection result', recordRound:'Record inspection result', recordHint:'Enter each result and quantity. Unqualified quantity is calculated automatically.', inspectedAt:'Inspection time', remark:'Remarks', roundRemark:'Round remarks', roundRemarkHint:'Site conditions or notes for this round', thisBatchQty:'Awaiting inspection', remaining:'remaining', inspectedQty:'Inspected this round', unqualifiedQty:'Unqualified (automatic)', issue:'Issue details', issueHint:'Describe defects, quantities or site exceptions', suggestion:'Handling suggestion', suggestionHint:'For example rework, replacement or reinspection', saveRound:'Save round', attachments:'Inspection files', attachmentsHint:'Keep site photos, videos, inspection reports, third-party reports and other files.', chooseFiles:'Choose files', selectedFiles:'{n} files selected', noFileSelected:'No files selected', upload:'Upload files', fileName:'File', category:'Category', uploader:'Uploaded by', uploadedAt:'Uploaded at', noAttachments:'No inspection files', history:'Inspection history', historyHint:'Each saved round is retained; a reinspection never overwrites an earlier result.', noHistory:'No inspection result recorded', roundNo:'Round {n}', started:'Inspection started', roundSaved:'Inspection round saved', releaseSaved:'Release decision saved', uploaded:'Files saved', uploadFailed:'File upload failed', todoTitle:'Pending inspections', todoHint:'Procurement submitted products and quantities; Quality needs to record the site result.', todoAction:'Open inspection', statuses:{WAITING:'Pending',IN_PROGRESS:'Pending',REINSPECTION:'Pending',COMPLETED:'Completed'}, results:{PENDING:'Pending',PASS:'Qualified',PARTIAL:'Partially qualified',FAIL:'Unqualified'}, categories:{PHOTO:'Site photos',VIDEO:'Site videos',REPORT:'Inspection report',THIRD_PARTY:'Third-party report',OTHER:'Other'}

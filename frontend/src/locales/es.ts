@@ -94,6 +94,23 @@ export default {
     todo: ' (próximamente)',
   },
   quality: {
+moreActions: "Más acciones",
+editBasics: "Editar datos básicos",
+deleteTask: "Eliminar inspección",
+deleteConfirm: "¿Eliminar esta inspección? Podrá crear otra desde la orden de compra original.",
+deleted: "Inspección eliminada",
+basicsSaved: "Datos básicos guardados",
+
+    create: "Nueva inspección",
+    sourceSearch: "Buscar orden de compra o proveedor",
+    openExisting: "Abrir inspección",
+    noSourceOrders: "No hay órdenes disponibles",
+    existingHint: "Esta orden ya tiene una inspección. Ábrala para continuar o reinspeccionar.",
+    sourceSpec: "Especificación",
+    sourceUnit: "Unidad",
+    requirements: "Requisitos / notas",
+    created: "Inspección lista",
+
 	taskLevel:'Archivo de inspección',
 	apply:'Solicitar inspección', applyTitle:'Solicitar inspección previa al envío', applyHint:'Cada orden de compra tiene una sola inspección completa con todos los productos y cantidades. Los resultados parciales o rechazados se gestionan y reinspeccionan en la misma tarea.', orderedQty:'Cantidad comprada', applyQty:'Esta inspección', contactName:'Contacto en sitio', contactPhone:'Teléfono', submitApplication:'Enviar inspección completa', pickQty:'La orden no tiene productos para inspeccionar', applied:'Inspección completa enviada',
     title:'Inspección de calidad', subtitle:'Compras solicita la inspección en fábrica cuando la mercancía está lista; Calidad conserva todas las rondas en una tarea.', pending:'Pendiente', completed:'Completado', search:'Buscar tarea, pedido o fábrica', taskNo:'Tarea de inspección', poNo:'Pedido de compra', factory:'Fábrica / proveedor', batch:'Lote', expectedDate:'Fecha prevista', process:'Procesar', empty:'No hay tareas', location:'Lugar de inspección', requestedBy:'Solicitado por', readOnlyHint:'Las tareas, los archivos y el historial de inspección solo están disponibles para el departamento de Calidad.', products:'Productos y cantidades', productsHint:'Resumen del lote, cantidades conformes y cantidades pendientes de reinspección.', product:'Producto / especificación', requestedQty:'Este lote', qualifiedQty:'Cantidad conforme', unresolvedQty:'Pendiente de reinspección', result:'Resultado de inspección', releaseQty:'Autorizado para envío', saveRelease:'Guardar decisión de envío parcial', startTitle:'Aceptar tarea', startHint:'El inspector actual registrará esta ronda y sus documentos.', start:'Iniciar inspección', reinspect:'Registrar resultado de reinspección', recordRound:'Registrar resultado', recordHint:'Complete el resultado y las cantidades. La cantidad no conforme se calcula automáticamente.', inspectedAt:'Hora de inspección', remark:'Observaciones', roundRemark:'Observaciones de la ronda', roundRemarkHint:'Condiciones del sitio o notas de esta ronda', thisBatchQty:'Pendiente de inspección', remaining:'pendiente', inspectedQty:'Inspeccionado en esta ronda', unqualifiedQty:'No conforme (automático)', issue:'Descripción del problema', issueHint:'Describa defectos, cantidades o incidencias', suggestion:'Medida propuesta', suggestionHint:'Por ejemplo, reproceso, sustitución o reinspección', saveRound:'Guardar ronda', attachments:'Documentos de inspección', attachmentsHint:'Guarde fotos, videos, informes de inspección, informes de terceros y otros archivos.', chooseFiles:'Elegir archivos', selectedFiles:'{n} archivos seleccionados', noFileSelected:'Ningún archivo seleccionado', upload:'Subir archivos', fileName:'Archivo', category:'Categoría', uploader:'Subido por', uploadedAt:'Fecha de carga', noAttachments:'No hay documentos', history:'Historial de inspección', historyHint:'Cada ronda se conserva y una reinspección no sustituye los resultados anteriores.', noHistory:'Aún no hay resultados', roundNo:'Ronda {n}', started:'Inspección iniciada', roundSaved:'Ronda guardada', releaseSaved:'Decisión guardada', uploaded:'Archivos guardados', uploadFailed:'Error al subir', todoTitle:'Inspecciones pendientes', todoHint:'Compras envió los productos y cantidades; Calidad debe registrar el resultado en sitio.', todoAction:'Abrir inspección', statuses:{WAITING:'Pendiente',IN_PROGRESS:'Pendiente',REINSPECTION:'Pendiente',COMPLETED:'Completado'}, results:{PENDING:'Pendiente',PASS:'Conforme',PARTIAL:'Parcialmente conforme',FAIL:'No conforme'}, categories:{PHOTO:'Fotos',VIDEO:'Videos',REPORT:'Informe de inspección',THIRD_PARTY:'Informe de tercero',OTHER:'Otros'}
