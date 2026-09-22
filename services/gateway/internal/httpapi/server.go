@@ -658,6 +658,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/quality-inspections", s.getOrderQualityInspections)
 		r.With(s.perm("procurement:order:read")).Get("/api/quality/procurement-todos", s.listQualityProcurementTodos)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/quality-inspections/handling", s.recordQualityProcurementHandling)
+
+		r.With(s.perm("quality:task:read"), s.perm("quality:task:write")).Get("/api/quality/source-orders", s.listQualitySourceOrders)
+		r.With(s.perm("quality:task:read"), s.perm("quality:task:write")).Get("/api/quality/source-orders/{id}", s.getQualitySourceOrder)
+		r.With(s.perm("quality:task:read"), s.perm("quality:task:write")).Post("/api/quality/tasks", s.createQualityInspection)
+
+		r.With(s.perm("quality:task:read")).Get("/api/quality/access", s.qualityAccess)
+		r.With(s.perm("quality:task:read"), s.perm("quality:task:write")).Patch("/api/quality/tasks/{id}/basics", s.updateQualityBasics)
+		r.With(s.perm("quality:task:read")).Delete("/api/quality/tasks/{id}", s.deleteQualityTask)
 		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks", s.listQualityTasks)
 		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks/{id}", s.getQualityTask)
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/start", s.startQualityTask)

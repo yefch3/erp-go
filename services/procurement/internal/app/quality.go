@@ -40,6 +40,7 @@ type QualityFile struct {
 	UploadedAt                                                              time.Time
 }
 type QualityTask struct {
+	Deletable                                                                                               bool
 	ID, POID                                                                                                int64
 	TaskNo, PONo, SupplierName                                                                              string
 	BatchNo                                                                                                 int32
@@ -210,7 +211,7 @@ func (s *Service) ListQualityTasks(ctx context.Context, tenantID int64, tab, key
 		ids = []int64{}
 	}
 	completed := strings.EqualFold(tab, "COMPLETED")
-	rows, err := s.pool.Query(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.requested_by_name,t.requested_at,t.inspector_name,t.completed_at,COUNT(*) OVER()
+	rows, err := s.pool.Query(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.requested_by_name,t.requested_at,t.inspector_name,t.completed_at,(t.status='WAITING' AND t.started_at IS NULL AND NOT EXISTS(SELECT 1 FROM quality_inspection_rounds r WHERE r.tenant_id=t.tenant_id AND r.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM quality_inspection_files f WHERE f.tenant_id=t.tenant_id AND f.task_id=t.id)),COUNT(*) OVER()
 	 FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id
 	 WHERE t.tenant_id=$1 AND (($2 AND t.status='COMPLETED') OR (NOT $2 AND t.status<>'COMPLETED'))
 	 AND ($3='' OR t.task_no ILIKE '%%'||$3||'%%' OR o.po_no ILIKE '%%'||$3||'%%' OR o.supplier_name ILIKE '%%'||$3||'%%')
@@ -224,7 +225,7 @@ func (s *Service) ListQualityTasks(ctx context.Context, tenantID int64, tab, key
 	var total int64
 	for rows.Next() {
 		var q QualityTask
-		if err = rows.Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.CompletedAt, &total); err != nil {
+		if err = rows.Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.CompletedAt, &q.Deletable, &total); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, q)
@@ -298,6 +299,7 @@ func (s *Service) GetQualityTask(ctx context.Context, tenantID, id int64) (Quali
 		q.Files = append(q.Files, f)
 	}
 	fr.Close()
+	q.Deletable = q.Status == "WAITING" && q.StartedAt == nil && len(q.Rounds) == 0 && len(q.Files) == 0
 	return q, nil
 }
 

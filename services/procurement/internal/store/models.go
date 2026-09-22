@@ -868,6 +868,17 @@ type QualityInspectionTaskLine struct {
 	ReleaseDecidedAt     pgtype.Timestamptz
 }
 
+type QualityTaskAudit struct {
+	ID        int64
+	TenantID  int64
+	TaskID    int64
+	Action    string
+	ActorID   int64
+	ActorName string
+	Snapshot  []byte
+	CreatedAt pgtype.Timestamptz
+}
+
 type SourcingCase struct {
 	ID                     int64
 	TenantID               int64

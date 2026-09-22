@@ -3112,6 +3112,11 @@ const (
 	PurchaseOrderService_RecordInspection_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/RecordInspection"
 	PurchaseOrderService_ResolveInspection_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ResolveInspection"
 	PurchaseOrderService_CloseOrder_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/CloseOrder"
+	PurchaseOrderService_QualityAccess_FullMethodName                     = "/erp.procurement.v1.PurchaseOrderService/QualityAccess"
+	PurchaseOrderService_UpdateQualityBasics_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateQualityBasics"
+	PurchaseOrderService_DeleteQualityTask_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/DeleteQualityTask"
+	PurchaseOrderService_ListQualitySourceOrders_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ListQualitySourceOrders"
+	PurchaseOrderService_CreateQualityInspection_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/CreateQualityInspection"
 	PurchaseOrderService_ApplyQualityInspection_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ApplyQualityInspection"
 	PurchaseOrderService_ListQualityInspectionTasks_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListQualityInspectionTasks"
 	PurchaseOrderService_GetQualityInspectionTask_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/GetQualityInspectionTask"
@@ -3237,6 +3242,11 @@ type PurchaseOrderServiceClient interface {
 	CloseOrder(ctx context.Context, in *CloseOrderRequest, opts ...grpc.CallOption) (*CloseOrderResponse, error)
 	// D5 factory pre-shipment quality handoff. This is deliberately separate
 	// from RecordInspection, which records checks after warehouse receipt.
+	QualityAccess(ctx context.Context, in *QualityAccessRequest, opts ...grpc.CallOption) (*QualityAccessResponse, error)
+	UpdateQualityBasics(ctx context.Context, in *UpdateQualityBasicsRequest, opts ...grpc.CallOption) (*UpdateQualityBasicsResponse, error)
+	DeleteQualityTask(ctx context.Context, in *DeleteQualityTaskRequest, opts ...grpc.CallOption) (*DeleteQualityTaskResponse, error)
+	ListQualitySourceOrders(ctx context.Context, in *ListQualitySourceOrdersRequest, opts ...grpc.CallOption) (*ListQualitySourceOrdersResponse, error)
+	CreateQualityInspection(ctx context.Context, in *CreateQualityInspectionRequest, opts ...grpc.CallOption) (*CreateQualityInspectionResponse, error)
 	ApplyQualityInspection(ctx context.Context, in *ApplyQualityInspectionRequest, opts ...grpc.CallOption) (*ApplyQualityInspectionResponse, error)
 	ListQualityInspectionTasks(ctx context.Context, in *ListQualityInspectionTasksRequest, opts ...grpc.CallOption) (*ListQualityInspectionTasksResponse, error)
 	GetQualityInspectionTask(ctx context.Context, in *GetQualityInspectionTaskRequest, opts ...grpc.CallOption) (*GetQualityInspectionTaskResponse, error)
@@ -3690,6 +3700,56 @@ func (c *purchaseOrderServiceClient) CloseOrder(ctx context.Context, in *CloseOr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CloseOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_CloseOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) QualityAccess(ctx context.Context, in *QualityAccessRequest, opts ...grpc.CallOption) (*QualityAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QualityAccessResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_QualityAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UpdateQualityBasics(ctx context.Context, in *UpdateQualityBasicsRequest, opts ...grpc.CallOption) (*UpdateQualityBasicsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateQualityBasicsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateQualityBasics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) DeleteQualityTask(ctx context.Context, in *DeleteQualityTaskRequest, opts ...grpc.CallOption) (*DeleteQualityTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteQualityTaskResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DeleteQualityTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListQualitySourceOrders(ctx context.Context, in *ListQualitySourceOrdersRequest, opts ...grpc.CallOption) (*ListQualitySourceOrdersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListQualitySourceOrdersResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListQualitySourceOrders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CreateQualityInspection(ctx context.Context, in *CreateQualityInspectionRequest, opts ...grpc.CallOption) (*CreateQualityInspectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateQualityInspectionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateQualityInspection_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4386,6 +4446,11 @@ type PurchaseOrderServiceServer interface {
 	CloseOrder(context.Context, *CloseOrderRequest) (*CloseOrderResponse, error)
 	// D5 factory pre-shipment quality handoff. This is deliberately separate
 	// from RecordInspection, which records checks after warehouse receipt.
+	QualityAccess(context.Context, *QualityAccessRequest) (*QualityAccessResponse, error)
+	UpdateQualityBasics(context.Context, *UpdateQualityBasicsRequest) (*UpdateQualityBasicsResponse, error)
+	DeleteQualityTask(context.Context, *DeleteQualityTaskRequest) (*DeleteQualityTaskResponse, error)
+	ListQualitySourceOrders(context.Context, *ListQualitySourceOrdersRequest) (*ListQualitySourceOrdersResponse, error)
+	CreateQualityInspection(context.Context, *CreateQualityInspectionRequest) (*CreateQualityInspectionResponse, error)
 	ApplyQualityInspection(context.Context, *ApplyQualityInspectionRequest) (*ApplyQualityInspectionResponse, error)
 	ListQualityInspectionTasks(context.Context, *ListQualityInspectionTasksRequest) (*ListQualityInspectionTasksResponse, error)
 	GetQualityInspectionTask(context.Context, *GetQualityInspectionTaskRequest) (*GetQualityInspectionTaskResponse, error)
@@ -4613,6 +4678,21 @@ func (UnimplementedPurchaseOrderServiceServer) ResolveInspection(context.Context
 }
 func (UnimplementedPurchaseOrderServiceServer) CloseOrder(context.Context, *CloseOrderRequest) (*CloseOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CloseOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) QualityAccess(context.Context, *QualityAccessRequest) (*QualityAccessResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QualityAccess not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateQualityBasics(context.Context, *UpdateQualityBasicsRequest) (*UpdateQualityBasicsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateQualityBasics not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DeleteQualityTask(context.Context, *DeleteQualityTaskRequest) (*DeleteQualityTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteQualityTask not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListQualitySourceOrders(context.Context, *ListQualitySourceOrdersRequest) (*ListQualitySourceOrdersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListQualitySourceOrders not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateQualityInspection(context.Context, *CreateQualityInspectionRequest) (*CreateQualityInspectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateQualityInspection not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ApplyQualityInspection(context.Context, *ApplyQualityInspectionRequest) (*ApplyQualityInspectionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ApplyQualityInspection not implemented")
@@ -5414,6 +5494,96 @@ func _PurchaseOrderService_CloseOrder_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).CloseOrder(ctx, req.(*CloseOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_QualityAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QualityAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).QualityAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_QualityAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).QualityAccess(ctx, req.(*QualityAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_UpdateQualityBasics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateQualityBasicsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateQualityBasics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateQualityBasics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateQualityBasics(ctx, req.(*UpdateQualityBasicsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_DeleteQualityTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteQualityTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DeleteQualityTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DeleteQualityTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DeleteQualityTask(ctx, req.(*DeleteQualityTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListQualitySourceOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListQualitySourceOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListQualitySourceOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListQualitySourceOrders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListQualitySourceOrders(ctx, req.(*ListQualitySourceOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CreateQualityInspection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateQualityInspectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateQualityInspection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateQualityInspection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateQualityInspection(ctx, req.(*CreateQualityInspectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6690,6 +6860,26 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CloseOrder",
 			Handler:    _PurchaseOrderService_CloseOrder_Handler,
+		},
+		{
+			MethodName: "QualityAccess",
+			Handler:    _PurchaseOrderService_QualityAccess_Handler,
+		},
+		{
+			MethodName: "UpdateQualityBasics",
+			Handler:    _PurchaseOrderService_UpdateQualityBasics_Handler,
+		},
+		{
+			MethodName: "DeleteQualityTask",
+			Handler:    _PurchaseOrderService_DeleteQualityTask_Handler,
+		},
+		{
+			MethodName: "ListQualitySourceOrders",
+			Handler:    _PurchaseOrderService_ListQualitySourceOrders_Handler,
+		},
+		{
+			MethodName: "CreateQualityInspection",
+			Handler:    _PurchaseOrderService_CreateQualityInspection_Handler,
 		},
 		{
 			MethodName: "ApplyQualityInspection",
