@@ -130,9 +130,12 @@ func TestCustomerTemplateImportIntegration(t *testing.T) {
 	bad.Code = "BATCH-BAD"
 	bad.Name = "Bad"
 	bad.ContactName = ""
+	bad.ContactEmail = "not-an-email"
 	good := row
 	good.Code = "BATCH-GOOD"
 	good.Name = "Good"
+	// Email identifies a contact even when its name is not yet known.
+	good.ContactName = ""
 	v, n = run(sales, tenant, []CustomerImportRow{good, bad}, false)
 	if n != 1 || !v[0].OK || v[1].OK {
 		t.Fatalf("valid row was not imported independently: %#v count=%d", v, n)
