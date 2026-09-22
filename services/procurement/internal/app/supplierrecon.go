@@ -186,8 +186,8 @@ func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO manual_payable_corrections
 			(tenant_id,po_id,before_data,after_data,corrected_by,corrected_by_name)
-			VALUES ($1,$2,jsonb_build_object('supplierName',$3,'orderNo',$4,'dueDate',$5),
-			jsonb_build_object('supplierName',$6,'orderNo',$7,'dueDate',$8),$9,$10)`,
+			VALUES ($1,$2,jsonb_build_object('supplierName',$3::text,'orderNo',$4::text,'dueDate',$5::text),
+			jsonb_build_object('supplierName',$6::text,'orderNo',$7::text,'dueDate',$8::text),$9,$10)`,
 			tenantID, poID, oldSupplier, oldNo, oldDue, supplierName, orderNo, dueDate, op.ID, op.Name)
 		return err
 	})
