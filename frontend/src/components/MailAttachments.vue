@@ -3,9 +3,23 @@
      预览、下载、右键转 Excel 的入口都在这里。复制一份出去，日后修的就只会是
      其中一份。 -->
 <template>
-  <div v-if="files.length" class="files">
+  <section v-if="files.length" ref="root" class="attachments">
+    <div class="attachment-header">
+      <h4>{{ t('emails.attachments') }} <span>· {{ files.length }}</span></h4>
+    <button
+      v-if="downloadableOnly(files).length > 1"
+      type="button"
+      class="bundle"
+      :disabled="bundling"
+      @click="emit('downloadAll', mailId ?? '', files)"
+    >
+      <el-icon><Download /></el-icon>
+      <span>{{ t(saveAsLabel, { n: downloadableOnly(files).length }) }}</span>
+    </button>
+    </div>
+    <div ref="grid" class="files" :class="{ expanded }" :tabindex="expanded ? 0 : undefined" :aria-label="t('emails.attachments')">
     <div
-      v-for="a in files"
+      v-for="a in visibleFiles"
       :key="a.id"
       class="file"
       :class="{ dead: !a.downloadUrl }"
@@ -15,8 +29,10 @@
       @mouseleave="emit('excelLeave')"
     >
       <el-icon><Paperclip /></el-icon>
-      <span class="fname ellipsis">{{ a.fileName }}</span>
-      <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
+      <span class="file-info">
+        <span class="fname ellipsis" :title="a.fileName">{{ a.fileName }}</span>
+        <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
+      </span>
       <!-- 看和拿是两件事，所以是两个按钮。预览只对真能显示的东西出现；
            .pptx 或 .zip 的全部交互就是下载。 -->
       <!-- 带字、带底色，不是两个灰图标。原来那两个灰图标和文件名、大小混在
@@ -47,35 +63,16 @@
       </el-tooltip>
     </div>
 
-    <!-- 这一封的附件一次拿走。**跟着这一封**，所以会话里每一封各有各的一颗：
-         对方发来三个、我们回了两个，就是三个的那一颗和两个的那一颗。
-         从前这颗只在阅读区最底下有一颗，打的是「打开的那封」的包，在会话里
-         说不清它算谁的（2026-09-15 去掉了那一块）。
-
-         **不再打成 zip**（2026-09-21）：拿到的就是原来那几个文件，名字和格式
-         都和发信人给的一样，不用先解压再找。浏览器给得起「选文件夹」的（Chrome
-         / Edge）会先问存到哪儿，也就是另存为；给不起的逐个走普通下载。
-         见 lib/saveAttachments。
-
-         两个以上才给：只有一个附件时它和旁边那颗「下载」是同一件事。
-         **不再要求 mailId**：从前打包那条接口按信的编号取文件，没有编号就
-         取不了；现在取的是每个附件自己的下载地址，和是哪一封无关——会话里
-         「我发出」而本地没留底的那几条，从此也有这颗按钮了。 -->
-    <button
-      v-if="downloadableOnly(files).length > 1"
-      type="button"
-      class="bundle"
-      :disabled="bundling"
-      @click="emit('downloadAll', mailId ?? '', files)"
-    >
-      <el-icon><Download /></el-icon>
-      <span>{{ t(saveAsLabel, { n: downloadableOnly(files).length }) }}</span>
+    </div>
+    <button v-if="files.length > collapsedCount" type="button" class="expand-files" :aria-expanded="expanded" @click="toggleExpanded">
+      {{ expanded ? t('emails.collapseAttachments') : t('emails.expandAttachments', { n: files.length - collapsedCount }) }}
     </button>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
 import { Download, Paperclip, View } from '@element-plus/icons-vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { humanSize } from '../lib/humanSize'
 import { canPreview } from '../lib/attachmentPreview'
@@ -98,7 +95,7 @@ export interface MailFile {
   revision?: number | string
 }
 
-defineProps<{
+const props = defineProps<{
   files: MailFile[]
   // 这些附件属于哪封信。会话视图里一屏有好几封，各是各的号——用当前打开的
   // 那一封去请求，找到的会是别人的附件，或者干脆找不到。
@@ -127,6 +124,27 @@ const emit = defineEmits<{
   downloadAll: [mailId: string, files: MailFile[]]
 }>()
 const { t } = useI18n()
+const root = ref<HTMLElement>()
+const grid = ref<HTMLElement>()
+const expanded = ref(false)
+const columns = ref(2)
+const collapsedCount = computed(() => columns.value * 2)
+const visibleFiles = computed(() => expanded.value ? props.files : props.files.slice(0, collapsedCount.value))
+let observer: ResizeObserver | undefined
+onMounted(() => {
+  observer = new ResizeObserver(([entry]) => { columns.value = entry.contentRect.width >= 680 ? 2 : 1 })
+  if (root.value) observer.observe(root.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+watch(() => [props.mailId, props.files.map(f => f.id).join(',')], () => {
+  expanded.value = false
+  if (grid.value) grid.value.scrollTop = 0
+})
+function toggleExpanded() {
+  expanded.value = !expanded.value
+  if (grid.value) grid.value.scrollTop = 0
+}
+
 
 // 按钮上写「另存为」还是「下载全部」——**说的是按下去会发生什么**。
 //
@@ -143,27 +161,24 @@ function hint(a: MailFile) {
 </script>
 
 <style scoped>
-.files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 6px 10px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-lighter);
-  font-size: 13px;
-}
+.attachments { container-type: inline-size; min-width: 0; }
+.attachment-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.attachment-header h4 { margin: 0; font-size: 14px; line-height: 1.5; }
+.attachment-header h4 span { color: var(--el-text-color-secondary); font-weight: 400; }
+.files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.files.expanded { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.file { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-lighter); font-size: 13px; }
+.file > .el-icon { flex-shrink: 0; }
+.file-info { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.expand-files { display: block; margin: 8px auto 0; padding: 6px 12px; border: 0; background: transparent; color: var(--el-color-primary); font-size: 12px; cursor: pointer; }
+.expand-files:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+@container (max-width: 679px) { .files { grid-template-columns: minmax(0, 1fr); } }
 .file.dead {
   opacity: 0.6;
 }
 .fname {
-  max-width: 260px;
+  display: block;
+  font-size: 13px;
 }
 .ellipsis {
   overflow: hidden;
@@ -171,13 +186,17 @@ function hint(a: MailFile) {
   white-space: nowrap;
 }
 .sub {
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 .fbtn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 9px;
+  padding: 5px 8px;
+  min-height: 26px;
+  flex-shrink: 0;
   border: 0;
   border-radius: 999px;
   font-size: 12px;

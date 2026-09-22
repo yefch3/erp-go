@@ -488,9 +488,6 @@
                这儿再来一块只会让人问「这两个是不是同一个文件」——而它确实只
                是其中一封的，不是整条会话的汇总。 -->
           <template v-if="openedInbound.attachments?.length">
-            <div class="att-head">
-              <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-            </div>
             <!-- 「下载全部」那颗在组件里，跟着这一封走。 -->
             <MailAttachments
               :files="openedInbound.attachments"

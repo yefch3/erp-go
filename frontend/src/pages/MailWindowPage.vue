@@ -170,9 +170,6 @@
            里，报价单、装箱单、提单常常才是这封信的重点，正文只是一句「见附件」。
            Outlook、Foxmail、263 都把它放在头上，理由是同一个。 -->
       <template v-if="mail.attachments?.length">
-        <div class="att-head">
-          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-        </div>
         <!-- 「下载全部」那颗在组件里，跟着这一封走。和主窗口同一条规矩。 -->
         <MailAttachments
           :files="mail.attachments"

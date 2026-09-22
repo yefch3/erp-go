@@ -1936,6 +1936,8 @@ basicsSaved: "基本资料已保存",
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
     previewUnavailable: '这个附件打不开，请下载后查看',
+    expandAttachments: '展开其余 {n} 个附件',
+    collapseAttachments: '收起附件',
     downloadAll: '下载全部（{n}）', saveAllAs: '全部另存为（{n}）', saveAllDone: '已保存 {n} 个文件', saveAllPartial: '保存了 {n} 个；这几个没取到：{bad}',
     sortBar: {
       label: '排序',
