@@ -129,7 +129,7 @@ func (s *Server) getQualitySourceOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 func (s *Server) createQualityInspection(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.ApplyQualityInspectionRequest{}
+	req := &prv1.CreateQualityInspectionRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -163,7 +163,7 @@ func (s *Server) updateQualityBasics(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 func (s *Server) deleteQualityTask(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Orders.DeleteQualityTask(r.Context(), &prv1.GetQualityInspectionTaskRequest{Id: idFromPath(r)})
+	resp, err := s.Orders.DeleteQualityTask(r.Context(), &prv1.DeleteQualityTaskRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

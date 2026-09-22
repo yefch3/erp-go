@@ -182,12 +182,12 @@ func (h *OrderHandler) ListQualitySourceOrders(ctx context.Context, req *prv1.Li
 	}
 	return out, nil
 }
-func (h *OrderHandler) CreateQualityInspection(ctx context.Context, req *prv1.ApplyQualityInspectionRequest) (*prv1.ApplyQualityInspectionResponse, error) {
+func (h *OrderHandler) CreateQualityInspection(ctx context.Context, req *prv1.CreateQualityInspectionRequest) (*prv1.CreateQualityInspectionResponse, error) {
 	q, err := h.svc.CreateQualityInspection(ctx, grpcx.TenantID(ctx), app.ApplyQualityInput{POID: req.GetPoId(), ExpectedDate: req.GetExpectedDate(), Location: req.GetInspectionLocation(), ContactName: req.GetContactName(), ContactPhone: req.GetContactPhone(), Remark: req.GetRemark()}, currentOp(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.ApplyQualityInspectionResponse{Task: qualityTaskProto(q)}, nil
+	return &prv1.CreateQualityInspectionResponse{Task: qualityTaskProto(q)}, nil
 }
 
 func (h *OrderHandler) QualityAccess(ctx context.Context, req *prv1.QualityAccessRequest) (*prv1.QualityAccessResponse, error) {
@@ -197,14 +197,14 @@ func (h *OrderHandler) QualityAccess(ctx context.Context, req *prv1.QualityAcces
 	}
 	return &prv1.QualityAccessResponse{CanDelete: allowed}, nil
 }
-func (h *OrderHandler) UpdateQualityBasics(ctx context.Context, req *prv1.UpdateQualityBasicsRequest) (*prv1.GetQualityInspectionTaskResponse, error) {
+func (h *OrderHandler) UpdateQualityBasics(ctx context.Context, req *prv1.UpdateQualityBasicsRequest) (*prv1.UpdateQualityBasicsResponse, error) {
 	q, err := h.svc.UpdateQualityBasics(ctx, grpcx.TenantID(ctx), req.GetId(), app.ApplyQualityInput{ExpectedDate: req.GetExpectedDate(), Location: req.GetInspectionLocation(), ContactName: req.GetContactName(), ContactPhone: req.GetContactPhone(), Remark: req.GetRemark()}, currentOp(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.GetQualityInspectionTaskResponse{Task: qualityTaskProto(q)}, nil
+	return &prv1.UpdateQualityBasicsResponse{Task: qualityTaskProto(q)}, nil
 }
-func (h *OrderHandler) DeleteQualityTask(ctx context.Context, req *prv1.GetQualityInspectionTaskRequest) (*prv1.DeleteQualityTaskResponse, error) {
+func (h *OrderHandler) DeleteQualityTask(ctx context.Context, req *prv1.DeleteQualityTaskRequest) (*prv1.DeleteQualityTaskResponse, error) {
 	if err := h.svc.DeleteQualityTask(ctx, grpcx.TenantID(ctx), req.GetId(), currentOp(ctx)); err != nil {
 		return nil, err
 	}

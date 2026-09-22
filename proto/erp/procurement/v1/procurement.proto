@@ -658,10 +658,10 @@ service PurchaseOrderService {
   // D5 factory pre-shipment quality handoff. This is deliberately separate
   // from RecordInspection, which records checks after warehouse receipt.
   rpc QualityAccess(QualityAccessRequest) returns (QualityAccessResponse);
-  rpc UpdateQualityBasics(UpdateQualityBasicsRequest) returns (GetQualityInspectionTaskResponse);
-  rpc DeleteQualityTask(GetQualityInspectionTaskRequest) returns (DeleteQualityTaskResponse);
+  rpc UpdateQualityBasics(UpdateQualityBasicsRequest) returns (UpdateQualityBasicsResponse);
+  rpc DeleteQualityTask(DeleteQualityTaskRequest) returns (DeleteQualityTaskResponse);
   rpc ListQualitySourceOrders(ListQualitySourceOrdersRequest) returns (ListQualitySourceOrdersResponse);
-  rpc CreateQualityInspection(ApplyQualityInspectionRequest) returns (ApplyQualityInspectionResponse);
+  rpc CreateQualityInspection(CreateQualityInspectionRequest) returns (CreateQualityInspectionResponse);
   rpc ApplyQualityInspection(ApplyQualityInspectionRequest) returns (ApplyQualityInspectionResponse);
   rpc ListQualityInspectionTasks(ListQualityInspectionTasksRequest) returns (ListQualityInspectionTasksResponse);
   rpc GetQualityInspectionTask(GetQualityInspectionTaskRequest) returns (GetQualityInspectionTaskResponse);
@@ -3126,3 +3126,16 @@ message UpdateQualityBasicsRequest {
  string remark = 6;
 }
 message DeleteQualityTaskResponse {}
+
+message CreateQualityInspectionRequest {
+  int64 po_id = 1;
+  string expected_date = 2;
+  string inspection_location = 3;
+  string contact_name = 4;
+  string contact_phone = 5;
+  string remark = 6;
+  repeated ApplyQualityInspectionLine lines = 7;
+}
+message CreateQualityInspectionResponse { QualityInspectionTask task = 1; }
+message UpdateQualityBasicsResponse { QualityInspectionTask task = 1; }
+message DeleteQualityTaskRequest { int64 id = 1; }
