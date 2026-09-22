@@ -134,13 +134,18 @@ func TestCustomerTemplateImportIntegration(t *testing.T) {
 	good.Code = "BATCH-GOOD"
 	good.Name = "Good"
 	v, n = run(sales, tenant, []CustomerImportRow{good, bad}, false)
-	if n != 0 || v[1].OK {
-		t.Fatalf("bad contact accepted %#v", v)
+	if n != 1 || !v[0].OK || v[1].OK {
+		t.Fatalf("valid row was not imported independently: %#v count=%d", v, n)
 	}
 	var count int
 	_ = pool.QueryRow(ctx, "SELECT count(*) FROM customers WHERE tenant_id=$1 AND code LIKE 'BATCH-%'", tenant).Scan(&count)
-	if count != 0 {
-		t.Fatal("partial import")
+	if count != 1 {
+		t.Fatalf("partial import count=%d want=1", count)
+	}
+	shortOnly := CustomerImportRow{ShortName: "Short Name Only"}
+	v, n = run(sales, tenant, []CustomerImportRow{shortOnly}, false)
+	if n != 1 || !v[0].OK || v[0].Name != shortOnly.ShortName {
+		t.Fatalf("short-name-only customer import: %#v count=%d", v, n)
 	}
 	// A repeated contact in a new customer batch can explicitly update the prior row.
 	first := row
