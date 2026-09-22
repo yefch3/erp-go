@@ -24,7 +24,11 @@ func TestMailDuplicatesFollowMasterDataStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			t.Errorf("rollback test data: %v", err)
+		}
+	}()
 	svc := New(pool)
 	svc.q = store.New(tx)
 	const tenant int64 = 98374152
