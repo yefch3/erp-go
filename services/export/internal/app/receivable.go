@@ -164,8 +164,8 @@ func (s *Service) UpdateManualReceivable(ctx context.Context, tenantID, contract
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO contract_corrections
 			(tenant_id,contract_id,contract_version_id,before_data,after_data,corrected_by,corrected_by_name)
-			VALUES ($1,$2,$3,jsonb_build_object('customerName',$4,'contractNo',$5,'dueDate',$6),
-			jsonb_build_object('customerName',$7,'contractNo',$8,'dueDate',$9),$10,$11)`,
+			VALUES ($1,$2,$3,jsonb_build_object('customerName',$4::text,'contractNo',$5::text,'dueDate',$6::text),
+			jsonb_build_object('customerName',$7::text,'contractNo',$8::text,'dueDate',$9::text),$10,$11)`,
 			tenantID, contractID, versionID, oldCustomer, oldNo, oldDue, customerName, contractNo, dueDate, op.ID, op.Name)
 		if err != nil {
 			return err
