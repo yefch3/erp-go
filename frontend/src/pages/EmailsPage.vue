@@ -25,8 +25,14 @@
            的位置，Foxmail、Gmail、Outlook 都把它放在这儿。
 
            锁着的时候不出现：搜索要的正是令牌。 -->
+      <!-- 一直在，**包括待处理和拒收名单**（2026-09-22 起）。
+           从前那两个页面上它是藏起来的，因为它和那两张表的筛选框共用同一个
+           值，同时出现会互相串。拆开之后（UrlState.lq）没有这个顾虑了，而
+           「点了待处理搜索框就没了」本身就够让人发愣的——这一栏是整页唯一
+           的搜索，它不该跟着文件夹时有时无。
+           锁着的时候仍然不给：搜索要的正是令牌。 -->
       <el-input
-        v-if="!locked && !isListFilterView"
+        v-if="!locked"
         v-model="keyword"
         class="rail-search"
         :placeholder="t('emails.searchAll')"
@@ -868,10 +874,16 @@
         <!-- 待处理和拒收名单的筛选框留在这儿，没跟着搬到左栏。
              左栏那个搜的是**邮件**；这两张表一个是 ERP 自己的投递记录、
              一个是拒收地址名单，都不是邮件，全局搜索到不了它们。同一个框
-             在这两处做另一件事，才是真的会让人误解的那种复用。 -->
-        <template v-if="isListFilterView">
+             在这两处做另一件事，才是真的会让人误解的那种复用。
+
+             **绑的是 listFilter，不是 keyword。** 两个框同时在屏幕上，
+             共用一个值的话打字会互相串——而左栏那个现在一直在。
+
+             搜索结果出来时收起来：那时列表显示的是**信**，而这个框筛的是
+             投递记录/拒收地址，留着它等于给一份它管不着的列表配了个筛选框。 -->
+        <template v-if="isListFilterView && !isSearching">
           <el-input
-            v-model="keyword"
+            v-model="listFilter"
             :placeholder="t(`emails.search.${folder}`)"
             clearable
             size="small"
@@ -1814,16 +1826,19 @@ const keyword = ref('')
 // 在列表头上，一个文件夹一个框；框挪到左栏之后它就是这一页唯一的搜索，站在
 // 草稿箱里打字也该搜——搜的本来就不是"这个文件夹"。
 //
-// 例外是下面那两张不是邮件的表。
-const isSearching = computed(
-  () => !isListFilterView.value && [...keyword.value.trim()].length >= 2,
-)
+// **这两张不是邮件的表也不再例外**（2026-09-22 起）。从前它们要例外，是因为
+// 那时两个框共用一个值，站在待处理里打字会既筛那张表、又被当成全局搜索。
+// 拆开之后左栏那个框在哪儿都是同一件事：搜信。站在待处理里搜出来的仍然是信，
+// 和站在草稿箱里搜是一样的。
+const isSearching = computed(() => [...keyword.value.trim()].length >= 2)
 
 // 这两张表不是邮件：待处理是 ERP 自己的投递记录，拒收名单是一串地址。
 // 全局搜索翻的是收到的信，到不了它们，所以它们各自留着自己的筛选框。
 const isListFilterView = computed(
   () => folder.value === 'attention' || folder.value === 'suppressions',
 )
+// 上面那两张表自己的筛选词，和左栏那个「搜索所有邮箱」各管各的（见 UrlState.lq）。
+const listFilter = ref('')
 
 // 退出搜索：清掉关键词，回到刚才那个文件夹。
 //
@@ -2276,6 +2291,15 @@ interface UrlState {
   // 只看未读。同样进地址栏，同样的理由：筛着一半刷新一下变回全部，人会
   // 以为收件箱多出来一批信。
   unread: boolean
+  // 待处理 / 拒收名单那张表自己的筛选词。
+  //
+  // **和 q 分开**：q 是左栏那个「搜索所有邮箱」，搜的是收到的信；这两张表
+  // 一个是 ERP 自己的投递记录、一个是一串地址，全局搜索翻不到它们。从前
+  // 两个框共用 q，代价是左栏那个框必须在这两个页面上藏起来——否则同一个
+  // 值两个框，打字互相串。2026-09-22 有人问「点了待处理搜索框怎么没了」，
+  // 藏起来这件事本身就是那个代价。拆开之后两个框各管各的，左栏那个可以
+  // 一直在。
+  lq: string
   // 优先显示：`star`、`unread`、`star,unread`，见 lib/mailSort 的 topParam。
   // 单开一个参数而不是塞进 sort，是因为两者互不影响——按大小排的同时可以
   // 星标优先，而默认排序不进地址栏，塞在一起时分档会跟着一起消失。
@@ -2309,6 +2333,7 @@ function parseQuery(q: LocationQuery): UrlState {
     folder: FOLDER_KEYS.has(f) || isCustomFolderKey(f) ? f : 'inbox',
     page: Number.isInteger(p) && p > 1 ? p : 1,
     q: one(q.q),
+    lq: one(q.lq),
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
     msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
@@ -2325,6 +2350,7 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.folder !== 'inbox') query.folder = s.folder
   if (s.page > 1) query.page = String(s.page)
   if (s.q) query.q = s.q
+  if (s.lq) query.lq = s.lq
   if (s.folder === 'sent' && s.sent !== 'erp') query.sent = s.sent
   if (s.mail) query.mail = s.mail
   if (s.msg) query.msg = s.msg
@@ -2565,6 +2591,7 @@ function applyRoute() {
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
+  listFilter.value = s.lq
   sort.value = parseSort(s.sort, s.top)
   unreadOnly.value = s.unread
   // 换了文件夹/关键词/排序/筛选，接过的那几页和表格的翻页位置都作废：它们
@@ -2574,6 +2601,7 @@ function applyRoute() {
     !prev ||
     prev.folder !== s.folder ||
     prev.q !== s.q ||
+    prev.lq !== s.lq ||
     prev.sort !== s.sort ||
     // 分档是排序键的一部分（后端把它写在排序键前面），所以改了分档的游标
     // 就是别人家的游标。不清的话往下滚会从上一种顺序里的某个位置接着要。
@@ -2592,6 +2620,7 @@ function applyRoute() {
     prev.folder !== s.folder ||
     prev.page !== s.page ||
     prev.q !== s.q ||
+    prev.lq !== s.lq ||
     prev.sent !== s.sent ||
     prev.acct !== s.acct ||
     prev.sort !== s.sort ||
@@ -3066,8 +3095,12 @@ function untilText(v: string) {
 function switchFolder(key: string) {
   // Clear the box too, or clicking the current folder with an unsearched
   // keyword sitting in it would silently search for it.
+  //
+  // 两个框都清：待处理那张表的筛选词是属于那张表的，换到别处还留着它，
+  // 下次回来会看到一份被筛过却看不出为什么的列表。
   keyword.value = ''
-  pushState({ folder: key, page: 1, q: '', mail: '', sort: '' })
+  listFilter.value = ''
+  pushState({ folder: key, page: 1, q: '', lq: '', mail: '', sort: '' })
 }
 
 // 左栏点的是「某个信箱的某个文件夹」——一下回答了两件事。
@@ -3210,8 +3243,11 @@ async function onSignOut(cmd: string) {
   await lockAllMailboxes()
 }
 
+// 两个框都从这儿提交：左栏那个搜索所有邮箱（q），待处理/拒收名单那张表自己
+// 的筛选框（lq）。两个值一起写进地址栏，各写各的——只写一个的话，另一个会被
+// pushState 从「当前状态」里原样带过去，看着像没生效。
 function reload() {
-  pushState({ page: 1, q: keyword.value, mail: '' })
+  pushState({ page: 1, q: keyword.value, lq: listFilter.value, mail: '' })
 }
 
 // 切信箱 = 重新开始翻这个箱。
@@ -3251,6 +3287,7 @@ watch(currentAccount, async (now, before) => {
   const wasLocked = locked.value
   locked.value = false
   keyword.value = ''
+  listFilter.value = ''
   // 左栏点的是「哪个箱的哪个文件夹」，两件事一次导航说完。没点文件夹时
   // （解绑后自动切、新绑一个箱）留在原来那个文件夹，和从前一样。
   const goto = pendingFolder
@@ -3260,7 +3297,7 @@ watch(currentAccount, async (now, before) => {
   moreFailed.value = false
   tableCursor.value = ''
   tablePageCursors.value = []
-  pushState({ page: 1, q: '', mail: '', acct: String(now), sort: '', ...(goto ? { folder: goto } : {}) })
+  pushState({ page: 1, q: '', lq: '', mail: '', acct: String(now), sort: '', ...(goto ? { folder: goto } : {}) })
   // 从锁着的状态回来时，页面上那些只在解锁后才拉的东西（草稿数、待处理数、
   // 同步健康）都还是空的或者过期的。init 会把它们一起补上。
   if (wasLocked) {
@@ -3453,7 +3490,7 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
         nextCursor: string
       }>('/email-messages', {
         page_size: pageSize,
-        keyword: keyword.value,
+        keyword: listFilter.value,
         attention_only: true,
         cursor,
       })
@@ -3465,7 +3502,7 @@ async function load(opts: { quiet?: boolean; append?: boolean; single?: boolean 
       attentionCount.value = total.value
     } else {
       const d = await get<{ suppressions: Suppression[] }>('/email-suppressions', {
-        keyword: keyword.value,
+        keyword: listFilter.value,
       })
       // 过期的一次不许落盘，见 loadSeq。
       if (!fresh()) return false
