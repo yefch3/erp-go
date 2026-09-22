@@ -162,14 +162,14 @@ function hint(a: MailFile) {
 
 <style scoped>
 .attachments { container-type: inline-size; min-width: 0; }
-.attachment-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.attachment-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .attachment-header h4 { margin: 0; font-size: 14px; line-height: 1.5; }
 .attachment-header h4 span { color: var(--el-text-color-secondary); font-weight: 400; }
-.files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; }
 .files.expanded { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
-.file { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-lighter); font-size: 13px; }
+.file { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 0; font-size: 12px; }
 .file > .el-icon { flex-shrink: 0; }
-.file-info { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.file-info { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; }
 .expand-files { display: block; margin: 8px auto 0; padding: 6px 12px; border: 0; background: transparent; color: var(--el-color-primary); font-size: 12px; cursor: pointer; }
 .expand-files:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 @container (max-width: 679px) { .files { grid-template-columns: minmax(0, 1fr); } }
@@ -178,7 +178,9 @@ function hint(a: MailFile) {
 }
 .fname {
   display: block;
-  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
 }
 .ellipsis {
   overflow: hidden;
@@ -186,7 +188,9 @@ function hint(a: MailFile) {
   white-space: nowrap;
 }
 .sub {
-  font-size: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
 }
 .fbtn {
@@ -194,12 +198,12 @@ function hint(a: MailFile) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 8px;
-  min-height: 26px;
+  padding: 4px 7px;
+  min-height: 22px;
   flex-shrink: 0;
   border: 0;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
   color: #fff;
@@ -207,15 +211,13 @@ function hint(a: MailFile) {
   text-decoration: none;
   transition: filter 0.15s ease, transform 0.15s ease;
 }
-/* 打包那一颗：描边不填色。它和每个文件旁边那颗蓝的「下载」是两件事，
-   颜色上就该分得开——一屏里三颗蓝按钮，人会以为点哪个都一样。 */
+/* 批量操作用文字入口，保留单个附件的彩色操作按钮。 */
 .bundle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 11px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 999px;
+  padding: 4px 0;
+  border: 0;
   background: transparent;
   font: inherit;
   font-size: 12px;
