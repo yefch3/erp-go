@@ -1930,7 +1930,7 @@ export default {
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
     previewUnavailable: 'Este adjunto no se puede abrir aquí; descárgalo para verlo',
-    downloadAll: 'Descargar todo ({n})',
+    downloadAll: 'Descargar todo ({n})', saveAllAs: 'Guardar todo como… ({n})', saveAllDone: '{n} archivos guardados', saveAllPartial: 'Se guardaron {n}; no se pudieron obtener: {bad}',
     sortBar: {
       label: 'Ordenar',
       from: 'Remitente',
@@ -1943,7 +1943,7 @@ export default {
       current: 'Orden: {name}',
       starFirst: 'Destacados primero',
       unreadFirst: 'No leídos primero',
-      messageMode: 'Mostrar cada mensaje por separado',
+      threadMode: 'Agrupar por conversación', messageMode: 'Mostrar cada mensaje por separado', modeSwitched: 'Cambiado a «{mode}»',
     },
     colGrip: {
       rail: 'Ancho de la columna de carpetas',

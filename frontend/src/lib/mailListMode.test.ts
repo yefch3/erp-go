@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_LIST_MODE,
   mergesThreads,
+  listModeChange,
   normalizeListMode,
-  toggledListMode,
-  type MailListMode,
 } from './mailListMode'
 
 describe('normalizeListMode', () => {
@@ -54,15 +53,22 @@ describe('mergesThreads', () => {
   })
 })
 
-describe('toggledListMode', () => {
-  it('两档来回切', () => {
-    expect(toggledListMode('THREAD')).toBe('MESSAGE')
-    expect(toggledListMode('MESSAGE')).toBe('THREAD')
+describe('listModeChange', () => {
+  it('点另一项就切过去', () => {
+    expect(listModeChange('THREAD', 'MESSAGE')).toBe('MESSAGE')
+    expect(listModeChange('MESSAGE', 'THREAD')).toBe('THREAD')
   })
 
-  it('切两次回到原处', () => {
-    for (const mode of ['THREAD', 'MESSAGE'] as MailListMode[]) {
-      expect(toggledListMode(toggledListMode(mode))).toBe(mode)
-    }
+  // 这一条就是那次误会：从前点已选中的那一项会把它**取消**，于是「再点一次
+  // 确认一下」正好关掉了刚开的功能，而屏幕上除了列表悄悄变回去没有别的话。
+  it('点已经选中的那一项，什么都不发生', () => {
+    expect(listModeChange('THREAD', 'THREAD')).toBeNull()
+    expect(listModeChange('MESSAGE', 'MESSAGE')).toBeNull()
+  })
+
+  it('认不出来的命令按兵不动', () => {
+    expect(listModeChange('THREAD', 'BANANA')).toBeNull()
+    expect(listModeChange('THREAD', '')).toBeNull()
+    expect(listModeChange('MESSAGE', 'message')).toBeNull()
   })
 })

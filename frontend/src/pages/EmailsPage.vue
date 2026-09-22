@@ -430,6 +430,21 @@
                   <dd>{{ row.v }}</dd>
                 </template>
               </dl>
+              <!-- 这一封自己带的附件，在它自己的正文**上面**——和阅读单封时
+                   的顺序一致（2026-09-21 一起挪的）。会话里一屏好几封，附件
+                   压在每一封正文底下时，要分清哪个附件属于哪一封得来回找。 -->
+              <MailAttachments
+                v-if="it.attachments?.length"
+                :files="it.attachments"
+                :mail-id="threadAttachmentMailId(it)"
+                :bundling="bundlingId === threadAttachmentMailId(it)"
+                class="thread-files"
+                @preview="openPreview"
+                @download-all="downloadAllAttachments"
+                @excel-menu="openAttachmentExcelMenu"
+                @excel-hover="hoverAttachmentExcelMenu"
+                @excel-leave="scheduleExcelMenuHide"
+              />
               <MailBody
                 v-if="it.bodyFormat === 'HTML'"
                 :html="it.body"
@@ -450,24 +465,39 @@
                 @selection-clear="closeExcelMenu"
               />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
-              <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
-                   时的顺序一致。 -->
-              <MailAttachments
-                v-if="it.attachments?.length"
-                :files="it.attachments"
-                :mail-id="threadAttachmentMailId(it)"
-                :bundling="bundlingId === threadAttachmentMailId(it)"
-                class="thread-files"
-                @preview="openPreview"
-                @download-all="downloadAllAttachments"
-                @excel-menu="openAttachmentExcelMenu"
-                @excel-hover="hoverAttachmentExcelMenu"
-                @excel-leave="scheduleExcelMenuHide"
-              />
             </div>
           </div>
         </template>
+        <!-- 单封（不是会话）时：附件在上，正文在下。
+             **两块必须在同一个 v-else 里**——上面那个 v-if 判的是"这是不是
+             一条会话"，中间插一个带 v-if 的兄弟会把这条 if/else 链接到新的
+             那个上面去，正文就变成"没有附件时才显示"。写在一起，链就断不了。 -->
         <template v-else>
+          <!-- 附件在正文**上面**（2026-09-21 挪的）。
+               从前在最底下，一封长信要滚到尾才看得见有没有附件；而在外贸这门
+               生意里，报价单、装箱单、提单常常才是这封信的重点，正文只是一句
+               「见附件」。Outlook、Foxmail、263 都把它放在头上。
+
+               会话那一侧不在这儿列：每一封的附件已经跟在它自己那一条上面了，
+               这儿再来一块只会让人问「这两个是不是同一个文件」——而它确实只
+               是其中一封的，不是整条会话的汇总。 -->
+          <template v-if="openedInbound.attachments?.length">
+            <div class="att-head">
+              <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+            </div>
+            <!-- 「下载全部」那颗在组件里，跟着这一封走。 -->
+            <MailAttachments
+              :files="openedInbound.attachments"
+              :mail-id="String(openedInbound.id)"
+              :bundling="bundlingId === String(openedInbound.id)"
+              @preview="openPreview"
+              @download-all="downloadAllAttachments"
+              @excel-menu="openAttachmentExcelMenu"
+              @excel-hover="hoverAttachmentExcelMenu"
+              @excel-leave="scheduleExcelMenuHide"
+            />
+            <el-divider />
+          </template>
           <MailBody
             v-if="openedInbound.bodyHtml"
             :html="openedInbound.bodyHtml"
@@ -481,28 +511,6 @@
             @selection-clear="closeExcelMenu"
           />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
-        </template>
-        <!-- 只在「这封信自己单独一封」时列在这里。
-             会话里每一封的附件已经跟在它自己那一条下面了，底下再来一块只会
-             让人问「这两个是不是同一个文件」——而它确实只是其中一封的，不是
-             整条会话的汇总（2026-09-15 被问到，所以去掉）。
-             代价：会话里没有「下载全部」了，单封仍然有。 -->
-        <template v-if="threadItems.length <= 1 && openedInbound.attachments?.length">
-          <el-divider />
-          <div class="att-head">
-            <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          </div>
-          <!-- 「下载全部」那颗在组件里，跟着这一封走。 -->
-          <MailAttachments
-            :files="openedInbound.attachments"
-            :mail-id="String(openedInbound.id)"
-            :bundling="bundlingId === String(openedInbound.id)"
-            @preview="openPreview"
-            @download-all="downloadAllAttachments"
-            @excel-menu="openAttachmentExcelMenu"
-            @excel-hover="hoverAttachmentExcelMenu"
-            @excel-leave="scheduleExcelMenuHide"
-          />
         </template>
       </template>
 
@@ -821,8 +829,18 @@
               >
                 {{ t('emails.sortBar.unreadFirst') }}
               </el-dropdown-item>
-              <!-- 合并会话 / 一封一行。也是**开关**，所以和上面两条一样画
-                   对钩，不是单选。
+              <!-- 合并会话 / 一封一行。**两项并列的单选，不是一个开关。**
+
+                   原来是一个开关（一项，选中画对钩）。2026-09-22 一位同事
+                   反映「勾上了还是显示会话」，查日志发现他先开、两分钟后又
+                   关了——他打开菜单看见对钩，为了"确认一下"又点了一次，那一
+                   下正好把它关掉。点完除了列表悄悄变回去，没有任何东西说刚
+                   才是开了还是关了。
+
+                   改成两项就不会了：点已经选中的那一项什么也不发生，选中的
+                   是哪一项一眼看得见。紧挨着上面的「降序 / 升序」就是这个
+                   样子，同一个菜单里用同一种模式。
+
                    放这个菜单里是因为它回答的正是这个菜单在回答的问题——
                    「这份列表怎么排」；而它一天里被点的次数比排序还少，不值得
                    在那一排已经挤满的按钮里再占一格。
@@ -831,7 +849,14 @@
               <el-dropdown-item
                 v-if="canSortTop"
                 divided
-                command="mode:toggle"
+                command="mode:THREAD"
+                :class="{ 'sort-on': mergeThreads }"
+              >
+                {{ t('emails.sortBar.threadMode') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="canSortTop"
+                command="mode:MESSAGE"
                 :class="{ 'sort-on': !mergeThreads }"
               >
                 {{ t('emails.sortBar.messageMode') }}
@@ -1467,12 +1492,13 @@ import { folderNameProblem, isCustomFolderKey, splitFolderPath, viewForFolderKey
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import {
   DEFAULT_LIST_MODE,
+  listModeChange,
   mergesThreads,
   normalizeListMode,
-  toggledListMode,
   type MailListMode,
 } from '../lib/mailListMode'
 import { attachmentHintKey } from '../lib/attachmentHint'
+import { canPickDirectory, saveAllAttachments } from '../lib/saveAttachments'
 import { plainTextToHtml } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
@@ -1855,8 +1881,10 @@ function onSortCommand(cmd: string) {
   // 合并/单封不走 sortFromCommand：它不是排序，也不进地址栏——它存在服务端。
   // 混进那一族的后果是 sortParam 会把它编进地址栏，而地址栏里的值和服务端
   // 存的值从此可以不一致。
-  if (cmd === 'mode:toggle') {
-    void toggleListMode()
+  if (cmd.startsWith('mode:')) {
+    // 点已经选中的那一项要什么都不发生，判断在 lib/mailListMode，那儿测得到。
+    const next = listModeChange(listMode.value, cmd.slice('mode:'.length))
+    if (next) void setListMode(next)
     return
   }
   const next = sortFromCommand(listSort.value, cmd)
@@ -1932,11 +1960,14 @@ async function loadListMode() {
 const switchingListMode = ref(false)
 // 换档。存完**重新从第一页拉**：一行的含义变了，停在原来那个位置没有意义，
 // 而且手里那个游标指的是另一种行。
-async function toggleListMode() {
+async function setListMode(next: MailListMode) {
   if (switchingListMode.value) return
+  // 点的就是当前这一档：什么都不做。菜单里两项并列，点已经选中的那一项本来
+  // 就该没有反应——而不是把它取消掉。原来那个版本是一个开关，「再点一次确认
+  // 一下」正好把它关了，2026-09-22 有同事踩过。
+  if (next === listMode.value) return
   switchingListMode.value = true
   try {
-    const next = toggledListMode(listMode.value)
     const d = await put<{ listMode?: string }>('/mail-list-mode', { listMode: next })
     listMode.value = normalizeListMode(d.listMode)
     // 回到第一页，和改排序、改筛选时做的是同一件事（见 applyRoute 里那段）。
@@ -1950,6 +1981,15 @@ async function toggleListMode() {
     // 要把它收掉。不重读的话，换完档屏幕上还是上一档的样子。
     if (openedInbound.value) void loadThread(openedInbound.value)
     await load()
+    // 说一声换成了哪一档。
+    //
+    // 不说的话，唯一的反馈就是列表悄悄变了样子——而「刚才那一下到底点成了
+    // 什么」正是 2026-09-22 那次误会的起点。一句话比一个对钩说得清楚。
+    ElMessage.success(
+      t('emails.sortBar.modeSwitched', {
+        mode: t(mergeThreads.value ? 'emails.sortBar.threadMode' : 'emails.sortBar.messageMode'),
+      }),
+    )
   } finally {
     switchingListMode.value = false
   }
@@ -5002,23 +5042,44 @@ function downloadExcel() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// 哪一封的包正在打。会话里每一封各有一颗「下载全部」，所以记的是信的编号
-// 而不是一个是非——不然点了其中一颗，所有按钮一起转圈。
+// 哪一封正在存。会话里每一封各有一颗「下载全部」，所以记的是信的编号而不是
+// 一个是非——不然点了其中一颗，所有按钮一起转圈。
 const bundlingId = ref('')
 
-/** 把这封信的附件打成一个压缩包下载。 */
-// 把某一封信的附件打成 zip 拿走。
-//
-// **按信取，不是按当前打开的那封。** 会话里每一封各有各的一颗按钮，点哪一颗
-// 打哪一封的包；转圈的也只是那一颗（bundlingId）。
-async function downloadAllAttachments(mailId: string) {
-  if (!mailId || bundlingId.value) return
-  bundlingId.value = mailId
+/**
+ * 「下载全部」：这一封的附件一次拿走。
+ *
+ * **不再打成 zip**（2026-09-21）。从前是请求服务端现场压一个包发回来，人拿到
+ * 一个 zip 还要先解压；而且 zip 里的中文文件名在某些解压工具下是乱码——那笔
+ * 编码糊涂账不值得替用户背。现在拿到的就是原来那几个文件。
+ *
+ * 能选文件夹的浏览器（Chrome / Edge）会先弹一次选择框，人自己决定放哪儿；
+ * 给不起的逐个走普通下载，落在默认下载目录。判断和写入都在 lib/saveAttachments，
+ * 那儿测得到。
+ */
+async function downloadAllAttachments(mailId: string, files: MailFile[]) {
+  if (bundlingId.value) return
+  // 转圈标记仍然按信走：一屏里好几封各有各的按钮。没有编号时用一个固定值，
+  // 只是为了"正在进行"这件事有个开关——会话里「我发出」而本地没留底的那几条
+  // 现在也有这颗按钮了，它们没有编号。
+  bundlingId.value = mailId || 'all'
   try {
-    const file = await download(`/inbound-mails/${mailId}/attachments/download`)
-    saveBlob(file.blob, file.fileName)
-  } catch {
-    // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
+    const out = await saveAllAttachments(files, {
+      // **先问文件夹再取文件**，顺序不能反：选择框必须由点击直接触发，中间
+      // await 过别的东西之后浏览器就不认这个手势了。这里只是把它接上去，
+      // 顺序由 saveAllAttachments 保证。
+      pickDirectory: canPickDirectory()
+        ? () => (window as unknown as { showDirectoryPicker: (o?: object) => Promise<FileSystemDirectoryHandle> })
+            .showDirectoryPicker({ mode: 'readwrite' })
+        : undefined,
+      saveOne: saveBlob,
+    })
+    if (out.cancelled) return
+    if (out.failed.length) {
+      ElMessage.warning(t('emails.saveAllPartial', { n: out.saved, bad: out.failed.join('、') }))
+    } else if (out.saved) {
+      ElMessage.success(t('emails.saveAllDone', { n: out.saved }))
+    }
   } finally {
     bundlingId.value = ''
   }

@@ -165,14 +165,11 @@
 
       <el-divider />
 
-      <!-- 正文一律在沙箱 frame 里渲染，纯文本也不例外——这条由
-           scripts/check-mail-sandbox.sh 守着。 -->
-      <MailBody v-if="mail.bodyHtml" :html="mail.bodyHtml" />
-      <MailBody v-else :html="plainTextToHtml(mail.bodyText || '')" />
-      <QuotedHistory v-if="mail.quotedHtml" :html="mail.quotedHtml" />
-
+      <!-- 附件在正文**上面**（2026-09-21 挪的）。
+           从前在最底下，一封长信要滚到尾才看得见有没有附件；而在外贸这门生意
+           里，报价单、装箱单、提单常常才是这封信的重点，正文只是一句「见附件」。
+           Outlook、Foxmail、263 都把它放在头上，理由是同一个。 -->
       <template v-if="mail.attachments?.length">
-        <el-divider />
         <div class="att-head">
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
         </div>
@@ -184,7 +181,14 @@
           @preview="openPreview"
           @download-all="downloadAll"
         />
+        <el-divider />
       </template>
+
+      <!-- 正文一律在沙箱 frame 里渲染，纯文本也不例外——这条由
+           scripts/check-mail-sandbox.sh 守着。 -->
+      <MailBody v-if="mail.bodyHtml" :html="mail.bodyHtml" />
+      <MailBody v-else :html="plainTextToHtml(mail.bodyText || '')" />
+      <QuotedHistory v-if="mail.quotedHtml" :html="mail.quotedHtml" />
     </template>
 
     <!-- 写信框和主窗口用的是同一个组件，所以草稿、附件、签名、发件人选择
@@ -224,6 +228,7 @@ import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
 import { plainTextToHtml } from '../lib/linkifyText'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
+import { canPickDirectory, saveAllAttachments } from '../lib/saveAttachments'
 import '../styles/mailbox.css'
 
 // 只要读这一封需要的那些字段。**不是** EmailsPage 里那份 InboundMail 的副本：
@@ -533,15 +538,26 @@ function forward() {
 function onSent() {}
 
 /** 把这封信的附件打成一个压缩包下载。上限（40 MB）和超过时的话由后端说。 */
-async function downloadAll() {
-  const id = mail.value?.id
-  if (!id || bundling.value) return
+// 「下载全部」：这一封的附件一次拿走，**不再打成 zip**。和邮件页那边同一条
+// 规矩、同一段逻辑（见 lib/saveAttachments）：能选文件夹的浏览器先问存到哪儿，
+// 给不起的逐个走普通下载。
+async function downloadAll(_mailId: string, files: MailFile[]) {
+  if (bundling.value) return
   bundling.value = true
   try {
-    const file = await download(`/inbound-mails/${id}/attachments/download`)
-    saveBlob(file.blob, file.fileName)
-  } catch {
-    // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
+    const out = await saveAllAttachments(files, {
+      pickDirectory: canPickDirectory()
+        ? () => (window as unknown as { showDirectoryPicker: (o?: object) => Promise<FileSystemDirectoryHandle> })
+            .showDirectoryPicker({ mode: 'readwrite' })
+        : undefined,
+      saveOne: saveBlob,
+    })
+    if (out.cancelled) return
+    if (out.failed.length) {
+      ElMessage.warning(t('emails.saveAllPartial', { n: out.saved, bad: out.failed.join('、') }))
+    } else if (out.saved) {
+      ElMessage.success(t('emails.saveAllDone', { n: out.saved }))
+    }
   } finally {
     bundling.value = false
   }
