@@ -40,6 +40,9 @@ func (h *Handler) CustomerAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 			employeeID = 0
 		}
 		ctx = app.WithCustomerAccess(ctx, employeeID)
+		if _, bulk := req.(*mdv1.BatchUpdateCustomerOwnersRequest); bulk && employeeID != 0 {
+			return nil, apierr.Permission("MD_CUSTOMER_OWNER_MANAGE_DENIED", "只有最高权限用户可以批量管理客户负责人")
+		}
 		if _, deleting := req.(*mdv1.DeactivateCustomerRequest); deleting && employeeID != 0 {
 			return nil, apierr.Permission("MD_CUSTOMER_DELETE_DENIED", "只有最高权限用户可以删除客户")
 		}

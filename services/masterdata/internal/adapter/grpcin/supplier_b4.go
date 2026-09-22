@@ -169,6 +169,18 @@ func (h *Handler) DeactivateSupplierOwner(ctx context.Context, req *mdv1.Deactiv
 	return &mdv1.DeactivateSupplierOwnerResponse{}, err
 }
 
+func (h *Handler) BatchUpdateSupplierOwners(ctx context.Context, req *mdv1.BatchUpdateSupplierOwnersRequest) (*mdv1.BatchUpdateSupplierOwnersResponse, error) {
+	owners := make([]app.BulkOwnerAssignment, 0, len(req.GetOwners()))
+	for _, owner := range req.GetOwners() {
+		owners = append(owners, app.BulkOwnerAssignment{EmployeeID: owner.GetEmployeeId(), EmployeeName: owner.GetEmployeeName()})
+	}
+	changed, err := h.svc.BatchUpdateSupplierOwners(ctx, grpcx.TenantID(ctx), req.GetSupplierIds(), owners, req.GetAction(), operatorID(ctx), operatorName(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.BatchUpdateSupplierOwnersResponse{SupplierCount: int32(len(req.GetSupplierIds())), OwnerCount: int32(len(owners)), ChangedCount: changed}, nil
+}
+
 func (h *Handler) ListSupplierChanges(ctx context.Context, req *mdv1.ListSupplierChangesRequest) (*mdv1.ListSupplierChangesResponse, error) {
 	rows, err := h.svc.ListSupplierChanges(ctx, grpcx.TenantID(ctx), req.GetSupplierId())
 	if err != nil {
