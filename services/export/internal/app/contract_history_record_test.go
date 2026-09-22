@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/contractflow"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
@@ -28,15 +31,26 @@ func TestHistoricalRecordWithoutItems(t *testing.T) {
 			_, _ = pool.Exec(ctx, "DELETE FROM "+tbl+" WHERE tenant_id=$1", tenant)
 		}
 	}()
-	svc := New(pool, Deps{Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: d2OfferRates{}, Numbering: &dueNumberingStub{}, Directory: dueDirectoryStub{}, Files: d2Files{}})
+	numbers := &historyNumberingStub{}
+	svc := New(pool, Deps{Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: d2OfferRates{}, Numbering: numbers, Directory: dueDirectoryStub{}, Files: d2Files{}})
 	for _, state := range []string{"EXECUTING", "COMPLETED"} {
 		in := ExistingContractInput{CustomerID: 7, Currency: "USD", ExternalContractNo: "ARCHIVE-" + state + strconv.FormatInt(tenant, 10), SignedDate: "2025-01-02", SignedFileKey: "contract-imports/" + strconv.FormatInt(tenant, 10) + "/" + state + "-signed.pdf", SignedFileName: "signed.pdf", History: contractflow.History{RecordOnly: true, TotalAmount: "1200.50", Status: state}}
+		numbers.n = 0 // Simulate the numbering service returning an already-used system number.
 		view, err := svc.ImportExistingContract(ctx, tenant, in, Operator{ID: 5, Name: "Sales"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		if state == "COMPLETED" && numbers.n != 2 {
+			t.Fatalf("system number collision was not retried: %d", numbers.n)
+		}
 		if view.Contract.EntrySource != "HISTORICAL_RECORD" || view.Contract.Status != state || len(view.Items) != 0 || view.Version.TotalAmount != "1200.50" {
 			t.Fatalf("bad archive: %+v", view)
+		}
+		before := numbers.n
+		_, duplicateErr := svc.ImportExistingContract(ctx, tenant, in, Operator{ID: 5, Name: "Sales"})
+		var businessErr *apierr.Error
+		if !errors.As(duplicateErr, &businessErr) || businessErr.Code != "EX_EXTERNAL_CONTRACT_NO_TAKEN" || numbers.n != before+1 {
+			t.Fatalf("external number conflict must fail without retry: %v, calls %d", duplicateErr, numbers.n-before)
 		}
 		rows, _, err := svc.ListContracts(ctx, tenant, in.ExternalContractNo, 0, "", 1, 20, Operator{ID: 5, Name: "Sales"})
 		if err != nil || len(rows) != 1 || rows[0].ID != view.Contract.ID {
@@ -80,4 +94,11 @@ func TestHistoricalRecordValidation(t *testing.T) {
 	if err := validateHistoricalOrders(&in); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type historyNumberingStub struct{ n int }
+
+func (n *historyNumberingStub) Next(context.Context, string) (string, error) {
+	n.n++
+	return fmt.Sprintf("CT-HISTORY-%d", n.n), nil
 }

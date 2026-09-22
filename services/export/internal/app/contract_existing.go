@@ -201,10 +201,6 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	if err != nil {
 		return ContractView{}, err
 	}
-	contractNo, err := s.number.Next(ctx, "CONTRACT")
-	if err != nil {
-		return ContractView{}, err
-	}
 	terms := Terms{
 		BuyerName: orDefault(in.Terms.BuyerName, customer.Name), BuyerAddress: orDefault(in.Terms.BuyerAddress, customer.Address),
 		SellerName: orDefault(in.Terms.SellerName, s.seller.Name), SellerAddress: orDefault(in.Terms.SellerAddress, s.seller.Address),
@@ -214,109 +210,111 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	}
 
 	var contractID int64
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		if in.DraftID > 0 {
-			var existing, revision int64
-			if err := tx.QueryRow(ctx, `SELECT coalesce(contract_id,0),revision FROM contract_history_drafts WHERE tenant_id=$1 AND id=$2 AND owner_id=$3 FOR UPDATE`, tenantID, in.DraftID, op.ID).Scan(&existing, &revision); err != nil {
-				return err
+	err = withContractNumber(ctx, s.number, func(contractNo string) error {
+		return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+			if in.DraftID > 0 {
+				var existing, revision int64
+				if err := tx.QueryRow(ctx, `SELECT coalesce(contract_id,0),revision FROM contract_history_drafts WHERE tenant_id=$1 AND id=$2 AND owner_id=$3 FOR UPDATE`, tenantID, in.DraftID, op.ID).Scan(&existing, &revision); err != nil {
+					return err
+				}
+				if existing > 0 {
+					contractID = existing
+					return nil
+				}
+				if revision != in.DraftRevision {
+					return apierr.Conflict("EX_HISTORY_REVISION", "草稿已更新，请重新打开后核对")
+				}
 			}
-			if existing > 0 {
-				contractID = existing
-				return nil
+			q := s.q.WithTx(tx)
+			var err error
+			contractID, err = q.CreateExistingContract(ctx, store.CreateExistingContractParams{
+				TenantID: tenantID, ContractNo: contractNo, ExternalContractNo: strings.TrimSpace(in.ExternalContractNo),
+				CustomerID: customer.ID, CustomerName: customerDisplayName(customer), SalesEmployeeID: ownerID, SalesEmployee: ownerName,
+				ReceivableDueDate: in.Terms.ReceivableDueDate, OpeningReceivedAmount: openingReceived.StringFixed(2),
+				FilePending: false, SignedDate: in.SignedDate, EffectiveDate: in.EffectiveDate, CreatedBy: op.ID,
+			})
+			if err != nil {
+				return contractNumberError(err)
 			}
-			if revision != in.DraftRevision {
-				return apierr.Conflict("EX_HISTORY_REVISION", "草稿已更新，请重新打开后核对")
-			}
-		}
-		q := s.q.WithTx(tx)
-		var err error
-		contractID, err = q.CreateExistingContract(ctx, store.CreateExistingContractParams{
-			TenantID: tenantID, ContractNo: contractNo, ExternalContractNo: strings.TrimSpace(in.ExternalContractNo),
-			CustomerID: customer.ID, CustomerName: customerDisplayName(customer), SalesEmployeeID: ownerID, SalesEmployee: ownerName,
-			ReceivableDueDate: in.Terms.ReceivableDueDate, OpeningReceivedAmount: openingReceived.StringFixed(2),
-			FilePending: false, SignedDate: in.SignedDate, EffectiveDate: in.EffectiveDate, CreatedBy: op.ID,
-		})
-		if err != nil {
-			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该原合同号已存在，请核对后再保存")
-		}
-		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
-			TenantID: tenantID, ContractID: contractID, VersionNo: 1,
-			BuyerName: terms.BuyerName, BuyerAddress: terms.BuyerAddress, SellerName: terms.SellerName, SellerAddress: terms.SellerAddress,
-			Currency: in.Currency, Incoterm: terms.Incoterm, PortOfLoading: terms.PortOfLoading,
-			PortOfDischarge: terms.PortOfDischarge, PaymentMethod: terms.PaymentMethod, DeliveryDate: terms.DeliveryDate,
-			Terms: terms.Text, TotalAmount: total.StringFixed(2), BaseAmount: baseAmount(total, rate).StringFixed(2),
-			FxRate: rate.Rate.String(), FxRateAt: tsFrom(rate.At), FxSource: rate.Source,
-			FxBaseCurrency: rate.Base, ChangeReason: "", CreatedBy: op.ID,
-		})
-		if err != nil {
-			return err
-		}
-		if _, err := q.CreateContractAttachment(ctx, store.CreateContractAttachmentParams{TenantID: tenantID, ContractID: contractID, ContractVersionID: versionID, Kind: "SIGNED", FileName: in.SignedFileName, FileKey: in.SignedFileKey, ContentType: fileType, SizeBytes: fileSize, UploadedBy: op.ID, UploaderName: op.Name, Source: SourceManual}); err != nil {
-			return err
-		}
-
-		event := contractEffectiveEvent{
-			ContractID: contractID, ContractNo: contractNo, VersionID: versionID, VersionNo: 1,
-			CustomerID: customer.ID, CustomerName: customerDisplayName(customer), Currency: in.Currency,
-			TotalAmount: total.StringFixed(2), DeliveryDate: terms.DeliveryDate, Incoterm: terms.Incoterm,
-			PortOfDischarge: terms.PortOfDischarge,
-			SalesEmployeeID: ownerID, SalesEmployee: ownerName,
-			ExistingContract: true, ProcurementEmployeeID: procurementEmployee.ID,
-			ProcurementEmployee: procurementEmployee.Name, SupplierID: in.SupplierID,
-		}
-		for i, line := range priced {
-			var sku *int64
-			var skuValue int64
-			if line.in.SkuID != 0 {
-				sku = &line.in.SkuID
-				skuValue = line.in.SkuID
-			}
-			itemID, err := q.AddExistingContractItem(ctx, store.AddExistingContractItemParams{
-				TenantID: tenantID, ContractVersionID: versionID, LineNo: int32(i + 1), ProductID: line.product.ID, SkuID: sku,
-				ProductCode: line.product.Code, ProductName: line.product.Name, Spec: line.in.Spec,
-				Qty: line.qty.String(), UomID: line.product.UomID, UomCode: line.product.UomCode,
-				UnitPrice: line.price.String(), Amount: line.amount.StringFixed(2), HsCode: hs[line.product.ID], Remark: line.in.Remark,
-				OpeningProcuredQty: opening[i].procured.String(), OpeningArrivedQty: opening[i].arrived.String(), OpeningShippedQty: opening[i].shipped.String(),
+			versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
+				TenantID: tenantID, ContractID: contractID, VersionNo: 1,
+				BuyerName: terms.BuyerName, BuyerAddress: terms.BuyerAddress, SellerName: terms.SellerName, SellerAddress: terms.SellerAddress,
+				Currency: in.Currency, Incoterm: terms.Incoterm, PortOfLoading: terms.PortOfLoading,
+				PortOfDischarge: terms.PortOfDischarge, PaymentMethod: terms.PaymentMethod, DeliveryDate: terms.DeliveryDate,
+				Terms: terms.Text, TotalAmount: total.StringFixed(2), BaseAmount: baseAmount(total, rate).StringFixed(2),
+				FxRate: rate.Rate.String(), FxRateAt: tsFrom(rate.At), FxSource: rate.Source,
+				FxBaseCurrency: rate.Base, ChangeReason: "", CreatedBy: op.ID,
 			})
 			if err != nil {
 				return err
 			}
-			event.Items = append(event.Items, effectiveEventItem{
-				LineNo: int32(i + 1), ItemID: itemID, ProductID: line.product.ID, SkuID: skuValue,
-				ProductCode: line.product.Code, ProductName: line.product.Name, Spec: line.in.Spec, Qty: line.qty.String(),
-				RequiredQty: line.qty.Sub(opening[i].procured).String(), UomID: line.product.UomID, UomCode: line.product.UomCode,
-				UnitPrice: line.price.String(), Amount: line.amount.StringFixed(2), HsCode: hs[line.product.ID],
-				PurchaseUnitPrice: line.in.PurchaseUnitPrice, OpeningArrivedQty: opening[i].arrived.String(),
-			})
-		}
-		if err := q.SetContractVersionStatus(ctx, store.SetContractVersionStatusParams{TenantID: tenantID, ID: versionID, NewStatus: "APPROVED"}); err != nil {
-			return err
-		}
-		if err := q.FinalizeExistingContract(ctx, store.FinalizeExistingContractParams{TenantID: tenantID, ID: contractID, VersionID: versionID, UpdatedBy: op.ID}); err != nil {
-			return err
-		}
-		if in.History.RecordOnly {
-			if _, err := tx.Exec(ctx, `UPDATE contracts SET entry_source='HISTORICAL_RECORD',status=$3,effective_at=NULL WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, in.History.Status); err != nil {
+			if _, err := q.CreateContractAttachment(ctx, store.CreateContractAttachmentParams{TenantID: tenantID, ContractID: contractID, ContractVersionID: versionID, Kind: "SIGNED", FileName: in.SignedFileName, FileKey: in.SignedFileKey, ContentType: fileType, SizeBytes: fileSize, UploadedBy: op.ID, UploaderName: op.Name, Source: SourceManual}); err != nil {
 				return err
 			}
-		}
-		history, _ := json.Marshal(in.History)
-		if _, err := tx.Exec(ctx, `INSERT INTO contract_workflows(tenant_id,contract_id,history) VALUES($1,$2,$3)`, tenantID, contractID, history); err != nil {
-			return err
-		}
-		if in.DraftID > 0 {
-			if _, err := tx.Exec(ctx, `UPDATE contract_history_drafts SET contract_id=$3,revision=revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, in.DraftID, contractID); err != nil {
+
+			event := contractEffectiveEvent{
+				ContractID: contractID, ContractNo: contractNo, VersionID: versionID, VersionNo: 1,
+				CustomerID: customer.ID, CustomerName: customerDisplayName(customer), Currency: in.Currency,
+				TotalAmount: total.StringFixed(2), DeliveryDate: terms.DeliveryDate, Incoterm: terms.Incoterm,
+				PortOfDischarge: terms.PortOfDischarge,
+				SalesEmployeeID: ownerID, SalesEmployee: ownerName,
+				ExistingContract: true, ProcurementEmployeeID: procurementEmployee.ID,
+				ProcurementEmployee: procurementEmployee.Name, SupplierID: in.SupplierID,
+			}
+			for i, line := range priced {
+				var sku *int64
+				var skuValue int64
+				if line.in.SkuID != 0 {
+					sku = &line.in.SkuID
+					skuValue = line.in.SkuID
+				}
+				itemID, err := q.AddExistingContractItem(ctx, store.AddExistingContractItemParams{
+					TenantID: tenantID, ContractVersionID: versionID, LineNo: int32(i + 1), ProductID: line.product.ID, SkuID: sku,
+					ProductCode: line.product.Code, ProductName: line.product.Name, Spec: line.in.Spec,
+					Qty: line.qty.String(), UomID: line.product.UomID, UomCode: line.product.UomCode,
+					UnitPrice: line.price.String(), Amount: line.amount.StringFixed(2), HsCode: hs[line.product.ID], Remark: line.in.Remark,
+					OpeningProcuredQty: opening[i].procured.String(), OpeningArrivedQty: opening[i].arrived.String(), OpeningShippedQty: opening[i].shipped.String(),
+				})
+				if err != nil {
+					return err
+				}
+				event.Items = append(event.Items, effectiveEventItem{
+					LineNo: int32(i + 1), ItemID: itemID, ProductID: line.product.ID, SkuID: skuValue,
+					ProductCode: line.product.Code, ProductName: line.product.Name, Spec: line.in.Spec, Qty: line.qty.String(),
+					RequiredQty: line.qty.Sub(opening[i].procured).String(), UomID: line.product.UomID, UomCode: line.product.UomCode,
+					UnitPrice: line.price.String(), Amount: line.amount.StringFixed(2), HsCode: hs[line.product.ID],
+					PurchaseUnitPrice: line.in.PurchaseUnitPrice, OpeningArrivedQty: opening[i].arrived.String(),
+				})
+			}
+			if err := q.SetContractVersionStatus(ctx, store.SetContractVersionStatusParams{TenantID: tenantID, ID: versionID, NewStatus: "APPROVED"}); err != nil {
 				return err
 			}
-		}
-		if in.History.RecordOnly {
-			return nil
-		} // Archive only: no execution or receivable event.
-		payload, err := json.Marshal(event)
-		if err != nil {
-			return err
-		}
-		return outbox.Append(ctx, tx, outbox.Event{TenantID: tenantID, AggregateType: "contract", AggregateID: strconv.FormatInt(contractID, 10), EventType: "ContractImportedExecuting", Payload: payload})
+			if err := q.FinalizeExistingContract(ctx, store.FinalizeExistingContractParams{TenantID: tenantID, ID: contractID, VersionID: versionID, UpdatedBy: op.ID}); err != nil {
+				return err
+			}
+			if in.History.RecordOnly {
+				if _, err := tx.Exec(ctx, `UPDATE contracts SET entry_source='HISTORICAL_RECORD',status=$3,effective_at=NULL WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, in.History.Status); err != nil {
+					return err
+				}
+			}
+			history, _ := json.Marshal(in.History)
+			if _, err := tx.Exec(ctx, `INSERT INTO contract_workflows(tenant_id,contract_id,history) VALUES($1,$2,$3)`, tenantID, contractID, history); err != nil {
+				return err
+			}
+			if in.DraftID > 0 {
+				if _, err := tx.Exec(ctx, `UPDATE contract_history_drafts SET contract_id=$3,revision=revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, in.DraftID, contractID); err != nil {
+					return err
+				}
+			}
+			if in.History.RecordOnly {
+				return nil
+			} // Archive only: no execution or receivable event.
+			payload, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			return outbox.Append(ctx, tx, outbox.Event{TenantID: tenantID, AggregateType: "contract", AggregateID: strconv.FormatInt(contractID, 10), EventType: "ContractImportedExecuting", Payload: payload})
+		})
 	})
 	if err != nil {
 		return ContractView{}, err
@@ -485,7 +483,7 @@ func (s *Service) correctExistingContract(ctx context.Context, tenantID int64, v
 			UpdatedBy: op.ID, TenantID: tenantID, ID: view.Contract.ID,
 		})
 		if err != nil {
-			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该原合同号已存在，请核对后再保存")
+			return contractNumberError(err)
 		}
 		if rows == 0 {
 			return apierr.Conflict("EX_EXISTING_CONTRACT_NOT_EDITABLE", "该合同当前不能编辑")
