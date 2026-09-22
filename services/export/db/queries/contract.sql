@@ -94,7 +94,7 @@ LEFT JOIN LATERAL (
     ORDER BY version_no DESC
     LIMIT 1
 ) v ON true
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+WHERE c.status <> 'DELETED' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- Data scope. An empty id list with visible_all = false means "nothing",
   -- which is the right answer for someone with no scope at all; it must not
   -- silently widen to everything.
@@ -148,7 +148,7 @@ UPDATE contracts SET
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: LockContract :one
-SELECT id, status, coalesce(current_version_id, 0)::bigint AS current_version_id
+SELECT id, status, coalesce(current_version_id, 0)::bigint AS current_version_id, sales_employee_id
 FROM contracts
 WHERE tenant_id = $1 AND id = $2
 FOR UPDATE;
@@ -615,7 +615,7 @@ LEFT JOIN (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.status <> 'DELETED' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- 数据范围沿用合同列表那道围栏：看得见这张合同，才看得见它的进度。
   AND (sqlc.arg(scope_all)::bool OR c.sales_employee_id = ANY(sqlc.arg(employee_ids)::bigint[]))
   -- 默认只看在跑的。签之前没什么进程可言，作废的也不必占地方。

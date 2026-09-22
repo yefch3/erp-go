@@ -81,7 +81,13 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	exportConn, err := dial(cfg.ExportAddr)
+	if err != nil {
+		return err
+	}
+	defer exportConn.Close()
 	svc := app.New(pool, grpcout.NewFiles(files))
+	svc.UseContractGuard(grpcout.NewContractGuard(exportConn))
 	svc.UseAccessControl(grpcout.NewScopes(iamConn), grpcout.NewCustomerAccess(masterdataConn))
 	svc.UseDirectory(grpcout.NewDirectory(iamConn))
 	svc.UseApprovals(grpcout.NewApprovals(approvalConn))

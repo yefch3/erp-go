@@ -349,7 +349,7 @@ SELECT
     required_qty::text AS required_qty,
     ordered_qty::text  AS ordered_qty,
     draft.reserved_qty::text AS reserved_qty,
-    greatest(required_qty - ordered_qty - draft.reserved_qty, 0)::text AS available_qty,
+    greatest(contract_requirement_open(tenant_id,id) - draft.reserved_qty, 0)::text AS available_qty,
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,

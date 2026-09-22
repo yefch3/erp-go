@@ -17,8 +17,9 @@ SELECT
     source_currency, source_unit_price::text AS source_unit_price,
     required_qty::text                 AS required_qty,
     ordered_qty::text                  AS ordered_qty,
-    (required_qty - ordered_qty)::text AS open_qty,
-    coalesce(required_date::text, '')::text AS required_date
+    contract_requirement_open(tenant_id,id)::text AS open_qty,
+    coalesce(required_date::text, '')::text AS required_date,
+    contract_requirement_group_open(tenant_id,id)::text AS group_open_qty
 FROM purchase_requirements
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = ANY (sqlc.arg(ids)::bigint[])

@@ -19,25 +19,7 @@ func (s *Service) CompleteContract(ctx context.Context, tenant, id int64, op Ope
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return "", err
 	}
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenant, ID: id})
-		if err != nil {
-			return err
-		}
-		if locked.Status == "COMPLETED" {
-			return nil
-		}
-		if locked.Status != "EXECUTING" && locked.Status != "EFFECTIVE" {
-			return apierr.Conflict("EX_COMPLETE_STATUS", "只有执行中的合同可以完成")
-		}
-		_, err = q.SetContractStatus(ctx, store.SetContractStatusParams{TenantID: tenant, ID: id, NewStatus: "COMPLETED", UpdatedBy: op.ID})
-		return err
-	})
-	if err != nil {
-		return "", err
-	}
-	return "COMPLETED", nil
+	return "", apierr.Conflict("EX_CLOSE_CHECKLIST_REQUIRED", "请从合同操作中的结案入口核对采购、物流和财务事项后结案")
 }
 func (s *Service) supplementContract(ctx context.Context, tenant, id int64, terms Terms, items []ItemInput, meta ContractEditMeta, op Operator) (ContractView, error) {
 	if len(items) > 0 {

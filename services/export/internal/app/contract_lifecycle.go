@@ -125,6 +125,13 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 		if err := claim(ctx, tx); err != nil {
 			return err
 		}
+		if len(proofs) > 0 {
+			handled, state, err := s.applyTerminationDecision(ctx, tx, tenantID, contractID, result, proofs[0])
+			if handled {
+				contractTo = state
+				return err
+			}
+		}
 		q := s.q.WithTx(tx)
 		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: contractID})
 		if err != nil {
@@ -298,6 +305,11 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, _, _, _ 
 		}
 		if _, err := tx.Exec(ctx, `UPDATE contracts SET signed_at=COALESCE(signed_at,now()),effective_at=COALESCE(effective_at,now()) WHERE tenant_id=$1 AND id=$2`, tenantID, id); err != nil {
 			return err
+		}
+		if view.Version.VersionNo > 1 {
+			if _, err := tx.Exec(ctx, `UPDATE contracts SET condition_confirmed_at=NULL,condition_confirmed_by=0,condition_confirmed_by_name='',condition_confirmation_note='',execution_condition_type='' WHERE tenant_id=$1 AND id=$2`, tenantID, id); err != nil {
+				return err
+			}
 		}
 		// How the signature was established, recorded on the contract rather
 		// than inferred later from whatever files happen to be attached.

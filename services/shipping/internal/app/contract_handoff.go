@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/sgao19/erp-go/pkg/pgdb"
@@ -53,6 +54,16 @@ func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, even
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := claim(ctx, tx); err != nil {
 			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fmt.Sprintf("shipping-contract:%d:%d", tenantID, event.ContractID)); err != nil {
+			return err
+		}
+		var latest int32
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max(version_no),0) FROM contract_shipping_handoffs WHERE tenant_id=$1 AND contract_id=$2`, tenantID, event.ContractID).Scan(&latest); err != nil {
+			return err
+		}
+		if latest > event.VersionNo {
+			return nil
 		}
 		q := s.q.WithTx(tx)
 		for _, shipment := range event.Shipments {

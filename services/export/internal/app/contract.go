@@ -268,17 +268,21 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	if err != nil {
 		return ContractView{}, err
 	}
+	if view.Contract.EntrySource == "HISTORICAL_RECORD" {
+		return ContractView{}, apierr.Conflict("EX_HISTORY_RECORD_ONLY", "历史合同是资料记录，不走新单修改或变更流程")
+	}
+
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return ContractView{}, err
 	}
-	if view.Contract.Status == "COMPLETED" {
-		return ContractView{}, apierr.Conflict("EX_CONTRACT_COMPLETED", "已完成合同仅可查看")
+	if view.Contract.Status != "DRAFT" && view.Contract.Status != "EXECUTING" && view.Contract.Status != "EFFECTIVE" {
+		return ContractView{}, apierr.Conflict("EX_CONTRACT_COMPLETED", "当前合同状态不允许修改，请先完成审批、恢复执行或查看归档")
 	}
-	if (view.Contract.Status == "EXECUTING" || view.Contract.Status == "EFFECTIVE") && view.Contract.EntrySource != "EXISTING_CONTRACT" {
+	if (view.Contract.Status == "EXECUTING" || view.Contract.Status == "EFFECTIVE") && view.Version.Status != "DRAFT" && view.Contract.EntrySource != "EXISTING_CONTRACT" {
 		return s.supplementContract(ctx, tenantID, id, terms, items, meta, op)
 	}
 
-	if view.Contract.EntrySource == "EXISTING_CONTRACT" {
+	if view.Contract.EntrySource == "EXISTING_CONTRACT" && view.Version.Status != "DRAFT" {
 		return s.correctExistingContract(ctx, tenantID, view, terms, items, meta, op)
 	}
 	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
@@ -311,8 +315,12 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		if _, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: id}); err != nil {
+		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: id})
+		if err != nil {
 			return err
+		}
+		if locked.Status != view.Contract.Status || locked.SalesEmployeeID != op.ID {
+			return apierr.Conflict("EX_CONTRACT_CHANGED", "合同状态或负责人已变化，请刷新后重新操作")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE contracts SET external_contract_no=$3,updated_at=now(),updated_by=$4 WHERE tenant_id=$1 AND id=$2`, tenantID, id, meta.ExternalContractNo, op.ID); err != nil {
 			return err
@@ -384,6 +392,9 @@ func writeContractItems(ctx context.Context, q *store.Queries, tenantID, version
 // ChangeContract opens a new version of a contract already in force. The old
 // version keeps running until the new one is approved and signed.
 func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms Terms, reason string, items []ItemInput, op Operator) (ContractView, error) {
+	if err := validBusinessDate(terms.DeliveryDate, "EX_DELIVERY_DATE_INVALID", "交货日期"); err != nil {
+		return ContractView{}, err
+	}
 	if reason == "" {
 		return ContractView{}, apierr.Invalid("EX_CHANGE_REASON_REQUIRED", "变更必须填写变更原因")
 	}
@@ -391,6 +402,10 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 	if err != nil {
 		return ContractView{}, err
 	}
+	if view.Contract.EntrySource == "HISTORICAL_RECORD" {
+		return ContractView{}, apierr.Conflict("EX_HISTORY_RECORD_ONLY", "历史合同是资料记录，不走新单修改或变更流程")
+	}
+
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return ContractView{}, err
 	}
@@ -422,7 +437,7 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 		return ContractView{}, err
 	}
 	if len(items) > 0 {
-		priced, sum, err := s.priceLines(ctx, items)
+		priced, sum, err := s.priceExistingLines(ctx, items)
 		if err != nil {
 			return ContractView{}, err
 		}
@@ -441,6 +456,13 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		if locked.Status != view.Contract.Status {
+			return apierr.Conflict("EX_CHANGE_CHANGED", "合同状态已变化，请刷新")
+		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
 			TenantID: tenantID, ContractID: id, VersionNo: nextVersionNo,
 			BuyerName:     orDefault(terms.BuyerName, base.Version.BuyerName),
@@ -467,7 +489,19 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 		if err != nil {
 			return err
 		}
-		return writeContractItems(ctx, q, tenantID, versionID, lines)
+		if err := writeContractItems(ctx, q, tenantID, versionID, lines); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO contract_workflows(tenant_id,contract_id) VALUES($1,$2) ON CONFLICT(tenant_id,contract_id) DO UPDATE SET revision=contract_workflows.revision+1`, tenantID, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE contracts SET status='DRAFT',approval_request_key='',approval_instance_id=0,updated_at=now(),updated_by=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, id, op.ID); err != nil {
+			return err
+		}
+		if err := recordWorkflowAction(ctx, tx, tenantID, id, "change", reason, nil, op); err != nil {
+			return err
+		}
+		return emitContractControl(ctx, tx, tenantID, id, "PAUSED", "合同变更待确认、签署及财务重新放行")
 	})
 	if err != nil {
 		return ContractView{}, err

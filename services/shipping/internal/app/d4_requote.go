@@ -151,6 +151,9 @@ func (s *Service) shippingRequoteOption(ctx context.Context, tenantID, handoffID
 }
 
 func (s *Service) SaveFinalRequoteDraft(ctx context.Context, tenantID, id int64, in FinalRequoteInput, op Operator) (ContractHandoff, error) {
+	if err := s.checkHandoffExecution(ctx, tenantID, id); err != nil {
+		return ContractHandoff{}, err
+	}
 	amount, err := validateFinalRequote(in)
 	if err != nil {
 		return ContractHandoff{}, err
@@ -194,6 +197,9 @@ func (s *Service) DeleteShippingRequoteOption(ctx context.Context, tenantID, han
 	return nil
 }
 func (s *Service) SelectFinalRequoteDraft(ctx context.Context, tenantID, id, optionID int64, op Operator) (ContractHandoff, error) {
+	if err := s.checkHandoffExecution(ctx, tenantID, id); err != nil {
+		return ContractHandoff{}, err
+	}
 	option, err := s.shippingRequoteOption(ctx, tenantID, id, optionID)
 	if err != nil {
 		return ContractHandoff{}, err
@@ -212,6 +218,9 @@ func (s *Service) SelectFinalRequoteDraft(ctx context.Context, tenantID, id, opt
 	return s.GetContractHandoff(ctx, tenantID, id)
 }
 func (s *Service) SubmitFinalRequote(ctx context.Context, tenantID, id int64, in FinalRequoteInput, op Operator) (ContractHandoff, error) {
+	if err := s.checkHandoffExecution(ctx, tenantID, id); err != nil {
+		return ContractHandoff{}, err
+	}
 	if s.approvals == nil {
 		return ContractHandoff{}, apierr.Conflict("SHIPPING_APPROVAL_UNAVAILABLE", "审批服务未配置")
 	}
@@ -278,6 +287,9 @@ func (s *Service) PresignShippingContract(ctx context.Context, tenantID, id int6
 	return ContractUpload{key, url, expires}, err
 }
 func (s *Service) SaveShippingContract(ctx context.Context, tenantID, id int64, key, name, contractNo string) (ContractHandoff, error) {
+	if err := s.checkHandoffExecution(ctx, tenantID, id); err != nil {
+		return ContractHandoff{}, err
+	}
 	key, name, contractNo = strings.TrimSpace(key), strings.TrimSpace(name), strings.TrimSpace(contractNo)
 	if key == "" || name == "" || contractNo == "" || !strings.HasPrefix(key, shippingContractPrefix(tenantID, id)) {
 		return ContractHandoff{}, apierr.Invalid("SHIPPING_CONTRACT_FILE_MISMATCH", "合同文件与正式船期任务不匹配")

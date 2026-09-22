@@ -268,6 +268,7 @@ services:
       CONTRACT_TOPIC: erp.export.contract.v1
       CONTRACT_CONSUMER_GROUP: shipping.contract.v1
       GRPC_PORT: "9009"
+      EXPORT_ADDR: export:9006
       IAM_ADDR: iam:9001
       MASTERDATA_ADDR: masterdata:9002
       # Empty REDIS_ADDR silently disables the arrival-reminder live push

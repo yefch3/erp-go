@@ -12,6 +12,8 @@ import "erp/export/v1/quotation.proto";
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 service ContractService {
+  rpc CheckContractExecution(CheckContractExecutionRequest) returns (CheckContractExecutionResponse);
+  rpc ContractWorkflow(ContractWorkflowRequest) returns (ContractWorkflowResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
   // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
   rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
@@ -347,6 +349,7 @@ message CreateContractRequest {
   string currency = 2;
   ContractTerms terms = 3;
   repeated ItemInput items = 4;
+  string external_contract_no = 5;
 }
 
 message ImportExistingContractRequest {
@@ -364,7 +367,21 @@ message ImportExistingContractRequest {
   int64 supplier_id = 12;
   string signed_file_key = 13;
   string signed_file_name = 14;
+  string history_json = 15;
+  int64 draft_id = 16;
+  int64 draft_revision = 17;
 }
+
+message ContractWorkflowRequest {
+  int64 id = 1;
+  string action = 2;
+  string reason = 3;
+  string data_json = 4;
+  int64 revision = 5;
+}
+message ContractWorkflowResponse { string data_json = 1; }
+message CheckContractExecutionRequest { int64 id = 1; }
+message CheckContractExecutionResponse { bool allowed = 1; string reason = 2; }
 
 message ImportExistingContractResponse {
   Contract contract = 1;

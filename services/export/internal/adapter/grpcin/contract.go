@@ -2,7 +2,9 @@ package grpcin
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/contractflow"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
@@ -23,7 +25,7 @@ type ContractHandler struct {
 func NewContracts(svc *app.Service) *ContractHandler { return &ContractHandler{svc: svc} }
 
 func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContractsRequest) (*exv1.ListContractsResponse, error) {
-	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:read", "export:receipt:read"); err != nil {
 		return nil, err
 	}
 	rows, total, err := h.svc.ListContracts(ctx, grpcx.TenantID(ctx), req.GetKeyword(),
@@ -58,7 +60,7 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 
 // ListContractExecution 出一览表的出口半边（D2）。
 func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.ListContractExecutionRequest) (*exv1.ListContractExecutionResponse, error) {
-	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:read", "export:receipt:read"); err != nil {
 		return nil, err
 	}
 	canReadReceipts := h.svc.RequireAnyPermission(ctx, "export:receipt:read") == nil
@@ -87,7 +89,7 @@ func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.L
 }
 
 func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContractRequest) (*exv1.GetContractResponse, error) {
-	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:read", "export:receipt:read"); err != nil {
 		return nil, err
 	}
 	view, err := h.svc.GetContractFor(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetVersionId(), operator(ctx))
@@ -128,11 +130,28 @@ func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContract
 func (h *ContractHandler) CreateContractFromQuotation(context.Context, *exv1.CreateContractFromQuotationRequest) (*exv1.CreateContractFromQuotationResponse, error) {
 	return nil, apierr.Conflict("CONTRACT_ENTRY_REPLACED", "请在客户报价点击客户已确认，系统自动创建或打开外销合同")
 }
-func (h *ContractHandler) CreateContract(context.Context, *exv1.CreateContractRequest) (*exv1.CreateContractResponse, error) {
-	return nil, apierr.Conflict("CONTRACT_ENTRY_REPLACED", "新合同从客户报价确认后自动创建；历史合同请使用录入执行中合同")
+func (h *ContractHandler) CreateContract(ctx context.Context, req *exv1.CreateContractRequest) (*exv1.CreateContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.CreateContract(ctx, grpcx.TenantID(ctx), app.DirectContractInput{ExternalContractNo: req.GetExternalContractNo(), CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Terms: termsFromProto(req.GetTerms()), Items: itemsFromProto(req.GetItems())}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.CreateContractResponse{Contract: contractToProto(view), Version: versionToProto(view.Version)}, nil
 }
 func (h *ContractHandler) ImportExistingContract(ctx context.Context, req *exv1.ImportExistingContractRequest) (*exv1.ImportExistingContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
+	var history contractflow.History
+	if req.GetHistoryJson() != "" {
+		if err := json.Unmarshal([]byte(req.GetHistoryJson()), &history); err != nil {
+			return nil, apierr.Invalid("EX_HISTORY_FORMAT", "历史接续资料格式无效")
+		}
+	}
 	view, err := h.svc.ImportExistingContract(ctx, grpcx.TenantID(ctx), app.ExistingContractInput{
+		History: history, DraftID: req.GetDraftId(), DraftRevision: req.GetDraftRevision(),
 		SignedFileKey: req.GetSignedFileKey(), SignedFileName: req.GetSignedFileName(),
 		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Terms: termsFromProto(req.GetTerms()),
 		Items: itemsFromProto(req.GetItems()), ExternalContractNo: req.GetExternalContractNo(),
@@ -149,6 +168,9 @@ func (h *ContractHandler) ImportExistingContract(ctx context.Context, req *exv1.
 }
 
 func (h *ContractHandler) UpdateContract(ctx context.Context, req *exv1.UpdateContractRequest) (*exv1.UpdateContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.UpdateContract(ctx, grpcx.TenantID(ctx), req.GetId(),
 		termsFromProto(req.GetTerms()), itemsFromProto(req.GetItems()), app.ContractEditMeta{
 			ExternalContractNo: req.GetExternalContractNo(), SignedDate: req.GetSignedDate(), EffectiveDate: req.GetEffectiveDate(),
@@ -162,6 +184,9 @@ func (h *ContractHandler) UpdateContract(ctx context.Context, req *exv1.UpdateCo
 }
 
 func (h *ContractHandler) SubmitContract(ctx context.Context, req *exv1.SubmitContractRequest) (*exv1.SubmitContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	status, instanceID, err := h.svc.SubmitContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -170,10 +195,20 @@ func (h *ContractHandler) SubmitContract(ctx context.Context, req *exv1.SubmitCo
 }
 
 func (h *ContractHandler) ChangeContract(ctx context.Context, req *exv1.ChangeContractRequest) (*exv1.ChangeContractResponse, error) {
-	return nil, apierr.Conflict("EX_CONTRACT_FLOW_RETIRED", "当前合同流程不提供此操作")
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.ChangeContract(ctx, grpcx.TenantID(ctx), req.GetId(), termsFromProto(req.GetTerms()), req.GetChangeReason(), itemsFromProto(req.GetItems()), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ChangeContractResponse{Contract: contractToProto(view), Version: versionToProto(view.Version)}, nil
 }
 
 func (h *ContractHandler) SignContract(ctx context.Context, req *exv1.SignContractRequest) (*exv1.SignContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	status, err := h.svc.SignContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetConditionStatus(), req.GetConditionConfirmedAt(), req.GetConditionConfirmationNote(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -274,6 +309,9 @@ func contractItemsToProto(items []store.ListContractItemsRow) []*exv1.ContractIt
 // ---------------------------------------------------------------- files
 
 func (h *ContractHandler) PresignContractFile(ctx context.Context, req *exv1.PresignContractFileRequest) (*exv1.PresignContractFileResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	key, url, expires, err := h.svc.PresignContractFile(ctx, grpcx.TenantID(ctx),
 		req.GetContractId(), req.GetFileName(), req.GetContentType(), operator(ctx))
 	if err != nil {
@@ -283,6 +321,9 @@ func (h *ContractHandler) PresignContractFile(ctx context.Context, req *exv1.Pre
 }
 
 func (h *ContractHandler) RegisterContractFile(ctx context.Context, req *exv1.RegisterContractFileRequest) (*exv1.RegisterContractFileResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.RegisterContractFile(ctx, grpcx.TenantID(ctx), req.GetContractId(), app.FileInput{
 		Key: req.GetFileKey(), FileName: req.GetFileName(), ContentType: req.GetContentType(),
 		Size: req.GetSizeBytes(), Kind: req.GetKind(), VersionID: req.GetContractVersionId(),
@@ -294,7 +335,7 @@ func (h *ContractHandler) RegisterContractFile(ctx context.Context, req *exv1.Re
 }
 
 func (h *ContractHandler) ListContractFiles(ctx context.Context, req *exv1.ListContractFilesRequest) (*exv1.ListContractFilesResponse, error) {
-	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:read", "export:receipt:read"); err != nil {
 		return nil, err
 	}
 	views, err := h.svc.ListContractFiles(ctx, grpcx.TenantID(ctx), req.GetContractId(), operator(ctx))
@@ -309,6 +350,9 @@ func (h *ContractHandler) ListContractFiles(ctx context.Context, req *exv1.ListC
 }
 
 func (h *ContractHandler) RemoveContractFile(ctx context.Context, req *exv1.RemoveContractFileRequest) (*exv1.RemoveContractFileResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	removed, err := h.svc.RemoveContractFile(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -330,6 +374,9 @@ func fileToProto(v app.FileView) *exv1.ContractFile {
 // ---------------------------------------------------------------- ownership
 
 func (h *ContractHandler) TransferOwnership(ctx context.Context, req *exv1.TransferOwnershipRequest) (*exv1.TransferOwnershipResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:ownership:transfer"); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.TransferOwnership(ctx, grpcx.TenantID(ctx), req.GetBizType(),
 		req.GetBizId(), req.GetToEmployeeId(), req.GetReason(), operator(ctx))
 	if err != nil {
@@ -339,6 +386,9 @@ func (h *ContractHandler) TransferOwnership(ctx context.Context, req *exv1.Trans
 }
 
 func (h *ContractHandler) ListOwnershipTransfers(ctx context.Context, req *exv1.ListOwnershipTransfersRequest) (*exv1.ListOwnershipTransfersResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:read"); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.ListOwnershipTransfers(ctx, grpcx.TenantID(ctx),
 		req.GetBizType(), req.GetBizId(), operator(ctx))
 	if err != nil {
@@ -362,6 +412,9 @@ func transfersToProto(rows []store.ListOwnershipTransfersRow) []*exv1.OwnershipT
 }
 
 func (h *ContractHandler) CompleteContract(ctx context.Context, req *exv1.CompleteContractRequest) (*exv1.CompleteContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	state, err := h.svc.CompleteContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -370,6 +423,9 @@ func (h *ContractHandler) CompleteContract(ctx context.Context, req *exv1.Comple
 }
 
 func (h *ContractHandler) PresignExistingContractFile(ctx context.Context, req *exv1.PresignExistingContractFileRequest) (*exv1.PresignExistingContractFileResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:contract:write"); err != nil {
+		return nil, err
+	}
 	key, url, expires, err := h.svc.PresignExistingContractFile(ctx, grpcx.TenantID(ctx), req.GetFileName())
 	if err != nil {
 		return nil, err

@@ -191,7 +191,7 @@ LEFT JOIN (
     WHERE tenant_id = $1::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = $1::bigint AND c.id = $2::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = $1::bigint AND c.id = $2::bigint
 `
 
 type ContractReceiptProgressParams struct {
@@ -257,7 +257,7 @@ LEFT JOIN (
     WHERE tenant_id = $1::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = $1::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = $1::bigint
   AND c.contract_no = ANY($2::text[])
 `
 
@@ -743,7 +743,7 @@ LEFT JOIN (
 ) r ON r.contract_id = c.id
 LEFT JOIN contract_receivable_closures cl
     ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
-WHERE c.tenant_id = $1::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = $1::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
   -- 两页：待核销 = 没有活着的结清；已完成 = 有。
   --
@@ -998,7 +998,7 @@ LEFT JOIN (
     WHERE tenant_id = $1::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = $1::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = $1::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING', 'COMPLETED')
   AND ($2::text = '' OR v.currency = $2::text)
   AND ($3::bigint = 0 OR c.customer_id = $3::bigint)
@@ -1253,7 +1253,7 @@ CROSS JOIN LATERAL (
             to_char(v.total_amount - c.opening_received_amount - coalesce(r.received, 0), 'FM999999999990.00') ||
             ' · 应收日 ' || c.receivable_due_date AS content
 ) d
-WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.status IN ('EFFECTIVE', 'EXECUTING')
   -- 结清的合同不再提醒。这是整个结清机制存在的第一理由：一笔退款让未收
   -- 重新变正之后，没有这一条，销售每 7 天收一封「应收逾期」，永不停止
   -- （period_no 一直涨，唯一键永远撞不上）。

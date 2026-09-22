@@ -9,6 +9,7 @@ import "erp/common/v1/pagination.proto";
 // events. It never calls a business service, and no business service reads
 // its tables.
 service ApprovalService {
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse);
   // Submit starts a flow for one business document. Called by the owning
   // business service inside its own transaction boundary.
   rpc Submit(SubmitRequest) returns (SubmitResponse);
@@ -50,6 +51,9 @@ service ApprovalService {
   // being asked to approve something must imply being allowed to read it.
   rpc MyInvolvedDocuments(MyInvolvedDocumentsRequest) returns (MyInvolvedDocumentsResponse);
 }
+
+message WithdrawRequest { int64 id = 1; string reason = 2; }
+message WithdrawResponse { string status = 1; }
 
 message MyInvolvedDocumentsRequest {
   string biz_type = 1;

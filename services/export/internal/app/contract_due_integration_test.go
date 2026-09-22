@@ -10,6 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/sgao19/erp-go/pkg/contractflow"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
@@ -96,7 +97,7 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 	svc := New(pool, Deps{
 		Customers: dueCustomerStub{},
 		Products:  dueProductStub{},
-		Rates:     dueRateStub{},
+		Rates:     d2OfferRates{},
 		Numbering: &dueNumberingStub{},
 	})
 	op := Operator{ID: 5, Name: "Sales"}
@@ -203,6 +204,7 @@ func TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct(t *test
 	today := dbToday(ctx, t, pool).Format("2006-01-02")
 	view, err := svc.ImportExistingContract(ctx, tenantID, ExistingContractInput{
 		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today,
+		History:       contractflow.History{TakeoverDate: today},
 		SignedFileKey: "contract-imports/" + strconv.FormatInt(tenantID, 10) + "/signed.pdf", SignedFileName: "signed.pdf",
 		// A historical contract must not require a supplier or procurement owner.
 		Terms: Terms{PortOfLoading: "宁波", PortOfDischarge: "客户指定内河港", DeliveryDate: today},

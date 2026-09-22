@@ -86,7 +86,7 @@ LEFT JOIN (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(contract_id)::bigint;
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(contract_id)::bigint;
 
 -- name: ListAllocationsOfContract :many
 -- The other half of the many-to-many: one contract collected in instalments.
@@ -131,7 +131,7 @@ LEFT JOIN (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING', 'COMPLETED')
   AND (sqlc.arg(currency)::text = '' OR v.currency = sqlc.arg(currency)::text)
   AND (sqlc.arg(customer_id)::bigint = 0 OR c.customer_id = sqlc.arg(customer_id)::bigint)
@@ -169,7 +169,7 @@ LEFT JOIN (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.contract_no = ANY(sqlc.arg(contract_nos)::text[]);
 
 -- name: SetContractReceivableDue :exec
@@ -259,7 +259,7 @@ LEFT JOIN (
 -- 活着的结清（一张合同至多一条，部分唯一索引保证）。
 LEFT JOIN contract_receivable_closures cl
     ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
-WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
   -- 两页：待核销 = 没有活着的结清；已完成 = 有。
   --
@@ -343,7 +343,7 @@ CROSS JOIN LATERAL (
 ) d
 -- 跨租户扫描：worker 没有租户上下文，新租户也不该需要额外配置才被覆盖。
 -- 每一行写回的仍是合同自己的 tenant_id。
-WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.status IN ('EFFECTIVE', 'EXECUTING')
   -- 结清的合同不再提醒。这是整个结清机制存在的第一理由：一笔退款让未收
   -- 重新变正之后，没有这一条，销售每 7 天收一封「应收逾期」，永不停止
   -- （period_no 一直涨，唯一键永远撞不上）。

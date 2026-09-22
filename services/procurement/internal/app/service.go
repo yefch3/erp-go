@@ -145,6 +145,7 @@ type Deps struct {
 }
 
 type Service struct {
+	contractGuard    ContractGuard
 	customers        CustomerAccess
 	inquiryDocuments InquiryDocuments
 	pool             *pgxpool.Pool

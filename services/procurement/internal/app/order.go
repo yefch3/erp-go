@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
@@ -205,6 +206,13 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	if len(reqs) != len(ids) {
 		return head, apierr.Invalid("PO_REQUIREMENT_NOT_FOUND", "有采购需求不存在，请刷新后重试")
 	}
+	quantities := map[int64]decimal.Decimal{}
+	for id, line := range want {
+		quantities[id] = line.qty
+	}
+	if reason := contractGroupConflict(reqs, quantities); reason != "" {
+		return head, apierr.Conflict("PO_CONTRACT_QUANTITY", reason)
+	}
 	reserved := make(map[int64]decimal.Decimal)
 	imported := false
 	for _, line := range want {
@@ -233,6 +241,11 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	var quoteID, scenarioID, inheritedSupplierID, factoryID int64
 	var quoteNo, factoryCode, factoryName string
 	for _, r := range reqs {
+		if s.contractGuard != nil && r.ContractID > 0 {
+			if err := s.contractGuard.Check(ctx, r.ContractID); err != nil {
+				return head, err
+			}
+		}
 		p := want[r.ID]
 		if r.Status == "CANCELLED" || r.Status == "SUPERSEDED" {
 			return head, apierr.Invalid("PO_REQUIREMENT_CLOSED",
@@ -620,6 +633,9 @@ func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, err
 // SubmitOrder 将采购员确认完成的草稿提交给审批服务。
 // 提交只改变审批状态，不占用采购需求；只有审批通过后才正式计入已采购数量。
 func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operator) (string, int64, error) {
+	if err := s.checkContractExecution(ctx, tenantID, id); err != nil {
+		return "", 0, err
+	}
 	head, err := s.GetOrder(ctx, tenantID, id)
 	if err != nil {
 		return "", 0, err
@@ -751,6 +767,19 @@ func (s *Service) ApplyApprovalDecision(
 			return nil
 		}
 
+		// A decision may arrive after the sales contract was paused or terminated.
+		// Recheck using the persisted buyer identity, never identity from event data.
+		guardCtx := grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenantID, EmployeeID: head.BuyerID, Name: head.BuyerName})
+		if err := s.checkContractExecution(guardCtx, tenantID, poID); err != nil {
+			if apierr.CodeFromError(err) != "CONTRACT_EXECUTION_BLOCKED" {
+				return err
+			}
+			if err := q.SetPurchaseOrderRejected(ctx, store.SetPurchaseOrderRejectedParams{TenantID: tenantID, ID: poID, Reason: err.Error()}); err != nil {
+				return err
+			}
+			status = "REJECTED"
+			return nil
+		}
 		ids := make([]int64, 0, len(items))
 		for _, it := range items {
 			ids = append(ids, it.RequirementID)
@@ -818,6 +847,17 @@ func approvalRequirementConflict(
 ) string {
 	if len(reqs) != len(items) {
 		return "采购需求已不存在或发生变化，请重新建立采购单"
+	}
+	quantities := map[int64]decimal.Decimal{}
+	for _, item := range items {
+		value, err := decimal.NewFromString(item.Qty)
+		if err != nil {
+			return "采购数量无效"
+		}
+		quantities[item.RequirementID] = quantities[item.RequirementID].Add(value)
+	}
+	if reason := contractGroupConflict(reqs, quantities); reason != "" {
+		return reason
 	}
 	byID := make(map[int64]store.RequirementsForOrderRow, len(reqs))
 	for _, r := range reqs {

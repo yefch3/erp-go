@@ -13,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/contractflow"
 	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
@@ -22,6 +23,8 @@ import (
 // some or none of its work happened elsewhere. It is not a shortcut for an
 // unsigned draft: the paper contract is already authoritative.
 type ExistingContractInput struct {
+	History                       contractflow.History
+	DraftID, DraftRevision        int64
 	SignedFileKey, SignedFileName string
 	CustomerID                    int64
 	Currency                      string
@@ -37,9 +40,24 @@ type ExistingContractInput struct {
 	SupplierID                    int64
 }
 
-// ImportExistingContract records the signed contract and opening snapshot atomically.
-// Finance handles the execution handoff before downstream orders are created.
+// ImportExistingContract records a signed contract atomically. Record-only imports
+// keep the declared amount and attachment without item lines or downstream events.
 func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in ExistingContractInput, op Operator) (ContractView, error) {
+	if err := s.checkCustomerAccess(ctx, in.CustomerID); err != nil {
+		return ContractView{}, err
+	}
+	if in.DraftID > 0 {
+		var existing int64
+		if err := s.pool.QueryRow(ctx, `SELECT coalesce(contract_id,0) FROM contract_history_drafts WHERE tenant_id=$1 AND id=$2 AND owner_id=$3`, tenantID, in.DraftID, op.ID).Scan(&existing); err != nil {
+			return ContractView{}, apierr.NotFound("EX_HISTORY_DRAFT", "历史合同草稿不存在或无权操作")
+		}
+		if existing > 0 {
+			return s.GetContractFor(ctx, tenantID, existing, 0, op)
+		}
+	}
+	if err := validateHistoricalOrders(&in); err != nil {
+		return ContractView{}, err
+	}
 	if !strings.HasPrefix(in.SignedFileKey, fmt.Sprintf("contract-imports/%d/", tenantID)) || strings.TrimSpace(in.SignedFileName) == "" {
 		return ContractView{}, apierr.Invalid("EX_SIGNED_COPY_REQUIRED", "请先上传已签署的历史合同")
 	}
@@ -58,7 +76,7 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	if strings.TrimSpace(in.Currency) == "" {
 		return ContractView{}, apierr.Invalid("EX_CURRENCY_REQUIRED", "请选择币种")
 	}
-	if len(in.Items) == 0 {
+	if len(in.Items) == 0 && !in.History.RecordOnly {
 		return ContractView{}, apierr.Invalid("EX_ITEMS_REQUIRED", "请至少录入一条合同明细")
 	}
 	var procurementEmployee Employee
@@ -132,6 +150,9 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	if err != nil {
 		return ContractView{}, err
 	}
+	if in.History.RecordOnly {
+		total = decimal.RequireFromString(in.History.TotalAmount)
+	}
 	// openingDecimal returns *apierr.Error so callers can add the line number.
 	// Do not assign its nil pointer into the existing `error` interface: a
 	// typed nil inside an interface compares non-nil and used to escape as a
@@ -194,6 +215,19 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 
 	var contractID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		if in.DraftID > 0 {
+			var existing, revision int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(contract_id,0),revision FROM contract_history_drafts WHERE tenant_id=$1 AND id=$2 AND owner_id=$3 FOR UPDATE`, tenantID, in.DraftID, op.ID).Scan(&existing, &revision); err != nil {
+				return err
+			}
+			if existing > 0 {
+				contractID = existing
+				return nil
+			}
+			if revision != in.DraftRevision {
+				return apierr.Conflict("EX_HISTORY_REVISION", "草稿已更新，请重新打开后核对")
+			}
+		}
 		q := s.q.WithTx(tx)
 		var err error
 		contractID, err = q.CreateExistingContract(ctx, store.CreateExistingContractParams{
@@ -261,6 +295,23 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 		if err := q.FinalizeExistingContract(ctx, store.FinalizeExistingContractParams{TenantID: tenantID, ID: contractID, VersionID: versionID, UpdatedBy: op.ID}); err != nil {
 			return err
 		}
+		if in.History.RecordOnly {
+			if _, err := tx.Exec(ctx, `UPDATE contracts SET entry_source='HISTORICAL_RECORD',status=$3,effective_at=NULL WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, in.History.Status); err != nil {
+				return err
+			}
+		}
+		history, _ := json.Marshal(in.History)
+		if _, err := tx.Exec(ctx, `INSERT INTO contract_workflows(tenant_id,contract_id,history) VALUES($1,$2,$3)`, tenantID, contractID, history); err != nil {
+			return err
+		}
+		if in.DraftID > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE contract_history_drafts SET contract_id=$3,revision=revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, in.DraftID, contractID); err != nil {
+				return err
+			}
+		}
+		if in.History.RecordOnly {
+			return nil
+		} // Archive only: no execution or receivable event.
 		payload, err := json.Marshal(event)
 		if err != nil {
 			return err
@@ -361,7 +412,7 @@ type existingCorrectionSnapshot struct {
 // procurement and shipping. Only descriptive terms can change; priced lines
 // and all opening/executed quantities remain immutable.
 func (s *Service) correctExistingContract(ctx context.Context, tenantID int64, view ContractView, terms Terms, items []ItemInput, meta ContractEditMeta, op Operator) (ContractView, error) {
-	if view.Contract.Status == "CANCELLED" || view.Contract.CurrentVersionID != view.Version.ID || view.Version.Status != "APPROVED" {
+	if (view.Contract.Status != "EXECUTING" && view.Contract.Status != "EFFECTIVE") || view.Contract.CurrentVersionID != view.Version.ID || view.Version.Status != "APPROVED" {
 		return ContractView{}, apierr.Conflict("EX_EXISTING_CONTRACT_NOT_EDITABLE", "只有当前执行中的已有合同可以纠错")
 	}
 	if len(items) != 0 {
@@ -426,7 +477,7 @@ func (s *Service) correctExistingContract(ctx context.Context, tenantID int64, v
 		if err != nil {
 			return err
 		}
-		if locked.Status == "CANCELLED" || locked.CurrentVersionID != view.Version.ID {
+		if (locked.Status != "EXECUTING" && locked.Status != "EFFECTIVE") || locked.SalesEmployeeID != op.ID || locked.CurrentVersionID != view.Version.ID {
 			return apierr.Conflict("EX_EXISTING_CONTRACT_NOT_EDITABLE", "合同状态或当前版本已经变化，请刷新后重试")
 		}
 		rows, err := q.CorrectExistingContractHeader(ctx, store.CorrectExistingContractHeaderParams{
