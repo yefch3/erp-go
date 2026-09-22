@@ -5200,7 +5200,17 @@ async function doUnsuppress(row: Suppression) {
      凑出来：留白没变，中间那 10px 成了能抓住的东西。 */
   gap: 4px;
   align-items: stretch;
-  min-height: 100%;
+  /* height 而不是 min-height，两个原因，第二个是 2026-09-21 查出来的。
+
+     一、下面三栏的 max-height 用的是 100%，而**百分比要求父级高度是确定
+     的**。只有 min-height 的容器在 CSS 里算"不确定"，那时 max-height: 100%
+     会被算成 none——实测左栏会从 614px 放飞到 1083px。
+
+     二、min-height: 100% 解析的是 .content（el-main）**内容盒**的高度，
+     而 el-main 上下各 20px 的内边距是**加在外面**的。于是 .content 的可滚
+     高度永远比可视高度多出一截，这一页**明明没有东西需要滚，却能滚**。
+     那段"假滚动"是真出过毛病的，见下面 .rail 那段。 */
+  height: 100%;
   background: var(--el-bg-color);
 }
 .rail {
@@ -5210,13 +5220,31 @@ async function doUnsuppress(row: Suppression) {
      它自己会让出来。 */
   width: 208px;
   /* Back to its own height, which stretch had just taken away — a sticky
-     element as tall as its container has nowhere to stick to. */
+     element as tall as its container has nowhere to stick to.
+
+     **这句话后来应在了它自己身上**：信箱从一个变成四个、文件夹一多，这一栏
+     就长到和容器一样高（实测两边都是 690px），于是 sticky 在宽屏上**一点作用
+     都没有**。留着它是因为窄屏（见底下的媒体查询）那边两栏改成上下叠、靠整页
+     滚，那里它仍然真的在粘。 */
   align-self: flex-start;
   position: sticky;
   top: 12px;
   /* 自己滚。信箱多、文件夹多的时候这一栏会比一屏长，而它 sticky 在顶上，
-     长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。 */
-  max-height: calc(100vh - 24px);
+     长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。
+
+     **100% 而不是 calc(100vh - 24px)**（2026-09-21 改）。旧写法按整个窗口
+     算高度上限，可这三栏住在 .content 里，而 .content 只有「窗口 − 顶栏 −
+     上下内边距」那么高。实测：窗口 714，.content 真正能站的地方 614，而三栏
+     被允许长到 690——**多出来的 76px 就是一段谁也不需要的"假滚动"**。
+
+     它的样子是：明明没有东西要滚，面板却能滚 76px；点左栏靠下的文件夹时，
+     浏览器为了把它滚进视野就用掉这段空间，于是整个左栏往上跳，「写邮件」
+     和面板顶之间那 20px（el-main 的内边距）就消失了。同一个按钮，在收件箱
+     里离顶 20px，点一下「已定时」就贴到顶上——而两边都不报错。
+
+     100% 解析的是 .mailbox 的高度，而 .mailbox 现在有确定高度（见上），
+     于是三栏正好等于它们能站的地方，假滚动归零。 */
+  max-height: 100%;
   overflow-y: auto;
   /* 滚动条的位置**一直留着**，不等它出现才腾。
 
@@ -6037,7 +6065,9 @@ async function doUnsuppress(row: Suppression) {
      往下滚，左边的列表就被顶出视野，那正是三栏要避免的事。 */
   position: sticky;
   top: 12px;
-  max-height: calc(100vh - 24px);
+  /* 100% 而不是 calc(100vh - 24px)，理由见 .rail 那段：按窗口算会比这三栏
+     真正能站的地方高出一截，多出来的部分成了一段谁也不需要的「假滚动」。 */
+  max-height: 100%;
   overflow-y: auto;
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
@@ -6049,7 +6079,9 @@ async function doUnsuppress(row: Suppression) {
   /* 自己滚，别把整页拉长：左边列表要一直看得见，这正是三栏的意义。 */
   position: sticky;
   top: 12px;
-  max-height: calc(100vh - 24px);
+  /* 100% 而不是 calc(100vh - 24px)，理由见 .rail 那段：按窗口算会比这三栏
+     真正能站的地方高出一截，多出来的部分成了一段谁也不需要的「假滚动」。 */
+  max-height: 100%;
   overflow-y: auto;
   /* 同上：滚动条的位置一直留着，见 .rail 那段。 */
   scrollbar-gutter: stable;
@@ -6113,6 +6145,19 @@ async function doUnsuppress(row: Suppression) {
    算的，而 420 本身就太宽了；列表改成按比例伸缩之后，这条线可以退到
    真正挤不下的地方。 */
 @media (max-width: 900px) {
+  /* 窄屏这边**必须退回 min-height**。
+     宽屏用确定高度是为了消掉那段假滚动（见 .mailbox 那段），而这里两栏改成
+     上下叠、靠整页滚——height 写死就把内容卡在一屏里，下半截够不着了。
+     这里没有假滚动的问题：真的有东西要滚。 */
+  .mailbox {
+    height: auto;
+    min-height: 100%;
+  }
+  /* 左栏在窄屏仍然 sticky、仍然自己滚，所以上限要给回一个按窗口算的数——
+     这时它的父级是 auto 高，100% 解不出来。 */
+  .rail {
+    max-height: calc(100vh - 24px);
+  }
   .panes {
     display: block;
   }
