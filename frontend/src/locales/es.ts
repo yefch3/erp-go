@@ -1930,7 +1930,7 @@ export default {
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
     previewUnavailable: 'Este adjunto no se puede abrir aquí; descárgalo para verlo',
-    downloadAll: 'Descargar todo ({n})',
+    downloadAll: 'Descargar todo ({n})', saveAllAs: 'Guardar todo como… ({n})', saveAllDone: '{n} archivos guardados', saveAllPartial: 'Se guardaron {n}; no se pudieron obtener: {bad}',
     sortBar: {
       label: 'Ordenar',
       from: 'Remitente',

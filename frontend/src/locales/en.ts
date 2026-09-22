@@ -1924,7 +1924,7 @@ export default {
     bccHint: 'People on BCC receive the mail; nobody on To or CC can see that they did.',
     previewFile: 'Preview',
     previewUnavailable: 'This attachment cannot be opened here — download it to look at it',
-    downloadAll: 'Download all ({n})',
+    downloadAll: 'Download all ({n})', saveAllAs: 'Save all as… ({n})', saveAllDone: 'Saved {n} files', saveAllPartial: 'Saved {n}; could not fetch: {bad}',
     sortBar: {
       label: 'Sort',
       from: 'Sender',

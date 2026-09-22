@@ -73,9 +73,9 @@
          stylesheet is kept — it is most of how a mail looks like itself — and
          keeping it is only safe because it cannot reach out of that frame.
          See MailBody.vue. -->
-    <MailBody v-if="mail.bodyFormat === 'HTML'" class="body" :html="mail.body" />
-    <pre v-else class="body text">{{ mail.body }}</pre>
-
+    <!-- 附件在正文**上面**（2026-09-21 挪的，和阅读收到的信一致）。
+         这里只是一排名字，没有下载——这一块显示的是我们自己的投递记录，
+         附件本体在写信时那一份里。 -->
     <div v-if="mail.attachments?.length" class="files">
       <div class="side-title">
         {{ t('reader.attachments', { n: mail.attachments.length }) }}
@@ -86,6 +86,9 @@
         </el-tag>
       </div>
     </div>
+
+    <MailBody v-if="mail.bodyFormat === 'HTML'" class="body" :html="mail.body" />
+    <pre v-else class="body text">{{ mail.body }}</pre>
 
   </div>
 </template>
