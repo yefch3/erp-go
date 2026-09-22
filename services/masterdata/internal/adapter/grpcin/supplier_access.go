@@ -43,7 +43,7 @@ func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 			return nil, apierr.Permission("MD_SUPPLIER_DELETE_DENIED", "只有最高权限用户可以删除供应商")
 		}
 		switch req.(type) {
-		case *mdv1.CreateSupplierOwnerRequest, *mdv1.UpdateSupplierOwnerRequest, *mdv1.DeactivateSupplierOwnerRequest:
+		case *mdv1.CreateSupplierOwnerRequest, *mdv1.UpdateSupplierOwnerRequest, *mdv1.DeactivateSupplierOwnerRequest, *mdv1.BatchUpdateSupplierOwnersRequest:
 			if employeeID != 0 {
 				return nil, apierr.Permission("MD_SUPPLIER_OWNER_MANAGE_DENIED", "只有最高权限用户可以管理供应商负责人")
 			}
