@@ -121,6 +121,7 @@ type CustomerContact struct {
 	UpdatedBy        int64
 	EmailPermission  string
 	EmailCategories  []string
+	AdditionalEmails []string
 }
 
 type CustomerCustomFieldValue struct {
@@ -174,6 +175,16 @@ type CustomerFieldDefinition struct {
 	UpdatedBy   int64
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+}
+
+type CustomerMailLink struct {
+	TenantID   int64
+	InboundID  int64
+	CustomerID int64
+	ContactID  int64
+	Email      string
+	CreatedBy  int64
+	UpdatedAt  pgtype.Timestamptz
 }
 
 type CustomerOwner struct {

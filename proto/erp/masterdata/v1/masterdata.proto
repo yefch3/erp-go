@@ -7,6 +7,9 @@ import "erp/common/v1/pagination.proto";
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 service CustomerService {
+  rpc MatchMailCustomer(MatchMailCustomerRequest) returns (MatchMailCustomerResponse);
+  rpc SaveMailCustomer(SaveMailCustomerRequest) returns (SaveMailCustomerResponse);
+  rpc GetMailCustomerLink(GetMailCustomerLinkRequest) returns (GetMailCustomerLinkResponse);
   rpc GetCustomerBasic(GetCustomerBasicRequest) returns (GetCustomerBasicResponse);
   rpc SaveCustomerBasic(SaveCustomerBasicRequest) returns (SaveCustomerBasicResponse);
   rpc DeleteCustomerDocument(DeleteCustomerDocumentRequest) returns (DeleteCustomerDocumentResponse);
@@ -194,6 +197,7 @@ message Contact {
   string email_permission = 14;
   // Empty means every mail category; otherwise only the selected categories.
   repeated string email_categories = 15;
+  repeated string additional_emails = 16;
 }
 
 // PortService owns port master data. Shipping stores the id together with a
@@ -1420,4 +1424,46 @@ message BatchUpdateSupplierOwnersResponse {
   int32 supplier_count = 1;
   int32 owner_count = 2;
   int32 changed_count = 3;
+}
+
+message MatchMailCustomerRequest { string company_name = 1; string email = 2; }
+message MailCustomerMatch {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string status = 4;
+  bool exact_name = 5;
+  repeated Contact contacts = 6;
+}
+message MatchMailCustomerResponse {
+  repeated MailCustomerMatch customers = 1;
+  repeated MailCustomerMatch suppliers = 2;
+}
+message SaveMailCustomerRequest {
+  int64 inbound_id = 1;
+  int64 customer_id = 2;
+  int64 contact_id = 3;
+  string action = 4;
+  string company_name = 5;
+  string contact_name = 6;
+  string email = 7;
+  string phone = 8;
+  string website = 9;
+  string address = 10;
+  string remark = 11;
+  bool confirm_same_name = 12;
+  bool confirm_supplier = 13;
+  string request_key = 14;
+}
+message GetMailCustomerLinkRequest { int64 inbound_id = 1; }
+message GetMailCustomerLinkResponse {
+  Customer customer = 1;
+  Contact contact = 2;
+  string email = 3;
+}
+
+message SaveMailCustomerResponse {
+  Customer customer = 1;
+  Contact contact = 2;
+  string email = 3;
 }

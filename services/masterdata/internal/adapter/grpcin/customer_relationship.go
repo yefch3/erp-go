@@ -15,7 +15,7 @@ func contactToProto(c store.CustomerContact) *mdv1.Contact {
 	return &mdv1.Contact{Id: c.ID, Name: c.Name, Department: c.Department, Title: c.Title,
 		Email: c.Email, Phone: c.Phone, Mobile: c.Mobile, InstantMessaging: c.InstantMessaging,
 		Language: c.Language, Remark: c.Remark, IsPrimary: c.IsPrimary, SortOrder: c.SortOrder, Status: c.Status,
-		EmailPermission: c.EmailPermission, EmailCategories: c.EmailCategories}
+		EmailPermission: c.EmailPermission, EmailCategories: c.EmailCategories, AdditionalEmails: c.AdditionalEmails}
 }
 
 func contactInput(c *mdv1.CustomerContactInput, ctx context.Context) app.CustomerContactInput {

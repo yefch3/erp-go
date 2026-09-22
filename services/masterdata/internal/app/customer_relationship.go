@@ -93,8 +93,8 @@ func (in *CustomerContactInput) normalizeAndValidate() error {
 	if in.EmailPermission == "" {
 		in.EmailPermission = "ALLOWED"
 	}
-	if in.Name == "" {
-		return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名必填")
+	if in.Name == "" && in.Email == "" {
+		return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名和邮箱至少填写一项")
 	}
 	if in.Email != "" {
 		if _, err := mail.ParseAddress(in.Email); err != nil {
