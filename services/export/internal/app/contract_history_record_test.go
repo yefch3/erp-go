@@ -38,6 +38,10 @@ func TestHistoricalRecordWithoutItems(t *testing.T) {
 		if view.Contract.EntrySource != "HISTORICAL_RECORD" || view.Contract.Status != state || len(view.Items) != 0 || view.Version.TotalAmount != "1200.50" {
 			t.Fatalf("bad archive: %+v", view)
 		}
+		rows, _, err := svc.ListContracts(ctx, tenant, in.ExternalContractNo, 0, "", 1, 20, Operator{ID: 5, Name: "Sales"})
+		if err != nil || len(rows) != 1 || rows[0].ID != view.Contract.ID {
+			t.Fatalf("archive missing from contract register: %v, %v", rows, err)
+		}
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM outbox_events WHERE tenant_id=$1", tenant).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("archive emitted events %d: %v", n, err)

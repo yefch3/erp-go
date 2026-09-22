@@ -1275,7 +1275,7 @@ LEFT JOIN LATERAL (
     ORDER BY version_no DESC
     LIMIT 1
 ) v ON true
-WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.status <> 'DELETED' AND c.tenant_id = $1::bigint
+WHERE c.status <> 'DELETED' AND c.tenant_id = $1::bigint
   -- Data scope. An empty id list with visible_all = false means "nothing",
   -- which is the right answer for someone with no scope at all; it must not
   -- silently widen to everything.
@@ -1513,7 +1513,12 @@ type LockContractRow struct {
 func (q *Queries) LockContract(ctx context.Context, arg LockContractParams) (LockContractRow, error) {
 	row := q.db.QueryRow(ctx, lockContract, arg.TenantID, arg.ID)
 	var i LockContractRow
-	err := row.Scan(&i.ID, &i.Status, &i.CurrentVersionID, &i.SalesEmployeeID)
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.CurrentVersionID,
+		&i.SalesEmployeeID,
+	)
 	return i, err
 }
 
