@@ -39,6 +39,7 @@ func (s *Server) resolveActiveCustomer(ctx context.Context, id int64) (*mdv1.Cus
 
 // resolveActiveCustomerContact 校验联系人属于所选客户，并返回主数据快照。
 // 上传入口不能相信浏览器传来的姓名或邮箱，否则可以把甲客户的联系人挂到乙客户询盘上。
+// 邮箱是联系人资料的一部分，不是创建询盘的门槛；没维护邮箱的联系人仍可绑定。
 func (s *Server) resolveActiveCustomerContact(ctx context.Context, customerID, contactID int64) (*mdv1.Customer, *mdv1.Contact, error) {
 	customer, err := s.resolveActiveCustomer(ctx, customerID)
 	if err != nil {
@@ -54,9 +55,6 @@ func (s *Server) resolveActiveCustomerContact(ctx context.Context, customerID, c
 	for _, contact := range resp.GetContacts() {
 		if contact.GetId() != contactID || contact.GetStatus() != "ACTIVE" {
 			continue
-		}
-		if contact.GetEmail() == "" {
-			return nil, nil, apierr.Invalid("MASTERDATA_CUSTOMER_CONTACT_EMAIL_REQUIRED", "所选客户联系人尚未维护邮箱")
 		}
 		return customer, contact, nil
 	}

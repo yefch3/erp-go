@@ -52,14 +52,13 @@
             <el-option v-for="item in customers" :key="item.id" :value="item.id" :label="customerOptionLabel(item)" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('procurementIntakes.contact')" required>
-          <el-select v-model="uploadForm.contactId" filterable :loading="contactsLoading" :disabled="!uploadForm.customerId" :placeholder="uploadForm.customerId ? t('procurementIntakes.contactPlaceholder') : t('procurementIntakes.selectCustomerFirst')" style="width:100%">
+        <el-form-item :label="t('procurementIntakes.contactOptional')">
+          <el-select v-model="uploadForm.contactId" filterable clearable :loading="contactsLoading" :disabled="!uploadForm.customerId" :placeholder="uploadForm.customerId ? t('procurementIntakes.contactPlaceholder') : t('procurementIntakes.selectCustomerFirst')" style="width:100%">
             <el-option
               v-for="item in contacts"
               :key="item.id"
               :value="item.id"
               :label="contactOptionLabel(item)"
-              :disabled="!item.email"
             />
           </el-select>
           <div v-if="uploadForm.customerId && !contactsLoading && !contacts.length" class="template-help">{{ t('procurementIntakes.noActiveContacts') }}</div>
@@ -291,11 +290,9 @@ async function load() {
 
 async function upload() {
   if (!uploadForm.customerId) { ElMessage.warning(t('procurementIntakes.customerRequired')); return }
-  if (!uploadForm.contactId) { ElMessage.warning(t('procurementIntakes.contactRequired')); return }
-  if (!selectedContact.value?.email) { ElMessage.warning(t('procurementIntakes.contactEmailRequired')); return }
   if (!uploadForm.file) { ElMessage.warning(t('procurementIntakes.fileRequired')); return }
   const body = new FormData()
-  body.append('file', uploadForm.file); if (uploadForm.templateId) body.append('inquiry_template_id', uploadForm.templateId); body.append('title', uploadForm.title); body.append('customer_id', uploadForm.customerId); body.append('contact_id', uploadForm.contactId)
+  body.append('file', uploadForm.file); if (uploadForm.templateId) body.append('inquiry_template_id', uploadForm.templateId); body.append('title', uploadForm.title); body.append('customer_id', uploadForm.customerId); if (uploadForm.contactId) body.append('contact_id', uploadForm.contactId)
   saving.value = true
   try {
     const response = await http.post<Envelope<{ sourcingCase: Intake }>>('/sourcing-intakes/import', body)

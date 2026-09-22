@@ -64,7 +64,7 @@ func TestResolveActiveMasterdata(t *testing.T) {
 	})
 }
 
-// TestResolveActiveCustomerContact 验证上传询盘只能引用所选客户名下的有效且有邮箱联系人。
+// TestResolveActiveCustomerContact 验证上传询盘只能引用所选客户名下的有效联系人；邮箱可后补。
 func TestResolveActiveCustomerContact(t *testing.T) {
 	contacts := []*mdv1.Contact{
 		{Id: 11, Name: "王经理", Email: "wang@example.com", Status: "ACTIVE"},
@@ -91,9 +91,10 @@ func TestResolveActiveCustomerContact(t *testing.T) {
 		}
 	})
 
-	t.Run("缺少邮箱被拒", func(t *testing.T) {
-		if _, _, err := s.resolveActiveCustomerContact(context.Background(), 7, 13); err == nil {
-			t.Fatal("contact without email should be rejected")
+	t.Run("缺少邮箱仍可绑定", func(t *testing.T) {
+		_, contact, err := s.resolveActiveCustomerContact(context.Background(), 7, 13)
+		if err != nil || contact.GetId() != 13 || contact.GetEmail() != "" {
+			t.Fatalf("contact without email should remain selectable: contact=%+v err=%v", contact, err)
 		}
 	})
 
