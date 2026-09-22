@@ -1,6 +1,12 @@
 <template>
   <div class="shipping-requirements-page">
-    <WorkflowPageHeader :title="mode === 'orders' ? t('shipping.ordersTitle') : t('shipping.executionInquiryTitle')" :description="mode === 'orders' ? t('shipping.ordersSubtitle') : t('shipping.d4Subtitle')" />
+    <WorkflowPageHeader :title="mode === 'orders' ? t('shipping.ordersTitle') : t('shipping.executionInquiryTitle')" :description="mode === 'orders' ? t('shipping.ordersSubtitle') : t('shipping.d4Subtitle')"><template v-if="mode === 'orders' && auth.can('shipping:schedule:write')" #actions><el-button type="primary" @click="manualOrderId='';manualOpen=true">建立物流实单</el-button></template></WorkflowPageHeader>
+    <ManualShippingOrderDialog v-model="manualOpen" :order-id="manualOrderId" :forwarders="forwarders" :carriers="carriers" @saved="manualSaved" />
+    <el-dialog v-model="linkOpen" title="关联合同" width="520px" :close-on-click-modal="false">
+      <p>选择销售合同，或按当前合同号精确匹配。关联不会重新流转或创建单据。</p>
+      <ShippingContractNumberInput v-model="linkNumber" @selected="linkContractId=$event" style="width:100%" />
+      <template #footer><el-button @click="linkOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="linkContract">确认关联</el-button></template>
+    </el-dialog>
     <section class="summary-strip">
       <div><strong>{{ activeCount }}</strong><span>{{ t('shipping.d4Active') }}</span></div>
       <div><strong>{{ waitingCount }}</strong><span>{{ t('shipping.d4WaitingApproval') }}</span></div>
@@ -18,11 +24,11 @@
         <el-table-column v-for="column in handoffColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
           <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="handoffColumns.canMoveLeft(column.key)" :can-move-right="handoffColumns.canMoveRight(column.key)" @move-left="handoffColumns.moveBy(column.key,-1)" @move-right="handoffColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
-            <span v-if="column.key==='contractNo'" class="contract-no">{{ row.contractNo }}</span>
+            <div v-if="column.key==='contractNo'"><div class="contract-no">{{ row.contractNo }}</div><div v-if="row.manualOrderNo" class="sub">物流实单：{{ row.manualOrderNo }}</div><div v-if="row.manualOrderNo" class="sub">补录 · {{ Number(row.linkedContractId)>0 ? '合同已关联' : '合同待关联' }}</div></div>
             <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
             <span v-else-if="column.key==='route'">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</span>
             <template v-else-if="column.key==='parties'"><div>{{ row.finalForwarderName || t('shipping.d4NotConfirmed') }}</div><div class="sub">{{ row.actualCarrierName || row.carrierForwarder || '—' }}</div></template>
-            <span v-else-if="column.key==='amount'" class="money">{{ row.finalCurrency || row.currency }} {{ row.finalFreightAmount || row.freightAmount }}</span>
+            <span v-else-if="column.key==='amount'" class="money">{{ row.amountMissing ? '—' : `${row.finalCurrency || row.currency} ${row.finalFreightAmount || row.freightAmount}` }}</span>
             <el-tag v-else-if="column.key==='status'" :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
@@ -35,6 +41,7 @@
     <el-dialog v-model="detailOpen" fullscreen :title="`${mode === 'inquiry' ? t('shipping.executionInquiryTitle') : t('shipping.ordersTitle')} · ${detail?.contractNo || ''}`" destroy-on-close class="shipping-fullscreen-detail">
       <div class="detail-content">
       <template v-if="detail">
+        <div v-if="detail.manualOrderNo" class="submit-selection"><span>{{ detail.manualOrderNo }} · 合同号：{{ detail.contractNo }}（{{ Number(detail.linkedContractId)>0 ? '已关联' : '待关联' }}）</span><el-button v-if="Number(detail.linkedContractId)>0 && auth.can('export:contract:read')" @click="router.push({path:'/contracts',query:{id:detail.linkedContractId}})">查看销售合同</el-button><el-button v-if="auth.can('shipping:schedule:write') && !Number(detail.linkedContractId)" @click="linkNumber=detail.contractNo;linkContractId='0';linkOpen=true">关联合同</el-button><el-button v-if="auth.can('shipping:schedule:write') && ['DRAFT','RETURNED'].includes(detail.status)" @click="manualOrderId=detail.id;detailOpen=false;manualOpen=true">补齐资料</el-button></div>
         <div class="detail-hero"><div><span>{{ detail.customerName }}</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
         <div v-if="detail.status === 'PENDING_APPROVAL' && approvalTaskId" class="submit-selection">
           <span>{{ t('shipping.d4ApprovalHint') }}</span>
@@ -46,7 +53,7 @@
             </el-dropdown-menu></template>
           </el-dropdown>
         </div>
-        <section class="reference-card">
+        <section v-if="!detail.manualOrderNo" class="reference-card">
           <div class="section-title">{{ t('shipping.d4PresalesReference') }}<span>{{ t('shipping.d4ReferenceOnly') }}</span></div>
           <el-descriptions :column="2" size="small">
             <el-descriptions-item :label="t('shipping.d4Forwarder')">{{ detail.carrierForwarder || '—' }}</el-descriptions-item><el-descriptions-item :label="t('shipping.d4Plan')">{{ detail.serviceOptionName || '—' }}</el-descriptions-item>
@@ -122,6 +129,9 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { del, get, post } from '../api'
+import ShippingContractNumberInput from '../components/ShippingContractNumberInput.vue'
+import ManualShippingOrderDialog from '../components/ManualShippingOrderDialog.vue'
+import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { getActionableApproval } from '../lib/approvalAction'
@@ -130,9 +140,13 @@ const approvalTaskId = ref('')
 const approvalOverride = ref(false)
 const props=withDefaults(defineProps<{mode?:'inquiry'|'orders'}>(),{mode:'inquiry'}); const mode=computed(()=>props.mode)
 interface CargoItem { id:string;contractItemId:string;lineNo:number;productCode:string;productName:string;specification:string;quantity:string;uomCode:string;remark:string }
-interface Handoff { id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;remark:string;status:string;scheduleId:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string;cargoItems:CargoItem[] }
+interface Handoff { linkedContractId?:string; manualOrderNo?:string;amountMissing?:boolean; id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;remark:string;status:string;scheduleId:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string;cargoItems:CargoItem[] }
 interface Party { id:string;name:string }
 interface RequoteOption { id:string;handoffId:string;forwarderId:string;forwarderName:string;actualCarrierId:string;actualCarrierName:string;serviceOption:string;currency:string;freightAmount:string;etd:string;eta:string;paymentTerms:string;remark:string;createdByName:string;createdAt:string;updatedAt:string }
+const linkOpen=ref(false),linkNumber=ref(''),linkContractId=ref('0')
+async function linkContract(){if(!detail.value||saving.value)return;saving.value=true;try{await post(`/shipping/manual-orders/${detail.value.id}/link-contract`,{contract_id:linkContractId.value,contract_no:linkNumber.value});ElMessage.success('合同已关联，使用销售合同号');linkOpen.value=false;await refreshDetail()}finally{saving.value=false}}
+const auth=useAuthStore(),manualOpen=ref(false),manualOrderId=ref('')
+async function manualSaved(){detailOpen.value=false;status.value='DRAFT';await load()}
 const { t }=useI18n(), route=useRoute(), router=useRouter(); const loading=ref(false),saving=ref(false),detailOpen=ref(false); const rows=ref<Handoff[]>([]),detail=ref<Handoff|null>(null),forwarders=ref<Party[]>([]),carriers=ref<Party[]>([]),requoteOptions=ref<RequoteOption[]>([]); const keyword=ref(''),status=ref(mode.value==='orders'?'DRAFT':''),page=ref(1),pageSize=ref(20),contractFile=ref<File|null>(null),selectedOptionId=ref(0),editingOptionId=ref(0)
 const handoffColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'contractNo',label:t('shipping.contractNo'),width:170},
@@ -146,11 +160,11 @@ const handoffColumns=useTableColumnOrder(computed(()=>mode.value==='orders'?'shi
 const contractAndDelegatedStatuses=['APPROVED','CONTRACT_UPLOADED','CONTRACT_VERIFIED','PAYMENT_REQUESTED']
 const statuses=computed(()=>mode.value==='orders'?['DRAFT','PENDING_APPROVAL','CONTRACT_AND_DELEGATED']:['WAITING_REQUOTE','RETURNED']), currencies=['USD','CNY','EUR','GBP','CAD','AUD','HKD']
 const form=reactive({finalForwarderId:0,finalForwarderName:'',actualCarrierId:0,actualCarrierName:'',finalServiceOption:'',finalCurrency:'USD',finalFreightAmount:'',finalEtd:'',finalEta:'',paymentTerms:'',forwarderContractNo:'',remark:''})
-const canEdit=computed(()=>['WAITING_REQUOTE','RETURNED','DRAFT'].includes(detail.value?.status||'')), canManageCandidates=computed(()=>mode.value==='inquiry'&&['WAITING_REQUOTE','RETURNED'].includes(detail.value?.status||'')), filteredRows=computed(()=>{const k=keyword.value.trim().toLowerCase();return k?rows.value.filter(r=>[r.contractNo,r.customerName,r.finalForwarderName,r.actualCarrierName,r.portOfLoading,r.portOfDischarge].some(v=>String(v||'').toLowerCase().includes(k))):rows.value}), pagedRows=computed(()=>filteredRows.value.slice((page.value-1)*pageSize.value,page.value*pageSize.value)), activeCount=computed(()=>rows.value.length),waitingCount=computed(()=>rows.value.filter(r=>r.status==='PENDING_APPROVAL').length),paymentCount=computed(()=>rows.value.filter(r=>r.status==='PAYMENT_REQUESTED').length)
+const canEdit=computed(()=>['WAITING_REQUOTE','RETURNED','DRAFT'].includes(detail.value?.status||'')), canManageCandidates=computed(()=>mode.value==='inquiry'&&['WAITING_REQUOTE','RETURNED'].includes(detail.value?.status||'')), filteredRows=computed(()=>{const k=keyword.value.trim().toLowerCase();return k?rows.value.filter(r=>[r.manualOrderNo,r.contractNo,r.customerName,r.finalForwarderName,r.actualCarrierName,r.portOfLoading,r.portOfDischarge].some(v=>String(v||'').toLowerCase().includes(k))):rows.value}), pagedRows=computed(()=>filteredRows.value.slice((page.value-1)*pageSize.value,page.value*pageSize.value)), activeCount=computed(()=>rows.value.length),waitingCount=computed(()=>rows.value.filter(r=>r.status==='PENDING_APPROVAL').length),paymentCount=computed(()=>rows.value.filter(r=>r.status==='PAYMENT_REQUESTED').length)
 function statusLabel(v:string){return v==='CONTRACT_AND_DELEGATED'?t('shipping.orderTabs.contractAndDelegated'):t(`shipping.handoffStatuses.${v}`)} function statusType(v:string){if(v==='RETURNED')return 'danger';if(v==='WAITING_REQUOTE'||v==='DRAFT'||v==='PENDING_APPROVAL'||v==='CONTRACT_UPLOADED')return 'warning';if(v==='PAYMENT_REQUESTED')return 'success';return 'info'} function nextLabel(r:Handoff){if(['WAITING_REQUOTE','RETURNED'].includes(r.status))return t('shipping.d4Start');if(r.status==='DRAFT')return t('shipping.editDraft');if(r.status==='APPROVED')return t('shipping.d4Upload');if(r.status==='PAYMENT_REQUESTED')return Number(r.scheduleId||0)>0?t('shipping.viewFormalSchedule'):t('shipping.createFromHandoff');return t('shipping.d4View')}
 function handleRowAction(r:Handoff){if(r.status==='PAYMENT_REQUESTED'&&Number(r.scheduleId||0)>0){void router.push(`/shipping/${r.scheduleId}`);return}void openDetail(r)}
 function clearCandidateForm(){editingOptionId.value=0;Object.assign(form,{finalForwarderId:0,finalForwarderName:'',actualCarrierId:0,actualCarrierName:'',finalServiceOption:'',finalCurrency:detail.value?.currency||'USD',finalFreightAmount:'',finalEtd:detail.value?.estimatedDeparture||'',finalEta:detail.value?.estimatedArrival||'',paymentTerms:'',remark:''})}
-function fillForm(r:Handoff){Object.assign(form,{finalForwarderId:Number(r.finalForwarderId||0),finalForwarderName:r.finalForwarderName||'',actualCarrierId:Number(r.actualCarrierId||0),actualCarrierName:r.actualCarrierName||'',finalServiceOption:r.finalServiceOption||'',finalCurrency:r.finalCurrency||r.currency||'USD',finalFreightAmount:r.finalFreightAmount||'',finalEtd:r.finalEtd||r.estimatedDeparture||'',finalEta:r.finalEta||r.estimatedArrival||'',paymentTerms:r.paymentTerms||'',forwarderContractNo:r.forwarderContractNo||'',remark:r.remark||''})}
+function fillForm(r:Handoff){Object.assign(form,{finalForwarderId:Number(r.finalForwarderId||0),finalForwarderName:r.finalForwarderName||'',actualCarrierId:Number(r.actualCarrierId||0),actualCarrierName:r.actualCarrierName||'',finalServiceOption:r.finalServiceOption||'',finalCurrency:r.finalCurrency||r.currency||'USD',finalFreightAmount:r.amountMissing?'':r.finalFreightAmount||'',finalEtd:r.finalEtd||r.estimatedDeparture||'',finalEta:r.finalEta||r.estimatedArrival||'',paymentTerms:r.paymentTerms||'',forwarderContractNo:r.forwarderContractNo||'',remark:r.remark||''})}
 async function load(){loading.value=true;try{const d=await get<{handoffs:Handoff[]}>('/shipping/contract-handoffs');rows.value=(d.handoffs??[]).filter(r=>status.value==='CONTRACT_AND_DELEGATED'?contractAndDelegatedStatuses.includes(r.status):status.value?r.status===status.value:statuses.value.includes(r.status));page.value=1}finally{loading.value=false}} async function loadParties(){const [f,c]=await Promise.all([get<{suppliers:Party[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'FORWARDER'}),get<{suppliers:Party[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'CARRIER'})]);forwarders.value=f.suppliers??[];carriers.value=c.suppliers??[]}
 async function loadOptions(){if(!detail.value){requoteOptions.value=[];return}const d=await get<{options:RequoteOption[]}>(`/shipping/contract-handoffs/${detail.value.id}/requote-options`);requoteOptions.value=d.options??[];if(selectedOptionId.value&&!requoteOptions.value.some(x=>Number(x.id)===selectedOptionId.value))selectedOptionId.value=0}
 async function openDetail(r:Handoff){detailOpen.value=true;contractFile.value=null;selectedOptionId.value=0;const d=await get<{handoff:Handoff}>(`/shipping/contract-handoffs/${r.id}`);detail.value=d.handoff;await loadApprovalTask();if(canManageCandidates.value)clearCandidateForm();else fillForm(d.handoff);if(mode.value==='inquiry')await loadOptions();else requoteOptions.value=[]} function selectForwarder(id:number){form.finalForwarderName=forwarders.value.find(x=>Number(x.id)===Number(id))?.name||''} function selectCarrier(id:number){form.actualCarrierName=carriers.value.find(x=>Number(x.id)===Number(id))?.name||''} async function refreshDetail(){if(!detail.value)return;await openDetail(detail.value);await load()}

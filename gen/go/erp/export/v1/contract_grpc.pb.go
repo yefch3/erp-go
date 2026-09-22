@@ -19,29 +19,30 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ContractService_CheckContractExecution_FullMethodName      = "/erp.export.v1.ContractService/CheckContractExecution"
-	ContractService_ContractWorkflow_FullMethodName            = "/erp.export.v1.ContractService/ContractWorkflow"
-	ContractService_ListFailedEvents_FullMethodName            = "/erp.export.v1.ContractService/ListFailedEvents"
-	ContractService_ReplayFailedEvent_FullMethodName           = "/erp.export.v1.ContractService/ReplayFailedEvent"
-	ContractService_ListContracts_FullMethodName               = "/erp.export.v1.ContractService/ListContracts"
-	ContractService_ListContractExecution_FullMethodName       = "/erp.export.v1.ContractService/ListContractExecution"
-	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
-	ContractService_CreateContractFromQuotation_FullMethodName = "/erp.export.v1.ContractService/CreateContractFromQuotation"
-	ContractService_CreateContract_FullMethodName              = "/erp.export.v1.ContractService/CreateContract"
-	ContractService_PresignExistingContractFile_FullMethodName = "/erp.export.v1.ContractService/PresignExistingContractFile"
-	ContractService_ImportExistingContract_FullMethodName      = "/erp.export.v1.ContractService/ImportExistingContract"
-	ContractService_UpdateContract_FullMethodName              = "/erp.export.v1.ContractService/UpdateContract"
-	ContractService_SubmitContract_FullMethodName              = "/erp.export.v1.ContractService/SubmitContract"
-	ContractService_ChangeContract_FullMethodName              = "/erp.export.v1.ContractService/ChangeContract"
-	ContractService_SignContract_FullMethodName                = "/erp.export.v1.ContractService/SignContract"
-	ContractService_CompleteContract_FullMethodName            = "/erp.export.v1.ContractService/CompleteContract"
-	ContractService_CancelContract_FullMethodName              = "/erp.export.v1.ContractService/CancelContract"
-	ContractService_PresignContractFile_FullMethodName         = "/erp.export.v1.ContractService/PresignContractFile"
-	ContractService_RegisterContractFile_FullMethodName        = "/erp.export.v1.ContractService/RegisterContractFile"
-	ContractService_ListContractFiles_FullMethodName           = "/erp.export.v1.ContractService/ListContractFiles"
-	ContractService_RemoveContractFile_FullMethodName          = "/erp.export.v1.ContractService/RemoveContractFile"
-	ContractService_TransferOwnership_FullMethodName           = "/erp.export.v1.ContractService/TransferOwnership"
-	ContractService_ListOwnershipTransfers_FullMethodName      = "/erp.export.v1.ContractService/ListOwnershipTransfers"
+	ContractService_ListShippingContractReferences_FullMethodName = "/erp.export.v1.ContractService/ListShippingContractReferences"
+	ContractService_CheckContractExecution_FullMethodName         = "/erp.export.v1.ContractService/CheckContractExecution"
+	ContractService_ContractWorkflow_FullMethodName               = "/erp.export.v1.ContractService/ContractWorkflow"
+	ContractService_ListFailedEvents_FullMethodName               = "/erp.export.v1.ContractService/ListFailedEvents"
+	ContractService_ReplayFailedEvent_FullMethodName              = "/erp.export.v1.ContractService/ReplayFailedEvent"
+	ContractService_ListContracts_FullMethodName                  = "/erp.export.v1.ContractService/ListContracts"
+	ContractService_ListContractExecution_FullMethodName          = "/erp.export.v1.ContractService/ListContractExecution"
+	ContractService_GetContract_FullMethodName                    = "/erp.export.v1.ContractService/GetContract"
+	ContractService_CreateContractFromQuotation_FullMethodName    = "/erp.export.v1.ContractService/CreateContractFromQuotation"
+	ContractService_CreateContract_FullMethodName                 = "/erp.export.v1.ContractService/CreateContract"
+	ContractService_PresignExistingContractFile_FullMethodName    = "/erp.export.v1.ContractService/PresignExistingContractFile"
+	ContractService_ImportExistingContract_FullMethodName         = "/erp.export.v1.ContractService/ImportExistingContract"
+	ContractService_UpdateContract_FullMethodName                 = "/erp.export.v1.ContractService/UpdateContract"
+	ContractService_SubmitContract_FullMethodName                 = "/erp.export.v1.ContractService/SubmitContract"
+	ContractService_ChangeContract_FullMethodName                 = "/erp.export.v1.ContractService/ChangeContract"
+	ContractService_SignContract_FullMethodName                   = "/erp.export.v1.ContractService/SignContract"
+	ContractService_CompleteContract_FullMethodName               = "/erp.export.v1.ContractService/CompleteContract"
+	ContractService_CancelContract_FullMethodName                 = "/erp.export.v1.ContractService/CancelContract"
+	ContractService_PresignContractFile_FullMethodName            = "/erp.export.v1.ContractService/PresignContractFile"
+	ContractService_RegisterContractFile_FullMethodName           = "/erp.export.v1.ContractService/RegisterContractFile"
+	ContractService_ListContractFiles_FullMethodName              = "/erp.export.v1.ContractService/ListContractFiles"
+	ContractService_RemoveContractFile_FullMethodName             = "/erp.export.v1.ContractService/RemoveContractFile"
+	ContractService_TransferOwnership_FullMethodName              = "/erp.export.v1.ContractService/TransferOwnership"
+	ContractService_ListOwnershipTransfers_FullMethodName         = "/erp.export.v1.ContractService/ListOwnershipTransfers"
 )
 
 // ContractServiceClient is the client API for ContractService service.
@@ -52,6 +53,7 @@ const (
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceClient interface {
+	ListShippingContractReferences(ctx context.Context, in *ListShippingContractReferencesRequest, opts ...grpc.CallOption) (*ListShippingContractReferencesResponse, error)
 	CheckContractExecution(ctx context.Context, in *CheckContractExecutionRequest, opts ...grpc.CallOption) (*CheckContractExecutionResponse, error)
 	ContractWorkflow(ctx context.Context, in *ContractWorkflowRequest, opts ...grpc.CallOption) (*ContractWorkflowResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
@@ -106,6 +108,16 @@ type contractServiceClient struct {
 
 func NewContractServiceClient(cc grpc.ClientConnInterface) ContractServiceClient {
 	return &contractServiceClient{cc}
+}
+
+func (c *contractServiceClient) ListShippingContractReferences(ctx context.Context, in *ListShippingContractReferencesRequest, opts ...grpc.CallOption) (*ListShippingContractReferencesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShippingContractReferencesResponse)
+	err := c.cc.Invoke(ctx, ContractService_ListShippingContractReferences_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *contractServiceClient) CheckContractExecution(ctx context.Context, in *CheckContractExecutionRequest, opts ...grpc.CallOption) (*CheckContractExecutionResponse, error) {
@@ -346,6 +358,7 @@ func (c *contractServiceClient) ListOwnershipTransfers(ctx context.Context, in *
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceServer interface {
+	ListShippingContractReferences(context.Context, *ListShippingContractReferencesRequest) (*ListShippingContractReferencesResponse, error)
 	CheckContractExecution(context.Context, *CheckContractExecutionRequest) (*CheckContractExecutionResponse, error)
 	ContractWorkflow(context.Context, *ContractWorkflowRequest) (*ContractWorkflowResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
@@ -402,6 +415,9 @@ type ContractServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedContractServiceServer struct{}
 
+func (UnimplementedContractServiceServer) ListShippingContractReferences(context.Context, *ListShippingContractReferencesRequest) (*ListShippingContractReferencesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShippingContractReferences not implemented")
+}
 func (UnimplementedContractServiceServer) CheckContractExecution(context.Context, *CheckContractExecutionRequest) (*CheckContractExecutionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckContractExecution not implemented")
 }
@@ -490,6 +506,24 @@ func RegisterContractServiceServer(s grpc.ServiceRegistrar, srv ContractServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ContractService_ServiceDesc, srv)
+}
+
+func _ContractService_ListShippingContractReferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShippingContractReferencesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ListShippingContractReferences(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ListShippingContractReferences_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ListShippingContractReferences(ctx, req.(*ListShippingContractReferencesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ContractService_CheckContractExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -913,6 +947,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.export.v1.ContractService",
 	HandlerType: (*ContractServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListShippingContractReferences",
+			Handler:    _ContractService_ListShippingContractReferences_Handler,
+		},
 		{
 			MethodName: "CheckContractExecution",
 			Handler:    _ContractService_CheckContractExecution_Handler,

@@ -47,7 +47,11 @@ func (s *Service) UploadOrderDraftFile(ctx context.Context, tenantID, poID int64
 	} else if err != nil {
 		return OrderDraftFile{}, err
 	}
-	if status != poDraft {
+	meta, metaErr := s.HistoricalOrderMeta(ctx, tenantID, poID)
+	if metaErr != nil {
+		return OrderDraftFile{}, metaErr
+	}
+	if status != poDraft && !(meta.Historical && status == poOrdered) {
 		return OrderDraftFile{}, apierr.Conflict("PO_DRAFT_FILE_LOCKED", "采购单提交审批后不能修改草稿资料")
 	}
 	if contentType == "" {

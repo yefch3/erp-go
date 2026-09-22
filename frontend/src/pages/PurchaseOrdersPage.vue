@@ -1,7 +1,8 @@
 <template>
   <div class="purchase-orders-page">
-    <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')" />
+    <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')"><template #actions><el-button v-if="canWrite" type="primary" @click="historyId='';historyOpen=true">补录历史采购单</el-button></template></WorkflowPageHeader>
 
+    <HistoricalPurchaseOrderDialog v-model="historyOpen" :order-id="historyId" @saved="(s:string)=>{status=s;reload()}" />
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
@@ -31,7 +32,7 @@
           <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="orderColumns.canMoveLeft(column.key)" :can-move-right="orderColumns.canMoveRight(column.key)" @move-left="orderColumns.moveBy(column.key,-1)" @move-right="orderColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
            <template v-if="column.key==='poNo'">
-            <div class="prod">{{ row.poNo }}</div>
+            <div class="prod">{{ row.poNo }} <el-tag v-if="row.historical" size="small" type="info">历史补录</el-tag></div><div v-if="row.historical" class="sub">原下单：{{row.originalDate}}</div>
             <div class="sub">{{ formatTime(row.createdAt) }}</div>
            </template>
            <template v-else-if="column.key==='supplier'">
@@ -43,7 +44,7 @@
             <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
            </template>
            <template v-else-if="column.key==='amount'">
-            <span class="num money">{{ row.currency }} {{ row.totalAmount }}</span>
+            <span class="num money">{{ row.currency }} {{ row.historical && !row.pricesComplete ? '价格未补齐' : row.totalAmount }}</span>
            </template>
            <template v-else-if="column.key==='expectedDate'">{{ row.expectedDate || '—' }}</template>
            <template v-else-if="column.key==='status'">
@@ -241,7 +242,7 @@
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.payableDue')">{{ detail?.payableDueDate || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
+        <template v-if="detail?.historical"><el-descriptions-item label="来源">历史补录</el-descriptions-item><el-descriptions-item label="原下单日期">{{detail.originalDate}}</el-descriptions-item><el-descriptions-item label="录入人 / 时间">{{detail.recordedBy}} / {{formatTime(detail.recordedAt||'')}}</el-descriptions-item></template><el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.confirmations')">
           <template v-if="detail && confirmTag(detail)">{{ confirmTag(detail)!.label }}</template>
           <template v-else>—</template>
@@ -582,12 +583,20 @@ import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
+import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Order {
+ historical?:boolean
+ originalDate?:string
+ contactName?:string
+ contactPhone?:string
+ recordedBy?:string
+ recordedAt?:string
+ pricesComplete?:boolean
   id: string
   poNo: string
   supplierId: string
@@ -707,6 +716,7 @@ const orderColumnDefaults = computed<TableColumnDefinition[]>(() => [
 const orderColumns = useTableColumnOrder('purchase-order-list', orderColumnDefaults)
 const route = useRoute()
 const router = useRouter()
+const historyOpen=ref(false), historyId=ref('')
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
 const canCancel = auth.can('procurement:order:cancel')
@@ -867,6 +877,7 @@ function toggleSupplierSwitch() {
 
 interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 'warning' | 'danger'; run: () => void }
 function primaryAction(row: Order): RowAction | null {
+ if(row.historical && row.status==='DRAFT')return canWrite?{key:'history',label:'继续补录',tone:'primary',run:()=>{historyId.value=row.id;historyOpen.value=true}}:null
   // 已结案与已作废采购单是只读历史，不再出现任何履约动作。
   if (row.closedAt || row.status === 'CANCELLED') return null
   if (canActOnOrderApproval(row))
@@ -965,6 +976,8 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
 }
 
 function rowMenuActions(row: Order): { key: string; label: string; divided?: boolean }[] {
+ if(row.historical && row.status==='DRAFT')return [{key:'detail',label:t('common.detail')},...(canWrite?[{key:'history',label:'继续补录'}]:[])]
+
   if (canActOnOrderApproval(row)) {
     return [
       { key: 'detail', label: t('common.detail') },
@@ -973,6 +986,7 @@ function rowMenuActions(row: Order): { key: string; label: string; divided?: boo
     ]
   }
   const actions = allActions(row)
+ if(row.historical && row.status==='ORDERED' && canWrite && !row.paymentRequestedAt)actions.push({key:'history',label:'补齐资料 / 价格'})
   if (['DRAFT', 'REJECTED'].includes(row.status)) {
     const order = ['detail', 'edit', 'submit', 'cancel']
     return actions.sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key))
@@ -1001,6 +1015,7 @@ function runDetailNext() {
 }
 
 function runOrderAction(row: Order, key: string) {
+ if(key==='history'){historyId.value=row.id;historyOpen.value=true;return}
   if (key === 'detail') {
     void openDetail(row)
     return
@@ -1149,6 +1164,7 @@ async function saveContract(){const row=contractOrder.value,file=contractFile.va
 async function verifyContract(row:Order){await ElMessageBox.confirm(`确认“${row.signedContractName}”是当前工厂双方签署的采购合同？`,'核验采购合同',{type:'warning'});await post(`/purchase-orders/${row.id}/contract/verify`,{});ElMessage.success('采购合同已核验');await reload()}
 
 async function openEdit(row: Order) {
+ if(row.historical){historyId.value=row.id;historyOpen.value=true;return}
   const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([
     get<{ order: Order; items: OrderItem[] }>(`/purchase-orders/${row.id}`),
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),

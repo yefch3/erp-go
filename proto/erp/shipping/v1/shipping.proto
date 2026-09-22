@@ -9,6 +9,8 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1"
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 service ShippingService {
+  rpc SaveManualShippingOrder(SaveManualShippingOrderRequest) returns (SaveManualShippingOrderResponse);
+  rpc LinkManualShippingContract(LinkManualShippingContractRequest) returns (LinkManualShippingContractResponse);
   rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
   rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
   rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
@@ -247,7 +249,14 @@ message ContractShippingHandoff {
   string updated_at = 45;
   string signed_contract_key = 46;
   repeated ContractShippingCargoItem cargo_items = 47;
+  string manual_order_no = 48;
+  bool amount_missing = 49;
+  int64 linked_contract_id = 50;
 }
+message LinkManualShippingContractRequest { int64 id = 1; int64 contract_id = 2; string contract_no = 3; }
+message LinkManualShippingContractResponse { ContractShippingHandoff order = 1; }
+message SaveManualShippingOrderRequest { ContractShippingHandoff order = 1; }
+message SaveManualShippingOrderResponse { ContractShippingHandoff order = 1; }
 message ContractShippingCargoItem {
   int64 id = 1; int64 contract_item_id = 2; int32 line_no = 3;
   string product_code = 4; string product_name = 5; string specification = 6;

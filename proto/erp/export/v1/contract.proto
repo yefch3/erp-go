@@ -12,6 +12,7 @@ import "erp/export/v1/quotation.proto";
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 service ContractService {
+  rpc ListShippingContractReferences(ListShippingContractReferencesRequest) returns (ListShippingContractReferencesResponse);
   rpc CheckContractExecution(CheckContractExecutionRequest) returns (CheckContractExecutionResponse);
   rpc ContractWorkflow(ContractWorkflowRequest) returns (ContractWorkflowResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
@@ -287,6 +288,10 @@ message ListContractsRequest {
   string status = 4;
   int64 sales_employee_id = 5;
 }
+// Minimal cross-department lookup. Never exposes contract prices or documents.
+message ShippingContractReference { int64 id = 1; string contract_no = 2; string external_contract_no = 3; }
+message ListShippingContractReferencesRequest { string keyword = 1; int64 id = 2; bool exact = 3; }
+message ListShippingContractReferencesResponse { repeated ShippingContractReference contracts = 1; }
 
 message ListContractsResponse {
   repeated Contract contracts = 1;

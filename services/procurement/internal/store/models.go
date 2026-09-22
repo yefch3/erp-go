@@ -198,6 +198,18 @@ type FailedEvent struct {
 	ParkedAt      pgtype.Timestamptz
 }
 
+type HistoricalPurchaseOrder struct {
+	TenantID       int64
+	PoID           int64
+	OriginalDate   pgtype.Date
+	ContactName    string
+	ContactPhone   string
+	PricesComplete bool
+	RecordedByID   int64
+	RecordedByName string
+	RecordedAt     pgtype.Timestamptz
+}
+
 type InquiryAttachment struct {
 	TenantID  int64
 	CaseID    int64
@@ -579,6 +591,7 @@ type PurchaseOrderItem struct {
 	Amount           pgtype.Numeric
 	ReceivedQty      pgtype.Numeric
 	ExecutionQuoteID *int64
+	PriceMissing     bool
 }
 
 type PurchaseOrderPaymentClosure struct {

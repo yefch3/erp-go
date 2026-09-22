@@ -81,6 +81,9 @@ func (s *Service) VerifyOrderContract(ctx context.Context, tenantID, orderID int
 }
 
 func (s *Service) RequestOrderPayment(ctx context.Context, tenantID, orderID int64, op Operator) (OrderContractState, error) {
+	if err := s.RequireHistoricalPrices(ctx, tenantID, orderID); err != nil {
+		return OrderContractState{}, err
+	}
 	cmd, err := s.pool.Exec(ctx, `UPDATE purchase_orders SET payment_requested_at=now(),payment_requested_by=$3,payment_requested_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='ORDERED' AND contract_verified_at IS NOT NULL AND payment_requested_at IS NULL`, tenantID, orderID, op.ID, op.Name)
 	if err != nil {
 		return OrderContractState{}, err

@@ -401,6 +401,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/status", s.getShippingStatus)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/manual-orders", s.saveManualShippingOrder)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-options", s.shippingContractOptions)
+		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/manual-orders/{id}/link-contract", s.linkManualShippingContract)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}", s.getContractShippingHandoff)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/requote-options", s.listContractShippingRequoteOptions)
@@ -643,6 +646,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/template-imports/preview", s.previewPurchaseTemplateImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)
 		// 创建只形成草稿；真正进入公司审批流程由下面独立的 submit 接口控制。
+		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Post("/api/purchase-orders/historical", s.saveHistoricalOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)

@@ -3079,6 +3079,7 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	PurchaseOrderService_SaveHistoricalOrder_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/SaveHistoricalOrder"
 	PurchaseOrderService_ListFailedEvents_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
 	PurchaseOrderService_ReplayFailedEvent_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
 	PurchaseOrderService_ListOrders_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
@@ -3192,6 +3193,7 @@ const (
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceClient interface {
+	SaveHistoricalOrder(ctx context.Context, in *SaveHistoricalOrderRequest, opts ...grpc.CallOption) (*SaveHistoricalOrderResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
 	ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error)
@@ -3374,6 +3376,16 @@ type purchaseOrderServiceClient struct {
 
 func NewPurchaseOrderServiceClient(cc grpc.ClientConnInterface) PurchaseOrderServiceClient {
 	return &purchaseOrderServiceClient{cc}
+}
+
+func (c *purchaseOrderServiceClient) SaveHistoricalOrder(ctx context.Context, in *SaveHistoricalOrderRequest, opts ...grpc.CallOption) (*SaveHistoricalOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveHistoricalOrderResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SaveHistoricalOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *purchaseOrderServiceClient) ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error) {
@@ -4396,6 +4408,7 @@ func (c *purchaseOrderServiceClient) UpdateManualPayable(ctx context.Context, in
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceServer interface {
+	SaveHistoricalOrder(context.Context, *SaveHistoricalOrderRequest) (*SaveHistoricalOrderResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
 	ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error)
@@ -4580,6 +4593,9 @@ type PurchaseOrderServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedPurchaseOrderServiceServer struct{}
 
+func (UnimplementedPurchaseOrderServiceServer) SaveHistoricalOrder(context.Context, *SaveHistoricalOrderRequest) (*SaveHistoricalOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveHistoricalOrder not implemented")
+}
 func (UnimplementedPurchaseOrderServiceServer) ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFailedEvents not implemented")
 }
@@ -4902,6 +4918,24 @@ func RegisterPurchaseOrderServiceServer(s grpc.ServiceRegistrar, srv PurchaseOrd
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&PurchaseOrderService_ServiceDesc, srv)
+}
+
+func _PurchaseOrderService_SaveHistoricalOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveHistoricalOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SaveHistoricalOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SaveHistoricalOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SaveHistoricalOrder(ctx, req.(*SaveHistoricalOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _PurchaseOrderService_ListFailedEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -6729,6 +6763,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.procurement.v1.PurchaseOrderService",
 	HandlerType: (*PurchaseOrderServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SaveHistoricalOrder",
+			Handler:    _PurchaseOrderService_SaveHistoricalOrder_Handler,
+		},
 		{
 			MethodName: "ListFailedEvents",
 			Handler:    _PurchaseOrderService_ListFailedEvents_Handler,
