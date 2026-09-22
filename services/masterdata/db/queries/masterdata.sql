@@ -287,9 +287,11 @@ SELECT DISTINCT c.id, c.code, c.name, c.tax_id,
        coalesce((SELECT cc.email FROM customer_contacts cc
                  WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
                    AND cc.status = 'ACTIVE' AND cc.email <> ''
-                 ORDER BY cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
+                 ORDER BY (lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)::text))) DESC,
+                          cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
 FROM customers c
 WHERE c.tenant_id = sqlc.arg(tenant_id)
+  AND c.status = 'ACTIVE'
   AND (sqlc.arg(exclude_id)::bigint = 0 OR c.id <> sqlc.arg(exclude_id))
   AND (
     (sqlc.arg(name)::text <> '' AND (
@@ -301,6 +303,7 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)
     OR (sqlc.arg(email)::text <> '' AND EXISTS (
       SELECT 1 FROM customer_contacts cc
       WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
+        AND cc.status = 'ACTIVE'
         AND lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)))
     ))
   )
@@ -319,6 +322,7 @@ SELECT s.id, s.code, coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.na
        s.tax_id, s.contact_email
 FROM suppliers s
 WHERE s.tenant_id = sqlc.arg(tenant_id)
+  AND s.status = 'ACTIVE'
   AND (sqlc.arg(exclude_id)::bigint = 0 OR s.id <> sqlc.arg(exclude_id))
   AND (
     (sqlc.arg(name)::text <> '' AND (
