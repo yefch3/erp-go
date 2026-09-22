@@ -35,6 +35,7 @@ type ApprovalSubmission struct {
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
+	contractGuard ContractGuard
 	// 按角色找人（E2 提单提醒的收件人来源）。
 	directory        Directory
 	db               databasePinger
@@ -209,6 +210,9 @@ func (s *Service) rejectDuplicate(ctx context.Context, q *store.Queries, tenantI
 
 func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in ScheduleInput, op Operator, confirmed bool) (store.ShippingSchedule, error) {
 	if in.ContractHandoffID != 0 {
+		if err := s.checkHandoffExecution(ctx, tenantID, in.ContractHandoffID); err != nil {
+			return store.ShippingSchedule{}, err
+		}
 		handoff, err := s.q.GetContractShippingHandoffForUpdate(ctx, store.GetContractShippingHandoffForUpdateParams{TenantID: tenantID, ID: in.ContractHandoffID})
 		if err != nil {
 			return store.ShippingSchedule{}, err
@@ -229,6 +233,11 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		}
 		if in.ETA == "" && handoff.EstimatedArrival.Valid {
 			in.ETA = handoff.EstimatedArrival.Time.Format("2006-01-02")
+		}
+	}
+	if s.contractGuard != nil && in.ContractID > 0 {
+		if err := s.contractGuard.Check(ctx, in.ContractID); err != nil {
+			return store.ShippingSchedule{}, err
 		}
 	}
 	if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
@@ -606,6 +615,11 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		}
 		if err != nil {
 			return err
+		}
+		if s.contractGuard != nil && current.ContractID != nil && (next == "SAILED" || next == "PLANNED") {
+			if err := s.contractGuard.Check(ctx, *current.ContractID); err != nil {
+				return err
+			}
 		}
 		if current.Status == next {
 			return apierr.Conflict("SHIPPING_STATUS_UNCHANGED", "船期已经是该状态")

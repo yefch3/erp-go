@@ -71,7 +71,7 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 	}
 
 	var snapshots []store.ListContractProcurementSnapshotsRow
-	if e.SourceCustomerSelectionID != 0 {
+	if e.SourceCustomerSelectionID != 0 && e.VersionNo <= 1 {
 		var err error
 		snapshots, err = s.q.ListContractProcurementSnapshots(ctx, store.ListContractProcurementSnapshotsParams{TenantID: tenantID, SelectionID: e.SourceCustomerSelectionID})
 		if err != nil {
@@ -90,6 +90,16 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 		if err := claim(ctx, tx); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::bigint::text||':contract-demand:'||$2::bigint::text,0))`, tenantID, e.ContractID); err != nil {
+			return err
+		}
+		var latest int32
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max(version_no),0) FROM purchase_requirements WHERE tenant_id=$1 AND contract_id=$2`, tenantID, e.ContractID).Scan(&latest); err != nil {
+			return err
+		}
+		if latest > e.VersionNo {
+			return nil
+		} // Late delivery must never reopen an older version.
 		q := s.q.WithTx(tx)
 		for index, line := range e.Items {
 			requiredQty := procurementRequiredQty(line)
@@ -108,7 +118,7 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 				ContractVersionID: e.VersionID, VersionNo: e.VersionNo,
 				ContractItemID: line.ItemID, CustomerName: e.CustomerName,
 				ProductID: line.ProductID, SkuID: line.SkuID,
-				ProductCode: line.ProductCode, ProductName: line.ProductName,
+				ProductCode: line.ProductCode, ProductName: line.ProductName, Spec: line.Spec,
 				UomID: line.UomID, UomCode: line.UomCode,
 				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate, Source: "CONTRACT",
 				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,

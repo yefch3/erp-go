@@ -1,7 +1,7 @@
 <template>
   <div class="contracts-page">
     <WorkflowPageHeader :title="t('contracts.title')" :description="t('contracts.listSubtitle')">
-      <template #actions><el-button v-if="canWrite" type="primary" @click="openDirect">{{t('contracts.enterExecuting')}}</el-button></template>
+      <template #actions><ContractOperationButton v-if="canWrite" label="新建合同" description="手工填写客户成交资料，之后与报价生成的合同一样，经上级确认、签署和财务放行后进入实单流程。" type="primary" @click="entryHistory=false;entryOpen=true"/><ContractOperationButton v-if="canWrite" label="补录历史合同" description="填写原合同基本资料并上传附件，无需产品明细；供查询和关联，不自动生成采购、物流或应收款。" @click="entryHistory=true;entryOpen=true"/></template>
     </WorkflowPageHeader>
 
     <el-card shadow="never">
@@ -56,187 +56,7 @@
       </el-form>
       <template #footer><el-button @click="supplementOpen=false">取消</el-button><el-button type="primary" @click="saveSupplement">保存</el-button></template>
     </el-dialog>
-    <!-- A signed contract that existed before it reached this ERP. -->
-    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="min(1180px,94vw)" top="4vh">
-      <el-alert :title="t('contracts.directHint')" type="info" :closable="false" show-icon class="alert" />
-      <el-form label-width="120px" class="head-form">
-        <el-form-item :label="t('contracts.customer')" required>
-          <el-select
-            v-model="directForm.customerId"
-            filterable
-            clearable
-            remote
-            :remote-method="searchCustomers"
-            style="width: 320px"
-            :placeholder="t('contracts.pickCustomer')"
-          >
-            <el-option
-              v-for="c in customers"
-              :key="c.id"
-              :value="Number(c.id)"
-              :label="customerOptionLabel(c)"
-            />
-          </el-select>
-          <el-select v-model="directForm.currency" style="width: 110px; margin-left: 12px">
-            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.responsibleSales')" required>
-          <el-select v-model="directForm.salesEmployeeId" :disabled="!canPickContractOwner" filterable style="width: 320px">
-            <el-option v-for="e in contractOwners" :key="e.id" :value="Number(e.id)" :label="e.name" />
-          </el-select>
-          <span class="hint">{{ t('contracts.ownerHint') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('contracts.originalBuyer')">
-          <el-select v-model="directForm.procurementEmployeeId" filterable style="width: 320px">
-            <el-option v-for="e in contractOwners" :key="e.id" :value="Number(e.id)" :label="e.name" />
-          </el-select>
-          <span class="hint">{{ t('contracts.originalBuyerHint') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('contracts.originalSupplier')">
-          <el-select v-model="directForm.supplierId" filterable style="width: 420px">
-            <el-option v-for="s in directSuppliers" :key="s.id" :value="Number(s.id)" :label="`${s.code} · ${s.nameZh || s.nameEn || s.name}`" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.externalContractNo')">
-          <el-input v-model="directForm.externalContractNo" clearable style="width: 320px" :placeholder="t('contracts.externalContractNoHint')" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.contractDates')" required>
-          <el-date-picker v-model="directForm.signedDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.signedDate')" style="width: 190px" />
-          <el-date-picker v-model="directForm.effectiveDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.effectiveDate')" style="width: 190px; margin-left: 12px" />
-          <el-date-picker v-model="directForm.deliveryDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.deliveryDate')" style="width: 190px; margin-left: 12px" />
-          <el-date-picker v-model="directForm.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('contracts.receivableDue')" style="width: 190px; margin-left: 12px" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.commercialTerms')">
-          <el-select v-model="directForm.incoterm" filterable allow-create default-first-option style="width: 150px" :placeholder="t('contracts.incoterm')">
-            <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
-          </el-select>
-          <el-select v-model="directForm.paymentMethod" filterable allow-create default-first-option clearable style="width: 240px; margin-left: 12px" :placeholder="t('contracts.payment')">
-            <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.ports')">
-          <el-select
-            v-model="directForm.portOfLoading"
-            filterable allow-create default-first-option clearable remote
-            :remote-method="searchContractPorts"
-            style="width: 260px"
-            :placeholder="t('contracts.pickOrEnterPol')"
-          >
-            <el-option v-for="p in contractPorts" :key="`pol-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
-          </el-select>
-          <el-select
-            v-model="directForm.portOfDischarge"
-            filterable allow-create default-first-option clearable remote
-            :remote-method="searchContractPorts"
-            style="width: 260px; margin-left: 12px"
-            :placeholder="t('contracts.pickOrEnterPod')"
-          >
-            <el-option v-for="p in contractPorts" :key="`pod-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.terms')">
-          <el-input v-model="directForm.terms" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.executionState')">
-          <el-radio-group v-model="directForm.partiallyExecuted">
-            <el-radio-button :value="false">{{ t('contracts.notStarted') }}</el-radio-button>
-            <el-radio-button :value="true">{{ t('contracts.partiallyExecuted') }}</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-
-      <div class="side-title">
-        {{ t('contracts.lines') }}
-        <span class="hint">{{ t('contracts.linesHint') }}</span>
-        <el-button link type="primary" @click="addDirectLine">{{ t('contracts.addLine') }}</el-button>
-      </div>
-      <el-table :data="directForm.items" size="small" border max-height="440">
-        <el-table-column :label="t('contracts.product')" min-width="210">
-          <template #default="{ row }">
-            <el-select
-              v-model="row.productId"
-              filterable
-              allow-create
-              default-first-option
-              clearable
-              remote
-              :remote-method="searchProducts"
-              style="width: 100%"
-              :placeholder="t('contracts.pickOrEnterProduct')"
-              @change="syncDirectProductUnit(row)"
-            >
-              <el-option
-                v-for="p in products"
-                :key="p.id"
-                :value="Number(p.id)"
-                :label="`${p.code} · ${p.name}`"
-              />
-            </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.uom')" width="105">
-          <template #default="{ row }">
-            <el-input
-              v-model="row.uomCode"
-              size="small"
-              :disabled="isCatalogDirectProduct(row)"
-              :placeholder="t('contracts.uomHint')"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.spec')" min-width="150">
-          <template #default="{ row }"><el-input v-model="row.spec" size="small" /></template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.qty')" width="120">
-          <template #default="{ row }"><el-input v-model="row.qty" size="small" /></template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.unitPrice')" width="120">
-          <template #default="{ row }"><el-input v-model="row.unitPrice" size="small" /></template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.amount')" width="120" align="right">
-          <template #default="{ row }">
-            <span class="num">{{ lineAmount(row) }}</span>
-          </template>
-        </el-table-column>
-        <template v-if="directForm.partiallyExecuted"><el-table-column label="已落实采购数量" width="125"><template #default="{row}"><el-input v-model="row.openingProcuredQty" size="small"/></template></el-table-column>
-          <el-table-column :label="t('contracts.openingArrived')" width="125">
-            <template #default="{ row }"><el-input v-model="row.openingArrivedQty" size="small" /></template>
-          </el-table-column>
-          <el-table-column :label="t('contracts.openingShipped')" width="125">
-            <template #default="{ row }"><el-input v-model="row.openingShippedQty" size="small" /></template>
-          </el-table-column>
-        </template>
-        <el-table-column width="60">
-          <template #default="{ $index }">
-            <el-button link type="danger" @click="directForm.items.splice($index, 1)">
-              {{ common('delete') }}
-            </el-button>
-          </template>
-        </el-table-column>
-        <template #empty>{{ t('contracts.noLines') }}</template>
-      </el-table>
-      <div class="total-row">
-        {{ t('contracts.total') }}<span class="num money">{{ directTotal }} {{ directForm.currency }}</span>
-      </div>
-      <el-form label-width="120px" class="head-form direct-tail">
-        <el-form-item v-if="directForm.partiallyExecuted" :label="t('contracts.openingReceived')">
-          <el-input v-model="directForm.openingReceivedAmount" inputmode="decimal" style="width: 240px">
-            <template #prepend>{{ directForm.currency }}</template>
-          </el-input>
-        </el-form-item>
-        <el-form-item :label="t('contracts.contractFile')">
-          <input ref="directFileInput" type="file" accept="application/pdf,.pdf" @change="pickDirectFile" />
-          <span class="hint">保存前上传已签署文件</span>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="directOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="createDirect">{{ t('contracts.saveAndExecute') }}</el-button>
-      </template>
-    </el-dialog>
-
+    <ContractEntryDialog v-model="entryOpen" :history="entryHistory" @saved="entrySaved"/>
     <!-- Fast correction for a signed contract imported from outside ERP.
          Financial lines and execution openings intentionally stay read-only. -->
     <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="min(860px,94vw)" class="contract-basic-edit-dialog">
@@ -327,22 +147,18 @@
             <el-tag :type="statusType(detail.contract.status)">
               {{ contractStatusLabel(detail.contract.status) }}
             </el-tag>
-            <span class="version-chip">
+            <span v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="version-chip">
               v{{ detail.version.versionNo }} · {{ t(`contracts.versionStatuses.${detail.version.status}`) }}
             </span>
-            <span v-if="isInForce" class="in-force">{{ t('contracts.inForce') }}</span>
+            <span v-if="isInForce && detail.contract.entrySource!=='HISTORICAL_RECORD'" class="in-force">{{ t('contracts.inForce') }}</span>
           </div>
           <div class="detail-actions">
-            <template v-if="myConfirmationTask"><el-button type="success" @click="confirmContract('APPROVE')">同意</el-button><el-button type="warning" @click="confirmContract('RETURN')">退回修改</el-button></template>
-            <el-button v-if="canTransfer" size="small" plain @click="openTransfer">
-              {{ t('ownership.transfer') }}
-            </el-button>
-            <template v-if="canWrite && isMine">
-            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button size="small" type="primary" plain @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">{{ t('contracts.modifyInfo') }}</el-button></template>
-            <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
-            <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
-              {{ '提交上级确认' }}
-            </el-button>
+            <template v-if="myConfirmationTask"><ContractOperationButton label="同意" description="同意当前待确认事项；终止申请通过后停止剩余履约，普通合同通过后进入签署。" type="success" @click="confirmContract('APPROVE')"/><ContractOperationButton label="退回修改" description="将当前申请退回负责销售，并填写需要调整的内容。" type="warning" @click="confirmContract('RETURN')"/></template>
+            <ContractOperationButton v-if="canTransfer" :label="t('ownership.transfer')" description="将合同交给管理范围内的另一名销售负责，保留交接原因和原办理记录。" @click="openTransfer"/>
+            <template v-if="canWrite && isMine && detail.contract.entrySource!=='HISTORICAL_RECORD'">
+            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><ContractOperationButton :label="t('contracts.modifyInfo')" description="补充原合同号、应收日期等资料；已签署的产品、数量和价格调整请使用合同变更。" @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()"/></template>
+            <ContractOperationButton v-if="editable" :label="t('contracts.editDraft')" description="修改尚未提交的合同条款及对客产品、数量和价格；保存后再提交上级确认。" @click="openTerms"/>
+            <ContractOperationButton v-if="editable" label="提交上级确认" description="合同资料核对完成后提交上级。确认通过后才能签署；退回后可修改再提交。" type="primary" @click="submit(detail.contract)"/>
             <el-tooltip
               v-if="detail.contract.status === 'PENDING_SIGN'"
               :disabled="hasSignedCopy"
@@ -350,24 +166,26 @@
               placement="bottom"
             >
               <span>
-                <el-button size="small" type="success" :disabled="!hasSignedCopy" @click="sign(detail.contract)">
-                  开始执行
-                </el-button>
+                <ContractOperationButton label="开始执行" description="双方已签署后交给财务确认执行条件。财务放行前不会启动采购或物流实单。" type="success" :disabled="!hasSignedCopy" unavailable="请先上传本版本的客户签回件" @click="sign(detail.contract)"/>
               </span>
             </el-tooltip>
 
             </template>
-            <span v-else-if="canWrite" class="not-mine">{{ t('contracts.notOwner') }}</span>
+            <span v-else-if="canWrite && !isMine" class="not-mine">{{ t('contracts.notOwner') }}</span>
           </div>
         </div>
 
+        <el-alert v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" title="历史合同资料：商品、交付及付款约定以原合同附件为准；记录金额不计入系统应收款。" type="info" :closable="false" show-icon/>
+        <ContractWorkflowPanel v-else :contract="detail.contract" :version-status="detail.version.status" :can-edit="canWrite && isMine" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()"/>
         <section class="basic-info-panel">
           <div class="basic-info-heading">
             <span class="basic-info-title">合同基本信息</span>
-            <span class="basic-info-hint">签约、交付与执行资料</span>
+            <span class="basic-info-hint">{{detail.contract.entrySource==='HISTORICAL_RECORD'?'原合同基本资料':'签约、交付与执行资料'}}</span>
           </div>
         <el-descriptions :column="2" border size="small" class="desc">
-          <el-descriptions-item label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="合同金额">{{detail.version.totalAmount}} {{detail.version.currency}}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="签订日期">{{detail.contract.signedAt?.slice(0,10)}}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
           <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.buyer')">
             {{ detail.version.buyerName }}
@@ -377,29 +195,29 @@
             {{ detail.version.sellerName }}
             <div class="sub">{{ detail.version.sellerAddress || '—' }}</div>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.incoterm')">{{ detail.version.incoterm }}</el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.paymentMethod')">{{ detail.version.paymentMethod || '—' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.portOfLoading')">{{ detail.version.portOfLoading || '—' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.portOfDischarge')">{{ detail.version.portOfDischarge || '—' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.receivableDue')">
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.incoterm')">{{ detail.version.incoterm }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.paymentMethod')">{{ detail.version.paymentMethod || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.portOfLoading')">{{ detail.version.portOfLoading || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.portOfDischarge')">{{ detail.version.portOfDischarge || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.receivableDue')">
             <span :class="{ missing: !detail.contract.receivableDueDate }">
               {{ detail.contract.receivableDueDate || t('contracts.notSet') }}
             </span>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.deliveryDate')">
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.deliveryDate')">
             <span :class="{ missing: !detail.version.deliveryDate }">{{ detail.version.deliveryDate || t('contracts.notSet') }}</span>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.owner')">{{ detail.contract.salesEmployee || '—' }}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" :label="t('contracts.contractSource')">
-            <el-tag size="small" type="warning" effect="plain">{{ t('contracts.existingContract') }}</el-tag>
+          <el-descriptions-item :label="t('contracts.contractSource')">
+            <el-tag size="small" effect="plain">{{ ['EXISTING_CONTRACT','HISTORICAL_RECORD'].includes(detail.contract.entrySource)?'历史合同':detail.contract.quoteNo?'客户报价生成':'手工新建合同' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.signatureSource" :label="t('contracts.signedVia')">
             <el-tag size="small" :type="detail.contract.signatureSource === 'PLATFORM' ? 'success' : 'warning'" effect="plain">
               {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.status === 'EXECUTING'" :label="t('contracts.conditionConfirmation')">
+          <el-descriptions-item v-if="detail.contract.status === 'EXECUTING' && detail.contract.entrySource!=='HISTORICAL_RECORD'" :label="t('contracts.conditionConfirmation')">
             <el-tag :type="detail.contract.conditionConfirmedAt ? 'success' : 'warning'" effect="light">
               {{ detail.contract.conditionConfirmedAt ? t('contracts.conditionReady') : t('contracts.conditionWaiting') }}
             </el-tag>
@@ -413,7 +231,7 @@
         </el-descriptions>
         </section>
 
-        <details class="detail-section" open>
+        <details v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="detail-section" open>
           <summary class="detail-section-summary">
             <span class="section-summary-title">{{ t('contracts.items') }}</span>
             <span class="section-summary-meta">{{ detail.items.length }} 项 · {{ detail.version.totalAmount }} {{ detail.version.currency }}</span>
@@ -439,35 +257,11 @@
           <el-table-column :label="t('contracts.lineAmount')" width="110" align="right">
             <template #default="{ row }">{{ row.amount }}</template>
           </el-table-column>
-          <template v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'">
-            <el-table-column :label="t('contracts.takeoverProgress')" min-width="360">
-              <template #default="{ row }">
-                <div class="sub">
-                  {{ t('contracts.completed') }}：
-                  {{ t('contracts.openingProcured') }} {{ trimZeros(row.openingProcuredQty) }} /
-                  {{ t('contracts.openingArrived') }} {{ trimZeros(row.openingArrivedQty) }} /
-                  {{ t('contracts.openingShipped') }} {{ trimZeros(row.openingShippedQty) }} {{ row.uomCode }}
-                </div>
-                <div>
-                  {{ t('contracts.remaining') }}：
-                  {{ t('contracts.pendingPurchase') }} {{ remainingQty(row.qty, row.openingProcuredQty) }} /
-                  {{ t('contracts.pendingArrival') }} {{ remainingQty(row.openingProcuredQty, row.openingArrivedQty) }} /
-                  {{ t('contracts.pendingShipment') }} {{ remainingQty(row.qty, row.openingShippedQty) }} {{ row.uomCode }}
-                </div>
-              </template>
-            </el-table-column>
-          </template>
         </el-table>
         <div class="totals">
           <span class="total-label">{{ t('contracts.total') }}</span>
           <strong class="total-value">{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
           <span class="sub">≈ {{ detail.version.baseAmount }} {{ detail.version.fx.baseCurrency }}</span>
-        </div>
-        <div v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" class="totals opening-money">
-          <span>{{ t('contracts.openingReceived') }}</span>
-          <strong>{{ moneyValue(detail.contract.openingReceivedAmount) }} {{ detail.version.currency }}</strong>
-          <span>{{ t('contracts.remainingReceivable') }}</span>
-          <strong>{{ remainingMoney(detail.version.totalAmount, detail.contract.openingReceivedAmount) }} {{ detail.version.currency }}</strong>
         </div>
         <el-alert
           v-if="detail.contract.entrySource === 'EXISTING_CONTRACT' && detail.contract.filePending"
@@ -984,6 +778,9 @@
 </template>
 
 <script setup lang="ts">
+import ContractEntryDialog from '../components/ContractEntryDialog.vue'
+import ContractOperationButton from '../components/ContractOperationButton.vue'
+import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
 import {contractItemPayload} from '../lib/contractItem'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -994,6 +791,8 @@ import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 
 // 防重键：合同重复一张不是删一行的事——它会往下游派生采购需求。
 const createIdem = newIdempotencySession()
+const entryOpen=ref(false),entryHistory=ref(false)
+async function entrySaved(id:string){await load();await openDetail(id)}
 import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
@@ -1152,10 +951,10 @@ interface ContractPort { id: string; unlocode: string; nameZh: string; nameEn: s
 interface OptionItem { code: string; label: string }
 interface ChangeLine { productName?:string;uomCode?:string; productId: string; spec: string; qty: string; unitPrice: string }
 
-const STATUSES = ['PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
+const STATUSES = ['DRAFT','CANCELLED','PAUSED','TERMINATING','TERMINATED','PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
 const ownerFilter=ref('')
 const filterOwners=ref<{id:string;name:string}[]>([])
-function contractStatusLabel(s:string){return t(`contracts.statuses.${s}`)}
+function contractStatusLabel(s:string){return ({PAUSED:'已暂停',TERMINATING:'终止待确认',TERMINATED:'已终止',DELETED:'已删除'} as Record<string,string>)[s]||t(`contracts.statuses.${s}`)}
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']
@@ -1541,8 +1340,8 @@ async function loadMyConfirmation(id:string){
 }
 async function confirmContract(action:'APPROVE'|'RETURN'){
  if(!detail.value||!myConfirmationTask.value)return
- let comment='';if(!myConfirmationOverride.value&&action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value.trim()}else if(!myConfirmationOverride.value){await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
- await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';myConfirmationOverride.value=false;ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(detail.value?.contract.status!=='PENDING_APPROVAL')break;await new Promise(r=>setTimeout(r,500))}await load()
+ let comment='';if(!myConfirmationOverride.value&&action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value.trim()}else if(!myConfirmationOverride.value){await ElMessageBox.confirm(detail.value.contract.status==='TERMINATING'?'同意终止这份合同？剩余履约将停止，已发生的采购、物流及账款仍需善后。':'同意这份合同，进入双方签署阶段？','上级确认')}
+ await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';myConfirmationOverride.value=false;ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(!['PENDING_APPROVAL','TERMINATING'].includes(detail.value?.contract.status||''))break;await new Promise(r=>setTimeout(r,500))}await load()
 }
 function openSupplement(){if(!detail.value)return;supplementForm.externalContractNo=detail.value.contract.externalContractNo||'';supplementForm.due=detail.value.contract.receivableDueDate||'';supplementOpen.value=true}
 async function saveSupplement(){if(!detail.value)return;await put(`/contracts/${detail.value.contract.id}`,{externalContractNo:supplementForm.externalContractNo,terms:{receivableDueDate:supplementForm.due}});supplementOpen.value=false;await openDetail(detail.value.contract.id);await load()}
@@ -1754,7 +1553,7 @@ function employeeName(id: string): string {
 // data can still be absent for a contract with no version; a failure here
 // hides the section rather than breaking the drawer.
 async function loadReceipts(contractId: string) {
-if(!auth.can('export:receipt:read')){receiptProgress.value=null;receipts.value=[];return}
+if(detail.value?.contract.entrySource==='HISTORICAL_RECORD'||!auth.can('export:receipt:read')){receiptProgress.value=null;receipts.value=[];return}
   try {
     const d = await get<{ progress: ReceiptProgress; receipts: ContractReceipt[] }>(
       `/contracts/${contractId}/receipts`,

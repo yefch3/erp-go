@@ -43,6 +43,9 @@ func (s *Service) ConfirmContractExecutionCondition(ctx context.Context, tenantI
 	if err != nil {
 		return ExecutionConditionConfirmation{}, err
 	}
+	if view.Contract.EntrySource == "HISTORICAL_RECORD" {
+		return ExecutionConditionConfirmation{}, apierr.Conflict("EX_HISTORY_RECORD_ONLY", "历史合同仅供资料查询，不通过此记录启动履约或应收款")
+	}
 	if view.Contract.Status != "EXECUTING" {
 		return ExecutionConditionConfirmation{}, apierr.Conflict("EX_CONTRACT_NOT_EXECUTING", "合同尚未开始执行，不能确认执行条件")
 	}

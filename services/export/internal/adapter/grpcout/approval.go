@@ -20,6 +20,11 @@ func NewApprovals(conn *grpc.ClientConn) *Approvals {
 	return &Approvals{client: apv1.NewApprovalServiceClient(conn)}
 }
 
+func (a *Approvals) Withdraw(ctx context.Context, id int64, reason string) error {
+	_, err := a.client.Withdraw(ctx, &apv1.WithdrawRequest{Id: id, Reason: reason})
+	return err
+}
+
 func (a *Approvals) Submit(ctx context.Context, in app.ApprovalSubmission) (int64, error) {
 	resp, err := a.client.Submit(ctx, &apv1.SubmitRequest{
 		BizType: in.BizType, BizId: in.BizID, BizNo: in.BizNo, BizSummary: in.Summary,

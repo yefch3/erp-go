@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	ExportAddr            string
 	DSN                   string
 	GRPCPort              string
 	IAMAddr               string
@@ -25,8 +26,8 @@ type Config struct {
 	KafkaBrokers          []string
 	ContractTopic         string
 	ContractConsumerGroup string
-	ApprovalAddr string
-	ApprovalTopic string
+	ApprovalAddr          string
+	ApprovalTopic         string
 	ApprovalConsumerGroup string
 }
 
@@ -34,6 +35,7 @@ func Load() Config {
 	return Config{
 		DSN:                   env("DB_DSN", "postgres://erp_shipping:erp_shipping_pw@localhost:5433/erp_shipping?sslmode=disable"),
 		GRPCPort:              env("GRPC_PORT", "9009"),
+		ExportAddr:            env("EXPORT_ADDR", "localhost:9006"),
 		IAMAddr:               env("IAM_ADDR", "localhost:9001"),
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
 		MinioEndpoint:         env("MINIO_ENDPOINT", "localhost:19000"),
@@ -48,8 +50,8 @@ func Load() Config {
 		KafkaBrokers:          strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
 		ContractTopic:         env("CONTRACT_TOPIC", "erp.export.contract.v1"),
 		ContractConsumerGroup: env("CONTRACT_CONSUMER_GROUP", "shipping.contract.v1"),
-		ApprovalAddr: env("APPROVAL_ADDR", "localhost:9005"),
-		ApprovalTopic: env("APPROVAL_TOPIC", "erp.approval.task.v1"),
+		ApprovalAddr:          env("APPROVAL_ADDR", "localhost:9005"),
+		ApprovalTopic:         env("APPROVAL_TOPIC", "erp.approval.task.v1"),
 		ApprovalConsumerGroup: env("APPROVAL_CONSUMER_GROUP", "shipping.approval.v1"),
 	}
 }

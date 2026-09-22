@@ -83,6 +83,17 @@ type ContractDueChange struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type ContractHistoryDraft struct {
+	ID         int64
+	TenantID   int64
+	OwnerID    int64
+	Body       []byte
+	Revision   int64
+	ContractID *int64
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type ContractItem struct {
 	ID                 int64
 	TenantID           int64
@@ -159,6 +170,29 @@ type ContractVersion struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       int64
+}
+
+type ContractWorkflow struct {
+	TenantID              int64
+	ContractID            int64
+	History               []byte
+	Revision              int64
+	PreviousStatus        string
+	TerminationRequestKey string
+	TerminationInstanceID int64
+	TerminationReason     string
+}
+
+type ContractWorkflowAction struct {
+	ID         int64
+	TenantID   int64
+	ContractID int64
+	Action     string
+	Reason     string
+	Data       []byte
+	ActorID    int64
+	ActorName  string
+	CreatedAt  pgtype.Timestamptz
 }
 
 type CustomerOffer struct {

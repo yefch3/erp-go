@@ -209,8 +209,11 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	if state, err := svc.CompleteContract(actor(2), tenant, contractID, Operator{ID: 2}); err == nil {
 		t.Fatal("other employee completed", state)
 	}
-	if state, err := svc.CompleteContract(actor(1), tenant, contractID, owner); err != nil || state != "COMPLETED" {
-		t.Fatal("complete", state, err)
+	if _, err := svc.CompleteContract(actor(1), tenant, contractID, owner); err == nil {
+		t.Fatal("legacy completion bypassed checklist")
+	}
+	if _, err := svc.ContractWorkflow(actor(1), tenant, WorkflowCommand{ID: contractID, Action: "complete", Reason: "All departments checked", Revision: 1, Data: json.RawMessage(`{"procurement":true,"logistics":true,"finance":true}`)}, owner); err != nil {
+		t.Fatal("complete", err)
 	}
 	if _, err := svc.UpdateContract(actor(1), tenant, contractID, Terms{}, nil, ContractEditMeta{}, owner); err == nil {
 		t.Fatal("edited completed contract")

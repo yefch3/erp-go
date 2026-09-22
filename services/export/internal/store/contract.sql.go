@@ -1008,7 +1008,7 @@ LEFT JOIN (
     WHERE tenant_id = $1::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
-WHERE c.tenant_id = $1::bigint
+WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.status <> 'DELETED' AND c.tenant_id = $1::bigint
   -- 数据范围沿用合同列表那道围栏：看得见这张合同，才看得见它的进度。
   AND ($2::bool OR c.sales_employee_id = ANY($3::bigint[]))
   -- 默认只看在跑的。签之前没什么进程可言，作废的也不必占地方。
@@ -1275,7 +1275,7 @@ LEFT JOIN LATERAL (
     ORDER BY version_no DESC
     LIMIT 1
 ) v ON true
-WHERE c.tenant_id = $1::bigint
+WHERE c.status <> 'DELETED' AND c.tenant_id = $1::bigint
   -- Data scope. An empty id list with visible_all = false means "nothing",
   -- which is the right answer for someone with no scope at all; it must not
   -- silently widen to everything.
@@ -1492,7 +1492,7 @@ func (q *Queries) LiveContractForQuotation(ctx context.Context, arg LiveContract
 }
 
 const lockContract = `-- name: LockContract :one
-SELECT id, status, coalesce(current_version_id, 0)::bigint AS current_version_id
+SELECT id, status, coalesce(current_version_id, 0)::bigint AS current_version_id, sales_employee_id
 FROM contracts
 WHERE tenant_id = $1 AND id = $2
 FOR UPDATE
@@ -1507,12 +1507,18 @@ type LockContractRow struct {
 	ID               int64
 	Status           string
 	CurrentVersionID int64
+	SalesEmployeeID  int64
 }
 
 func (q *Queries) LockContract(ctx context.Context, arg LockContractParams) (LockContractRow, error) {
 	row := q.db.QueryRow(ctx, lockContract, arg.TenantID, arg.ID)
 	var i LockContractRow
-	err := row.Scan(&i.ID, &i.Status, &i.CurrentVersionID)
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.CurrentVersionID,
+		&i.SalesEmployeeID,
+	)
 	return i, err
 }
 

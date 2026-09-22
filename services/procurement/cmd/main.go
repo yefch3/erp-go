@@ -117,6 +117,7 @@ func run(log *slog.Logger) error {
 		Files:            grpcout.NewFiles(files),
 		Live:             live,
 	})
+	svc.UseContractGuard(grpcout.NewContractGuard(exportConn))
 	// Three-way-match tolerance. Zero unless set: a pilot should first see
 	// how often reality differs before deciding how much to stop looking at.
 	//   MATCH_TOLERANCE_PCT=0.01  → 1% of the payable amount

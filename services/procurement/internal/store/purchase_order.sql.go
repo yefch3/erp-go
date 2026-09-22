@@ -1276,8 +1276,9 @@ SELECT
     source_currency, source_unit_price::text AS source_unit_price,
     required_qty::text                 AS required_qty,
     ordered_qty::text                  AS ordered_qty,
-    (required_qty - ordered_qty)::text AS open_qty,
-    coalesce(required_date::text, '')::text AS required_date
+    contract_requirement_open(tenant_id,id)::text AS open_qty,
+    coalesce(required_date::text, '')::text AS required_date,
+    contract_requirement_group_open(tenant_id,id)::text AS group_open_qty
 FROM purchase_requirements
 WHERE tenant_id = $1::bigint
   AND id = ANY ($2::bigint[])
@@ -1320,6 +1321,7 @@ type RequirementsForOrderRow struct {
 	OrderedQty            string
 	OpenQty               string
 	RequiredDate          string
+	GroupOpenQty          string
 }
 
 // Purchase orders. Same rule as the rest of the system: quantities and money
@@ -1366,6 +1368,7 @@ func (q *Queries) RequirementsForOrder(ctx context.Context, arg RequirementsForO
 			&i.OrderedQty,
 			&i.OpenQty,
 			&i.RequiredDate,
+			&i.GroupOpenQty,
 		); err != nil {
 			return nil, err
 		}

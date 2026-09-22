@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ApprovalService_Withdraw_FullMethodName            = "/erp.approval.v1.ApprovalService/Withdraw"
 	ApprovalService_Submit_FullMethodName              = "/erp.approval.v1.ApprovalService/Submit"
 	ApprovalService_Act_FullMethodName                 = "/erp.approval.v1.ApprovalService/Act"
 	ApprovalService_MyTodos_FullMethodName             = "/erp.approval.v1.ApprovalService/MyTodos"
@@ -43,6 +44,7 @@ const (
 // events. It never calls a business service, and no business service reads
 // its tables.
 type ApprovalServiceClient interface {
+	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error)
 	// Submit starts a flow for one business document. Called by the owning
 	// business service inside its own transaction boundary.
 	Submit(ctx context.Context, in *SubmitRequest, opts ...grpc.CallOption) (*SubmitResponse, error)
@@ -91,6 +93,16 @@ type approvalServiceClient struct {
 
 func NewApprovalServiceClient(cc grpc.ClientConnInterface) ApprovalServiceClient {
 	return &approvalServiceClient{cc}
+}
+
+func (c *approvalServiceClient) Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_Withdraw_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *approvalServiceClient) Submit(ctx context.Context, in *SubmitRequest, opts ...grpc.CallOption) (*SubmitResponse, error) {
@@ -232,6 +244,7 @@ func (c *approvalServiceClient) MyInvolvedDocuments(ctx context.Context, in *MyI
 // events. It never calls a business service, and no business service reads
 // its tables.
 type ApprovalServiceServer interface {
+	Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error)
 	// Submit starts a flow for one business document. Called by the owning
 	// business service inside its own transaction boundary.
 	Submit(context.Context, *SubmitRequest) (*SubmitResponse, error)
@@ -282,6 +295,9 @@ type ApprovalServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedApprovalServiceServer struct{}
 
+func (UnimplementedApprovalServiceServer) Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Withdraw not implemented")
+}
 func (UnimplementedApprovalServiceServer) Submit(context.Context, *SubmitRequest) (*SubmitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Submit not implemented")
 }
@@ -340,6 +356,24 @@ func RegisterApprovalServiceServer(s grpc.ServiceRegistrar, srv ApprovalServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ApprovalService_ServiceDesc, srv)
+}
+
+func _ApprovalService_Withdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).Withdraw(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_Withdraw_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).Withdraw(ctx, req.(*WithdrawRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ApprovalService_Submit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -583,6 +617,10 @@ var ApprovalService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.approval.v1.ApprovalService",
 	HandlerType: (*ApprovalServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Withdraw",
+			Handler:    _ApprovalService_Withdraw_Handler,
+		},
 		{
 			MethodName: "Submit",
 			Handler:    _ApprovalService_Submit_Handler,

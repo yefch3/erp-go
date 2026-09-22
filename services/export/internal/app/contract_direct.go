@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -12,10 +13,11 @@ import (
 
 // DirectContractInput is a contract written up without a quotation behind it.
 type DirectContractInput struct {
-	CustomerID int64
-	Currency   string
-	Terms      Terms
-	Items      []ItemInput
+	ExternalContractNo string
+	CustomerID         int64
+	Currency           string
+	Terms              Terms
+	Items              []ItemInput
 }
 
 // CreateContract writes up a contract that never was a quotation.
@@ -31,6 +33,12 @@ type DirectContractInput struct {
 // because there is an existing owner to protect. Here the person writing it
 // up is the first owner there has ever been.
 func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectContractInput, op Operator) (ContractView, error) {
+	if err := s.checkCustomerAccess(ctx, in.CustomerID); err != nil {
+		return ContractView{}, err
+	}
+	if err := validBusinessDate(in.Terms.DeliveryDate, "EX_DELIVERY_DATE_INVALID", "交货日期"); err != nil {
+		return ContractView{}, err
+	}
 	if in.CustomerID == 0 {
 		return ContractView{}, apierr.Invalid("EX_CUSTOMER_REQUIRED", "请选择客户")
 	}
@@ -61,7 +69,7 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 			WithMeta("customer", customer.Name)
 	}
 
-	priced, total, err := s.priceLines(ctx, in.Items)
+	priced, total, err := s.priceExistingLines(ctx, in.Items)
 	if err != nil {
 		return ContractView{}, err
 	}
@@ -69,7 +77,7 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 
 	// Read once, store with the document. Everything downstream reads the
 	// stored copy — same rule as a quotation, for the same reason.
-	rate, err := s.rates.Latest(ctx, in.Currency)
+	rate, err := s.effectiveContractRate(ctx, in.Currency)
 	if err != nil {
 		return ContractView{}, err
 	}
@@ -115,6 +123,12 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 		})
 		if err != nil {
 			return translateUnique(err, "EX_CONTRACT_NO_TAKEN", "合同号已存在")
+		}
+		if _, err := tx.Exec(ctx, `UPDATE contracts SET external_contract_no=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, strings.TrimSpace(in.ExternalContractNo)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO contract_workflows(tenant_id,contract_id) VALUES($1,$2)`, tenantID, contractID); err != nil {
+			return err
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
 			TenantID: tenantID, ContractID: contractID, VersionNo: 1,

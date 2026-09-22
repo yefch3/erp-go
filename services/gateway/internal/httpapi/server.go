@@ -356,6 +356,9 @@ func (s *Server) Router() http.Handler {
 		// Contracts. Signing is what makes a version binding, so it sits
 		// behind the write permission like every other state change.
 		r.With(s.perm("export:contract:read")).Get("/api/contracts", s.listContracts)
+		r.With(s.perm("export:contract:write")).Post("/api/contract-history-drafts", s.contractWorkflow)
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/workflow", s.contractWorkflow)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/workflow", s.contractWorkflow)
 		// 合同执行一览（D2）。挂在合同的读权限下，因为这一行问的就是
 		// 「我这张合同办到哪了」——看得见合同才看得见它的进度。
 		r.With(s.perm("export:contract:read")).Get("/api/contract-execution", s.listContractExecution)
