@@ -68,7 +68,7 @@ func TestContractVersionDemandIncludesOldCommitments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `UPDATE purchase_requirements SET ordered_qty=3 WHERE tenant_id=$1 AND id=$2`, tenant, ids[0]); err != nil {
 		t.Fatal(err)
 	}
