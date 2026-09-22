@@ -623,7 +623,7 @@ INSERT INTO customer_contacts (
     $12, $13, $14,
     $15, $16, $16
 )
-RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories, additional_emails
 `
 
 type CreateCustomerContactParams struct {
@@ -687,6 +687,7 @@ func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerC
 		&i.UpdatedBy,
 		&i.EmailPermission,
 		&i.EmailCategories,
+		&i.AdditionalEmails,
 	)
 	return i, err
 }
@@ -1079,10 +1080,10 @@ func (q *Queries) CustomerCodeExists(ctx context.Context, arg CustomerCodeExists
 
 const customerDuplicateCandidates = `-- name: CustomerDuplicateCandidates :many
 SELECT DISTINCT c.id, c.code, c.name, c.tax_id,
-       coalesce((SELECT cc.email FROM customer_contacts cc
+       coalesce((SELECT CASE WHEN lower(btrim($1::text))=ANY(cc.additional_emails) THEN $1::text ELSE cc.email END FROM customer_contacts cc
                  WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
-                   AND cc.status = 'ACTIVE' AND cc.email <> ''
-                 ORDER BY (lower(btrim(cc.email)) = lower(btrim($1::text))) DESC,
+                   AND cc.status = 'ACTIVE' AND (cc.email <> '' OR cardinality(cc.additional_emails)>0)
+                 ORDER BY (lower(btrim(cc.email)) = lower(btrim($1::text)) OR lower(btrim($1::text))=ANY(cc.additional_emails)) DESC,
                           cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
 FROM customers c
 WHERE c.tenant_id = $2
@@ -1099,7 +1100,7 @@ WHERE c.tenant_id = $2
       SELECT 1 FROM customer_contacts cc
       WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
         AND cc.status = 'ACTIVE'
-        AND lower(btrim(cc.email)) = lower(btrim($1))
+        AND (lower(btrim(cc.email)) = lower(btrim($1)) OR lower(btrim($1::text))=ANY(cc.additional_emails))
     ))
   )
   AND ($6::bigint = 0 OR EXISTS (
@@ -1447,7 +1448,7 @@ func (q *Queries) GetCustomerAddress(ctx context.Context, arg GetCustomerAddress
 }
 
 const getCustomerContact = `-- name: GetCustomerContact :one
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories, additional_emails FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
   AND id = $3
 `
@@ -1483,6 +1484,7 @@ func (q *Queries) GetCustomerContact(ctx context.Context, arg GetCustomerContact
 		&i.UpdatedBy,
 		&i.EmailPermission,
 		&i.EmailCategories,
+		&i.AdditionalEmails,
 	)
 	return i, err
 }
@@ -1995,7 +1997,7 @@ func (q *Queries) ListCustomerChangeLogs(ctx context.Context, arg ListCustomerCh
 }
 
 const listCustomerContacts = `-- name: ListCustomerContacts :many
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories, additional_emails FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
 ORDER BY sort_order, id
 `
@@ -2036,6 +2038,7 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 			&i.UpdatedBy,
 			&i.EmailPermission,
 			&i.EmailCategories,
+			&i.AdditionalEmails,
 		); err != nil {
 			return nil, err
 		}
@@ -2048,7 +2051,7 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 }
 
 const listCustomerContactsDetailed = `-- name: ListCustomerContactsDetailed :many
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories, additional_emails FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
   AND ($3::text = 'ALL' OR status = 'ACTIVE')
 ORDER BY status, is_primary DESC, sort_order, id
@@ -2091,6 +2094,7 @@ func (q *Queries) ListCustomerContactsDetailed(ctx context.Context, arg ListCust
 			&i.UpdatedBy,
 			&i.EmailPermission,
 			&i.EmailCategories,
+			&i.AdditionalEmails,
 		); err != nil {
 			return nil, err
 		}
@@ -3504,7 +3508,7 @@ SET name = $1, department = $2, title = $3,
     email_categories = $13, updated_by = $14, updated_at = now()
 WHERE tenant_id = $15 AND customer_id = $16
   AND id = $17 AND status = 'ACTIVE'
-RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories, additional_emails
 `
 
 type UpdateCustomerContactParams struct {
@@ -3570,6 +3574,7 @@ func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerC
 		&i.UpdatedBy,
 		&i.EmailPermission,
 		&i.EmailCategories,
+		&i.AdditionalEmails,
 	)
 	return i, err
 }

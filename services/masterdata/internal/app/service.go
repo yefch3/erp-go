@@ -117,8 +117,8 @@ func (in CustomerInput) validate() error {
 		if c.Phone != "" && !customerPhonePattern.MatchString(strings.TrimSpace(c.Phone)) {
 			return apierr.Invalid("MD_CONTACT_PHONE_INVALID", "联系人电话格式不正确")
 		}
-		if c.Name == "" {
-			return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名必填")
+		if strings.TrimSpace(c.Name) == "" && strings.TrimSpace(c.Email) == "" {
+			return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名和邮箱至少填写一项")
 		}
 	}
 	return nil
@@ -440,16 +440,41 @@ func (s *Service) DeactivateCustomer(ctx context.Context, tenantID, id, operator
 	})
 }
 
+// Preserve contact identities used by correspondence instead of deleting and
+// recreating every row when an older client saves a complete customer form.
 func replaceContacts(ctx context.Context, q *store.Queries, tenantID, customerID int64, contacts []ContactInput) error {
-	if err := q.DeleteCustomerContacts(ctx, store.DeleteCustomerContactsParams{TenantID: tenantID, CustomerID: customerID}); err != nil {
+	old, err := q.ListCustomerContactsDetailed(ctx, store.ListCustomerContactsDetailedParams{TenantID: tenantID, CustomerID: customerID, Status: "ALL"})
+	if err != nil {
 		return err
 	}
+	if err = q.ClearPrimaryCustomerContact(ctx, store.ClearPrimaryCustomerContactParams{TenantID: tenantID, CustomerID: customerID}); err != nil {
+		return err
+	}
+	used := map[int64]bool{}
 	for i, c := range contacts {
-		if err := q.AddCustomerContact(ctx, store.AddCustomerContactParams{
-			TenantID: tenantID, CustomerID: customerID, Name: c.Name, Title: c.Title,
-			Email: c.Email, Phone: c.Phone, IsPrimary: c.IsPrimary, SortOrder: int32(i),
-		}); err != nil {
+		var existing *store.CustomerContact
+		for j := range old {
+			v := &old[j]
+			if v.Status == "ACTIVE" && !used[v.ID] && ((c.Email != "" && contactHasEmail(*v, c.Email)) || (c.Email == "" && v.Email == "" && v.Name == c.Name)) {
+				existing = v
+				break
+			}
+		}
+		if existing == nil {
+			err = q.AddCustomerContact(ctx, store.AddCustomerContactParams{TenantID: tenantID, CustomerID: customerID, Name: c.Name, Title: c.Title, Email: c.Email, Phone: c.Phone, IsPrimary: c.IsPrimary, SortOrder: int32(i)})
+		} else {
+			used[existing.ID] = true
+			_, err = q.UpdateCustomerContact(ctx, store.UpdateCustomerContactParams{TenantID: tenantID, CustomerID: customerID, ID: existing.ID, Name: c.Name, Title: c.Title, Email: existing.Email, Phone: c.Phone, IsPrimary: c.IsPrimary, SortOrder: int32(i), Department: existing.Department, Mobile: existing.Mobile, InstantMessaging: existing.InstantMessaging, Language: existing.Language, Remark: existing.Remark, EmailPermission: existing.EmailPermission, EmailCategories: existing.EmailCategories})
+		}
+		if err != nil {
 			return err
+		}
+	}
+	for _, v := range old {
+		if v.Status == "ACTIVE" && !used[v.ID] {
+			if _, err = q.DeactivateCustomerContact(ctx, store.DeactivateCustomerContactParams{TenantID: tenantID, CustomerID: customerID, ID: v.ID}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

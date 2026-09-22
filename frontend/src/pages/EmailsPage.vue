@@ -221,7 +221,7 @@
             type="primary"
             @click.stop="openCustomerFromSender"
           >
-            {{ t('emails.createCustomerFromSender') }}
+            {{ customerMailLink?.customer ? customerMailLink.customer.name : t('emails.createCustomerFromSender') }}
           </el-button>
           <span class="grow" />
           <span class="sub in-when" :title="zonedStamp(openedInbound.sentAt || openedInbound.receivedAt)">
@@ -1298,7 +1298,7 @@
     </p>
   </div>
 
-  <CustomerFromMailDialog v-model:open="customerCreateOpen" :draft="customerCreateDraft" />
+  <CustomerFromMailDialog v-model:open="customerCreateOpen" :draft="customerCreateDraft" :inbound-id="openedInbound?.id ?? '0'" @created="onMailCustomerLinked" />
 
   <el-dialog
     v-model="excelTemplateOpen"
@@ -1536,6 +1536,7 @@ import {
 } from '../lib/mailSelection'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
 import { customerDraftFromMail } from '../lib/mailCustomerDraft'
+import type { MailCustomerLink } from '../lib/mailCustomerRecognition'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -2164,11 +2165,25 @@ function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boole
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
+const customerMailLink = ref<MailCustomerLink | null>(null)
+let customerLinkSequence = 0
+watch(() => openedInbound.value?.id, async id => {
+  const seq = ++customerLinkSequence
+  customerMailLink.value = null
+  if (!id || openedInbound.value?.kind === 'ERP' || !auth.can('masterdata:customer:read')) return
+  try {
+    const link = await get<MailCustomerLink>(`/inbound-mails/${id}/customer-link`, undefined, { quiet: true })
+    if (seq === customerLinkSequence) customerMailLink.value = link.customer ? link : null
+  } catch { /* The main mail view remains usable if customer access was revoked. */ }
+})
+function onMailCustomerLinked(link: MailCustomerLink) {
+  if (link.inboundId === openedInbound.value?.id) customerMailLink.value = link
+}
 const customerCreateDraft = computed(() => openedInbound.value
   ? customerDraftFromMail(openedInbound.value, myAddresses.value)
   : null)
 const canCreateCustomerFromSender = computed(() => {
-  return canCreateCustomer.value && customerCreateDraft.value !== null
+  return canCreateCustomer.value && customerCreateDraft.value !== null && openedInbound.value?.kind !== 'ERP'
 })
 
 // Folded by default, and folded again on every open: the details are for the

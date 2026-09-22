@@ -31,6 +31,36 @@ func (h *Handler) CustomerAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 		if !ok || op.TenantID <= 0 || op.EmployeeID <= 0 || access == nil {
 			return nil, apierr.Permission("MD_CUSTOMER_ACCESS_DENIED", "客户访问需要登录用户")
 		}
+		switch req.(type) {
+		case *mdv1.MatchMailCustomerRequest, *mdv1.SaveMailCustomerRequest, *mdv1.GetMailCustomerLinkRequest:
+			permission := "masterdata:customer:read"
+			if _, writing := req.(*mdv1.SaveMailCustomerRequest); writing {
+				permission = "masterdata:customer:write"
+			}
+			check, err := access.CheckPermission(ctx, &iamv1.CheckPermissionRequest{EmployeeId: op.EmployeeID, PermissionCode: permission})
+			if err != nil {
+				return nil, err
+			}
+			if !check.GetAllowed() {
+				return nil, apierr.Permission("MD_MAIL_CUSTOMER_PERMISSION", "没有客户资料操作权限")
+			}
+			ctx = app.WithSupplierAccess(ctx, -1)
+			supplierRead, err := access.CheckPermission(ctx, &iamv1.CheckPermissionRequest{EmployeeId: op.EmployeeID, PermissionCode: "masterdata:supplier:read"})
+			if err != nil {
+				return nil, err
+			}
+			if supplierRead.GetAllowed() {
+				scope, err := access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: op.EmployeeID, Module: "supplier"})
+				if err != nil {
+					return nil, err
+				}
+				supplierEmployee := op.EmployeeID
+				if scope.GetAll() {
+					supplierEmployee = 0
+				}
+				ctx = app.WithSupplierAccess(ctx, supplierEmployee)
+			}
+		}
 		visibility, err := access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: op.EmployeeID, Module: "customer"})
 		if err != nil {
 			return nil, err

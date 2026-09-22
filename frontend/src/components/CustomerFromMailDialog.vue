@@ -1,482 +1,146 @@
 <template>
-  <el-dialog
-    :model-value="open"
-    :title="t('emails.createCustomerTitle')"
-    width="min(920px, 94vw)"
-    top="4vh"
-    append-to-body
-    draggable
-    overflow
-    :modal="false"
-    :close-on-click-modal="false"
-    class="customer-from-mail-dialog"
-    @update:model-value="emit('update:open', $event)"
-  >
-    <p class="dialog-help">{{ t('emails.customerForm.moveHelp') }}</p>
-    <el-alert
-      v-if="matching"
-      type="info"
-      :closable="false"
-      show-icon
-      :title="t('emails.customerForm.matching')"
-      class="match-alert"
-    />
-    <el-alert v-else-if="exactEmailOwner" type="warning" :closable="false" show-icon class="match-alert">
-      <template #title>
-        {{ t('emails.customerForm.emailMatched', { code: exactEmailOwner.code, name: exactEmailOwner.name }) }}
-      </template>
-      <el-button size="small" type="warning" plain @click="useExistingCustomer(exactEmailOwner)">
-        {{ t('emails.customerForm.useExisting') }}
-      </el-button>
-    </el-alert>
-
-    <template v-if="!exactEmailOwner">
-      <!-- 邮件已经给了联系人姓名和邮箱；先用这三项完成新客户建档。
-           其他基础数据都是选填，不该在这一刻挡住用户。 -->
-      <el-form :model="form" label-width="110px" class="customer-grid core-fields">
-        <el-form-item :label="t('customers.name')" required>
-          <el-input v-model="form.name" maxlength="200" :placeholder="t('emails.customerForm.companyNamePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('customers.contactName')" required>
-          <el-input v-model="form.contactName" />
-        </el-form-item>
-        <el-form-item :label="t('customers.contactEmail')" required class="full-row">
-          <el-input v-model="form.contactEmail" />
-        </el-form-item>
-      </el-form>
-
-      <el-alert v-if="targetCompany" type="success" :closable="false" show-icon class="match-alert">
-        <template #title>
-          {{ t('emails.customerForm.companyMatched', { code: targetCompany.code, name: targetCompany.name }) }}
-        </template>
-        {{ t('emails.customerForm.companyMatchedHint') }}
-        <el-button size="small" link type="primary" @click="clearCompanyTarget">
-          {{ t('emails.customerForm.createSeparateCompany') }}
-        </el-button>
-      </el-alert>
-      <div v-else-if="suggestions.length" class="match-candidates">
-        <span>{{ t('emails.customerForm.possibleMatches') }}</span>
-        <el-button
-          v-for="candidate in suggestions"
-          :key="candidate.id"
-          size="small"
-          plain
-          @click="selectExistingCompany(candidate)"
-        >
-          {{ candidate.code }} · {{ candidate.name }}
-        </el-button>
-      </div>
-
-      <el-collapse v-model="expandedPanels" class="advanced-collapse">
-        <el-collapse-item :title="t('emails.customerForm.moreOptional')" name="advanced">
-    <el-tabs v-model="activeSection">
-      <el-tab-pane :label="t('emails.customerForm.basic')" name="basic">
-        <el-form :model="form" label-width="110px" class="customer-grid">
-          <el-form-item :label="t('customers.code')">
-            <el-input v-model="form.code" :placeholder="t('customers.codeAuto')" />
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.shortName')">
-            <el-input v-model="form.shortName" />
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.englishName')">
-            <el-input v-model="form.englishName" />
-          </el-form-item>
-          <el-form-item :label="t('customers.country')">
-            <el-select v-model="form.countryCode" filterable clearable style="width:100%" :placeholder="t('emails.unassignedCountry')">
-              <el-option v-for="c in countries" :key="c.code" :label="c.name" :value="c.code" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('customers.type')">
-            <el-select v-model="form.customerType" clearable style="width:100%">
-              <el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.industry')">
-            <el-input v-model="form.industry" />
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.source')">
-            <el-select v-model="form.source" clearable style="width:100%">
-              <el-option v-for="o in sourceOptions" :key="o.code" :label="o.label" :value="o.code" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('customers.businessStatus')">
-            <el-select v-model="form.businessStatus" style="width:100%">
-              <el-option :label="t('customers.statusProspect')" value="PROSPECT" />
-              <el-option :label="t('customers.statusCooperating')" value="COOPERATING" />
-              <el-option :label="t('customers.statusPaused')" value="PAUSED" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.website')">
-            <el-input v-model="form.website" placeholder="https://example.com" />
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.language')">
-            <el-input v-model="form.primaryLanguage" />
-          </el-form-item>
-          <el-form-item :label="t('customers.timezone')">
-            <el-select v-model="form.timezone" filterable clearable style="width:100%" :placeholder="t('customers.timezonePick')">
-              <el-option v-for="zone in timezoneOptions" :key="zone" :label="zone" :value="zone" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.tags')" class="full-row">
-            <el-select v-model="form.tags" multiple allow-create filterable default-first-option style="width:100%" />
-          </el-form-item>
-          <el-form-item :label="t('customers.remark')" class="full-row">
-            <el-input v-model="form.remark" type="textarea" :rows="2" />
-          </el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('emails.customerForm.contact')" name="contact">
-        <el-form :model="form" label-width="110px" class="customer-grid">
-          <el-form-item :label="t('emails.customerForm.department')"><el-input v-model="form.contactDepartment" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.title')"><el-input v-model="form.contactTitle" /></el-form-item>
-          <el-form-item :label="t('customers.contactPhone')"><el-input v-model="form.contactPhone" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.mobile')"><el-input v-model="form.contactMobile" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.instantMessaging')"><el-input v-model="form.contactInstantMessaging" placeholder="WhatsApp / WeChat" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.contactLanguage')"><el-input v-model="form.contactLanguage" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.emailPermission')">
-            <el-select v-model="form.emailPermission" style="width:100%">
-              <el-option :label="t('emails.customerForm.emailAllowed')" value="ALLOWED" />
-              <el-option :label="t('emails.customerForm.emailOptedOut')" value="OPTED_OUT" />
-              <el-option :label="t('emails.customerForm.emailInvalid')" value="INVALID" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.emailCategories')">
-            <el-select v-model="form.emailCategories" multiple clearable style="width:100%" :placeholder="t('emails.customerForm.allEmailCategories')">
-              <el-option :label="t('emails.customerForm.categoryBusiness')" value="BUSINESS" />
-              <el-option :label="t('emails.customerForm.categoryQuotation')" value="QUOTATION" />
-              <el-option :label="t('emails.customerForm.categoryShipping')" value="SHIPPING" />
-              <el-option :label="t('emails.customerForm.categoryMarketing')" value="MARKETING" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('emails.customerForm.contactRemark')" class="full-row"><el-input v-model="form.contactRemark" type="textarea" :rows="3" /></el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('emails.customerForm.tax')" name="tax">
-        <el-form :model="form" label-width="110px" class="customer-grid">
-          <el-form-item :label="t('emails.customerForm.registeredName')"><el-input v-model="form.registeredName" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.registrationNo')"><el-input v-model="form.registrationNo" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.taxId')"><el-input v-model="form.taxId" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.invoiceTitle')"><el-input v-model="form.invoiceTitle" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.invoiceTaxNo')"><el-input v-model="form.invoiceTaxNo" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.invoiceRemark')" class="full-row"><el-input v-model="form.invoiceRemark" type="textarea" :rows="3" /></el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('emails.customerForm.settlement')" name="settlement">
-        <el-form :model="form" label-width="110px" class="customer-grid">
-          <el-form-item :label="t('customers.currency')"><el-select v-model="form.currency" style="width:100%"><el-option v-for="c in CURRENCIES" :key="c" :label="c" :value="c" /></el-select></el-form-item>
-          <el-form-item :label="t('customers.paymentTerm')"><el-select v-model="form.paymentTerm" clearable style="width:100%"><el-option v-for="o in paymentOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select></el-form-item>
-          <el-form-item :label="t('emails.customerForm.creditLimit')"><el-input-number v-model="form.creditAmount" :min="0" :precision="2" style="width:100%" /></el-form-item>
-          <el-form-item :label="t('emails.customerForm.creditCurrency')"><el-select v-model="form.creditCurrency" style="width:100%"><el-option v-for="c in CURRENCIES" :key="c" :label="c" :value="c" /></el-select></el-form-item>
-          <el-form-item :label="t('emails.customerForm.creditStatus')"><el-select v-model="form.creditStatus" style="width:100%"><el-option :label="t('emails.customerForm.creditNormal')" value="NORMAL" /><el-option :label="t('emails.customerForm.creditWatch')" value="WATCH" /><el-option :label="t('emails.customerForm.creditSuspended')" value="CREDIT_SUSPENDED" /></el-select></el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('emails.customerForm.address')" name="address">
-        <el-form :model="form" label-width="110px" class="customer-grid">
-          <el-form-item :label="t('emails.customerForm.addAddress')" class="full-row"><el-switch v-model="form.includeAddress" /></el-form-item>
-          <template v-if="form.includeAddress">
-            <el-form-item :label="t('emails.customerForm.addressType')"><el-select v-model="form.addressType" style="width:100%"><el-option :label="t('emails.customerForm.addressRegistered')" value="REGISTERED" /><el-option :label="t('emails.customerForm.addressOffice')" value="OFFICE" /><el-option :label="t('emails.customerForm.addressBilling')" value="BILLING" /><el-option :label="t('emails.customerForm.addressShipping')" value="SHIPPING" /></el-select></el-form-item>
-            <el-form-item :label="t('customers.country')"><el-select v-model="form.addressCountryCode" filterable clearable style="width:100%"><el-option v-for="c in countries" :key="c.code" :label="c.name" :value="c.code" /></el-select></el-form-item>
-            <el-form-item :label="t('emails.customerForm.state')"><el-input v-model="form.addressState" /></el-form-item>
-            <el-form-item :label="t('emails.customerForm.city')"><el-input v-model="form.addressCity" /></el-form-item>
-            <el-form-item :label="t('emails.customerForm.postalCode')"><el-input v-model="form.addressPostalCode" /></el-form-item>
-            <el-form-item :label="t('emails.customerForm.defaultAddress')"><el-switch v-model="form.addressDefault" /></el-form-item>
-            <el-form-item :label="t('emails.customerForm.addressLine')" required class="full-row"><el-input v-model="form.addressLine" type="textarea" :rows="3" /></el-form-item>
-          </template>
-        </el-form>
-      </el-tab-pane>
-    </el-tabs>
-        </el-collapse-item>
-      </el-collapse>
+ <el-dialog :model-value="open" :title="copy.title" width="min(760px,94vw)" top="6vh" append-to-body :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving" class="mail-customer-recognition" @update:model-value="emit('update:open',$event)">
+  <div ref="contentEl">
+  <p class="recognition-help">{{copy.help}}</p>
+  <el-form label-position="top" :disabled="saving" class="recognition-fields">
+   <el-form-item :label="copy.email" required class="full"><el-input v-model="form.email" maxlength="200"/></el-form-item>
+   <el-form-item :label="copy.company" required><el-input v-model="form.companyName" :placeholder="copy.companyPlaceholder" maxlength="200"/></el-form-item>
+   <el-form-item :label="copy.person"><el-input v-model="form.name" :placeholder="copy.optional" maxlength="100"/></el-form-item>
+  </el-form>
+  <section class="recognition-results" aria-live="polite" :aria-busy="matching">
+   <div class="result-heading"><strong>{{copy.result}}</strong><el-button link :disabled="saving||matching" @click="lookup">{{copy.retry}}</el-button></div>
+   <p v-if="matching">{{copy.checking}}</p>
+   <el-alert v-if="error" :title="error" type="error" show-icon :closable="false"/>
+   <template v-if="!matching && checked">
+    <el-alert v-if="resolved.conflict||resolved.ambiguous" :title="resolved.conflict?copy.conflict:copy.ambiguous" type="warning" :closable="false" show-icon/>
+    <div v-for="c in activeCompanies" :key="c.id" :class="['company-match',{selected:resolved.company?.id===c.id}]">
+     <div><strong>{{c.name}}</strong><small>{{c.code}}</small><small v-for="contact in (c.contacts??[]).filter(v=>mailContactMatches(v,form.email))" :key="contact.id">{{contact.name||copy.nameless}} · {{form.email}}</small></div>
+     <el-button :disabled="saving" :type="resolved.company?.id===c.id?'primary':undefined" plain size="small" @click="selectCompany(c)">{{resolved.company?.id===c.id?copy.selected:copy.choose}}</el-button>
+    </div>
+    <p v-if="resolved.company">{{action==='SUPPLEMENT'?copy.supplementTip:emailContacts.length?copy.existing:copy.addHint}}</p>
+    <p v-else-if="!activeCompanies.length">{{copy.noMatch}}</p>
+    <el-checkbox v-if="!resolved.company && activeCompanies.length && !resolved.owners.length && !activeCompanies.some(c=>c.exactName)" v-model="confirmNew" :disabled="saving">{{copy.confirmNew}}</el-checkbox>
+    <template v-if="emailContacts.length>1"><p>{{copy.ambiguous}}</p><el-radio-group v-model="contactChoice"><el-radio v-for="c in emailContacts" :key="c.id" :value="c.id">{{c.name||copy.nameless}} · {{c.email}}</el-radio></el-radio-group></template>
+    <template v-if="!emailContacts.length && sameNames.length">
+     <p>{{copy.sameName}}</p><el-radio-group v-model="contactChoice" class="contact-choices" :disabled="saving">
+      <el-radio v-for="c in sameNames" :key="c.id" :value="c.id">{{copy.supplement}} — {{c.name}} <small>{{copy.retained}}: {{[c.email,...(c.additionalEmails??[])].filter(Boolean).join(' / ')}}</small></el-radio>
+      <el-radio value="new">{{copy.newPerson}}</el-radio>
+     </el-radio-group>
     </template>
-    <template #footer>
-      <el-button @click="emit('update:open', false)">{{ t('common.cancel') }}</el-button>
-      <el-button v-if="!exactEmailOwner" type="primary" :loading="saving" @click="save">
-        {{ targetCompany ? t('emails.addContactToExisting') : t('common.save') }}
-      </el-button>
-    </template>
-  </el-dialog>
+    <el-alert v-if="inactiveMatches" :title="copy.stopped" type="info" :closable="false" show-icon/>
+    <div v-if="suppliers.length" class="supplier-matches"><strong>{{copy.suppliers}}</strong><p v-for="s in suppliers" :key="s.id">{{s.code}} · {{s.name}}{{s.status!=='ACTIVE'?' ('+copy.stopped+')':''}}</p><el-checkbox v-if="action==='CREATE' && suppliers.some(s=>s.status==='ACTIVE')" v-model="confirmSupplier" :disabled="saving">{{copy.supplierConfirm}}</el-checkbox></div>
+   </template>
+  </section>
+  <el-collapse v-model="expanded" class="recognition-more"><el-collapse-item name="details" :title="copy.more">
+   <el-form label-position="top" class="recognition-fields" :disabled="saving||action==='USE'||action==='SUPPLEMENT'">
+    <el-form-item :label="copy.phone"><el-input v-model="form.phone" maxlength="50"/></el-form-item>
+    <el-form-item :label="copy.website"><el-input v-model="form.website" maxlength="300" :disabled="action!=='CREATE'"/></el-form-item>
+    <el-form-item :label="copy.address" class="full"><el-input v-model="form.address" maxlength="500" :disabled="action!=='CREATE'"/></el-form-item>
+    <el-form-item :label="copy.remark" class="full"><el-input v-model="form.remark" type="textarea" :rows="2" maxlength="2000"/></el-form-item>
+   </el-form>
+  </el-collapse-item></el-collapse>
+  </div>
+  <template #footer><el-button :disabled="saving" @click="emit('update:open',false)">{{copy.close}}</el-button><el-tooltip :content="actionTip" :show-after="250"><span><el-button type="primary" :loading="saving" :disabled="!canSave" @click="save">{{actionLabel}}</el-button></span></el-tooltip></template>
+ </el-dialog>
 </template>
-
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { useI18n } from 'vue-i18n'
-import { get, post, quietErrors } from '../api'
-import { CURRENCIES } from '../constants'
-import { countryOptions } from '../lib/countries'
-import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
-import {
-  classifyMailCustomerDuplicates,
-  type MailCustomerDraft,
-  type MailCustomerDuplicateCandidate,
-} from '../lib/mailCustomerDraft'
-import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
-import { portTimezoneOptions } from '../lib/portOptions'
-
-interface OptionItem { code: string; label: string }
-
-const props = defineProps<{ open: boolean; draft: MailCustomerDraft | null }>()
-const emit = defineEmits<{ 'update:open': [value: boolean]; created: [customer: { id: string; code: string; name: string }] }>()
-const { t, locale } = useI18n()
-const activeSection = ref('basic')
-const expandedPanels = ref<string[]>([])
-const saving = ref(false)
-const matching = ref(false)
-const exactEmailOwner = ref<MailCustomerDuplicateCandidate | null>(null)
-const matchedCompany = ref<MailCustomerDuplicateCandidate | null>(null)
-const selectedCompany = ref<MailCustomerDuplicateCandidate | null>(null)
-const ignoreCompanyMatch = ref(false)
-const suggestions = ref<MailCustomerDuplicateCandidate[]>([])
-const targetCompany = computed(() => selectedCompany.value ?? matchedCompany.value)
-const typeOptions = ref<OptionItem[]>([])
-const sourceOptions = ref<OptionItem[]>([])
-const paymentOptions = ref<OptionItem[]>([])
-const countries = computed(() => countryOptions(locale.value))
-
-function emptyForm() {
-  return {
-    code: '', name: '', shortName: '', englishName: '', countryCode: '', customerType: '', industry: '',
-    source: 'EMAIL', businessStatus: 'PROSPECT', website: '', primaryLanguage: '', timezone: '', tags: [] as string[], remark: '',
-    contactName: '', contactEmail: '', contactDepartment: '', contactTitle: '', contactPhone: '', contactMobile: '',
-    contactInstantMessaging: '', contactLanguage: '', contactRemark: '', emailPermission: 'ALLOWED', emailCategories: [] as string[],
-    registeredName: '', registrationNo: '', taxId: '', invoiceTitle: '', invoiceTaxNo: '', invoiceRemark: '',
-    currency: 'USD', paymentTerm: '', creditAmount: 0, creditCurrency: 'USD', creditStatus: 'NORMAL',
-    includeAddress: false, addressType: 'OFFICE', addressCountryCode: '', addressState: '', addressCity: '',
-    addressPostalCode: '', addressLine: '', addressDefault: true,
-  }
+import {computed,reactive,ref,watch,onBeforeUnmount,onMounted,nextTick} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {ElMessage} from 'element-plus'
+import {get,post,quietErrors} from '../api'
+import {newIdempotencySession,withIdempotency} from '../lib/idempotency'
+import type {MailCustomerDraft} from '../lib/mailCustomerDraft'
+import {mailCustomerCopy} from '../lib/mailCustomerCopy'
+import {resolveMailCustomer,mailContactMatches,normalizedMailValue,type MailCompanyMatch,type MailCustomerLink} from '../lib/mailCustomerRecognition'
+const props=defineProps<{open:boolean;draft:MailCustomerDraft|null;inboundId:string}>()
+const emit=defineEmits<{'update:open':[boolean];created:[MailCustomerLink]}>()
+const {locale}=useI18n()
+const copy=computed(()=>mailCustomerCopy[locale.value.startsWith('zh')?'zh':locale.value.startsWith('es')?'es':'en'])
+const form=reactive({companyName:'',name:'',email:'',phone:'',website:'',address:'',remark:''})
+const companies=ref<MailCompanyMatch[]>([]),suppliers=ref<MailCompanyMatch[]>([]),selectedId=ref(''),contactChoice=ref(''),confirmNew=ref(false),confirmSupplier=ref(false)
+const matching=ref(false),saving=ref(false),checked=ref(false),error=ref(''),expanded=ref<string[]>([])
+const contentEl=ref<HTMLElement|null>(null)
+let scrollObserver:ResizeObserver|undefined
+async function fitScrollArea(){
+ await nextTick()
+ scrollObserver?.disconnect()
+ const content=contentEl.value,body=content?.parentElement
+ if(!content||!body)return
+ const fit=()=>{body.style.overflowY=content.scrollHeight>body.clientHeight+1?'auto':'hidden'}
+ scrollObserver=new ResizeObserver(fit);scrollObserver.observe(content);scrollObserver.observe(body);fit()
 }
-const form = reactive(emptyForm())
-const timezoneOptions = computed(() => portTimezoneOptions(form.countryCode))
-
-let matchTimer = 0
-let matchSequence = 0
-
-function applyDuplicateCandidates(candidates: MailCustomerDuplicateCandidate[]) {
-  const result = classifyMailCustomerDuplicates(candidates)
-  exactEmailOwner.value = result.emailOwner
-  matchedCompany.value = ignoreCompanyMatch.value ? null : result.existingCompany
-  suggestions.value = ignoreCompanyMatch.value && result.existingCompany
-    ? [result.existingCompany, ...result.suggestions]
-    : result.suggestions
-}
-
-async function precheckDuplicates() {
-  const sequence = ++matchSequence
-  const name = form.name.trim()
-  const email = form.contactEmail.trim()
-  if (!name && !email) {
-    applyDuplicateCandidates([])
-    matching.value = false
-    return
-  }
-  matching.value = true
-  try {
-    const duplicates = await get<{ candidates?: MailCustomerDuplicateCandidate[] }>(
-      '/customers/duplicates', { name, email }, quietErrors,
-    )
-    if (sequence !== matchSequence) return
-    applyDuplicateCandidates(duplicates.candidates ?? [])
-  } catch {
-    // 预检失败不阻塞建档；保存时仍会做最终检查。
-    if (sequence === matchSequence) applyDuplicateCandidates([])
-  } finally {
-    if (sequence === matchSequence) matching.value = false
-  }
-}
-
-function schedulePrecheck(delay = 350) {
-  window.clearTimeout(matchTimer)
-  matchTimer = window.setTimeout(() => void precheckDuplicates(), delay)
-}
-
-function selectExistingCompany(candidate: MailCustomerDuplicateCandidate) {
-  ignoreCompanyMatch.value = false
-  selectedCompany.value = candidate
-  matchedCompany.value = null
-  suggestions.value = suggestions.value.filter((item) => item.id !== candidate.id)
-}
-
-function clearCompanyTarget() {
-  const previous = targetCompany.value
-  selectedCompany.value = null
-  matchedCompany.value = null
-  ignoreCompanyMatch.value = true
-  if (previous && !suggestions.value.some((item) => item.id === previous.id)) {
-    suggestions.value = [previous, ...suggestions.value]
-  }
-}
-
-function useExistingCustomer(customer: MailCustomerDuplicateCandidate) {
-  emit('update:open', false)
-  emit('created', customer)
-}
-
-watch(() => form.countryCode, (countryCode, previous) => {
-  if (!form.addressCountryCode || form.addressCountryCode === previous) form.addressCountryCode = countryCode
-  if (form.timezone && !timezoneOptions.value.includes(form.timezone)) form.timezone = ''
+const idem=newIdempotencySession()
+let sequence=0,timer:ReturnType<typeof setTimeout>|undefined,initializing=false
+const activeCompanies=computed(()=>companies.value.filter(c=>c.status==='ACTIVE'))
+const resolved=computed(()=>resolveMailCustomer(companies.value,form.email,form.companyName,selectedId.value))
+const emailContacts=computed(()=>resolved.value.contacts.filter(c=>mailContactMatches(c,form.email)))
+const sameNames=computed(()=>resolved.value.contacts.filter(c=>form.name.trim()&&normalizedMailValue(c.name)===normalizedMailValue(form.name)))
+const inactiveMatches=computed(()=>companies.value.some(c=>c.status!=='ACTIVE'||(c.contacts??[]).some(ct=>ct.status!=='ACTIVE'&&[ct.email,...(ct.additionalEmails??[])].some(e=>normalizedMailValue(e)===normalizedMailValue(form.email)))))
+const chosenContact=computed(()=>emailContacts.value.length===1?emailContacts.value[0]:resolved.value.contacts.find(c=>c.id===contactChoice.value))
+const action=computed(()=>!resolved.value.company?'CREATE':emailContacts.value.length?'USE':sameNames.value.some(c=>c.id===contactChoice.value)?'SUPPLEMENT':'ADD')
+const actionLabel=computed(()=>({CREATE:copy.value.create,ADD:copy.value.add,USE:copy.value.use,SUPPLEMENT:copy.value.addEmail})[action.value])
+const actionTip=computed(()=>({CREATE:copy.value.createTip,ADD:copy.value.addTip,USE:copy.value.useTip,SUPPLEMENT:copy.value.supplementTip})[action.value])
+const canSave=computed(()=>{
+ if(saving.value||matching.value||!checked.value||resolved.value.conflict||resolved.value.ambiguous)return false
+ if(!form.companyName.trim()||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))return false
+ if(action.value==='CREATE')return !resolved.value.owners.length&&(!activeCompanies.value.length||confirmNew.value)&&(!suppliers.value.some(s=>s.status==='ACTIVE')||confirmSupplier.value)
+ if(action.value==='USE')return Boolean(chosenContact.value)
+ return !sameNames.value.length||Boolean(contactChoice.value)
 })
-
-watch([() => form.name, () => form.contactEmail], () => {
-  if (!props.open) return
-  ignoreCompanyMatch.value = false
-  selectedCompany.value = null
-  schedulePrecheck()
+function failure(e:unknown){error.value=e&&typeof e==='object'&&'message' in e?String(e.message):copy.value.failed}
+async function lookup(){
+ const seq=++sequence;checked.value=false;matching.value=true;error.value=''
+ const name=form.companyName,email=form.email
+ try{
+  const v=await get<{customers?:MailCompanyMatch[];suppliers?:MailCompanyMatch[]}>(`/inbound-mails/${props.inboundId}/customer-matches`,{company_name:name,email},quietErrors)
+  if(seq!==sequence||!props.open)return
+  companies.value=v.customers??[];suppliers.value=v.suppliers??[];checked.value=true
+  if(selectedId.value&&!activeCompanies.value.some(c=>c.id===selectedId.value))selectedId.value=''
+  if(!name.trim()&&resolved.value.company){selectCompany(resolved.value.company)}
+ }catch(e){if(seq===sequence){failure(e);checked.value=false}}finally{if(seq===sequence)matching.value=false}
+}
+function selectCompany(c:MailCompanyMatch){
+ if(saving.value)return
+ selectedId.value=c.id;contactChoice.value='';confirmNew.value=false
+ initializing=true;form.companyName=c.name;initializing=false
+ const owner=(c.contacts??[]).filter(ct=>mailContactMatches(ct,form.email))
+ if(owner.length===1&&!form.name.trim())form.name=owner[0].name
+}
+watch([()=>form.companyName,()=>form.email],()=>{
+ if(!props.open||initializing)return
+ selectedId.value='';contactChoice.value='';confirmNew.value=false;confirmSupplier.value=false;checked.value=false;++sequence
+ clearTimeout(timer);timer=setTimeout(()=>void lookup(),350)
+},{flush:'sync'})
+watch(()=>form.name,()=>{contactChoice.value=''})
+watch(()=>props.open,async open=>{
+ clearTimeout(timer);++sequence
+ if(!open){matching.value=false;scrollObserver?.disconnect();return}
+ initializing=true
+ Object.assign(form,{companyName:props.draft?.companyName??'',name:props.draft?.name??'',email:props.draft?.email??'',phone:props.draft?.phone??'',website:props.draft?.website??'',address:props.draft?.address??'',remark:''})
+ initializing=false;companies.value=[];suppliers.value=[];selectedId.value='';contactChoice.value='';confirmNew.value=false;confirmSupplier.value=false;error.value='';expanded.value=[];idem.reset()
+ await fitScrollArea()
+ await lookup()
 })
-
-watch(() => props.open, async (open) => {
-  if (!open) {
-    window.clearTimeout(matchTimer)
-    matchSequence++
-    matching.value = false
-    return
-  }
-  Object.assign(form, emptyForm(), {
-    // From 只能确定联系人，不能把一个人名当成公司名。
-    name: '', contactName: props.draft?.name ?? '', contactEmail: props.draft?.email ?? '',
-  })
-  activeSection.value = 'basic'
-  expandedPanels.value = []
-  exactEmailOwner.value = null
-  matchedCompany.value = null
-  selectedCompany.value = null
-  ignoreCompanyMatch.value = false
-  suggestions.value = []
-  schedulePrecheck(0)
-  try {
-    const [types, sources, payments] = await Promise.all([
-      get<{ options: OptionItem[] }>('/options', { category: 'CUSTOMER_TYPE' }),
-      get<{ options: OptionItem[] }>('/options', { category: 'CUSTOMER_SOURCE' }),
-      get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' }),
-    ])
-    typeOptions.value = types.options ?? []
-    sourceOptions.value = sources.options ?? []
-    paymentOptions.value = payments.options ?? []
-  } catch {
-    // The form remains usable; the shared API interceptor has already shown the error.
-  }
-})
-
-async function save() {
-  const name = form.name.trim()
-  const email = form.contactEmail.trim()
-  if (!name) { ElMessage.warning(t('customers.required')); return }
-  const contactError = validateCustomerContact({ name: form.contactName, email, phone: form.contactPhone, mobile: form.contactMobile })
-  if (contactError) {
-    if (contactError === 'phoneInvalid') {
-      expandedPanels.value = ['advanced']
-      activeSection.value = 'contact'
-    }
-    ElMessage.warning(t(`customers.${contactError}`))
-    return
-  }
-  const profileError = validateCustomerProfile({ website: form.website, timezone: form.timezone })
-  if (profileError) {
-    expandedPanels.value = ['advanced']
-    activeSection.value = 'basic'
-    ElMessage.warning(t(`customers.${profileError}`))
-    return
-  }
-  if (form.includeAddress && !form.addressLine.trim()) {
-    expandedPanels.value = ['advanced']
-    activeSection.value = 'address'
-    ElMessage.warning(t('emails.customerForm.addressRequired'))
-    return
-  }
-
-  saving.value = true
-  try {
-    const duplicates = await get<{ candidates?: MailCustomerDuplicateCandidate[] }>(
-      '/customers/duplicates', { name, email, tax_id: form.taxId },
-    )
-    const candidates = duplicates.candidates ?? []
-    const result = classifyMailCustomerDuplicates(candidates)
-    if (result.emailOwner) {
-      applyDuplicateCandidates(candidates)
-      ElMessage.warning(t('emails.customerEmailExists', {
-        code: result.emailOwner.code,
-        name: result.emailOwner.name,
-      }))
-      return
-    }
-    const contact = {
-      name: form.contactName.trim(), email, department: form.contactDepartment, title: form.contactTitle,
-      phone: form.contactPhone, mobile: form.contactMobile, instantMessaging: form.contactInstantMessaging,
-      language: form.contactLanguage, remark: form.contactRemark, isPrimary: true, emailPermission: form.emailPermission,
-      emailCategories: form.emailCategories,
-    }
-    const existingCompany = selectedCompany.value
-      ?? (ignoreCompanyMatch.value ? null : result.existingCompany)
-    if (existingCompany) {
-      const existingContacts = await get<{ contacts?: Array<{ email?: string }> }>(
-        `/customers/${existingCompany.id}/contacts`, { status: 'ALL' },
-      )
-      if ((existingContacts.contacts ?? []).some((item) => item.email?.trim().toLowerCase() === email.toLowerCase())) {
-        ElMessage.warning(t('emails.customerEmailExists', { code: existingCompany.code, name: existingCompany.name }))
-        return
-      }
-      // 名称在最终检查才刚刚命中时，先把结果放回表单，不用一个
-      // 提交末尾的弹窗迫使用户立即决定。下一次按键文案会明确说
-      // “添加联系人”。
-      if (targetCompany.value?.id !== existingCompany.id) {
-        matchedCompany.value = existingCompany
-        suggestions.value = result.suggestions
-        ElMessage.info(t('emails.customerForm.reviewCompanyMatch'))
-        return
-      }
-      await post(`/customers/${existingCompany.id}/contacts`, {
-        contact: { ...contact, isPrimary: false },
-      })
-      emit('update:open', false)
-      emit('created', existingCompany)
-      ElMessage.success(t('emails.customerContactAdded', {
-        contact: contact.name,
-        code: existingCompany.code,
-        name: existingCompany.name,
-      }))
-      return
-    }
-    await confirmPossibleDuplicates(ignoreCompanyMatch.value ? candidates : result.suggestions, t)
-    const { customer } = await post<{ customer: { id: string; code: string; name: string } }>('/customers', {
-      code: form.code, name, country: '', countryCode: form.countryCode, address: form.includeAddress ? form.addressLine : '',
-      currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark, contacts: [contact],
-      shortName: form.shortName, englishName: form.englishName, customerType: form.customerType, industry: form.industry,
-      source: form.source || 'EMAIL', tags: form.tags, website: form.website, primaryLanguage: form.primaryLanguage,
-      timezone: form.timezone, registeredName: form.registeredName, registrationNo: form.registrationNo, taxId: form.taxId,
-      invoiceTitle: form.invoiceTitle, invoiceTaxNo: form.invoiceTaxNo, invoiceRemark: form.invoiceRemark,
-      creditLimitMinor: Math.round(Number(form.creditAmount || 0) * 100), creditCurrency: form.creditCurrency,
-      creditStatus: form.creditStatus, businessStatus: form.businessStatus,
-    })
-    if (form.includeAddress) {
-      await post(`/customers/${customer.id}/addresses`, { address: {
-        addressType: form.addressType, countryCode: form.addressCountryCode, state: form.addressState,
-        city: form.addressCity, postalCode: form.addressPostalCode, addressLine: form.addressLine,
-        isDefault: form.addressDefault, sortOrder: 0,
-      } })
-    }
-    emit('update:open', false)
-    emit('created', customer)
-    ElMessage.success(t('emails.customerCreated', { code: customer.code }))
-  } finally {
-    saving.value = false
-  }
+function refreshOnFocus(){if(props.open&&!saving.value)void lookup()}
+onMounted(()=>window.addEventListener('focus',refreshOnFocus))
+onBeforeUnmount(()=>{scrollObserver?.disconnect();clearTimeout(timer);++sequence;window.removeEventListener('focus',refreshOnFocus)})
+async function save(){
+ if(!canSave.value)return
+ saving.value=true;error.value=''
+ const inboundId=props.inboundId
+ try{
+  const result=await post<MailCustomerLink>(`/inbound-mails/${props.inboundId}/customer-link`,{action:action.value,customerId:resolved.value.company?.id??'0',contactId:chosenContact.value?.id??'0',companyName:form.companyName.trim(),contactName:form.name.trim(),email:form.email.trim(),phone:form.phone.trim(),website:form.website.trim(),address:form.address.trim(),remark:form.remark,confirmSameName:contactChoice.value==='new',confirmSupplier:confirmSupplier.value},withIdempotency(idem,quietErrors))
+  idem.reset();emit('created',{...result,inboundId});emit('update:open',false);ElMessage.success(copy.value.saved)
+ }catch(e){failure(e);checked.value=false}finally{saving.value=false}
 }
 </script>
-
 <style scoped>
-.dialog-help { margin: -6px 0 10px; color: var(--el-text-color-secondary); font-size: 12px; }
-.customer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
-.full-row { grid-column: 1 / -1; }
-.core-fields { padding: 14px 14px 0; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
-.match-alert { margin-bottom: 12px; }
-.match-alert :deep(.el-alert__content) { min-width: 0; }
-.match-alert .el-button { margin: 8px 0 0; }
-.match-candidates { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--el-color-warning-light-5); border-radius: 8px; background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 13px; }
-.advanced-collapse { margin-top: 12px; }
-.advanced-collapse :deep(.el-collapse-item__header) { font-weight: 600; }
-@media (max-width: 720px) { .customer-grid { grid-template-columns: 1fr; } .full-row { grid-column: auto; } }
-:global(.customer-from-mail-dialog .el-dialog__body) { max-height: 72vh; overflow: auto; }
+.recognition-help{margin:0 0 20px;color:var(--el-text-color-secondary);line-height:1.7;white-space:normal}
+.recognition-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 20px}.full{grid-column:1/-1}
+.recognition-results{border:1px solid var(--el-border-color-light);background:var(--el-fill-color-extra-light);border-radius:10px;padding:14px 16px;margin:0 0 18px}.recognition-results p{line-height:1.65;margin:10px 0}.result-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.company-match{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--el-bg-color);border:1px solid var(--el-border-color-light);padding:12px;border-radius:8px;margin:10px 0}.company-match.selected{border-color:var(--el-color-primary)}.company-match small{display:block;color:var(--el-text-color-secondary);margin-top:4px;overflow-wrap:anywhere}.company-match>div{min-width:0}
+.contact-choices{display:flex;flex-direction:column;align-items:stretch}.contact-choices :deep(.el-radio){height:auto;margin:8px 0}.contact-choices :deep(.el-radio__label){white-space:normal;line-height:1.7}.contact-choices small{display:block}.supplier-matches{margin-top:14px;padding-top:12px;border-top:1px solid var(--el-border-color-light)}
+.recognition-results :deep(.el-checkbox){height:auto;white-space:normal}.recognition-results :deep(.el-checkbox__label){white-space:normal;line-height:1.6}.recognition-more{margin-top:4px}
+:global(.mail-customer-recognition){display:flex;flex-direction:column;max-height:88vh;margin-bottom:0;box-sizing:border-box}:global(.mail-customer-recognition .el-dialog__header){margin:0;padding-bottom:18px}:global(.mail-customer-recognition .el-dialog__body){min-height:0;overflow-y:auto;padding:0 6px 0 0}:global(.mail-customer-recognition .el-dialog__footer){flex-shrink:0;padding-top:18px}:global(.mail-customer-recognition .el-dialog__footer>span){display:inline-block;margin-left:12px}
+@media(max-width:560px){.recognition-fields{grid-template-columns:1fr}.company-match{align-items:flex-start;flex-direction:column}}
 </style>

@@ -1,6 +1,11 @@
+import { recognizeMailContact } from './mailCustomerRecognition'
 export interface MailCustomerDraft {
   name: string
   email: string
+  companyName?: string
+  phone?: string
+  website?: string
+  address?: string
 }
 
 export interface MailCustomerHeaders {
@@ -8,6 +13,8 @@ export interface MailCustomerHeaders {
   fromEmail?: string
   toName?: string
   toEmail?: string
+  bodyText?: string
+  bodyHtml?: string
 }
 
 export interface MailCustomerDuplicateCandidate {
@@ -61,11 +68,6 @@ export function existingCompanyForMailContact<T extends MailCustomerDuplicateCan
   return exact.length === 1 ? exact[0] : null
 }
 
-function fallbackName(email: string): string {
-  const local = email.split('@')[0]?.trim() ?? ''
-  return local || email
-}
-
 // 客户身份来自邮件头，而不是正文选区。正文里可能出现抄送人、签名、产品名
 // 或历史引用；From 的姓名和邮箱才是这封来信明确声明的发件人。
 export function customerDraftFromSender(
@@ -73,7 +75,7 @@ export function customerDraftFromSender(
   fromEmail: string,
 ): MailCustomerDraft {
   const email = fromEmail.trim()
-  const name = fromName.trim() || fallbackName(email)
+  const name = fromName.trim()
   return { name, email }
 }
 
@@ -92,7 +94,17 @@ export function customerDraftFromMail(
   const own = new Set(Array.from(ownAddresses, normalized).filter(Boolean))
   const fromEmail = mail.fromEmail?.trim() ?? ''
   if (fromEmail && !own.has(normalized(fromEmail))) {
-    return customerDraftFromSender(mail.fromName ?? '', fromEmail)
+    let text = mail.bodyText ?? ''
+    if (!text && mail.bodyHtml && typeof DOMParser !== 'undefined') {
+      const doc = new DOMParser().parseFromString(mail.bodyHtml, 'text/html')
+      doc.querySelectorAll('blockquote,script,style,.gmail_quote').forEach(node => node.remove())
+      doc.querySelectorAll('br').forEach(node => node.replaceWith('\n'))
+      doc.querySelectorAll('p,div,tr').forEach(node => node.append('\n'))
+      text = doc.body.textContent ?? ''
+    }
+    const fields = recognizeMailContact(text)
+    const sender = customerDraftFromSender(mail.fromName ?? '', fromEmail)
+    return { ...fields, ...sender, name: sender.name || fields.name || '' }
   }
 
   const toEmail = mail.toEmail?.trim() ?? ''

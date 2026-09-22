@@ -19,6 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	CustomerService_MatchMailCustomer_FullMethodName                 = "/erp.masterdata.v1.CustomerService/MatchMailCustomer"
+	CustomerService_SaveMailCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/SaveMailCustomer"
+	CustomerService_GetMailCustomerLink_FullMethodName               = "/erp.masterdata.v1.CustomerService/GetMailCustomerLink"
 	CustomerService_GetCustomerBasic_FullMethodName                  = "/erp.masterdata.v1.CustomerService/GetCustomerBasic"
 	CustomerService_SaveCustomerBasic_FullMethodName                 = "/erp.masterdata.v1.CustomerService/SaveCustomerBasic"
 	CustomerService_DeleteCustomerDocument_FullMethodName            = "/erp.masterdata.v1.CustomerService/DeleteCustomerDocument"
@@ -67,6 +70,9 @@ const (
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceClient interface {
+	MatchMailCustomer(ctx context.Context, in *MatchMailCustomerRequest, opts ...grpc.CallOption) (*MatchMailCustomerResponse, error)
+	SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error)
+	GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error)
 	GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error)
 	SaveCustomerBasic(ctx context.Context, in *SaveCustomerBasicRequest, opts ...grpc.CallOption) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(ctx context.Context, in *DeleteCustomerDocumentRequest, opts ...grpc.CallOption) (*DeleteCustomerDocumentResponse, error)
@@ -126,6 +132,36 @@ type customerServiceClient struct {
 
 func NewCustomerServiceClient(cc grpc.ClientConnInterface) CustomerServiceClient {
 	return &customerServiceClient{cc}
+}
+
+func (c *customerServiceClient) MatchMailCustomer(ctx context.Context, in *MatchMailCustomerRequest, opts ...grpc.CallOption) (*MatchMailCustomerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MatchMailCustomerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_MatchMailCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) SaveMailCustomer(ctx context.Context, in *SaveMailCustomerRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MailCustomerLinkResponse)
+	err := c.cc.Invoke(ctx, CustomerService_SaveMailCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) GetMailCustomerLink(ctx context.Context, in *GetMailCustomerLinkRequest, opts ...grpc.CallOption) (*MailCustomerLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MailCustomerLinkResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetMailCustomerLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *customerServiceClient) GetCustomerBasic(ctx context.Context, in *GetCustomerBasicRequest, opts ...grpc.CallOption) (*GetCustomerBasicResponse, error) {
@@ -525,6 +561,9 @@ func (c *customerServiceClient) ContactsInCountry(ctx context.Context, in *Conta
 // CustomerService owns customer master data. Quotation/contract/receivable
 // reference customers by id and never copy-maintain them.
 type CustomerServiceServer interface {
+	MatchMailCustomer(context.Context, *MatchMailCustomerRequest) (*MatchMailCustomerResponse, error)
+	SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*MailCustomerLinkResponse, error)
+	GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*MailCustomerLinkResponse, error)
 	GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error)
 	SaveCustomerBasic(context.Context, *SaveCustomerBasicRequest) (*SaveCustomerBasicResponse, error)
 	DeleteCustomerDocument(context.Context, *DeleteCustomerDocumentRequest) (*DeleteCustomerDocumentResponse, error)
@@ -586,6 +625,15 @@ type CustomerServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCustomerServiceServer struct{}
 
+func (UnimplementedCustomerServiceServer) MatchMailCustomer(context.Context, *MatchMailCustomerRequest) (*MatchMailCustomerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MatchMailCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) SaveMailCustomer(context.Context, *SaveMailCustomerRequest) (*MailCustomerLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveMailCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) GetMailCustomerLink(context.Context, *GetMailCustomerLinkRequest) (*MailCustomerLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMailCustomerLink not implemented")
+}
 func (UnimplementedCustomerServiceServer) GetCustomerBasic(context.Context, *GetCustomerBasicRequest) (*GetCustomerBasicResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerBasic not implemented")
 }
@@ -722,6 +770,60 @@ func RegisterCustomerServiceServer(s grpc.ServiceRegistrar, srv CustomerServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&CustomerService_ServiceDesc, srv)
+}
+
+func _CustomerService_MatchMailCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MatchMailCustomerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).MatchMailCustomer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_MatchMailCustomer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).MatchMailCustomer(ctx, req.(*MatchMailCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_SaveMailCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveMailCustomerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).SaveMailCustomer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_SaveMailCustomer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).SaveMailCustomer(ctx, req.(*SaveMailCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_GetMailCustomerLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMailCustomerLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetMailCustomerLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetMailCustomerLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetMailCustomerLink(ctx, req.(*GetMailCustomerLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _CustomerService_GetCustomerBasic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1433,6 +1535,18 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.masterdata.v1.CustomerService",
 	HandlerType: (*CustomerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "MatchMailCustomer",
+			Handler:    _CustomerService_MatchMailCustomer_Handler,
+		},
+		{
+			MethodName: "SaveMailCustomer",
+			Handler:    _CustomerService_SaveMailCustomer_Handler,
+		},
+		{
+			MethodName: "GetMailCustomerLink",
+			Handler:    _CustomerService_GetMailCustomerLink_Handler,
+		},
 		{
 			MethodName: "GetCustomerBasic",
 			Handler:    _CustomerService_GetCustomerBasic_Handler,

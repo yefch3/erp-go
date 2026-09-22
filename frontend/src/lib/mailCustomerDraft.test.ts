@@ -13,9 +13,9 @@ describe('customerDraftFromSender', () => {
     )).toEqual({ name: 'Hans Weber', email: 'hans@example.com' })
   })
 
-  it('falls back to the email local part when the display name is empty', () => {
+  it('leaves the name empty when the display name is unavailable', () => {
     expect(customerDraftFromSender('', 'new.customer@example.com')).toEqual({
-      name: 'new.customer', email: 'new.customer@example.com',
+      name: '', email: 'new.customer@example.com',
     })
   })
 })

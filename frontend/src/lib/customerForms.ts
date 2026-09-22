@@ -18,7 +18,7 @@ const phonePattern = /^[0-9+()\-. ]{6,30}$/
 
 // 客户列表和详情页共用同一套联系人校验，避免两个入口的规则不一致。
 export function validateCustomerContact(form: CustomerContactFormInput): CustomerContactValidationError | null {
-  if (!form.name.trim()) return 'nameRequired'
+  if (!form.name.trim() && !form.email?.trim()) return 'nameRequired'
   const email = form.email?.trim() ?? ''
   if (email && !emailPattern.test(email)) return 'emailInvalid'
   for (const value of [form.phone, form.mobile]) {

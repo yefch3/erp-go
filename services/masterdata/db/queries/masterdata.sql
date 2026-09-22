@@ -284,10 +284,10 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id);
 
 -- name: CustomerDuplicateCandidates :many
 SELECT DISTINCT c.id, c.code, c.name, c.tax_id,
-       coalesce((SELECT cc.email FROM customer_contacts cc
+       coalesce((SELECT CASE WHEN lower(btrim(sqlc.arg(email)::text))=ANY(cc.additional_emails) THEN sqlc.arg(email)::text ELSE cc.email END FROM customer_contacts cc
                  WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
-                   AND cc.status = 'ACTIVE' AND cc.email <> ''
-                 ORDER BY (lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)::text))) DESC,
+                   AND cc.status = 'ACTIVE' AND (cc.email <> '' OR cardinality(cc.additional_emails)>0)
+                 ORDER BY (lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)::text)) OR lower(btrim(sqlc.arg(email)::text))=ANY(cc.additional_emails)) DESC,
                           cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
 FROM customers c
 WHERE c.tenant_id = sqlc.arg(tenant_id)
@@ -304,7 +304,7 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)
       SELECT 1 FROM customer_contacts cc
       WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
         AND cc.status = 'ACTIVE'
-        AND lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)))
+        AND (lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email))) OR lower(btrim(sqlc.arg(email)::text))=ANY(cc.additional_emails))
     ))
   )
   AND (sqlc.arg(access_employee_id)::bigint = 0 OR EXISTS (

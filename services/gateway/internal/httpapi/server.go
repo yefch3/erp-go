@@ -886,6 +886,10 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		r.With(s.perm("mail:email:read"), s.perm("masterdata:customer:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}/customer-matches", s.matchMailCustomer)
+		r.With(s.perm("mail:email:read"), s.perm("masterdata:customer:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}/customer-link", s.getMailCustomerLink)
+		r.With(s.perm("mail:email:read"), s.perm("masterdata:customer:write"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/customer-link", s.saveMailCustomer)
+
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Get("/api/inbound-mails/{id}/attachments/{attachmentId}/office", s.officePreviewConfig)
 		// 一次把这封信的附件全下载下来。生产上 835 封信带 3 个以上附件，

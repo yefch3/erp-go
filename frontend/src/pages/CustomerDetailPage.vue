@@ -132,7 +132,7 @@
             :class="{ inactive: item.status !== 'ACTIVE' }"
           >
             <div class="record-title">
-              <strong>{{ item.name }}</strong
+              <strong>{{ item.name || "姓名待补充" }}</strong
               ><el-tag v-if="item.isPrimary" size="small" type="success"
                 >主要联系人</el-tag
               ><el-tag v-if="item.status !== 'ACTIVE'" size="small"
@@ -146,8 +146,9 @@
               }}
             </p>
             <div class="contact-lines">
-              <span>✉ {{ item.email || "—" }}</span
-              ><span>☎ {{ item.phone || item.mobile || "—" }}</span
+              <span>✉ {{ item.email || "—" }}</span>
+              <span v-for="email in item.additionalEmails || []" :key="email">补充邮箱：{{ email }}</span>
+              <span>☎ {{ item.phone || item.mobile || "—" }}</span
               ><span v-if="item.language">首选语言：{{ item.language }}</span>
             </div>
             <div class="mail-preferences">
@@ -515,7 +516,7 @@
       width="min(680px, 94vw)"
     >
       <el-form :model="contactForm" label-width="100px" class="two-col-form" style="max-height:68vh;overflow-y:auto">
-        <el-form-item label="姓名" required
+        <el-form-item label="姓名" :required="!contactForm.email"
           ><el-input v-model="contactForm.name" /></el-form-item
         ><el-form-item label="主要联系人"
           ><el-switch v-model="contactForm.isPrimary"
@@ -1169,7 +1170,7 @@ async function saveContact() {
     ElMessage.warning(
       (
         {
-          nameRequired: "联系人姓名必填",
+          nameRequired: "联系人姓名和邮箱至少填写一项",
           emailInvalid: "联系人邮箱格式不正确",
           phoneInvalid: "电话或手机格式不正确",
         } as any
