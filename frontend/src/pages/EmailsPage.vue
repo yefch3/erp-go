@@ -1381,7 +1381,7 @@
     </template>
   </el-dialog>
 
-  <!-- 客户和联系人都来自基础数据。联系人按客户联动，邮箱只显示主数据快照。 -->
+  <!-- 客户来自基础数据；联系人按客户联动但可留空，邮箱只显示主数据快照。 -->
   <el-dialog
     v-model="sourcingOpen"
     :title="t('emails.sourcingTransferTitle')"
@@ -1397,7 +1397,7 @@
           @selected="selectSourcingCustomer"
         />
       </el-form-item>
-      <el-form-item :label="t('emails.sourcingContact')" required>
+      <el-form-item :label="t('emails.sourcingContactOptional')">
         <el-select
           v-model="sourcingForm.contactId"
           filterable
@@ -1411,7 +1411,6 @@
             :key="contact.id"
             :value="contact.id"
             :label="sourcingContactLabel(contact)"
-            :disabled="!contact.email"
           />
         </el-select>
         <div v-if="sourcingForm.customerId && !sourcingContactsLoading && !sourcingContacts.length" class="sourcing-contact-help">
@@ -1431,7 +1430,7 @@
       <el-button
         type="primary"
         :loading="creatingSourcingCase"
-        :disabled="!sourcingForm.customerId || !sourcingForm.contactId"
+        :disabled="!sourcingForm.customerId"
         @click="createSourcingCaseFromExcel"
       >
         {{ t('emails.createSourcingCase') }}

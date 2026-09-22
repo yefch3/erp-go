@@ -38,11 +38,35 @@ func TestUpDownUp(t *testing.T) {
 		t.Fatalf("down: %v", err)
 	}
 	assertMasterdataTable(t, db, "number_rules", false)
+	if err := goose.UpTo(db, ".", 29); err != nil {
+		t.Fatalf("second up to legacy schema: %v", err)
+	}
+	var legacyCustomerID int64
+	if err := db.QueryRow(`INSERT INTO customers(tenant_id,code,name,created_by,updated_by)
+		VALUES(909090,'MAIL-LEGACY','邮件历史客户',41001,41001) RETURNING id`).Scan(&legacyCustomerID); err != nil {
+		t.Fatalf("seed legacy customer: %v", err)
+	}
 	if err := goose.Up(db, "."); err != nil {
-		t.Fatalf("second up: %v", err)
+		t.Fatalf("finish second up: %v", err)
 	}
 	assertNumberRule(t, db, "SUPPLIER_PAYMENT", true)
 	assertNumberRule(t, db, "WAREHOUSE", true)
+	assertCustomerOwner(t, db, 909090, legacyCustomerID, 41001)
+}
+
+func assertCustomerOwner(t *testing.T, db *sql.DB, tenantID, customerID, employeeID int64) {
+	t.Helper()
+	var got bool
+	err := db.QueryRowContext(context.Background(), `SELECT EXISTS(
+		SELECT 1 FROM customer_owners
+		WHERE tenant_id=$1 AND customer_id=$2 AND employee_id=$3
+		  AND status='ACTIVE' AND is_primary)`, tenantID, customerID, employeeID).Scan(&got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Fatalf("legacy customer %d did not receive creator %d as owner", customerID, employeeID)
+	}
 }
 
 func assertMasterdataTable(t *testing.T, db *sql.DB, name string, want bool) {

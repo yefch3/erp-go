@@ -254,3 +254,47 @@ func TestImportSourcingIntakePreservesContactID(t *testing.T) {
 		t.Fatalf("contact id must reach procurement create request: %+v", sourcing.got)
 	}
 }
+
+func TestImportSourcingIntakeAllowsNoContact(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("file", "standard.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.Write([]byte("产品,数量,单位\n镀锌卷,20,MT\n")); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{
+		"inquiry_template_id": "42", "customer_id": "7", "title": "无联系人导入测试",
+	} {
+		if err = writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sourcing := &captureSourcingClientStub{}
+	server := &Server{
+		Customers: activeCustomerClientStub{status: "ACTIVE"},
+		InquiryTemplates: intakeTemplateClientStub{template: &prv1.InquiryTemplate{
+			Id: 42, TemplateCode: "SYSTEM_DEFAULT", Version: 3, Status: "ACTIVE", Fields: []*prv1.InquiryTemplateField{
+				{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+				{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+				{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 3},
+			}}},
+		Sourcing: sourcing,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sourcing-intakes/import", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	server.importSourcingIntake(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("manual intake without a contact should succeed: %d %s", rec.Code, rec.Body.String())
+	}
+	if sourcing.got == nil || sourcing.got.GetCustomerId() != 7 || sourcing.got.GetContactId() != 0 || sourcing.got.GetContactEmail() != "" {
+		t.Fatalf("optional contact must stay empty in procurement request: %+v", sourcing.got)
+	}
+}
