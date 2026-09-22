@@ -52,16 +52,10 @@ func (dueProductStub) GetMany(_ context.Context, ids []int64) (map[int64]Product
 	return out, nil
 }
 
-type dueRateStub struct{}
-
 type dueDirectoryStub struct{}
 
 func (dueDirectoryStub) Get(_ context.Context, employeeID int64) (Employee, error) {
 	return Employee{ID: employeeID, Name: "Original Buyer", Status: "ACTIVE"}, nil
-}
-
-func (dueRateStub) Latest(context.Context, string) (Rate, error) {
-	return Rate{Rate: decimal.RequireFromString("7.1"), At: time.Now(), Source: "test", Base: "CNY"}, nil
 }
 
 type dueNumberingStub struct {

@@ -102,7 +102,7 @@ func (s *Service) ContractWorkflow(ctx context.Context, tenant int64, cmd Workfl
 		if revision != cmd.Revision {
 			return apierr.Conflict("EX_WORKFLOW_REVISION", "合同已更新，请刷新后重新操作")
 		}
-		next := state
+		var next string
 		switch cmd.Action {
 		case "pause":
 			if state != "EXECUTING" && state != "EFFECTIVE" {

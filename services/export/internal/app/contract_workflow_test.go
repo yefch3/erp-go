@@ -109,7 +109,9 @@ func TestContractWorkflowTenantIsolationAndStateGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	var draftID int64
-	fmt.Sscan(saved.(map[string]any)["id"].(string), &draftID)
+	if _, err := fmt.Sscan(saved.(map[string]any)["id"].(string), &draftID); err != nil {
+		t.Fatal(err)
+	}
 	for _, pair := range [][2]int64{{tenant + 1, 1}, {tenant, 3}} {
 		if _, err := svc.ContractWorkflow(actor(pair[0], pair[1]), pair[0], WorkflowCommand{ID: draftID, Action: "history_delete", Revision: 1}, Operator{ID: pair[1]}); err == nil {
 			t.Fatal("deleted another tenant/owner draft", pair)
@@ -122,7 +124,9 @@ func TestContractWorkflowTenantIsolationAndStateGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Sscan(saved.(map[string]any)["id"].(string), &draftID)
+	if _, err := fmt.Sscan(saved.(map[string]any)["id"].(string), &draftID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE contract_history_drafts SET contract_id=$3,revision=revision+1 WHERE tenant_id=$1 AND id=$2`, tenant, draftID, id); err != nil {
 		t.Fatal(err)
 	}

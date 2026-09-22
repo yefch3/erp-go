@@ -509,43 +509,6 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 	return s.GetContract(ctx, tenantID, id, 0)
 }
 
-// priceLines resolves and prices explicit line input, reusing the quotation
-// rules so a contract line and a quotation line can never disagree on how an
-// amount is computed.
-func (s *Service) priceLines(ctx context.Context, items []ItemInput) ([]priced, decimal.Decimal, error) {
-	lines := make([]priced, 0, len(items))
-	total := decimal.Zero
-	// 这一批行用到的产品一次问完，循环里只查 map。
-	productOf, err := s.prefetchProducts(ctx, productIDsOfItems(items))
-	if err != nil {
-		return nil, decimal.Zero, err
-	}
-	for i, item := range items {
-		qty, err := decimal.NewFromString(item.Qty)
-		if err != nil || qty.LessThanOrEqual(decimal.Zero) {
-			return nil, decimal.Zero, apierr.Invalid("EX_QTY_INVALID", "数量必须是大于 0 的数字").
-				WithMeta("line", itoa(i+1))
-		}
-		price, err := decimal.NewFromString(item.UnitPrice)
-		if err != nil || price.IsNegative() {
-			return nil, decimal.Zero, apierr.Invalid("EX_PRICE_INVALID", "单价必须是不小于 0 的数字").
-				WithMeta("line", itoa(i+1))
-		}
-		product, err := productOf(item.ProductID, i+1)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-		if product.Status != "ACTIVE" {
-			return nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_INACTIVE", "产品已停用，不能签入合同").
-				WithMeta("product", product.Code, "line", itoa(i+1))
-		}
-		amount := qty.Mul(price).Round(2)
-		total = total.Add(amount)
-		lines = append(lines, priced{in: item, product: product, qty: qty, price: price, amount: amount})
-	}
-	return lines, total, nil
-}
-
 func pricedToItems(lines []priced) []store.ListContractItemsRow {
 	out := make([]store.ListContractItemsRow, 0, len(lines))
 	for i, l := range lines {

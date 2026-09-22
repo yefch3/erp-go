@@ -324,9 +324,8 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 	return s.GetContract(ctx, tenantID, contractID, 0)
 }
 
-// priceExistingLines is deliberately narrower than priceLines. Ordinary
-// system-authored contracts must still reference active product master data;
-// only the takeover path may preserve a manually entered product snapshot.
+// priceExistingLines prices a contract snapshot. Referenced master products must
+// be active; manually entered product names and units remain on the contract.
 func (s *Service) priceExistingLines(ctx context.Context, items []ItemInput) ([]priced, decimal.Decimal, error) {
 	lines := make([]priced, 0, len(items))
 	total := decimal.Zero
