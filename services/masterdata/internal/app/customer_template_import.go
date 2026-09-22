@@ -80,9 +80,9 @@ func importReason(err error) string {
 	return err.Error()
 }
 
-// One transaction validates the whole batch and then writes it. A tenant lock
-// serializes concurrent imports; customer rows lock existing records. A failed
-// preview/commit never partially imports customers or contacts.
+// One transaction validates the batch and writes every valid row. A tenant lock
+// serializes concurrent imports; customer rows lock existing records. Invalid
+// rows stay in the verdict list and do not prevent the valid rows from importing.
 func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, rows []CustomerImportRow, mappings []CustomerImportFieldMapping, dryRun bool, operatorID int64, operatorName string) ([]CustomerImportVerdict, int32, error) {
 	if len(rows) == 0 || len(rows) > 5000 {
 		return nil, 0, apierr.Invalid("MD_IMPORT_SIZE", "一次导入 1 至 5000 行")
@@ -98,7 +98,6 @@ func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, ro
 		}
 		groups := map[string]*templateCustomer{}
 		plans := make([]templatePlan, len(rows))
-		blocked := false
 		for i := range rows {
 			r := &rows[i]
 			rv := reflect.ValueOf(r).Elem()
@@ -108,13 +107,16 @@ func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, ro
 				}
 			}
 			r.Code = strings.ToUpper(r.Code)
+			// The database needs a display name, but the fixed template lets users
+			// provide either the full customer name or the short name.
+			r.Name = defaultText(r.Name, r.ShortName)
 			r.CreditGrade = strings.ToUpper(r.CreditGrade)
 			r.CountryCode = strings.ToUpper(r.CountryCode)
 			v := CustomerImportVerdict{Line: r.SourceLine, Code: r.Code, Name: r.Name, OK: true}
 			if v.Line < 2 {
 				v.Line = int32(i + 2)
 			}
-			fail := func(reason string) { v.OK = false; v.Reason = reason; blocked = true }
+			fail := func(reason string) { v.OK = false; v.Reason = reason }
 			in := CustomerInput{Name: r.Name, Currency: r.Currency, Website: r.Website, Timezone: r.Timezone, BusinessStatus: r.BusinessStatus, CreditStatus: "NORMAL"}
 			in.normalizeProfile()
 			if err := in.validate(); err != nil {
@@ -128,9 +130,16 @@ func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, ro
 				key = "name:" + strings.ToLower(r.Name)
 			}
 			g := groups[key]
+			createdGroup := false
+			var groupBefore templateCustomer
+			if g != nil {
+				groupBefore = *g
+				groupBefore.contacts = append([]templateContact(nil), g.contacts...)
+			}
 			if g == nil && v.OK {
 				g = &templateCustomer{basic: *r}
 				groups[key] = g
+				createdGroup = true
 				var id int64
 				err := tx.QueryRow(ctx, `SELECT id FROM customers WHERE tenant_id=$1 AND (($2<>'' AND upper(code)=$2) OR ($2='' AND lower(name)=lower($3))) ORDER BY id LIMIT 1`, tenantID, r.Code, r.Name).Scan(&id)
 				if errors.Is(err, pgx.ErrNoRows) && r.Code != "" {
@@ -249,9 +258,17 @@ func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, ro
 				}
 				plans[i].group = g
 			}
+			if !v.OK && g != nil {
+				if createdGroup {
+					delete(groups, key)
+				} else {
+					*g = groupBefore
+				}
+				plans[i] = templatePlan{}
+			}
 			verdicts[i] = v
 		}
-		if dryRun || blocked {
+		if dryRun {
 			return nil
 		}
 		q := s.q.WithTx(tx)
@@ -262,8 +279,14 @@ func (s *Service) ImportCustomerTemplate(ctx context.Context, tenantID int64, ro
 		written := map[*templateCustomer]bool{}
 		contactIDs := map[int64]int64{}
 		for i, r := range rows {
+			if !verdicts[i].OK {
+				continue
+			}
 			p := plans[i]
 			g := p.group
+			if g == nil {
+				continue
+			}
 			isNew := g.id == 0
 			if isNew {
 				code := r.Code

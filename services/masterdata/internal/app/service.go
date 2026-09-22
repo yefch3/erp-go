@@ -472,18 +472,22 @@ type SupplierInput struct {
 // normalizeSupplierInput 统一旧调用和 B4 新资料字段，并阻止不认识的业务类型进入主数据。
 func normalizeSupplierInput(in *SupplierInput) error {
 	in.NameZh, in.NameEn = strings.TrimSpace(in.NameZh), strings.TrimSpace(in.NameEn)
+	in.ShortName = strings.TrimSpace(in.ShortName)
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
 		in.Name = in.NameZh
 		if in.Name == "" {
 			in.Name = in.NameEn
 		}
+		if in.Name == "" {
+			in.Name = in.ShortName
+		}
 	}
-	if in.NameZh == "" && in.NameEn == "" {
+	if in.NameZh == "" && in.NameEn == "" && in.ShortName == "" {
 		in.NameZh = in.Name
 	}
 	if in.Name == "" {
-		return apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商中文名或英文名至少填写一项")
+		return apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商中文名、英文名或简称至少填写一项")
 	}
 	in.CountryCode = strings.ToUpper(strings.TrimSpace(in.CountryCode))
 	if in.CountryCode != "" && len(in.CountryCode) != 2 {
