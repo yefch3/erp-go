@@ -93,6 +93,18 @@ include /etc/nginx/snippets/erp-app.conf;
 
 （`conf.d/` 那份不用加 include，发行版的 `nginx.conf` 自己会带上。）
 
+**还要改发行版 `nginx.conf` 一行** —— 这是全项目唯一一处动它的地方。把 http 块里那句
+默认的访问日志注释掉：
+
+```nginx
+# access_log /var/log/nginx/access.log;  # ERP: 见 conf.d/erp-timing.conf（带耗时）
+```
+
+**为什么非改不可**：`access_log` 在同一层是**叠加**的，不是覆盖。两条都留着的话，每个
+请求被写进同一个文件两次（一行旧格式、一行新格式），日志体积翻倍，按行数统计的东西
+全部多一倍。`access_log off;` 不是解法 —— 实测它会把这一层的访问日志整个关掉，后面
+再写一条也不生效。
+
 **漏掉 gzip 那一段会怎样**：站点照常能用，只是所有 JS、CSS 和 API 的 JSON 都变成
 不压缩传输——从美国访问几乎看不出来，从中国大陆则会把一次 300 KB 的接口拖到
 十几秒、触发前端的超时。2026-09-21 之前生产上就是这个状态，见那一节的注释。

@@ -47,23 +47,29 @@
       </el-tooltip>
     </div>
 
-    <!-- 这一封的附件打成一个 zip 拿走。**跟着这一封**，所以会话里每一封各有
-         各的一颗：对方发来三个、我们回了两个，就是三个的那一颗和两个的那一颗。
+    <!-- 这一封的附件一次拿走。**跟着这一封**，所以会话里每一封各有各的一颗：
+         对方发来三个、我们回了两个，就是三个的那一颗和两个的那一颗。
          从前这颗只在阅读区最底下有一颗，打的是「打开的那封」的包，在会话里
          说不清它算谁的（2026-09-15 去掉了那一块）。
 
+         **不再打成 zip**（2026-09-21）：拿到的就是原来那几个文件，名字和格式
+         都和发信人给的一样，不用先解压再找。浏览器给得起「选文件夹」的（Chrome
+         / Edge）会先问存到哪儿，也就是另存为；给不起的逐个走普通下载。
+         见 lib/saveAttachments。
+
          两个以上才给：只有一个附件时它和旁边那颗「下载」是同一件事。
-         mailId 为空时不给：打包按信取文件，没有信的编号就取不了——会话里
-         「我发出」而本地又没留底的那几条就是这种。 -->
+         **不再要求 mailId**：从前打包那条接口按信的编号取文件，没有编号就
+         取不了；现在取的是每个附件自己的下载地址，和是哪一封无关——会话里
+         「我发出」而本地没留底的那几条，从此也有这颗按钮了。 -->
     <button
-      v-if="canBundleAttachments(files.length, mailId ?? '')"
+      v-if="downloadableOnly(files).length > 1"
       type="button"
       class="bundle"
       :disabled="bundling"
-      @click="emit('downloadAll', mailId ?? '')"
+      @click="emit('downloadAll', mailId ?? '', files)"
     >
       <el-icon><Download /></el-icon>
-      <span>{{ t('emails.downloadAll', { n: files.length }) }}</span>
+      <span>{{ t(saveAsLabel, { n: downloadableOnly(files).length }) }}</span>
     </button>
   </div>
 </template>
@@ -73,7 +79,7 @@ import { Download, Paperclip, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { humanSize } from '../lib/humanSize'
 import { canPreview } from '../lib/attachmentPreview'
-import { canBundleAttachments } from '../lib/attachmentBundle'
+import { canPickDirectory, downloadableOnly } from '../lib/saveAttachments'
 import { attachmentHintKey } from '../lib/attachmentHint'
 
 export interface MailFile {
@@ -112,11 +118,22 @@ const emit = defineEmits<{
   excelMenu: [event: MouseEvent, file: MailFile, mailId: string]
   excelHover: [event: MouseEvent, file: MailFile, mailId: string]
   excelLeave: []
-  // 把这一封的附件打成 zip。带上是哪一封——组件不碰网络，取文件这件事留在
-  // 页面那头（两个页面各自有自己的保存方式）。
-  downloadAll: [mailId: string]
+  // 把这一封的附件一次拿走。组件不碰网络，取文件这件事留在页面那头
+  // （两个页面各自有自己的保存方式）。
+  //
+  // 带上文件列表：现在取的是每个附件自己的下载地址，不再是「按信的编号请求
+  // 服务端打包」，所以光有 mailId 不够。mailId 仍然带着，出错时要说清是哪
+  // 一封。
+  downloadAll: [mailId: string, files: MailFile[]]
 }>()
 const { t } = useI18n()
+
+// 按钮上写「另存为」还是「下载全部」——**说的是按下去会发生什么**。
+//
+// 能选文件夹的浏览器上，按下去先弹一个文件夹选择框，那就是另存为；不能选的
+// 浏览器上，文件直接落进默认下载目录，那时写「另存为」是骗人。两种浏览器上
+// 同一颗按钮写两种字，因为它们做的确实是两件事。
+const saveAsLabel = canPickDirectory() ? 'emails.saveAllAs' : 'emails.downloadAll'
 
 // 说哪一句由 lib/attachmentHint 判（那里写着四种说法各自的依据，并且单独
 // 测过）；这里只负责把 key 翻成话。

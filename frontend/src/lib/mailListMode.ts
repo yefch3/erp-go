@@ -33,8 +33,19 @@ export function mergesThreads(mode: MailListMode): boolean {
   return mode !== 'MESSAGE'
 }
 
-// 点一下换到另一档。开关只有两档，所以「切换」是完整的语义，不需要调用方
-// 自己拼下一个值。
-export function toggledListMode(mode: MailListMode): MailListMode {
-  return mode === 'MESSAGE' ? 'THREAD' : 'MESSAGE'
+// 菜单里点了一项，该不该真的去改——返回要切到的档位，null = 什么都不做。
+//
+// **这个函数存在的理由是一次真实的误会。** 原来菜单里只有一项，是个开关：
+// 选中时画对钩，再点一下取消。2026-09-22 一位同事反映「勾上了还是显示会话」，
+// 查日志发现他 01:34 开、01:36 又关了——他打开菜单看见对钩，为了"确认一下"
+// 又点了一次，那一下正好把它关掉。
+//
+// 改成两项并列的单选之后，「点已经选中的那一项」必须是**什么也不发生**，
+// 而不是取消。少了这一条，两项并列也救不了他：点中间那一项照样会翻。
+//
+// 认不出来的命令同样回 null：菜单里的字符串是写死的，能走到这里的别的值
+// 只可能是有人手改了 DOM，那时按兵不动比猜一个档位安全。
+export function listModeChange(current: MailListMode, command: string): MailListMode | null {
+  if (command !== 'THREAD' && command !== 'MESSAGE') return null
+  return command === current ? null : command
 }
