@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { customerDraftFromMail, customerDraftFromSender, existingCompanyForMailContact } from './mailCustomerDraft'
+import {
+  classifyMailCustomerDuplicates,
+  customerDraftFromMail,
+  customerDraftFromSender,
+  existingCompanyForMailContact,
+} from './mailCustomerDraft'
 
 describe('customerDraftFromSender', () => {
   it('uses the sender display name and email from the mail header', () => {
@@ -37,6 +42,36 @@ describe('existingCompanyForMailContact', () => {
       { id: '7', code: 'C0007', name: 'Acme Steel', matchFields: ['NAME'] },
       { id: '8', code: 'C0008', name: 'Acme Steel', matchFields: ['NAME'] },
     ])).toBeNull()
+  })
+})
+
+describe('classifyMailCustomerDuplicates', () => {
+  it('精确邮箱已存在时优先阻止新建', () => {
+    const owner = { id: '7', code: 'C0007', name: 'Acme', matchFields: ['EMAIL', 'NAME'] }
+    expect(classifyMailCustomerDuplicates([owner])).toEqual({
+      emailOwner: owner,
+      existingCompany: null,
+      suggestions: [],
+    })
+  })
+
+  it('同一家公司时改为添加联系人', () => {
+    const company = { id: '7', code: 'C0007', name: 'Acme', matchFields: ['NAME'] }
+    const similar = { id: '8', code: 'C0008', name: 'Acme Trading', matchFields: ['SIMILAR_NAME'] }
+    expect(classifyMailCustomerDuplicates([company, similar])).toEqual({
+      emailOwner: null,
+      existingCompany: company,
+      suggestions: [similar],
+    })
+  })
+
+  it('相似名称只作候选，不自动归入', () => {
+    const similar = { id: '8', code: 'C0008', name: 'Acme Trading', matchFields: ['SIMILAR_NAME'] }
+    expect(classifyMailCustomerDuplicates([similar])).toEqual({
+      emailOwner: null,
+      existingCompany: null,
+      suggestions: [similar],
+    })
   })
 })
 
