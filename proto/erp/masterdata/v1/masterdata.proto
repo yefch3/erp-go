@@ -38,6 +38,7 @@ service CustomerService {
   rpc CreateCustomerOwner(CreateCustomerOwnerRequest) returns (CreateCustomerOwnerResponse);
   rpc UpdateCustomerOwner(UpdateCustomerOwnerRequest) returns (UpdateCustomerOwnerResponse);
   rpc DeactivateCustomerOwner(DeactivateCustomerOwnerRequest) returns (DeactivateCustomerOwnerResponse);
+  rpc BatchUpdateCustomerOwners(BatchUpdateCustomerOwnersRequest) returns (BatchUpdateCustomerOwnersResponse);
   rpc ListCustomerChanges(ListCustomerChangesRequest) returns (ListCustomerChangesResponse);
   rpc ImportCustomers(ImportCustomersRequest) returns (ImportCustomersResponse);
   rpc ListCustomerFields(ListCustomerFieldsRequest) returns (ListCustomerFieldsResponse);
@@ -121,6 +122,7 @@ service SupplierService {
   rpc CreateSupplierOwner(CreateSupplierOwnerRequest) returns (CreateSupplierOwnerResponse);
   rpc UpdateSupplierOwner(UpdateSupplierOwnerRequest) returns (UpdateSupplierOwnerResponse);
   rpc DeactivateSupplierOwner(DeactivateSupplierOwnerRequest) returns (DeactivateSupplierOwnerResponse);
+  rpc BatchUpdateSupplierOwners(BatchUpdateSupplierOwnersRequest) returns (BatchUpdateSupplierOwnersResponse);
   rpc ListSupplierChanges(ListSupplierChangesRequest) returns (ListSupplierChangesResponse);
   rpc ImportSuppliers(ImportSuppliersRequest) returns (ImportSuppliersResponse);
   rpc CheckSupplierDuplicates(CheckSupplierDuplicatesRequest) returns (CheckSupplierDuplicatesResponse);
@@ -980,7 +982,6 @@ message UpdateSupplierOwnerRequest { int64 supplier_id = 1; int64 id = 2; Suppli
 message UpdateSupplierOwnerResponse { SupplierOwner owner = 1; }
 message DeactivateSupplierOwnerRequest { int64 supplier_id = 1; int64 id = 2; }
 message DeactivateSupplierOwnerResponse {}
-
 message MasterDataChange {
   int64 id = 1; string action = 2; string section = 3; string summary = 4;
   string before_json = 5; string after_json = 6; int64 operator_id = 7;
@@ -1388,3 +1389,35 @@ message ListSupplierDocumentRemindersRequest {}
 message ListSupplierDocumentRemindersResponse { repeated SupplierDocument documents = 1; }
 message MarkSupplierDocumentRemindersReadRequest { repeated int64 ids = 1; }
 message MarkSupplierDocumentRemindersReadResponse { int64 marked = 1; }
+
+message BulkOwnerAssignment {
+  int64 employee_id = 1;
+  // The gateway resolves this from IAM inside the authenticated tenant.
+  string employee_name = 2;
+}
+
+message BatchUpdateCustomerOwnersRequest {
+  repeated int64 customer_ids = 1;
+  repeated BulkOwnerAssignment owners = 2;
+  // ADD / REMOVE
+  string action = 3;
+}
+
+message BatchUpdateCustomerOwnersResponse {
+  int32 customer_count = 1;
+  int32 owner_count = 2;
+  int32 changed_count = 3;
+}
+
+message BatchUpdateSupplierOwnersRequest {
+  repeated int64 supplier_ids = 1;
+  repeated BulkOwnerAssignment owners = 2;
+  // ADD / REMOVE
+  string action = 3;
+}
+
+message BatchUpdateSupplierOwnersResponse {
+  int32 supplier_count = 1;
+  int32 owner_count = 2;
+  int32 changed_count = 3;
+}

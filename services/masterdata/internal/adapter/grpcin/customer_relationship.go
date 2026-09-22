@@ -130,6 +130,18 @@ func (h *Handler) DeactivateCustomerOwner(ctx context.Context, req *mdv1.Deactiv
 	return &mdv1.DeactivateCustomerOwnerResponse{}, err
 }
 
+func (h *Handler) BatchUpdateCustomerOwners(ctx context.Context, req *mdv1.BatchUpdateCustomerOwnersRequest) (*mdv1.BatchUpdateCustomerOwnersResponse, error) {
+	owners := make([]app.BulkOwnerAssignment, 0, len(req.GetOwners()))
+	for _, owner := range req.GetOwners() {
+		owners = append(owners, app.BulkOwnerAssignment{EmployeeID: owner.GetEmployeeId(), EmployeeName: owner.GetEmployeeName()})
+	}
+	changed, err := h.svc.BatchUpdateCustomerOwners(ctx, grpcx.TenantID(ctx), req.GetCustomerIds(), owners, req.GetAction(), operatorID(ctx), operatorName(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.BatchUpdateCustomerOwnersResponse{CustomerCount: int32(len(req.GetCustomerIds())), OwnerCount: int32(len(owners)), ChangedCount: changed}, nil
+}
+
 func (h *Handler) ListCustomerChanges(ctx context.Context, req *mdv1.ListCustomerChangesRequest) (*mdv1.ListCustomerChangesResponse, error) {
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
 	rows, total, err := h.svc.ListCustomerChanges(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), page, size)

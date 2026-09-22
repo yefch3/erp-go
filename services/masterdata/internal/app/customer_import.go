@@ -50,6 +50,8 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 	for i, row := range rows {
 		row.Code = strings.ToUpper(strings.TrimSpace(row.Code))
 		row.Name = strings.TrimSpace(row.Name)
+		row.ShortName = strings.TrimSpace(row.ShortName)
+		row.Name = defaultText(row.Name, row.ShortName)
 		row.OwnerName = strings.TrimSpace(row.OwnerName)
 		if row.OwnerName != "" && row.OwnerEmployeeID == 0 && strings.EqualFold(row.OwnerName, strings.TrimSpace(operatorName)) {
 			row.OwnerEmployeeID = operatorID
@@ -57,7 +59,7 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 		rows[i] = row
 		v := CustomerImportVerdict{Line: int32(i + 2), Code: row.Code, Name: row.Name, OK: true}
 		if row.Name == "" {
-			v.OK, v.Reason = false, "客户名称必填"
+			v.OK, v.Reason = false, "客户名称或客户简称至少填写一项"
 		}
 		if v.OK {
 			if _, err := normaliseCountry(row.CountryCode); err != nil {

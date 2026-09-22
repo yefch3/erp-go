@@ -47,6 +47,7 @@ const (
 	CustomerService_CreateCustomerOwner_FullMethodName               = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
 	CustomerService_UpdateCustomerOwner_FullMethodName               = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
 	CustomerService_DeactivateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
+	CustomerService_BatchUpdateCustomerOwners_FullMethodName         = "/erp.masterdata.v1.CustomerService/BatchUpdateCustomerOwners"
 	CustomerService_ListCustomerChanges_FullMethodName               = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
 	CustomerService_ImportCustomers_FullMethodName                   = "/erp.masterdata.v1.CustomerService/ImportCustomers"
 	CustomerService_ListCustomerFields_FullMethodName                = "/erp.masterdata.v1.CustomerService/ListCustomerFields"
@@ -97,6 +98,7 @@ type CustomerServiceClient interface {
 	CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error)
 	UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error)
+	BatchUpdateCustomerOwners(ctx context.Context, in *BatchUpdateCustomerOwnersRequest, opts ...grpc.CallOption) (*BatchUpdateCustomerOwnersResponse, error)
 	ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error)
 	ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error)
 	ListCustomerFields(ctx context.Context, in *ListCustomerFieldsRequest, opts ...grpc.CallOption) (*ListCustomerFieldsResponse, error)
@@ -406,6 +408,16 @@ func (c *customerServiceClient) DeactivateCustomerOwner(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *customerServiceClient) BatchUpdateCustomerOwners(ctx context.Context, in *BatchUpdateCustomerOwnersRequest, opts ...grpc.CallOption) (*BatchUpdateCustomerOwnersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchUpdateCustomerOwnersResponse)
+	err := c.cc.Invoke(ctx, CustomerService_BatchUpdateCustomerOwners_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListCustomerChangesResponse)
@@ -544,6 +556,7 @@ type CustomerServiceServer interface {
 	CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error)
 	UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error)
+	BatchUpdateCustomerOwners(context.Context, *BatchUpdateCustomerOwnersRequest) (*BatchUpdateCustomerOwnersResponse, error)
 	ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error)
 	ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error)
 	ListCustomerFields(context.Context, *ListCustomerFieldsRequest) (*ListCustomerFieldsResponse, error)
@@ -656,6 +669,9 @@ func (UnimplementedCustomerServiceServer) UpdateCustomerOwner(context.Context, *
 }
 func (UnimplementedCustomerServiceServer) DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomerOwner not implemented")
+}
+func (UnimplementedCustomerServiceServer) BatchUpdateCustomerOwners(context.Context, *BatchUpdateCustomerOwnersRequest) (*BatchUpdateCustomerOwnersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchUpdateCustomerOwners not implemented")
 }
 func (UnimplementedCustomerServiceServer) ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerChanges not implemented")
@@ -1212,6 +1228,24 @@ func _CustomerService_DeactivateCustomerOwner_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_BatchUpdateCustomerOwners_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchUpdateCustomerOwnersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).BatchUpdateCustomerOwners(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_BatchUpdateCustomerOwners_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).BatchUpdateCustomerOwners(ctx, req.(*BatchUpdateCustomerOwnersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_ListCustomerChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListCustomerChangesRequest)
 	if err := dec(in); err != nil {
@@ -1512,6 +1546,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CustomerService_DeactivateCustomerOwner_Handler,
 		},
 		{
+			MethodName: "BatchUpdateCustomerOwners",
+			Handler:    _CustomerService_BatchUpdateCustomerOwners_Handler,
+		},
+		{
 			MethodName: "ListCustomerChanges",
 			Handler:    _CustomerService_ListCustomerChanges_Handler,
 		},
@@ -1720,6 +1758,7 @@ const (
 	SupplierService_CreateSupplierOwner_FullMethodName               = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
 	SupplierService_UpdateSupplierOwner_FullMethodName               = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
 	SupplierService_DeactivateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
+	SupplierService_BatchUpdateSupplierOwners_FullMethodName         = "/erp.masterdata.v1.SupplierService/BatchUpdateSupplierOwners"
 	SupplierService_ListSupplierChanges_FullMethodName               = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
 	SupplierService_ImportSuppliers_FullMethodName                   = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
 	SupplierService_CheckSupplierDuplicates_FullMethodName           = "/erp.masterdata.v1.SupplierService/CheckSupplierDuplicates"
@@ -1775,6 +1814,7 @@ type SupplierServiceClient interface {
 	CreateSupplierOwner(ctx context.Context, in *CreateSupplierOwnerRequest, opts ...grpc.CallOption) (*CreateSupplierOwnerResponse, error)
 	UpdateSupplierOwner(ctx context.Context, in *UpdateSupplierOwnerRequest, opts ...grpc.CallOption) (*UpdateSupplierOwnerResponse, error)
 	DeactivateSupplierOwner(ctx context.Context, in *DeactivateSupplierOwnerRequest, opts ...grpc.CallOption) (*DeactivateSupplierOwnerResponse, error)
+	BatchUpdateSupplierOwners(ctx context.Context, in *BatchUpdateSupplierOwnersRequest, opts ...grpc.CallOption) (*BatchUpdateSupplierOwnersResponse, error)
 	ListSupplierChanges(ctx context.Context, in *ListSupplierChangesRequest, opts ...grpc.CallOption) (*ListSupplierChangesResponse, error)
 	ImportSuppliers(ctx context.Context, in *ImportSuppliersRequest, opts ...grpc.CallOption) (*ImportSuppliersResponse, error)
 	CheckSupplierDuplicates(ctx context.Context, in *CheckSupplierDuplicatesRequest, opts ...grpc.CallOption) (*CheckSupplierDuplicatesResponse, error)
@@ -1965,6 +2005,16 @@ func (c *supplierServiceClient) DeactivateSupplierOwner(ctx context.Context, in 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeactivateSupplierOwnerResponse)
 	err := c.cc.Invoke(ctx, SupplierService_DeactivateSupplierOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) BatchUpdateSupplierOwners(ctx context.Context, in *BatchUpdateSupplierOwnersRequest, opts ...grpc.CallOption) (*BatchUpdateSupplierOwnersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchUpdateSupplierOwnersResponse)
+	err := c.cc.Invoke(ctx, SupplierService_BatchUpdateSupplierOwners_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2330,6 +2380,7 @@ type SupplierServiceServer interface {
 	CreateSupplierOwner(context.Context, *CreateSupplierOwnerRequest) (*CreateSupplierOwnerResponse, error)
 	UpdateSupplierOwner(context.Context, *UpdateSupplierOwnerRequest) (*UpdateSupplierOwnerResponse, error)
 	DeactivateSupplierOwner(context.Context, *DeactivateSupplierOwnerRequest) (*DeactivateSupplierOwnerResponse, error)
+	BatchUpdateSupplierOwners(context.Context, *BatchUpdateSupplierOwnersRequest) (*BatchUpdateSupplierOwnersResponse, error)
 	ListSupplierChanges(context.Context, *ListSupplierChangesRequest) (*ListSupplierChangesResponse, error)
 	ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error)
 	CheckSupplierDuplicates(context.Context, *CheckSupplierDuplicatesRequest) (*CheckSupplierDuplicatesResponse, error)
@@ -2420,6 +2471,9 @@ func (UnimplementedSupplierServiceServer) UpdateSupplierOwner(context.Context, *
 }
 func (UnimplementedSupplierServiceServer) DeactivateSupplierOwner(context.Context, *DeactivateSupplierOwnerRequest) (*DeactivateSupplierOwnerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateSupplierOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) BatchUpdateSupplierOwners(context.Context, *BatchUpdateSupplierOwnersRequest) (*BatchUpdateSupplierOwnersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchUpdateSupplierOwners not implemented")
 }
 func (UnimplementedSupplierServiceServer) ListSupplierChanges(context.Context, *ListSupplierChangesRequest) (*ListSupplierChangesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierChanges not implemented")
@@ -2810,6 +2864,24 @@ func _SupplierService_DeactivateSupplierOwner_Handler(srv interface{}, ctx conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SupplierServiceServer).DeactivateSupplierOwner(ctx, req.(*DeactivateSupplierOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_BatchUpdateSupplierOwners_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchUpdateSupplierOwnersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).BatchUpdateSupplierOwners(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_BatchUpdateSupplierOwners_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).BatchUpdateSupplierOwners(ctx, req.(*BatchUpdateSupplierOwnersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3492,6 +3564,10 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeactivateSupplierOwner",
 			Handler:    _SupplierService_DeactivateSupplierOwner_Handler,
+		},
+		{
+			MethodName: "BatchUpdateSupplierOwners",
+			Handler:    _SupplierService_BatchUpdateSupplierOwners_Handler,
 		},
 		{
 			MethodName: "ListSupplierChanges",

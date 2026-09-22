@@ -35,7 +35,8 @@ func importRowNumber(value int32, index int) int32 {
 	return int32(index + 2)
 }
 
-// ImportSuppliers 先完整预检整批数据；只有确认导入且全部行通过时，才在一个事务中写入。
+// ImportSuppliers 先完整预检整批数据；确认后在同一租户事务中写入通过校验的供应商，
+// 有问题的行保留在 issues 中供用户修正，不阻止其他供应商导入。
 func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []SupplierImportRow, confirm bool, operatorID int64, operatorName string) (int32, int32, []MasterDataImportIssue, error) {
 	type supplierImportGroup struct {
 		row      SupplierImportRow
@@ -44,16 +45,18 @@ func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []Su
 	}
 	groups := make([]supplierImportGroup, 0, len(rows))
 	groupByCode := make(map[string]int, len(rows))
+	groupByName := make(map[string]int, len(rows))
 	issues := make([]MasterDataImportIssue, 0)
 	for i, row := range rows {
 		code := strings.ToUpper(strings.TrimSpace(row.Code))
-		name := defaultText(row.NameZh, row.NameEn)
+		name := defaultText(defaultText(row.NameZh, row.NameEn), row.ShortName)
 		issue := MasterDataImportIssue{RowNumber: importRowNumber(row.RowNumber, i), Code: code, Name: name}
-		if code == "" {
-			issue.Message = "供应商编码必填"
-		}
+		nameKey := strings.ToLower(strings.TrimSpace(defaultText(defaultText(row.NameZh, row.NameEn), row.ShortName)))
 		groupIndex, grouped := groupByCode[code]
-		if issue.Message == "" && !grouped {
+		if code == "" && nameKey != "" {
+			groupIndex, grouped = groupByName[nameKey]
+		}
+		if code != "" && !grouped {
 			exists, err := s.q.SupplierCodeExists(ctx, store.SupplierCodeExistsParams{TenantID: tenantID, Code: code})
 			if err != nil {
 				return 0, 0, nil, err
@@ -87,7 +90,11 @@ func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []Su
 		}
 		if !grouped {
 			groupIndex = len(groups)
-			groupByCode[code] = groupIndex
+			if code != "" {
+				groupByCode[code] = groupIndex
+			} else if nameKey != "" {
+				groupByName[nameKey] = groupIndex
+			}
 			groups = append(groups, supplierImportGroup{row: row, input: in})
 		} else {
 			base := groups[groupIndex].input
@@ -102,13 +109,20 @@ func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []Su
 		}
 	}
 	ready := int32(len(groups))
-	if !confirm || len(issues) > 0 || len(groups) == 0 {
+	if !confirm || len(groups) == 0 {
 		return ready, 0, issues, nil
 	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		for _, group := range groups {
 			in := group.input
+			if in.Code == "" {
+				var err error
+				in.Code, err = s.nextNumber(ctx, q, tenantID, "SUPPLIER")
+				if err != nil {
+					return err
+				}
+			}
 			created, err := q.CreateSupplier(ctx, store.CreateSupplierParams{TenantID: tenantID, Code: in.Code, Name: in.Name,
 				NameZh: in.NameZh, NameEn: in.NameEn, ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
 				Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID, Currency: in.Currency,

@@ -1,7 +1,7 @@
 <template>
   <el-dialog v-model="visible" title="批量导入客户" width="960px" destroy-on-close @closed="resetDialog">
     <el-alert type="info" :closable="false" show-icon>
-      <template #title>请使用固定模板填写数据，不要修改表头或列顺序。同一客户代码可填写多行联系人。已有客户需确认更新，空单元格保留原值；多个分管人用分号分隔。</template>
+      <template #title>客户名称或客户简称至少填写一项，其他资料可留空。错误行会跳过，其他通过预检的行仍可导入；多个分管人用分号分隔。</template>
     </el-alert>
 
     <div class="import-tools">
@@ -61,7 +61,7 @@
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button :disabled="!rows.length || mappingProblems.length > 0" :loading="checking" @click="preview">预检全部 {{ rows.length }} 行</el-button>
-      <el-button type="primary" :disabled="!reviewed || !verdicts.length || blocked > 0" :loading="saving" @click="commit">确认导入 {{ ready }} 行</el-button>
+      <el-button type="primary" :disabled="!reviewed || ready === 0" :loading="saving" @click="commit">确认导入 {{ ready }} 行</el-button>
     </template>
   </el-dialog>
 </template>
@@ -165,9 +165,11 @@ async function commit() {
   saving.value = true
   try {
     const data = await post<any>('/customers/import', { templateMode: true, rows: rows.value, dryRun: false })
-    if (Number(data.blocked) > 0) { verdicts.value = data.verdicts ?? []; reviewed.value = true; ElMessage.warning('数据已变化，请检查预检结果'); return }
-    ElMessage.success(`已处理 ${data.imported ?? 0} 行客户及联系人资料`)
-    visible.value = false
+    verdicts.value = data.verdicts ?? verdicts.value
+    reviewed.value = true
+    const failed = Number(data.blocked ?? 0)
+    if (failed > 0) { reviewed.value = false; ElMessage.warning(`已导入 ${data.imported ?? 0} 行，另有 ${failed} 行未导入，请查看错误说明`) }
+    else { ElMessage.success(`已处理 ${data.imported ?? 0} 行客户及联系人资料`); visible.value = false }
     emit('imported')
   } finally { saving.value = false }
 }
