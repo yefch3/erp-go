@@ -657,6 +657,11 @@ service PurchaseOrderService {
 
   // D5 factory pre-shipment quality handoff. This is deliberately separate
   // from RecordInspection, which records checks after warehouse receipt.
+  rpc QualityAccess(QualityAccessRequest) returns (QualityAccessResponse);
+  rpc UpdateQualityBasics(UpdateQualityBasicsRequest) returns (UpdateQualityBasicsResponse);
+  rpc DeleteQualityTask(DeleteQualityTaskRequest) returns (DeleteQualityTaskResponse);
+  rpc ListQualitySourceOrders(ListQualitySourceOrdersRequest) returns (ListQualitySourceOrdersResponse);
+  rpc CreateQualityInspection(CreateQualityInspectionRequest) returns (CreateQualityInspectionResponse);
   rpc ApplyQualityInspection(ApplyQualityInspectionRequest) returns (ApplyQualityInspectionResponse);
   rpc ListQualityInspectionTasks(ListQualityInspectionTasksRequest) returns (ListQualityInspectionTasksResponse);
   rpc GetQualityInspectionTask(GetQualityInspectionTaskRequest) returns (GetQualityInspectionTaskResponse);
@@ -866,6 +871,7 @@ message QualityInspectionTask {
   string procurement_handling_note = 23;
   string procurement_handled_by_name = 24;
   string procurement_handled_at = 25;
+  bool deletable = 26;
 }
 
 message ApplyQualityInspectionLine { int64 po_item_id = 1; string qty = 2; }
@@ -3084,3 +3090,52 @@ message DownloadOrderDraftFileRequest { int64 id = 1; int64 file_id = 2; }
 message DownloadOrderDraftFileResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }
 message DeleteOrderDraftFileRequest { int64 id = 1; int64 file_id = 2; }
 message DeleteOrderDraftFileResponse {}
+
+// Minimal procurement projection for the Quality workbench; no prices or totals.
+message QualitySourceOrder {
+  int64 id = 1;
+  string po_no = 2;
+  string supplier_name = 3;
+  int64 existing_task_id = 4;
+  repeated QualitySourceLine lines = 5;
+}
+message QualitySourceLine {
+  string product_name = 1;
+  string spec = 2;
+  string uom_code = 3;
+  string qty = 4;
+}
+message ListQualitySourceOrdersRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  int64 id = 3;
+}
+message ListQualitySourceOrdersResponse {
+  repeated QualitySourceOrder orders = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message QualityAccessRequest {}
+message QualityAccessResponse { bool can_delete = 1; }
+message UpdateQualityBasicsRequest {
+ int64 id = 1;
+ string expected_date = 2;
+ string inspection_location = 3;
+ string contact_name = 4;
+ string contact_phone = 5;
+ string remark = 6;
+}
+message DeleteQualityTaskResponse {}
+
+message CreateQualityInspectionRequest {
+  int64 po_id = 1;
+  string expected_date = 2;
+  string inspection_location = 3;
+  string contact_name = 4;
+  string contact_phone = 5;
+  string remark = 6;
+  repeated ApplyQualityInspectionLine lines = 7;
+}
+message CreateQualityInspectionResponse { QualityInspectionTask task = 1; }
+message UpdateQualityBasicsResponse { QualityInspectionTask task = 1; }
+message DeleteQualityTaskRequest { int64 id = 1; }

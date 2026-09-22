@@ -94,6 +94,23 @@ export default {
     todo: '（待开发）',
   },
   quality: {
+moreActions: "更多操作",
+editBasics: "编辑基本资料",
+deleteTask: "删除质检单",
+deleteConfirm: "确定删除该质检单吗？删除后可从原采购单重新创建。",
+deleted: "质检单已删除",
+basicsSaved: "基本资料已保存",
+
+    create: "新建质检单",
+    sourceSearch: "搜索采购单号或供应商",
+    openExisting: "打开原单",
+    noSourceOrders: "暂无可质检的采购单",
+    existingHint: "该采购单已有质检单，请打开原单处理或记录复检。",
+    sourceSpec: "规格",
+    sourceUnit: "单位",
+    requirements: "质检要求 / 备注",
+    created: "质检单已就绪",
+
 	taskLevel:'质检资料',
 	apply:'申请质检', applyTitle:'申请出货前质检', applyHint:'一张采购单只建立一次整单质检任务，自动包含采购单内全部产品和全部采购数量。部分合格或不合格在同一任务内处理并复检，不拆分质检批次。', orderedQty:'采购数量', applyQty:'本次送检', contactName:'现场联系人', contactPhone:'联系电话', submitApplication:'提交整单质检', pickQty:'采购单没有可质检的产品', applied:'整单质检任务已提交',
     title:'质检', subtitle:'采购确认货物备好后申请；质检部门在同一任务内记录现场检查与复检全过程。', pending:'待质检', completed:'已完成', search:'搜索质检任务、采购单或工厂', taskNo:'质检任务', poNo:'采购单号', factory:'工厂 / 供应商', batch:'批次', expectedDate:'计划质检日期', process:'处理', empty:'暂无质检任务', location:'质检地点', requestedBy:'申请人', readOnlyHint:'质检任务、现场资料和历史仅对质检部门开放。', products:'送检产品与数量', productsHint:'汇总整张采购单的采购数量、累计合格数量和仍需复检数量。', product:'产品 / 规格', requestedQty:'整单送检数量', qualifiedQty:'合格数量', unresolvedQty:'待复检数量', result:'质检结论', releaseQty:'允许先发', saveRelease:'保存部分合格放行决定', startTitle:'接收质检任务', startHint:'开始后由当前质检人员记录本轮现场结果和资料。', start:'开始质检', reinspect:'记录复检结果', recordRound:'记录本轮质检结果', recordHint:'逐项填写结论和数量；不合格数量会根据本轮检查数量与合格数量自动计算。', inspectedAt:'质检时间', remark:'备注', roundRemark:'本轮备注', roundRemarkHint:'填写本轮现场情况或补充说明', thisBatchQty:'当前待检', remaining:'待检', inspectedQty:'本轮检查数量', unqualifiedQty:'不合格数量（自动）', issue:'异常说明', issueHint:'说明缺陷、数量或现场异常', suggestion:'处理建议', suggestionHint:'例如返工、换货或安排复检', saveRound:'保存本轮结果', attachments:'现场资料', attachmentsHint:'保存现场照片、视频、质检报告、第三方报告及其他附件。', chooseFiles:'选择文件', selectedFiles:'已选择 {n} 个文件', noFileSelected:'尚未选择文件', upload:'上传资料', fileName:'文件名', category:'资料类型', uploader:'上传人', uploadedAt:'上传时间', noAttachments:'暂无现场资料', history:'质检与复检历史', historyHint:'每次保存都会形成独立记录，后续复检不会覆盖上一轮。', noHistory:'尚未记录质检结果', roundNo:'第 {n} 轮', started:'质检任务已接收', roundSaved:'本轮质检结果已保存', releaseSaved:'放行决定已保存', uploaded:'资料已保存', uploadFailed:'资料上传失败', todoTitle:'待质检任务', todoHint:'采购已提交送检产品与数量，等待质检部门记录现场结果。', todoAction:'前往质检', statuses:{WAITING:'待质检',IN_PROGRESS:'待质检',REINSPECTION:'待质检',COMPLETED:'已完成'}, results:{PENDING:'待质检',PASS:'合格',PARTIAL:'部分合格',FAIL:'不合格'}, categories:{PHOTO:'现场照片',VIDEO:'现场视频',REPORT:'质检报告',THIRD_PARTY:'第三方报告',OTHER:'其他附件'}
@@ -452,7 +469,7 @@ export default {
     defaultTemplate: '默认',
     downloadSelectedTemplate: '下载所选模板',
     templateRequired: '请选择询盘模板',
-    customerPlaceholder: '搜索客户编号或名称', contactPlaceholder: '选择该客户的联系人', selectCustomerFirst: '请先选择客户', noActiveContacts: '该客户尚未维护有效联系人，请先到客户档案中补充。', contactEmailAuto: '选择联系人后自动带出', primaryContact: '主要联系人', contactEmailMissing: '未维护邮箱', customerRequired: '请选择客户', contactRequired: '请选择客户联系人', contactEmailRequired: '所选联系人尚未维护邮箱',
+    customerPlaceholder: '搜索客户编号或名称', contactPlaceholder: '可选择该客户的联系人', contactOptional: '客户联系人（可选）', selectCustomerFirst: '请先选择客户', noActiveContacts: '该客户尚未维护有效联系人，也可以先不绑定联系人继续导入。', contactEmailAuto: '选择联系人后自动带出', primaryContact: '主要联系人', contactEmailMissing: '未维护邮箱', customerRequired: '请选择客户', contactRequired: '请选择客户联系人', contactEmailRequired: '所选联系人尚未维护邮箱',
     eyebrow: 'STANDARD INQUIRY REVIEW', title: '待复核询盘', subtitle: '人工核对邮件转入或员工上传的标准询盘', manualUpload: '手工上传标准询盘', mailSource: '邮件转入', mailHint: '来自已确认的 LLM 标准化结果', manualSource: '员工手工上传', manualHint: '仅接受统一标准的 Excel 或 CSV', pendingQueue: '待复核队列', queueHint: '检查、修正或忽略异常行后再进入询价', search: '搜索询盘编号、客户或文件名', number: '询盘编号', source: '来源', fileOrSubject: '文件/邮件主题', customer: '客户', lines: '明细', receivedAt: '进入时间', review: '人工复核', empty: '暂无待复核询盘', mailAuto: '邮件转入', manual: '手工上传', uploadTitle: '上传标准询盘', uploadHint: '仅接收已经标准化的 Excel 或 CSV；上传后直接在网页中人工复核。最大 8MB。', inquiryTitle: '询盘标题', titleAuto: '留空则使用文件名', contact: '客户联系人', contactEmail: '联系邮箱', standardFile: '标准文件', uploadAndReview: '上传并开始复核', fileRequired: '请选择标准询盘文件', uploaded: '标准询盘已进入待复核队列', reviewTitle: '人工复核询盘', reviewHint: '请直接核对并修改产品、材质、牌号、厚度、宽度、数量、单位、交期和港口；资料不完整的明细不能进入询价。', product: '产品', material: '材质/标准', grade: '牌号/等级', spec: '厚度/宽度', quantity: '数量/单位', deliveryPort: '交期/港口', restore: '恢复', ignore: '忽略', keepOne: '至少保留一条有效明细', draftHint: '资料未填完时可以保存复核进度；全部完整后才能进入询价。', saveDraft: '保存修改', draftSaved: '复核修改已保存', addProduct: '新增产品明细', addProductTitle: '新增询盘产品', addAndSave: '新增并保存', newProductRequired: '请填写产品、数量和单位', productAdded: '产品明细已新增并保存', confirmCreate: '确认完成并进入询价', confirmHint: '确认所有产品资料均已填写完整，并进入正式询价吗？', confirmed: '询盘复核完成，已进入询价', autoTransferred: '标准询盘 {no} 已转入采购待复核队列', requiredMissing:'第 {lines} 行资料不完整；产品、材质、牌号、厚度、宽度、数量、单位、交期和港口均需填写后才能进入询价。',
   },
   inquiryTemplates: {
@@ -1919,7 +1936,7 @@ export default {
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
     previewUnavailable: '这个附件打不开，请下载后查看',
-    downloadAll: '下载全部（{n}）',
+    downloadAll: '下载全部（{n}）', saveAllAs: '全部另存为（{n}）', saveAllDone: '已保存 {n} 个文件', saveAllPartial: '保存了 {n} 个；这几个没取到：{bad}',
     sortBar: {
       label: '排序',
       from: '发件人',
@@ -1935,7 +1952,7 @@ export default {
       // 合并会话 / 一封一行。菜单项上写的是**点下去会变成什么**，所以文案是
       // 「每封单独显示」而不是「会话模式」——前者说的是结果，后者要人先知道
       // 什么叫会话。
-      messageMode: '每封单独显示',
+      threadMode: '合并同一会话', messageMode: '每封单独显示', modeSwitched: '已切换为「{mode}」',
     },
     colGrip: {
       rail: '文件夹栏宽度',
@@ -1991,14 +2008,15 @@ export default {
     sourcingCaseCreated: '询价案件 {no} 已建立',
     sourcingPreviewIncomplete: '明细超过 200 行，请先下载核对；当前预览不完整，不能直接建案。',
     sourcingTransferTitle: '转入待复核询盘',
-    sourcingTransferHint: '询盘之后要变成报价和合同，请从基础数据选择客户及其联系人；联系邮箱将自动带出。',
+    sourcingTransferHint: '请从基础数据选择客户；联系人和联系邮箱可选，也可以转入询盘后再补充。',
     sourcingCustomer: '客户',
     sourcingCustomerPlaceholder: '从基础数据选择客户',
     sourcingCustomerRequired: '请先选择客户',
     sourcingContact: '客户联系人',
-    sourcingContactPlaceholder: '选择该客户的联系人',
+    sourcingContactOptional: '客户联系人（可选）',
+    sourcingContactPlaceholder: '可选择该客户的联系人',
     sourcingSelectCustomerFirst: '请先选择客户',
-    sourcingNoActiveContacts: '该客户尚未维护有效联系人，请先到客户档案中补充。',
+    sourcingNoActiveContacts: '该客户尚未维护有效联系人，也可以不绑定联系人直接转入。',
     sourcingContactRequired: '请选择客户联系人',
     sourcingPrimaryContact: '主要联系人',
     sourcingContactEmailMissing: '未维护邮箱',

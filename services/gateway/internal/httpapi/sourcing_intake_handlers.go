@@ -140,14 +140,23 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 	}
 	customerID, _ := strconv.ParseInt(r.FormValue("customer_id"), 10, 64)
 	contactID, _ := strconv.ParseInt(r.FormValue("contact_id"), 10, 64)
-	customer, contact, err := s.resolveActiveCustomerContact(r.Context(), customerID, contactID)
+	customer, err := s.resolveActiveCustomer(r.Context(), customerID)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
+	contactName, contactEmail := "", ""
+	if contactID > 0 {
+		_, contact, contactErr := s.resolveActiveCustomerContact(r.Context(), customerID, contactID)
+		if contactErr != nil {
+			s.writeGRPCError(w, contactErr)
+			return
+		}
+		contactName, contactEmail = contact.GetName(), contact.GetEmail()
+	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), &prv1.CreateCaseRequest{
 		Title: title, CustomerId: customerID, CustomerName: customerSnapshotName(customer),
-		ContactId: contactID, ContactName: contact.GetName(), ContactEmail: contact.GetEmail(),
+		ContactId: contactID, ContactName: contactName, ContactEmail: contactEmail,
 		// -1 表示手工上传；摘要用于阻止同一文件被重复导入。
 		SourceMailId: -1, SourceAttachmentId: inquiryFingerprint(data), Lines: lines,
 		SourceFileName: filepath.Base(header.Filename), SourceContentType: header.Header.Get("Content-Type"), SourceFileData: data,
