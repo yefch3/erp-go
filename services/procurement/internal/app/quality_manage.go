@@ -36,7 +36,7 @@ func (s *Service) UpdateQualityBasics(ctx context.Context, tenantID, id int64, i
 	if err != nil {
 		return QualityTask{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
 	var before []byte
 	err = tx.QueryRow(ctx, `SELECT status,to_jsonb(t) FROM quality_inspection_tasks t WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, id).Scan(&status, &before)
@@ -80,7 +80,7 @@ func (s *Service) DeleteQualityTask(ctx context.Context, tenantID, id int64, op 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
 	var started *time.Time
 	var snapshot []byte
