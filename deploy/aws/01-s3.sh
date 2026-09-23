@@ -34,15 +34,23 @@ aws s3api put-public-access-block --bucket "$BUCKET" \
 aws s3api put-bucket-versioning --bucket "$BUCKET" \
   --versioning-configuration Status=Enabled
 
+# 邮件里外链图片的缓存（mail/inbound-img/）**不设过期**。
+#
+# 从前有一条 180 天过期的规则。2026-09-23 撤掉了，因为它和读信那一侧对不
+# 上：S3 按时删对象，email_inbound_images 里的行却一直在，读信时照样把正文
+# 里的图片地址换成指向那个对象的签名链接——对象没了，就是一张裂图。第一批
+# 缓存是 2026-08-19 存的，照那条规则 2027 年 2 月中起，半年前的邮件里凡是被
+# 缓存过的图片（签名 logo、产品图）会一批批裂掉，而且没有退路：换地址之前
+# 不检查对象在不在。
+#
+# 不过期的代价：2026-09-23 缓存一共 13 GB，按标准存储每月约 0.3 美元。缓存
+# 跟着邮件走——一封信被彻底删除时，它的图片对象随 purgeOne 一起删。
+#
+# 只缓存外链图片（<img src="https://...">，发件人服务器上的）。邮件自带的
+# 内嵌图片（cid:）是附件的一部分，存在 mail/inbound/ 下，从来就不过期。
 aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" \
   --lifecycle-configuration '{
     "Rules": [
-      {
-        "ID": "expire-cached-remote-images",
-        "Filter": { "Prefix": "mail/inbound-img/" },
-        "Status": "Enabled",
-        "Expiration": { "Days": 180 }
-      },
       {
         "ID": "drop-old-versions",
         "Filter": { "Prefix": "" },
