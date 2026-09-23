@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 // 那一份里包含命令式 API 和指令的样式，漏一个的样子是某个页面上的某个
 // 对话框没有边框，不值得为 20 KB 去四十个页面里找。
 import 'element-plus/dist/index.css'
+import './styles/compactModuleLists.css'
 import App from './App.vue'
 import { router } from './router'
 import { i18n, bootLocale } from './i18n'

@@ -1,0 +1,122 @@
+/* Shared list presentation. This file only changes layout and type; row actions,
+   sorting, selection, expansion and per-page column definitions stay untouched. */
+.content.compact-module-lists {
+  --compact-list-text: 12px;
+  --compact-list-muted: 11px;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) {
+  --el-table-header-bg-color: #f3faff;
+  --el-table-header-text-color: #30455b;
+  --el-table-row-hover-bg-color: #f0fbf6;
+  font-size: var(--compact-list-text);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *))::before,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-table__inner-wrapper::before { display: none; }
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) th.el-table__cell {
+  height: 36px;
+  padding: 3px 0;
+  font-size: var(--compact-list-text);
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid #dcebf2;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell {
+  padding: 7px 0;
+  font-size: var(--compact-list-text);
+  border-bottom: 1px solid #e7eff3;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) :is(th,td).el-table__cell > .cell {
+  padding-left: 6px;
+  padding-right: 6px;
+  line-height: 19px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) th .cell {
+  white-space: normal;
+  word-break: keep-all;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .reorderable-table-header {
+  min-height: 26px;
+  padding: 0;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .reorderable-table-header .column-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .reorderable-table-header:hover .column-label,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .reorderable-table-header:focus-within .column-label { opacity: .15; }
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-button:not(.is-circle):not(.is-round):not(.is-text):not(.is-link) {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 6px;
+  font-size: var(--compact-list-text);
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-button.is-link,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-tag {
+  font-size: var(--compact-list-text);
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-tag { max-width: 100%; }
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-table-fixed-column--right::before,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) .el-table-fixed-column--left::before { box-shadow: none; }
+.content.compact-module-lists :is(.el-pagination,.el-table .sub,.el-table small) { font-size: var(--compact-list-muted); }
+/* Keep editors and form controls at their original sizes. Tables inside modal
+   workflows are intentionally excluded above. */
+.content.compact-module-lists :is(.el-dialog,.el-drawer,.el-table__expanded-cell) .el-table { font-size: inherit; }
+/* Lists share the same page density while retaining their own controls. */
+.content.compact-module-lists > :is(div, main, section):has(.el-table) :is(.page-head,.procurement-page-header) {
+  min-height: 34px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+.content.compact-module-lists > :is(div, main, section):has(.el-table) :is(.page-head,.procurement-page-header) :is(h1,h2) {
+  font-size: 20px;
+}
+.content.compact-module-lists > :is(div, main, section):has(.el-table) :is(.page-head,.procurement-page-header) p {
+  font-size: 12px;
+}
+.content.compact-module-lists .el-card:has(.el-table:not(:where(.el-dialog *, .el-drawer *))) {
+  border: 0;
+  box-shadow: none;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > :is(.el-button, .el-dropdown > .el-button) {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--compact-list-text);
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > .el-button--primary {
+  color: var(--el-color-primary);
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > .el-button--danger {
+  color: var(--el-color-danger);
+}
+/* Center the content inside interactive cells too. Centering only Element Plus
+   .cell leaves the product-summary and customer-identity flex children left. */
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary__main {
+  justify-content: center;
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary--stacked {
+  align-items: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .customer-identity {
+  align-items: center;
+  margin-inline: auto;
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > button:not(:where(.el-button,.el-checkbox *)) {
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > .el-dropdown > .el-button {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--el-color-primary);
+}

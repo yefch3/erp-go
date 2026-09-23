@@ -43,10 +43,10 @@
         </div>
        </template>
       </el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="280"><template #default="{row}"><div class="product-summary"><strong>{{row.productName}}</strong></div></template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.specifications')" width="140" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.specificationCountValue',{count:row.specs.length})}}</template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.supplierQuoteCount')" width="150" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.supplierQuoteCountValue',{count:row.rows.length})}}</template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="300" align="center"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span>{{candidateLabel(row,candidate)}}</span><strong>{{selectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(selectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div><span v-else>—</span></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.product')" min-width="200" align="center"><template #default="{row}"><div class="product-summary"><strong>{{row.productName}}</strong></div></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.specifications')" width="112" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.specificationCountValue',{count:row.specs.length})}}</template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.supplierQuoteCount')" width="124" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.supplierQuoteCountValue',{count:row.rows.length})}}</template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="500" align="center"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span :title="candidateLabel(row,candidate)">{{candidateLabel(row,candidate)}}</span><strong>{{selectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(selectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div><span v-else>—</span></template></el-table-column>
      </el-table>
     </section>
     <section class="workspace-card logistics-panel">
@@ -262,4 +262,21 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .supplier-quote-expand{margin:0;padding:5px 10px;border-top:1px solid #e4ecef;background:#fff}
 @media(max-width:760px){.customer-product-identity,.customer-product-quantity{padding-top:0}.supplier-quote-list{margin-left:33px;padding-left:0}.supplier-quote-expand{width:100%;text-align:left}}
 @media(max-width:520px){.supplier-quote-list{margin-left:0}}
+/* Keep the selected prices readable without making each quote a nested card. */
+.compare-mode .compact-category-heading{gap:12px}
+.compare-mode .group-count{min-width:0;flex-wrap:wrap;justify-content:flex-end;white-space:normal}
+.compare-mode .fixed-category-calculation .manual-inputs{grid-template-columns:repeat(auto-fit,minmax(150px,190px));justify-content:start;gap:10px}
+.compare-mode .fixed-category-calculation .manual-inputs label{min-width:0}
+.compare-mode .fixed-category-calculation .fixed-formula{min-width:0}
+.compare-mode .fixed-category-calculation .fixed-formula strong{overflow-wrap:anywhere}
+.compare-mode .product-group-table .product-summary{text-align:center}
+.compare-mode .product-group-table .selected-cfr-list{display:grid;gap:0;min-width:0;width:100%}
+.compare-mode .product-group-table .cfr-chip{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:start;gap:6px 12px;min-width:0;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left}
+.compare-mode .product-group-table .cfr-chip+.cfr-chip{border-top:1px solid #e2ebee}
+.compare-mode .product-group-table .cfr-chip>span{min-width:0;max-width:none;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
+.compare-mode .product-group-table .cfr-chip strong{justify-self:end;white-space:nowrap;text-align:right}
+@media(max-width:700px){
+ .compare-mode .group-count{justify-content:flex-start}
+ .compare-mode .fixed-category-calculation .manual-inputs{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+}
 </style>
