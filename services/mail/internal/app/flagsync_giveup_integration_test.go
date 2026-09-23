@@ -1,12 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,9 +221,14 @@ func syncState(t *testing.T, pool *pgxpool.Pool, tenantID, accountID int64, fold
 }
 
 // 文件夹换代之后我们手里的 UID 全部作废：按 UID 查每一封都"不在"，但那不是
-// 信没了，是编号没意义了。这时**不能**把操作当成已完成作废——静默作废是所有
-// 结果里最坏的一种。让它按退避走到上限、留一条告警。
-func TestAMoveIsNotRetiredWhenTheFolderChangedGeneration(t *testing.T) {
+// 信没了，是编号没意义了。这时**不能**把操作当成已完成悄悄作废——静默作废是
+// 所有结果里最坏的一种。
+//
+// 从前的做法是按退避重试到上限再告警。2026-09-23 改成**一次都不执行、当场
+// 作废、留一条告警**（dropStaleOps）：新一代从 1 开始编号，旧的 UID 9 在新
+// 一代里多半正好指着另一封信，重试的那三四个小时里第一次就会把那封信挪进回收
+// 站。这个测试原来只测了「新一代里没有 UID 9」的情形，所以一直是绿的。
+func TestAMoveIsDroppedUnexecutedWhenTheFolderChangedGeneration(t *testing.T) {
 	dsn := os.Getenv("MAIL_TEST_DSN")
 	if dsn == "" {
 		t.Skip("MAIL_TEST_DSN not set")
@@ -241,19 +248,22 @@ func TestAMoveIsNotRetiredWhenTheFolderChangedGeneration(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
 	}()
 	box, _ := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	var logs bytes.Buffer
 	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
-		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		slog.New(slog.NewTextHandler(&logs, nil)))
 	res, err := svc.VerifyMailSecret(ctx, tenantID, me, BindRequest{
 		Email: "me@263.net", Provider: "p263", Secret: "pw",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 服务器上 INBOX 已经是第 8 代，UID 9 在新世代里不存在；我们记的还是第 7 代。
-	svc.UseMailbox(&refusingHost{
-		present:  map[string]map[uint32]bool{"INBOX": {}},
+	// 服务器上 INBOX 已经是第 8 代，而且新一代里**有** UID 9——那是另一封信；
+	// 我们记的还是第 7 代。
+	host := &refusingHost{
+		present:  map[string]map[uint32]bool{"INBOX": {9: true}},
 		validity: map[string]uint32{"INBOX": 8},
-	})
+	}
+	svc.UseMailbox(host)
 	syncState(t, pool, tenantID, res.AccountID, "INBOX", 7)
 	if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
 		TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
@@ -264,14 +274,16 @@ func TestAMoveIsNotRetiredWhenTheFolderChangedGeneration(t *testing.T) {
 
 	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
 
-	var n int
-	var attempts int32
-	_ = pool.QueryRow(ctx, "SELECT count(*), coalesce(max(attempts),0) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n, &attempts)
-	if n != 1 {
-		t.Fatalf("换代之后按 UID 查不到不等于信没了，操作不该被作废；队列里剩 %d 条", n)
+	if host.moves != 0 {
+		t.Fatalf("换代之后旧 UID 指着的是另一封信，一次都不该挪；实际挪了 %d 次", host.moves)
 	}
-	if attempts != 1 {
-		t.Errorf("应该记为失败一次、等待重试，attempts=%d", attempts)
+	var n int
+	_ = pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("执行不了的操作不该留在队列里挡着对账；还剩 %d 条", n)
+	}
+	if !strings.Contains(logs.String(), "folder was renumbered") {
+		t.Fatalf("作废不能是悄悄的，要留一条告警：\n%s", logs.String())
 	}
 }
 

@@ -240,6 +240,13 @@ SET secret_enc = sqlc.arg(secret_enc)::bytea,
     -- 因为所有挑信箱的查询都还在按 unbound_at 跳过它。
     is_active = TRUE,
     unbound_at = NULL,
+    -- 新凭据，旧的「被服务器拒绝」就不算数了。后台挑信箱的查询都跳过
+    -- login_rejected_at 有值的箱——这里不清的话，重新填了授权码的箱照样
+    -- 没人去收，要等有人打开邮箱页才偶然被收一次。
+    -- status_checked_at 清空是让它排到下一轮的最前面。
+    auth_failed = FALSE,
+    login_rejected_at = NULL,
+    status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -259,21 +266,56 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota, keep_sent_copy
+       hourly_quota, daily_quota, keep_sent_copy,
+       (login_rejected_at IS NOT NULL)::boolean AS login_rejected
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountVerified :exec
+-- 刚刚登录成功，所以之前记下的「被拒绝」一并清掉。
 UPDATE mail_accounts
-SET verified_at = now(), last_error = '', updated_at = now()
+SET verified_at = now(), last_error = '', auth_failed = FALSE, login_rejected_at = NULL,
+    updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountFailed :exec
 -- auth_failed 和 last_error 一起写：文本给人看，位给程序判。
+--
+-- 收信登录被拒着（login_rejected_at 有值）的时候，一次不是凭据问题的失败
+-- （员工打开页面那次收信碰上超时）不把 auth_failed 改回 false：凭据还是那份
+-- 坏的，横幅上「重新登录」那颗按钮不能因为一次网络抖动就消失，主邮箱开锁时
+-- 的那次重试也靠这一位触发。
 UPDATE mail_accounts
 SET last_error = sqlc.arg(last_error)::text,
-    auth_failed = sqlc.arg(auth_failed)::boolean,
+    auth_failed = (sqlc.arg(auth_failed)::boolean OR login_rejected_at IS NOT NULL),
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ClearMailAccountFailure :exec
+-- 信箱又能用了：清掉记下的错误。
+--
+-- **只在真有东西要清时才写。** 全量同步每一轮成功都会调它，轻状态检查
+-- 每次成功也会——无条件写的话，每个箱每两分钟一次 UPDATE，写的全是
+-- 「没变」。
+UPDATE mail_accounts
+SET last_error = '', auth_failed = FALSE, login_rejected_at = NULL, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+  AND (auth_failed OR last_error <> '' OR login_rejected_at IS NOT NULL);
+
+-- name: MarkMailboxLoginRejected :exec
+-- 收信时 IMAP 登录被服务器拒绝了。
+--
+-- 和 MarkMailAccountFailed 的区别：多写一个 login_rejected_at，后台据此不再
+-- 自动登录这个箱（见 00076）。只有收信那几条路调它——发信失败只写横幅那一
+-- 位，不该让一个箱停止收信。
+--
+-- COALESCE：记的是这一轮被拒从什么时候开始，员工打开页面时那次重试又被拒
+-- 不往后挪。
+UPDATE mail_accounts
+SET last_error = sqlc.arg(last_error)::text,
+    auth_failed = TRUE,
+    login_rejected_at = coalesce(login_rejected_at, now()),
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -1179,6 +1221,10 @@ SET auth_kind = 'OAUTH',
     is_active = TRUE,
     -- 同 SetMailAccountSecret：重新授权就是重新绑上。
     unbound_at = NULL,
+    -- 同 SetMailAccountSecret：新授权，旧的拒绝不算数。
+    auth_failed = FALSE,
+    login_rejected_at = NULL,
+    status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -1233,16 +1279,25 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: EnqueueFlagOp :exec
 -- The intent to publish one flag change. Conflicting intents collapse: the
 -- newest wins, because that is the state the person last chose.
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id)
+--
+-- uid_validity 取这个文件夹上次同步时服务器给的那个：UID 是在那一代编号下
+-- 拿到的。执行前和服务器当前的比，对不上就作废（见 00076、dropStaleOps）。
+-- 没同步过的文件夹取不到，记 0 = 不检查。
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, uid_validity)
 VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
     sqlc.arg(employee_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
-    sqlc.arg(flag)::text, sqlc.arg(op)::text, sqlc.arg(message_id)::text
+    sqlc.arg(flag)::text, sqlc.arg(op)::text, sqlc.arg(message_id)::text,
+    coalesce((SELECT s.uid_validity FROM mail_sync_state s
+              WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
+                AND s.account_id = sqlc.arg(account_id)::bigint
+                AND s.folder = sqlc.arg(folder)::text), 0)
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
     message_id = excluded.message_id,
+    uid_validity = excluded.uid_validity,
     attempts = 0,
     last_error = '',
     next_try_at = now();
@@ -1251,10 +1306,18 @@ ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
 -- Due work, oldest first, locked so two workers cannot publish the same
 -- change twice. SKIP LOCKED rather than waiting: another worker holding a row
 -- means it is already being handled.
-SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
+--
+-- 收信登录被拒过的箱的操作先不取：拿坏凭据去写回只会被拒，二十次之后这条
+-- 操作被放弃，员工那次标已读、删除就丢了。留在队列里不动，也不记失败次数，
+-- 凭据修好（login_rejected_at 清掉）之后照常写回。
+SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts,
+       uid_validity
 FROM mail_flag_ops
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND next_try_at <= now()
+  AND account_id NOT IN (
+      SELECT a.id FROM mail_accounts a
+      WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint AND a.login_rejected_at IS NOT NULL)
 ORDER BY next_try_at
 LIMIT sqlc.arg(row_limit)::int
 FOR UPDATE SKIP LOCKED;
@@ -1999,6 +2062,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   -- 失败的登录，然后把「认证失败」写到那一行上——而那句话在一个主动解绑
   -- 的人看来毫无道理。
   AND unbound_at IS NULL
+  -- 收信登录被拒过的箱不在这一档：凭据只有人重新填才会变，每两分钟拿同
+  -- 一份去登录只会一直被拒，还可能被服务商当成攻击限流（163 已经回过
+  -- "login frequency limited"）。后台哪一档都不收它，见 00076；有人打开
+  -- 邮箱页时的那次收信照常去试。
+  --
+  -- 看 login_rejected_at 不看 auth_failed：后者发信失败也会写（见 00076）。
+  AND login_rejected_at IS NULL
   AND last_read_at IS NOT NULL
   AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
 ORDER BY id;
@@ -2014,11 +2084,18 @@ ORDER BY id;
 --
 -- NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
 -- 最需要先被看一眼。
+--
+-- **收信登录被拒过的箱（login_rejected_at 有值）不问。** 问轻状态也要先登录，
+-- 而凭据只有人重新填才会变。2026-09-23 之前这一档照问，五个坏掉的箱每 7~11
+-- 分钟登录一次、被拒一次，一天两千多次，163 已经回了 "login frequency
+-- limited"。服务商偶尔把「登录太频繁」误报成密码错的那种情况，由员工打开
+-- 邮箱页时的那次收信兜底，不由后台盲试，见 00076。
 SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND is_active
   AND unbound_at IS NULL
+  AND login_rejected_at IS NULL
   AND (last_read_at IS NULL
        OR last_read_at <= now() - make_interval(secs => sqlc.arg(active_seconds)::int))
   AND (status_checked_at IS NULL
@@ -2077,9 +2154,11 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 --
 -- IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
 -- 一轮的轮询加十分钟一次的轻状态已经够了。
+-- 收信登录被拒过的箱不守：常开连接登不上，只会隔几分钟重连一次、被拒一次。
 SELECT (last_read_at IS NOT NULL
         AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
-        AND unbound_at IS NULL)::bool
+        AND unbound_at IS NULL
+        AND login_rejected_at IS NULL)::bool
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 

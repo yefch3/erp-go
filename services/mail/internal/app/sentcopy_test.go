@@ -57,7 +57,7 @@ func TestSentCopyIsFiledOnAPlainHost(t *testing.T) {
 	raw := []byte("Message-ID: <a@263.net>\r\nSubject: hi\r\n\r\nbody")
 
 	before := time.Now()
-	s.fileSentCopy(context.Background(), acct, raw)
+	s.fileSentCopy(context.Background(), 1, acct, raw)
 
 	if len(mb.appends) != 1 {
 		t.Fatalf("发出去的信没有在已发送里留底，append 次数 %d", len(mb.appends))
@@ -78,7 +78,7 @@ func TestSentCopyIsNotFiledWhereTheHostAlreadyKeepsOne(t *testing.T) {
 	for _, host := range []string{"smtp.gmail.com", "gmail.com", "SMTP.GOOGLEMAIL.COM"} {
 		mb := &fakeAppendMailbox{sentFolder: "[Gmail]/Sent Mail"}
 		s := newSentCopyService(mb)
-		s.fileSentCopy(context.Background(), MailAccount{AccountID: 1, Host: host}, []byte("x"))
+		s.fileSentCopy(context.Background(), 1, MailAccount{AccountID: 1, Host: host}, []byte("x"))
 
 		if len(mb.appends) != 0 {
 			t.Fatalf("%s 自己就会留底，再存一份等于每封信在 Gmail 里都变成两封", host)
@@ -95,7 +95,7 @@ func TestSentCopyIsNotFiledWhereTheHostAlreadyKeepsOne(t *testing.T) {
 func TestLookalikeDomainIsNotMistakenForGmail(t *testing.T) {
 	mb := &fakeAppendMailbox{sentFolder: "Sent"}
 	s := newSentCopyService(mb)
-	s.fileSentCopy(context.Background(), MailAccount{Host: "smtp.notgmail.com"}, []byte("x"))
+	s.fileSentCopy(context.Background(), 1, MailAccount{Host: "smtp.notgmail.com"}, []byte("x"))
 
 	if len(mb.appends) != 1 {
 		t.Fatal("smtp.notgmail.com 被当成了 Gmail，这家公司的已发送会一直是空的")
@@ -107,7 +107,7 @@ func TestFilingFailuresStayQuiet(t *testing.T) {
 	t.Run("找不到已发送文件夹", func(t *testing.T) {
 		mb := &fakeAppendMailbox{sentFolderErr: errors.New("no such folder")}
 		s := newSentCopyService(mb)
-		s.fileSentCopy(context.Background(), MailAccount{AccountID: 2, Host: "mail.example.com"}, []byte("x"))
+		s.fileSentCopy(context.Background(), 1, MailAccount{AccountID: 2, Host: "mail.example.com"}, []byte("x"))
 		if len(mb.appends) != 0 {
 			t.Fatal("文件夹都没找到，却往某处存了一封信")
 		}
@@ -116,14 +116,14 @@ func TestFilingFailuresStayQuiet(t *testing.T) {
 	t.Run("主机拒绝存入", func(t *testing.T) {
 		mb := &fakeAppendMailbox{sentFolder: "Sent", appendErr: errors.New("over quota")}
 		s := newSentCopyService(mb)
-		s.fileSentCopy(context.Background(), MailAccount{AccountID: 3, Host: "mail.example.com"}, []byte("x"))
+		s.fileSentCopy(context.Background(), 1, MailAccount{AccountID: 3, Host: "mail.example.com"}, []byte("x"))
 	})
 
 	t.Run("没有信可存", func(t *testing.T) {
 		mb := &fakeAppendMailbox{sentFolder: "Sent"}
 		s := newSentCopyService(mb)
 		// dev 发送适配器什么都不发，自然也没有原文可留底。
-		s.fileSentCopy(context.Background(), MailAccount{AccountID: 4, Host: "mail.example.com"}, nil)
+		s.fileSentCopy(context.Background(), 1, MailAccount{AccountID: 4, Host: "mail.example.com"}, nil)
 		if len(mb.appends) != 0 || mb.folderAsks != 0 {
 			t.Fatal("没有原文却去存了一封空信")
 		}
@@ -137,7 +137,7 @@ func TestSentFolderIsResolvedOncePerAccount(t *testing.T) {
 	acct := MailAccount{AccountID: 77, Host: "smtp.263.net"}
 
 	for range 3 {
-		s.fileSentCopy(context.Background(), acct, []byte("x"))
+		s.fileSentCopy(context.Background(), 1, acct, []byte("x"))
 	}
 	if mb.folderAsks != 1 {
 		t.Fatalf("每封信都重新找一次已发送文件夹（%d 次），发一批信就是一批多余的往返", mb.folderAsks)

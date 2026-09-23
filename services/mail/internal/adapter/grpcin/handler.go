@@ -884,6 +884,15 @@ func (h *Handler) GetCompanyMailbox(ctx context.Context, req *mailv1.GetCompanyM
 	if !ok {
 		return &mailv1.GetCompanyMailboxResponse{}, nil
 	}
+	// 本人开锁、而这个箱记着登录失败：先试一次，再按试完的结果回答。
+	if req.GetRetryLogin() && employeeID == op.ID && v.AuthFailed {
+		h.svc.RetryMailboxLogin(ctx, grpcx.TenantID(ctx), v.AccountID)
+		if v, ok, err = h.svc.CompanyMailboxOf(ctx, grpcx.TenantID(ctx), employeeID); err != nil {
+			return nil, err
+		} else if !ok {
+			return &mailv1.GetCompanyMailboxResponse{}, nil
+		}
+	}
 	return &mailv1.GetCompanyMailboxResponse{Mailbox: &mailv1.CompanyMailbox{
 		AccountId: v.AccountID, Email: v.Email, VerifiedAt: v.VerifiedAt,
 		LastError: v.LastError, NeedsReauth: v.AuthFailed, IsActive: v.IsActive,

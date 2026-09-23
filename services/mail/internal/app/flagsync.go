@@ -127,6 +127,10 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	if len(ops) == 0 {
 		return
 	}
+	ops = s.dropStaleOps(ctx, cfg.TenantID, ops)
+	if len(ops) == 0 {
+		return
+	}
 
 	// 键里不再有 employeeID：取凭据认的是账号。一个人绑两个箱时，拿 A 箱的
 	// UID 去 B 箱上执行——而下面的 publishMove 是**按 UID 移动**，UID 是每个
@@ -401,6 +405,65 @@ func (s *Service) failOrRetire(ctx context.Context, row store.ClaimFlagOpsRow, c
 		return
 	}
 	s.failOps(ctx, []store.ClaimFlagOpsRow{row}, cause)
+}
+
+// dropStaleOps 作废那些 UID 已经不属于这一代编号的写回操作，返回剩下的。
+//
+// 写回按 UID 执行，而 UID 只在同一个 UIDVALIDITY 下有意义。邮箱搬过家（换
+// 服务商、服务器重建）之后编号整体重排，一条排在队里的「把 UID 5 挪进回收站」
+// 落到的是另一封信。凭据被拒的箱的写回会暂停到凭据修好（见 00076），暂停可能
+// 几周，而搬家常常正是凭据失效的原因——所以恢复之后第一件事是核对这个。
+//
+// 每个（信箱、文件夹）问一次 STATUS，不开文件夹、不传信件。问不出来、或者
+// 入队时就不知道是哪一代（uid_validity = 0）的，照旧执行：这道检查之前一直
+// 没有，退回到原来的行为，不因为多了一道查不成的检查就把写回卡住。
+func (s *Service) dropStaleOps(ctx context.Context, tenantID int64, ops []store.ClaimFlagOpsRow) []store.ClaimFlagOpsRow {
+	type folderKey struct {
+		accountID int64
+		folder    string
+	}
+	current := map[folderKey]int64{} // 0 = 问不出来，不检查
+	kept := ops[:0:0]
+	for _, o := range ops {
+		if o.UidValidity == 0 {
+			kept = append(kept, o)
+			continue
+		}
+		k := folderKey{o.AccountID, o.Folder}
+		now, asked := current[k]
+		if !asked {
+			now = s.currentUIDValidity(ctx, tenantID, o.AccountID, o.Folder)
+			current[k] = now
+		}
+		if now == 0 || now == o.UidValidity {
+			kept = append(kept, o)
+			continue
+		}
+		s.log.Warn("queued mail change dropped: the folder was renumbered on the host since it was queued",
+			"account", o.AccountID, "folder", o.Folder, "uid", o.ImapUid, "flag", o.Flag, "op", o.Op,
+			"queued_under", o.UidValidity, "host_now", now)
+		if err := s.q.DeleteFlagOp(ctx, o.ID); err != nil {
+			s.log.Warn("could not drop a stale write-back", "id", o.ID, "err", err)
+		}
+	}
+	return kept
+}
+
+// currentUIDValidity 问服务器这个文件夹现在是哪一代编号。问不出来回 0。
+func (s *Service) currentUIDValidity(ctx context.Context, tenantID, accountID int64, folder string) int64 {
+	acct, err := s.ForAccount(ctx, tenantID, accountID)
+	if err != nil {
+		return 0
+	}
+	actual, err := s.hostFolder(ctx, acct, folder)
+	if err != nil || actual == "" {
+		return 0
+	}
+	st, err := s.mailbox.FolderStatus(ctx, acct, actual)
+	if err != nil {
+		return 0
+	}
+	return int64(st.UIDValidity)
 }
 
 // moveIsMoot 问服务器：这封信还在原文件夹里吗。

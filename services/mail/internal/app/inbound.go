@@ -240,6 +240,17 @@ func (c SyncConfig) withDefaults() SyncConfig {
 	return c
 }
 
+// dueForStatusParams 是「这一轮问谁轻状态」那条查询的参数。和生产走同一个
+// 函数，测试才测得到生产传进去的值。
+func dueForStatusParams(cfg SyncConfig) store.ListMailboxesDueForStatusParams {
+	return store.ListMailboxesDueForStatusParams{
+		TenantID:      cfg.TenantID,
+		ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
+		StatusSeconds: int32(cfg.StatusEvery.Seconds()),
+		RowLimit:      int32(cfg.StatusBudget),
+	}
+}
+
 // RunInboundSync polls every configured mailbox for ever.
 //
 // Polling rather than pushing because a mail host offers nothing else. The
@@ -287,22 +298,40 @@ func (s *Service) RunInboundSync(ctx context.Context, cfg SyncConfig) {
 // 提上来之后走的是和有人在看的箱**同一条**全量同步，所以「怎么收信」只有
 // 一套代码；这里只回答「要不要收」。
 func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accountID int64) {
+	// 时间戳不管成败都记：问失败了也别在下一轮立刻重问，那会让一个连不上
+	// 的箱每两分钟占一个 worker。等它下一次到点。凭据被拒的箱之后不会再被
+	// 挑出来（见 ListMailboxesDueForStatus 和 00076）。
+	//
+	// 从前 ForAccount 失败那一支不记这个时间戳，于是 Google 授权失效的箱
+	// 每轮都被挑出来再失败一次（2026-09-23 生产上三个箱每 7 分钟一次）。
+	defer s.markStatusChecked(ctx, cfg.TenantID, accountID)
+
 	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 	if err != nil {
-		// 凭据坏了在这里只记一句：全量那条路上有 RecordFailure 把它写到
-		// 账号行上、让设置页说得出话，重复一遍没有新信息。
+		// Google 授权被撤销就是在这里失败的（换令牌那一步）。要写到账号上：
+		// 设置页靠 auth_failed 给出「重新登录」，后台靠 login_rejected_at 不再
+		// 去试。从前
+		// 只记一句日志，理由是「全量那条路会写」——但没人看的箱根本走不到
+		// 全量那条路，于是这三个箱永远没被标成坏的，也就永远在被重试。
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
+		}
 		s.log.Warn("status check could not resolve the mailbox", "account", accountID, "err", err)
 		return
 	}
 	st, err := s.mailbox.FolderStatus(ctx, acct, cfg.Folder)
 	if err != nil {
+		// 服务器拒绝了登录：同上，写到账号上。只有这一种写——连不上、超时
+		// 这些不算凭据问题，不该让这个箱停止收信。
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
+		}
 		s.log.Warn("status check failed", "account", accountID, "err", err)
-		// 时间戳照记：问失败了也别在下一轮立刻重问，那会让一个连不上的箱
-		// 每两分钟占一个 worker。等它下一次到点。
-		s.markStatusChecked(ctx, cfg.TenantID, accountID)
 		return
 	}
-	s.markStatusChecked(ctx, cfg.TenantID, accountID)
+	// 登上去了：之前记下的错误（比如上一次全量同步超时）清掉，横幅就不再
+	// 报一个已经过去的问题。没记着就什么都不写。
+	s.clearFailure(ctx, cfg.TenantID, accountID)
 
 	if !s.worthAFullSync(ctx, cfg, acct, st) {
 		return
@@ -408,12 +437,7 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 	}
 	// 轻状态那一档先挑出来：它要在同一个 fleet 上跑，和全量那一档共用并发
 	// 上限——受不了并发的是邮件服务商，不是我们，所以上限必须是全局的。
-	due, err := s.q.ListMailboxesDueForStatus(ctx, store.ListMailboxesDueForStatusParams{
-		TenantID:      cfg.TenantID,
-		ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
-		StatusSeconds: int32(cfg.StatusEvery.Seconds()),
-		RowLimit:      int32(cfg.StatusBudget),
-	})
+	due, err := s.q.ListMailboxesDueForStatus(ctx, dueForStatusParams(cfg))
 	if err != nil {
 		// 轻状态挑不出来不该拖累全量那一档：有人正等着的那些箱照收。
 		s.log.Error("could not list mailboxes due for a status check", "err", err)
@@ -627,7 +651,7 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// 密码、在安全页里撤了）正是这里失败，不记的话页面永远不会给那颗
 		// "重新登录"——它是唯一修得好这件事的按钮。
 		if IsCredentialRejected(err) {
-			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 		}
 		return 0, err
 	}
@@ -643,7 +667,11 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// long as it took somebody to notice, while the page went on showing
 		// the last successful sync as though it were current. Silence is the
 		// bug: the mailbox has to be able to say it is not receiving.
-		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), IsCredentialRejected(err))
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, cfg.TenantID, acct.AccountID, err)
+		} else {
+			s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), false)
+		}
 		return 0, err
 	}
 	// Cleared on the way back up, so a recovered mailbox stops complaining
@@ -1445,6 +1473,12 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		if err != nil {
 			// Unbound or paused. The manager restarts the watch if the
 			// account comes back; holding a loop open for it helps nobody.
+			//
+			// 或者 Google 授权被撤销了。那种要写到账号上：不写的话管理器
+			// 每分钟把它重新挑出来，每次都去 Google 换一次令牌、被拒一次。
+			if IsCredentialRejected(err) {
+				s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
+			}
 			return
 		}
 		// 这台服务器的 IDLE 被判定为没用，正在冷静期：不开连接，睡到期满
@@ -1493,6 +1527,17 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 				case <-time.After(benignReconnectDelay):
 				}
 				continue
+			}
+			// 登录被拒：常开连接这条路到此为止。写到账号上，管理器下一轮
+			// 就不会再把它挑出来（ListActiveMailAccounts 跳过 login_rejected_at
+			// 有值的箱）。
+			// 从前这里只是退避重连，最长十分钟一次，只要有人开着邮箱页就
+			// 一直重连、一直被拒。
+			if IsCredentialRejected(err) {
+				s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
+				s.log.Warn("idle watch stopped: the mail host rejected the credentials",
+					"account", accountID, "err", err)
+				return
 			}
 			s.log.Warn("idle watch dropped", "account", accountID, "err", err)
 			select {

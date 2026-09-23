@@ -49,6 +49,10 @@ type MailAccount struct {
 	//
 	// nil = 还没人表过态，按主机猜。别读它，读 ShouldKeepSentCopy。
 	KeepSentCopy *bool
+	// LoginRejected：收信时登录被服务器拒绝着（login_rejected_at，见 00076）。
+	// 后台的自动登录据此跳过这个箱；这里带上，是给那些拿到账号之后才决定
+	// 要不要登录的地方用，比如发信之后往「已发送」存副本。
+	LoginRejected bool
 }
 
 // ShouldKeepSentCopy 是「这一封发完之后，我们自己要不要存一份」。
@@ -143,20 +147,21 @@ func (s *Service) ForAccount(ctx context.Context, tenantID, accountID int64) (Ma
 	}
 
 	return MailAccount{
-		AccountID:    row.ID,
-		AuthKind:     row.AuthKind,
-		EmployeeID:   row.EmployeeID,
-		Email:        row.Email,
-		Username:     row.Username,
-		Secret:       string(secret),
-		Domain:       row.Domain,
-		Host:         row.SmtpHost,
-		Port:         int(row.SmtpPort),
-		Security:     row.SmtpSecurity,
-		IMAPHost:     row.ImapHost,
-		IMAPPort:     int(row.ImapPort),
-		IMAPSecurity: row.ImapSecurity,
-		KeepSentCopy: row.KeepSentCopy,
+		AccountID:     row.ID,
+		AuthKind:      row.AuthKind,
+		EmployeeID:    row.EmployeeID,
+		Email:         row.Email,
+		Username:      row.Username,
+		Secret:        string(secret),
+		Domain:        row.Domain,
+		Host:          row.SmtpHost,
+		Port:          int(row.SmtpPort),
+		Security:      row.SmtpSecurity,
+		IMAPHost:      row.ImapHost,
+		IMAPPort:      int(row.ImapPort),
+		IMAPSecurity:  row.ImapSecurity,
+		KeepSentCopy:  row.KeepSentCopy,
+		LoginRejected: row.LoginRejected,
 	}, nil
 }
 
@@ -294,14 +299,64 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 	}
 }
 
+// recordLoginRejected 记下收信时 IMAP 登录被服务器拒绝了。
+//
+// 横幅那一位（auth_failed）照写，另外记下这一轮被拒从什么时候开始
+// （login_rejected_at）。后台据此不再自动登录这个箱，只等员工打开邮箱页时
+// 试一次、或者重新填凭据，见 00076。**只有收信的几条路调它。** 发信失败走
+// RecordFailure：它只管横幅，不该让一个箱停止收信——发信那条路连超时、
+// 断线都算成 authProblem。
+func (s *Service) recordLoginRejected(ctx context.Context, tenantID, accountID int64, cause error) {
+	if err := s.q.MarkMailboxLoginRejected(ctx, store.MarkMailboxLoginRejectedParams{
+		TenantID: tenantID, ID: accountID, LastError: truncateUTF8(cause.Error(), 500),
+	}); err != nil {
+		s.log.Warn("could not record a rejected mailbox login", "account", accountID, "err", err)
+	}
+}
+
+// RetryMailboxLogin 在人在场的时候拿存着的凭据登录一次：登上了就清掉记下的
+// 失败，还是被拒就照旧记着。
+//
+// 后台不再替被拒的箱去试（见 00076），这是除「重新填凭据」之外唯一的恢复口子
+// 之一——另一个是打开邮箱页时的那次收信。主邮箱需要这一个：它在记着失败时
+// 连锁都开不了，收信那一次走不到。
+//
+// 只登录，不收信：登上之后正常的轮询会接手。连不上、超时这些不改任何记录——
+// 它们说明不了凭据是好是坏。
+func (s *Service) RetryMailboxLogin(ctx context.Context, tenantID, accountID int64) {
+	if s.mailbox == nil {
+		return
+	}
+	acct, err := s.ForAccount(ctx, tenantID, accountID)
+	if err != nil {
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, tenantID, accountID, err)
+		}
+		return
+	}
+	if err := s.mailbox.VerifyLogin(ctx, acct); err != nil {
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, tenantID, accountID, err)
+		}
+		s.log.Info("mailbox login retried while its owner is present; still failing",
+			"account", accountID, "err", err)
+		return
+	}
+	s.clearFailure(ctx, tenantID, accountID)
+	s.log.Info("mailbox login retried while its owner is present; it works again", "account", accountID)
+}
+
 // clearFailure wipes a recorded problem once the mailbox works again.
 //
 // Only touches last_error, never verified_at: whether the credential was ever
 // verified is a different fact from whether the last sync went through, and
 // conflating them would let a working poll masquerade as a fresh sign-in.
+//
+// A no-op when nothing is recorded: it runs after every successful pass, and
+// an unconditional write would be one UPDATE per mailbox every two minutes.
 func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
-	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: "", AuthFailed: false,
+	if err := s.q.ClearMailAccountFailure(ctx, store.ClearMailAccountFailureParams{
+		TenantID: tenantID, ID: accountID,
 	}); err != nil {
 		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
 	}
