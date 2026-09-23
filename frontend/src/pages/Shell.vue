@@ -411,7 +411,7 @@
           <BLReminders v-if="auth.can('shipping:schedule:read')" />
         </div>
       </el-header>
-      <el-main class="content" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
+      <el-main class="content compact-module-lists" :class="{ 'content--procurement': procurementActive, 'content--logistics': logisticsActive }">
         <router-view :key="`${route.path}:${pageInstanceKey}:${auth.permissionRevision}`" />
       </el-main>
     </el-container>
