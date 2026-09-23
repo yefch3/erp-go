@@ -561,7 +561,7 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 		code := in.Code
 		if code == "" {
 			var err error
-			if code, err = s.nextNumber(ctx, q, tenantID, "SUPPLIER"); err != nil {
+			if code, err = s.nextAvailableSupplierCode(ctx, q, tenantID); err != nil {
 				return err
 			}
 		}
