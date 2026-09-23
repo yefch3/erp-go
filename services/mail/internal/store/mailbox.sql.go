@@ -41,6 +41,9 @@ SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, messa
 FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
   AND next_try_at <= now()
+  AND account_id NOT IN (
+      SELECT a.id FROM mail_accounts a
+      WHERE a.tenant_id = $1::bigint AND a.login_rejected_at IS NOT NULL)
 ORDER BY next_try_at
 LIMIT $2::int
 FOR UPDATE SKIP LOCKED
@@ -67,6 +70,10 @@ type ClaimFlagOpsRow struct {
 // Due work, oldest first, locked so two workers cannot publish the same
 // change twice. SKIP LOCKED rather than waiting: another worker holding a row
 // means it is already being handled.
+//
+// 收信登录被拒过的箱的操作先不取：拿坏凭据去写回只会被拒，二十次之后这条
+// 操作被放弃，员工那次标已读、删除就丢了。留在队列里不动，也不记失败次数，
+// 凭据修好（login_rejected_at 清掉）之后照常写回。
 func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]ClaimFlagOpsRow, error) {
 	rows, err := q.db.Query(ctx, claimFlagOps, arg.TenantID, arg.RowLimit)
 	if err != nil {
@@ -1867,8 +1874,8 @@ WHERE tenant_id = $1::bigint
   AND unbound_at IS NULL
   -- 收信登录被拒过的箱不在这一档：凭据只有人重新填才会变，每两分钟拿同
   -- 一份去登录只会一直被拒，还可能被服务商当成攻击限流（163 已经回过
-  -- "login frequency limited"）。它们归轻状态那一档按退避重试，见
-  -- ListMailboxesDueForStatus。有人打开邮箱页时的那次收信照常去试。
+  -- "login frequency limited"）。后台哪一档都不收它，见 00076；有人打开
+  -- 邮箱页时的那次收信照常去试。
   --
   -- 看 login_rejected_at 不看 auth_failed：后者发信失败也会写（见 00076）。
   AND login_rejected_at IS NULL
@@ -2542,19 +2549,11 @@ FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND is_active
   AND unbound_at IS NULL
-  AND CASE WHEN login_rejected_at IS NOT NULL THEN
-        status_checked_at IS NULL
-        OR status_checked_at <= now() - CASE
-             WHEN login_rejected_at > now() - interval '2 hours' THEN interval '30 minutes'
-             WHEN login_rejected_at > now() - interval '1 day'   THEN interval '2 hours'
-             ELSE interval '1 day'
-           END
-      ELSE
-        (last_read_at IS NULL
-         OR last_read_at <= now() - make_interval(secs => $2::int))
-        AND (status_checked_at IS NULL
-             OR status_checked_at <= now() - make_interval(secs => $3::int))
-      END
+  AND login_rejected_at IS NULL
+  AND (last_read_at IS NULL
+       OR last_read_at <= now() - make_interval(secs => $2::int))
+  AND (status_checked_at IS NULL
+       OR status_checked_at <= now() - make_interval(secs => $3::int))
 ORDER BY status_checked_at NULLS FIRST, id
 LIMIT $4::int
 `
@@ -2586,19 +2585,11 @@ type ListMailboxesDueForStatusRow struct {
 // NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
 // 最需要先被看一眼。
 //
-// **收信登录被拒过的箱（login_rejected_at 有值）单算，不管有没有人在看，
-// 按被拒了多久退避：**
-//
-//	被拒不到 2 小时   每 30 分钟试一次
-//	不到一天          每 2 小时
-//	一天以上          每天一次
-//
-// 凭据只有人重新填才会变，填的那一刻这一列就清了（SetMailAccountSecret /
-// SetMailAccountOAuth），所以这里的重试不是在等凭据变好，是兜底：服务商
-// 偶尔把「登录太频繁」「连接太多」也报成密码错（foxmail、163 的原话就是
-// 这么混着写的）。那种半小时内自己就好了，前两小时勤一点试；真是密码错的，
-// 第一天十几次、之后一天一次。2026-09-23 之前这一档每 7~11 分钟问一次，
-// 五个坏掉的箱一天两千多次登录。
+// **收信登录被拒过的箱（login_rejected_at 有值）不问。** 问轻状态也要先登录，
+// 而凭据只有人重新填才会变。2026-09-23 之前这一档照问，五个坏掉的箱每 7~11
+// 分钟登录一次、被拒一次，一天两千多次，163 已经回了 "login frequency
+// limited"。服务商偶尔把「登录太频繁」误报成密码错的那种情况，由员工打开
+// 邮箱页时的那次收信兜底，不由后台盲试，见 00076。
 func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailboxesDueForStatusParams) ([]ListMailboxesDueForStatusRow, error) {
 	rows, err := q.db.Query(ctx, listMailboxesDueForStatus,
 		arg.TenantID,
@@ -4558,12 +4549,12 @@ type MarkMailboxLoginRejectedParams struct {
 
 // 收信时 IMAP 登录被服务器拒绝了。
 //
-// 和 MarkMailAccountFailed 的区别：多写一个 login_rejected_at，后台据此放慢
-// 这个箱的重试（见 00076）。只有收信那几条路调它——发信失败只写横幅那一位，
-// 不该让一个箱停止收信。
+// 和 MarkMailAccountFailed 的区别：多写一个 login_rejected_at，后台据此不再
+// 自动登录这个箱（见 00076）。只有收信那几条路调它——发信失败只写横幅那一
+// 位，不该让一个箱停止收信。
 //
-// COALESCE：记的是这一轮被拒从什么时候开始，每次重试被拒不往后挪，否则
-// 「拒了多久」永远是零，退避就永远停在最勤的那一档。
+// COALESCE：记的是这一轮被拒从什么时候开始，员工打开页面时那次重试又被拒
+// 不往后挪。
 func (q *Queries) MarkMailboxLoginRejected(ctx context.Context, arg MarkMailboxLoginRejectedParams) error {
 	_, err := q.db.Exec(ctx, markMailboxLoginRejected, arg.LastError, arg.TenantID, arg.ID)
 	return err
@@ -5501,7 +5492,7 @@ SET secret_enc = $1::bytea,
     unbound_at = NULL,
     -- 新凭据，旧的「被服务器拒绝」就不算数了。后台挑信箱的查询都跳过
     -- login_rejected_at 有值的箱——这里不清的话，重新填了授权码的箱照样
-    -- 没人去收，要等退避到点、或者有人打开邮箱页才偶然被收一次。
+    -- 没人去收，要等有人打开邮箱页才偶然被收一次。
     -- status_checked_at 清空是让它排到下一轮的最前面。
     auth_failed = FALSE,
     login_rejected_at = NULL,

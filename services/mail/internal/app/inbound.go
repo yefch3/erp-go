@@ -285,8 +285,8 @@ func (s *Service) RunInboundSync(ctx context.Context, cfg SyncConfig) {
 // 一套代码；这里只回答「要不要收」。
 func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accountID int64) {
 	// 时间戳不管成败都记：问失败了也别在下一轮立刻重问，那会让一个连不上
-	// 的箱每两分钟占一个 worker。等它下一次到点——凭据被拒的箱，下一次是
-	// 一天以后（见 ListMailboxesDueForStatus）。
+	// 的箱每两分钟占一个 worker。等它下一次到点。凭据被拒的箱之后不会再被
+	// 挑出来（见 ListMailboxesDueForStatus 和 00076）。
 	//
 	// 从前 ForAccount 失败那一支不记这个时间戳，于是 Google 授权失效的箱
 	// 每轮都被挑出来再失败一次（2026-09-23 生产上三个箱每 7 分钟一次）。
@@ -295,7 +295,8 @@ func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accoun
 	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 	if err != nil {
 		// Google 授权被撤销就是在这里失败的（换令牌那一步）。要写到账号上：
-		// 设置页靠 auth_failed 给出「重新登录」，后台靠它不再每轮去试。从前
+		// 设置页靠 auth_failed 给出「重新登录」，后台靠 login_rejected_at 不再
+		// 去试。从前
 		// 只记一句日志，理由是「全量那条路会写」——但没人看的箱根本走不到
 		// 全量那条路，于是这三个箱永远没被标成坏的，也就永远在被重试。
 		if IsCredentialRejected(err) {
@@ -307,15 +308,15 @@ func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accoun
 	st, err := s.mailbox.FolderStatus(ctx, acct, cfg.Folder)
 	if err != nil {
 		// 服务器拒绝了登录：同上，写到账号上。只有这一种写——连不上、超时
-		// 这些不算凭据问题，也不该让这个箱掉进「一天一次」那一档。
+		// 这些不算凭据问题，不该让这个箱停止收信。
 		if IsCredentialRejected(err) {
 			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 		}
 		s.log.Warn("status check failed", "account", accountID, "err", err)
 		return
 	}
-	// 登上去了。之前记着「被拒」的话（一天一次的那次试探成功了，或者服务商
-	// 那次本来就是误报），这里清掉，它就回到正常的档。没记着就什么都不写。
+	// 登上去了：之前记下的错误（比如上一次全量同步超时）清掉，横幅就不再
+	// 报一个已经过去的问题。没记着就什么都不写。
 	s.clearFailure(ctx, cfg.TenantID, accountID)
 
 	if !s.worthAFullSync(ctx, cfg, acct, st) {
