@@ -766,6 +766,16 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 					continue
 				}
 				stillBinned, err := s.stillOnHost(ctx, acct, trash, r.HostFolder, r.HostUid, r.MessageID)
+				if errors.Is(err, ErrMessageIDSearchRefused) {
+					// 这台服务器不肯按 Message-ID 查（263）。确认不了就不动，
+					// 和别的出错一样——但不逐封记日志：一轮几百封都是同一句
+					// 话，2026-09-23 一天记了 54,081 行，把真出事的那几行淹
+					// 了。适配层第一次被拒时已经记过一行。
+					//
+					// 这些信不会一直挂着：回收站 30 天的清扫（trashRetention）
+					// 照常清掉它们，只是晚一些，而不是跟着服务器那边一起走。
+					continue
+				}
 				if err != nil {
 					s.log.Warn("could not confirm a host purge, so leaving the mail alone",
 						"account", acct.AccountID, "message_id", r.MessageID, "err", err)

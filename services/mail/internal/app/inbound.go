@@ -17,6 +17,15 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
+// ErrMessageIDSearchRefused 说邮箱服务器**明确拒绝**了按 Message-ID 搜索。
+//
+// 263 就是这样：`UID SEARCH HEADER Message-Id` 一律回 "can't search that
+// criteria"。它和「连接断了」「超时了」是两回事——那些下次可能就好了，
+// 这个下次原样还是拒绝。适配层认出它之后会有一阵子不再去问（见 mailfetch
+// 的 searchrefusal.go），调用方拿到它也不该当成值得逐封记日志的意外：它
+// 说的是「这台服务器回答不了这个问题」，不是「这一封出了事」。
+var ErrMessageIDSearchRefused = errors.New("邮箱服务器不支持按 Message-ID 查找")
+
 // RawMessage is one message as the server holds it.
 type RawMessage struct {
 	UID uint32
@@ -111,6 +120,9 @@ type Mailbox interface {
 	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) (map[uint32]uint32, error)
 	// FindUIDByMessageID follows a message that has moved: its UID changed,
 	// its Message-ID did not.
+	//
+	// 服务器拒绝按 Message-ID 搜索时回 ErrMessageIDSearchRefused（可以用
+	// errors.Is 认），而且之后一段时间里不再真的去问。
 	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
 	// FindUIDsByMessageIDs answers the same question for many messages over
 	// one connection. Emptying a trash asks it once per mail, and a fresh
