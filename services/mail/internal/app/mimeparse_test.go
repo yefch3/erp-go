@@ -167,11 +167,11 @@ func TestMessageKeyExtraction(t *testing.T) {
 		// message_key::text has.
 		"<3F0C6A1E-8A51-4D7B-9A0E-5B1F2C3D4E5F@erp.example.com>": "3f0c6a1e-8a51-4d7b-9a0e-5b1f2c3d4e5f",
 		// Somebody else's: there is no row to find, so no query should be made.
-		"<key-42@sunrise.com>": "",
+		"<key-42@sunrise.com>":             "",
 		"<CAF=abc123XYZ+q@mail.gmail.com>": "",
-		"nokeyhere":            "",
-		"@sunrise.com":         "",
-		"":                     "",
+		"nokeyhere":                        "",
+		"@sunrise.com":                     "",
+		"":                                 "",
 	}
 	for in, want := range cases {
 		if got := messageKeyFromID(in); got != want {
