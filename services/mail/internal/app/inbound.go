@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -1131,13 +1132,25 @@ func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMai
 }
 
 // messageKeyFromID extracts our own key out of a Message-ID we issued.
+//
+// **只认 UUID。** 我们发出去的 Message-ID 一律是 <message_key@域名>（见
+// provider/mime.go），而 message_key 是 UUID 列。别人家的 Message-ID——回信
+// 的 References 里大多是这种——@ 前面什么都有，拿去查只会是一次注定落空的
+// 查询；一条长会话的 References 有二十来个，每封入库的信就白查二十来次。
+// 不是 UUID 的一律回空，调用方本来就把空当「不是我们发的」。
+//
+// 回的是规范写法（小写、带连字符），和 message_key::text 同一个样子。
 func messageKeyFromID(id string) string {
 	id = strings.Trim(strings.TrimSpace(id), "<>")
 	i := strings.Index(id, "@")
 	if i <= 0 {
 		return ""
 	}
-	return id[:i]
+	key, err := uuid.Parse(id[:i])
+	if err != nil {
+		return ""
+	}
+	return key.String()
 }
 
 // applyBounce turns a delivery report into a fact about a recipient.
