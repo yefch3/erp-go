@@ -96,3 +96,27 @@
 .content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > .el-button--danger {
   color: var(--el-color-danger);
 }
+/* Center the content inside interactive cells too. Centering only Element Plus
+   .cell leaves the product-summary and customer-identity flex children left. */
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary,
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary__main {
+  justify-content: center;
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .product-summary--stacked {
+  align-items: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell .customer-identity {
+  align-items: center;
+  margin-inline: auto;
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > button:not(:where(.el-button,.el-checkbox *)) {
+  text-align: center;
+}
+.content.compact-module-lists .el-table:not(:where(.el-dialog *, .el-drawer *, .el-table__expanded-cell *)) td.el-table__cell > .cell > .el-dropdown > .el-button {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--el-color-primary);
+}
