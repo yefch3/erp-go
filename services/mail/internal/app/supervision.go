@@ -69,14 +69,25 @@ const (
 	SupervisionSent  = "sent"
 )
 
-// SupervisableEmployees 是这家公司里有信箱的那些人。
-func (s *Service) SupervisableEmployees(ctx context.Context, tenantID int64) ([]SupervisedEmployee, error) {
+// SupervisableEmployees 是这家公司里有信箱的那些人——**除了提问的这个人自己**。
+//
+// 2026-09-22 前老板打开「员工邮箱」，树上第一个就是自己。那不是信息：自己的
+// 信在邮箱页上本来就看得到，而且从监管那条路点进去还会往登记簿上记一行
+// 「某某看了某某的信」——看的是自己。剔在这儿而不是前端，是因为这份名单
+// 以后不止一个屏幕会要，"能看谁"这条规矩只该有一处说了算。
+//
+// 用 Go 过滤而不是改 SQL：那条查询是「有信箱的人」，还有别的用处；一个
+// 人的例外不值得让它带上一个参数。
+func (s *Service) SupervisableEmployees(ctx context.Context, tenantID, viewerID int64) ([]SupervisedEmployee, error) {
 	rows, err := s.q.ListSupervisableEmployees(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]SupervisedEmployee, 0, len(rows))
 	for _, r := range rows {
+		if r.EmployeeID == viewerID {
+			continue
+		}
 		e := SupervisedEmployee{EmployeeID: r.EmployeeID, Mailboxes: r.Mailboxes, Unread: r.Unread}
 		if r.LastReadAt.Valid {
 			e.LastReadAt = r.LastReadAt.Time
