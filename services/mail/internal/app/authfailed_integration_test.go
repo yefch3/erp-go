@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"io"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync/atomic"
@@ -518,28 +518,60 @@ func TestAQueuedChangeIsDroppedIfTheFolderWasRenumbered(t *testing.T) {
 
 type sentCopyHost struct {
 	Mailbox
+	reject   bool
 	appended atomic.Int32
 }
 
 func (h *sentCopyHost) SentFolder(context.Context, MailAccount) (string, error) { return "Sent", nil }
 func (h *sentCopyHost) AppendMessage(context.Context, MailAccount, string, []byte, time.Time) error {
+	if h.reject {
+		return NewCredentialRejected(errors.New("LOGIN Login error or password error"))
+	}
 	h.appended.Add(1)
 	return nil
 }
 
-// 发信之后往「已发送」存副本也要登录。收信登录被拒着的箱不存：注定被拒，而且
-// 每发一封就多一次登录，正好喂给服务商的登录频率限制。
-func TestASentCopyIsNotFiledWhileTheLoginIsRejected(t *testing.T) {
-	host := &sentCopyHost{}
-	s := &Service{mailbox: host, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+// 发信之后往服务器「已发送」存副本：收信登录被拒着也照存。能走到这一步，
+// 信刚用同一份凭据发出去了——凭据真坏的话发信就被拒了——所以「被拒」多半是
+// 误报。跳过的话，这封信在 ERP 里是已发送，在网页版、Foxmail 的「已发送」里
+// 却没有。存成功了顺便清掉标记，后台恢复收信；还被拒就照旧记着。
+func TestASentCopyIsStillFiledAndAWorkingLoginClearsTheRejection(t *testing.T) {
+	f := newAuthFixture(t)
 	keep := true
-	for i, c := range []struct {
-		rejected bool
-		want     int32
-	}{{true, 0}, {false, 1}} {
-		s.fileSentCopy(context.Background(), MailAccount{AccountID: int64(100 + i), KeepSentCopy: &keep, LoginRejected: c.rejected}, []byte("raw"))
-		if got := host.appended.Load(); got != c.want {
-			t.Fatalf("登录被拒=%v：存副本 %d 次，想要 %d", c.rejected, got, c.want)
-		}
+	cases := []struct {
+		name         string
+		hostRejects  bool
+		wantAppended int32
+		wantRejected bool
+		id           int64
+	}{
+		{name: "其实能登上：存副本，并恢复", hostRejects: false, wantAppended: 1, wantRejected: false},
+		{name: "确实被拒：存不进去，标记留着", hostRejects: true, wantAppended: 0, wantRejected: true},
+	}
+	// 先绑好再换假服务器：绑定要验证登录，这个假服务器只会存副本。
+	for i := range cases {
+		cases[i].id = f.bind(t, 9421+int64(i), fmt.Sprintf("sent%d@263.net", i), "auth_failed=true, login_rejected_at=now()-interval '1 hour'")
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			id := c.id
+			host := &sentCopyHost{reject: c.hostRejects}
+			f.svc.UseMailbox(host)
+			acct, err := f.svc.ForAccount(f.ctx, f.tenant, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			acct.KeepSentCopy = &keep
+			if !acct.LoginRejected {
+				t.Fatal("ForAccount 应该带出「登录被拒」")
+			}
+			f.svc.fileSentCopy(f.ctx, f.tenant, acct, []byte("raw"))
+			if got := host.appended.Load(); got != c.wantAppended {
+				t.Fatalf("存副本 %d 次，想要 %d", got, c.wantAppended)
+			}
+			if st := f.state(t, id); st.rejected != c.wantRejected || st.banner != c.wantRejected {
+				t.Fatalf("存完之后被拒标记 = %+v，想要 rejected=%v", st, c.wantRejected)
+			}
+		})
 	}
 }

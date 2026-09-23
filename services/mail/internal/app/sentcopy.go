@@ -44,7 +44,7 @@ func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID, accountI
 		s.log.Warn("could not file a copy in the sent folder", "sender", senderID, "err", err)
 		return
 	}
-	s.fileSentCopy(ctx, acct, raw)
+	s.fileSentCopy(ctx, tenantID, acct, raw)
 }
 
 // fileSentCopy is saveSentCopy once the mailbox is known.
@@ -53,27 +53,39 @@ func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID, accountI
 // smtp.263.net，yy@aaaindustryinc.com 发 36 封重 36 封、erptest@263.net 发
 // 11 封一封没重——263 把「保存客户端发信」做成了每个信箱各自的后台开关。
 // hostFilesItsOwnSentCopy 还在，但只用来定这一列的默认值（见 00061）。
-func (s *Service) fileSentCopy(ctx context.Context, acct MailAccount, raw []byte) {
+func (s *Service) fileSentCopy(ctx context.Context, tenantID int64, acct MailAccount, raw []byte) {
 	if s.mailbox == nil || len(raw) == 0 || !acct.ShouldKeepSentCopy() {
 		return
 	}
-	// 收信登录被拒着：存副本也要用同一份凭据登录，注定被拒，而且每发一封就多
-	// 一次，正好喂给服务商的登录频率限制。信已经发出去了，ERP 里有这封的发送
-	// 记录；服务器「已发送」里缺的这一份，凭据修好之后也补不回来——和被拒时
-	// 硬试失败的结果一样，只是少了那次登录。
-	if acct.LoginRejected {
-		s.log.Info("sent copy skipped: this mailbox's login is being rejected", "account", acct.AccountID)
-		return
-	}
+	// **收信登录被拒着也照存。** 走到这里，信刚刚用同一份凭据发出去了——凭据
+	// 真坏的话发信那一步就被拒了，根本到不了这里。所以这时「被拒」多半是误报
+	// 或者已经过时，跳过的话，这封信在 ERP 里是「已发送」，在 263 网页版、
+	// Foxmail、手机的「已发送」里却没有，事后也补不回来。
+	//
+	// 这次登录是跟着一个人发的一封信来的，不是后台自己去试，所以不违背「后台
+	// 不再拿被拒的凭据去登录」。登上了顺便把标记清掉，后台就恢复收信；还被拒
+	// 就照旧记着。
 	folder, err := s.specialFolderOf(ctx, acct, "sent")
 	if err != nil {
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, tenantID, acct.AccountID, err)
+		}
 		s.log.Warn("could not locate the sent folder to file a copy",
 			"account", acct.AccountID, "err", err)
 		return
 	}
 	if err := s.mailbox.AppendMessage(ctx, acct, folder, raw, time.Now()); err != nil {
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, tenantID, acct.AccountID, err)
+		}
 		s.log.Warn("could not file a copy in the sent folder",
 			"account", acct.AccountID, "err", err)
+		return
+	}
+	if acct.LoginRejected {
+		s.clearFailure(ctx, tenantID, acct.AccountID)
+		s.log.Info("mailbox login works again (a sent copy was filed); background sync resumes",
+			"account", acct.AccountID)
 	}
 }
 
