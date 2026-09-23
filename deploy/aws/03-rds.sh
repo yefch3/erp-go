@@ -47,6 +47,7 @@ else
     --engine-version "$RDS_ENGINE_VERSION" \
     --db-instance-class "$RDS_CLASS" \
     --allocated-storage "$RDS_STORAGE_GB" \
+    --max-allocated-storage "$RDS_MAX_STORAGE_GB" \
     --storage-type gp3 \
     --master-username "$MASTER_USER" \
     --master-user-password "$MASTER_PASSWORD" \
@@ -60,6 +61,16 @@ else
 fi
 
 aws rds wait db-instance-available --db-instance-identifier "$DB_ID"
+
+# 存储自动扩容对齐到 00-vars.sh 的上限。实例已存在时上面跳过了创建，这一步
+# 才是让老实例也带上这个设置的地方（2026-09-23 生产上就是这样补的）。
+CURRENT_MAX=$(aws rds describe-db-instances --db-instance-identifier "$DB_ID" \
+  --query 'DBInstances[0].MaxAllocatedStorage' --output text)
+if [ "$CURRENT_MAX" != "$RDS_MAX_STORAGE_GB" ]; then
+  aws rds modify-db-instance --db-instance-identifier "$DB_ID" \
+    --max-allocated-storage "$RDS_MAX_STORAGE_GB" --apply-immediately >/dev/null
+  echo "存储自动扩容上限：$CURRENT_MAX -> $RDS_MAX_STORAGE_GB GB（不重启）"
+fi
 
 ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier "$DB_ID" \
   --query 'DBInstances[0].Endpoint.Address' --output text)
