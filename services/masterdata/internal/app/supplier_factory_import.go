@@ -118,7 +118,7 @@ func (s *Service) ImportSuppliers(ctx context.Context, tenantID int64, rows []Su
 			in := group.input
 			if in.Code == "" {
 				var err error
-				in.Code, err = s.nextNumber(ctx, q, tenantID, "SUPPLIER")
+				in.Code, err = s.nextAvailableSupplierCode(ctx, q, tenantID)
 				if err != nil {
 					return err
 				}
