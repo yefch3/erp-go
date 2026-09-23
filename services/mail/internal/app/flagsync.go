@@ -364,7 +364,22 @@ const maxFlagOpAttempts = 20
 // 一封信上不一致，日志里记着。比起挡住整个信箱的对账，这是小的那一边。
 //
 // **只认这一种说法**，不认泛泛的失败：错判会把一条本来能成功的写回扔掉。
+//
+// 两种样子都要认：适配层第一次被拒时，错误里带着服务器的原话；之后六小时
+// 它不再去问，直接回 ErrMessageIDSearchRefused，里面**没有**那句原话。只认
+// 原话的话，缓存期内的写回操作会退回「重试二十次」，而队列非空时对账整个
+// 不跑——正是这个函数要防的事（2026-09-23 审查发现）。
 func hostCannotSearch(err error) bool {
+	return errors.Is(err, ErrMessageIDSearchRefused) || SearchCriterionUnsupported(err)
+}
+
+// SearchCriterionUnsupported 认的是服务器那句原话：这台服务器不支持这种搜索
+// 条件。
+//
+// 导出给适配层用：它靠这个决定要不要把一次拒绝记下来、六小时内不再问。
+// 泛泛的 NO（"system busy"、临时不可用）不算——那种下次可能就好了，记下来
+// 等于把一台支持搜索的服务器当成不支持，关掉它六小时的按 Message-ID 找信。
+func SearchCriterionUnsupported(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -766,6 +781,16 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 					continue
 				}
 				stillBinned, err := s.stillOnHost(ctx, acct, trash, r.HostFolder, r.HostUid, r.MessageID)
+				if errors.Is(err, ErrMessageIDSearchRefused) {
+					// 这台服务器不肯按 Message-ID 查（263）。确认不了就不动，
+					// 和别的出错一样——但不逐封记日志：一轮几百封都是同一句
+					// 话，2026-09-23 一天记了 54,081 行，把真出事的那几行淹
+					// 了。适配层第一次被拒时已经记过一行。
+					//
+					// 这些信不会一直挂着：回收站 30 天的清扫（trashRetention）
+					// 照常清掉它们，只是晚一些，而不是跟着服务器那边一起走。
+					continue
+				}
 				if err != nil {
 					s.log.Warn("could not confirm a host purge, so leaving the mail alone",
 						"account", acct.AccountID, "message_id", r.MessageID, "err", err)
