@@ -195,7 +195,8 @@ func TestSupervisableEmployeesListsOnlyPeopleWithMailboxes(t *testing.T) {
 	const sales = int64(7301)
 	f.seedEmployeeMail(t, sales, "一封未读")
 
-	rows, err := f.svc.SupervisableEmployees(ctx, f.tenantID)
+	// 提问的是老板（7300），他自己没绑箱，所以名单不受"剔掉自己"影响。
+	rows, err := f.svc.SupervisableEmployees(ctx, f.tenantID, 7300)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,5 +208,36 @@ func TestSupervisableEmployeesListsOnlyPeopleWithMailboxes(t *testing.T) {
 	}
 	if rows[0].Unread != 1 {
 		t.Errorf("未读数不对：%d", rows[0].Unread)
+	}
+}
+
+// 名单里不能有提问的这个人自己。
+//
+// 老板打开「员工邮箱」，树上第一个是自己——那不是信息，而且从这条路点进去
+// 会在登记簿上记一行"老板看了老板的信"。这条钉住：提问者自己有信箱、有未读，
+// 照样不出现；别人照常在。
+func TestSupervisableEmployeesExcludesTheViewer(t *testing.T) {
+	f, ctx := newSupervisionFixture(t)
+	const boss, sales = int64(7401), int64(7402)
+	f.seedEmployeeMail(t, boss, "老板自己的信")
+	f.seedEmployeeMail(t, sales, "销售的信")
+
+	rows, err := f.svc.SupervisableEmployees(ctx, f.tenantID, boss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("老板自己该被剔掉，只剩销售一个，实际 %+v", rows)
+	}
+	if rows[0].EmployeeID != sales {
+		t.Errorf("剩下的该是销售 %d，实际 %d", sales, rows[0].EmployeeID)
+	}
+	// 反过来问：销售看名单，老板在、销售自己不在。规矩对谁都一样。
+	rows, err = f.svc.SupervisableEmployees(ctx, f.tenantID, sales)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].EmployeeID != boss {
+		t.Errorf("换销售来问，该只剩老板，实际 %+v", rows)
 	}
 }

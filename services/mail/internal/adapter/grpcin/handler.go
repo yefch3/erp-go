@@ -1224,7 +1224,7 @@ func supervisionViewer(req interface {
 }
 
 func (h *Handler) ListSupervisableEmployees(ctx context.Context, _ *mailv1.ListSupervisableEmployeesRequest) (*mailv1.ListSupervisableEmployeesResponse, error) {
-	rows, err := h.svc.SupervisableEmployees(ctx, grpcx.TenantID(ctx))
+	rows, err := h.svc.SupervisableEmployees(ctx, grpcx.TenantID(ctx), operator(ctx).ID)
 	if err != nil {
 		return nil, err
 	}
