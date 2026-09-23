@@ -122,7 +122,10 @@ func (s *Server) getCompanyMailbox(w http.ResponseWriter, r *http.Request) {
 // 回的形状和 verifyMailbox 一样，前端 adoptVerification 原样收。
 func (s *Server) unlockCompanyMailbox(w http.ResponseWriter, r *http.Request) {
 	op, _ := grpcx.OperatorFromContext(r.Context())
-	resp, err := s.Emails.GetCompanyMailbox(r.Context(), &mailv1.GetCompanyMailboxRequest{})
+	// RetryLogin：这个箱记着登录失败的话，mail 那边先拿存着的密码试一次再回答。
+	// 后台不再替被拒的箱去试，员工打开邮箱页的这一下是它能自己恢复的时机；不试
+	// 的话下面那个 409 会把人挡在门外，恢复就只剩管理员重新填密码。
+	resp, err := s.Emails.GetCompanyMailbox(r.Context(), &mailv1.GetCompanyMailboxRequest{RetryLogin: true})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

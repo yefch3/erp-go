@@ -17,5 +17,17 @@
 -- 看得出这个箱断了多久。
 ALTER TABLE mail_accounts ADD COLUMN login_rejected_at TIMESTAMPTZ;
 
+-- 写回队列里每条操作记下入队时那个文件夹的 UIDVALIDITY（服务器给这批编号
+-- 的「版本号」）。0 = 不知道（这一列之前入队的、或那个文件夹还没同步过）。
+--
+-- 为什么现在要：上面那一列让被拒的箱的写回**暂停**等凭据修好，暂停可能很久。
+-- 而写回按 UID 执行——如果这期间邮箱搬过家（换服务商、服务器重建），UID 全
+-- 部重排，几周前那条「把 UID 5 挪进回收站」落到的是另一封信。从前写回失败
+-- 二十次（三四个小时）就作废，这个窗口有上限；暂停之后没有了（2026-09-23
+-- 审查发现）。执行前拿这一列和服务器当前的 UIDVALIDITY 比，对不上就作废，
+-- 不去动任何一封信。
+ALTER TABLE mail_flag_ops ADD COLUMN uid_validity BIGINT NOT NULL DEFAULT 0;
+
 -- +goose Down
+ALTER TABLE mail_flag_ops DROP COLUMN uid_validity;
 ALTER TABLE mail_accounts DROP COLUMN login_rejected_at;

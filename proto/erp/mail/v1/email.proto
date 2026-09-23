@@ -1023,6 +1023,14 @@ message AssignCompanyMailboxResponse {
 message GetCompanyMailboxRequest {
   // 问谁的。0 = 登录的这个人自己。
   int64 employee_id = 1;
+  // 员工打开邮箱页、要开锁时置 true：这个主邮箱记着「登录被拒」的话，先拿
+  // 存着的密码登录试一次，登上了就清掉标记再回答。只对本人（employee_id=0）
+  // 生效——管理员查看别人的主邮箱不触发登录。
+  //
+  // 为什么要：后台不再拿被拒的凭据去试（mail 迁移 00076），恢复靠「人打开
+  // 邮箱页时那一次」。主邮箱在「被拒」时连锁都开不了，那一次就走不到——员工
+  // 自己又改不了主邮箱的密码，服务商一次误报就会让它一直停到管理员出手。
+  bool retry_login = 2;
 }
 
 message CompanyMailbox {

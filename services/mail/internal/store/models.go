@@ -370,19 +370,20 @@ type MailExportLog struct {
 }
 
 type MailFlagOp struct {
-	ID         int64
-	TenantID   int64
-	AccountID  int64
-	EmployeeID int64
-	Folder     string
-	ImapUid    int64
-	Op         string
-	Attempts   int32
-	LastError  string
-	NextTryAt  pgtype.Timestamptz
-	CreatedAt  pgtype.Timestamptz
-	Flag       string
-	MessageID  string
+	ID          int64
+	TenantID    int64
+	AccountID   int64
+	EmployeeID  int64
+	Folder      string
+	ImapUid     int64
+	Op          string
+	Attempts    int32
+	LastError   string
+	NextTryAt   pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	Flag        string
+	MessageID   string
+	UidValidity int64
 }
 
 type MailFolder struct {

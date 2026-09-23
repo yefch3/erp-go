@@ -57,6 +57,14 @@ func (s *Service) fileSentCopy(ctx context.Context, acct MailAccount, raw []byte
 	if s.mailbox == nil || len(raw) == 0 || !acct.ShouldKeepSentCopy() {
 		return
 	}
+	// 收信登录被拒着：存副本也要用同一份凭据登录，注定被拒，而且每发一封就多
+	// 一次，正好喂给服务商的登录频率限制。信已经发出去了，ERP 里有这封的发送
+	// 记录；服务器「已发送」里缺的这一份，凭据修好之后也补不回来——和被拒时
+	// 硬试失败的结果一样，只是少了那次登录。
+	if acct.LoginRejected {
+		s.log.Info("sent copy skipped: this mailbox's login is being rejected", "account", acct.AccountID)
+		return
+	}
 	folder, err := s.specialFolderOf(ctx, acct, "sent")
 	if err != nil {
 		s.log.Warn("could not locate the sent folder to file a copy",

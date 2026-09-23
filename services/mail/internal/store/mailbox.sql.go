@@ -37,7 +37,8 @@ func (q *Queries) BumpSendCounter(ctx context.Context, arg BumpSendCounterParams
 }
 
 const claimFlagOps = `-- name: ClaimFlagOps :many
-SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
+SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts,
+       uid_validity
 FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
   AND next_try_at <= now()
@@ -55,16 +56,17 @@ type ClaimFlagOpsParams struct {
 }
 
 type ClaimFlagOpsRow struct {
-	ID         int64
-	TenantID   int64
-	AccountID  int64
-	EmployeeID int64
-	Folder     string
-	ImapUid    int64
-	Flag       string
-	Op         string
-	MessageID  string
-	Attempts   int32
+	ID          int64
+	TenantID    int64
+	AccountID   int64
+	EmployeeID  int64
+	Folder      string
+	ImapUid     int64
+	Flag        string
+	Op          string
+	MessageID   string
+	Attempts    int32
+	UidValidity int64
 }
 
 // Due work, oldest first, locked so two workers cannot publish the same
@@ -94,6 +96,7 @@ func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]C
 			&i.Op,
 			&i.MessageID,
 			&i.Attempts,
+			&i.UidValidity,
 		); err != nil {
 			return nil, err
 		}
@@ -766,16 +769,21 @@ func (q *Queries) DeleteSyncStateForAccount(ctx context.Context, arg DeleteSyncS
 }
 
 const enqueueFlagOp = `-- name: EnqueueFlagOp :exec
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id)
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, uid_validity)
 VALUES (
     $1::bigint, $2::bigint,
     $3::bigint,
     $4::text, $5::bigint,
-    $6::text, $7::text, $8::text
+    $6::text, $7::text, $8::text,
+    coalesce((SELECT s.uid_validity FROM mail_sync_state s
+              WHERE s.tenant_id = $1::bigint
+                AND s.account_id = $2::bigint
+                AND s.folder = $4::text), 0)
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
     message_id = excluded.message_id,
+    uid_validity = excluded.uid_validity,
     attempts = 0,
     last_error = '',
     next_try_at = now()
@@ -794,6 +802,10 @@ type EnqueueFlagOpParams struct {
 
 // The intent to publish one flag change. Conflicting intents collapse: the
 // newest wins, because that is the state the person last chose.
+//
+// uid_validity 取这个文件夹上次同步时服务器给的那个：UID 是在那一代编号下
+// 拿到的。执行前和服务器当前的比，对不上就作废（见 00076、dropStaleOps）。
+// 没同步过的文件夹取不到，记 0 = 不检查。
 func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) error {
 	_, err := q.db.Exec(ctx, enqueueFlagOp,
 		arg.TenantID,
@@ -1425,7 +1437,8 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota, keep_sent_copy
+       hourly_quota, daily_quota, keep_sent_copy,
+       (login_rejected_at IS NOT NULL)::boolean AS login_rejected
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND id = $2::bigint
@@ -1456,6 +1469,7 @@ type GetMailAccountSecretRow struct {
 	HourlyQuota     int32
 	DailyQuota      int32
 	KeepSentCopy    *bool
+	LoginRejected   bool
 }
 
 // The only query that returns ciphertext. Used by the sender and the IMAP
@@ -1492,6 +1506,7 @@ func (q *Queries) GetMailAccountSecret(ctx context.Context, arg GetMailAccountSe
 		&i.HourlyQuota,
 		&i.DailyQuota,
 		&i.KeepSentCopy,
+		&i.LoginRejected,
 	)
 	return i, err
 }
@@ -4491,7 +4506,7 @@ func (q *Queries) MarkInboundRead(ctx context.Context, arg MarkInboundReadParams
 const markMailAccountFailed = `-- name: MarkMailAccountFailed :exec
 UPDATE mail_accounts
 SET last_error = $1::text,
-    auth_failed = $2::boolean,
+    auth_failed = ($2::boolean OR login_rejected_at IS NOT NULL),
     updated_at = now()
 WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
@@ -4504,6 +4519,11 @@ type MarkMailAccountFailedParams struct {
 }
 
 // auth_failed 和 last_error 一起写：文本给人看，位给程序判。
+//
+// 收信登录被拒着（login_rejected_at 有值）的时候，一次不是凭据问题的失败
+// （员工打开页面那次收信碰上超时）不把 auth_failed 改回 false：凭据还是那份
+// 坏的，横幅上「重新登录」那颗按钮不能因为一次网络抖动就消失，主邮箱开锁时
+// 的那次重试也靠这一位触发。
 func (q *Queries) MarkMailAccountFailed(ctx context.Context, arg MarkMailAccountFailedParams) error {
 	_, err := q.db.Exec(ctx, markMailAccountFailed,
 		arg.LastError,

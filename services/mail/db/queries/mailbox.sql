@@ -266,7 +266,8 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota, keep_sent_copy
+       hourly_quota, daily_quota, keep_sent_copy,
+       (login_rejected_at IS NOT NULL)::boolean AS login_rejected
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint;
@@ -280,9 +281,14 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountFailed :exec
 -- auth_failed 和 last_error 一起写：文本给人看，位给程序判。
+--
+-- 收信登录被拒着（login_rejected_at 有值）的时候，一次不是凭据问题的失败
+-- （员工打开页面那次收信碰上超时）不把 auth_failed 改回 false：凭据还是那份
+-- 坏的，横幅上「重新登录」那颗按钮不能因为一次网络抖动就消失，主邮箱开锁时
+-- 的那次重试也靠这一位触发。
 UPDATE mail_accounts
 SET last_error = sqlc.arg(last_error)::text,
-    auth_failed = sqlc.arg(auth_failed)::boolean,
+    auth_failed = (sqlc.arg(auth_failed)::boolean OR login_rejected_at IS NOT NULL),
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -1262,16 +1268,25 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: EnqueueFlagOp :exec
 -- The intent to publish one flag change. Conflicting intents collapse: the
 -- newest wins, because that is the state the person last chose.
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id)
+--
+-- uid_validity 取这个文件夹上次同步时服务器给的那个：UID 是在那一代编号下
+-- 拿到的。执行前和服务器当前的比，对不上就作废（见 00076、dropStaleOps）。
+-- 没同步过的文件夹取不到，记 0 = 不检查。
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, uid_validity)
 VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
     sqlc.arg(employee_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
-    sqlc.arg(flag)::text, sqlc.arg(op)::text, sqlc.arg(message_id)::text
+    sqlc.arg(flag)::text, sqlc.arg(op)::text, sqlc.arg(message_id)::text,
+    coalesce((SELECT s.uid_validity FROM mail_sync_state s
+              WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
+                AND s.account_id = sqlc.arg(account_id)::bigint
+                AND s.folder = sqlc.arg(folder)::text), 0)
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
     message_id = excluded.message_id,
+    uid_validity = excluded.uid_validity,
     attempts = 0,
     last_error = '',
     next_try_at = now();
@@ -1284,7 +1299,8 @@ ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
 -- 收信登录被拒过的箱的操作先不取：拿坏凭据去写回只会被拒，二十次之后这条
 -- 操作被放弃，员工那次标已读、删除就丢了。留在队列里不动，也不记失败次数，
 -- 凭据修好（login_rejected_at 清掉）之后照常写回。
-SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
+SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts,
+       uid_validity
 FROM mail_flag_ops
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND next_try_at <= now()

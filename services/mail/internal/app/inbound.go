@@ -1503,7 +1503,8 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 				continue
 			}
 			// 登录被拒：常开连接这条路到此为止。写到账号上，管理器下一轮
-			// 就不会再把它挑出来（ListActiveMailAccounts 跳过 auth_failed）。
+			// 就不会再把它挑出来（ListActiveMailAccounts 跳过 login_rejected_at
+			// 有值的箱）。
 			// 从前这里只是退避重连，最长十分钟一次，只要有人开着邮箱页就
 			// 一直重连、一直被拒。
 			if IsCredentialRejected(err) {

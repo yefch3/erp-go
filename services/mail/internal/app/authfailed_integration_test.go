@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"sync/atomic"
@@ -95,7 +96,7 @@ func (f *authFixture) bind(t *testing.T, employee int64, email, sets string) int
 
 type loginState struct {
 	banner   bool // auth_failed：横幅上「重新登录」
-	rejected bool // login_rejected_at 有值：后台放慢重试
+	rejected bool // login_rejected_at 有值：后台不再自动登录
 	checked  bool // status_checked_at 有值
 }
 
@@ -360,6 +361,10 @@ func TestALaterNetworkErrorDoesNotPutARejectedMailboxBack(t *testing.T) {
 	if f.active(t)[id] {
 		t.Fatal("一次网络错误不该让收信被拒的箱回到全量同步")
 	}
+	// 横幅上「重新登录」那颗按钮也不能因为这一次网络抖动就消失：凭据还是坏的。
+	if st := f.state(t, id); !st.banner {
+		t.Fatal("被拒着的时候，auth_failed 不该被一次网络错误改回 false")
+	}
 }
 
 // 状态检查被拒：记到账号上（设置页出「重新登录」），之后后台再也不挑它。
@@ -385,7 +390,7 @@ func TestAStatusCheckRejectionStopsTheBackground(t *testing.T) {
 	}
 }
 
-// 连不上不是凭据问题：不该让一个只是网络抖了的箱掉进「一天一次」。
+// 连不上不是凭据问题：不该让一个只是网络抖了的箱停止收信。
 func TestANetworkFailureDoesNotMarkTheCredentialsBad(t *testing.T) {
 	f := newAuthFixture(t)
 	id := f.bind(t, 9321, "y@263.net", "")
@@ -440,5 +445,101 @@ func TestAnIdleWatchStopsWhenTheCredentialsAreRejected(t *testing.T) {
 	}
 	if st := f.state(t, id); !st.banner || !st.rejected {
 		t.Errorf("被拒这件事应该记到账号上，管理器才不会把它再挑出来；实际 %+v", st)
+	}
+}
+
+// flagHost 记下写回有没有真的动服务器上的信；FolderStatus 答 validity。
+type flagHost struct {
+	Mailbox
+	validity uint32
+	stored   atomic.Int32
+}
+
+func (h *flagHost) FolderStatus(context.Context, MailAccount, string) (FolderStatus, error) {
+	return FolderStatus{UIDValidity: h.validity, UIDNext: 1}, nil
+}
+func (h *flagHost) SetFlags(context.Context, MailAccount, string, []uint32, string, bool) error {
+	h.stored.Add(1)
+	return nil
+}
+
+// 写回按 UID 执行，UID 只在同一代编号（UIDVALIDITY）下有意义。凭据被拒期间写回
+// 会暂停，暂停可能很久，而邮箱搬家（换服务商、服务器重建）常常正是凭据失效的
+// 原因：搬家后编号整体重排，排着的「给 UID 5 标已读 / 挪进回收站」会落到另一封
+// 信上。执行前核对，对不上就作废，不动任何一封信（2026-09-23 审查发现）。
+func TestAQueuedChangeIsDroppedIfTheFolderWasRenumbered(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		hostNow  uint32
+		wantSent bool
+	}{
+		{"编号没变：照常写回", 7, true},
+		{"服务器重建过：作废，不动信", 99, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newAuthFixture(t)
+			t.Cleanup(func() {
+				_, _ = f.pool.Exec(f.ctx, "DELETE FROM mail_flag_ops WHERE tenant_id=$1", f.tenant)
+				_, _ = f.pool.Exec(f.ctx, "DELETE FROM mail_sync_state WHERE tenant_id=$1", f.tenant)
+			})
+			id := f.bind(t, 9411, "v@263.net", "")
+			// 上次同步时，收件箱是第 7 代编号。
+			if _, err := f.pool.Exec(f.ctx, `INSERT INTO mail_sync_state (tenant_id, account_id, folder, uid_validity, last_uid)
+				VALUES ($1, $2, 'INBOX', 7, 5)`, f.tenant, id); err != nil {
+				t.Fatal(err)
+			}
+			host := &flagHost{validity: c.hostNow}
+			f.svc.UseMailbox(host)
+			f.svc.queueFlagWrite(f.ctx, f.tenant, id, 9411, "INBOX", 5, flagSeen, true)
+
+			var recorded int64
+			if err := f.pool.QueryRow(f.ctx, "SELECT uid_validity FROM mail_flag_ops WHERE tenant_id=$1", f.tenant).Scan(&recorded); err != nil {
+				t.Fatal(err)
+			}
+			if recorded != 7 {
+				t.Fatalf("入队时应该记下第 7 代，实际 %d", recorded)
+			}
+
+			f.svc.publishFlagOps(f.ctx, SyncConfig{TenantID: f.tenant})
+
+			if sent := host.stored.Load() > 0; sent != c.wantSent {
+				t.Fatalf("动没动服务器上的信 = %v，想要 %v", sent, c.wantSent)
+			}
+			var left int
+			if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", f.tenant).Scan(&left); err != nil {
+				t.Fatal(err)
+			}
+			if left != 0 {
+				t.Fatalf("写回完或作废后队列应该空了，还剩 %d 条", left)
+			}
+		})
+	}
+}
+
+type sentCopyHost struct {
+	Mailbox
+	appended atomic.Int32
+}
+
+func (h *sentCopyHost) SentFolder(context.Context, MailAccount) (string, error) { return "Sent", nil }
+func (h *sentCopyHost) AppendMessage(context.Context, MailAccount, string, []byte, time.Time) error {
+	h.appended.Add(1)
+	return nil
+}
+
+// 发信之后往「已发送」存副本也要登录。收信登录被拒着的箱不存：注定被拒，而且
+// 每发一封就多一次登录，正好喂给服务商的登录频率限制。
+func TestASentCopyIsNotFiledWhileTheLoginIsRejected(t *testing.T) {
+	host := &sentCopyHost{}
+	s := &Service{mailbox: host, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	keep := true
+	for i, c := range []struct {
+		rejected bool
+		want     int32
+	}{{true, 0}, {false, 1}} {
+		s.fileSentCopy(context.Background(), MailAccount{AccountID: int64(100 + i), KeepSentCopy: &keep, LoginRejected: c.rejected}, []byte("raw"))
+		if got := host.appended.Load(); got != c.want {
+			t.Fatalf("登录被拒=%v：存副本 %d 次，想要 %d", c.rejected, got, c.want)
+		}
 	}
 }
