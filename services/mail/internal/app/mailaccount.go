@@ -294,6 +294,21 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 	}
 }
 
+// recordLoginRejected 记下收信时 IMAP 登录被服务器拒绝了。
+//
+// 横幅那一位（auth_failed）照写，另外记下这一轮被拒从什么时候开始
+// （login_rejected_at），后台据此放慢这个箱的重试，见 00076 和
+// ListMailboxesDueForStatus。**只有收信的几条路调它。** 发信失败走
+// RecordFailure：它只管横幅，不该让一个箱停止收信——发信那条路连超时、
+// 断线都算成 authProblem。
+func (s *Service) recordLoginRejected(ctx context.Context, tenantID, accountID int64, cause error) {
+	if err := s.q.MarkMailboxLoginRejected(ctx, store.MarkMailboxLoginRejectedParams{
+		TenantID: tenantID, ID: accountID, LastError: truncateUTF8(cause.Error(), 500),
+	}); err != nil {
+		s.log.Warn("could not record a rejected mailbox login", "account", accountID, "err", err)
+	}
+}
+
 // clearFailure wipes a recorded problem once the mailbox works again.
 //
 // Only touches last_error, never verified_at: whether the credential was ever

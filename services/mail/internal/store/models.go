@@ -286,7 +286,8 @@ type MailAccount struct {
 	// 上一次判断出 push_mode 的时刻。过了冷静期会重新试 IDLE。
 	PushCheckedAt pgtype.Timestamptz
 	// PERSONAL=员工自己绑的；COMPANY=管理员分配的主邮箱，员工不能改密码、不能解绑，登录即开
-	Kind string
+	Kind            string
+	LoginRejectedAt pgtype.Timestamptz
 }
 
 // 收件箱附件在线编辑后的版本；原件在 email_inbound_attachments 上，永不覆盖

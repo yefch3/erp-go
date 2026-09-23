@@ -174,10 +174,6 @@ type SyncConfig struct {
 	ActiveWindow time.Duration
 	// StatusEvery 是没人看的箱多久问一次轻状态。它就是那类箱的收信延迟上限。
 	StatusEvery time.Duration
-	// AuthRetryEvery 是服务器拒绝过凭据的箱多久再试一次登录。见
-	// ListMailboxesDueForStatus 上的说明：凭据只有人重新填才会变，这一档的
-	// 重试只为兜住服务商把「一时忙」误报成密码错。
-	AuthRetryEvery time.Duration
 	// StatusBudget 是一轮里最多问多少个轻状态。
 	//
 	// 上限而不是「全问」：600 个箱一起到点会在一轮里堆出一个尖峰，把全量
@@ -222,12 +218,6 @@ func (c SyncConfig) withDefaults() SyncConfig {
 		// 一成半——剩下的都留给有人在等的那一档。
 		c.StatusEvery = 10 * time.Minute
 	}
-	if c.AuthRetryEvery <= 0 {
-		// 一天。凭据被拒的箱一天一次登录，从前是每十分钟一次（Google 那条
-		// 路甚至每轮都来）：2026-09-23 五个坏掉的箱一天两千多次，163 已经
-		// 回了 "login frequency limited"。
-		c.AuthRetryEvery = 24 * time.Hour
-	}
 	if c.StatusBudget <= 0 {
 		// 一轮 150 个。按两分钟一轮、十分钟一遍算，600 个箱刚好摊得开
 		// （600 / 5 = 120），留一点余量给新绑的和上一轮没轮到的。
@@ -236,17 +226,14 @@ func (c SyncConfig) withDefaults() SyncConfig {
 	return c
 }
 
-// dueForStatusParams 是「这一轮问谁轻状态」那条查询的参数。单独拿出来是
-// 为了让测试能钉住 Go 这一侧：sqlc 的必填参数漏了不报编译错误，只会是 0，
-// 而 AuthRetrySeconds 是 0 的意思是「被拒的箱每一轮都问」——正是它要消掉
-// 的东西。
+// dueForStatusParams 是「这一轮问谁轻状态」那条查询的参数。和生产走同一个
+// 函数，测试才测得到生产传进去的值。
 func dueForStatusParams(cfg SyncConfig) store.ListMailboxesDueForStatusParams {
 	return store.ListMailboxesDueForStatusParams{
-		TenantID:         cfg.TenantID,
-		ActiveSeconds:    int32(cfg.ActiveWindow.Seconds()),
-		StatusSeconds:    int32(cfg.StatusEvery.Seconds()),
-		AuthRetrySeconds: int32(cfg.AuthRetryEvery.Seconds()),
-		RowLimit:         int32(cfg.StatusBudget),
+		TenantID:      cfg.TenantID,
+		ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
+		StatusSeconds: int32(cfg.StatusEvery.Seconds()),
+		RowLimit:      int32(cfg.StatusBudget),
 	}
 }
 
@@ -312,7 +299,7 @@ func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accoun
 		// 只记一句日志，理由是「全量那条路会写」——但没人看的箱根本走不到
 		// 全量那条路，于是这三个箱永远没被标成坏的，也就永远在被重试。
 		if IsCredentialRejected(err) {
-			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 		}
 		s.log.Warn("status check could not resolve the mailbox", "account", accountID, "err", err)
 		return
@@ -322,7 +309,7 @@ func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accoun
 		// 服务器拒绝了登录：同上，写到账号上。只有这一种写——连不上、超时
 		// 这些不算凭据问题，也不该让这个箱掉进「一天一次」那一档。
 		if IsCredentialRejected(err) {
-			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 		}
 		s.log.Warn("status check failed", "account", accountID, "err", err)
 		return
@@ -649,7 +636,7 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// 密码、在安全页里撤了）正是这里失败，不记的话页面永远不会给那颗
 		// "重新登录"——它是唯一修得好这件事的按钮。
 		if IsCredentialRejected(err) {
-			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+			s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 		}
 		return 0, err
 	}
@@ -665,7 +652,11 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// long as it took somebody to notice, while the page went on showing
 		// the last successful sync as though it were current. Silence is the
 		// bug: the mailbox has to be able to say it is not receiving.
-		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), IsCredentialRejected(err))
+		if IsCredentialRejected(err) {
+			s.recordLoginRejected(ctx, cfg.TenantID, acct.AccountID, err)
+		} else {
+			s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), false)
+		}
 		return 0, err
 	}
 	// Cleared on the way back up, so a recovered mailbox stops complaining
@@ -1459,7 +1450,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			// 或者 Google 授权被撤销了。那种要写到账号上：不写的话管理器
 			// 每分钟把它重新挑出来，每次都去 Google 换一次令牌、被拒一次。
 			if IsCredentialRejected(err) {
-				s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+				s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 			}
 			return
 		}
@@ -1515,7 +1506,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			// 从前这里只是退避重连，最长十分钟一次，只要有人开着邮箱页就
 			// 一直重连、一直被拒。
 			if IsCredentialRejected(err) {
-				s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+				s.recordLoginRejected(ctx, cfg.TenantID, accountID, err)
 				s.log.Warn("idle watch stopped: the mail host rejected the credentials",
 					"account", accountID, "err", err)
 				return

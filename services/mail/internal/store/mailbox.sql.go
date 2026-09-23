@@ -161,9 +161,9 @@ func (q *Queries) ClearInboundNotJunk(ctx context.Context, arg ClearInboundNotJu
 
 const clearMailAccountFailure = `-- name: ClearMailAccountFailure :exec
 UPDATE mail_accounts
-SET last_error = '', auth_failed = FALSE, updated_at = now()
+SET last_error = '', auth_failed = FALSE, login_rejected_at = NULL, updated_at = now()
 WHERE tenant_id = $1::bigint AND id = $2::bigint
-  AND (auth_failed OR last_error <> '')
+  AND (auth_failed OR last_error <> '' OR login_rejected_at IS NOT NULL)
 `
 
 type ClearMailAccountFailureParams struct {
@@ -1865,11 +1865,13 @@ WHERE tenant_id = $1::bigint
   -- 失败的登录，然后把「认证失败」写到那一行上——而那句话在一个主动解绑
   -- 的人看来毫无道理。
   AND unbound_at IS NULL
-  -- 服务器拒绝过这份凭据的箱不在这一档：凭据只有人重新填才会变，每两分钟
-  -- 拿同一份去登录只会一直被拒，还可能被服务商当成攻击限流（163 已经回过
-  -- "login frequency limited"）。它们归轻状态那一档，一天问一次，见
+  -- 收信登录被拒过的箱不在这一档：凭据只有人重新填才会变，每两分钟拿同
+  -- 一份去登录只会一直被拒，还可能被服务商当成攻击限流（163 已经回过
+  -- "login frequency limited"）。它们归轻状态那一档按退避重试，见
   -- ListMailboxesDueForStatus。有人打开邮箱页时的那次收信照常去试。
-  AND NOT auth_failed
+  --
+  -- 看 login_rejected_at 不看 auth_failed：后者发信失败也会写（见 00076）。
+  AND login_rejected_at IS NULL
   AND last_read_at IS NOT NULL
   AND last_read_at > now() - make_interval(secs => $2::int)
 ORDER BY id
@@ -2540,25 +2542,28 @@ FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND is_active
   AND unbound_at IS NULL
-  AND CASE WHEN auth_failed THEN
+  AND CASE WHEN login_rejected_at IS NOT NULL THEN
         status_checked_at IS NULL
-        OR status_checked_at <= now() - make_interval(secs => $2::int)
+        OR status_checked_at <= now() - CASE
+             WHEN login_rejected_at > now() - interval '2 hours' THEN interval '30 minutes'
+             WHEN login_rejected_at > now() - interval '1 day'   THEN interval '2 hours'
+             ELSE interval '1 day'
+           END
       ELSE
         (last_read_at IS NULL
-         OR last_read_at <= now() - make_interval(secs => $3::int))
+         OR last_read_at <= now() - make_interval(secs => $2::int))
         AND (status_checked_at IS NULL
-             OR status_checked_at <= now() - make_interval(secs => $4::int))
+             OR status_checked_at <= now() - make_interval(secs => $3::int))
       END
 ORDER BY status_checked_at NULLS FIRST, id
-LIMIT $5::int
+LIMIT $4::int
 `
 
 type ListMailboxesDueForStatusParams struct {
-	TenantID         int64
-	AuthRetrySeconds int32
-	ActiveSeconds    int32
-	StatusSeconds    int32
-	RowLimit         int32
+	TenantID      int64
+	ActiveSeconds int32
+	StatusSeconds int32
+	RowLimit      int32
 }
 
 type ListMailboxesDueForStatusRow struct {
@@ -2581,17 +2586,22 @@ type ListMailboxesDueForStatusRow struct {
 // NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
 // 最需要先被看一眼。
 //
-// **服务器拒绝过凭据的箱（auth_failed）单算：不管有没有人在看，隔
-// auth_retry_seconds（一天）才问一次。** 凭据只有人重新填才会变，填的那一刻
-// auth_failed 就清了（SetMailAccountSecret / SetMailAccountOAuth），所以
-// 这一档的重试不是为了等凭据变好，只是兜底：服务商偶尔把「一时忙」「登录
-// 太频繁」也报成密码错（foxmail 那句话就是这么写的），一天问一次，这种误
-// 判第二天自己就好了。2026-09-23 之前这一档每十分钟问一次，五个坏掉的箱
-// 一天两千多次登录。
+// **收信登录被拒过的箱（login_rejected_at 有值）单算，不管有没有人在看，
+// 按被拒了多久退避：**
+//
+//	被拒不到 2 小时   每 30 分钟试一次
+//	不到一天          每 2 小时
+//	一天以上          每天一次
+//
+// 凭据只有人重新填才会变，填的那一刻这一列就清了（SetMailAccountSecret /
+// SetMailAccountOAuth），所以这里的重试不是在等凭据变好，是兜底：服务商
+// 偶尔把「登录太频繁」「连接太多」也报成密码错（foxmail、163 的原话就是
+// 这么混着写的）。那种半小时内自己就好了，前两小时勤一点试；真是密码错的，
+// 第一天十几次、之后一天一次。2026-09-23 之前这一档每 7~11 分钟问一次，
+// 五个坏掉的箱一天两千多次登录。
 func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailboxesDueForStatusParams) ([]ListMailboxesDueForStatusRow, error) {
 	rows, err := q.db.Query(ctx, listMailboxesDueForStatus,
 		arg.TenantID,
-		arg.AuthRetrySeconds,
 		arg.ActiveSeconds,
 		arg.StatusSeconds,
 		arg.RowLimit,
@@ -4333,7 +4343,7 @@ const mailboxIsBeingRead = `-- name: MailboxIsBeingRead :one
 SELECT (last_read_at IS NOT NULL
         AND last_read_at > now() - make_interval(secs => $1::int)
         AND unbound_at IS NULL
-        AND NOT auth_failed)::bool
+        AND login_rejected_at IS NULL)::bool
 FROM mail_accounts
 WHERE tenant_id = $2::bigint AND id = $3::bigint
 `
@@ -4352,7 +4362,7 @@ type MailboxIsBeingReadParams struct {
 //
 // IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
 // 一轮的轮询加十分钟一次的轻状态已经够了。
-// 凭据被拒的箱不守：常开连接登不上，只会隔几分钟重连一次、被拒一次。
+// 收信登录被拒过的箱不守：常开连接登不上，只会隔几分钟重连一次、被拒一次。
 func (q *Queries) MailboxIsBeingRead(ctx context.Context, arg MailboxIsBeingReadParams) (bool, error) {
 	row := q.db.QueryRow(ctx, mailboxIsBeingRead, arg.ActiveSeconds, arg.TenantID, arg.ID)
 	var column_1 bool
@@ -4515,7 +4525,8 @@ func (q *Queries) MarkMailAccountFailed(ctx context.Context, arg MarkMailAccount
 
 const markMailAccountVerified = `-- name: MarkMailAccountVerified :exec
 UPDATE mail_accounts
-SET verified_at = now(), last_error = '', auth_failed = FALSE, updated_at = now()
+SET verified_at = now(), last_error = '', auth_failed = FALSE, login_rejected_at = NULL,
+    updated_at = now()
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
 
@@ -4527,6 +4538,34 @@ type MarkMailAccountVerifiedParams struct {
 // 刚刚登录成功，所以之前记下的「被拒绝」一并清掉。
 func (q *Queries) MarkMailAccountVerified(ctx context.Context, arg MarkMailAccountVerifiedParams) error {
 	_, err := q.db.Exec(ctx, markMailAccountVerified, arg.TenantID, arg.ID)
+	return err
+}
+
+const markMailboxLoginRejected = `-- name: MarkMailboxLoginRejected :exec
+UPDATE mail_accounts
+SET last_error = $1::text,
+    auth_failed = TRUE,
+    login_rejected_at = coalesce(login_rejected_at, now()),
+    updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type MarkMailboxLoginRejectedParams struct {
+	LastError string
+	TenantID  int64
+	ID        int64
+}
+
+// 收信时 IMAP 登录被服务器拒绝了。
+//
+// 和 MarkMailAccountFailed 的区别：多写一个 login_rejected_at，后台据此放慢
+// 这个箱的重试（见 00076）。只有收信那几条路调它——发信失败只写横幅那一位，
+// 不该让一个箱停止收信。
+//
+// COALESCE：记的是这一轮被拒从什么时候开始，每次重试被拒不往后挪，否则
+// 「拒了多久」永远是零，退避就永远停在最勤的那一档。
+func (q *Queries) MarkMailboxLoginRejected(ctx context.Context, arg MarkMailboxLoginRejectedParams) error {
+	_, err := q.db.Exec(ctx, markMailboxLoginRejected, arg.LastError, arg.TenantID, arg.ID)
 	return err
 }
 
@@ -5421,6 +5460,7 @@ SET auth_kind = 'OAUTH',
     unbound_at = NULL,
     -- 同 SetMailAccountSecret：新授权，旧的拒绝不算数。
     auth_failed = FALSE,
+    login_rejected_at = NULL,
     status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = $3::bigint AND id = $4::bigint
@@ -5459,11 +5499,12 @@ SET secret_enc = $1::bytea,
     -- 因为所有挑信箱的查询都还在按 unbound_at 跳过它。
     is_active = TRUE,
     unbound_at = NULL,
-    -- 新凭据，旧的「被服务器拒绝」就不算数了。后台那几条挑信箱的查询都
-    -- 跳过 auth_failed 的箱——这里不清的话，重新填了授权码的箱照样没人去
-    -- 收，一直要等到有人打开邮箱页才偶然被收一次。status_checked_at 清空
-    -- 是让它排到下一轮的最前面，而不是等满十分钟。
+    -- 新凭据，旧的「被服务器拒绝」就不算数了。后台挑信箱的查询都跳过
+    -- login_rejected_at 有值的箱——这里不清的话，重新填了授权码的箱照样
+    -- 没人去收，要等退避到点、或者有人打开邮箱页才偶然被收一次。
+    -- status_checked_at 清空是让它排到下一轮的最前面。
     auth_failed = FALSE,
+    login_rejected_at = NULL,
     status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = $3::bigint AND id = $4::bigint
