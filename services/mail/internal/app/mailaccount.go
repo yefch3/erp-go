@@ -299,9 +299,12 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 // Only touches last_error, never verified_at: whether the credential was ever
 // verified is a different fact from whether the last sync went through, and
 // conflating them would let a working poll masquerade as a fresh sign-in.
+//
+// A no-op when nothing is recorded: it runs after every successful pass, and
+// an unconditional write would be one UPDATE per mailbox every two minutes.
 func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
-	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: "", AuthFailed: false,
+	if err := s.q.ClearMailAccountFailure(ctx, store.ClearMailAccountFailureParams{
+		TenantID: tenantID, ID: accountID,
 	}); err != nil {
 		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
 	}

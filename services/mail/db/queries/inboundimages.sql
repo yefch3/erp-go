@@ -152,11 +152,17 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 按 account_id 分组，不是 owner_id：重取要连回**这封信当初进来的那个
 -- 信箱**。一个人绑了两个箱之后，按人分组会拿着 A 箱的凭据去 B 箱上搜
 -- Message-ID，搜不到就把行判成"对方删了"。
+--
+-- 服务器拒绝过凭据的箱跳过：登不上去，每次重启白白被拒一次。凭据修好之后
+-- 下一次启动自然会轮到它。
 SELECT id, account_id, owner_id, folder, message_id
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND raw_key = ''
   AND message_id <> ''
+  AND account_id NOT IN (
+      SELECT a.id FROM mail_accounts a
+      WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint AND a.auth_failed)
 ORDER BY account_id, folder, id;
 
 -- name: AdoptInboundRawKey :execrows

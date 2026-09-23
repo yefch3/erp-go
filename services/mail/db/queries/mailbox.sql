@@ -240,6 +240,12 @@ SET secret_enc = sqlc.arg(secret_enc)::bytea,
     -- 因为所有挑信箱的查询都还在按 unbound_at 跳过它。
     is_active = TRUE,
     unbound_at = NULL,
+    -- 新凭据，旧的「被服务器拒绝」就不算数了。后台那几条挑信箱的查询都
+    -- 跳过 auth_failed 的箱——这里不清的话，重新填了授权码的箱照样没人去
+    -- 收，一直要等到有人打开邮箱页才偶然被收一次。status_checked_at 清空
+    -- 是让它排到下一轮的最前面，而不是等满十分钟。
+    auth_failed = FALSE,
+    status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -265,8 +271,9 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountVerified :exec
+-- 刚刚登录成功，所以之前记下的「被拒绝」一并清掉。
 UPDATE mail_accounts
-SET verified_at = now(), last_error = '', updated_at = now()
+SET verified_at = now(), last_error = '', auth_failed = FALSE, updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountFailed :exec
@@ -276,6 +283,17 @@ SET last_error = sqlc.arg(last_error)::text,
     auth_failed = sqlc.arg(auth_failed)::boolean,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ClearMailAccountFailure :exec
+-- 信箱又能用了：清掉记下的错误。
+--
+-- **只在真有东西要清时才写。** 全量同步每一轮成功都会调它，轻状态检查
+-- 每次成功也会——无条件写的话，每个箱每两分钟一次 UPDATE，写的全是
+-- 「没变」。
+UPDATE mail_accounts
+SET last_error = '', auth_failed = FALSE, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+  AND (auth_failed OR last_error <> '');
 
 -- name: SetMailAccountActive :exec
 UPDATE mail_accounts
@@ -1168,6 +1186,9 @@ SET auth_kind = 'OAUTH',
     is_active = TRUE,
     -- 同 SetMailAccountSecret：重新授权就是重新绑上。
     unbound_at = NULL,
+    -- 同 SetMailAccountSecret：新授权，旧的拒绝不算数。
+    auth_failed = FALSE,
+    status_checked_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -1986,6 +2007,11 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   -- 失败的登录，然后把「认证失败」写到那一行上——而那句话在一个主动解绑
   -- 的人看来毫无道理。
   AND unbound_at IS NULL
+  -- 服务器拒绝过这份凭据的箱不在这一档：凭据只有人重新填才会变，每两分钟
+  -- 拿同一份去登录只会一直被拒，还可能被服务商当成攻击限流（163 已经回过
+  -- "login frequency limited"）。它们归轻状态那一档，一天问一次，见
+  -- ListMailboxesDueForStatus。有人打开邮箱页时的那次收信照常去试。
+  AND NOT auth_failed
   AND last_read_at IS NOT NULL
   AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
 ORDER BY id;
@@ -2001,15 +2027,28 @@ ORDER BY id;
 --
 -- NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
 -- 最需要先被看一眼。
+--
+-- **服务器拒绝过凭据的箱（auth_failed）单算：不管有没有人在看，隔
+-- auth_retry_seconds（一天）才问一次。** 凭据只有人重新填才会变，填的那一刻
+-- auth_failed 就清了（SetMailAccountSecret / SetMailAccountOAuth），所以
+-- 这一档的重试不是为了等凭据变好，只是兜底：服务商偶尔把「一时忙」「登录
+-- 太频繁」也报成密码错（foxmail 那句话就是这么写的），一天问一次，这种误
+-- 判第二天自己就好了。2026-09-23 之前这一档每十分钟问一次，五个坏掉的箱
+-- 一天两千多次登录。
 SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND is_active
   AND unbound_at IS NULL
-  AND (last_read_at IS NULL
-       OR last_read_at <= now() - make_interval(secs => sqlc.arg(active_seconds)::int))
-  AND (status_checked_at IS NULL
-       OR status_checked_at <= now() - make_interval(secs => sqlc.arg(status_seconds)::int))
+  AND CASE WHEN auth_failed THEN
+        status_checked_at IS NULL
+        OR status_checked_at <= now() - make_interval(secs => sqlc.arg(auth_retry_seconds)::int)
+      ELSE
+        (last_read_at IS NULL
+         OR last_read_at <= now() - make_interval(secs => sqlc.arg(active_seconds)::int))
+        AND (status_checked_at IS NULL
+             OR status_checked_at <= now() - make_interval(secs => sqlc.arg(status_seconds)::int))
+      END
 ORDER BY status_checked_at NULLS FIRST, id
 LIMIT sqlc.arg(row_limit)::int;
 
@@ -2064,9 +2103,11 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 --
 -- IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
 -- 一轮的轮询加十分钟一次的轻状态已经够了。
+-- 凭据被拒的箱不守：常开连接登不上，只会隔几分钟重连一次、被拒一次。
 SELECT (last_read_at IS NOT NULL
         AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
-        AND unbound_at IS NULL)::bool
+        AND unbound_at IS NULL
+        AND NOT auth_failed)::bool
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
