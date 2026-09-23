@@ -17,10 +17,11 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
-// ErrMessageIDSearchRefused 说邮箱服务器**明确拒绝**了按 Message-ID 搜索。
+// ErrMessageIDSearchRefused 说邮箱服务器**不支持**按 Message-ID 搜索。
 //
 // 263 就是这样：`UID SEARCH HEADER Message-Id` 一律回 "can't search that
-// criteria"。它和「连接断了」「超时了」是两回事——那些下次可能就好了，
+// criteria"（SearchCriterionUnsupported 认的就是这句）。别的拒绝——服务器一
+// 时忙之类——不用这个错误，那些是普通失败。它和「连接断了」「超时了」是两回事——那些下次可能就好了，
 // 这个下次原样还是拒绝。适配层认出它之后会有一阵子不再去问（见 mailfetch
 // 的 searchrefusal.go），调用方拿到它也不该当成值得逐封记日志的意外：它
 // 说的是「这台服务器回答不了这个问题」，不是「这一封出了事」。

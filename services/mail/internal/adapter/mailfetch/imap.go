@@ -952,7 +952,7 @@ func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, fol
 		return 0, false, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
 	}
 	if refusal != nil {
-		return 0, false, f.noteRefusal(acct, folder, refusal)
+		return 0, false, f.refused(acct, folder, refusal)
 	}
 	if len(uids) == 0 {
 		return 0, false, nil
@@ -1009,10 +1009,10 @@ func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, f
 			return out, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
 		}
 		if refusal != nil {
-			// A server that refuses one Message-ID search refuses them all;
-			// asking about the rest of the batch would only collect the same
-			// answer.
-			return out, f.noteRefusal(acct, folder, refusal)
+			// A server that cannot do one Message-ID search cannot do any, and
+			// one that is busy is busy for the next one too: either way the
+			// rest of the batch would only collect the same answer.
+			return out, f.refused(acct, folder, refusal)
 		}
 		if len(uids) > 0 {
 			// Newest match: a message can legitimately appear twice after a

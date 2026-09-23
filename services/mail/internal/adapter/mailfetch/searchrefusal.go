@@ -14,17 +14,17 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/app"
 )
 
-// messageIDSearchRetryAfter 是一个信箱拒绝了按 Message-ID 搜索之后，多久
-// 不再问它。
+// messageIDSearchRetryAfter 是一个信箱答了「不支持按 Message-ID 搜索」之后，
+// 多久不再问它。
 //
 // 263 对 `UID SEARCH HEADER Message-Id` 一律回 "can't search that criteria"。
 // 从前每次都照问：2026-09-23 生产上一天 54,081 次，全部被拒，而且每次被拒
 // 都把连接当坏的扔掉、下一封再重新 TLS 握手登录一遍——一天五万多次登录打
 // 在 263 上，只为了得到同一句「不支持」。
 //
-// 不是永久记住：拒绝也可能是一时的（"system busy" 也是 NO），服务商也可能
-// 哪天加上支持。六小时问一次，一个信箱一天四次，够发现变化，又不至于把
-// 同一句话问上几万遍。进程重启就清零，那时也只多问一次。
+// 只记这一种拒绝（见 refused）。也不是永久记住：服务商可能哪天加上支持。
+// 六小时问一次，一个信箱一天四次，够发现变化，又不至于把同一句话问上几万
+// 遍。进程重启就清零，那时也只多问一次。
 const messageIDSearchRetryAfter = 6 * time.Hour
 
 // searchRefusals 记着哪些信箱最近拒绝过按 Message-ID 搜索。按账号记，
@@ -96,20 +96,27 @@ func searchMessageID(c *client.Client, messageID string) (uids []uint32, refusal
 	return nil, nil, nil // unreachable: the second charset always returns
 }
 
-// refusedRecently 在这个信箱最近拒绝过时直接回 ErrMessageIDSearchRefused，
-// 不借连接、不往服务器发任何东西。
+// refusedRecently 在这个信箱最近说过「不支持」时直接回
+// ErrMessageIDSearchRefused，不借连接、不往服务器发任何东西。
 func (f *IMAP) refusedRecently(acct app.MailAccount) error {
 	if f.refusals.recent(acct.AccountID, time.Now()) {
-		return app.ErrMessageIDSearchRefused
+		return fmt.Errorf("%w（这个信箱最近答过不支持，暂不再问）", app.ErrMessageIDSearchRefused)
 	}
 	return nil
 }
 
-// noteRefusal 记下一次拒绝，并把它包成调用方认得的 error。同一个信箱在
-// 记录有效期内只写一行日志。
-func (f *IMAP) noteRefusal(acct app.MailAccount, folder string, refusal error) error {
+// refused 处理服务器答了 NO/BAD 的那一次搜索。连接两种情况下都是好的。
+//
+//   - 答的是「不支持这种搜索条件」（263 那句）：记下来，六小时内不再问，回
+//     ErrMessageIDSearchRefused。同一个信箱在记录有效期内只写一行日志。
+//   - 别的拒绝（一时忙、暂不可用）：普通失败，不记——下次照问，很可能就好
+//     了。记下来的话，一台支持搜索的服务器会因为一次抖动被当成不支持六小时。
+func (f *IMAP) refused(acct app.MailAccount, folder string, refusal error) error {
+	if !app.SearchCriterionUnsupported(refusal) {
+		return fmt.Errorf("在 %s 中查找失败：%w", folder, refusal)
+	}
 	if f.refusals.remember(acct.AccountID, time.Now()) {
-		f.log.Warn("mail host refused a Message-ID search; not asking this mailbox again for a while",
+		f.log.Warn("mail host cannot search by Message-ID; not asking this mailbox again for a while",
 			"account", acct.AccountID, "folder", folder, "retry_after", messageIDSearchRetryAfter.String(),
 			"err", refusal)
 	}

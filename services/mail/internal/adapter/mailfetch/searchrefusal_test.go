@@ -16,6 +16,7 @@ import (
 // 一台只管登录、选中文件夹和搜索的假服务器。search 决定它怎么答 UID SEARCH：
 //
 //	"refuse"     照 263 的原话回 NO
+//	"busy"       回一个泛泛的 NO（一时忙）——拒绝了，但不是「不支持」
 //	"hangup"     一个字不回，直接断开——连接坏了，不是拒绝
 //	"found"      * SEARCH 9 12
 //	"badcharset" CHARSET UTF-8 回 BADCHARSET，US-ASCII 那次回 * SEARCH 5
@@ -80,6 +81,8 @@ func (f *searchFake) serve(conn net.Conn, search string) {
 			switch search {
 			case "refuse":
 				say(tag + " NO UID SEARCH search error: can't search that criteria")
+			case "busy":
+				say(tag + " NO [UNAVAILABLE] system busy")
 			case "hangup":
 				return
 			case "found":
@@ -227,5 +230,27 @@ func TestARefusalIsForgottenAfterTheRetryWindow(t *testing.T) {
 	}
 	if r.recent(8, t0) {
 		t.Fatal("别的信箱不受影响")
+	}
+}
+
+// 一时忙不是「不支持」：不记下来（下次照问），连接也不扔。从前的版本把任何
+// NO 都记六小时，一台支持搜索的服务器抖一下就被当成不支持（2026-09-23 审查）。
+func TestABusyAnswerIsNeitherRememberedNorFatalToTheConnection(t *testing.T) {
+	srv := startSearchFake(t, "busy")
+	f := NewIMAP(5*time.Second, 2*time.Second, nil)
+	acct := searchAcct(srv.addr)
+	ctx := context.Background()
+
+	_, _, err := f.FindUIDByMessageID(ctx, acct, "已删除", "a@x")
+	if err == nil || errors.Is(err, app.ErrMessageIDSearchRefused) {
+		t.Fatalf("一时忙应当是普通失败，不是「不支持」：%v", err)
+	}
+	_, _, _ = f.FindUIDByMessageID(ctx, acct, "已删除", "b@x")
+	logins, searches := srv.counts()
+	if searches != 2 {
+		t.Fatalf("一时忙之后应当照问，实际问了 %d 次", searches)
+	}
+	if logins != 1 {
+		t.Fatalf("NO 之后连接是好的，不该重新登录，实际登录了 %d 次", logins)
 	}
 }
