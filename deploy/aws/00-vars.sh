@@ -39,6 +39,9 @@ ROOT_VOL_GB=100
 # trade-off, and flipping to Multi-AZ later is one command.
 RDS_CLASS=db.t4g.medium
 RDS_STORAGE_GB=50
+# 存储自动扩容的封顶。只是上限，不按它收费：RDS 在剩余空间不足 10% 时自己加，
+# 加到这个数为止。2026-09-23 生产上 4.6 GB/50 GB，一个月长 0.5 GB，200 够很多年。
+RDS_MAX_STORAGE_GB=200
 RDS_ENGINE_VERSION=16
 
 # ---------------------------------------------------------------- plumbing
