@@ -40,6 +40,9 @@ type IMAP struct {
 	dialTimeout time.Duration
 	// Connections, kept between commands. See pool.go for why.
 	pool *connPool
+	// Mailboxes whose server recently refused a Message-ID search. See
+	// searchrefusal.go.
+	refusals *searchRefusals
 }
 
 func NewIMAP(timeout, dialTimeout time.Duration, log *slog.Logger) *IMAP {
@@ -49,11 +52,17 @@ func NewIMAP(timeout, dialTimeout time.Duration, log *slog.Logger) *IMAP {
 	if dialTimeout <= 0 || dialTimeout > timeout {
 		dialTimeout = 10 * time.Second
 	}
+	if log == nil {
+		// Tests construct this without a logger; a nil one would panic on the
+		// first warning instead of the test reporting what it was testing.
+		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &IMAP{
 		log: log, timeout: timeout, dialTimeout: dialTimeout,
 		// The pool's idle window is bounded by the command timeout, not chosen
 		// independently of it — see idleWindow.
-		pool: newConnPool(idleWindow(timeout)),
+		pool:     newConnPool(idleWindow(timeout)),
+		refusals: newSearchRefusals(),
 	}
 }
 
@@ -916,28 +925,34 @@ func (f *IMAP) AppendMessage(ctx context.Context, acct app.MailAccount, folder s
 // The way to follow a message that has moved. A UID means nothing outside the
 // folder it came from, but the Message-ID is the sender's own identifier and
 // travels with the message wherever the host files it.
-func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, folder, messageID string) (_ uint32, _ bool, err error) {
+func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, folder, messageID string) (uint32, bool, error) {
 	if messageID == "" || folder == "" {
 		return 0, false, nil
+	}
+	if err := f.refusedRecently(acct); err != nil {
+		return 0, false, err
 	}
 	c, err := f.borrow(acct)
 	if err != nil {
 		return 0, false, err
 	}
-	// Released rather than logged out: the next command on this
-	// mailbox reuses it. A failed command discards it instead.
-	defer func() { f.release(acct, c, err) }()
+	// Released rather than logged out: the next command on this mailbox
+	// reuses it. Only a broken connection is thrown away — a server that
+	// answered "no" to the search left the connection perfectly usable.
+	var broken error
+	defer func() { f.release(acct, c, broken) }()
 	if _, err := c.Select(folder, true); err != nil {
+		broken = err
 		return 0, false, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
 
-	crit := imap.NewSearchCriteria()
-	// Angle brackets restored: they are part of the header value, and a
-	// server matching literally will not find the message without them.
-	crit.Header.Add("Message-Id", asAngled(messageID))
-	uids, err := c.UidSearch(crit)
+	uids, refusal, err := searchMessageID(c, messageID)
 	if err != nil {
+		broken = err
 		return 0, false, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
+	}
+	if refusal != nil {
+		return 0, false, f.refused(acct, folder, refusal)
 	}
 	if len(uids) == 0 {
 		return 0, false, nil
@@ -955,19 +970,23 @@ func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, fol
 // dial, the TLS handshake and the authentication, repeated once per message
 // and rejected by the host once a burst got long enough. Those happen once
 // here.
-func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, folder string, messageIDs []string) (_ map[string]uint32, err error) {
+func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, folder string, messageIDs []string) (map[string]uint32, error) {
 	out := make(map[string]uint32, len(messageIDs))
 	if folder == "" || len(messageIDs) == 0 {
 		return out, nil
+	}
+	if err := f.refusedRecently(acct); err != nil {
+		return out, err
 	}
 	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
 	}
-	// Released rather than logged out: the next command on this
-	// mailbox reuses it. A failed command discards it instead.
-	defer func() { f.release(acct, c, err) }()
+	// Same rule as FindUIDByMessageID: only a broken connection is discarded.
+	var broken error
+	defer func() { f.release(acct, c, broken) }()
 	if _, err := c.Select(folder, true); err != nil {
+		broken = err
 		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
 
@@ -981,14 +1000,19 @@ func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, f
 		if err := ctx.Err(); err != nil {
 			return out, err
 		}
-		crit := imap.NewSearchCriteria()
-		crit.Header.Add("Message-Id", asAngled(id))
-		uids, err := c.UidSearch(crit)
+		uids, refusal, err := searchMessageID(c, id)
 		if err != nil {
 			// One unanswerable search must not cost the rest of the batch. The
 			// caller treats a missing id as "not here", which then takes the
 			// careful one-at-a-time path.
+			broken = err
 			return out, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
+		}
+		if refusal != nil {
+			// A server that cannot do one Message-ID search cannot do any, and
+			// one that is busy is busy for the next one too: either way the
+			// rest of the batch would only collect the same answer.
+			return out, f.refused(acct, folder, refusal)
 		}
 		if len(uids) > 0 {
 			// Newest match: a message can legitimately appear twice after a

@@ -28,14 +28,27 @@ type refusingHost struct {
 	purges   int
 	// searchBroken 模拟 263：HEADER Message-Id 的 SEARCH 直接被拒。
 	searchBroken bool
+	// searchErr 非空时代替 searchBroken 那句原话。用来模拟适配层记住拒绝
+	// 之后的六小时：那时回的是 ErrMessageIDSearchRefused，不带服务器原话。
+	searchErr error
+}
+
+func (h *refusingHost) searchFailure() error {
+	if h.searchErr != nil {
+		return h.searchErr
+	}
+	if h.searchBroken {
+		return errors.New("UID SEARCH search error: can't search that criteria")
+	}
+	return nil
 }
 
 func (h *refusingHost) FolderStatus(_ context.Context, _ MailAccount, folder string) (FolderStatus, error) {
 	return FolderStatus{UIDValidity: h.validity[folder]}, nil
 }
 func (h *refusingHost) FindUIDsByMessageIDs(_ context.Context, _ MailAccount, _ string, ids []string) (map[string]uint32, error) {
-	if h.searchBroken {
-		return nil, errors.New("UID SEARCH search error: can't search that criteria")
+	if err := h.searchFailure(); err != nil {
+		return nil, err
 	}
 	out := map[string]uint32{}
 	for i, id := range ids {
@@ -383,8 +396,8 @@ func TestAPurgeWhoseLookupTheHostRejectsIsAlsoGivenUp(t *testing.T) {
 }
 
 func (h *refusingHost) FindUIDByMessageID(context.Context, MailAccount, string, string) (uint32, bool, error) {
-	if h.searchBroken {
-		return 0, false, errors.New("UID SEARCH search error: can't search that criteria")
+	if err := h.searchFailure(); err != nil {
+		return 0, false, err
 	}
 	return 1001, true, nil
 }
@@ -423,30 +436,42 @@ func TestAnOpTheHostCannotLookUpIsRetiredAtOnceInsteadOfBlockingReconcile(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.UseMailbox(&refusingHost{present: map[string]map[uint32]bool{}, validity: map[string]uint32{}, searchBroken: true})
+	// 两种样子：服务器第一次答的原话；以及适配层记住之后六小时内回的
+	// ErrMessageIDSearchRefused——那里面没有原话，从前只认原话，于是缓存期
+	// 内的写回又回到重试二十次（2026-09-23 审查发现）。
+	for _, tc := range []struct {
+		name string
+		host *refusingHost
+	}{
+		{"服务器原话", &refusingHost{present: map[string]map[uint32]bool{}, validity: map[string]uint32{}, searchBroken: true}},
+		{"适配层记住之后", &refusingHost{present: map[string]map[uint32]bool{}, validity: map[string]uint32{},
+			searchErr: fmt.Errorf("%w（这个信箱最近答过不支持，暂不再问）", ErrMessageIDSearchRefused)}},
+	} {
+		svc.UseMailbox(tc.host)
 
-	// 一条恢复操作（把信从回收站挪回收件箱）。没有记下来的服务器位置，
-	// 只能按 Message-ID 找——而这台服务器不会。
-	if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
-		TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
-		Folder: "INBOX", ImapUid: 3, Flag: flagTrash, Op: opRemove, MessageID: "stuck@263.net",
-	}); err != nil {
-		t.Fatal(err)
-	}
+		// 一条恢复操作（把信从回收站挪回收件箱）。没有记下来的服务器位置，
+		// 只能按 Message-ID 找——而这台服务器不会。
+		if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+			TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
+			Folder: "INBOX", ImapUid: 3, Flag: flagTrash, Op: opRemove, MessageID: "stuck@263.net",
+		}); err != nil {
+			t.Fatal(err)
+		}
 
-	// **第一次就退役**，不是重试到二十次。
-	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
+		// **第一次就退役**，不是重试到二十次。
+		svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
 
-	var n int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		var attempts int32
-		var lastErr string
-		_ = pool.QueryRow(ctx, "SELECT attempts, coalesce(last_error,'') FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&attempts, &lastErr)
-		t.Fatalf("服务器答「搜不了」时应该当场放弃，队列里还剩 %d 条（attempts=%d err=%q）——"+
-			"占着队列就是挡着这个信箱的读状态对账", n, attempts, lastErr)
+		var n int
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			var attempts int32
+			var lastErr string
+			_ = pool.QueryRow(ctx, "SELECT attempts, coalesce(last_error,'') FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&attempts, &lastErr)
+			t.Fatalf("%s：服务器答「搜不了」时应该当场放弃，队列里还剩 %d 条（attempts=%d err=%q）——"+
+				"占着队列就是挡着这个信箱的读状态对账", tc.name, n, attempts, lastErr)
+		}
 	}
 }
 
@@ -460,8 +485,16 @@ func TestOnlyTheSearchCapabilityWordingCountsAsPermanent(t *testing.T) {
 			t.Errorf("应该认出是「这台服务器搜不了」：%q", m)
 		}
 	}
+	// 适配层记住拒绝之后回的错误不带原话，也要认得。
+	if !hostCannotSearch(ErrMessageIDSearchRefused) {
+		t.Error("ErrMessageIDSearchRefused 本身就是「这台服务器搜不了」")
+	}
+	if !hostCannotSearch(fmt.Errorf("在 已删除 中查找失败：%w", ErrMessageIDSearchRefused)) {
+		t.Error("包了一层的 ErrMessageIDSearchRefused 也要认得")
+	}
 	for _, m := range []string{
 		"UID MOVE can't move those messages or to that name",
+		"UID SEARCH [UNAVAILABLE] system busy",
 		"read tcp 10.0.0.1:993: connection reset by peer",
 		"imap: connection closed",
 		"EXPUNGE failed: mailbox is read-only",

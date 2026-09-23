@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
@@ -73,7 +74,10 @@ func InjectOpenPixel(html, baseURL, messageKey string) string {
 // what we told our own user, and the rules will need adjusting against real
 // traffic rather than against a guess.
 func (s *Service) RecordOpen(ctx context.Context, messageKey, userAgent, ip string) {
-	if messageKey == "" {
+	// Not a UUID, not one of ours: every key we hand out is a message_key.
+	// Answered here rather than by the database, because this address is
+	// public and whatever a scanner puts in it would otherwise become a query.
+	if _, err := uuid.Parse(messageKey); err != nil {
 		return
 	}
 	row, err := s.q.FindMessageByKeyAnyTenant(ctx, messageKey)

@@ -473,7 +473,12 @@ SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, 
        customer_id, contact_id, customer_name
 FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND message_key::text = sqlc.arg(message_key)::text;
+  -- 按 uuid 比，不按文本比：message_key::text = $2 用不上 (tenant_id,
+  -- message_key) 唯一索引，每次都是全表扫（2026-09-23 在生产上 EXPLAIN 过）。
+  -- 表小的时候看不出来，但发出去的信只会越来越多，而入库时每封信要查好
+  -- 几次。调用方只递 UUID 形状的 key（messageKeyFromID），所以这里的转换
+  -- 不会失败；万一失败，调用方本来就把出错当「没找到」。
+  AND message_key = sqlc.arg(message_key)::text::uuid;
 -- name: ListInboundThreads :many
 -- The same slice of the mailbox as ListInbound, but one row per conversation
 -- instead of one row per message — Gmail's list, where "客户回了三次" is one
@@ -785,6 +790,10 @@ RETURNING version;
 -- **也按信箱算。** 徽标就贴在收件箱那一行上，而列表已经按信箱过滤了——
 -- 不带 account_id 的话，切到 A 箱看着五封信，徽标写着 12，那个数字指的是
 -- A+B 两个箱。数字和它旁边的列表说的不是一回事，比没有数字更糟。
+--
+-- **条件改了要连 00074 的 email_inbound_unread_idx 一起改。** 那是个局部
+-- 索引，谓词和这里的条件一字不差；两边不一致时规划器不用它，未读数就退回
+-- 整表扫，而且不报任何错。
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
@@ -1167,7 +1176,9 @@ ORDER BY a.id;
 -- gateway loads the image while the message is still in transit, and nobody
 -- reads their mail within seconds of it landing.
 SELECT id, tenant_id, to_email, sent_at FROM email_messages
-WHERE message_key::text = sqlc.arg(message_key)::text;
+-- 按 uuid 比才走得上 message_key 的索引，理由同 FindMessageByKey。RecordOpen
+-- 先挡掉了不是 UUID 的 key。
+WHERE message_key = sqlc.arg(message_key)::text::uuid;
 
 -- name: MarkOpened :exec
 -- First open only. A later fetch appends an event but must not overwrite the
@@ -2006,6 +2017,8 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- 只回有未读的箱。一个都没有的箱不出现在结果里，调用方按 0 处理——
 -- 让 SQL 回一堆 0 再让调用方过滤，两边都要记住这件事。
+--
+-- 和 CountUnread 一样，条件的口径绑着 00074 的 email_inbound_unread_idx。
 SELECT account_id, count(*)::bigint AS unread
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint

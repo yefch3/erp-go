@@ -10,12 +10,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
+
+// ErrMessageIDSearchRefused 说邮箱服务器**不支持**按 Message-ID 搜索。
+//
+// 263 就是这样：`UID SEARCH HEADER Message-Id` 一律回 "can't search that
+// criteria"（SearchCriterionUnsupported 认的就是这句）。别的拒绝——服务器一
+// 时忙之类——不用这个错误，那些是普通失败。它和「连接断了」「超时了」是两回事——那些下次可能就好了，
+// 这个下次原样还是拒绝。适配层认出它之后会有一阵子不再去问（见 mailfetch
+// 的 searchrefusal.go），调用方拿到它也不该当成值得逐封记日志的意外：它
+// 说的是「这台服务器回答不了这个问题」，不是「这一封出了事」。
+var ErrMessageIDSearchRefused = errors.New("邮箱服务器不支持按 Message-ID 查找")
 
 // RawMessage is one message as the server holds it.
 type RawMessage struct {
@@ -111,6 +122,9 @@ type Mailbox interface {
 	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) (map[uint32]uint32, error)
 	// FindUIDByMessageID follows a message that has moved: its UID changed,
 	// its Message-ID did not.
+	//
+	// 服务器拒绝按 Message-ID 搜索时回 ErrMessageIDSearchRefused（可以用
+	// errors.Is 认），而且之后一段时间里不再真的去问。
 	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
 	// FindUIDsByMessageIDs answers the same question for many messages over
 	// one connection. Emptying a trash asks it once per mail, and a fresh
@@ -1146,13 +1160,25 @@ func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMai
 }
 
 // messageKeyFromID extracts our own key out of a Message-ID we issued.
+//
+// **只认 UUID。** 我们发出去的 Message-ID 一律是 <message_key@域名>（见
+// provider/mime.go），而 message_key 是 UUID 列。别人家的 Message-ID——回信
+// 的 References 里大多是这种——@ 前面什么都有，拿去查只会是一次注定落空的
+// 查询；一条长会话的 References 有二十来个，每封入库的信就白查二十来次。
+// 不是 UUID 的一律回空，调用方本来就把空当「不是我们发的」。
+//
+// 回的是规范写法（小写、带连字符），和 message_key::text 同一个样子。
 func messageKeyFromID(id string) string {
 	id = strings.Trim(strings.TrimSpace(id), "<>")
 	i := strings.Index(id, "@")
 	if i <= 0 {
 		return ""
 	}
-	return id[:i]
+	key, err := uuid.Parse(id[:i])
+	if err != nil {
+		return ""
+	}
+	return key.String()
 }
 
 // applyBounce turns a delivery report into a fact about a recipient.
