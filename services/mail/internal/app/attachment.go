@@ -112,6 +112,63 @@ func previewable(contentType string) string {
 	return ""
 }
 
+// previewTypeOf 是附件在预览时该当成什么类型。
+//
+// 先看附件自己报的类型。**报得笼统时再看扩展名**：有些邮件客户端给每个附件都
+// 标 application/octet-stream（「一个文件，不说是什么」），于是一份好好的 PDF
+// 只能下载。2026-09-23 生产上名字是 .pdf 的附件里，3,919 个标了 application/pdf、
+// 3,304 个标的是 octet-stream——将近一半的 PDF 没有预览按钮，其中不少来自公司
+// 自己同事的邮箱。Gmail、Outlook 都是这么补的。
+//
+// **只在笼统时猜。** 报了具体类型的，说的是另一回事：生产上有 .pdf 标着
+// message/rfc822（转发的整封信）、.jpeg 标着 application/applefile（苹果的资源
+// 分叉，不是图片本身）。按扩展名把它们当成 PDF、图片，得到的是一个打不开的
+// 预览——宁可只给下载。
+//
+// 猜出来的类型只用来决定出不出「预览」、以及预览链接带什么 Content-Type。
+// 下载给的永远是原件，名字和字节都不动。猜错的代价是浏览器的 PDF 或图片查看器
+// 报「打不开」，不会把文件当网页执行：previewable 的白名单里没有任何能跑脚本
+// 的类型。
+//
+// 扩展名表是写死的，不用 mime.TypeByExtension：那个结果取决于容器里有没有
+// /etc/mime.types，.bmp 在精简镜像里就查不到。
+func previewTypeOf(declared, fileName string) string {
+	ct := strings.ToLower(strings.TrimSpace(declared))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	if !vagueContentTypes[ct] {
+		return declared
+	}
+	if guessed := previewTypeByExtension[strings.ToLower(path.Ext(fileName))]; guessed != "" {
+		return guessed
+	}
+	return declared
+}
+
+// vagueContentTypes 是「没说是什么」的那些写法。octet-stream 最常见；其余几种
+// 是各家邮件客户端和网站下载按钮发明的同义词。
+var vagueContentTypes = map[string]bool{
+	"":                           true,
+	"application/octet-stream":   true,
+	"binary/octet-stream":        true,
+	"application/unknown":        true,
+	"application/download":       true,
+	"application/x-download":     true,
+	"application/force-download": true,
+}
+
+// previewTypeByExtension 只收 previewable 认的那几种。
+var previewTypeByExtension = map[string]string{
+	".pdf":  "application/pdf",
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".bmp":  "image/bmp",
+}
+
 // signDownloads fills in the download URL for each attachment.
 //
 // Best effort per file: one unreachable object must not cost the caller the
@@ -134,7 +191,7 @@ func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attach
 
 		// A preview is a nicety; failing to sign one must not cost the file
 		// its download link, so it is attempted separately and last.
-		if ct := previewable(a.ContentType); ct != "" {
+		if ct := previewable(previewTypeOf(a.ContentType, a.FileName)); ct != "" {
 			atts[i].PreviewKind = PreviewDirect
 			if pv, err := s.files.PresignGetInline(ctx, a.FileKey, ct); err == nil {
 				atts[i].PreviewURL = pv
