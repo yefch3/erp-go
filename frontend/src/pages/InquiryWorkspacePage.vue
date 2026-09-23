@@ -1,5 +1,5 @@
 <template>
- <main class="inquiry-workspace inquiry-workspace--operations" :class="{'logistics-compact':view==='LOGISTICS'&&!item}" v-loading="busy">
+ <main class="inquiry-workspace inquiry-workspace--operations" :class="{'list-compact':!item,'logistics-compact':view==='LOGISTICS'&&!item}" v-loading="busy">
   <WorkflowPageHeader v-if="!item" :title="title" :description="subtitle">
    <template v-if="view==='SALES'" #actions><div class="heading-actions"><el-button @click="router.push('/sales/settings/inquiry-templates')">{{t('inquiryWorkspace.templates')}}</el-button><el-button class="mail-import-action" @click="router.push('/emails')">{{t('inquiryWorkspace.fromMailbox')}}</el-button></div></template>
   </WorkflowPageHeader>
@@ -636,28 +636,31 @@ watch(view,()=>void initial())
 .exchange-rate-panel{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0 6px;padding:13px 15px;border:1px solid #cfe3ea;border-radius:10px;background:#f4fafc}.exchange-rate-copy{display:grid;gap:3px;margin-right:auto}.exchange-rate-copy span{font-weight:650;color:#17485d}.exchange-rate-copy strong{font-size:12px;font-weight:400;color:#637889}.exchange-rate-field{display:flex;align-items:center;gap:8px;color:#4c6875;font-size:13px;white-space:nowrap}.exchange-rate-field .el-input{width:170px}.usd-preview{display:block;margin-top:5px;color:#19718b;font-size:11px;line-height:1.2}.charge-summary{display:flex;align-items:center;justify-content:flex-end;gap:16px;flex-wrap:wrap;margin:8px 0 20px;padding:10px 14px;border-radius:8px;background:#f7fafb;color:#607987;font-size:12px}.charge-summary strong{color:#17485d;font-size:13px}@media(max-width:700px){.exchange-rate-panel{align-items:stretch}.exchange-rate-copy{width:100%}.exchange-rate-field{justify-content:space-between}.exchange-rate-field .el-input{width:min(210px,65vw)}}
 .inquiry-table-scroll{min-width:0;overflow-x:auto}.inquiry-table-scroll :deep(.el-table){min-width:920px}.column-reset{margin-left:0!important;font-size:12px}.inquiry-workspace--operations :deep(.inquiry-list-table th.el-table__cell){height:42px;font-size:13px}.inquiry-workspace--operations :deep(.inquiry-list-table td.el-table__cell){padding:10px 0;font-size:14px}.inquiry-workspace--operations :deep(.inquiry-list-table .cell){padding-left:10px;padding-right:10px}.inquiry-workspace--operations .list-toolbar{gap:8px}.inquiry-workspace--operations .list-toolbar :deep(.el-input__wrapper),.inquiry-workspace--operations .list-toolbar :deep(.el-select__wrapper){min-height:34px}@media(max-width:1400px){.inquiry-workspace--operations :deep(.el-card__body){padding:16px}.inquiry-workspace--operations :deep(.inquiry-list-table th.el-table__cell){height:38px}.inquiry-workspace--operations :deep(.inquiry-list-table td.el-table__cell){padding:8px 0}.inquiry-workspace--operations :deep(.inquiry-list-table .cell){padding-left:8px;padding-right:8px}.inquiry-number{font-size:13px}.product-summary{font-size:13px}.list-pagination{margin-top:8px}}
 
-/* The logistics list keeps all operational columns visible at desktop widths. */
-.logistics-compact :deep(.procurement-page-header){min-height:32px;padding:10px 14px;margin-bottom:12px;gap:12px}
-.logistics-compact :deep(.procurement-page-header h1){font-size:20px}
-.logistics-compact :deep(.procurement-page-header p){background:transparent;padding:0;font-size:12px}
-.inquiry-workspace.logistics-compact .inquiry-list-panel{border:0;border-radius:0;box-shadow:none}
-.logistics-compact :deep(.el-card__body){padding:12px 8px}
-.logistics-compact .list-toolbar{margin-bottom:10px}
-.logistics-compact .list-toolbar>.el-input{width:min(320px,100%)}
-.logistics-compact .list-toolbar>.el-select{width:140px}
-.logistics-compact .list-toolbar :deep(.el-input__inner),.logistics-compact .list-toolbar :deep(.el-select__wrapper),.logistics-compact .list-toolbar :deep(.el-button){font-size:12px}
-.logistics-compact .inquiry-table-scroll :deep(.el-table){min-width:1080px;border:0!important;border-radius:0!important}
-.inquiry-workspace.logistics-compact :deep(.inquiry-list-table th.el-table__cell){height:34px;padding:3px 0;font-size:12px}
-.inquiry-workspace.logistics-compact :deep(.inquiry-list-table td.el-table__cell){padding:7px 0;font-size:12px}
-.inquiry-workspace.logistics-compact :deep(.inquiry-list-table .cell){padding:0 6px;line-height:19px;word-break:normal;overflow-wrap:anywhere}
-.logistics-compact :deep(.reorderable-table-header){padding:0;min-height:26px}
-.logistics-compact :deep(.reorderable-table-header:hover .column-label),.logistics-compact :deep(.reorderable-table-header:focus-within .column-label){opacity:.15}
-.logistics-compact .inquiry-number{font-size:12px;font-weight:600;white-space:nowrap}
-.logistics-compact .logistics-customer{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+ /* Match the shared compact list density in every inquiry view. */
+ .list-compact :deep(.procurement-page-header){min-height:32px;padding:10px 14px;margin-bottom:12px;gap:12px}
+ .list-compact :deep(.procurement-page-header h1){font-size:20px}
+ .list-compact :deep(.procurement-page-header p){background:transparent;padding:0;font-size:12px}
+ .inquiry-workspace.list-compact .inquiry-list-panel{border:0;border-radius:0;box-shadow:none}
+ .list-compact :deep(.el-card__body){padding:12px 8px}
+ .list-compact .list-toolbar{margin-bottom:10px}
+ .list-compact .list-toolbar>.el-input{width:min(320px,100%)}
+ .list-compact .list-toolbar>.el-select{width:140px}
+ .list-compact .list-toolbar :deep(.el-input__inner),.list-compact .list-toolbar :deep(.el-select__wrapper),.list-compact .list-toolbar :deep(.el-button){font-size:12px}
+ .list-compact .inquiry-table-scroll :deep(.el-table){border:0!important;border-radius:0!important}
+ /* Logistics has more columns and keeps its wider scrollable table. */
+ .logistics-compact .inquiry-table-scroll :deep(.el-table){min-width:1080px}
+ .inquiry-workspace.list-compact :deep(.inquiry-list-table th.el-table__cell){height:34px;padding:3px 0;font-size:12px}
+ .inquiry-workspace.list-compact :deep(.inquiry-list-table td.el-table__cell){padding:7px 0;font-size:12px}
+ .inquiry-workspace.list-compact :deep(.inquiry-list-table .cell){padding:0 6px;line-height:19px;word-break:normal;overflow-wrap:anywhere}
+ .list-compact :deep(.reorderable-table-header){padding:0;min-height:26px}
+ .list-compact :deep(.reorderable-table-header:hover .column-label),.list-compact :deep(.reorderable-table-header:focus-within .column-label){opacity:.15}
+ .list-compact .inquiry-number{font-size:12px;font-weight:600;white-space:nowrap}
+ .list-compact .product-summary{padding:2px 0;font-size:12px}
+ .logistics-compact .logistics-customer{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .logistics-quantities{display:flex;flex-direction:column;gap:0}
 .logistics-quantities>span{white-space:nowrap}
-.logistics-compact :deep(.inquiry-list-table .el-button){font-size:12px;padding:4px 0;white-space:nowrap;min-height:26px}
-.logistics-compact :deep(.inquiry-list-table .el-tag){font-size:12px;padding:0;border:0;background:transparent;white-space:normal;line-height:18px;height:auto}
-.logistics-compact .list-pagination{margin-top:10px}
-@media(max-width:600px){.logistics-compact .list-toolbar>.el-input{width:100%}}
+ .list-compact :deep(.inquiry-list-table .el-button){font-size:12px;padding:4px 0;white-space:nowrap;min-height:26px}
+ .list-compact :deep(.inquiry-list-table .el-tag){font-size:12px;padding:0;border:0;background:transparent;white-space:normal;line-height:18px;height:auto}
+ .list-compact .list-pagination{margin-top:10px}
+ @media(max-width:600px){.list-compact .list-toolbar>.el-input{width:100%}}
 </style>
