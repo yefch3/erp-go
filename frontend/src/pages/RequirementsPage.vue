@@ -517,7 +517,7 @@ function requirementQuantitySummary(lines: Requirement[]): string {
   return [...totals].map(([unit, total]) => `${total.toFixed(2)}${unit ? ` ${unit}` : ''}`).concat(unstructured).join('；') || '—'
 }
 const page = ref(1)
-const pageSize = 20
+const pageSize = 100
 // Outstanding work is what a buyer opens this page for; everything else is
 // history they go looking for deliberately.
 const keyword = ref('')

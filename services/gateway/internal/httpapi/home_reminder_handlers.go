@@ -335,8 +335,8 @@ func homeReminderPageParams(r *http.Request) (int, int) {
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 50 {
-		pageSize = 10
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 100
 	}
 	return page, pageSize
 }

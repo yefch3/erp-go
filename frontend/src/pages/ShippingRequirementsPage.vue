@@ -147,7 +147,7 @@ const linkOpen=ref(false),linkNumber=ref(''),linkContractId=ref('0')
 async function linkContract(){if(!detail.value||saving.value)return;saving.value=true;try{await post(`/shipping/manual-orders/${detail.value.id}/link-contract`,{contract_id:linkContractId.value,contract_no:linkNumber.value});ElMessage.success('合同已关联，使用销售合同号');linkOpen.value=false;await refreshDetail()}finally{saving.value=false}}
 const auth=useAuthStore(),manualOpen=ref(false),manualOrderId=ref('')
 async function manualSaved(){detailOpen.value=false;status.value='DRAFT';await load()}
-const { t }=useI18n(), route=useRoute(), router=useRouter(); const loading=ref(false),saving=ref(false),detailOpen=ref(false); const rows=ref<Handoff[]>([]),detail=ref<Handoff|null>(null),forwarders=ref<Party[]>([]),carriers=ref<Party[]>([]),requoteOptions=ref<RequoteOption[]>([]); const keyword=ref(''),status=ref(mode.value==='orders'?'DRAFT':''),page=ref(1),pageSize=ref(20),contractFile=ref<File|null>(null),selectedOptionId=ref(0),editingOptionId=ref(0)
+const { t }=useI18n(), route=useRoute(), router=useRouter(); const loading=ref(false),saving=ref(false),detailOpen=ref(false); const rows=ref<Handoff[]>([]),detail=ref<Handoff|null>(null),forwarders=ref<Party[]>([]),carriers=ref<Party[]>([]),requoteOptions=ref<RequoteOption[]>([]); const keyword=ref(''),status=ref(mode.value==='orders'?'DRAFT':''),page=ref(1),pageSize=ref(100),contractFile=ref<File|null>(null),selectedOptionId=ref(0),editingOptionId=ref(0)
 const handoffColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'contractNo',label:t('shipping.contractNo'),width:170},
  {key:'customer',label:t('shipping.customer'),minWidth:145,showOverflowTooltip:true},

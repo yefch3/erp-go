@@ -64,7 +64,7 @@
               </el-table>
             </div>
             <el-empty v-if="!loading && !rows.length" :description="t('shipping.empty')" />
-            <el-pagination class="pager" layout="total, sizes, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" :page-sizes="[10, 20, 50]" @current-change="changePage" @size-change="changeSize" />
+            <el-pagination class="pager" layout="total, sizes, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" :page-sizes="[10, 20, 50, 100]" @current-change="changePage" @size-change="changeSize" />
           </el-card>
     </section>
 
@@ -105,7 +105,7 @@ const rows = ref<ShippingSchedule[]>([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100)
 const more = ref(false)
 const dialogOpen = ref(false)
 const editing = ref<ShippingSchedule>()

@@ -30,7 +30,7 @@
         </template></el-table-column>
         <template #empty>{{ t('quality.empty') }}</template>
       </el-table>
-      <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="20" :current-page="page" @current-change="(p:number) => { page = p; load() }" />
+      <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="100" :current-page="page" @current-change="(p:number) => { page = p; load() }" />
     </el-card>
 
     <el-dialog class="quality-dialog" v-model="createOpen" :title="t('quality.create')" width="min(960px, 94vw)" :close-on-click-modal="false">
@@ -45,7 +45,7 @@
           <el-table-column width="150"><template #default="{row}"><el-button v-if="hasTask(row)" link type="primary" @click.stop="openExisting(row)">{{ t('quality.openExisting') }}</el-button></template></el-table-column>
           <template #empty>{{ t('quality.noSourceOrders') }}</template>
         </el-table>
-        <el-pagination small layout="total, prev, pager, next" :total="sourceTotal" :page-size="20" v-model:current-page="sourcePage" @current-change="loadSources" />
+        <el-pagination small layout="total, prev, pager, next" :total="sourceTotal" :page-size="100" v-model:current-page="sourcePage" @current-change="loadSources" />
         <div v-loading="sourceDetailLoading" class="source-detail">
           <template v-if="selectedSource">
             <p><b>{{ selectedSource.poNo }}</b> · {{ selectedSource.supplierName }}</p>
@@ -194,7 +194,7 @@ let sourceRequest=0, detailRequest=0
 const hasTask=(o:SourceOrder)=>!!o.existingTaskId && o.existingTaskId!=='0'
 async function openCreate(){createOpen.value=true;selectedSource.value=null;sourceDetailLoading.value=false;++detailRequest;sourceKeyword.value='';sourcePage.value=1;Object.assign(createForm,{expectedDate:'',location:'',contactName:'',contactPhone:'',remark:''});await loadSources()}
 async function searchSources(){sourcePage.value=1;await loadSources()}
-async function loadSources(){const request=++sourceRequest;sourceLoading.value=true;try{const d=await get<{orders:SourceOrder[];meta:{total:number}}>('/quality/source-orders',{keyword:sourceKeyword.value,page:sourcePage.value,page_size:20});if(request!==sourceRequest)return;sourceOrders.value=d.orders||[];sourceTotal.value=Number(d.meta?.total||0)}finally{if(request===sourceRequest)sourceLoading.value=false}}
+async function loadSources(){const request=++sourceRequest;sourceLoading.value=true;try{const d=await get<{orders:SourceOrder[];meta:{total:number}}>('/quality/source-orders',{keyword:sourceKeyword.value,page:sourcePage.value,page_size: 100});if(request!==sourceRequest)return;sourceOrders.value=d.orders||[];sourceTotal.value=Number(d.meta?.total||0)}finally{if(request===sourceRequest)sourceLoading.value=false}}
 async function selectSource(row:SourceOrder){const request=++detailRequest;Object.assign(createForm,{expectedDate:'',location:'',contactName:'',contactPhone:'',remark:''});selectedSource.value=null;sourceDetailLoading.value=true;try{const d=await get<{orders:SourceOrder[]}>(`/quality/source-orders/${row.id}`);if(request===detailRequest)selectedSource.value=d.orders[0]||null}finally{if(request===detailRequest)sourceDetailLoading.value=false}}
 async function openExisting(row:SourceOrder){await openTask({id:row.existingTaskId});createOpen.value=false}
 async function createTask(){if(!selectedSource.value||creating.value)return;creating.value=true;try{const d=await post<{task:QTask}>('/quality/tasks',{po_id:Number(selectedSource.value.id),expected_date:createForm.expectedDate||'',inspection_location:createForm.location,contact_name:createForm.contactName,contact_phone:createForm.contactPhone,remark:createForm.remark});createOpen.value=false;task.value=d.task;prepare();detailOpen.value=true;tab.value='PENDING';page.value=1;await load();ElMessage.success(t('quality.created'))}finally{creating.value=false}}
@@ -229,7 +229,7 @@ const round=reactive({inspectedAt:'',location:'',remark:''}); const roundOf=reac
 const unresolvedLines=computed(()=>task.value?.lines.filter(l=>Number(l.unresolvedQty)>0)||[])
 const fmt=(v:string)=>v?new Date(v).toLocaleString():'—'; const trim=(v:string)=>String(Number(v)); const statusLabel=(s:string)=>t(`quality.statuses.${s==='COMPLETED'?'COMPLETED':'WAITING'}`); const resultLabel=(s?:string)=>t(`quality.results.${s||'PENDING'}`); const lineName=(id:string)=>task.value?.lines.find(l=>String(l.id)===String(id))?.productName||id
 function prepare(){if(!task.value)return;round.inspectedAt=new Date().toISOString();round.location=task.value.inspectionLocation||'';for(const l of task.value.lines){if(Number(l.unresolvedQty)>0)roundOf[l.id]={result:'PASS',inspectedQty:trim(l.unresolvedQty),qualifiedQty:trim(l.unresolvedQty),unqualifiedQty:'0',issueDescription:'',handlingSuggestion:''}}}
-async function load(){loading.value=true;try{const d=await get<{tasks:QTask[];meta:{total:number}}>('/quality/tasks',{tab:tab.value,page:page.value,page_size:20,keyword:keyword.value});rows.value=d.tasks||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
+async function load(){loading.value=true;try{const d=await get<{tasks:QTask[];meta:{total:number}}>('/quality/tasks',{tab:tab.value,page:page.value,page_size: 100,keyword:keyword.value});rows.value=d.tasks||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
 function reload(){page.value=1;void load()}
 async function openTask(row:Pick<QTask,'id'>){const d=await get<{task:QTask}>(`/quality/tasks/${row.id}`);task.value=d.task;prepare();detailOpen.value=true}
 async function openRequestedTask(){const id=String(route.query.task||'');if(id)await openTask({id})}

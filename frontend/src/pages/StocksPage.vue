@@ -287,7 +287,7 @@ const warehouses = ref<Warehouse[]>([])
 const products = ref<Product[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 20
+const pageSize = 100
 const warehouseId = ref(0)
 const keyword = ref('')
 const inStockOnly = ref(false)
@@ -331,7 +331,7 @@ async function load() {
 async function openDetail(row: Stock) {
   const [stockData, ledgerData] = await Promise.all([
     get<{ stock: Stock }>(`/stocks/${row.id}`),
-    get<{ entries: Ledger[] }>('/stock-ledger', { stock_id: row.id, page_size: 10 }),
+    get<{ entries: Ledger[] }>('/stock-ledger', { stock_id: row.id, page_size: 100 }),
   ])
   detail.value = stockData.stock
   detailLedger.value = ledgerData.entries ?? []
@@ -357,7 +357,7 @@ async function submitFreeze() {
       qty: freezeForm.qty, reason: freezeForm.reason,
     })
     detail.value = data.stock
-    detailLedger.value = (await get<{ entries: Ledger[] }>('/stock-ledger', { stock_id: detail.value.id, page_size: 10 })).entries ?? []
+    detailLedger.value = (await get<{ entries: Ledger[] }>('/stock-ledger', { stock_id: detail.value.id, page_size: 100 })).entries ?? []
     freezeOpen.value = false
     ElMessage.success(freezeMode.value ? t('stocks.frozenSuccess') : t('stocks.unfrozenSuccess'))
     load()

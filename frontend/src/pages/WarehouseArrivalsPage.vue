@@ -96,7 +96,7 @@ interface Warehouse { id:string; code:string; name:string; whType:string; profil
 
 const route=useRoute(), router=useRouter(), auth=useAuthStore(), { t }=useI18n()
 const canReceive=computed(()=>auth.can('procurement:receipt:write'))
-const loading=ref(false), saving=ref(false), rows=ref<Order[]>([]), pageNo=ref(1), pageSize=20
+const loading=ref(false), saving=ref(false), rows=ref<Order[]>([]), pageNo=ref(1), pageSize=100
 const keyword=ref(String(route.query.keyword ?? '')), routeType=ref(String(route.query.route ?? 'ALL')), expectedDate=ref(String(route.query.date ?? ''))
 const receiptOpen=ref(false), receiving=ref<Order|null>(null), receiptItems=ref<OrderItem[]>([]), warehouses=ref<Warehouse[]>([]), warehouseId=ref(0), remark=ref('')
 const receiptQty=reactive<Record<string,string>>({})

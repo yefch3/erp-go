@@ -95,7 +95,7 @@
        </section>
        <div v-if="!pagedQuoteProductGroups.length" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</div>
       </div>
-      <p>{{quotePriceHint(editor.body.quoteCategory)}}</p><el-pagination v-model:current-page="productPage" v-model:page-size="productSize" :page-sizes="[10,20,50]" :total="filteredQuoteProductGroups.length" layout="total, sizes, prev, pager, next"/>
+      <p>{{quotePriceHint(editor.body.quoteCategory)}}</p><el-pagination v-model:current-page="productPage" v-model:page-size="productSize" :page-sizes="[10,20,50,100]" :total="filteredQuoteProductGroups.length" layout="total, sizes, prev, pager, next"/>
      </template>
      <template v-else>
       <section v-if="nonUsdCurrencies.length" class="exchange-rate-panel">
@@ -185,7 +185,7 @@ const listColumnDefaults=computed<TableColumnDefinition[]>(()=>{
  return[{...common.number,minWidth:125},{key:'customer',label:t('inquiryWorkspace.customer'),minWidth:170},{key:'owner',label:t('inquiryWorkspace.owner'),minWidth:90},{key:'totalQuantity',label:t('inquiryWorkspace.totalQuantity'),minWidth:115},{key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:94},{key:'loadingPort',label:t('inquiryWorkspace.loadingPort'),minWidth:85},{key:'destinationPort',label:t('inquiryWorkspace.destinationPort'),minWidth:100},{...common.submittedAt,minWidth:122},{...common.status,minWidth:90}]
 })
 const listColumnOrder=useTableColumnOrder(computed(()=>({SALES:'inquiry-list',QUOTATIONS:'customer-quotation-list',PROCUREMENT:'procurement-sourcing-list',LOGISTICS:'logistics-sourcing-list'} as const)[view.value]),listColumnDefaults)
-const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(20),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
+const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(100),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
 // 自动刷新的重试状态，见 lib/refreshBackoff。
 //
 // 从前这里是一个 refreshSuspended 布尔：失败一次就永久置真，再没有任何东西
@@ -225,7 +225,7 @@ const logisticsPrimaryFields=computed<QuoteField[]>(()=>[{key:'vessel',label:t('
 const logisticsFields=computed<QuoteField[]>(()=>[...logisticsPrimaryFields.value,{key:'route',label:t('inquiryWorkspace.quotes.route')}])
 const quoteDisplayFields=computed<QuoteField[]>(()=>[{key:'company',label:t('inquiryWorkspace.quotes.factoryOrForwarder')},{key:'currency',label:t('inquiryWorkspace.quotes.currency')},{key:'delivery',label:t('inquiryWorkspace.quotes.unifiedDelivery')},{key:'validUntil',label:t('inquiryWorkspace.quotes.validUntil')},{key:'paymentTerms',label:t('inquiryWorkspace.quotes.paymentTerms')},...logisticsFields.value,{key:'departure',label:t('inquiryWorkspace.quotes.departure')},{key:'arrival',label:t('inquiryWorkspace.quotes.arrival')},{key:'remark',label:t('inquiryProducts.fields.remark')}])
 const chargeFields=computed(()=>[{key:'name',label:t('inquiryWorkspace.quotes.chargeName'),width:140},{key:'amount',label:t('inquiryWorkspace.quotes.amount'),width:110},{key:'remark',label:t('inquiryProducts.fields.remark'),width:170}])
-const productSearch=ref(''),productFilter=ref('all'),productPage=ref(1),productSize=ref(20),requirementsOpen=ref<string[]>([]),expandedQuoteProductKeys=ref<string[]>([])
+const productSearch=ref(''),productFilter=ref('all'),productPage=ref(1),productSize=ref(100),requirementsOpen=ref<string[]>([]),expandedQuoteProductKeys=ref<string[]>([])
 const procurementCompanyOptions=ref<{label:string;value:string}[]>([]),procurementCompanyLoading=ref(false)
 const portOptions=ref<{label:string;value:string}[]>([]),portLoading=ref(false)
 const nonUsdCurrencies=computed(()=>{

@@ -522,7 +522,7 @@ interface Entry {
 const rows = ref<Row[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 20
+const pageSize = 100
 // 「已完成」是 ?view=done。用 query 而不是第二条路径：两个子页属于同一个
 // 服务（供应商对账），菜单上只该有一项，而 route.path 不变高亮才不会掉。
 const isDone = computed(() => route.query.view === 'done')

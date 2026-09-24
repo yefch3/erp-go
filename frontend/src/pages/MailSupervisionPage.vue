@@ -325,7 +325,7 @@ async function fetchPage(cursor: string) {
     folder: folder.value,
     keyword: keyword.value.trim(),
     cursor,
-    page_size: 25,
+    page_size: 100,
   })
   return { mails: d.mails ?? [], nextCursor: d.nextCursor ?? '' }
 }

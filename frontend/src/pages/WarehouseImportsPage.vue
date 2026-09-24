@@ -73,7 +73,7 @@
         <el-table-column :label="t('warehouse.imports.actions')" width="115" align="right"><template #default="{row}"><el-button link type="primary" @click="downloadReport(row)">{{ t('warehouse.imports.downloadReport') }}</el-button></template></el-table-column>
         <template #empty><el-empty :description="t('warehouse.imports.emptyHistory')" /></template>
       </el-table>
-      <div class="pagination"><span>{{ t('warehouse.imports.count', { count: total }) }}</span><el-pagination layout="prev, pager, next" :total="total" :page-size="20" v-model:current-page="pageNo" @current-change="loadHistory" /></div>
+      <div class="pagination"><span>{{ t('warehouse.imports.count', { count: total }) }}</span><el-pagination layout="prev, pager, next" :total="total" :page-size="100" v-model:current-page="pageNo" @current-change="loadHistory" /></div>
     </el-card>
   </div>
 </template>
@@ -103,7 +103,7 @@ async function previewFile(){if(!selectedFile.value)return;previewing.value=true
 function savePreviewReport(){if(preview.value?.errorFileData)saveBlob(base64Blob(preview.value.errorFileData),preview.value.errorFileName||'initial-stock-errors.xlsx')}
 async function confirmPreview(){if(!preview.value)return;await ElMessageBox.confirm(t('warehouse.imports.confirmMessage'),t('warehouse.imports.confirmTitle'),{type:'warning',confirmButtonText:t('warehouse.imports.confirmButton')});confirming.value=true;try{const data=await post<{batch:Batch}>(`/stock-imports/${encodeURIComponent(preview.value.batch.importToken)}/confirm`,{});preview.value.batch=data.batch;ElMessage.success(t('warehouse.imports.posted'));await loadHistory()}finally{confirming.value=false}}
 async function cancelPreview(){if(!preview.value)return;await ElMessageBox.confirm(t('warehouse.imports.discardMessage'),t('warehouse.imports.discardTitle'),{type:'warning'});const data=await post<{batch:Batch}>(`/stock-imports/${encodeURIComponent(preview.value.batch.importToken)}/cancel`,{});preview.value.batch=data.batch;ElMessage.success(t('warehouse.imports.discarded'));await loadHistory()}
-async function loadHistory(){loadingHistory.value=true;try{const data=await get<{batches:Batch[];meta?:{total?:number}}>('/stock-imports',{page:pageNo.value,page_size:20});history.value=data.batches??[];total.value=Number(data.meta?.total??0)}finally{loadingHistory.value=false}}
+async function loadHistory(){loadingHistory.value=true;try{const data=await get<{batches:Batch[];meta?:{total?:number}}>('/stock-imports',{page:pageNo.value,page_size: 100});history.value=data.batches??[];total.value=Number(data.meta?.total??0)}finally{loadingHistory.value=false}}
 async function downloadReport(row:Batch){const file=await download(`/stock-imports/${encodeURIComponent(row.importToken)}/report`);saveBlob(file.blob,file.fileName||`${row.batchNo}-report.xlsx`)}
 function statusText(v:string){return ['PREVIEW','INVALID','CONFIRMED','CANCELLED'].includes(v)?t(`warehouse.imports.status.${v}`):v}
 function statusType(v:string):'success'|'warning'|'danger'|'info'{return v==='CONFIRMED'?'success':v==='PREVIEW'?'warning':v==='INVALID'?'danger':'info'}
