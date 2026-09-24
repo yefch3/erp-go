@@ -19,7 +19,7 @@ type DailyPriceHandler struct {
 
 func NewDailyPrice(svc *app.Service) *DailyPriceHandler { return &DailyPriceHandler{svc: svc} }
 
-func (h *DailyPriceHandler) Execute(ctx context.Context, r *prv1.DailyPriceRequest) (*prv1.DailyPriceResponse, error) {
+func (h *DailyPriceHandler) Execute(ctx context.Context, r *prv1.DailyPriceServiceExecuteRequest) (*prv1.DailyPriceServiceExecuteResponse, error) {
 	if len(r.GetCommandJson()) > 1024*1024 {
 		return nil, apierr.Invalid("DAILY_PRICE_SIZE", "一次提交的数据过多")
 	}
@@ -44,5 +44,5 @@ func (h *DailyPriceHandler) Execute(ctx context.Context, r *prv1.DailyPriceReque
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.DailyPriceResponse{ResultJson: string(data)}, nil
+	return &prv1.DailyPriceServiceExecuteResponse{ResultJson: string(data)}, nil
 }

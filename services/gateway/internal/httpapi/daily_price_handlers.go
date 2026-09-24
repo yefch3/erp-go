@@ -19,7 +19,7 @@ func (s *Server) dailyPriceCall(w http.ResponseWriter, r *http.Request, command 
 		return
 	}
 	data, _ := json.Marshal(command)
-	resp, err := s.DailyPrices.Execute(r.Context(), &prv1.DailyPriceRequest{CommandJson: string(data)})
+	resp, err := s.DailyPrices.Execute(r.Context(), &prv1.DailyPriceServiceExecuteRequest{CommandJson: string(data)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

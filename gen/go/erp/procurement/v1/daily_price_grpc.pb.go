@@ -29,7 +29,7 @@ const (
 // A closed JSON command keeps matrix saves atomic without one RPC per cell.
 // The HTTP gateway checks each action's permission before forwarding.
 type DailyPriceServiceClient interface {
-	Execute(ctx context.Context, in *DailyPriceRequest, opts ...grpc.CallOption) (*DailyPriceResponse, error)
+	Execute(ctx context.Context, in *DailyPriceServiceExecuteRequest, opts ...grpc.CallOption) (*DailyPriceServiceExecuteResponse, error)
 }
 
 type dailyPriceServiceClient struct {
@@ -40,9 +40,9 @@ func NewDailyPriceServiceClient(cc grpc.ClientConnInterface) DailyPriceServiceCl
 	return &dailyPriceServiceClient{cc}
 }
 
-func (c *dailyPriceServiceClient) Execute(ctx context.Context, in *DailyPriceRequest, opts ...grpc.CallOption) (*DailyPriceResponse, error) {
+func (c *dailyPriceServiceClient) Execute(ctx context.Context, in *DailyPriceServiceExecuteRequest, opts ...grpc.CallOption) (*DailyPriceServiceExecuteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DailyPriceResponse)
+	out := new(DailyPriceServiceExecuteResponse)
 	err := c.cc.Invoke(ctx, DailyPriceService_Execute_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (c *dailyPriceServiceClient) Execute(ctx context.Context, in *DailyPriceReq
 // A closed JSON command keeps matrix saves atomic without one RPC per cell.
 // The HTTP gateway checks each action's permission before forwarding.
 type DailyPriceServiceServer interface {
-	Execute(context.Context, *DailyPriceRequest) (*DailyPriceResponse, error)
+	Execute(context.Context, *DailyPriceServiceExecuteRequest) (*DailyPriceServiceExecuteResponse, error)
 	mustEmbedUnimplementedDailyPriceServiceServer()
 }
 
@@ -68,7 +68,7 @@ type DailyPriceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDailyPriceServiceServer struct{}
 
-func (UnimplementedDailyPriceServiceServer) Execute(context.Context, *DailyPriceRequest) (*DailyPriceResponse, error) {
+func (UnimplementedDailyPriceServiceServer) Execute(context.Context, *DailyPriceServiceExecuteRequest) (*DailyPriceServiceExecuteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
 }
 func (UnimplementedDailyPriceServiceServer) mustEmbedUnimplementedDailyPriceServiceServer() {}
@@ -93,7 +93,7 @@ func RegisterDailyPriceServiceServer(s grpc.ServiceRegistrar, srv DailyPriceServ
 }
 
 func _DailyPriceService_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DailyPriceRequest)
+	in := new(DailyPriceServiceExecuteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func _DailyPriceService_Execute_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: DailyPriceService_Execute_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DailyPriceServiceServer).Execute(ctx, req.(*DailyPriceRequest))
+		return srv.(DailyPriceServiceServer).Execute(ctx, req.(*DailyPriceServiceExecuteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
