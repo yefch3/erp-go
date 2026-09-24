@@ -63,6 +63,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer mdConn.Close()
+	pdConn, err := dial(cfg.ProductAddr)
+	if err != nil {
+		return err
+	}
+	defer pdConn.Close()
 	apConn, err := dial(cfg.ApprovalAddr)
 	if err != nil {
 		return err
@@ -110,6 +115,8 @@ func run(log *slog.Logger) error {
 		Numbering:        grpcout.NewNumbering(mdConn),
 		Approvals:        grpcout.NewApprovals(apConn),
 		Suppliers:        grpcout.NewSuppliers(mdConn),
+		Products:         grpcout.NewProducts(pdConn),
+		Permissions:      grpcout.NewPermissionChecker(iamConn),
 		Warehouses:       grpcout.NewWarehouses(invConn),
 		Rates:            grpcout.NewRates(fxConn),
 		Scopes:           grpcout.NewScopes(iamConn),
@@ -172,6 +179,7 @@ func run(log *slog.Logger) error {
 	orders.UseDeadLetterConsole(console)
 	prv1.RegisterPurchaseOrderServiceServer(srv, orders)
 	prv1.RegisterSourcingServiceServer(srv, grpcin.NewSourcing(svc))
+	prv1.RegisterDailyPriceServiceServer(srv, grpcin.NewDailyPrice(svc))
 	prv1.RegisterInquiryTemplateServiceServer(srv, grpcin.NewInquiryTemplates(svc))
 	reflection.Register(srv)
 

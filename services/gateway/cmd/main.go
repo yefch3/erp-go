@@ -180,6 +180,7 @@ func run(log *slog.Logger) error {
 		Shipments:               exv1.NewShipmentServiceClient(exConn),
 		Receipts:                exv1.NewReceiptServiceClient(exConn),
 		Requirements:            prv1.NewRequirementServiceClient(prConn),
+		DailyPrices:             prv1.NewDailyPriceServiceClient(prConn),
 		Orders:                  prv1.NewPurchaseOrderServiceClient(prConn),
 		Sourcing:                prv1.NewSourcingServiceClient(prConn),
 		InquiryTemplates:        prv1.NewInquiryTemplateServiceClient(prConn),

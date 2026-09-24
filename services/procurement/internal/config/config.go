@@ -20,6 +20,7 @@ type Config struct {
 	PurchaseTopic string
 	// Where to ask for document numbers and approvals.
 	MasterdataAddr string
+	ProductAddr    string
 	ApprovalAddr   string
 	InventoryAddr  string
 	FxAddr         string
@@ -49,6 +50,7 @@ func Load() Config {
 		ApprovalConsumerGroup: env("APPROVAL_CONSUMER_GROUP", "procurement.approval.v1"),
 		PurchaseTopic:         env("PURCHASE_TOPIC", "erp.procurement.purchase.v1"),
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
+		ProductAddr:           env("PRODUCT_ADDR", "localhost:9004"),
 		ApprovalAddr:          env("APPROVAL_ADDR", "localhost:9005"),
 		InventoryAddr:         env("INVENTORY_ADDR", "localhost:9008"),
 		FxAddr:                env("FX_ADDR", "localhost:9003"),

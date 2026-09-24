@@ -532,6 +532,7 @@ const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
   'procurement:order:read',
+  'procurement:daily-price:read',
 ].some(auth.can))
 const procurementActive = computed(() => procurementItems.value.some((item) => isProcurementItemActive(item.path)))
 const menuActive = computed(() => route.path)
@@ -662,6 +663,7 @@ const procurementItems = computed(() => sortByOrder([
   { key: '/procurement/sourcing', path: '/procurement/sourcing', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
   { key: '/requirements', path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { key: '/purchase-orders', path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
+  { key: '/procurement/daily-prices', path: '/procurement/daily-prices', label: t('procurementNav.dailyPrices'), allowed: auth.can('procurement:daily-price:read') },
 ].filter((item) => item.allowed), navigationPreferences.value.children.procurement))
 
 // Element Plus teleports dialogs and drawers under <body>, outside .content.

@@ -138,6 +138,7 @@ var presetRoles = []presetRole{
 			"procurement:order:read", "procurement:order:send",
 			"procurement:order:submit", "procurement:order:write",
 			"procurement:production:write", "procurement:requirement:read",
+			"procurement:daily-price:read", "procurement:daily-price:write",
 			"procurement:sourcing:price", "procurement:sourcing:read",
 			"procurement:sourcing:send", "procurement:sourcing:write",
 			"product:product:read",
@@ -147,6 +148,7 @@ var presetRoles = []presetRole{
 			// 采购需求是一张共享待办池，采购员需要从全公司的需求中合并下单；
 			// 采购单仍按 buyer 隔离，避免普通采购员互相修改采购单。
 			{"procurement_order", "SELF"}, {"procurement_requirement", "ALL"},
+			{"daily_base_price", "SELF"},
 			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
 	},
@@ -162,6 +164,7 @@ var presetRoles = []presetRole{
 			"procurement:payment:read", "procurement:production:write",
 			"procurement:requirement:exception", "procurement:requirement:read",
 			"procurement:requirement:write",
+			"procurement:daily-price:read", "procurement:daily-price:write", "procurement:daily-price:manage",
 			"procurement:sourcing:approve", "procurement:sourcing:price",
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
@@ -172,6 +175,7 @@ var presetRoles = []presetRole{
 			// 采购经理需要审批团队采购单并统筹全部采购需求；SELF 会让分配给
 			// 他的审批任务存在，但进入具体单据后因看不到数据而失败。
 			{"procurement_order", "ALL"}, {"procurement_requirement", "ALL"},
+			{"daily_base_price", "ALL"},
 			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
 	},

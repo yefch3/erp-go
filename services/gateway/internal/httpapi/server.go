@@ -57,6 +57,7 @@ type Server struct {
 	Shipments     exv1.ShipmentServiceClient
 	Receipts      exv1.ReceiptServiceClient
 	Requirements  prv1.RequirementServiceClient
+	DailyPrices   prv1.DailyPriceServiceClient
 	Orders        prv1.PurchaseOrderServiceClient
 	Sourcing      prv1.SourcingServiceClient
 	// 询盘列模板：邮件标准化与待复核解析共用的列注册表。
@@ -549,6 +550,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/confirm", s.confirmOutbound)
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
+		r.With(s.perm("procurement:daily-price:read")).Get("/api/daily-prices/config", s.dailyPriceConfig)
+		r.With(s.perm("procurement:daily-price:read")).Get("/api/daily-prices/day", s.dailyPriceDay)
+		r.With(s.perm("procurement:daily-price:read")).Get("/api/daily-prices/trend", s.dailyPriceTrend)
+		r.With(s.perm("procurement:daily-price:write")).Put("/api/daily-prices/prices", s.saveDailyPrices)
+		r.With(s.perm("procurement:daily-price:write")).Put("/api/daily-prices/spreads", s.saveDailySpreads)
+		r.With(s.perm("procurement:daily-price:manage")).Put("/api/daily-prices/config", s.configureDailyPrice)
+		r.With(s.perm("procurement:daily-price:manage")).Delete("/api/daily-prices/config/{id}", s.deleteDailyPriceDimension)
+		r.With(s.perm("procurement:daily-price:delete")).Delete("/api/daily-prices/prices/{id}", s.deleteDailyPrice)
+		r.With(s.perm("procurement:daily-price:delete")).Delete("/api/daily-prices/spreads/{id}", s.deleteDailySpread)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}/execution-quotes", s.listExecutionSupplierQuotes)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/execution-suppliers/resolve", s.resolveExecutionSupplier)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/{id}/execution-quotes", s.saveExecutionSupplierQuote)
