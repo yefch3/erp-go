@@ -2533,6 +2533,7 @@ basicsSaved: "基本资料已保存",
   },
   reader: {
     bodyFrame: '邮件正文',
+    imagesUnavailable: '部分图片未能显示，邮件内容可能不完整。请尝试重新打开邮件，或检查附件中是否有对应图片。',
     showQuoted: '显示引用的往来',
     hideQuoted: '收起引用的往来',
     openedLabel: '对方是否已读：',

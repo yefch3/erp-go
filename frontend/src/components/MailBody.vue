@@ -1,4 +1,6 @@
 <template>
+  <div class="mail-body">
+  <p v-if="failedImages" class="image-warning" role="status">{{ t('reader.imagesUnavailable') }}</p>
   <!-- The mail renders inside a sandboxed frame rather than in our document.
        Two things follow from that, and they are the whole reason this
        component exists.
@@ -25,6 +27,7 @@
     :aria-label="t('reader.bodyFrame')"
     @load="measure"
   />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -41,6 +44,7 @@ const emit = defineEmits<{
 }>()
 
 const frame = ref<HTMLIFrameElement | null>(null)
+const failedImages = ref(false)
 // A first guess, replaced the moment the frame reports its real content
 // height. Small enough not to leave a gap under a one-line mail, big enough
 // that the common case does not visibly grow.
@@ -184,6 +188,10 @@ function bindSelectionBubble() {
   const d = el?.contentDocument
   if (!el || !d || d.documentElement.dataset.excelBubbleBound === '1') return
   d.documentElement.dataset.excelBubbleBound = '1'
+  // Capture resource events: image failures do not bubble. Keep monitoring
+  // after the layout poll ends, since a remote image may fail much later.
+  d.addEventListener('error', read, true)
+  d.addEventListener('load', read, true)
 
   let timer = 0
   let dragging = false
@@ -318,6 +326,10 @@ function read() {
   try {
     const d = el.contentDocument
     if (!d?.body) return
+    failedImages.value = Array.from(d.images).some(img =>
+      (!img.getAttribute('src') && !img.getAttribute('srcset')) ||
+      (img.complete && img.naturalWidth === 0),
+    )
     // 量 <html> 这个盒子的实际高度，不是任何一个 scrollHeight。
     //
     // 三个候选值，各有各的毛病，实测（Chrome，把 frame 先后设成 120 和 400px）：
@@ -369,6 +381,7 @@ function read() {
 // read. The first tick or two may find no document yet; read() returns quietly
 // in that case and the next one catches it.
 watch(() => props.html, () => {
+  failedImages.value = false
   height.value = 320
   ready.value = false
   nextTick(measure)
@@ -383,6 +396,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.mail-body { min-width: 0; }
+.image-warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  color: #854d0e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  font-size: 14px;
+}
 .mail-frame {
   display: block;
   width: 100%;

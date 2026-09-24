@@ -8,6 +8,38 @@ import (
 
 // ------------------------------------------------------ reading the header
 
+func TestEncodedCIDSurvivesReading(t *testing.T) {
+	for _, ref := range []string{"CID:Table%2B1%40sender", "cid:Table+1@sender", "cid:&lt;Table+1@sender&gt;"} {
+		body := `<p>Please provide quotation:</p><img src="` + ref + `">`
+		swap := imageSwap{"cid:Table+1@sender": "https://storage/table.png"}
+		got := SanitizeForReading((&Service{}).localiseImages(context.Background(), body, swap))
+		if !strings.Contains(got, `src="https://storage/table.png"`) {
+			t.Errorf("%s lost its image: %s", ref, got)
+		}
+		if !bodyCIDs(body)["Table+1@sender"] {
+			t.Errorf("%s not recognized as embedded", ref)
+		}
+		atts := []Attachment{{ID: 1, ContentID: "Table+1@sender"}}
+		if len(hideEmbedded(atts, body, swap)) != 0 {
+			t.Errorf("%s left a duplicate attachment", ref)
+		}
+		if len(hideEmbedded(atts, body, nil)) != 1 {
+			t.Errorf("%s hid an unresolved attachment", ref)
+		}
+	}
+}
+
+func TestCIDNormalizationDoesNotGuessIdentifiers(t *testing.T) {
+	for _, raw := range []string{"cid:bad%ZZ", "cid:", "https://sender/image", "cid:two%20words"} {
+		if canonicalCID(raw) != "" {
+			t.Errorf("accepted invalid CID %q", raw)
+		}
+	}
+	if canonicalCID("CID:Table%2B1@sender") != "cid:Table+1@sender" {
+		t.Fatal("identifier case or plus sign changed")
+	}
+}
+
 // The header is <angle-bracketed> and the body writes cid: plus the bare
 // value. Storing one form and looking up the other is the whole bug this
 // change exists to fix, so the normalisation is worth pinning down.
