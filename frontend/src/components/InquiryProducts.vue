@@ -2,58 +2,65 @@
   <div class="product-toolbar">
     <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
     <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
-    <el-button-group v-if="!editable" class="view-switch"><el-button :type="mode==='compact'?'primary':'default'" @click="mode='compact'">{{ t('inquiryProducts.compact') }}</el-button><el-button :type="mode==='all'?'primary':'default'" @click="mode='all'">{{ t('inquiryProducts.allFields') }}</el-button></el-button-group>
   </div>
-  <div v-if="!editable&&mode==='compact'" class="product-groups">
-    <section v-for="group in visibleGroups" :key="group.key" class="product-group">
-      <button type="button" class="product-group-heading" :aria-expanded="isExpanded(group.key)" @click="toggleGroup(group.key)">
-        <el-icon class="group-chevron" :class="{'is-expanded':isExpanded(group.key)}"><ArrowDown/></el-icon>
-        <strong>{{group.name}}</strong>
-        <span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span>
-        <b>{{t('inquiryWorkspace.list.totalQuantity')}} {{groupedQuantity(group.products)}}</b>
-      </button>
-      <div v-show="isExpanded(group.key)" class="specification-list">
-        <div class="specification-grid specification-header" :class="{'has-selection':!!cargoIds}">
-          <span v-if="cargoIds">{{t('inquiryProducts.select')}}</span>
-          <span>{{t('inquiryWorkspace.list.materialStandard')}}</span>
-          <span>{{t('inquiryWorkspace.list.sizeSpecification')}}</span>
-          <span>{{t('inquiryWorkspace.list.quantityUnit')}}</span>
-        </div>
-        <article v-for="specification in group.specifications" :key="specification.key" class="specification-grid specification-row" :class="{'has-selection':!!cargoIds}">
-          <el-checkbox v-if="cargoIds" :model-value="specificationSelected(specification.products)" @change="chooseProducts(specification.products,!!$event)"/>
-          <span class="specification-material" :title="materialSummary(specification.representative)">{{materialSummary(specification.representative)||'—'}}</span>
-          <span class="specification-size" :title="dimensionSummary(specification.representative)||specification.representative.specification">{{dimensionSummary(specification.representative)||specification.representative.specification||'—'}}</span>
-          <span class="specification-quantity">{{groupedQuantity(specification.products)}}</span>
-          <div v-if="specificationAuxiliaryFields(specification.representative,allFields).length" class="specification-auxiliary">
-            <span v-for="field in specificationAuxiliaryFields(specification.representative,allFields)" :key="field.key" :title="`${listFieldLabel(field.label,field.key)}：${field.value}`"><b>{{listFieldLabel(field.label,field.key)}}</b>{{field.value}}</span>
-          </div>
-        </article>
-      </div>
-    </section>
-    <div v-if="!visibleGroups.length" class="product-empty">{{t('inquiryProducts.empty')}}</div>
+  <div ref="gridElement" class="product-grid">
+    <table :style="{width:`max(100%, ${tableWidth}px)`}">
+      <colgroup>
+        <col v-if="cargoIds" style="width:56px" />
+        <col v-for="field in tableFields" :key="field.fieldKey" :style="{width:`${columnWidths[field.fieldKey]}px`}" />
+        <col v-if="editable" style="width:68px" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th v-if="cargoIds" scope="col">{{t('inquiryProducts.select')}}</th>
+          <th v-for="field in tableFields" :key="field.fieldKey" scope="col" :class="{'product-sticky':field.fieldKey==='product'}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined">{{fieldLabel(field)}}<span v-if="field.isRequired" class="required-mark"> *</span></th>
+          <th v-if="editable" scope="col">{{t('common.actions')}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="row in visibleRows" :key="row.id">
+          <td v-if="cargoIds"><el-checkbox :model-value="cargoIds.includes(row.id)" @change="choose(row.id,!!$event)" /></td>
+          <td v-for="field in tableFields" :key="field.fieldKey" :class="{'product-sticky':field.fieldKey==='product'}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined">
+            <div class="product-cell">
+              <template v-if="editable&&editingCell===cellKey(row,field.fieldKey)">
+                <el-date-picker v-if="field.dataType==='DATE'" :ref="setEditInput" :model-value="value(row,field.fieldKey)" value-format="YYYY-MM-DD" type="date" @update:model-value="setValue(row,field.fieldKey,String($event||''))" @change="stopEditing" @blur="stopEditing"/>
+                <el-input v-else :ref="setEditInput" class="inline-editor" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':multilineField(field)?'textarea':'text'" :autosize="multilineField(field)?field.fieldKey==='remarks'?{minRows:1}:{minRows:1,maxRows:8}:undefined" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))" @blur="stopEditing" @keydown.esc="stopEditing"/>
+              </template>
+              <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="startEditing(row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
+              <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
+              <button v-if="field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
+            </div>
+          </td>
+          <td v-if="editable"><el-button link type="danger" @click="$emit('remove',products.indexOf(row))">{{t('common.remove')}}</el-button></td>
+        </tr>
+        <tr v-if="!visibleRows.length"><td class="product-grid-empty" :colspan="tableFields.length+(cargoIds?1:0)+(editable?1:0)">{{t('inquiryProducts.empty')}}</td></tr>
+      </tbody>
+    </table>
   </div>
-  <el-table v-else :data="visibleRows" row-key="id" :max-height="520" :empty-text="t('inquiryProducts.empty')">
-    <el-table-column type="index" label="#" width="52" :index="indexNumber" fixed="left" />
-    <el-table-column v-if="cargoIds" :label="t('inquiryProducts.select')" width="65"><template #default="{row}"><el-checkbox :model-value="cargoIds.includes(row.id)" @change="choose(row.id,!!$event)" /></template></el-table-column>
-    <el-table-column v-for="field in tableFields" :key="field.fieldKey" :min-width="fieldWidth(field)" :width="field.fieldKey==='product'?productColumnWidth:undefined" :fixed="field.fieldKey==='product'?'left':undefined" show-overflow-tooltip>
-      <template #header><span>{{fieldLabel(field)}}</span><span v-if="field.isRequired" class="required-mark"> *</span></template>
-      <template #default="{row}"><el-input v-if="editable&&field.fieldKey==='product'" class="product-name-input" :model-value="value(row,field.fieldKey)" type="textarea" :autosize="{minRows:1}" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><el-date-picker v-else-if="editable&&field.dataType==='DATE'" :model-value="value(row,field.fieldKey)" value-format="YYYY-MM-DD" type="date" @update:model-value="setValue(row,field.fieldKey,String($event||''))"/><el-input v-else-if="editable" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':'text'" @update:model-value="setValue(row,field.fieldKey,String($event??''))"/><span v-else class="cell-value" :class="{'product-name-value':field.fieldKey==='product'}">{{value(row,field.fieldKey)||'—'}}</span></template>
-    </el-table-column>
-    <el-table-column v-if="editable" :label="t('common.actions')" width="75" fixed="right"><template #default="{row}"><el-button link type="danger" @click="$emit('remove',products.indexOf(row))">{{ t('common.remove') }}</el-button></template></el-table-column>
-  </el-table>
-  <div class="table-footer"><span v-if="mode==='compact'" class="expand-tip">{{ t('inquiryProducts.expandTip') }}</span><el-pagination v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="paginationTotal" layout="total, sizes, prev, pager, next"/></div>
+  <div class="table-footer"><el-pagination v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="filtered.length" layout="total, sizes, prev, pager, next"/></div>
 </template>
 <script setup lang="ts">
-import {computed,ref,watch} from 'vue'
+import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {ArrowDown} from '@element-plus/icons-vue'
 import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
-import {dimensionSummary,groupedQuantity,groupInquiryProducts,materialSummary,specificationAuxiliaryFields} from '../lib/inquiryList'
+import {inquiryProductFields,planInquiryColumns} from '../lib/inquiryProductLayout'
 const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[]}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
-const search=ref(''),page=ref(1),size=ref(20),mode=ref<'compact'|'all'>(props.editable?'all':'compact'),expandedGroups=ref<string[]>([])
+const search=ref(''),page=ref(1),size=ref(20)
+const gridElement=ref<HTMLElement|null>(null),gridWidth=ref(1000)
+let gridObserver:ResizeObserver|undefined
+onMounted(()=>{
+ if(!gridElement.value)return
+ gridWidth.value=gridElement.value.clientWidth
+ gridObserver=new ResizeObserver(entries=>{gridWidth.value=entries[0]?.contentRect.width||gridWidth.value})
+ gridObserver.observe(gridElement.value)
+})
+onBeforeUnmount(()=>gridObserver?.disconnect())
+const editingCell=ref(''),expandedTextCells=ref<string[]>([])
+const editInput=ref<{focus:()=>void}|null>(null)
+function setEditInput(instance:unknown){editInput.value=instance as {focus:()=>void}|null}
 const fallbackFields:TemplateField[]=[
  {fieldKey:'product',displayName:'产品',sortOrder:1,isRequired:true,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:true},
  {fieldKey:'specification',displayName:'规格',sortOrder:2,isRequired:false,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:false},
@@ -66,50 +73,62 @@ const fallbackFields:TemplateField[]=[
  {fieldKey:'package_quantity',displayName:'包装数量',sortOrder:9,isRequired:false,defaultValue:'',dataType:'NUMBER',isCustom:false,isCore:false},
  {fieldKey:'remarks',displayName:'备注',sortOrder:10,isRequired:false,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:false},
 ]
-const allFields=computed(()=>(props.fields?.length?props.fields:fallbackFields).slice().sort((a,b)=>a.sortOrder-b.sortOrder).filter(field=>!['unit_price','total_price'].includes(field.fieldKey)))
-const tableFields=computed(()=>allFields.value)
-// Use all products so filtering and pagination do not change the column width.
-// Include input padding; very long names wrap once the column reaches its cap.
-const productColumnWidth=computed(()=>{
- let width=180
- for(const product of props.products){
-  for(const line of productTemplateValue(product,'product').split('\n')){
-   const textWidth=Array.from(line).reduce((total,char)=>total+(/[^\x00-\x7f]/.test(char)?16:9),0)
-   width=Math.max(width,textWidth+60)
-  }
- }
- return Math.min(420,width)
-})
+const allFields=computed(()=>inquiryProductFields(props.products,props.fields?.length?props.fields:fallbackFields,!!props.editable))
+const columnPlan=computed(()=>planInquiryColumns(allFields.value,props.products,Object.fromEntries(allFields.value.map(field=>[field.fieldKey,fieldLabel(field)])),gridWidth.value,(props.cargoIds?56:0)+(props.editable?68:0)))
+const tableFields=computed(()=>columnPlan.value.columns)
+const columnWidths=computed(()=>columnPlan.value.widths)
+const tableWidth=computed(()=>columnPlan.value.totalWidth)
 const filtered=computed(()=>{const needle=search.value.trim().toLowerCase();return props.products.filter(p=>!needle||allFields.value.some(f=>productTemplateValue(p,f.fieldKey).toLowerCase().includes(needle)))})
-const filteredGroups=computed(()=>groupInquiryProducts(filtered.value))
-const visibleGroups=computed(()=>filteredGroups.value.slice((page.value-1)*size.value,page.value*size.value))
 const visibleRows=computed(()=>filtered.value.slice((page.value-1)*size.value,page.value*size.value))
-const paginationTotal=computed(()=>!props.editable&&mode.value==='compact'?filteredGroups.value.length:filtered.value.length)
-watch(()=>props.editable,editable=>{mode.value=editable?'all':'compact'})
+watch(()=>props.editable,()=>{editingCell.value=''})
 function choose(id:string,yes:boolean){const ids=props.cargoIds||[];emit('update:cargoIds',yes?[...new Set([...ids,id])]:ids.filter(x=>x!==id))}
-function chooseProducts(products:Product[],yes:boolean){let ids=[...(props.cargoIds||[])];for(const product of products)ids=yes?[...new Set([...ids,product.id])]:ids.filter(id=>id!==product.id);emit('update:cargoIds',ids)}
-function specificationSelected(products:Product[]){return products.every(product=>(props.cargoIds||[]).includes(product.id))}
-function isExpanded(key:string){return expandedGroups.value.includes(key)}
-function toggleGroup(key:string){expandedGroups.value=isExpanded(key)?expandedGroups.value.filter(value=>value!==key):[...expandedGroups.value,key]}
 function value(product:Product,key:string){return productTemplateValue(product,key)}
 function setValue(product:Product,key:string,value:string){setProductTemplateValue(product,key,value)}
-function fieldWidth(field:TemplateField){return field.dataType==='DATE'?170:Math.max(110,Math.min(240,field.displayName.length*18+54))}
-function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
-function listFieldLabel(label:string,fieldKey=''){
- const aliases:Record<string,string>={length:'length_or_form',surface:'surface_requirement'}
- const candidates=[label,fieldKey,fieldKey.replace(/^custom\./,'')].map(value=>value.trim()).filter(Boolean)
- for(const candidate of candidates){const normalized=aliases[candidate.toLowerCase()]||candidate,key=`inquiryProducts.fields.${normalized}`;if(te(key))return t(key)}
- return label
+function multilineField(field:TemplateField){
+ return field.dataType==='TEXT'&&['product','material_standard','specification','remarks'].includes(field.fieldKey)
 }
-function indexNumber(index:number){return(page.value-1)*size.value+index+1}
+function cellKey(product:Product,key:string){return `${product.id}:${key}`}
+function startEditing(product:Product,key:string){
+ editingCell.value=cellKey(product,key)
+ void nextTick(()=>editInput.value?.focus())
+}
+function stopEditing(){editingCell.value=''}
+function isTextExpanded(product:Product,key:string){return expandedTextCells.value.includes(cellKey(product,key))}
+function toggleText(product:Product,key:string){
+ const cell=cellKey(product,key)
+ expandedTextCells.value=isTextExpanded(product,key)?expandedTextCells.value.filter(item=>item!==cell):[...expandedTextCells.value,cell]
+}
+function canExpandText(product:Product,key:string){
+ const text=value(product,key)
+ const visualLength=Array.from(text).reduce((length,char)=>length+(/[^\x00-\x7f]/.test(char)?2:1),0)
+ return visualLength>280||text.split('\n').length>8
+}
+function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
 </script>
 <style scoped>
-.product-name-input{width:100%}
-.product-name-input :deep(.el-textarea__inner){padding:6px 11px;line-height:22px;font-size:14px;resize:none;border-radius:6px;overflow-wrap:anywhere;box-shadow:0 0 0 1px #d2dee7 inset}
-.product-name-value{display:block;white-space:pre-wrap;overflow-wrap:anywhere;line-height:22px}
-.product-toolbar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;padding:12px 14px;background:#f5f9fb;border:1px solid #e0e9ef;border-radius:10px}.product-toolbar .el-input{width:250px}.product-summary{display:flex;gap:8px 18px;align-items:center;flex:1;flex-wrap:wrap;color:#617487;font-size:13px}.product-summary b{color:#173f59}.view-switch{margin-left:auto}.required-mark{color:#e45b65}.cell-value{color:#263f53}:deep(.el-table){--el-table-header-bg-color:#f4f8fa;--el-table-row-hover-bg-color:#f0f8fa}:deep(.el-table th.el-table__cell){color:#486174;font-weight:600}:deep(.el-input__wrapper){border-radius:6px;box-shadow:0 0 0 1px #d2dee7 inset}
-.product-groups{overflow:hidden;border:1px solid #dbe7ed;border-radius:10px;background:#f7fafb}.product-group{background:#fff;border-bottom:1px solid #dbe7ed}.product-group:last-child{border-bottom:0}.product-group-heading{display:grid;grid-template-columns:20px minmax(180px,1.6fr) minmax(100px,.65fr) minmax(150px,.85fr);align-items:center;gap:12px;width:100%;min-height:50px;padding:8px 16px;color:#526b7a;background:#fff;border:0;font:inherit;text-align:left;cursor:pointer;transition:background-color .18s ease}.product-group-heading:hover,.product-group-heading:focus-visible{background:#f1f8fb;outline:none}.product-group-heading strong{overflow:hidden;color:#163f57;text-overflow:ellipsis;white-space:nowrap}.product-group-heading span{font-size:13px}.product-group-heading b{color:#17475e;text-align:right;white-space:nowrap}.group-chevron{color:#688596;transition:transform .2s ease}.group-chevron.is-expanded{transform:rotate(180deg)}.specification-list{border-top:1px solid #e0ebf0}.specification-grid{display:grid;grid-template-columns:minmax(160px,.85fr) minmax(230px,1.25fr) minmax(130px,.65fr);align-items:center;gap:0 20px;padding:0 36px}.specification-grid.has-selection{grid-template-columns:42px minmax(150px,.85fr) minmax(220px,1.25fr) minmax(125px,.65fr)}.specification-header{min-height:34px;color:#7a8d99;background:#f7fafb;font-size:12px;font-weight:650}.specification-row{min-height:52px;padding-top:8px;padding-bottom:8px;border-top:1px solid #edf2f4}.specification-header+.specification-row{border-top:0}.specification-material,.specification-size{overflow:hidden;color:#344f5f;text-overflow:ellipsis;white-space:nowrap}.specification-quantity{color:#173f56;text-align:right;white-space:nowrap}.specification-auxiliary{display:flex;grid-column:1/-1;gap:4px 16px;flex-wrap:wrap;margin-top:6px;color:#718390;font-size:12px}.specification-auxiliary span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.specification-auxiliary b{margin-right:5px;color:#536d7d;font-weight:600}.product-empty{padding:22px;color:#8a99a4;text-align:center}.table-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:14px}.expand-tip{color:#7a8b9a;font-size:12px}.el-pagination{margin:0 0 0 auto}@media(max-width:760px){.product-toolbar{align-items:flex-start}.product-toolbar .el-input{width:100%}.view-switch{margin-left:0}.product-group-heading{grid-template-columns:20px minmax(120px,1fr) auto;padding-left:10px;padding-right:10px}.product-group-heading b{grid-column:2/-1;text-align:left}.specification-grid,.specification-grid.has-selection{grid-template-columns:minmax(110px,.85fr) minmax(150px,1.15fr) auto;gap:0 10px;min-width:540px;padding-left:14px;padding-right:14px}.specification-grid.has-selection{grid-template-columns:36px minmax(105px,.8fr) minmax(145px,1.1fr) auto}.specification-list{overflow-x:auto}.table-footer{align-items:flex-start;flex-direction:column}.el-pagination{margin:0;overflow-x:auto;max-width:100%}}
-.product-group-heading{grid-template-columns:20px minmax(220px,1fr) 110px 190px;gap:18px}.product-group-heading strong{font-size:15px;font-weight:600}.product-group-heading span{font-weight:400}.product-group-heading b{font-size:14px;font-weight:600}.specification-header{font-weight:500}.specification-material,.specification-size{font-weight:400}.specification-quantity{font-weight:500}.specification-auxiliary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px 18px;width:100%;margin-top:7px;line-height:1.55}.specification-auxiliary span{display:flex;gap:5px}.specification-auxiliary b{flex:0 0 auto;margin:0;font-weight:500}.specification-row{min-height:56px}
-@media(max-width:1200px){.product-group-heading{grid-template-columns:20px minmax(180px,1fr) 100px 165px}.specification-auxiliary{grid-template-columns:repeat(4,minmax(0,1fr))}}
-@media(max-width:760px){.product-group-heading{grid-template-columns:20px minmax(120px,1fr) auto}.product-group-heading b{grid-column:2/-1}.specification-auxiliary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.product-grid{width:100%;overflow-x:auto;border:1px solid var(--el-border-color-lighter);border-radius:5px}
+.product-grid table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.product-grid th,.product-grid td{max-width:360px;padding:7px 10px;border-right:1px solid var(--el-border-color-lighter);border-bottom:1px solid var(--el-border-color-lighter);white-space:pre-wrap;word-break:break-word;text-align:left;vertical-align:top}
+.product-grid th{position:sticky;top:0;z-index:1;background:var(--el-fill-color-light);font-weight:600}
+.product-grid .product-sticky{position:sticky;z-index:2;background:#fff}
+.product-grid th.product-sticky{z-index:3;background:var(--el-fill-color-light)}
+.product-grid-empty{text-align:center!important;color:#8a99a4}
+.product-cell{min-width:0;color:#263f53;font-size:13px;line-height:20px}
+.cell-preview,.cell-value{display:block;width:100%;min-height:24px;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;line-height:20px}
+.cell-preview{padding:2px 0;border:0;background:transparent;color:inherit;font:inherit;cursor:text}
+.cell-preview:hover{background:#f0f8fc}
+.cell-preview:focus-visible,.cell-expand:focus-visible{outline:2px solid #55aee3;outline-offset:2px}
+.cell-preview--empty{color:#9aaab5}
+.cell-preview--clamped,.cell-value--clamped{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:8;overflow:hidden}
+.cell-expand{display:block;margin-top:2px;padding:0;border:0;background:transparent;color:#1684c4;font-size:12px;line-height:18px;cursor:pointer}
+.product-cell--numeric .cell-preview,.product-cell--numeric .cell-value{text-align:right}
+.inline-editor{width:100%}
+.inline-editor :deep(.el-textarea__inner),.inline-editor :deep(.el-input__wrapper){padding:3px 6px;border-radius:4px;box-shadow:0 0 0 1px #64b4e4 inset;background:#fff;color:#263f53;font-size:13px;line-height:20px}
+.inline-editor :deep(.el-textarea__inner){resize:none;overflow-wrap:anywhere}
+.product-toolbar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;padding:12px 14px;background:#f5f9fb;border:1px solid #e0e9ef;border-radius:10px}.product-toolbar .el-input{width:250px}.product-summary{display:flex;gap:8px 18px;align-items:center;flex:1;flex-wrap:wrap;color:#617487;font-size:13px}.product-summary b{color:#173f59}.required-mark{color:#e45b65}.cell-value{color:#263f53}:deep(.el-table){--el-table-header-bg-color:#f4f8fa;--el-table-row-hover-bg-color:#f0f8fa}:deep(.el-table th.el-table__cell){color:#486174;font-weight:600}:deep(.el-input__wrapper){border-radius:6px;box-shadow:0 0 0 1px #d2dee7 inset}
+.product-toolbar{margin:0 0 14px;padding:0;border:0;border-radius:0;background:transparent}
+.product-grid .product-cell,.product-grid .cell-value{color:var(--el-text-color-regular)}
+.table-footer{display:flex;justify-content:flex-end;margin-top:14px}
+.el-pagination{margin:0;max-width:100%;overflow-x:auto}
+@media(max-width:760px){.product-toolbar{align-items:flex-start}.product-toolbar .el-input{width:100%}.table-footer{justify-content:flex-start}}
 </style>
