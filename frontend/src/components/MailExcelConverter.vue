@@ -144,7 +144,7 @@
   </el-dialog>
 
   <MailSourcingTransferDialog
-    v-model:open="sourcingOpen"
+    v-model="sourcingOpen"
     :result="excelResult"
     :source-mail-id="convertedExcelSource?.mailId ?? ''"
     @transferred="onTransferred"

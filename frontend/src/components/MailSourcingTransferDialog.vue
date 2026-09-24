@@ -5,7 +5,8 @@
 <template>
   <!-- 客户来自基础数据；联系人按客户联动但可留空，邮箱只显示主数据快照。 -->
   <el-dialog
-    v-model="open"
+    :model-value="modelValue"
+    @update:model-value="emit('update:modelValue', $event)"
     :title="t('emails.sourcingTransferTitle')"
     width="min(460px, 92vw)"
     append-to-body
@@ -48,7 +49,7 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">{{ t('emails.close') }}</el-button>
+      <el-button @click="emit('update:modelValue', false)">{{ t('emails.close') }}</el-button>
       <el-button
         type="primary"
         :loading="creating"
@@ -73,12 +74,15 @@ import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { optionalSourcingContact } from '../lib/sourcingTransfer'
 
 const props = defineProps<{
+  modelValue: boolean
   result: ExcelResult | null
   // 这份表是从哪封信里转出来的，记在询盘上。
   sourceMailId: string
 }>()
-const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ transferred: [caseId: string] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  transferred: [caseId: string]
+}>()
 
 const { t } = useI18n()
 
@@ -104,7 +108,7 @@ const selectedContact = computed(() =>
 )
 
 // 每次打开都从空白开始：上一次选的客户不该带到另一封信的询盘上。
-watch(open, (isOpen) => {
+watch(() => props.modelValue, (isOpen) => {
   if (!isOpen) return
   form.customerId = ''
   form.customerName = ''
@@ -190,7 +194,7 @@ async function create() {
     }, withIdempotency(idem))
     idem.reset()
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
-    open.value = false
+    emit('update:modelValue', false)
     emit('transferred', response.sourcingCase.id)
   } finally {
     creating.value = false
