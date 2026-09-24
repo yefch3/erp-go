@@ -46,6 +46,13 @@ func buildMailPolicy() *bluemonday.Policy {
 		"cellpadding", "cellspacing", "border").OnElements(
 		"table", "tr", "td", "th")
 	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
+	// 列宽。从 Google 表格粘进 Gmail 的表，整张表写的是 width:0px 加
+	// table-layout:fixed，每列多宽**只**写在 <col width> 上。丢了它，每一列
+	// 都是 0 宽，单元格又带 overflow:hidden，整张表看上去是一块空白——收件
+	// 那边这样（2026-09-24 巴西客户的询价单），回信里引用的原信也这样，因为
+	// 引用进来的那一段发出去之前过的就是这里。
+	p.AllowElements("colgroup", "col")
+	p.AllowAttrs("width", "span").OnElements("colgroup", "col")
 
 	// Inline styles only — a <style> block would be stripped by Gmail anyway.
 	//
@@ -283,7 +290,7 @@ func buildReaderPolicy() *bluemonday.Policy {
 	// Layout elements real mail uses that the composer never emits, so they
 	// are not in the sending whitelist: senders build with these constantly
 	// and dropping them collapses the scaffold the CSS is written against.
-	p.AllowElements("center", "font", "tbody", "colgroup", "col")
+	p.AllowElements("center", "font", "tbody")
 	p.AllowAttrs("bgcolor", "background", "align", "valign").Globally()
 	return p
 }
