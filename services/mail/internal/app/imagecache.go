@@ -462,31 +462,72 @@ func (s *Service) cacheImagesOnce(ctx context.Context, tenantID int64, client *h
 }
 
 func (s *Service) cacheImagesFor(ctx context.Context, tenantID, inboundID int64, html string, client *http.Client, selfHost string) {
+	have := s.cachedImageSources(ctx, tenantID, inboundID)
+
+	// 正文自带的图，见 dataimages.go。从没修过的原文里取：阅读时对的也是原文
+	// （它在净化之前换，repairURLWhitespace 还没碰过它）。
+	for _, img := range dataImagesIn(html) {
+		if !have[img.key] {
+			s.storeCachedImage(ctx, tenantID, inboundID, img.key, img.data, img.contentType)
+		}
+	}
+
 	// The addresses are read from the repaired body, because that is the
 	// form the reader will match against later — repairURLWhitespace percent-
 	// encodes spaces on the way out, and a URL stored in its unrepaired shape
 	// would never be found again.
-	urls := remoteImagesIn(repairURLWhitespace(html), selfHost)
+	//
+	// 已经存过的不再取。一封信可能被重新排进队列（迁移 00077 就这么做了），
+	// 再取一遍，对方服务器就又记一次「这封信被打开了」。
+	var urls []string
+	for _, u := range remoteImagesIn(repairURLWhitespace(html), selfHost) {
+		if !have[u] {
+			urls = append(urls, u)
+		}
+	}
 	if len(urls) == 0 {
 		return
 	}
 	for _, img := range fetchImages(ctx, client, urls) {
-		sum := sha256.Sum256(img.data)
-		key := fmt.Sprintf("mail/inbound-img/%d/%d/%s%s",
-			tenantID, inboundID, hex.EncodeToString(sum[:8]), extensionFor(img.contentType))
-		if err := s.putRaw(ctx, key, img.data); err != nil {
-			s.log.Warn("could not store a cached picture", "id", inboundID, "err", err)
-			continue
-		}
-		if err := s.q.InsertInboundImage(ctx, store.InsertInboundImageParams{
-			TenantID: tenantID, InboundID: inboundID,
-			SourceUrl: img.url, UrlHash: urlHash(img.url),
-			ObjectKey: key, ContentType: img.contentType,
-			ByteSize: int64(len(img.data)),
-		}); err != nil {
-			s.log.Warn("could not record a cached picture", "id", inboundID, "err", err)
-		}
+		s.storeCachedImage(ctx, tenantID, inboundID, img.url, img.data, img.contentType)
 	}
+}
+
+// storeCachedImage puts one picture in storage and records where it came from.
+func (s *Service) storeCachedImage(ctx context.Context, tenantID, inboundID int64, source string, data []byte, contentType string) {
+	sum := sha256.Sum256(data)
+	key := fmt.Sprintf("mail/inbound-img/%d/%d/%s%s",
+		tenantID, inboundID, hex.EncodeToString(sum[:8]), extensionFor(contentType))
+	if err := s.putRaw(ctx, key, data); err != nil {
+		s.log.Warn("could not store a cached picture", "id", inboundID, "err", err)
+		return
+	}
+	if err := s.q.InsertInboundImage(ctx, store.InsertInboundImageParams{
+		TenantID: tenantID, InboundID: inboundID,
+		SourceUrl: source, UrlHash: urlHash(source),
+		ObjectKey: key, ContentType: contentType,
+		ByteSize: int64(len(data)),
+	}); err != nil {
+		s.log.Warn("could not record a cached picture", "id", inboundID, "err", err)
+	}
+}
+
+// cachedImageSources is what this message already has in storage.
+//
+// 查不到就当什么都没有：多取一遍是浪费，少取一张是这封信缺图。
+func (s *Service) cachedImageSources(ctx context.Context, tenantID, inboundID int64) map[string]bool {
+	rows, err := s.q.ListInboundImages(ctx, store.ListInboundImagesParams{
+		TenantID: tenantID, InboundID: inboundID,
+	})
+	if err != nil {
+		s.log.Warn("could not list a message's cached pictures", "id", inboundID, "err", err)
+		return nil
+	}
+	have := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		have[r.SourceUrl] = true
+	}
+	return have
 }
 
 func extensionFor(contentType string) string {
@@ -550,6 +591,12 @@ func (s *Service) localiseImages(ctx context.Context, html string, swap imageSwa
 			if signed := swap[key]; signed != "" {
 				return signed
 			}
+		}
+		if key := dataImageKey(raw); key != "" {
+			if signed := swap[key]; signed != "" {
+				return signed
+			}
+			return raw
 		}
 		if signed, ok := swap[strings.TrimSpace(raw)]; ok {
 			return signed

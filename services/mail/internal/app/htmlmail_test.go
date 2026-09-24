@@ -423,3 +423,41 @@ func TestColumnsCarryNothingButWidthAndSpan(t *testing.T) {
 		t.Fatalf("width lost: %q", got)
 	}
 }
+
+// Gmail 给字选颜色写的是老式的 <font color>。BGA 标红的是价格和数量（715、
+// 775），我们这里显示成黑字，等于把客户划的重点抹掉了。
+func TestFontColorSizeAndFaceSurvive(t *testing.T) {
+	in := `<p>Price <font color="#ff0000">715</font> <font size="4" face="Calibri, sans-serif">USD</font></p>`
+	for name, got := range map[string]string{
+		"reading":         SanitizeForReading(in),
+		"quoted in reply": SanitizeHTML(SanitizeForReading(in)),
+	} {
+		for _, want := range []string{`<font color="#ff0000">715</font>`, `size="4"`, `face="Calibri, sans-serif"`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: %s lost: %q", name, want, got)
+			}
+		}
+	}
+}
+
+// 编号列表中间夹一段说明、再接着编号，写信程序写的是 <ol start="3">；丢了它，
+// 「3. 4. 5.」显示成「1. 2. 3.」。字母、罗马数字编号靠 type。
+func TestListNumberingSurvives(t *testing.T) {
+	in := `<ol start="3" type="a"><li>third</li></ol>`
+	for name, got := range map[string]string{
+		"reading":         SanitizeForReading(in),
+		"quoted in reply": SanitizeHTML(SanitizeForReading(in)),
+	} {
+		if !strings.Contains(got, `<ol start="3" type="a">`) {
+			t.Errorf("%s: numbering lost: %q", name, got)
+		}
+	}
+}
+
+// 放行的是编号，不是任意字符串。
+func TestListNumberingTakesOnlyNumbersAndKnownStyles(t *testing.T) {
+	got := SanitizeHTML(`<ol start="3;x" type="square"><li>a</li></ol>`)
+	if strings.Contains(got, "start=") || strings.Contains(got, "type=") {
+		t.Fatalf("a malformed value survived: %q", got)
+	}
+}
