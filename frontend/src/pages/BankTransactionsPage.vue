@@ -204,7 +204,7 @@
       <el-pagination
         class="pager"
         v-model:current-page="page"
-        :page-size="20"
+        :page-size="100"
         :total="total"
         layout="total, prev, pager, next"
         @current-change="load"
@@ -785,7 +785,7 @@ async function load() {
   loading.value = true
   try {
     const resp = await get<{ items: TxnRow[]; total: string }>('/bank-transactions', {
-      page: page.value, page_size: 20, direction: direction.value, keyword: keyword.value,
+      page: page.value, page_size: 100, direction: direction.value, keyword: keyword.value,
       ownership: ownership.value === 'PENDING' ? '' : ownership.value,
       ownership_pending: ownership.value === 'PENDING' ? '1' : '',
       deleted: view.value === 'deleted' ? '1' : '',

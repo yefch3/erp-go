@@ -188,7 +188,7 @@ function executionCustomerName(row: Row) {
 }
 const total = ref(0)
 const page = ref(1)
-const pageSize = 50
+const pageSize = 100
 const status = ref('')
 const keyword = ref('')
 const loading = ref(false)

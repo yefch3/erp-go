@@ -66,7 +66,7 @@
       </div>
 
       <el-empty v-if="!loading && !tasks.length" :description="t('presalesShipping.noTasks')" />
-      <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="20" :current-page="page" @current-change="changePage" />
+      <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="100" :current-page="page" @current-change="changePage" />
     </el-card>
 
     <el-drawer v-model="detailOpen" :title="t('presalesShipping.detailTitle')" size="min(1280px, 96vw)">
@@ -237,7 +237,7 @@ async function loadCounts() {
 async function load() {
   loading.value = true
   try {
-    const data = await get<any>('/shipping/sourcing-tasks', { page: page.value, page_size: 20, keyword: keyword.value, status: status.value })
+    const data = await get<any>('/shipping/sourcing-tasks', { page: page.value, page_size: 100, keyword: keyword.value, status: status.value })
     tasks.value = data.tasks || []
     total.value = Number(data.meta?.total || 0)
     await loadCounts()

@@ -99,7 +99,7 @@ const procurementStages = [
   { value: 'COSTING', label: '成本方案', hint: '形成报价依据' },
 ]
 const rows=ref<SourcingCase[]>([]),total=ref(0),page=ref(1),keyword=ref(''),status=ref(isPendingView.value ? 'REVIEWING' : ''),loading=ref(false)
-const pageSize=20
+const pageSize=100
 const withdrawOpen=ref(false),withdrawing=ref(false),withdrawReason=ref(''),selectedCase=ref<SourcingCase|null>(null)
 
 // load 只负责列表查询；详情操作全部放在独立详情页，避免列表再次变成大型弹窗。

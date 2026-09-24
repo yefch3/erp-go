@@ -80,6 +80,14 @@ func TestListHomeRemindersUsesSourcePermissionsAndSummary(t *testing.T) {
 	}
 }
 
+func TestHomeReminderPageParamsAllowsHundred(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/home/reminders?page=2&page_size=100", nil)
+	page, size := homeReminderPageParams(request)
+	if page != 2 || size != 100 {
+		t.Fatalf("page=%d size=%d, want 2 and 100", page, size)
+	}
+}
+
 func TestClassifyHomeReminderDate(t *testing.T) {
 	now := time.Date(2026, 8, 27, 18, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {

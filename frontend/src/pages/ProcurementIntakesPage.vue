@@ -30,7 +30,7 @@
         </el-table-column>
         <template #empty>{{ t('procurementIntakes.empty') }}</template>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" />
+      <el-pagination v-model:current-page="page" :page-size="100" :total="total" layout="total, prev, pager, next" @current-change="load" />
     </section>
 
     <el-dialog v-model="uploadOpen" :title="t('procurementIntakes.uploadTitle')" width="620px" destroy-on-close>
@@ -288,7 +288,7 @@ async function load() {
   try {
     // 读走 /sales-inquiries：同一批处理函数，但挂的是 sales:inquiry:read——
     // 这页由销售录入补充，销售专员没有 procurement:sourcing:read。
-    const data = await get<{ sourcingCases: Intake[]; meta: { total: number } }>('/sales-inquiries', { status: 'INTAKE_PENDING', keyword: keyword.value, page: page.value, page_size: 20 })
+    const data = await get<{ sourcingCases: Intake[]; meta: { total: number } }>('/sales-inquiries', { status: 'INTAKE_PENDING', keyword: keyword.value, page: page.value, page_size: 100 })
     rows.value = await Promise.all((data.sourcingCases ?? []).map(async (item) => {
       try { return (await get<{ sourcingCase: Intake }>(`/sales-inquiries/${item.id}`)).sourcingCase } catch { return item }
     })); total.value = Number(data.meta?.total ?? 0)

@@ -71,7 +71,7 @@ const changeOpen=ref(false), changes=ref<any[]>([])
 const countryCounts=ref<{countryCode:string;portCount:number}[]>([])
 const countryTotal=computed(()=>countryCounts.value.reduce((sum,item)=>sum+Number(item.portCount),0))
 const importOpen=ref(false)
-const keyword=ref(''), countryCode=ref(''), status=ref('ACTIVE'), page=ref(1), pageSize=20
+const keyword=ref(''), countryCode=ref(''), status=ref('ACTIVE'), page=ref(1), pageSize=100
 const empty=():Port=>({id:0,unlocode:'',nameZh:'',nameEn:'',countryCode:'',city:'',timezone:'',aliases:[],status:'ACTIVE',remark:'',version:0,portType:'SEAPORT',adminArea:'',latitude:null,longitude:null,hasCoordinates:false,isFavorite:false})
 const portTypes=['SEAPORT','RIVER_PORT','DRY_PORT','AIRPORT','OTHER']
 const form=reactive<Port>(empty())

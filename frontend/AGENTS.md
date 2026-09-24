@@ -5,3 +5,4 @@
 - Do not hide populated record fields merely because a selected template omits them. Keep template columns in template order, then show populated supplemental fields.
 - Keep one record per table row and preserve the Excel-like column layout. Fit routine columns on a 14-inch screen when practical; when content genuinely cannot fit, allow horizontal scrolling instead of stacking fields into additional rows or hiding values.
 - Preserve existing editing, search, selection, export, and save behavior while changing layout.
+- Default user-facing paginated lists to 100 records per page. Keep any existing page-size selector and its smaller options available.

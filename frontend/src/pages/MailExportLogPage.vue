@@ -88,7 +88,7 @@ const { t } = useI18n()
 const rows = ref<ExportRecord[]>([])
 const total = ref(0)
 const page = ref(1)
-const size = 20
+const size = 100
 const loading = ref(false)
 
 async function reload() {

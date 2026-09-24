@@ -733,7 +733,7 @@ const canRequestQuality = auth.can('quality:task:request')
 const rows = ref<Order[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 20
+const pageSize = 100
 // 采购单页面同时承接制单、审批状态查看和审批后的履约跟踪。
 // 真正的批准/驳回仍由个人审批任务执行，避免只凭采购单读取权限越权审批。
 const status = ref(String(route.query.status || 'ORDERED'))

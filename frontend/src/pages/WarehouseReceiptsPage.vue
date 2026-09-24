@@ -34,7 +34,7 @@ import { get } from '../api'
 interface Order {id:string;poNo:string;supplierName:string;fulfillmentMode:string;deliveryLocationType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;warehouseName:string;receivedQty:string}
 interface Receipt {id:string;receiptNo:string;warehouseId:string;operatorName:string;remark:string;totalQty:string;receivedAt:string}
 interface ReceiptRow extends Receipt {poNo:string;supplierName:string;destination:string}
-const route=useRoute(),router=useRouter(),{t,locale}=useI18n(),loading=ref(false),rows=ref<ReceiptRow[]>([]),pageNo=ref(1),pageSize=20,warehouseNames=ref<Record<string,string>>({})
+const route=useRoute(),router=useRouter(),{t,locale}=useI18n(),loading=ref(false),rows=ref<ReceiptRow[]>([]),pageNo=ref(1),pageSize=100,warehouseNames=ref<Record<string,string>>({})
 const keyword=ref(String(route.query.keyword??'')),deliveryType=ref(String(route.query.type??'ALL'))
 const filteredRows=computed(()=>{const needle=keyword.value.trim().toLowerCase();return rows.value.filter(row=>(deliveryType.value==='ALL'||(deliveryType.value==='DIRECT'&&isDirectReceipt(row))||(deliveryType.value==='WAREHOUSE'&&!isDirectReceipt(row)))&&(!needle||[row.receiptNo,row.poNo,row.supplierName].join(' ').toLowerCase().includes(needle)))})
 const pagedRows=computed(()=>filteredRows.value.slice((pageNo.value-1)*pageSize,(pageNo.value-1)*pageSize+pageSize))

@@ -1006,7 +1006,7 @@ function trimQty(v: string): string {
 }
 const total = ref(0)
 const page = ref(1)
-const pageSize = 10
+const pageSize = 100
 const keyword = ref('')
 const status = ref('')
 const loading = ref(false)

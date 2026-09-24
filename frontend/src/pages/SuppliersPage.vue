@@ -87,7 +87,7 @@ const { t, locale } = useI18n(); const route=useRoute(); const router=useRouter(
 const rows=ref<Supplier[]>([]), countries=ref<CountryGroup[]>([]), businessOptions=ref<OptionItem[]>([]), paymentOptions=ref<OptionItem[]>([])
 const keyword=ref(queryText(route.query.keyword)), countryCode=ref(queryText(route.query.country)), businessType=ref(queryText(route.query.business_type)), status=ref(queryText(route.query.status)), loading=ref(false), saving=ref(false), dialogOpen=ref(false), importOpen=ref(false)
 const canDelete=ref(false),canManageOwners=ref(false)
-const page=ref(queryPage(route.query.page)), pageSize=ref(20), total=ref(0)
+const page=ref(queryPage(route.query.page)), pageSize=ref(100), total=ref(0)
 const supplierTable=ref<any>(),selectedSuppliers=ref<Supplier[]>([]),bulkOwnerOpen=ref(false),bulkOwnerAction=ref<'ADD'|'REMOVE'>('ADD')
 const allPageSelected=computed(()=>rows.value.length>0&&selectedSuppliers.value.length===rows.value.length)
 const empty={code:'',name:'',nameZh:'',nameEn:'',shortName:'',country:'',countryCode:'',currency:'USD',businessTypes:['GENERAL'],taxId:'',paymentTerm:'',registeredAddress:'',address:'',remark:''}

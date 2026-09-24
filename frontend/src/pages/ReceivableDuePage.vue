@@ -479,7 +479,7 @@ interface Entry {
 const rows = ref<Row[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 50
+const pageSize = 100
 const view = ref('')
 // 待核销 / 已完成是两条独立地址指向同一个组件——菜单高亮按精确路径相等
 // 判断，用一页带 query 的写法菜单不会亮。

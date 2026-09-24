@@ -2082,7 +2082,7 @@ function prevTablePage() {
 const tableCursor = ref('')
 
 const page = ref(1)
-const pageSize = 20
+const pageSize = 100
 const total = ref(0)
 const loading = ref(false)
 const messages = ref<AttentionMessage[]>([])
