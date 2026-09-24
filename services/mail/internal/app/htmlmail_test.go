@@ -384,3 +384,42 @@ func TestReaderStillRefusesWhatTheFrameCannotContain(t *testing.T) {
 		})
 	}
 }
+
+// Google 表格粘进 Gmail 的表就是这个形状：整张表 width:0px、table-layout:fixed，
+// 每一列有多宽只写在 <col width> 上，单元格还带 overflow:hidden。列宽一丢，
+// 每列宽 0，字全被裁掉——看上去是一块空白（2026-09-24，巴西客户的询价单）。
+const sheetsPastedTable = `<table cellspacing="0" cellpadding="0" style="table-layout:fixed;width:0px">` +
+	`<colgroup><col width="177"><col width="198" span="2"></colgroup>` +
+	`<tbody><tr><td style="overflow:hidden">MATERIAL</td><td style="overflow:hidden">0.4</td>` +
+	`<td style="overflow:hidden">1250</td></tr></tbody></table>`
+
+func TestReaderKeepsColumnWidths(t *testing.T) {
+	got := SanitizeForReading(sheetsPastedTable)
+	for _, want := range []string{`<col width="177">`, `<col width="198" span="2">`, "MATERIAL"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s lost: %q", want, got)
+		}
+	}
+}
+
+// 回信时原信整段引用进来，发出去之前过的是发信白名单。那里丢了列宽，客户在
+// 我们的回信里看到的引用也是一块空白。
+func TestQuotedTableKeepsColumnWidthsWhenSent(t *testing.T) {
+	got := SanitizeHTML(SanitizeForReading(sheetsPastedTable))
+	for _, want := range []string{`<colgroup>`, `<col width="177">`, `<col width="198" span="2">`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s lost: %q", want, got)
+		}
+	}
+}
+
+// 放行的只是宽度和跨几列，别的属性照旧不留。
+func TestColumnsCarryNothingButWidthAndSpan(t *testing.T) {
+	got := SanitizeHTML(`<table><colgroup><col width="80" onclick="x()" data-col="x"></colgroup><tr><td>a</td></tr></table>`)
+	if strings.Contains(got, "onclick") || strings.Contains(got, "data-col") {
+		t.Fatalf("attribute other than width survived: %q", got)
+	}
+	if !strings.Contains(got, `width="80"`) {
+		t.Fatalf("width lost: %q", got)
+	}
+}
