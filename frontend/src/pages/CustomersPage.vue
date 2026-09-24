@@ -1,11 +1,6 @@
 <template>
   <div>
-    <div class="page-head">
-      <div><h2>{{ t('customers.title') }}</h2><p>{{ t('customers.subtitle') }}</p></div>
-      <div class="head-actions"><el-button v-if="auth.can('masterdata:customer:write')" @click="importOpen=true">{{ t('customers.bulkImport') }}</el-button><el-button v-if="auth.can('masterdata:customer:write')" type="primary" @click="openCreate">{{ t('customers.create') }}</el-button></div>
-    </div>
-
-    <div class="mobile-country">
+    <div class="mobile-country" v-loading="countryLoading">
       <div class="mobile-country__title">
         <span>国家范围</span>
         <strong>{{ selectedCountrySummary }}</strong>
@@ -15,29 +10,7 @@
         <el-option v-for="group in displayedCountryGroups" :key="group.code||'none'" :label="`${group.code ? countryName(group.code, locale) : t('customers.unclassified')}（${Number(group.customerCount)}）`" :value="group.code||'__UNCLASSIFIED__'" />
       </el-select>
     </div>
-    <div class="customer-workspace" :class="{ collapsed: countryCollapsed }">
-      <el-card class="country-panel" shadow="never" v-loading="countryLoading">
-        <div class="country-panel__title"><span v-if="!countryCollapsed">{{ t('customers.countryGroups') }}</span><button type="button" @click="countryCollapsed=!countryCollapsed">{{ countryCollapsed ? '›' : '‹' }}</button></div>
-        <button
-          class="country-item"
-          :class="{ active: selectedCountry === '' }"
-          type="button"
-          @click="selectCountry('')"
-        >
-          <span v-if="!countryCollapsed">{{ t('customers.allCountries') }}</span><span v-else>{{ t('customers.allShort') }}</span><strong v-if="!countryCollapsed">{{ countryTotal }}</strong>
-        </button>
-        <button
-          v-for="group in displayedCountryGroups"
-          :key="group.code || '__UNCLASSIFIED__'"
-          class="country-item"
-          :class="{ active: selectedCountry === (group.code || '__UNCLASSIFIED__') }"
-          type="button"
-          @click="selectCountry(group.code || '__UNCLASSIFIED__')"
-        >
-          <span v-if="!countryCollapsed">{{ group.code ? countryName(group.code, locale) : t('customers.unclassified') }}</span><span v-else>{{ group.code || '—' }}</span><strong v-if="!countryCollapsed">{{ Number(group.customerCount) }}</strong>
-        </button>
-      </el-card>
-
+    <div class="customer-workspace">
       <el-card class="customer-list" shadow="never">
       <div class="filters">
         <el-input
@@ -52,7 +25,13 @@
         <el-select v-model="customerType" clearable :placeholder="t('customers.type')" class="filter-select" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
         <el-select v-model="businessStatus" clearable :placeholder="t('customers.businessStatus')" class="filter-select" @change="changeFilters"><el-option :label="t('customers.statusProspect')" value="PROSPECT"/><el-option :label="t('customers.statusCooperating')" value="COOPERATING"/><el-option :label="t('customers.statusPaused')" value="PAUSED"/><el-option :label="t('customers.statusInactive')" value="INACTIVE"/></el-select>
         <el-button v-if="columnOrder.customized.value" link type="primary" @click="columnOrder.reset">恢复默认列顺序</el-button>
-        <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
+        <div class="filter-end">
+          <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
+          <div v-if="auth.can('masterdata:customer:write')" class="filter-actions">
+            <el-button @click="importOpen=true">{{ t('customers.bulkImport') }}</el-button>
+            <el-button type="primary" @click="openCreate">{{ t('customers.create') }}</el-button>
+          </div>
+        </div>
       </div>
 
       <div v-if="canManageOwners" class="bulk-owner-bar">
@@ -304,7 +283,7 @@ const auth = useAuthStore()
 const canDelete = ref(false)
 const canManageOwners = ref(false)
 const layoutTenant = ref('')
-const columnOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-list`, [{"key": "name", "label": "名称", "minWidth": 210}, {"key": "country", "label": "国家/地区", "minWidth": 150}, {"key": "type", "label": "客户类型", "minWidth": 140}, {"key": "contact", "label": "主要联系人", "minWidth": 150}, {"key": "owners", "label": "负责人", "minWidth": 170}, {"key": "status", "label": "状态", "minWidth": 130}, {"key": "actions", "label": "操作", "minWidth": 135}])
+const columnOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-list`, [{"key": "name", "label": "名称", "minWidth": 235}, {"key": "country", "label": "国家/地区", "minWidth": 125}, {"key": "type", "label": "客户类型", "minWidth": 110}, {"key": "contact", "label": "主要联系人", "minWidth": 140}, {"key": "owners", "label": "负责人", "minWidth": 175}, {"key": "status", "label": "状态", "minWidth": 80}, {"key": "actions", "label": "操作", "minWidth": 100}])
 const customers = ref<Customer[]>([])
 const countryGroups = ref<CountryGroup[]>([])
 const paymentOptions = ref<OptionItem[]>([])
@@ -324,7 +303,6 @@ const countryLoading = ref(false)
 const selectedCountry = ref('')
 const customerType = ref('')
 const businessStatus = ref('')
-const countryCollapsed = ref(false)
 const importOpen = ref(false)
 const dialogOpen = ref(false)
 const saving = ref(false)
@@ -551,10 +529,16 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:14px}.page-head h2{font-size:20px;font-weight:600;margin:0}.page-head p{margin:5px 0 0;color:var(--el-text-color-secondary);font-size:13px}.head-actions{display:flex;gap:10px;flex-shrink:0}.filters{display:flex;align-items:center;gap:10px;margin-bottom:12px}.filter-search{width:min(300px,32%)}.filter-select{width:150px}.customer-workspace{display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px;align-items:start}.customer-workspace.collapsed{grid-template-columns:64px minmax(0,1fr)}.country-panel{position:sticky;top:16px}.country-panel :deep(.el-card__body){padding:10px}.country-panel__title{display:flex;align-items:center;justify-content:space-between;padding:4px 8px 10px;color:var(--el-text-color-secondary);font-size:13px;font-weight:600}.country-panel__title button{width:26px;height:26px;border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.country-item{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-radius:8px;padding:7px 9px;color:var(--el-text-color-regular);background:transparent;cursor:pointer;text-align:left}.country-item:hover{background:var(--el-fill-color-light)}.country-item.active{color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.country-item strong{min-width:28px;padding:2px 7px;border-radius:999px;color:inherit;background:var(--el-fill-color);font-size:12px;text-align:center}.customer-list{min-width:0}.customer-list :deep(.el-card__body){padding:16px 18px}.customer-table{width:100%;--el-table-row-hover-bg-color:var(--el-fill-color-light)}.customer-table :deep(.el-table__row){cursor:pointer}.customer-table :deep(th.el-table__cell){height:42px;padding:6px 0;color:var(--el-text-color-secondary);font-size:13px}.customer-table :deep(td.el-table__cell){padding:11px 0}.customer-identity{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:3px;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.customer-identity strong{max-width:100%;overflow:hidden;color:var(--el-text-color-primary);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.customer-identity span{max-width:100%;overflow:hidden;color:var(--el-text-color-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.muted,.stale-country{color:var(--el-text-color-secondary)}.customer-cards{display:none}.mobile-country{display:none;margin-bottom:10px}.mobile-country__title{display:flex;flex-direction:column;gap:2px;white-space:nowrap}.mobile-country__title span{color:var(--el-text-color-secondary);font-size:11px}.mobile-country__title strong{font-size:14px;font-weight:600}.country-select{width:100%}.pager{margin-top:12px;justify-content:flex-end}.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
+.filters{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}.filter-actions{display:flex;align-items:center;gap:10px;margin-left:auto;white-space:nowrap}.filter-actions .el-button+.el-button{margin-left:0}.filter-search{width:min(300px,32%)}.filter-select{width:150px}.customer-workspace{display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px;align-items:start}.customer-workspace.collapsed{grid-template-columns:64px minmax(0,1fr)}.country-panel{position:sticky;top:16px}.country-panel :deep(.el-card__body){padding:10px}.country-panel__title{display:flex;align-items:center;justify-content:space-between;padding:4px 8px 10px;color:var(--el-text-color-secondary);font-size:13px;font-weight:600}.country-panel__title button{width:26px;height:26px;border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.country-item{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-radius:8px;padding:7px 9px;color:var(--el-text-color-regular);background:transparent;cursor:pointer;text-align:left}.country-item:hover{background:var(--el-fill-color-light)}.country-item.active{color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.country-item strong{min-width:28px;padding:2px 7px;border-radius:999px;color:inherit;background:var(--el-fill-color);font-size:12px;text-align:center}.customer-list{min-width:0}.customer-list :deep(.el-card__body){padding:16px 18px}.customer-table{width:100%;--el-table-row-hover-bg-color:var(--el-fill-color-light)}.customer-table :deep(.el-table__row){cursor:pointer}.customer-table :deep(th.el-table__cell){height:42px;padding:6px 0;color:var(--el-text-color-secondary);font-size:13px}.customer-table :deep(td.el-table__cell){padding:11px 0}.customer-identity{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:3px;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.customer-identity strong{max-width:100%;overflow:hidden;color:var(--el-text-color-primary);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.customer-identity span{max-width:100%;overflow:hidden;color:var(--el-text-color-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.muted,.stale-country{color:var(--el-text-color-secondary)}.customer-cards{display:none}.mobile-country{display:none;margin-bottom:10px}.mobile-country__title{display:flex;flex-direction:column;gap:2px;white-space:nowrap}.mobile-country__title span{color:var(--el-text-color-secondary);font-size:11px}.mobile-country__title strong{font-size:14px;font-weight:600}.country-select{width:100%}.pager{margin-top:12px;justify-content:flex-end}.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
 .bulk-owner-bar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--el-color-primary-light-7);border-radius:8px;background:var(--el-color-primary-light-9)}.bulk-owner-bar span{margin-right:auto;color:var(--el-text-color-regular)}
 @media(max-width:1450px){.customer-workspace,.customer-workspace.collapsed{grid-template-columns:1fr}.country-panel{display:none}.mobile-country{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 13px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-select{max-width:300px}}
 @media(max-width:820px){.customer-table{display:none}.customer-cards{display:grid;grid-template-columns:1fr;gap:10px}.customer-card{position:relative;display:grid;gap:9px;padding:14px 74px 14px 15px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color);cursor:pointer;outline:none}.customer-card:hover,.customer-card:focus-visible{border-color:var(--el-color-primary-light-5);box-shadow:0 3px 12px rgb(31 69 89 / 8%)}.customer-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.customer-card__identity{display:flex;min-width:0;flex-direction:column;gap:3px}.customer-card__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.customer-card__identity span{color:var(--el-color-primary);font-size:12px}.customer-card__summary{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--el-text-color-regular);font-size:13px}.customer-card__summary span+span:before{margin-right:14px;color:var(--el-border-color);content:'·'}.customer-card__facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}.customer-card__facts div{min-width:0}.customer-card__facts dt{margin-bottom:2px;color:var(--el-text-color-secondary);font-size:11px}.customer-card__facts dd{overflow:hidden;margin:0;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.customer-card__actions{position:absolute;right:14px;bottom:12px}}
-@media(max-width:760px){.mobile-country{align-items:stretch;flex-direction:column;gap:8px}.country-select{max-width:none}.mobile-country__title{flex-direction:row;align-items:baseline;justify-content:space-between}.page-head{align-items:stretch}.page-head,.head-actions{flex-wrap:wrap}.head-actions{width:100%}.head-actions .el-button{flex:1;margin:0}.filters{display:grid;grid-template-columns:minmax(0,1fr) auto}.filter-search{width:100%}.filter-select{width:100%}.filters .filter-select{grid-column:span 1}.filters .el-checkbox{grid-column:1/-1}.customer-list :deep(.el-card__body){padding:12px}.customer-cards{grid-template-columns:1fr}.customer-card__facts{grid-template-columns:1fr 1fr}.pager{justify-content:center}.pager :deep(.el-pagination__total){display:none}}
-@media(max-width:480px){.page-head h2{font-size:18px}.filters{grid-template-columns:1fr}.filters>*{grid-column:1!important}.customer-card{padding:13px 58px 13px 13px}.customer-card__facts{grid-template-columns:1fr}.customer-card__actions{right:12px}}
+@media(max-width:760px){.mobile-country{align-items:stretch;flex-direction:column;gap:8px}.country-select{max-width:none}.mobile-country__title{flex-direction:row;align-items:baseline;justify-content:space-between}.filters{display:grid;grid-template-columns:minmax(0,1fr) auto}.filter-search{width:100%}.filter-select{width:100%}.filters .filter-select{grid-column:span 1}.filters .el-checkbox{grid-column:1/-1}.filter-actions{grid-column:1/-1;justify-content:flex-end;margin-left:0}.customer-list :deep(.el-card__body){padding:12px}.customer-cards{grid-template-columns:1fr}.customer-card__facts{grid-template-columns:1fr 1fr}.pager{justify-content:center}.pager :deep(.el-pagination__total){display:none}}
+@media(max-width:480px){.filters{grid-template-columns:1fr}.filters>*{grid-column:1!important}.filter-actions{justify-content:stretch}.filter-actions .el-button{flex:1}.customer-card{padding:13px 58px 13px 13px}.customer-card__facts{grid-template-columns:1fr}.customer-card__actions{right:12px}}
+.filter-end{display:flex;align-items:center;gap:10px;margin-left:auto;white-space:nowrap}.filter-end .filter-actions{margin-left:0}
+@media(max-width:760px){.filter-end{grid-column:1/-1;justify-content:space-between;margin-left:0}}
+@media(max-width:480px){.filter-end{flex-wrap:wrap}.filter-end .filter-actions{width:100%;margin-left:0}}
+.customer-workspace{display:block}.mobile-country{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-select{width:min(320px,45%);max-width:none}.customer-list :deep(.el-card__body){padding:12px 14px}.filters{gap:8px;margin-bottom:10px}.filter-search{width:min(300px,26%)}.filter-select{width:135px}.bulk-owner-bar{gap:8px;padding:7px 10px;margin-bottom:10px}.customer-table :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.customer-table :deep(td.el-table__cell){padding:6px 0;font-size:12px}.customer-identity{gap:1px}.customer-identity strong{font-size:13px}.customer-identity span{font-size:11px}.pager{margin-top:8px}
+@media(max-width:820px){.customer-table{display:block}.customer-cards{display:none}.filter-search{width:100%}.mobile-country{flex-direction:row;align-items:center}.mobile-country__title{flex-direction:column}.country-select{width:min(320px,55%)}}
+@media(max-width:480px){.mobile-country{align-items:stretch;flex-direction:column}.country-select{width:100%}.mobile-country__title{flex-direction:row}.filters{grid-template-columns:minmax(0,1fr) auto}}
 </style>

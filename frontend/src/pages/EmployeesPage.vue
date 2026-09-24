@@ -1,27 +1,6 @@
 <template>
   <div>
     <BasicDataEmployeeNav />
-    <el-breadcrumb separator="/" class="breadcrumb">
-      <el-breadcrumb-item>{{ t('menu.basicData') }}</el-breadcrumb-item>
-      <el-breadcrumb-item>{{ t('employees.title') }}</el-breadcrumb-item>
-    </el-breadcrumb>
-    <div class="page-head">
-      <h2>{{ t('employees.title') }}</h2>
-      <div class="head-actions">
-        <!-- Acts on the selection, so it is stated with a count rather than
-             leaving somebody to guess how many mails they are about to send
-             from their own mailbox. -->
-        <el-button v-if="canWrite && invitable.length" @click="inviteSelected">
-          {{ t('employees.inviteSelected', { n: invitable.length }) }}
-        </el-button>
-        <el-button v-if="canGrant && selected.length" @click="openBatchRoles">
-          {{ t('employees.assignRolesBatch', { n: selected.length }) }}
-        </el-button>
-        <el-button v-if="canWrite" @click="importOpen = true">{{ t('employees.import') }}</el-button>
-        <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('employees.create') }}</el-button>
-      </div>
-    </div>
-
     <el-card shadow="never" class="employee-card">
       <div class="filters">
         <div class="filter-fields">
@@ -55,6 +34,12 @@
           <el-button @click="resetFilters">{{ t('employees.resetFilters') }}</el-button>
           <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
         </div>
+      </div>
+      <div class="list-actions">
+        <el-button v-if="canWrite && invitable.length" @click="inviteSelected">{{ t('employees.inviteSelected', { n: invitable.length }) }}</el-button>
+        <el-button v-if="canGrant && selected.length" @click="openBatchRoles">{{ t('employees.assignRolesBatch', { n: selected.length }) }}</el-button>
+        <el-button v-if="canWrite" @click="importOpen = true">{{ t('employees.import') }}</el-button>
+        <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('employees.create') }}</el-button>
       </div>
 
       <el-table
@@ -1163,4 +1148,6 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
     gap: 4px;
   }
 }
+.filters{gap:8px;padding:10px 14px;background:var(--el-bg-color)}.filter-fields{gap:8px}.list-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px 14px 0}.list-actions :deep(.el-button+.el-button){margin-left:0}.employee-table{width:calc(100% - 28px);margin:10px 14px 0}.employee-table :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.employee-table :deep(.el-table__row td.el-table__cell){padding:6px 0;font-size:12px}.employee-table :deep(.cell-stack){gap:1px}.employee-table :deep(.sub){font-size:11px}.pager{padding:8px 14px 10px}
+@media(max-width:620px){.list-actions{justify-content:stretch}.list-actions :deep(.el-button){flex:1}}
 </style>
