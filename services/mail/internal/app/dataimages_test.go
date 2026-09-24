@@ -101,3 +101,23 @@ func TestOnlyInlinePicturesJoinTheSwapBeforeSanitising(t *testing.T) {
 		t.Errorf("nothing inline, yet the swap changed: %v", same)
 	}
 }
+
+// 改回发件人原地址时，这条地址是在净化之后原样写回正文的，所以自己把关。
+func TestSenderAddressOnlyTakesPlainWebAddresses(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://buyer.example/logo.png":         "https://buyer.example/logo.png",
+		"http://buyer.example/a.png?x=1&amp;y=2": "http://buyer.example/a.png?x=1&amp;y=2",
+		dataImagePrefixForTest:                   "",
+		"javascript:alert(1)":                    "",
+		`https://x.example/a.png" onerror="x()`:  "",
+		"https://x.example/a b.png":              "",
+		"https://x.example/<b>.png":              "",
+		"":                                       "",
+	} {
+		if got := senderAddress(in); got != want {
+			t.Errorf("senderAddress(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+var dataImagePrefixForTest = dataImageKeyPrefix + "abc"
