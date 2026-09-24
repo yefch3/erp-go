@@ -569,7 +569,10 @@ func (s *Service) inboundFor(ctx context.Context, tenantID, ownerID, id int64, m
 	// Remote ones go after, because their keys were recorded in the form the
 	// sanitiser produces — it percent-encodes spaces in URLs on the way
 	// through, and matching the raw form would miss those.
-	embedded := s.embeddedSwap(ctx, tenantID, id)
+	//
+	// 正文自带的图（data:）也是之前换，理由和 cid: 一样，见 withInlinePictures。
+	cached := s.swapForMessage(ctx, tenantID, id)
+	embedded := withInlinePictures(s.embeddedSwap(ctx, tenantID, id), cached)
 	// 补链接放在净化之后：只加锚点，不做任何净化，输入必须是已经过滤干净的。
 	// 发信方把地址写成光秃秃的文字是常事（事务性邮件尤其多），净化器不管这个
 	// ——它只负责把危险的东西去掉，不负责把不是链接的变成链接。
@@ -579,7 +582,7 @@ func (s *Service) inboundFor(ctx context.Context, tenantID, ownerID, id int64, m
 	// 记录的「打开」。见 ownpixel.go。
 	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
 		stripOwnPixel(
-			s.localiseImages(ctx, sanitised, s.swapForMessage(ctx, tenantID, id)),
+			s.localiseImages(ctx, sanitised, cached),
 			s.selfHost))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
@@ -792,7 +795,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 				// Embedded before the sanitiser, remote after — see GetInbound.
 				body = LinkifyBareURLs(stripOwnPixel(
 					s.localiseImages(ctx,
-						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
+						SanitizeForReading(s.localiseImages(ctx, body, withInlinePictures(embedded[r.ID], swaps[r.ID]))),
 						swaps[r.ID]),
 					s.selfHost))
 			} else {

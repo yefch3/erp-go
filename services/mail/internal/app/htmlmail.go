@@ -54,6 +54,18 @@ func buildMailPolicy() *bluemonday.Policy {
 	p.AllowElements("colgroup", "col")
 	p.AllowAttrs("width", "span").OnElements("colgroup", "col")
 
+	// 老式的字色、字号、字体。Gmail 给字选颜色写的就是 <font color="#ff0000">，
+	// 客户拿它标红价格和数量。原来收件那边只放行了 <font> 这个标签、没放行
+	// 这三个属性——属性删光以后 bluemonday 连标签一起丢，红字就成了黑字。和
+	// 上面的列宽是同一个漏法。放在发信这边，是因为回信引用的原信要过这里。
+	p.AllowElements("font")
+	p.AllowAttrs("color", "face", "size").OnElements("font")
+
+	// 编号列表从几开始、用哪种编号。一段编号中间夹一段说明、再接着编号时，
+	// 写信程序写的是 <ol start="3">；丢了它，「3. 4. 5.」显示成「1. 2. 3.」。
+	p.AllowAttrs("start").Matching(regexp.MustCompile(`^\d{1,6}$`)).OnElements("ol")
+	p.AllowAttrs("type").Matching(regexp.MustCompile(`^[1aAiI]$`)).OnElements("ol")
+
 	// Inline styles only — a <style> block would be stripped by Gmail anyway.
 	//
 	// **这里的 style 是原样放行的，一条 CSS 都不审。** 这个版本的 bluemonday
@@ -290,7 +302,9 @@ func buildReaderPolicy() *bluemonday.Policy {
 	// Layout elements real mail uses that the composer never emits, so they
 	// are not in the sending whitelist: senders build with these constantly
 	// and dropping them collapses the scaffold the CSS is written against.
-	p.AllowElements("center", "font", "tbody")
+	// （<font>、<col> 原来也在这里，2026-09-24 挪去了发信白名单：回信会把
+	// 收到的正文整段引用进去，只在这里放行的东西，一回信就丢。）
+	p.AllowElements("center", "tbody")
 	p.AllowAttrs("bgcolor", "background", "align", "valign").Globally()
 	return p
 }

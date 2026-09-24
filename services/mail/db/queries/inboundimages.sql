@@ -187,9 +187,23 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- Scoped to the sender's own mail rather than to the tenant, because that is
 -- the body they could legitimately have built: the composer quotes a message
 -- they can already read.
+--
+-- 第二段是正文自带、被缓存那一遍存进对象存储的图（dataimages.go）。它和附件
+-- 一样没有别的地址可退，回信里不带着走，客户看到的就是一条会过期的链接。外链
+-- 图片的缓存不在这里：它们还有发件人那条原地址可以指回去，怎么带是另一回事。
+-- 条件 source_url LIKE 'data:sha256,%' 和索引 email_inbound_images_data_key_idx
+-- （00077）的谓词一字不差，改了这里要一起改那里。
 SELECT a.file_key, a.content_type
 FROM email_inbound_attachments a
 JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
 WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
-  AND a.file_key = ANY(sqlc.arg(file_keys)::text[]);
+  AND a.file_key = ANY(sqlc.arg(file_keys)::text[])
+UNION ALL
+SELECT g.object_key, g.content_type
+FROM email_inbound_images g
+JOIN email_inbound i ON i.id = g.inbound_id AND i.tenant_id = g.tenant_id
+WHERE g.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.owner_id = sqlc.arg(owner_id)::bigint
+  AND g.source_url LIKE 'data:sha256,%'
+  AND g.object_key = ANY(sqlc.arg(file_keys)::text[]);
