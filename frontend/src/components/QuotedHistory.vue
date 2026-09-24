@@ -20,7 +20,15 @@
     <!-- v-if, not v-show: an unopened history must not be built at all. That
          is the whole point — it is what stops fifteen folded messages fetching
          their pictures and firing their senders' tracking pixels. -->
-    <MailBody v-if="open" :html="html" />
+    <!-- 选中文字转 Excel 的那两个事件原样往外递。销售转发客户询价时上面写一句
+         「报18/10」，整封客户来信就被折进这里；不递的话，折起来的表格选中了
+         什么都不会出现，看上去就像「转发的信不能转 Excel」（2026-09-24）。 -->
+    <MailBody
+      v-if="open"
+      :html="html"
+      @selection-context="emit('selectionContext', $event)"
+      @selection-clear="emit('selectionClear')"
+    />
   </div>
 </template>
 
@@ -31,6 +39,11 @@ import MailBody from './MailBody.vue'
 
 const { t } = useI18n()
 defineProps<{ html: string }>()
+// 和 MailBody 的同名事件一模一样：页面那头拿同一个处理函数接两处。
+const emit = defineEmits<{
+  selectionContext: [payload: { text?: string; attachmentId?: string; x: number; y: number }]
+  selectionClear: []
+}>()
 const open = ref(false)
 </script>
 
