@@ -147,6 +147,52 @@ type CostScenarioLine struct {
 	CustomerAmount      pgtype.Numeric
 }
 
+type DailyBasePrice struct {
+	ID            int64
+	TenantID      int64
+	PriceDate     pgtype.Date
+	ProductID     int64
+	SupplierID    int64
+	Price         pgtype.Numeric
+	Remark        string
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedBy     int64
+	UpdatedByName string
+	UpdatedAt     pgtype.Timestamptz
+	DeletedAt     pgtype.Timestamptz
+}
+
+type DailyBasisSpread struct {
+	ID            int64
+	TenantID      int64
+	PriceDate     pgtype.Date
+	ProductID     int64
+	Spot          pgtype.Numeric
+	Futures       pgtype.Numeric
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedBy     int64
+	UpdatedByName string
+	UpdatedAt     pgtype.Timestamptz
+	DeletedAt     pgtype.Timestamptz
+}
+
+type DailyPriceDimension struct {
+	ID        int64
+	TenantID  int64
+	Kind      string
+	MasterID  *int64
+	Name      string
+	SortOrder int32
+	Active    bool
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	Note      string
+}
+
 type FactoryRfq struct {
 	ID             int64
 	TenantID       int64
