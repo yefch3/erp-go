@@ -177,19 +177,49 @@
           :bundling="bundling"
           @preview="openPreview"
           @download-all="downloadAll"
+          @excel-menu="(e: MouseEvent, f: MailFile, id: string) => excel?.openAttachmentMenu(e, f, id)"
+          @excel-hover="(e: MouseEvent, f: MailFile, id: string) => excel?.hoverAttachment(e, f, id)"
+          @excel-leave="excel?.scheduleHide()"
         />
         <el-divider />
       </template>
 
       <!-- 正文一律在沙箱 frame 里渲染，纯文本也不例外——这条由
            scripts/check-mail-sandbox.sh 守着。 -->
-      <MailBody v-if="mail.bodyHtml" :html="mail.bodyHtml" />
-      <MailBody v-else :html="plainTextToHtml(mail.bodyText || '')" />
-      <QuotedHistory v-if="mail.quotedHtml" :html="mail.quotedHtml" />
+      <!-- 选中正文（包括折起来的「···」）或点正文里的图，都能「生成 Excel」，
+           和主窗口同一个组件、同一套规矩。 -->
+      <MailBody
+        v-if="mail.bodyHtml"
+        :html="mail.bodyHtml"
+        @selection-context="excel?.openText($event, String(mail.id))"
+        @selection-clear="excel?.close()"
+      />
+      <MailBody
+        v-else
+        :html="plainTextToHtml(mail.bodyText || '')"
+        @selection-context="excel?.openText($event, String(mail.id))"
+        @selection-clear="excel?.close()"
+      />
+      <QuotedHistory
+        v-if="mail.quotedHtml"
+        :html="mail.quotedHtml"
+        @selection-context="excel?.openText($event, String(mail.id))"
+        @selection-clear="excel?.close()"
+      />
     </template>
 
     <!-- 写信框和主窗口用的是同一个组件，所以草稿、附件、签名、发件人选择
          全都一样——回信从哪个箱发出去，默认就是这封信落在的那个箱。 -->
+    <!-- 任务号用自己的键：窗口是从主窗口 window.open 出来的，sessionStorage 会
+         照着主窗口复制一份，同一个键会把主窗口正在等的任务在这里也弹一遍。
+         转入询盘后另开一页，这封信留在这个窗口里。 -->
+    <MailExcelConverter
+      ref="excel"
+      :find-attachment="findExcelAttachment"
+      job-storage-key="mailWindowExcelJobId"
+      @transferred="(id: string) => openInNewTab(`/sales/inquiries?id=${id}`)"
+    />
+
     <EmailComposer
       ref="composer"
       v-model="composing"
@@ -220,6 +250,7 @@ import EmailComposer from '../components/EmailComposer.vue'
 import MailActionIcon from '../components/MailActionIcon.vue'
 import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
+import MailExcelConverter from '../components/MailExcelConverter.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { isOfficePreview, isSheetPreview } from '../lib/attachmentPreview'
@@ -333,6 +364,16 @@ const boxes = ref<{ id: number; email: string }[]>([])
 
 const detailRows = computed(() => mailDetailRows(mail.value, t))
 
+const excel = ref<InstanceType<typeof MailExcelConverter> | null>(null)
+// 能不能不经模型直接读成表，要找回附件本身。这个窗口只有这一封。
+function findExcelAttachment(mailId: string, attachmentId: string): MailFile | undefined {
+  if (!mail.value || String(mail.value.id) !== mailId) return undefined
+  return mail.value.attachments?.find((a) => String(a.id) === attachmentId)
+}
+function openInNewTab(path: string) {
+  window.open(router.resolve(path).href, '_blank', 'noopener')
+}
+
 onMounted(async () => {
   const id = String(route.params.id || '')
   try {
@@ -350,6 +391,8 @@ onMounted(async () => {
     // 这一封。**await 它**，和上面两条不同：拿不到就按合并档走，而那
     // 时人点删除会删掉他不想删的东西。
     await loadListMode()
+    // 信打开了才问：锁着或者打不开的时候问了也是白问。
+    excel.value?.start()
   } catch {
     // 信被删了、id 不是自己的、或者信箱这会儿是锁着的。分不出是哪一种，
     // 也不该猜——一句「打不开，回主窗口看看」比一个白屏诚实。
