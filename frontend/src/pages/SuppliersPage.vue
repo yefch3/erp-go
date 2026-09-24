@@ -1,23 +1,20 @@
 <template>
   <div class="supplier-page">
-    <div class="page-head">
-      <div><h2>{{ t('suppliers.title') }}</h2><p>{{ t('suppliers.subtitle') }}</p></div>
-      <div v-if="auth.can('masterdata:supplier:write')" class="head-actions"><el-button @click="importOpen=true">{{ t('suppliers.bulkImport') }}</el-button><el-button type="primary" @click="openCreate">{{ t('suppliers.create') }}</el-button></div>
+    <div class="country-strip">
+      <div><span>{{ t('suppliers.countryGroups') }}</span><strong>{{ countryCode ? countryName(countryCode, locale) : t('suppliers.allCountries') }} · {{ countryCode ? Number(countries.find(g => g.countryCode === countryCode)?.count || 0) : countryTotal }}</strong></div>
+      <el-select v-model="countryCode" filterable :aria-label="t('suppliers.countryGroups')" @change="resetLoad">
+        <el-option :label="`${t('suppliers.allCountries')}（${countryTotal}）`" value="" />
+        <el-option v-for="g in countries" :key="g.countryCode||'none'" :label="`${g.countryCode ? countryName(g.countryCode, locale) : t('suppliers.unclassified')}（${Number(g.count)}）`" :value="g.countryCode" />
+      </el-select>
     </div>
     <div class="workspace">
-      <el-card class="country-panel" shadow="never">
-        <h3>{{ t('suppliers.countryGroups') }}</h3>
-        <button :class="{active:countryCode===''}" @click="chooseCountry('')"><span>{{ t('suppliers.allCountries') }}</span><b>{{ countryTotal }}</b></button>
-        <button v-for="g in countries" :key="g.countryCode||'none'" :class="{active:countryCode===g.countryCode}" @click="chooseCountry(g.countryCode)">
-          <span>{{ g.countryCode ? countryName(g.countryCode, locale) : t('suppliers.unclassified') }}</span><b>{{ g.count }}</b>
-        </button>
-      </el-card>
       <el-card class="list-card" shadow="never">
         <div class="filters">
           <el-input v-model="keyword" clearable :placeholder="t('suppliers.search')" @keyup.enter="load" />
           <el-select v-model="businessType" clearable :placeholder="t('suppliers.businessType')" @change="resetLoad"><el-option v-for="o in businessOptions" :key="o.code" :label="optionLabel(o.code)" :value="o.code" /></el-select>
           <el-select v-model="status" @change="resetLoad"><el-option :label="t('common.active')" value=""/><el-option :label="t('common.inactive')" value="INACTIVE"/><el-option :label="t('suppliers.allStatuses')" value="ALL"/></el-select>
           <el-button type="primary" @click="resetLoad">{{ t('common.query') }}</el-button>
+          <div v-if="auth.can('masterdata:supplier:write')" class="filter-actions"><el-button @click="importOpen=true">{{ t('suppliers.bulkImport') }}</el-button><el-button type="primary" @click="openCreate">{{ t('suppliers.create') }}</el-button></div>
         </div>
         <div v-if="canManageOwners" class="bulk-owner-bar">
           <el-button @click="toggleSelectPage">{{ allPageSelected ? '取消全选' : '全选本页' }}</el-button>
@@ -28,13 +25,13 @@
         </div>
         <el-table ref="supplierTable" :data="rows" v-loading="loading" @selection-change="selectedSuppliers=$event">
           <el-table-column v-if="canManageOwners" type="selection" width="48" />
-          <el-table-column :label="t('suppliers.code')" width="135"><template #default="{row}"><el-button link type="primary" @click="openDetail(row)">{{ row.code }}</el-button></template></el-table-column>
-          <el-table-column :label="t('suppliers.name')" min-width="210"><template #default="{row}"><div class="name-cell"><strong>{{ displayName(row) }}</strong><small>{{ secondaryName(row) }}</small></div></template></el-table-column>
-          <el-table-column :label="t('suppliers.country')" width="150"><template #default="{row}">{{ row.countryCode ? countryName(row.countryCode, locale) : '—' }}</template></el-table-column>
-          <el-table-column :label="t('suppliers.businessType')" min-width="180"><template #default="{row}"><el-tag v-for="v in row.businessTypes" :key="v" size="small" effect="plain">{{ optionLabel(v) }}</el-tag></template></el-table-column>
-          <el-table-column :label="t('suppliers.owners')" min-width="150" prop="ownerNames" />
-          <el-table-column :label="t('common.status')" width="90"><template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'">{{ row.status==='ACTIVE'?t('common.active'):t('common.inactive') }}</el-tag></template></el-table-column>
-          <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}">
+          <el-table-column :label="t('suppliers.code')" width="110"><template #default="{row}"><el-button link type="primary" @click="openDetail(row)">{{ row.code }}</el-button></template></el-table-column>
+          <el-table-column :label="t('suppliers.name')" min-width="220"><template #default="{row}"><div class="name-cell"><strong>{{ displayName(row) }}</strong><small>{{ secondaryName(row) }}</small></div></template></el-table-column>
+          <el-table-column :label="t('suppliers.country')" min-width="120"><template #default="{row}">{{ row.countryCode ? countryName(row.countryCode, locale) : '—' }}</template></el-table-column>
+          <el-table-column :label="t('suppliers.businessType')" min-width="140"><template #default="{row}"><el-tag v-for="v in row.businessTypes" :key="v" size="small" effect="plain">{{ optionLabel(v) }}</el-tag></template></el-table-column>
+          <el-table-column :label="t('suppliers.owners')" min-width="145" prop="ownerNames" />
+          <el-table-column :label="t('common.status')" width="78"><template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'" size="small">{{ row.status==='ACTIVE'?t('common.active'):t('common.inactive') }}</el-tag></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="120" fixed="right"><template #default="{row}">
             <el-dropdown trigger="click" @command="(command:string)=>handleAction(command,row)">
               <el-button>更多操作 <span class="caret">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
@@ -103,7 +100,6 @@ async function syncQuery(){await router.replace({query:masterDataListQuery({keyw
 async function load(){clearSelection();loading.value=true;try{await syncQuery();const d=await get<any>('/suppliers',{page:page.value,page_size:pageSize.value,keyword:keyword.value,country_code:countryCode.value,business_type:businessType.value,status:status.value});rows.value=d.suppliers||[];total.value=Number(d.meta?.total||0)}catch{rows.value=[];total.value=0}finally{loading.value=false}}
 async function loadGroups(){try{const d=await get<any>('/suppliers/countries');countries.value=(d.countries||[]) as CountryGroup[]}catch{countries.value=[]}}
 function resetLoad(){page.value=1;load()}
-function chooseCountry(v:string){countryCode.value=v;resetLoad()}
 function changePage(v:number){page.value=v;load()}
 function changePageSize(v:number){pageSize.value=v;page.value=1;load()}
 function clearSelection(){selectedSuppliers.value=[];supplierTable.value?.clearSelection()}
@@ -121,4 +117,7 @@ onMounted(async()=>{try{const [,business,payment,access]=await Promise.all([Prom
 
 <style scoped>
 .supplier-page{--navy:#18324a;--teal:#147d7b}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.page-head h2{margin:0;color:var(--navy)}.page-head p{margin:6px 0 0;color:#778899}.workspace{display:grid;grid-template-columns:225px 1fr;gap:16px}.country-panel h3{margin:2px 0 12px;color:var(--navy)}.country-panel button{width:100%;display:flex;justify-content:space-between;border:0;background:transparent;padding:10px 12px;border-radius:9px;color:#526372;cursor:pointer}.country-panel button.active{background:#e6f4f2;color:var(--teal)}.country-panel b{background:#edf1f4;border-radius:12px;padding:1px 9px}.filters{display:flex;gap:10px;margin-bottom:16px}.filters .el-input{max-width:280px}.filters .el-select{width:165px}.bulk-owner-bar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--el-color-primary-light-7);border-radius:8px;background:var(--el-color-primary-light-9)}.bulk-owner-bar span{margin-right:auto;color:var(--el-text-color-regular)}.name-cell{display:flex;flex-direction:column}.name-cell small{color:#8b99a5}.el-tag+.el-tag{margin-left:5px}.pager{justify-content:flex-end;margin-top:18px}.form-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}.form-grid .full{grid-column:1/-1}.form-grid .code-notice{margin-bottom:18px}.form-grid :deep(.el-select){width:100%}.caret{font-size:10px;margin-left:5px}.danger-item{color:#f56c6c}@media(max-width:900px){.workspace{grid-template-columns:1fr}.country-panel{display:none}.filters,.bulk-owner-bar{flex-wrap:wrap}.bulk-owner-bar span{width:100%;margin-right:0}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}}
+.workspace{display:block}.country-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-strip>div{display:flex;flex-direction:column;gap:2px}.country-strip span{font-size:11px;color:var(--el-text-color-secondary)}.country-strip strong{font-size:14px}.country-strip .el-select{width:min(320px,48%)}.list-card :deep(.el-card__body){padding:12px 14px}.filters{align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}.filters .el-input{width:min(280px,25%)}.filters .el-select{width:145px}.filter-actions{display:flex;gap:8px;margin-left:auto}.filter-actions .el-button+.el-button{margin-left:0}.bulk-owner-bar{gap:8px;padding:7px 10px;margin-bottom:10px}.list-card :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.list-card :deep(td.el-table__cell){padding:6px 0;font-size:12px}.list-card :deep(.el-table__cell .cell){line-height:1.35}.name-cell strong{font-size:13px}.name-cell small{font-size:11px}.list-card :deep(.el-tag){font-size:11px}.pager{margin-top:8px}
+@media(max-width:850px){.filters .el-input{width:100%;max-width:none}.filters .el-select{flex:1;min-width:135px}.filter-actions{margin-left:0}}
+@media(max-width:480px){.country-strip{align-items:stretch;flex-direction:column}.country-strip .el-select{width:100%}.filter-actions{width:100%}.filter-actions .el-button{flex:1}}
 </style>

@@ -1,11 +1,7 @@
 <template>
   <div class="page">
-    <header class="page-head">
-      <div>
-        <div class="eyebrow">{{ t('excelUsage.eyebrow') }}</div>
-        <h1>{{ t('excelUsage.title') }}</h1>
-        <p>{{ t('excelUsage.subtitle') }}</p>
-      </div>
+    <div class="month-strip">
+      <strong>{{ t('excelUsage.title') }}</strong>
       <el-date-picker
         v-model="month"
         type="month"
@@ -14,7 +10,7 @@
         style="width: 150px"
         @change="load"
       />
-    </header>
+    </div>
 
     <section class="metrics">
       <div class="metric">
@@ -283,4 +279,5 @@ onMounted(load)
 .num.money {
   font-weight: 600;
 }
+.page{gap:10px}.month-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.month-strip strong{font-size:14px}.metrics{gap:10px}.metric{gap:2px;padding:8px 12px}.metric-value{font-size:20px}.metric-label,.metric-hint{font-size:11px}.panel{padding:12px 14px}.alert{margin-bottom:8px}.panel :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.panel :deep(td.el-table__cell){padding:6px 0;font-size:12px}.sub{font-size:11px}
 </style>

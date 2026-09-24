@@ -1,7 +1,7 @@
 <template>
-  <el-dialog v-model="visible" title="批量导入客户" width="960px" destroy-on-close @closed="resetDialog">
+  <el-dialog v-model="visible" title="批量导入客户" width="760px" destroy-on-close @closed="resetDialog">
     <el-alert type="info" :closable="false" show-icon>
-      <template #title>客户名称或客户简称至少填写一项，其他资料可留空。错误行会跳过，其他通过预检的行仍可导入；多个分管人用分号分隔。</template>
+      <template #title>客户名称或简称至少填写一项。错误行会跳过；同一客户可用多行填写联系人，多个分管人用分号分隔。</template>
     </el-alert>
 
     <div class="import-tools">
@@ -26,42 +26,36 @@
       <el-alert v-else class="mapping-warning" type="success" :closable="false" title="模板格式正确，字段将按固定规则导入。" />
 
       <div v-if="rows.length" class="data-preview">
-        <div class="section-title">
-          <div><strong>数据预览</strong><small>显示前 5 行；正式预检会检查全部 {{ rows.length }} 行。</small></div>
-        </div>
-        <el-table :data="previewRows" border size="small" max-height="240">
-          <el-table-column v-for="column in previewColumns" :key="column.key" :prop="column.key" :label="column.label" min-width="140" show-overflow-tooltip />
+        <strong>数据预览 <small>前 8 行，共 {{ rows.length }} 行</small></strong>
+        <el-table :data="rows.slice(0, 8)" size="small" max-height="220">
+          <el-table-column prop="sourceLine" label="行" width="55" />
+          <el-table-column prop="code" label="客户代码" width="125" show-overflow-tooltip />
+          <el-table-column label="客户名称" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.name || row.shortName }}</template></el-table-column>
+          <el-table-column prop="contactName" label="联系人" min-width="120" show-overflow-tooltip />
         </el-table>
       </div>
     </template>
 
-    <div v-if="verdicts.length" class="preview">
-      <div class="preview-head">
-        <strong>预检结果</strong>
-        <span class="ok">可导入 {{ ready }} 行</span>
-        <span v-if="blocked" class="blocked">需修正 {{ blocked }} 行</span>
-      </div>
-      <el-table :data="verdicts" max-height="280" size="small">
+    <div v-if="rows.length" class="batch-options">
+      <label>已有客户公司资料 <el-select v-model="customerAction" :disabled="checking || saving" @change="invalidatePreview"><el-option label="保留原资料" value="KEEP" /><el-option label="更新非空资料" value="UPDATE" /></el-select></label>
+      <label>重复联系人 <el-select v-model="contactAction" :disabled="checking || saving" @change="invalidatePreview"><el-option label="跳过" value="SKIP" /><el-option label="更新非空资料" value="UPDATE" /><el-option label="另增一人" value="ADD" /></el-select></label>
+      <small>新客户和新联系人正常新增；模板中的分管人会追加，已有分管人不会被移除。</small>
+    </div>
+
+    <div v-if="reviewed" class="preview">
+      <div class="preview-head"><strong>预检结果</strong><span class="ok">可导入 {{ ready }} 行</span><span class="blocked">错误 {{ blocked }} 行</span></div>
+      <el-table v-if="blocked" :data="errorRows" max-height="260" size="small">
         <el-table-column prop="line" label="行" width="60" />
-        <el-table-column prop="code" label="编码" width="130" />
-        <el-table-column prop="name" label="客户名称" min-width="180" />
-        <el-table-column label="结果" width="90">
-          <template #default="{ row }"><el-tag :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '通过' : '错误' }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="客户资料" min-width="190"><template #default="{ row, $index }">
-          <el-select v-if="row.existingCustomer" :model-value="decisions[$index]?.customerAction" placeholder="请选择" @change="decide($index, 'customerAction', $event)"><el-option label="更新非空资料" value="UPDATE"/><el-option label="保留原资料" value="KEEP"/></el-select><span v-else>新增客户／合并同代码行</span>
-        </template></el-table-column>
-        <el-table-column label="联系人处理" min-width="160"><template #default="{ row, $index }">
-          <el-select v-if="row.duplicateContact" :model-value="decisions[$index]?.contactAction" placeholder="请选择" @change="decide($index, 'contactAction', $event)"><el-option label="更新非空资料" value="UPDATE"/><el-option label="另增一人" value="ADD"/><el-option label="跳过" value="SKIP"/></el-select><span v-else>新增（有联系人时）</span>
-        </template></el-table-column>
-        <el-table-column prop="reason" label="说明" min-width="220" />
+        <el-table-column prop="code" label="客户代码" width="125" />
+        <el-table-column prop="name" label="客户名称" min-width="175" show-overflow-tooltip />
+        <el-table-column prop="reason" label="错误原因" min-width="260" show-overflow-tooltip />
       </el-table>
     </div>
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button :disabled="!rows.length || mappingProblems.length > 0" :loading="checking" @click="preview">预检全部 {{ rows.length }} 行</el-button>
-      <el-button type="primary" :disabled="!reviewed || ready === 0" :loading="saving" @click="commit">确认导入 {{ ready }} 行</el-button>
+      <el-button :disabled="saving || !rows.length || mappingProblems.length > 0" :loading="checking" @click="preview">预检全部 {{ rows.length }} 行</el-button>
+      <el-button type="primary" :disabled="checking || !reviewed || !preparedRows.length || ready === 0" :loading="saving" @click="commit">确认导入 {{ ready }} 行</el-button>
     </template>
   </el-dialog>
 </template>
@@ -78,6 +72,7 @@ import {
   customerTemplateProblems,
   type CustomerImportEmployee,
 } from '../lib/customerImport'
+import { applyCustomerImportActions, type ContactImportAction, type CustomerImportAction, type CustomerImportVerdictFlags } from '../lib/customerImportDecisions'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean]; imported: [] }>()
@@ -87,7 +82,9 @@ const fileName = ref('')
 const sheetIndex = ref(0)
 const employees = ref<CustomerImportEmployee[]>([])
 const verdicts = ref<any[]>([])
-const decisions = ref<Record<number, { customerAction?: string; contactAction?: string }>>({})
+const preparedRows = ref<any[]>([])
+const customerAction = ref<CustomerImportAction>('KEEP')
+const contactAction = ref<ContactImportAction>('SKIP')
 const reviewed = ref(false)
 const checking = ref(false)
 const saving = ref(false)
@@ -95,14 +92,17 @@ const saving = ref(false)
 const currentSheet = computed(() => workbook.value?.sheets[sheetIndex.value] ?? { name: '', columns: [], rows: [], totalRows: 0 })
 const mappingProblems = computed(() => customerTemplateProblems(currentSheet.value.columns))
 const mapping = computed(() => fixedCustomerTemplateMapping(currentSheet.value.columns))
-const rows = computed(() => mappingProblems.value.length ? [] : buildCustomerImportRows(currentSheet.value.rows, mapping.value, employees.value).map((row, index) => ({ ...row, ...decisions.value[index] })))
-const previewColumns = computed(() => currentSheet.value.columns.map((label, index) => ({ key: `column_${index}`, label })))
-const previewRows = computed(() => currentSheet.value.rows.slice(0, 5).map(sourceRow => Object.fromEntries(previewColumns.value.map(column => [column.key, sourceRow[Number(column.key.slice(7))] ?? '']))))
+const rows = computed(() => mappingProblems.value.length ? [] : buildCustomerImportRows(currentSheet.value.rows, mapping.value, employees.value))
 const ready = computed(() => verdicts.value.filter(v => v.ok).length)
 const blocked = computed(() => verdicts.value.filter(v => !v.ok).length)
+const errorRows = computed(() => verdicts.value.filter(v => !v.ok))
+
+function invalidatePreview() {
+  verdicts.value = []; preparedRows.value = []; reviewed.value = false
+}
 
 function selectSheet() {
-  verdicts.value = []; decisions.value = {}; reviewed.value = false
+  invalidatePreview()
 }
 
 async function loadWorkbook(name: string, data: ArrayBuffer) {
@@ -143,33 +143,45 @@ async function readFile(file: UploadFile) {
 function downloadTemplate() {
   const link = document.createElement('a'); link.href = '/templates/customer-import.xlsx'; link.download = '客户导入模板.xlsx'; link.click()
 }
-function decide(index: number, field: 'customerAction' | 'contactAction', value: string) {
-  decisions.value[index] = { ...decisions.value[index], [field]: value }; reviewed.value = false
-  if (field === 'customerAction') {
-    const code = verdicts.value[index]?.code
-    if (code) verdicts.value.forEach((row, i) => { if (row.code === code) decisions.value[i] = { ...decisions.value[i], [field]: value } })
-  }
-}
-
 async function preview() {
   if (!rows.value.length) { ElMessage.warning('请先上传文件或读取粘贴内容'); return }
   if (mappingProblems.value.length) { ElMessage.warning(mappingProblems.value[0]); return }
+  invalidatePreview()
   checking.value = true
   try {
-    const data = await post<any>('/customers/import', { templateMode: true, rows: rows.value, dryRun: true })
-    verdicts.value = data.verdicts ?? []; reviewed.value = true
+    // The first dry run discovers existing customers and duplicate contacts.
+    // Apply the chosen batch rules only to those rows; applying UPDATE to a new
+    // contact would make the backend correctly reject it as an ambiguous match.
+    const discovery = await post<any>('/customers/import', { templateMode: true, rows: rows.value, dryRun: true })
+    let flags: CustomerImportVerdictFlags[] = discovery.verdicts ?? []
+    let result = discovery
+    for (let attempt = 0; attempt < 3; attempt++) {
+      preparedRows.value = applyCustomerImportActions(rows.value, flags, customerAction.value, contactAction.value)
+      result = await post<any>('/customers/import', { templateMode: true, rows: preparedRows.value, dryRun: true })
+      const next: CustomerImportVerdictFlags[] = result.verdicts ?? []
+      const discoveredMore = next.some((verdict, index) =>
+        (verdict.existingCustomer && !flags[index]?.existingCustomer)
+        || (verdict.duplicateContact && !flags[index]?.duplicateContact))
+      if (!discoveredMore) break
+      flags = next.map((verdict, index) => ({
+        existingCustomer: Boolean(flags[index]?.existingCustomer || verdict.existingCustomer),
+        duplicateContact: Boolean(flags[index]?.duplicateContact || verdict.duplicateContact),
+      }))
+    }
+    verdicts.value = result.verdicts ?? []; reviewed.value = true
   } finally { checking.value = false }
 }
 
 async function commit() {
+  if (!reviewed.value || !preparedRows.value.length || ready.value === 0) return
   saving.value = true
   try {
-    const data = await post<any>('/customers/import', { templateMode: true, rows: rows.value, dryRun: false })
+    const data = await post<any>('/customers/import', { templateMode: true, rows: preparedRows.value, dryRun: false })
     verdicts.value = data.verdicts ?? verdicts.value
-    reviewed.value = true
     const failed = Number(data.blocked ?? 0)
-    if (failed > 0) { reviewed.value = false; ElMessage.warning(`已导入 ${data.imported ?? 0} 行，另有 ${failed} 行未导入，请查看错误说明`) }
+    if (failed > 0) { ElMessage.warning(`已导入 ${data.imported ?? 0} 行，另有 ${failed} 行未导入，请查看错误说明`) }
     else { ElMessage.success(`已处理 ${data.imported ?? 0} 行客户及联系人资料`); visible.value = false }
+    preparedRows.value = []
     emit('imported')
   } finally { saving.value = false }
 }
@@ -178,7 +190,9 @@ function resetDialog() {
   workbook.value = null
   fileName.value = ''
   sheetIndex.value = 0
-  verdicts.value = []; decisions.value = {}; reviewed.value = false
+  invalidatePreview()
+  customerAction.value = 'KEEP'
+  contactAction.value = 'SKIP'
 }
 </script>
 
@@ -188,13 +202,16 @@ function resetDialog() {
 .file-summary { display:flex; align-items:center; gap:16px; padding:12px 14px; border:1px solid var(--el-border-color-lighter); border-radius:8px; background:var(--el-fill-color-light); color:var(--el-text-color-secondary); font-size:13px; }
 .file-summary strong { color:var(--el-text-color-primary); }
 .sheet-select { width:180px; margin-left:auto; }
-.section-title { display:flex; justify-content:space-between; align-items:center; margin:18px 0 9px; }
-.section-title > div { display:flex; align-items:baseline; gap:10px; }
-.section-title small { color:var(--el-text-color-secondary); }
 .mapping-warning { margin-top:10px; }
-.data-preview { margin-top:4px; }
+.data-preview { margin-top:12px; }
+.data-preview strong { display:block; margin-bottom:6px; font-size:13px; }
+.data-preview small { margin-left:6px; color:var(--el-text-color-secondary); font-weight:400; }
+.batch-options { display:flex; align-items:end; flex-wrap:wrap; gap:10px 14px; margin-top:14px; }
+.batch-options label { display:flex; flex-direction:column; gap:5px; min-width:180px; font-size:12px; color:var(--el-text-color-secondary); }
+.batch-options small { width:100%; color:var(--el-text-color-secondary); }
 .preview { margin-top:16px; border:1px solid var(--el-border-color-lighter); border-radius:10px; overflow:hidden; }
 .preview-head { display:flex; gap:18px; padding:12px 16px; background:var(--el-fill-color-light); }
 .ok { color:var(--el-color-success); }
 .blocked { color:var(--el-color-danger); }
+@media(max-width:600px){.import-tools,.file-summary{flex-wrap:wrap}.batch-options label{flex:1;min-width:150px}}
 </style>
