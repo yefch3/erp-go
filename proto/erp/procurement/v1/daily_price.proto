@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package erp.procurement.v1;
+
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
+
+// A closed JSON command keeps matrix saves atomic without one RPC per cell.
+// The HTTP gateway checks each action's permission before forwarding.
+service DailyPriceService {
+  rpc Execute(DailyPriceRequest) returns (DailyPriceResponse);
+}
+
+message DailyPriceRequest {
+  string command_json = 1;
+}
+
+message DailyPriceResponse {
+  string result_json = 1;
+}

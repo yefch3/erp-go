@@ -78,6 +78,19 @@ type Suppliers interface {
 	Get(ctx context.Context, id int64) (Supplier, error)
 }
 
+type Products interface {
+	Get(ctx context.Context, id int64) (ProductIdentity, error)
+}
+
+type PermissionChecker interface {
+	Allowed(ctx context.Context, employeeID int64, code string) (bool, error)
+}
+
+type ProductIdentity struct {
+	ID           int64
+	Name, Status string
+}
+
 type Supplier struct {
 	ID       int64
 	Code     string
@@ -130,6 +143,8 @@ type Deps struct {
 	Numbering        Numbering
 	Approvals        Approvals
 	Suppliers        Suppliers
+	Products         Products
+	Permissions      PermissionChecker
 	Warehouses       Warehouses
 	Rates            Rates
 	Scopes           Scopes
@@ -153,6 +168,8 @@ type Service struct {
 	numbering        Numbering
 	approvals        Approvals
 	suppliers        Suppliers
+	products         Products
+	permissions      PermissionChecker
 	warehouses       Warehouses
 	rates            Rates
 	scopes           Scopes
@@ -177,7 +194,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		inquiryDocuments: d.InquiryDocuments,
 		pool:             pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
-		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates,
+		suppliers: d.Suppliers, products: d.Products, permissions: d.Permissions, warehouses: d.Warehouses, rates: d.Rates,
 		scopes: d.Scopes, people: d.People, files: d.Files, live: d.Live, log: orDefaultLog(d.Log),
 	}
 }

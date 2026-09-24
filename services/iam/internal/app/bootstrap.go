@@ -253,6 +253,7 @@ var superAdminScopeModules = []string{
 	"shipping",
 	"procurement_order",
 	"procurement_requirement",
+	"daily_base_price",
 	"procurement_sourcing",
 }
 

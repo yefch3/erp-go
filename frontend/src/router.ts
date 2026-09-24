@@ -109,6 +109,7 @@ export const router = createRouter({
         { path: 'procurement/settings/inquiry-templates', redirect: (to) => ({ path: '/sales/settings/inquiry-templates', query: to.query }) },
         { path: 'procurement/sourcing/pending', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'procurement/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'procurement/daily-prices', component: () => import('./pages/DailyPricesPage.vue'), meta: { permission: 'procurement:daily-price:read' } },
         { path: 'procurement/sourcing/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'requirements/:batchKey', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },

@@ -52,6 +52,9 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "travel_reimbursements", true)
 	assertProcurementTable(t, db, "travel_reimbursement_files", true)
 	assertProcurementTable(t, db, "travel_reimbursement_history", true)
+	assertProcurementTable(t, db, "daily_price_dimensions", true)
+	assertProcurementTable(t, db, "daily_base_prices", true)
+	assertProcurementTable(t, db, "daily_basis_spreads", true)
 	assertProcurementColumnType(t, db, "sourcing_lines", "packaging", "text")
 	assertProcurementColumn(t, db, "sourcing_cases", "display_inquiry_no", true)
 	assertProcurementColumn(t, db, "sourcing_cases", "deleted_at", true)
@@ -65,6 +68,7 @@ func TestUpDownUp(t *testing.T) {
 		t.Fatalf("down: %v", err)
 	}
 	assertProcurementTable(t, db, "sourcing_cases", false)
+	assertProcurementTable(t, db, "daily_base_prices", false)
 	if err := goose.Up(db, "."); err != nil {
 		t.Fatalf("second up: %v", err)
 	}
@@ -87,6 +91,9 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementColumn(t, db, "purchase_execution_supplier_quotes", "quote_category", true)
 	assertProcurementTable(t, db, "purchase_execution_inquiry_files", true)
 	assertProcurementTable(t, db, "purchase_order_draft_files", true)
+	assertProcurementTable(t, db, "daily_price_dimensions", true)
+	assertProcurementTable(t, db, "daily_base_prices", true)
+	assertProcurementTable(t, db, "daily_basis_spreads", true)
 }
 
 func assertProcurementTable(t *testing.T, db *sql.DB, name string, want bool) {
