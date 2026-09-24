@@ -48,7 +48,7 @@
         </el-form-item>
         <el-form-item :label="t('procurementIntakes.inquiryTitle')"><el-input v-model="uploadForm.title" :placeholder="t('procurementIntakes.titleAuto')" /></el-form-item>
         <el-form-item :label="t('procurementIntakes.customer')" required>
-          <el-select v-model="uploadForm.customerId" filterable :loading="customersLoading" :placeholder="t('procurementIntakes.customerPlaceholder')" style="width:100%" @change="loadUploadContacts">
+          <el-select v-model="uploadForm.customerId" filterable remote :remote-method="loadUploadCustomers" :loading="customersLoading" :no-data-text="t('procurementIntakes.customerSearchEmpty')" :placeholder="t('procurementIntakes.customerPlaceholder')" style="width:100%" @change="loadUploadContacts">
             <el-option v-for="item in customers" :key="item.id" :value="item.id" :label="customerOptionLabel(item)" />
           </el-select>
         </el-form-item>
@@ -172,6 +172,7 @@ const resubmitReason = ref('')
 const uploadForm = reactive({ templateId: '', title: '', customerId: '', contactId: '', file: null as File | null })
 const templates = ref<InquiryTemplate[]>([])
 const customers = ref<CustomerOption[]>([])
+let customerSearchRequest = 0
 const contacts = ref<CustomerContactOption[]>([])
 const resolvedTemplate = ref<InquiryTemplate | null>(null)
 const activeTemplates = computed(() => templates.value.filter((item) => item.status === 'ACTIVE'))
@@ -222,7 +223,9 @@ function formatTime(value: string) { return value ? new Date(value).toLocaleStri
 function pickFile(event: Event) { uploadForm.file = (event.target as HTMLInputElement).files?.[0] ?? null }
 
 function resetUploadForm() {
+  customerSearchRequest++
   Object.assign(uploadForm, { templateId: '', title: '', customerId: '', contactId: '', file: null })
+  customers.value = []
   contacts.value = []
 }
 
@@ -233,12 +236,18 @@ function contactOptionLabel(contact: CustomerContactOption) {
   return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
 }
 
-async function loadUploadCustomers() {
+async function loadUploadCustomers(keyword = '') {
+  const request = ++customerSearchRequest
   customersLoading.value = true
   try {
-    const data = await get<{ customers: CustomerOption[] }>('/sourcing-customer-options', { page_size: 500 })
-    customers.value = data.customers ?? []
-  } finally { customersLoading.value = false }
+    const data = await get<{ customers: CustomerOption[] }>('/sourcing-customer-options', { page_size: 50, keyword: keyword.trim() })
+    if (request !== customerSearchRequest) return
+    const selected = customers.value.find((item) => item.id === uploadForm.customerId)
+    const results = data.customers ?? []
+    customers.value = selected && !results.some((item) => item.id === selected.id) ? [selected, ...results] : results
+  } finally {
+    if (request === customerSearchRequest) customersLoading.value = false
+  }
 }
 
 async function loadUploadContacts() {
