@@ -2532,6 +2532,7 @@ basicsSaved: "Basic information saved",
   },
   reader: {
     bodyFrame: 'Message body',
+    imagesUnavailable: 'Some images could not be displayed. This message may be incomplete. Try reopening it or checking the attachments for the missing images.',
     showQuoted: 'Show quoted history',
     hideQuoted: 'Hide quoted history',
     openedLabel: 'Opened by recipient:',

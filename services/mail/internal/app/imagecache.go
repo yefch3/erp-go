@@ -546,6 +546,11 @@ func (s *Service) localiseImages(ctx context.Context, html string, swap imageSwa
 	}
 	_ = ctx
 	return mapImageURLs(html, func(raw string) string {
+		if key := canonicalCID(raw); key != "" {
+			if signed := swap[key]; signed != "" {
+				return signed
+			}
+		}
 		if signed, ok := swap[strings.TrimSpace(raw)]; ok {
 			return signed
 		}

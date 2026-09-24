@@ -2538,6 +2538,7 @@ basicsSaved: "Datos básicos guardados",
   },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',
+    imagesUnavailable: 'No se pudieron mostrar algunas imágenes. El mensaje puede estar incompleto. Intente abrirlo de nuevo o busque las imágenes en los archivos adjuntos.',
     showQuoted: 'Mostrar historial citado',
     hideQuoted: 'Ocultar historial citado',
     openedLabel: '¿Lo abrió el destinatario?:',

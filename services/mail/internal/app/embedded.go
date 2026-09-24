@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"html"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +28,24 @@ import (
 
 // cidPrefix is what a body writes in front of the identifier.
 const cidPrefix = "cid:"
+
+// CID URLs encode the identifier, but MIME Content-ID headers do not.
+// Only the scheme is case-insensitive; changing the ID could select another part.
+func canonicalCID(raw string) string {
+	raw = strings.TrimSpace(html.UnescapeString(raw))
+	if len(raw) < len(cidPrefix) || !strings.EqualFold(raw[:len(cidPrefix)], cidPrefix) {
+		return ""
+	}
+	id, err := url.PathUnescape(raw[len(cidPrefix):])
+	if err != nil {
+		return ""
+	}
+	id = contentIDOf(id)
+	if id == "" {
+		return ""
+	}
+	return cidPrefix + id
+}
 
 // embeddedAttachmentFragment connects the picture displayed in the sandboxed
 // reader back to the already owner-scoped attachment row accepted by the
@@ -118,8 +138,8 @@ var cidRef = regexp.MustCompile(`(?i)src\s*=\s*["']cid:([^"']+)["']`)
 func bodyCIDs(html string) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range cidRef.FindAllStringSubmatch(html, -1) {
-		if id := strings.TrimSpace(m[1]); id != "" {
-			out[id] = true
+		if key := canonicalCID(cidPrefix + m[1]); key != "" {
+			out[strings.TrimPrefix(key, cidPrefix)] = true
 		}
 	}
 	return out
@@ -168,7 +188,7 @@ func hasListedAttachments(parsed ParsedMail) bool {
 // is reachable from nowhere. When in doubt it stays in the list, where it can
 // at least be downloaded.
 func hideEmbedded(atts []Attachment, storedBody string, swap imageSwap) []Attachment {
-	if len(atts) == 0 || len(swap) == 0 || !strings.Contains(storedBody, cidPrefix) {
+	if len(atts) == 0 || len(swap) == 0 {
 		return atts
 	}
 	shown := bodyCIDs(storedBody)
