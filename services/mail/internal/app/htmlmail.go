@@ -66,6 +66,27 @@ func buildMailPolicy() *bluemonday.Policy {
 	p.AllowAttrs("start").Matching(regexp.MustCompile(`^\d{1,6}$`)).OnElements("ol")
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^[1aAiI]$`)).OnElements("ol")
 
+	// 下面这些只管样子，不丢内容也不危险，删掉只会让来信和原样不一样（2026-09-24
+	// 拿客户来信清点出来的，括号里是客户来信里的封数）。放在发信这边，理由同上：
+	// 回信引用原信要过这里。
+	//
+	// 图片后面「换到图下面去」（943）：没有它，签名 logo 旁边的字挤到了图旁边。
+	p.AllowAttrs("clear").Matching(regexp.MustCompile(`(?i)^(all|left|right|both|none)$`)).OnElements("br")
+	// 圆点列表的圆点样式（150）。
+	p.AllowAttrs("type").Matching(regexp.MustCompile(`(?i)^(disc|circle|square|none)$`)).OnElements("ul")
+	// 分隔线的粗细、长短、颜色、对齐（约 60）。
+	p.AllowAttrs("size").Matching(regexp.MustCompile(`^\d{1,3}$`)).OnElements("hr")
+	p.AllowAttrs("width").Matching(regexp.MustCompile(`^\d{1,4}%?$`)).OnElements("hr")
+	p.AllowAttrs("color").Matching(cssColorValue).OnElements("hr")
+	p.AllowAttrs("align").Matching(regexp.MustCompile(`(?i)^(left|center|right)$`)).OnElements("hr")
+	p.AllowAttrs("noshade").OnElements("hr")
+	// 单元格不换行（18）。
+	p.AllowAttrs("nowrap").OnElements("td", "th")
+	// 外层容器（112）。写信程序和营销邮件拿它们当 div 用，样式写在它们身上；
+	// 标签一丢，样式跟着丢。长单词里的断行提示（139）、五六级标题。
+	p.AllowElements("article", "section", "header", "footer", "main", "aside", "nav",
+		"wbr", "h5", "h6")
+
 	// Inline styles only — a <style> block would be stripped by Gmail anyway.
 	//
 	// **这里的 style 是原样放行的，一条 CSS 都不审。** 这个版本的 bluemonday
@@ -82,7 +103,8 @@ func buildMailPolicy() *bluemonday.Policy {
 	// Links: http/https/mailto only. Requiring a scheme is what keeps
 	// javascript: out, and it stays out even if the editor is bypassed.
 	p.AllowAttrs("href").OnElements("a")
-	p.AllowURLSchemes("http", "https", "mailto")
+	// tel: / fax:：签名里的电话号码（44）。没有它号码还在，只是点不了。
+	p.AllowURLSchemes("http", "https", "mailto", "tel", "fax")
 	p.RequireParseableURLs(true)
 	p.RequireNoFollowOnLinks(false)
 	// Links in mail open outside the client anyway; target is advisory.
@@ -95,6 +117,10 @@ func buildMailPolicy() *bluemonday.Policy {
 
 	return p
 }
+
+// cssColorValue is a colour as an attribute or a stylesheet may spell it:
+// #rgb…#rrggbbaa, a name, or rgb()/rgba().
+var cssColorValue = regexp.MustCompile(`^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20}|rgba?\([0-9.,%\s]{3,40}\))$`)
 
 // SanitizeHTML strips anything outside the mail whitelist.
 func SanitizeHTML(s string) string { return mailPolicy.Sanitize(repairURLWhitespace(s)) }
@@ -339,11 +365,14 @@ var cssDanger = regexp.MustCompile(`(?is)@import\b[^;]*;?|expression\s*\(|javasc
 func SanitizeForReading(s string) string {
 	s = repairURLWhitespace(s)
 
+	hints, inline := bodyRules(s)
 	var css strings.Builder
+	css.WriteString(hints)
 	for _, m := range styleBlock.FindAllStringSubmatch(s, -1) {
 		css.WriteString(cssDanger.ReplaceAllString(m[1], ""))
 		css.WriteString("\n")
 	}
+	css.WriteString(inline)
 	body := readerPolicy.Sanitize(s)
 	if css.Len() == 0 {
 		return body
@@ -352,4 +381,68 @@ func SanitizeForReading(s string) string {
 	// markup, and escaped so a stylesheet cannot close its own tag and become
 	// markup again.
 	return "<style>" + strings.ReplaceAll(css.String(), "</", "<\\/") + "</style>" + body
+}
+
+// bodyTag is the first <body> start tag; htmlAttr one attribute on it.
+var (
+	// 引号里的 > 不算标签结束：style 里写个 > 选择器、或者别有用心地写一段
+	// </style>，都不该让这里截断。
+	bodyTag  = regexp.MustCompile(`(?is)<body\b((?:[^>"']|"[^"]*"|'[^']*')*)>`)
+	htmlAttr = regexp.MustCompile(`(?is)([a-z][a-z0-9-]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)`)
+)
+
+// bodyRules turns what a mail says on its own <body> into stylesheet rules.
+//
+// 净化器按片段处理，<body> 这个标签本身留不下来，写在它身上的东西——整封信的
+// 背景色、字色、链接颜色、以及 style（Outlook、苹果邮件在这里写长单词怎么折行）
+// ——跟着一起没了，来信就成了白底默认字体（客户来信约 160 封）。所以把它们
+// 改写成样式表规则，和发件人自己的 <style> 一起放进阅读框。
+//
+// 两段，先后有讲究：hints 是 bgcolor、text、link 这类老式属性，按浏览器的规矩
+// 它们让位于作者的样式表，所以排在发件人的 <style> 前面；inline 是 body 上的
+// style，按规矩压过样式表，所以排在后面。阅读框自己的底色写在 <head> 里，这两段
+// 都在它之后，所以发件人说了算——和 MailBody.vue 里那句「发件人自己设了背景就
+// 听发件人的」是同一个意思。
+//
+// 颜色只收合规的写法；style 原样照收，和 <style> 一样只摘 cssDanger 那几样：
+// 这些规则只进沙箱里的阅读框，管不到我们自己的页面。
+func bodyRules(s string) (hints, inline string) {
+	m := bodyTag.FindStringSubmatch(s)
+	if m == nil {
+		return "", ""
+	}
+	attrs := map[string]string{}
+	for _, a := range htmlAttr.FindAllStringSubmatch(m[1], -1) {
+		name := strings.ToLower(a[1])
+		if _, seen := attrs[name]; seen {
+			continue
+		}
+		_, v := unquote(a[2])
+		attrs[name] = strings.TrimSpace(html.UnescapeString(v))
+	}
+
+	var b strings.Builder
+	var decls []string
+	if c := attrs["bgcolor"]; cssColorValue.MatchString(c) {
+		decls = append(decls, "background-color:"+c)
+	}
+	if c := attrs["text"]; cssColorValue.MatchString(c) {
+		decls = append(decls, "color:"+c)
+	}
+	if len(decls) > 0 {
+		b.WriteString("body{" + strings.Join(decls, ";") + "}\n")
+	}
+	for _, l := range []struct{ attr, selector string }{
+		{"link", "a:link"}, {"vlink", "a:visited"}, {"alink", "a:active"},
+	} {
+		if c := attrs[l.attr]; cssColorValue.MatchString(c) {
+			b.WriteString(l.selector + "{color:" + c + "}\n")
+		}
+	}
+	hints = b.String()
+
+	if st := strings.TrimSpace(cssDanger.ReplaceAllString(attrs["style"], "")); st != "" {
+		inline = "body{" + st + "}\n"
+	}
+	return hints, inline
 }

@@ -580,9 +580,15 @@ func (s *Service) inboundFor(ctx context.Context, tenantID, ownerID, id int64, m
 	// 自家像素在这里拆掉，拆在本地化之后：图片缓存刻意不缓存我们自己的主机，
 	// 于是那条地址会原样留到浏览器手里，由浏览器去把它拉一次 —— 那正是它要
 	// 记录的「打开」。见 ownpixel.go。
+	//
+	// 正文里原本就写着一条我们存储的地址的（「已发送」里我们自己那份、客户回信
+	// 引用了我们那条），那条是当时签的，早过期了：按库里本人名下的行签一条新的。
+	// key 从存下来的原文里取——换进来的那些本来就是新签的，不该再动。
 	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
 		stripOwnPixel(
-			s.localiseImages(ctx, sanitised, cached),
+			refreshStorageImageLinks(
+				s.localiseImages(ctx, sanitised, cached),
+				s.freshOwnStorageLinks(ctx, tenantID, ownerID, row.BodyHtml)),
 			s.selfHost))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
@@ -779,6 +785,28 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 		s.log.Warn("could not load the thread's sent copies", "thread", threadKey, "err", err)
 	}
 
+	// 引用里借来的图也可能是从客户网站缓存下来的副本，不是附件，上面那张表里
+	// 没有它；收到的回信里也可能引用着我们当时那条地址。按正文里点到的 key 去库
+	// 里问（本人名下的信），签一条新的。两个方向分开：收到的那几条只换它原文里
+	// 本来就写着的，换进来的附件图带着转 Excel 用的记号，不能被覆盖。
+	var outBodies, inBodies []string
+	for _, r := range rows {
+		if r.BodyFormat != "HTML" {
+			continue
+		}
+		if r.Direction == "IN" {
+			inBodies = append(inBodies, r.Body)
+		} else {
+			outBodies = append(outBodies, r.Body)
+		}
+	}
+	for k, u := range s.freshOwnStorageLinks(ctx, tenantID, ownerID, outBodies...) {
+		if _, ok := freshImages[k]; !ok {
+			freshImages[k] = u
+		}
+	}
+	freshQuoted := s.freshOwnStorageLinks(ctx, tenantID, ownerID, inBodies...)
+
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body, quoted := r.Body, ""
@@ -794,9 +822,11 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 			if r.Direction == "IN" {
 				// Embedded before the sanitiser, remote after — see GetInbound.
 				body = LinkifyBareURLs(stripOwnPixel(
-					s.localiseImages(ctx,
-						SanitizeForReading(s.localiseImages(ctx, body, withInlinePictures(embedded[r.ID], swaps[r.ID]))),
-						swaps[r.ID]),
+					refreshStorageImageLinks(
+						s.localiseImages(ctx,
+							SanitizeForReading(s.localiseImages(ctx, body, withInlinePictures(embedded[r.ID], swaps[r.ID]))),
+							swaps[r.ID]),
+						onlyKeysIn(freshQuoted, r.Body)),
 					s.selfHost))
 			} else {
 				// 我们自己发出去的：引用里借来的那张图，地址是发信当天签的，

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -99,5 +100,47 @@ func TestOnlyInlinePicturesJoinTheSwapBeforeSanitising(t *testing.T) {
 	}
 	if same := withInlinePictures(embedded, imageSwap{"https://x/y.png": "z"}); len(same) != 1 {
 		t.Errorf("nothing inline, yet the swap changed: %v", same)
+	}
+}
+
+// 改回发件人原地址时，这条地址是在净化之后原样写回正文的，所以自己把关。
+func TestSenderAddressOnlyTakesPlainWebAddresses(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://buyer.example/logo.png":         "https://buyer.example/logo.png",
+		"http://buyer.example/a.png?x=1&amp;y=2": "http://buyer.example/a.png?x=1&amp;y=2",
+		dataImagePrefixForTest:                   "",
+		"javascript:alert(1)":                    "",
+		`https://x.example/a.png" onerror="x()`:  "",
+		"https://x.example/a b.png":              "",
+		"https://x.example/<b>.png":              "",
+		"":                                       "",
+	} {
+		if got := senderAddress(in); got != want {
+			t.Errorf("senderAddress(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+var dataImagePrefixForTest = dataImageKeyPrefix + "abc"
+
+// 回头看换地址时，样式里的背景图、单引号的 <img src> 一样换。
+func TestReSigningReachesEveryWayOfPointingAtAPicture(t *testing.T) {
+	key := "mail/inbound-img/4/9/banner.png"
+	stale := "https://bucket.s3.amazonaws.com/" + key + "?X-Amz-Signature=EXPIRED"
+	body := `<div style="background:url(&#34;` + stale + `&#34;)">x</div><img src='` + stale + `'>`
+	got := refreshStorageImageLinks(body, map[string]string{key: "https://files.example/fresh.png"})
+	if strings.Contains(got, "EXPIRED") || strings.Count(got, "https://files.example/fresh.png") != 2 {
+		t.Errorf("not every reference was re-signed: %s", got)
+	}
+}
+
+// 一封信里认的地址有上限：回头看每次打开都要认一遍。
+func TestStorageKeysPerBodyAreBounded(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < storageKeysMax+50; i++ {
+		b.WriteString(`<img src="https://bucket.s3.amazonaws.com/mail/inbound-img/4/9/` + strconv.Itoa(i) + `.png">`)
+	}
+	if got := len(storageKeysIn(b.String())); got != storageKeysMax {
+		t.Errorf("found %d keys, want the cap %d", got, storageKeysMax)
 	}
 }

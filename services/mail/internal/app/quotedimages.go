@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"html"
 	"io"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -32,9 +32,21 @@ import (
 // *问题*：拿去问 AttachmentsByKeys，问的范围是这个人自己名下的信，只有问回来
 // 的才会被打开。正文说了不算，库说了算。
 
-// imgSrc 取出每个 <img> 的地址。只认双引号，因为经过 SanitizeForReading 的正文
-// 属性一律是双引号的，而没经过的那些是我们自己的写信框生成的，也一样。
-var imgSrc = regexp.MustCompile(`(?i)<img[^>]+src="([^"]+)"`)
+// 图片地址在哪儿找、在哪儿换，一律走 mapImageURLs（<img src> 两种引号、srcset、
+// 样式里的 url()）。原来找和换都只认双引号的 <img src>；找的那一边放宽之后换的
+// 那一边没跟上，样式里的背景图就会被读出来带上、正文却还指着那条过期地址——
+// 找和换必须是同一个函数。
+
+// storageKeysMax 是一封信里最多认几个指向我们存储的地址。回头看每次打开都要
+// 认一遍，正文最长 5 MB，不设上限的话一封刻意堆满地址的信能让打开变慢。
+const storageKeysMax = 200
+
+// storageKeyOf is the key of our own storage that one picture reference points
+// at, or "". 样式里的 url() 经过序列化常带着转义过的引号（&quot; / &#34;），
+// 先还原、去掉引号再认。
+func storageKeyOf(raw string) string {
+	return ourStorageKey(strings.Trim(html.UnescapeString(strings.TrimSpace(raw)), `"' `))
+}
 
 // ourStorageKey 是这条地址在我们自己存储里对应的 key，不是我们的就回空。
 //
@@ -67,7 +79,25 @@ func quotedImageContentID(key string) string {
 	return "q" + hex.EncodeToString(sum[:12])
 }
 
+// 引用里的图一封信最多带多少。按 2026-09 发出的 26 封回信实测，每封带的图中位数
+// 80 KB、最多 165 KB，这两个数碰不到；它们防的是回一封几十张图的广告信，一下子
+// 把信撑到收件方拒收（MaxCampaignBytes 那边说的 25 MB 那堵墙）。
+const (
+	quotedImagesMaxCount = 30
+	quotedImagesMaxBytes = 5 << 20
+)
+
 // inlineQuotedStorageImages 把正文借用的、我们自己存储里的图片变成随信携带的部件。
+//
+// 三种图走这里：原信的附件图（cid）、正文自带的图（data:，见 dataimages.go）、
+// 以及从发件人网站缓存下来的副本。第三种原来不走这里，于是回信里发出去的是一条
+// 一小时后过期的存储地址，客户打开就是裂图（2026-09 发出的 289 封里有 26 封）。
+// 追踪像素、排版用的一像素占位图一律照带：带在信里，它只是一张几十字节的图，
+// 不会替任何人报告「已读」，排版也不会塌。
+//
+// 超出上面那两个数的，缓存副本改回发件人的原地址（至少不会过期），附件图和
+// 自带图没有原地址可退，照旧留着那条链接。按正文里出现的先后带：靠前的图离
+// 回信的正文最近。
 func (s *Service) inlineQuotedStorageImages(
 	ctx context.Context, tenantID, ownerID int64, html string,
 ) (string, []InlineImage) {
@@ -76,24 +106,13 @@ func (s *Service) inlineQuotedStorageImages(
 	}
 
 	// 一、正文点到了哪些看起来像我们存储的 key。去重：一张图引两次问一次。
-	seen := map[string]bool{}
-	var candidates []string
-	for _, m := range imgSrc.FindAllStringSubmatch(html, -1) {
-		key := ourStorageKey(m[1])
-		if key == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		candidates = append(candidates, key)
-	}
+	candidates := storageKeysIn(html)
 	if len(candidates) == 0 {
 		return html, nil
 	}
 
-	// 二、这些 key 里哪些真是这个人自己的附件。正文说了不算的那一步。
-	rows, err := s.q.AttachmentsByKeys(ctx, store.AttachmentsByKeysParams{
-		TenantID: tenantID, OwnerID: ownerID, FileKeys: candidates,
-	})
+	// 二、这些 key 里哪些真是这个人自己的。正文说了不算的那一步。
+	byKey, err := s.ownStorageImages(ctx, tenantID, ownerID, candidates)
 	if err != nil {
 		// 问不到就别带。发信不能因为一张引用里的图而失败——这跟
 		// InlineMailImages 里「一张图取不到就当链接发」是同一个取舍。
@@ -102,26 +121,38 @@ func (s *Service) inlineQuotedStorageImages(
 		return html, nil
 	}
 
-	// 三、读出来，做成部件。
-	carried := map[string]string{} // key → cid
+	// 三、按出现的先后读出来，做成部件；超额的记下原地址。
+	carried := map[string]string{}  // key → cid
+	fallback := map[string]string{} // key → 发件人的原地址
 	var out []InlineImage
-	for _, r := range rows {
-		if !cacheableTypes[strings.ToLower(r.ContentType)] {
+	total := 0
+	for _, key := range candidates {
+		r, ok := byKey[key]
+		if !ok || !cacheableTypes[strings.ToLower(r.ContentType)] {
 			continue
 		}
-		rc, err := s.files.Get(ctx, r.FileKey)
-		if err != nil {
-			s.log.Warn("a quoted picture could not be read, leaving it as a link",
-				"key", r.FileKey, "err", err)
+		if len(out) >= quotedImagesMaxCount || total >= quotedImagesMaxBytes {
+			if u := senderAddress(r.SourceUrl); u != "" {
+				fallback[key] = u
+			}
 			continue
 		}
-		data, err := io.ReadAll(io.LimitReader(rc, MaxImageBytes+1))
-		rc.Close()
-		if err != nil || len(data) == 0 || int64(len(data)) > MaxImageBytes {
-			s.log.Warn("a quoted picture was unreadable or oversized, leaving it as a link",
-				"key", r.FileKey, "bytes", len(data))
+		data, ok := s.readQuotedImage(ctx, r.FileKey)
+		if !ok {
+			// 读不出来或者超过单张上限（缓存时收到 3 MB，这里只带 2 MB）：
+			// 有原地址就退回原地址，别把那条会过期的留在正文里。
+			if u := senderAddress(r.SourceUrl); u != "" {
+				fallback[key] = u
+			}
 			continue
 		}
+		if total+len(data) > quotedImagesMaxBytes {
+			if u := senderAddress(r.SourceUrl); u != "" {
+				fallback[key] = u
+			}
+			continue
+		}
+		total += len(data)
 		cid := quotedImageContentID(r.FileKey)
 		out = append(out, InlineImage{
 			ContentID:   cid,
@@ -131,24 +162,122 @@ func (s *Service) inlineQuotedStorageImages(
 		})
 		carried[r.FileKey] = cid
 	}
-	if len(carried) == 0 {
+	if len(carried) == 0 && len(fallback) == 0 {
 		return html, nil
 	}
 
-	// 四、只改真的带上了的那几个。指向一个不存在的部件的 cid: 比原来那条链接
-	// 更糟——链接至少还有一次能打开的机会。同 InlineMailImages。
-	rewritten := imgSrc.ReplaceAllStringFunc(html, func(tag string) string {
-		m := imgSrc.FindStringSubmatch(tag)
-		if m == nil {
-			return tag
+	// 四、只改真的带上了的、或者真有原地址可退的那几个。指向一个不存在的部件的
+	// cid: 比原来那条链接更糟——链接至少还有一次能打开的机会。同 InlineMailImages。
+	rewritten := mapImageURLs(html, func(raw string) string {
+		key := storageKeyOf(raw)
+		if cid, ok := carried[key]; ok {
+			return "cid:" + cid
 		}
-		cid, ok := carried[ourStorageKey(m[1])]
-		if !ok {
-			return tag
+		if u, ok := fallback[key]; ok {
+			return u
 		}
-		return strings.Replace(tag, `src="`+m[1]+`"`, `src="cid:`+cid+`"`, 1)
+		return raw
 	})
 	return rewritten, out
+}
+
+// storageKeysIn lists, in order of appearance and without repeats, the keys of
+// our own storage that the pictures in these bodies point at.
+//
+// 最多 storageKeysMax 个，超出的当没看见（那几张照旧是原来的链接）。
+func storageKeysIn(bodies ...string) []string {
+	seen := map[string]bool{}
+	var keys []string
+	for _, b := range bodies {
+		mapImageURLs(b, func(raw string) string {
+			if len(keys) >= storageKeysMax {
+				return raw
+			}
+			if key := storageKeyOf(raw); key != "" && !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
+			return raw
+		})
+	}
+	return keys
+}
+
+// ownStorageImages asks which of these keys belong to this person's own mail.
+func (s *Service) ownStorageImages(ctx context.Context, tenantID, ownerID int64, keys []string) (map[string]store.AttachmentsByKeysRow, error) {
+	rows, err := s.q.AttachmentsByKeys(ctx, store.AttachmentsByKeysParams{
+		TenantID: tenantID, OwnerID: ownerID, FileKeys: keys,
+	})
+	if err != nil {
+		return nil, err
+	}
+	byKey := make(map[string]store.AttachmentsByKeysRow, len(rows))
+	for _, r := range rows {
+		if _, dup := byKey[r.FileKey]; !dup {
+			byKey[r.FileKey] = r
+		}
+	}
+	return byKey, nil
+}
+
+func (s *Service) readQuotedImage(ctx context.Context, key string) ([]byte, bool) {
+	rc, err := s.files.Get(ctx, key)
+	if err != nil {
+		s.log.Warn("a quoted picture could not be read, leaving it as a link", "key", key, "err", err)
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, MaxImageBytes+1))
+	rc.Close()
+	if err != nil || len(data) == 0 || int64(len(data)) > MaxImageBytes {
+		s.log.Warn("a quoted picture was unreadable or oversized, leaving it as a link",
+			"key", key, "bytes", len(data))
+		return nil, false
+	}
+	return data, true
+}
+
+// senderAddress is where a cached picture originally came from, if that is an
+// address worth pointing a recipient at; empty otherwise (an attachment or a
+// picture carried in the body has none).
+//
+// 这条地址是原样写回正文的，而写回发生在净化之后，所以这里自己把关：只认
+// http(s)，带引号、尖括号或空白的一律不要。
+func senderAddress(source string) string {
+	if !strings.HasPrefix(source, "https://") && !strings.HasPrefix(source, "http://") {
+		return ""
+	}
+	if strings.ContainsAny(source, "\"'<> \t\r\n") {
+		return ""
+	}
+	return source
+}
+
+// freshOwnStorageLinks signs afresh every picture in these bodies that points
+// at our own storage and belongs to this person's mail.
+//
+// 给「回头看」用：我们发出去的信、收到的回信里引用的我们那条地址，都是当时
+// 签的，一小时就过期。key 只是拿去问的问题，本人名下的信里真有它才签——
+// 和 inlineQuotedStorageImages 同一道闸。
+func (s *Service) freshOwnStorageLinks(ctx context.Context, tenantID, ownerID int64, bodies ...string) map[string]string {
+	if s.files == nil {
+		return nil
+	}
+	keys := storageKeysIn(bodies...)
+	if len(keys) == 0 {
+		return nil
+	}
+	byKey, err := s.ownStorageImages(ctx, tenantID, ownerID, keys)
+	if err != nil {
+		s.log.Warn("could not re-sign the pictures a body points at", "keys", len(keys), "err", err)
+		return nil
+	}
+	fresh := make(map[string]string, len(byKey))
+	for key, r := range byKey {
+		if u := s.signImage(ctx, key, r.ContentType); u != "" {
+			fresh[key] = u
+		}
+	}
+	return fresh
 }
 
 // refreshStorageImageLinks 把正文里指向我们存储的、已经过期的地址换成刚签的。
@@ -157,9 +286,10 @@ func (s *Service) inlineQuotedStorageImages(
 // worker.go 里那句「什么被存下来就是人写了什么」），里面那条签名地址早过期了，
 // 于是会话里我们自己那几条的图片全是裂的。
 //
-// fresh 的 key 是对象 key，来自这条会话自己的附件行——不是照着正文里的地址去
-// 签。这个区别就是安全边界：正文里的地址是人能手打的，照着它签等于替外面的人
-// 签任意一个 key；而这条会话有哪些附件，是库说的。
+// fresh 的 key 是对象 key，来自库里的行（这条会话的附件，或 freshOwnStorageLinks
+// 问回来的本人名下的图）——不是照着正文里的地址去签。这个区别就是安全边界：
+// 正文里的地址是人能手打的，照着它签等于替外面的人签任意一个 key；而这个人
+// 名下有哪些图，是库说的。
 //
 // 换不到的原样留着。一条打不开的链接不比一个空 src 差，而猜错了会把别人网站上
 // 的图也改掉。
@@ -167,19 +297,28 @@ func refreshStorageImageLinks(html string, fresh map[string]string) string {
 	if html == "" || len(fresh) == 0 {
 		return html
 	}
-	return imgSrc.ReplaceAllStringFunc(html, func(tag string) string {
-		m := imgSrc.FindStringSubmatch(tag)
-		if m == nil {
-			return tag
+	return mapImageURLs(html, func(raw string) string {
+		if u, ok := fresh[storageKeyOf(raw)]; ok {
+			return u
 		}
-		key := ourStorageKey(m[1])
-		if key == "" {
-			return tag
-		}
-		u, ok := fresh[key]
-		if !ok {
-			return tag
-		}
-		return strings.Replace(tag, `src="`+m[1]+`"`, `src="`+u+`"`, 1)
+		return raw
 	})
+}
+
+// onlyKeysIn narrows a conversation's fresh links to the keys one body names
+// itself, so that a picture swapped in from elsewhere is never overwritten.
+func onlyKeysIn(fresh map[string]string, body string) map[string]string {
+	if len(fresh) == 0 {
+		return nil
+	}
+	var out map[string]string
+	for _, k := range storageKeysIn(body) {
+		if u, ok := fresh[k]; ok {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[k] = u
+		}
+	}
+	return out
 }

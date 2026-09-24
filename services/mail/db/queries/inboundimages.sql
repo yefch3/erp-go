@@ -188,22 +188,21 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- the body they could legitimately have built: the composer quotes a message
 -- they can already read.
 --
--- 第二段是正文自带、被缓存那一遍存进对象存储的图（dataimages.go）。它和附件
--- 一样没有别的地址可退，回信里不带着走，客户看到的就是一条会过期的链接。外链
--- 图片的缓存不在这里：它们还有发件人那条原地址可以指回去，怎么带是另一回事。
--- 条件 source_url LIKE 'data:sha256,%' 和索引 email_inbound_images_data_key_idx
--- （00077）的谓词一字不差，改了这里要一起改那里。
-SELECT a.file_key, a.content_type
+-- 第二段是缓存那一遍存进对象存储的图：从发件人网站取回的副本，和正文自带的图
+-- （dataimages.go）。回信引用它们时同样要跟着信走，不然客户拿到的是一条一小时
+-- 就过期的地址。source_url 给调用方做退路：超出一封信能带的量时，网站副本改回
+-- 发件人的原地址（附件那一段没有原地址，给空串）。
+-- 按 object_key 找，走 email_inbound_images_object_key_idx（00078）。
+SELECT a.file_key, a.content_type, ''::text AS source_url
 FROM email_inbound_attachments a
 JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
 WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
   AND a.file_key = ANY(sqlc.arg(file_keys)::text[])
 UNION ALL
-SELECT g.object_key, g.content_type
+SELECT g.object_key, g.content_type, g.source_url
 FROM email_inbound_images g
 JOIN email_inbound i ON i.id = g.inbound_id AND i.tenant_id = g.tenant_id
 WHERE g.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
-  AND g.source_url LIKE 'data:sha256,%'
   AND g.object_key = ANY(sqlc.arg(file_keys)::text[]);

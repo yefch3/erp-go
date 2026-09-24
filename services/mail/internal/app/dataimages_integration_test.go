@@ -142,22 +142,6 @@ func TestAQuotedInlinePictureTravelsWithTheMail(t *testing.T) {
 	}
 }
 
-// 这条路只给自带的图开。外链图片的缓存不从这里走，也就根本不去读。
-func TestAQuotedRemotePictureIsNotCarriedThisWay(t *testing.T) {
-	f := newFolderFixture(t, 9424)
-	ctx := context.Background()
-	files := &readRecordingFiles{data: tinyPNG}
-	f.svc.files = files
-
-	id := f.insertMail(t, "INBOX", 704, "quoted-remote")
-	key := fmt.Sprintf("mail/inbound-img/%d/%d/beef.png", f.tenantID, id)
-	f.insertCachedImage(t, id, "https://sender.example/logo.png", key)
-
-	if _, inline := f.svc.InlineMailImages(ctx, f.tenantID, f.me, quotingBody(key)); len(inline) != 0 || len(files.got) != 0 {
-		t.Errorf("a cached remote picture was carried (%d) or read (%v)", len(inline), files.got)
-	}
-}
-
 // 正文说了不算，库说了算：别人名下那封信里的自带图，根本不去读。
 func TestSomebodyElsesInlinePictureIsNeverRead(t *testing.T) {
 	f := newFolderFixture(t, 9425)
