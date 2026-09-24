@@ -461,3 +461,75 @@ func TestListNumberingTakesOnlyNumbersAndKnownStyles(t *testing.T) {
 		t.Fatalf("a malformed value survived: %q", got)
 	}
 }
+
+// 只管样子的那一批：阅读时和回信引用时都留着。
+func TestLookOnlyMarkupSurvives(t *testing.T) {
+	for name, c := range map[string]struct{ in, want string }{
+		"float cleared below a logo": {`<img src="https://a.example/l.png" align="left"><br clear="all">text`, `<br clear="all">`},
+		"bullet style":               {`<ul type="square"><li>x</li></ul>`, `<ul type="square">`},
+		"divider":                    {`<hr size="2" width="100%" color="#cccccc" align="center" noshade>`, `size="2" width="100%" color="#cccccc" align="center" noshade=""`},
+		"cell that must not wrap":    {`<table><tr><td nowrap>+55 11 99999-0000</td></tr></table>`, `<td nowrap="">`},
+		"container carrying style":   {`<article style="max-width:600px">x</article>`, `<article style="max-width:600px">`},
+		"soft break hint":            {`very<wbr>long`, `very<wbr>long`},
+		"small headings":             {`<h5>a</h5><h6>b</h6>`, `<h5>a</h5><h6>b</h6>`},
+		"phone link":                 {`<a href="tel:+551199990000">call</a>`, `href="tel:+551199990000"`},
+		"fax link":                   {`<a href="fax:+551199990001">fax</a>`, `href="fax:+551199990001"`},
+	} {
+		read := SanitizeForReading(c.in)
+		quoted := SanitizeHTML(read)
+		for leg, got := range map[string]string{"reading": read, "quoted in reply": quoted} {
+			if !strings.Contains(got, c.want) {
+				t.Errorf("%s, %s: want %s in %q", name, leg, c.want, got)
+			}
+		}
+	}
+}
+
+// 放行的是这几个取值，不是任意字符串。
+func TestLookOnlyAttributesTakeOnlyTheirOwnValues(t *testing.T) {
+	got := SanitizeHTML(`<br clear="x"><ul type="url(x)"><li>a</li></ul><hr size="9999" width="1px;x" color="red;x">`)
+	for _, bad := range []string{"clear=", "type=", "size=", "width=", "color="} {
+		if strings.Contains(got, bad) {
+			t.Errorf("%s survived with a malformed value: %q", bad, got)
+		}
+	}
+}
+
+// 写在 <body> 上的背景色、字色、链接颜色、style，改写成样式表规则进阅读框。
+// 老式属性排在发件人的 <style> 前面（让位于样式表），style 排在后面（压过它）。
+func TestTheMailsOwnBodyStylingReachesTheFrame(t *testing.T) {
+	in := `<html><head><style>p{margin:0}</style></head>` +
+		`<body bgcolor="#123456" text="#eeeeee" link="#0563C1" vlink="#954F72" style="word-wrap:break-word"><p>x</p></body></html>`
+	got := SanitizeForReading(in)
+	hints := strings.Index(got, "body{background-color:#123456;color:#eeeeee}")
+	own := strings.Index(got, "p{margin:0}")
+	inline := strings.Index(got, "body{word-wrap:break-word}")
+	if hints < 0 || own < 0 || inline < 0 {
+		t.Fatalf("a rule is missing: %q", got)
+	}
+	if !(hints < own && own < inline) {
+		t.Errorf("rules in the wrong order (hints %d, sender %d, inline %d): %q", hints, own, inline, got)
+	}
+	for _, want := range []string{"a:link{color:#0563C1}", "a:visited{color:#954F72}"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s missing: %q", want, got)
+		}
+	}
+}
+
+// 颜色只收合规的写法；style 里想提前关掉样式表、变回标记的，关不掉。
+func TestBodyStylingCannotBreakOutOfTheStylesheet(t *testing.T) {
+	in := `<body bgcolor="red;}body{display:none" style="color:red</style><script>alert(1)</script>"><p>x</p></body>`
+	got := SanitizeForReading(in)
+	if strings.Contains(got, "display:none") {
+		t.Errorf("a malformed colour was taken: %q", got)
+	}
+	// 那段 </style><script> 留在样式表里当文字（</ 被转义，关不掉），样式表只有
+	// 我们自己那一个结束标签，结束之后没有任何 <script>。
+	if strings.Count(got, "</style>") != 1 || !strings.Contains(got, `<\/style>`) {
+		t.Fatalf("the style attribute was not kept as escaped text: %q", got)
+	}
+	if after := got[strings.Index(got, "</style>"):]; strings.Contains(after, "<script") {
+		t.Errorf("markup escaped the stylesheet: %q", got)
+	}
+}
