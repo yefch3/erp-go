@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -121,3 +122,25 @@ func TestSenderAddressOnlyTakesPlainWebAddresses(t *testing.T) {
 }
 
 var dataImagePrefixForTest = dataImageKeyPrefix + "abc"
+
+// 回头看换地址时，样式里的背景图、单引号的 <img src> 一样换。
+func TestReSigningReachesEveryWayOfPointingAtAPicture(t *testing.T) {
+	key := "mail/inbound-img/4/9/banner.png"
+	stale := "https://bucket.s3.amazonaws.com/" + key + "?X-Amz-Signature=EXPIRED"
+	body := `<div style="background:url(&#34;` + stale + `&#34;)">x</div><img src='` + stale + `'>`
+	got := refreshStorageImageLinks(body, map[string]string{key: "https://files.example/fresh.png"})
+	if strings.Contains(got, "EXPIRED") || strings.Count(got, "https://files.example/fresh.png") != 2 {
+		t.Errorf("not every reference was re-signed: %s", got)
+	}
+}
+
+// 一封信里认的地址有上限：回头看每次打开都要认一遍。
+func TestStorageKeysPerBodyAreBounded(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < storageKeysMax+50; i++ {
+		b.WriteString(`<img src="https://bucket.s3.amazonaws.com/mail/inbound-img/4/9/` + strconv.Itoa(i) + `.png">`)
+	}
+	if got := len(storageKeysIn(b.String())); got != storageKeysMax {
+		t.Errorf("found %d keys, want the cap %d", got, storageKeysMax)
+	}
+}

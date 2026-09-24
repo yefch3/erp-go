@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"html"
 	"io"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -32,9 +32,21 @@ import (
 // *问题*：拿去问 AttachmentsByKeys，问的范围是这个人自己名下的信，只有问回来
 // 的才会被打开。正文说了不算，库说了算。
 
-// imgSrc 取出每个 <img> 的地址。只认双引号，因为经过 SanitizeForReading 的正文
-// 属性一律是双引号的，而没经过的那些是我们自己的写信框生成的，也一样。
-var imgSrc = regexp.MustCompile(`(?i)<img[^>]+src="([^"]+)"`)
+// 图片地址在哪儿找、在哪儿换，一律走 mapImageURLs（<img src> 两种引号、srcset、
+// 样式里的 url()）。原来找和换都只认双引号的 <img src>；找的那一边放宽之后换的
+// 那一边没跟上，样式里的背景图就会被读出来带上、正文却还指着那条过期地址——
+// 找和换必须是同一个函数。
+
+// storageKeysMax 是一封信里最多认几个指向我们存储的地址。回头看每次打开都要
+// 认一遍，正文最长 5 MB，不设上限的话一封刻意堆满地址的信能让打开变慢。
+const storageKeysMax = 200
+
+// storageKeyOf is the key of our own storage that one picture reference points
+// at, or "". 样式里的 url() 经过序列化常带着转义过的引号（&quot; / &#34;），
+// 先还原、去掉引号再认。
+func storageKeyOf(raw string) string {
+	return ourStorageKey(strings.Trim(html.UnescapeString(strings.TrimSpace(raw)), `"' `))
+}
 
 // ourStorageKey 是这条地址在我们自己存储里对应的 key，不是我们的就回空。
 //
@@ -127,6 +139,11 @@ func (s *Service) inlineQuotedStorageImages(
 		}
 		data, ok := s.readQuotedImage(ctx, r.FileKey)
 		if !ok {
+			// 读不出来或者超过单张上限（缓存时收到 3 MB，这里只带 2 MB）：
+			// 有原地址就退回原地址，别把那条会过期的留在正文里。
+			if u := senderAddress(r.SourceUrl); u != "" {
+				fallback[key] = u
+			}
 			continue
 		}
 		if total+len(data) > quotedImagesMaxBytes {
@@ -151,19 +168,15 @@ func (s *Service) inlineQuotedStorageImages(
 
 	// 四、只改真的带上了的、或者真有原地址可退的那几个。指向一个不存在的部件的
 	// cid: 比原来那条链接更糟——链接至少还有一次能打开的机会。同 InlineMailImages。
-	rewritten := imgSrc.ReplaceAllStringFunc(html, func(tag string) string {
-		m := imgSrc.FindStringSubmatch(tag)
-		if m == nil {
-			return tag
-		}
-		key := ourStorageKey(m[1])
+	rewritten := mapImageURLs(html, func(raw string) string {
+		key := storageKeyOf(raw)
 		if cid, ok := carried[key]; ok {
-			return strings.Replace(tag, `src="`+m[1]+`"`, `src="cid:`+cid+`"`, 1)
+			return "cid:" + cid
 		}
 		if u, ok := fallback[key]; ok {
-			return strings.Replace(tag, `src="`+m[1]+`"`, `src="`+u+`"`, 1)
+			return u
 		}
-		return tag
+		return raw
 	})
 	return rewritten, out
 }
@@ -171,14 +184,16 @@ func (s *Service) inlineQuotedStorageImages(
 // storageKeysIn lists, in order of appearance and without repeats, the keys of
 // our own storage that the pictures in these bodies point at.
 //
-// 用 mapImageURLs 而不是只认双引号的 imgSrc：收到的原文不一定是我们的写信框
-// 生成的，单引号的也有。
+// 最多 storageKeysMax 个，超出的当没看见（那几张照旧是原来的链接）。
 func storageKeysIn(bodies ...string) []string {
 	seen := map[string]bool{}
 	var keys []string
 	for _, b := range bodies {
 		mapImageURLs(b, func(raw string) string {
-			if key := ourStorageKey(strings.TrimSpace(raw)); key != "" && !seen[key] {
+			if len(keys) >= storageKeysMax {
+				return raw
+			}
+			if key := storageKeyOf(raw); key != "" && !seen[key] {
 				seen[key] = true
 				keys = append(keys, key)
 			}
@@ -282,20 +297,11 @@ func refreshStorageImageLinks(html string, fresh map[string]string) string {
 	if html == "" || len(fresh) == 0 {
 		return html
 	}
-	return imgSrc.ReplaceAllStringFunc(html, func(tag string) string {
-		m := imgSrc.FindStringSubmatch(tag)
-		if m == nil {
-			return tag
+	return mapImageURLs(html, func(raw string) string {
+		if u, ok := fresh[storageKeyOf(raw)]; ok {
+			return u
 		}
-		key := ourStorageKey(m[1])
-		if key == "" {
-			return tag
-		}
-		u, ok := fresh[key]
-		if !ok {
-			return tag
-		}
-		return strings.Replace(tag, `src="`+m[1]+`"`, `src="`+u+`"`, 1)
+		return raw
 	})
 }
 

@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 )
@@ -129,5 +131,65 @@ func TestTheThreadReSignsQuotedSitePicturesInBothDirections(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Errorf("%d turns show the re-signed picture, want 2", seen)
+	}
+}
+
+// 样式里的背景图、单引号的 <img src>：找到了就一定换掉。原来找的那边认、换的
+// 那边不认，图被读出来带上了，正文却还指着那条过期地址——白带一个部件，
+// 客户照样看到裂图。
+func TestEveryWayOfPointingAtAPictureIsRewritten(t *testing.T) {
+	f := newFolderFixture(t, 9435)
+	ctx := context.Background()
+	f.svc.files = &readRecordingFiles{data: tinyPNG}
+
+	id := f.insertMail(t, "INBOX", 807, "styled")
+	bg := fmt.Sprintf("mail/inbound-img/%d/%d/banner.png", f.tenantID, id)
+	logo := fmt.Sprintf("mail/inbound-img/%d/%d/logo.png", f.tenantID, id)
+	f.insertCachedImage(t, id, "https://buyer.example/banner.png", bg)
+	f.insertCachedImage(t, id, "https://buyer.example/logo.png", logo)
+	link := func(key string) string {
+		return "https://bucket.s3.us-west-2.amazonaws.com/" + key + "?X-Amz-Signature=EXPIRED"
+	}
+	body := `<blockquote><div style="background-image:url(&quot;` + link(bg) + `&quot;)">x</div>` +
+		`<img src='` + link(logo) + `'></blockquote>`
+
+	out, inline := f.svc.InlineMailImages(ctx, f.tenantID, f.me, body)
+	if len(inline) != 2 {
+		t.Fatalf("carried %d parts, want 2", len(inline))
+	}
+	for _, part := range inline {
+		if !strings.Contains(out, "cid:"+part.ContentID) {
+			t.Errorf("part %s travels but nothing in the body points at it:\n%s", part.ContentID, out)
+		}
+	}
+	if strings.Contains(out, "X-Amz-Signature") {
+		t.Errorf("an expiring link is still in the body:\n%s", out)
+	}
+}
+
+// storeThatCannotRead 读什么都失败，像存储那一刻不通。
+type storeThatCannotRead struct{ Files }
+
+func (storeThatCannotRead) Get(context.Context, string) (io.ReadCloser, error) {
+	return nil, errors.New("storage unreachable")
+}
+
+// 在额度之内、却读不出来（存储不通，或者比单张上限大）：有原地址就退回原地址，
+// 不把那条会过期的留下。
+func TestAPictureThatCannotBeReadGoesBackToTheSendersAddress(t *testing.T) {
+	f := newFolderFixture(t, 9436)
+	ctx := context.Background()
+	f.svc.files = storeThatCannotRead{}
+
+	id := f.insertMail(t, "INBOX", 808, "unreadable")
+	key := fmt.Sprintf("mail/inbound-img/%d/%d/logo.png", f.tenantID, id)
+	f.insertCachedImage(t, id, "https://buyer.example/logo.png", key)
+
+	out, inline := f.svc.InlineMailImages(ctx, f.tenantID, f.me, quotingBody(key))
+	if len(inline) != 0 {
+		t.Fatalf("carried %d parts from a store that cannot read", len(inline))
+	}
+	if !strings.Contains(out, `src="https://buyer.example/logo.png"`) || strings.Contains(out, "X-Amz-Signature") {
+		t.Errorf("did not go back to the sender's address:\n%s", out)
 	}
 }
