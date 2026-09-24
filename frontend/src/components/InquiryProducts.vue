@@ -3,10 +3,7 @@
     <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
     <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
   </div>
-  <div v-show="hasHorizontalOverflow" ref="topScrollbar" class="product-top-scroll" :aria-label="t('inquiryProducts.scrollHorizontally')" @scroll="syncGridScroll">
-    <div :style="{width:`${tableWidth}px`,height:'1px'}" />
-  </div>
-  <div ref="gridElement" class="product-grid" @scroll="syncTopScroll">
+  <div ref="gridElement" class="product-grid">
     <table :style="{width:`max(100%, ${tableWidth}px)`}">
       <colgroup>
         <col v-if="cargoIds" style="width:56px" />
@@ -52,7 +49,7 @@ const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[]
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
 const search=ref(''),page=ref(1),size=ref(100)
-const gridElement=ref<HTMLElement|null>(null),topScrollbar=ref<HTMLElement|null>(null),gridWidth=ref(1000)
+const gridElement=ref<HTMLElement|null>(null),gridWidth=ref(1000)
 let gridObserver:ResizeObserver|undefined
 onMounted(()=>{
  if(!gridElement.value)return
@@ -81,13 +78,6 @@ const columnPlan=computed(()=>planInquiryColumns(allFields.value,props.products,
 const tableFields=computed(()=>columnPlan.value.columns)
 const columnWidths=computed(()=>columnPlan.value.widths)
 const tableWidth=computed(()=>columnPlan.value.totalWidth)
-const hasHorizontalOverflow=computed(()=>tableWidth.value>gridWidth.value+1)
-function syncGridScroll(){
- if(gridElement.value&&topScrollbar.value)gridElement.value.scrollLeft=topScrollbar.value.scrollLeft
-}
-function syncTopScroll(){
- if(gridElement.value&&topScrollbar.value)topScrollbar.value.scrollLeft=gridElement.value.scrollLeft
-}
 const filtered=computed(()=>{const needle=search.value.trim().toLowerCase();return props.products.filter(p=>!needle||allFields.value.some(f=>productTemplateValue(p,f.fieldKey).toLowerCase().includes(needle)))})
 const visibleRows=computed(()=>filtered.value.slice((page.value-1)*size.value,page.value*size.value))
 watch(()=>props.editable,()=>{editingCell.value=''})
@@ -116,7 +106,6 @@ function canExpandText(product:Product,key:string){
 function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
 </script>
 <style scoped>
-.product-top-scroll{width:100%;height:18px;overflow-x:auto;overflow-y:hidden}
 .product-grid{width:100%;overflow-x:auto;border:1px solid var(--el-border-color-lighter);border-radius:5px}
 .product-grid table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
 .product-grid th,.product-grid td{max-width:360px;padding:7px 10px;border-right:1px solid var(--el-border-color-lighter);border-bottom:1px solid var(--el-border-color-lighter);white-space:pre-wrap;word-break:break-word;text-align:left;vertical-align:top}
