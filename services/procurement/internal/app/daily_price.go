@@ -297,7 +297,7 @@ func (s *Service) deleteDailyDimension(ctx context.Context, tenant, id int64) (a
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var kind string
 	if err = tx.QueryRow(ctx, `SELECT kind FROM daily_price_dimensions WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, id).Scan(&kind); err == pgx.ErrNoRows {
 		return nil, apierr.NotFound("DAILY_PRICE_DIMENSION_NOT_FOUND", "品种或钢厂不存在")
@@ -469,7 +469,7 @@ func (s *Service) saveDaily(ctx context.Context, tenant int64, op Operator, in D
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if in.Action == "savePrices" {
 		seen := map[string]bool{}
 		for _, v := range in.Prices {
