@@ -143,62 +143,12 @@
     </template>
   </el-dialog>
 
-  <!-- 客户来自基础数据；联系人按客户联动但可留空，邮箱只显示主数据快照。 -->
-  <el-dialog
-    v-model="sourcingOpen"
-    :title="t('emails.sourcingTransferTitle')"
-    width="min(460px, 92vw)"
-    append-to-body
-  >
-    <p class="sourcing-hint">{{ t('emails.sourcingTransferHint') }}</p>
-    <el-form label-position="top">
-      <el-form-item :label="t('emails.sourcingCustomer')" required>
-        <CustomerSelect
-          v-model="sourcingForm.customerId"
-          :placeholder="t('emails.sourcingCustomerPlaceholder')"
-          @selected="selectSourcingCustomer"
-        />
-      </el-form-item>
-      <el-form-item :label="t('emails.sourcingContactOptional')">
-        <el-select
-          v-model="sourcingForm.contactId"
-          filterable
-          :loading="sourcingContactsLoading"
-          :disabled="!sourcingForm.customerId"
-          :placeholder="sourcingForm.customerId ? t('emails.sourcingContactPlaceholder') : t('emails.sourcingSelectCustomerFirst')"
-          style="width:100%"
-        >
-          <el-option
-            v-for="contact in sourcingContacts"
-            :key="contact.id"
-            :value="contact.id"
-            :label="sourcingContactLabel(contact)"
-          />
-        </el-select>
-        <div v-if="sourcingForm.customerId && !sourcingContactsLoading && !sourcingContacts.length" class="sourcing-contact-help">
-          {{ t('emails.sourcingNoActiveContacts') }}
-        </div>
-      </el-form-item>
-      <el-form-item :label="t('emails.sourcingContactEmail')">
-        <el-input
-          :model-value="selectedSourcingContact?.email || ''"
-          readonly
-          :placeholder="t('emails.sourcingContactEmailAuto')"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="sourcingOpen = false">{{ t('emails.close') }}</el-button>
-      <el-button
-        type="primary"
-        :loading="creatingSourcingCase"
-        :disabled="!sourcingForm.customerId"
-        @click="createSourcingCaseFromExcel"
-      >
-        {{ t('emails.createSourcingCase') }}
-      </el-button>
-    </template>
-  </el-dialog>
+  <MailSourcingTransferDialog
+    v-model:open="sourcingOpen"
+    :result="excelResult"
+    :source-mail-id="convertedExcelSource?.mailId ?? ''"
+    @transferred="onTransferred"
+  />
 </template>
 
 <script setup lang="ts">
@@ -206,11 +156,10 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, mailExcelRequest, post } from '../api'
-import CustomerSelect from './masterdata/CustomerSelect.vue'
+import MailSourcingTransferDialog from './MailSourcingTransferDialog.vue'
 import type { MailFile } from './MailAttachments.vue'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { attachmentExcelSource } from '../lib/attachmentExcelSource'
-import { customerDisplayName } from '../lib/customerDisplay'
 import {
   base64ToBytes,
   excelPollAfterFailure,
@@ -218,9 +167,7 @@ import {
   serverMessageOf,
   type ExcelResult,
 } from '../lib/excelJobResult'
-import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
-import { optionalSourcingContact } from '../lib/sourcingTransfer'
 import { useAuthStore } from '../stores/auth'
 
 const props = withDefaults(defineProps<{
@@ -263,15 +210,6 @@ interface ExcelJob {
   inquiryTemplateVersion?: number
 }
 
-interface SourcingCustomerContact {
-  id: string
-  name: string
-  department: string
-  title: string
-  email: string
-  isPrimary: boolean
-}
-
 const excelMenu = reactive({
   open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
 })
@@ -289,18 +227,7 @@ const excelResult = ref<ExcelResult | null>(null)
 const excelJobId = ref('')
 const excelSheet = ref('')
 const excelAvailable = ref(false)
-const creatingSourcingCase = ref(false)
-// 转询盘是一次创建动作。请求成功但响应丢失时，重试继续使用同一个键，
-// 网关会重放第一次的结果，不会再开一张重复询盘。
-const sourcingTransferIdem = newIdempotencySession()
 const sourcingOpen = ref(false)
-const sourcingContactsLoading = ref(false)
-const sourcingContacts = ref<SourcingCustomerContact[]>([])
-// 转入采购必须关联主数据中的客户和联系人，姓名与邮箱只作为后端保存的快照。
-const sourcingForm = reactive({ customerId: '', customerName: '', contactId: '' })
-const selectedSourcingContact = computed(() =>
-  sourcingContacts.value.find((contact) => contact.id === sourcingForm.contactId) ?? null,
-)
 const convertedExcelSource = ref<ExcelSource | null>(null)
 // Results live in memory: asking for the same attachment or text again opens
 // the stored workbook instead of spending another model call. 重新生成 is the
@@ -644,98 +571,13 @@ function openSourcingTransfer() {
     ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
     return
   }
-  sourcingForm.customerId = ''
-  sourcingForm.customerName = ''
-  sourcingForm.contactId = ''
-  sourcingContacts.value = []
   sourcingOpen.value = true
 }
 
-function sourcingContactLabel(contact: SourcingCustomerContact) {
-  const role = [contact.department, contact.title].filter(Boolean).join(' / ')
-  const primary = contact.isPrimary ? ` · ${t('emails.sourcingPrimaryContact')}` : ''
-  const email = contact.email || t('emails.sourcingContactEmailMissing')
-  return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
-}
-
-async function selectSourcingCustomer(customer?: { id: string | number; name: string; shortName?: string }) {
-  sourcingForm.customerName = customerDisplayName(customer)
-  sourcingForm.contactId = ''
-  sourcingContacts.value = []
-  const customerId = String(customer?.id ?? sourcingForm.customerId ?? '')
-  if (!customerId) {
-    sourcingContactsLoading.value = false
-    return
-  }
-  sourcingContactsLoading.value = true
-  try {
-    const data = await get<{ contacts: SourcingCustomerContact[] }>(`/sourcing-customer-options/${customerId}/contacts`)
-    if (String(sourcingForm.customerId) !== customerId) return
-    sourcingContacts.value = data.contacts ?? []
-  } finally {
-    if (String(sourcingForm.customerId) === customerId) sourcingContactsLoading.value = false
-  }
-}
-
-async function createSourcingCaseFromExcel() {
-  const result = excelResult.value
-  const source = convertedExcelSource.value
-  const sheet = result?.sheets[0]
-  if (!result || !source || !sheet?.rows.length) return
-  if (!sourcingForm.customerId) {
-    ElMessage.warning(t('emails.sourcingCustomerRequired'))
-    return
-  }
-
-  const fieldByColumn: Record<string, string> = {
-    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
-    '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
-    '表面要求': 'surfaceRequirement', '涂层/镀层': 'coating', '公差': 'tolerance',
-    '卷重': 'coilWeight', '卷内径': 'coilId', '包装': 'packaging', '交期': 'delivery',
-    '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
-    '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
-  }
-  // LLM 结果每列携带模板字段标识（snake_case），按标识对齐——公司用模板
-  // 改过表头也不受影响；本地直读的结果没有标识，退回表头映射。价格列不
-  // 属于采购明细事实（由工厂报价产生），custom.* 自定义列进 custom_fields。
-  const columnKeys = sheet.columnKeys ?? []
-  const lines = sheet.rows.map((row) => {
-    const line: Record<string, string> & { customFields?: Record<string, string> } = {}
-    sheet.columns.forEach((column, index) => {
-      const key = columnKeys[index] ?? fieldByColumn[column]
-      if (!key || key === 'unit_price' || key === 'total_price') return
-      const cell = row.cells[index] ?? ''
-      if (key.startsWith('custom.')) {
-        ;(line.customFields ??= {})[key] = cell
-      } else {
-        line[key] = cell
-      }
-    })
-    return line
-  })
-  creatingSourcingCase.value = true
-  try {
-    const response = await post<{ sourcingCase: { id: string; caseNo: string } }>('/sourcing-cases', {
-      title: result.fileName.replace(/\.xlsx$/i, ''),
-      customerId: sourcingForm.customerId,
-      customerName: sourcingForm.customerName,
-      // protojson 的 int64 不接受空字符串。联系人可选时必须彻底省略字段，
-      // 不能把 el-select 的空值 "" 原样送到网关。
-      ...optionalSourcingContact(sourcingForm.contactId),
-      sourceMailId: source.mailId,
-      inquiryTemplateId: result.inquiryTemplateId || '0',
-      inquiryTemplateCode: result.inquiryTemplateCode || '',
-      inquiryTemplateVersion: result.inquiryTemplateVersion || 0,
-      lines,
-    }, withIdempotency(sourcingTransferIdem))
-    sourcingTransferIdem.reset()
-    ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
-    sourcingOpen.value = false
-    excelOpen.value = false
-    emit('transferred', response.sourcingCase.id)
-  } finally {
-    creatingSourcingCase.value = false
-  }
+// 转入成功：预览也收起，去哪儿由页面定。
+function onTransferred(caseId: string) {
+  excelOpen.value = false
+  emit('transferred', caseId)
 }
 
 function downloadExcel() {
@@ -856,17 +698,6 @@ defineExpose({
 .sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.sourcing-hint {
-  margin: 0 0 14px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.sourcing-contact-help {
-  margin-top: 6px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.45;
 }
 .excel-grid {
   max-height: 58vh;
