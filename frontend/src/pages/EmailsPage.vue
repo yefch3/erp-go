@@ -470,7 +470,12 @@
                 @selection-context="openTextExcelMenu($event, threadAttachmentMailId(it))"
                 @selection-clear="closeExcelMenu"
               />
-              <QuotedHistory v-if="it.quoted" :html="it.quoted" />
+              <QuotedHistory
+                v-if="it.quoted"
+                :html="it.quoted"
+                @selection-context="openTextExcelMenu($event, threadAttachmentMailId(it))"
+                @selection-clear="closeExcelMenu"
+              />
             </div>
           </div>
         </template>
@@ -513,7 +518,12 @@
             @selection-context="openTextExcelMenu($event, openedInbound.id)"
             @selection-clear="closeExcelMenu"
           />
-          <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
+          <QuotedHistory
+            v-if="openedInbound.quotedHtml"
+            :html="openedInbound.quotedHtml"
+            @selection-context="openTextExcelMenu($event, openedInbound.id)"
+            @selection-clear="closeExcelMenu"
+          />
         </template>
       </template>
 

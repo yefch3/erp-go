@@ -106,3 +106,21 @@ func TestSelectionMatchesEitherBodyVersion(t *testing.T) {
 		t.Fatal("正文为空时不该放行")
 	}
 }
+
+// 销售转发客户询价、上面写了一句话：整封客户来信在阅读页里折进「···」。从
+// 折起来的那块里选中的表格，照样算这封信的——校验看的是整封正文，不是折叠
+// 之后露在外面的那一半（前端 2026-09-24 起把折叠区的选中也接上了转 Excel）。
+func TestASelectionFromTheFoldedForwardBelongsToTheMail(t *testing.T) {
+	body := `<div>报18/10</div><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Fernanda</div>` +
+		`<table><tr><td>BOBINAS INOX</td><td>439 - 2BA - MILL EDGE</td><td>0.4</td><td>60,000</td></tr>` +
+		`<tr><td>BOBINAS INOX</td><td>439 - N4 - MILL EDGE</td><td>0.6</td><td>20,000</td></tr></table></div>`
+	fresh, quoted := SplitQuotedHistory(SanitizeForReading(body))
+	if strings.Contains(fresh, "BOBINAS") || !strings.Contains(quoted, "BOBINAS") {
+		t.Fatalf("precondition: the table should be folded away (fresh %q)", fresh)
+	}
+	// 浏览器跨单元格拖选：格与格之间是制表符，行与行之间是换行。
+	selected := "BOBINAS INOX\t439 - 2BA - MILL EDGE\t0.4\t60,000\nBOBINAS INOX\t439 - N4 - MILL EDGE\t0.6\t20,000"
+	if !selectionBelongsToMail("", body, selected) {
+		t.Fatal("a table selected in the folded part was refused as not belonging to the mail")
+	}
+}
