@@ -41,6 +41,9 @@ var permissionDependencies = map[string][]string{
 	"masterdata:port:write":     {"masterdata:port:read"},
 	"masterdata:supplier:write": {"masterdata:supplier:read"},
 
+	"procurement:daily-price:delete":    {"procurement:daily-price:read"},
+	"procurement:daily-price:manage":    {"procurement:daily-price:read"},
+	"procurement:daily-price:write":     {"procurement:daily-price:read"},
 	"procurement:exception:write":       {"procurement:order:read"},
 	"procurement:invoice:write":         {"procurement:invoice:read"},
 	"procurement:order:cancel":          {"procurement:order:read"},
