@@ -25,6 +25,7 @@ type DailyPriceCommand struct {
 	ID              int64              `json:"id"`
 	MasterID        int64              `json:"masterId"`
 	Name            string             `json:"name"`
+	Note            string             `json:"note"`
 	SortOrder       int32              `json:"sortOrder"`
 	Active          *bool              `json:"active"`
 	Prices          []DailyPriceInput  `json:"prices"`
@@ -46,6 +47,7 @@ type DailyDimension struct {
 	Kind      string `json:"kind"`
 	MasterID  int64  `json:"masterId"`
 	Name      string `json:"name"`
+	Note      string `json:"note"`
 	SortOrder int32  `json:"sortOrder"`
 	Active    bool   `json:"active"`
 }
@@ -120,7 +122,7 @@ func (s *Service) DailyPrice(ctx context.Context, tenant int64, op Operator, in 
 	switch in.Action {
 	case "savePrices", "saveSpreads":
 		permission = "procurement:daily-price:write"
-	case "configure":
+	case "configure", "deleteDimension":
 		permission = "procurement:daily-price:manage"
 	case "deletePrice", "deleteSpread":
 		permission = "procurement:daily-price:delete"
@@ -161,6 +163,8 @@ func (s *Service) DailyPrice(ctx context.Context, tenant int64, op Operator, in 
 		return s.saveDaily(ctx, tenant, op, in)
 	case "configure":
 		return s.configureDaily(ctx, tenant, in)
+	case "deleteDimension":
+		return s.deleteDailyDimension(ctx, tenant, in.ID)
 	case "deletePrice", "deleteSpread":
 		return s.deleteDaily(ctx, tenant, op, in)
 	default:
@@ -184,7 +188,22 @@ func validDailyRange(from, to string) error {
 }
 
 func (s *Service) dailyConfig(ctx context.Context, tenant int64) (any, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,kind,COALESCE(master_id,0),name,sort_order,active FROM daily_price_dimensions WHERE tenant_id=$1 ORDER BY kind,sort_order,id`, tenant)
+	// The daily sheet needs rows and columns on first use. These are editable
+	// market labels, not product or supplier master records and not price data.
+	// A tenant that has already set up its own sheet is left untouched.
+	_, err := s.pool.Exec(ctx, `INSERT INTO daily_price_dimensions(tenant_id,kind,name,note,sort_order)
+		SELECT $1, defaults.kind, defaults.name, defaults.note, defaults.sort_order
+		FROM (VALUES
+			('PRODUCT','热卷','',0),('PRODUCT','冷卷','',1),('PRODUCT','镀锌','',2),('PRODUCT','SAE1006/1008 6.5mm','',3),
+			('SUPPLIER','东钢','出厂价',0),('SUPPLIER','纵横','出厂价',1),('SUPPLIER','新天钢','出厂价',2),('SUPPLIER','智融','出厂价',3),('SUPPLIER','神龙','鲅鱼圈',4),('SUPPLIER','澳森','天津港',5),
+			('SPREAD','铝','',0),('SPREAD','锌','',1),('SPREAD','螺纹钢','',2),('SPREAD','热卷','',3),('SPREAD','焦煤','',4),('SPREAD','铁矿石','',5)
+		) AS defaults(kind,name,note,sort_order)
+		WHERE NOT EXISTS (SELECT 1 FROM daily_price_dimensions WHERE tenant_id=$1)
+		ON CONFLICT (tenant_id,kind,name) DO NOTHING`, tenant)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id,kind,COALESCE(master_id,0),name,note,sort_order,active FROM daily_price_dimensions WHERE tenant_id=$1 ORDER BY kind,sort_order,id`, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +211,7 @@ func (s *Service) dailyConfig(ctx context.Context, tenant int64) (any, error) {
 	out := []DailyDimension{}
 	for rows.Next() {
 		var d DailyDimension
-		if err := rows.Scan(&d.ID, &d.Kind, &d.MasterID, &d.Name, &d.SortOrder, &d.Active); err != nil {
+		if err := rows.Scan(&d.ID, &d.Kind, &d.MasterID, &d.Name, &d.Note, &d.SortOrder, &d.Active); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -205,6 +224,10 @@ func (s *Service) configureDaily(ctx context.Context, tenant int64, in DailyPric
 		return nil, apierr.Invalid("DAILY_PRICE_KIND", "配置类型无效")
 	}
 	name := strings.TrimSpace(in.Name)
+	note := strings.TrimSpace(in.Note)
+	if len([]rune(note)) > 200 || (in.Kind != "SUPPLIER" && note != "") {
+		return nil, apierr.Invalid("DAILY_PRICE_NOTE", "报价说明最多 200 字且仅用于钢厂")
+	}
 	if in.ID == 0 {
 		if in.MasterID < 0 {
 			return nil, apierr.Invalid("DAILY_PRICE_MASTER", "主数据 ID 无效")
@@ -247,7 +270,7 @@ func (s *Service) configureDaily(ctx context.Context, tenant int64, in DailyPric
 		if name == "" || len([]rune(name)) > 200 {
 			return nil, apierr.Invalid("DAILY_PRICE_NAME", "请输入 1 至 200 字的名称")
 		}
-		_, err := s.pool.Exec(ctx, `INSERT INTO daily_price_dimensions(tenant_id,kind,master_id,name,sort_order) VALUES($1,$2,NULLIF($3,0),$4,$5) ON CONFLICT (tenant_id,kind,name) DO UPDATE SET active=TRUE,master_id=COALESCE(daily_price_dimensions.master_id,EXCLUDED.master_id),sort_order=EXCLUDED.sort_order,updated_at=now()`, tenant, in.Kind, in.MasterID, name, in.SortOrder)
+		_, err := s.pool.Exec(ctx, `INSERT INTO daily_price_dimensions(tenant_id,kind,master_id,name,note,sort_order) VALUES($1,$2,NULLIF($3,0),$4,$5,$6) ON CONFLICT (tenant_id,kind,name) DO UPDATE SET active=TRUE,master_id=COALESCE(daily_price_dimensions.master_id,EXCLUDED.master_id),sort_order=EXCLUDED.sort_order,updated_at=now()`, tenant, in.Kind, in.MasterID, name, note, in.SortOrder)
 		if err != nil {
 			return nil, err
 		}
@@ -255,7 +278,7 @@ func (s *Service) configureDaily(ctx context.Context, tenant int64, in DailyPric
 		if in.Active == nil {
 			return nil, apierr.Invalid("DAILY_PRICE_ACTIVE", "缺少显示状态")
 		}
-		ct, err := s.pool.Exec(ctx, `UPDATE daily_price_dimensions SET active=$3,sort_order=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND kind=$5`, tenant, in.ID, *in.Active, in.SortOrder, in.Kind)
+		ct, err := s.pool.Exec(ctx, `UPDATE daily_price_dimensions SET active=$3,sort_order=$4,note=CASE WHEN $5='SUPPLIER' THEN $6 ELSE note END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND kind=$5`, tenant, in.ID, *in.Active, in.SortOrder, in.Kind, note)
 		if err != nil {
 			return nil, err
 		}
@@ -264,6 +287,44 @@ func (s *Service) configureDaily(ctx context.Context, tenant int64, in DailyPric
 		}
 	}
 	return s.dailyConfig(ctx, tenant)
+}
+
+func (s *Service) deleteDailyDimension(ctx context.Context, tenant, id int64) (any, error) {
+	if id <= 0 {
+		return nil, apierr.Invalid("DAILY_PRICE_DIMENSION_ID", "品种或钢厂 ID 无效")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var kind string
+	if err = tx.QueryRow(ctx, `SELECT kind FROM daily_price_dimensions WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, id).Scan(&kind); err == pgx.ErrNoRows {
+		return nil, apierr.NotFound("DAILY_PRICE_DIMENSION_NOT_FOUND", "品种或钢厂不存在")
+	} else if err != nil {
+		return nil, err
+	}
+	var used bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM daily_base_prices WHERE tenant_id=$1 AND (product_id=$2 OR supplier_id=$2)) OR EXISTS(SELECT 1 FROM daily_basis_spreads WHERE tenant_id=$1 AND product_id=$2)`, tenant, id).Scan(&used); err != nil {
+		return nil, err
+	}
+	if used {
+		return nil, apierr.Conflict("DAILY_PRICE_DIMENSION_USED", "该品种或钢厂已有历史数据，不能删除；可以关闭显示")
+	}
+	var count int
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM daily_price_dimensions WHERE tenant_id=$1`, tenant).Scan(&count); err != nil {
+		return nil, err
+	}
+	if count <= 1 {
+		return nil, apierr.Conflict("DAILY_PRICE_DIMENSION_LAST", "请至少保留一个品种或钢厂")
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM daily_price_dimensions WHERE tenant_id=$1 AND id=$2`, tenant, id); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"deleted": true, "kind": kind}, nil
 }
 
 func (s *Service) dailyDay(ctx context.Context, tenant int64, date string) (any, error) {

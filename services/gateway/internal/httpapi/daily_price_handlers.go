@@ -68,6 +68,9 @@ func (s *Server) saveDailySpreads(w http.ResponseWriter, r *http.Request) {
 func (s *Server) configureDailyPrice(w http.ResponseWriter, r *http.Request) {
 	s.dailyPriceBody(w, r, "configure")
 }
+func (s *Server) deleteDailyPriceDimension(w http.ResponseWriter, r *http.Request) {
+	s.dailyPriceDelete(w, r, "deleteDimension")
+}
 func (s *Server) deleteDailyPrice(w http.ResponseWriter, r *http.Request) {
 	s.dailyPriceDelete(w, r, "deletePrice")
 }

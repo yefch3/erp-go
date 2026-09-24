@@ -556,6 +556,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:daily-price:write")).Put("/api/daily-prices/prices", s.saveDailyPrices)
 		r.With(s.perm("procurement:daily-price:write")).Put("/api/daily-prices/spreads", s.saveDailySpreads)
 		r.With(s.perm("procurement:daily-price:manage")).Put("/api/daily-prices/config", s.configureDailyPrice)
+		r.With(s.perm("procurement:daily-price:manage")).Delete("/api/daily-prices/config/{id}", s.deleteDailyPriceDimension)
 		r.With(s.perm("procurement:daily-price:delete")).Delete("/api/daily-prices/prices/{id}", s.deleteDailyPrice)
 		r.With(s.perm("procurement:daily-price:delete")).Delete("/api/daily-prices/spreads/{id}", s.deleteDailySpread)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}/execution-quotes", s.listExecutionSupplierQuotes)
