@@ -88,6 +88,7 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	source := &d2OfferSource{inquiry: OfferInquiry{ID: "901", Number: "D2-INQUIRY", OwnerID: "1", Owner: "D2 Sales", State: "INQUIRING"}}
 	source.inquiry.Body.Delivery = "2026-10-01"
 	source.inquiry.Body.Customer = "Negotiated customer"
+	source.inquiry.Body.Remark = "original sales inquiry note"
 	source.inquiry.Body.Products = []OfferProduct{{ID: "p1", Product: "Steel", Quantity: "100", Unit: "MT"}}
 	svc := New(pool, Deps{Approvals: d2Approvals{}, Files: d2Files{}, OfferSource: source, Scopes: d2OfferScopes{}, Rates: d2OfferRates{}, Numbering: &d2OfferNumber{}})
 	t.Cleanup(func() {
@@ -110,6 +111,7 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 		t.Fatal(first, err)
 	}
 	body := first.Body
+	body.Remark = "customer-facing contract note"
 	body.QuoteFX = "7.05"
 	body.QuoteFXConfirmed = true
 	body.Lines[0].Quantity = "60"
@@ -142,6 +144,14 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	contract, err := svc.GetContract(ctx, tenant, offerID(confirmed.ContractID), 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var salesRemark string
+	if err := pool.QueryRow(ctx, `SELECT source_sales_remark FROM quotations WHERE tenant_id=$1 AND id=$2`, tenant, contract.Contract.QuotationID).Scan(&salesRemark); err != nil || salesRemark != "original sales inquiry note" {
+		t.Fatalf("source sales remark = %q, err = %v", salesRemark, err)
+	}
+	effective, err := svc.hydrateEffectiveEvent(ctx, tenant, contract)
+	if err != nil || effective.SourceSalesRemark != salesRemark {
+		t.Fatalf("contract event source sales remark = %q, err = %v", effective.SourceSalesRemark, err)
 	}
 	if contract.Version.TotalAmount != "7500.00" || len(contract.Items) != 1 || contract.Items[0].Qty != "60.0000" {
 		t.Fatalf("contract differs from final quote: %+v", contract)

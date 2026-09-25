@@ -54,6 +54,7 @@
         <div><span>采购批次</span><h2>{{ activeBatch.label }}</h2><p>{{ activeBatch.customerName || '未填写客户' }} · 来源合同 {{ activeBatch.sourceLabels || '—' }}</p></div>
         <el-tag type="warning" effect="light" size="large">{{ detailStageLabel }}</el-tag>
       </section>
+      <section v-for="note in sourceSalesRemarks(activeBatch)" :key="note.contractNo" class="source-sales-remark"><strong>{{ t('inquiryWorkspace.detail.salesRemark') }}<span v-if="note.contractNo"> · {{ note.contractNo }}</span></strong><p>{{ note.text }}</p></section>
       <el-card shadow="never" class="inquiry-detail-card">
         <div class="requote-summary">
           <div><span>客户</span><strong>{{ activeBatch.customerName || '—' }}</strong></div>
@@ -380,6 +381,7 @@ interface Requirement {
   moq: string
   leadTime: string
   sourcePaymentTerms: string
+  sourceSalesRemark: string
   sourceIncoterm: string
   sourceValidUntil: string
 }
@@ -488,6 +490,14 @@ function groupBatchProducts(lines: Requirement[]): PurchaseProductGroup[] {
     else groups.set(key, { key, name, lines: [line] })
   }
   return [...groups.values()]
+}
+function sourceSalesRemarks(batch: PurchaseBatch): {contractNo:string;text:string}[] {
+  const notes = new Map<string,string>()
+  for (const line of batch.lines) {
+    const text = line.sourceSalesRemark?.trim()
+    if (text) notes.set(line.contractNo || line.quotationNo || line.id, text)
+  }
+  return [...notes].map(([contractNo,text]) => ({contractNo,text}))
 }
 function batchProductSummary(batch: PurchaseBatch): string {
   const first = batch.productGroups[0]
@@ -1443,4 +1453,5 @@ onMounted(load)
   margin-top: 14px;
   justify-content: flex-end;
 }
+.source-sales-remark{margin:0 0 14px;padding:13px 16px;border:1px solid #cfe3ea;border-radius:10px;background:#f4fafc;color:#17485d}.source-sales-remark strong{display:block}.source-sales-remark strong span{font-weight:400}.source-sales-remark p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#334e5c}
 </style>

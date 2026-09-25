@@ -231,7 +231,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2
 `
@@ -286,6 +286,7 @@ type GetRequirementRow struct {
 	SourcePaymentTerms  string
 	SourceIncoterm      string
 	SourceValidUntil    string
+	SourceSalesRemark   string
 }
 
 func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) (GetRequirementRow, error) {
@@ -336,6 +337,7 @@ func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) 
 		&i.SourcePaymentTerms,
 		&i.SourceIncoterm,
 		&i.SourceValidUntil,
+		&i.SourceSalesRemark,
 	)
 	return i, err
 }
@@ -360,7 +362,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark,
     count(*) OVER () AS total
 FROM purchase_requirements
 LEFT JOIN LATERAL (
@@ -448,6 +450,7 @@ type ListRequirementsRow struct {
 	SourcePaymentTerms  string
 	SourceIncoterm      string
 	SourceValidUntil    string
+	SourceSalesRemark   string
 	Total               int64
 }
 
@@ -516,6 +519,7 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 			&i.SourcePaymentTerms,
 			&i.SourceIncoterm,
 			&i.SourceValidUntil,
+			&i.SourceSalesRemark,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -702,7 +706,7 @@ INSERT INTO purchase_requirements (
     owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
     sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
     factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
-    source_payment_terms, source_incoterm, source_valid_until, status
+    source_payment_terms, source_incoterm, source_valid_until, source_sales_remark, status
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -731,7 +735,8 @@ INSERT INTO purchase_requirements (
     nullif($31::text,'')::numeric, $32::text,
     $33::text, $34::text,
     nullif($35::text,'')::date,
-    coalesce(nullif($36::text,''),'PENDING')
+    $36::text,
+    coalesce(nullif($37::text,''),'PENDING')
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -757,6 +762,7 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     source_payment_terms = excluded.source_payment_terms,
     source_incoterm     = excluded.source_incoterm,
     source_valid_until  = excluded.source_valid_until,
+    source_sales_remark = excluded.source_sales_remark,
     status = CASE
                  WHEN purchase_requirements.ordered_qty = 0
                       AND purchase_requirements.status IN ('WAITING_REQUOTE','PENDING','SUPERSEDED','CANCELLED')
@@ -819,6 +825,7 @@ type UpsertRequirementParams struct {
 	SourcePaymentTerms  string
 	SourceIncoterm      string
 	SourceValidUntil    string
+	SourceSalesRemark   string
 	InitialStatus       string
 }
 
@@ -870,6 +877,7 @@ func (q *Queries) UpsertRequirement(ctx context.Context, arg UpsertRequirementPa
 		arg.SourcePaymentTerms,
 		arg.SourceIncoterm,
 		arg.SourceValidUntil,
+		arg.SourceSalesRemark,
 		arg.InitialStatus,
 	)
 	var id int64

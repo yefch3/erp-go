@@ -24,9 +24,13 @@ func TestContractVersionDemandIncludesOldCommitments(t *testing.T) {
 	tenant := time.Now().UnixNano()
 	defer func() { _, _ = pool.Exec(ctx, `DELETE FROM purchase_requirements WHERE tenant_id=$1`, tenant) }()
 	svc := New(pool, Deps{})
-	event := ContractEffective{ContractID: 123, ContractNo: "CT-version", VersionID: 1, VersionNo: 1, Items: []ContractLine{{ItemID: 11, LineNo: 1, ProductName: "plate", Spec: "Q235", Qty: "20", UomCode: "KG"}}}
+	event := ContractEffective{ContractID: 123, ContractNo: "CT-version", SourceSalesRemark: "original sales inquiry note", VersionID: 1, VersionNo: 1, Items: []ContractLine{{ItemID: 11, LineNo: 1, ProductName: "plate", Spec: "Q235", Qty: "20", UomCode: "KG"}}}
 	if err := svc.RequirementsFromContract(ctx, tenant, event, slog.Default(), noopClaim); err != nil {
 		t.Fatal(err)
+	}
+	var sourceRemark string
+	if err := pool.QueryRow(ctx, `SELECT source_sales_remark FROM purchase_requirements WHERE tenant_id=$1 LIMIT 1`, tenant).Scan(&sourceRemark); err != nil || sourceRemark != event.SourceSalesRemark {
+		t.Fatalf("purchase requirement source sales remark = %q, err = %v", sourceRemark, err)
 	}
 	var oldID int64
 	if err := pool.QueryRow(ctx, `UPDATE purchase_requirements SET ordered_qty=15,status='PARTIALLY_ORDERED' WHERE tenant_id=$1 RETURNING id`, tenant).Scan(&oldID); err != nil {

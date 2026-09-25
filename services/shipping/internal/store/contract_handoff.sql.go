@@ -12,7 +12,7 @@ import (
 )
 
 const getContractShippingHandoffForUpdate = `-- name: GetContractShippingHandoffForUpdate :one
-SELECT id, tenant_id, contract_id, contract_no, contract_version_id, version_no, customer_id, customer_name, batch_no, shipment_group_key, carrier_forwarder, service_option_name, customer_managed, currency, freight_amount, charge_basis, port_of_loading, port_of_discharge, estimated_departure, estimated_arrival, valid_until, remark, status, schedule_id, created_at, final_forwarder_id, final_forwarder_name, actual_carrier_id, actual_carrier_name, final_service_option, final_currency, final_freight_amount, final_etd, final_eta, payment_terms, forwarder_contract_no, approval_instance_id, return_reason, operator_id, operator_name, signed_contract_key, signed_contract_name, signed_contract_uploaded_at, contract_verified_at, contract_verified_by, contract_verified_by_name, payment_requested_at, updated_at FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
+SELECT id, tenant_id, contract_id, contract_no, contract_version_id, version_no, customer_id, customer_name, batch_no, shipment_group_key, carrier_forwarder, service_option_name, customer_managed, currency, freight_amount, charge_basis, port_of_loading, port_of_discharge, estimated_departure, estimated_arrival, valid_until, remark, status, schedule_id, created_at, final_forwarder_id, final_forwarder_name, actual_carrier_id, actual_carrier_name, final_service_option, final_currency, final_freight_amount, final_etd, final_eta, payment_terms, forwarder_contract_no, approval_instance_id, return_reason, operator_id, operator_name, signed_contract_key, signed_contract_name, signed_contract_uploaded_at, contract_verified_at, contract_verified_by, contract_verified_by_name, payment_requested_at, updated_at, source_sales_remark FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
 `
 
 type GetContractShippingHandoffForUpdateParams struct {
@@ -72,6 +72,7 @@ func (q *Queries) GetContractShippingHandoffForUpdate(ctx context.Context, arg G
 		&i.ContractVerifiedByName,
 		&i.PaymentRequestedAt,
 		&i.UpdatedAt,
+		&i.SourceSalesRemark,
 	)
 	return i, err
 }
@@ -204,16 +205,16 @@ INSERT INTO contract_shipping_handoffs (
  tenant_id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,
  batch_no,shipment_group_key,carrier_forwarder,service_option_name,customer_managed,currency,
  freight_amount,charge_basis,port_of_loading,port_of_discharge,estimated_departure,estimated_arrival,
- valid_until,remark,status
+ valid_until,remark,source_sales_remark,status
 ) VALUES (
  $1,$2,$3,$4,$5,
  $6,$7,$8,$9,
  $10,$11,$12,$13,
  $14::text::numeric,$15,$16,$17,
  nullif($18::text,'')::date,nullif($19::text,'')::date,
- nullif($20::text,'')::date,$21,
+ nullif($20::text,'')::date,$21,$22::text,
  CASE WHEN $12::bool THEN 'CUSTOMER_MANAGED'
-      ELSE coalesce(nullif($22::text,''),'PENDING') END
+      ELSE coalesce(nullif($23::text,''),'PENDING') END
 )
 ON CONFLICT (tenant_id,contract_version_id,batch_no) DO NOTHING
 `
@@ -240,6 +241,7 @@ type UpsertContractShippingHandoffParams struct {
 	EstimatedArrival   string
 	ValidUntil         string
 	Remark             string
+	SourceSalesRemark  string
 	InitialStatus      string
 }
 
@@ -266,6 +268,7 @@ func (q *Queries) UpsertContractShippingHandoff(ctx context.Context, arg UpsertC
 		arg.EstimatedArrival,
 		arg.ValidUntil,
 		arg.Remark,
+		arg.SourceSalesRemark,
 		arg.InitialStatus,
 	)
 	return err

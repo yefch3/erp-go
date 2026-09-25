@@ -544,6 +544,8 @@ message Requirement {
   string source_payment_terms = 44;
   string source_incoterm = 45;
   string source_valid_until = 46;
+  // Sales inquiry note captured when the customer accepted the quotation.
+  string source_sales_remark = 47;
 }
 
 message ListRequirementsRequest {

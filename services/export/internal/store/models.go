@@ -300,6 +300,7 @@ type Quotation struct {
 	SourceCustomerSelectionID      *int64
 	SourceCustomerSelectionNo      string
 	SourceCustomerSelectionVersion int32
+	SourceSalesRemark              string
 }
 
 type QuotationItem struct {
