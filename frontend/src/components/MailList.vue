@@ -28,8 +28,8 @@
     >
       <!-- 勾选框和星标，**叠成一纵**。
            它们从前并排，各占一格：20 + 6 + 24 = 50px。这一列总共只有
-           280–400px 宽，而行本身是三行高的，竖着放绰绰有余——叠起来这一纵
-           24px，省下的二十多像素全给主题。
+           280–400px 宽，两行文字旁仍能放下这一纵——叠起来这一纵
+           20px，省下的宽度给主题。
 
            这里从前还有一个彩色的首字母头像，和勾选框轮流占这一格：平时看
            头像，鼠标压上来才变成勾选框。头像去掉了——那个圆圈认人的本事，
@@ -81,7 +81,7 @@
            a mail is a state change in this app, not a document to fetch; the
            action buttons then sit outside it, which a link could not do
            without nesting interactive elements inside itself. -->
-      <!-- 三行，照 Foxmail：发件人+日期 / 主题 / 摘要。
+      <!-- 两行：发件人+日期 / 主题。预览留在详情区阅读。
            从前是一行 —— 发件人 | 主题 — 摘要 | 日期 —— 那是给一条**整页宽**
            的列表设计的。改成三栏之后列表列只有 280–400px，一行里塞不下四样
            东西，于是它们直接叠在一起（发件人压着主题、主题压着日期），因为
@@ -143,10 +143,7 @@
                另一个箱但认不出是哪个，鼠标停一下就知道了。 -->
           <span v-if="otherMailbox(m)" class="in-mailbox" :title="otherMailbox(m)">{{ otherMailbox(m) }}</span>
           <span v-if="m.matchFolder" class="in-folder">{{ folderLabel(m.matchFolder) }}</span>
-          <!-- Split into text runs and rendered as elements rather than
-               through v-html: the matched string is whatever somebody typed
-               into a search box, and the snippet is text from a stranger's
-               mail. Neither may become markup. -->
+          <!-- Search hits are text runs, never injected as HTML. -->
           <span class="subj">
             <template v-for="(part, i) in split(m.subject || t('emails.noSubject'))" :key="i">
               <mark v-if="part.hit">{{ part.text }}</mark>
@@ -164,24 +161,16 @@
           </el-tooltip>
         </span>
 
-        <!-- 第三行：摘要。没有摘要就整行不出现，行高跟着缩——空着一行会让
-             这一封看起来比邻居"轻"，而它并不是。 -->
-        <span v-if="m.snippet" class="snip">
-          <template v-for="(part, i) in split(m.snippet)" :key="i">
-            <mark v-if="part.hit">{{ part.text }}</mark>
-            <template v-else>{{ part.text }}</template>
-          </template>
-        </span>
       </div>
 
       <!-- 这里从前有一组悬停才出现的行内按钮（归档/删除/标为已读）。
            **删掉了**，两个理由：
 
-           一、它们浮在行的右边，正好压住第一行的日期——三行式之前它们和
-           日期共用一格（悬停时替换），三行之后日期在第一行而按钮竖向居中，
+           一、它们浮在行的右边，正好压住第一行的日期——原先它们和
+           日期共用一格（悬停时替换），两行里日期仍在第一行，
            两者重叠。
            二、同样的动作在右边阅读区的工具条上都有，而且那里是在**看着这封
-           信**的时候做决定，比在列表上凭一行摘要决定要靠谱。Foxmail 的列表
+           信**的时候做决定，比在列表上凭主题决定要靠谱。Foxmail 的列表
            里也没有这一组。
 
            要批量处理仍然走勾选框 + 上方那条批量工具条。 -->
@@ -418,7 +407,7 @@ function onDragStart(m: MailRow, ev: DragEvent) {
   ev.dataTransfer.setData('text/plain', ids.join(','))
   // 拖影换成一张小卡片，照 Foxmail。
   //
-  // 默认拖影是**整行的半透明快照**——三行式之后那是 340×86 的一大块，跟着
+  // 默认拖影是**整行的半透明快照**——这会遮住左栏文件夹，跟着
   // 光标走的时候把左栏那几格文件夹遮掉大半，而那正是此刻要看清的地方。
   // 一个信封加个数字够了：手上拿着几封信，这是唯一需要知道的事。
   const chip = document.createElement('div')
@@ -448,6 +437,9 @@ function ariaFor(m: MailRow) {
 
 <style scoped>
 .mail-list {
+  /* This compact list uses smaller type without changing the rail or reader. */
+  --mail-text: 13px;
+  --mail-meta: 11px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -456,17 +448,12 @@ function ariaFor(m: MailRow) {
 
 .row {
   display: flex;
-  /* 顶部对齐，不是居中：勾选框和星标属于第一行（发件人那一行），
-     居中的话它们会飘到主题旁边，看着像在标记主题。 */
+  /* Keep the two controls aligned with the two text lines. */
   align-items: flex-start;
   gap: 6px;
-  /* 高度由内容定。三行是常态，没有摘要的（投递记录、空正文）自然是两行，
-     不必为它留一条空行——空着一行会让那一封看起来比邻居"轻"。
-     三行约 76px，和 Foxmail 一档：再紧就分不出三行，再松一屏就少两封。 */
-  /* 左边只留一点（--mail-row-inset），勾选框和工具条上的「全选」上下对齐。
-     从前左边也是 14px，勾选框再在一个 24px 的格子里居中，比「全选」往右缩了
-     19px，那一截空白什么都不装（2026-09-25 改）。 */
-  padding: 7px 14px 7px var(--mail-row-inset);
+  /* Two text lines and two aligned controls set a consistent compact height. */
+  /* 左边只留一点（--mail-row-inset），勾选框和工具条上的「全选」上下对齐。 */
+  padding: 6px 12px 6px var(--mail-row-inset);
   border-bottom: 1px solid var(--mail-divider);
   background: var(--mail-surface);
   /* 箭头，不是小手。
@@ -528,30 +515,35 @@ function ariaFor(m: MailRow) {
 /* 勾选框和星标那一纵。**空着也要占位**：投递记录那几行两样都没有，宽度
    长在这一纵上而不靠里面的东西撑，所以它们的主题不会比上下两行往左窜。
 
-   顶上对齐、不居中：这一纵从第一行（发件人）起往下排，居中的话三行高的行
-   里它会飘到中间，看着像在标记主题。 */
+   顶上对齐：勾选框与发件人同一行，星标与主题同一行。 */
 .marks {
   flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
-  /* 这一纵就是勾选框那么宽（14px），勾选框的左边就是这一纵的左边，和「全选」
-     对得上。星标那颗字符有 16px，按钮给 20px 好点，居中放，两边各探出去一点
-     ——它和勾选框共用一条中线，看着还是一纵。
-     并排那会儿两格加中间的空当是 50px，叠起来后是 24px，现在 14px。 */
-  width: 14px;
+  gap: 2px;
+  /* Both actions occupy the same 20px column, including their hit areas. */
+  width: 20px;
 }
 .face {
   display: grid;
   place-items: center;
   width: 100%;
-  /* 贴着第一行（发件人那一行）。 */
-  height: 21px;
+  height: 20px;
+}
+.pick {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 0;
 }
 /* Element Plus reserves room for a label this checkbox does not have. */
 .pick :deep(.el-checkbox__label) {
   display: none;
+}
+.pick :deep(.el-checkbox__input:not(.is-checked) .el-checkbox__inner) {
+  border-color: #62758a;
 }
 
 .star {
@@ -559,14 +551,13 @@ function ariaFor(m: MailRow) {
   display: grid;
   place-items: center;
   width: 20px;
-  /* 挨着勾选框下面那一行（主题那一行的高度）。 */
   height: 20px;
   padding: 0;
   background: none;
   border: none;
   font-size: 16px;
   line-height: 1;
-  color: var(--el-text-color-placeholder);
+  color: #62758a;
   cursor: pointer;
   transition: color var(--mail-fast) var(--mail-ease);
 }
@@ -577,12 +568,12 @@ function ariaFor(m: MailRow) {
   color: var(--el-color-warning);
 }
 
-/* 三行竖着排。每一行自己占满整列的宽度，长了就省略号——这正是横排做不到
+/* 两行竖着排。每一行自己占满整列的宽度，长了就省略号——这正是横排做不到
    的：横排里定宽的发件人不肯收缩，一挤就溢出来盖在邻居身上。 */
 .body {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   flex: 1;
   min-width: 0;
   border: none;
@@ -614,10 +605,6 @@ function ariaFor(m: MailRow) {
   min-width: 0;
   overflow: hidden;
 }
-.snip {
-  min-width: 0;
-}
-
 .who {
   flex: 1;
   min-width: 0;
@@ -625,12 +612,12 @@ function ariaFor(m: MailRow) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--mail-text);
-  line-height: 1.45;
-  color: var(--el-text-color-regular);
+  line-height: 1.4;
+  color: #27384b;
 }
 .unread .who {
-  font-weight: 700;
-  color: var(--el-text-color-primary);
+  font-weight: 600;
+  color: #1d344e;
 }
 
 .tcount {
@@ -640,8 +627,6 @@ function ariaFor(m: MailRow) {
   color: var(--el-text-color-secondary);
 }
 
-/* Subject and snippet on one line, the snippet giving up its space first:
-   what the mail is about survives truncation, the preview of it does not. */
 /* 主题是第二行的主角。min-width 是一条底线：标签和主题同在一行，而标签
    （信箱地址）可以很长——不设底线的话，窄列里标签会把主题挤成 0 宽，
    于是这一行只剩两个标签，看不出这封信是关于什么的。宁可标签被切短。 */
@@ -652,22 +637,12 @@ function ariaFor(m: MailRow) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--mail-text);
-  line-height: 1.45;
-  color: var(--el-text-color-regular);
+  line-height: 1.4;
+  color: #596b7e;
 }
 .unread .subj {
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-}
-/* 摘要压一号、压一档灰：它是第三顺位的信息，和主题同样重就等于没有层次。
-   单行省略——两行会让每一行的高度取决于摘要长度，一列邮件的节奏就乱了。 */
-.snip {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--mail-sub);
-  line-height: 1.45;
-  color: var(--el-text-color-secondary);
+  font-weight: 600;
+  color: #234b80;
 }
 
 .clip {
@@ -690,12 +665,12 @@ function ariaFor(m: MailRow) {
 .when {
   flex: none;
   font-size: var(--mail-meta);
-  color: var(--el-text-color-secondary);
+  color: #62758a;
   white-space: nowrap;
 }
 .unread .when {
-  font-weight: 700;
-  color: var(--el-text-color-primary);
+  font-weight: 500;
+  color: #52677d;
 }
 
 /* Hidden until the row is under the cursor or holds focus — the list is for
@@ -719,7 +694,6 @@ function ariaFor(m: MailRow) {
 
 /* The matched words. A background wash rather than a colour change, so a hit
    is visible in a row that is already bold for being unread. */
-.snip mark,
 .subj mark {
   background: var(--el-color-warning-light-7);
   color: inherit;
