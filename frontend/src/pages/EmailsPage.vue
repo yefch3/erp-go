@@ -1290,197 +1290,16 @@
   <MailSignatureDialog v-model="signaturesOpen" />
   <MailTemplatesDialog v-model="templatesOpen" />
 
-  <!-- The selection bubble. It follows the current text selection (or a
-       clicked embedded image) and leaves when the selection does. Not a
-       context menu: right-click stays native, because a page cannot add an
-       entry to the browser's own menu — it can only replace it, and
-       replacing it costs the reader copy, look-up and translate. -->
-  <div
-    v-if="excelMenu.open"
-    class="excel-context"
-    :style="{ left: excelMenu.x + 'px', top: excelMenu.y + 'px' }"
-    role="menu"
-    @mouseenter="cancelExcelMenuHide"
-    @mouseleave="scheduleExcelMenuHide"
-  >
-    <button
-      type="button"
-      role="menuitem"
-      :disabled="(!excelAvailable && !excelMenuDirectFile) || !!excelMenu.disabledReason"
-      :aria-describedby="((!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
-      @click="convertExcelSelection"
-    >
-      {{ t('emails.convertToExcel') }}
-    </button>
-    <p v-if="(!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
-      {{ excelMenu.disabledReason ? t(excelMenu.disabledReason) : t('emails.excelUnavailable') }}
-    </p>
-  </div>
+  <!-- 选中正文或附件后的「生成 Excel」：气泡、选模板、预览、转入询盘都在
+       MailExcelConverter 里，独立邮件窗口用的是同一个。 -->
+  <MailExcelConverter
+    ref="excel"
+    :find-attachment="findExcelAttachment"
+    :locked="locked === true"
+    @transferred="(id: string) => router.push(`/sales/inquiries?id=${id}`)"
+  />
 
   <CustomerFromMailDialog v-model:open="customerCreateOpen" :draft="customerCreateDraft" :inbound-id="openedInbound?.id ?? '0'" @created="onMailCustomerLinked" />
-
-  <el-dialog
-    v-model="excelTemplateOpen"
-    :title="t('emails.selectExcelTemplate')"
-    width="min(520px, 92vw)"
-    append-to-body
-  >
-    <el-form label-position="top" v-loading="excelTemplatesBusy">
-      <el-form-item :label="t('emails.excelTemplate')" required>
-        <el-select
-          v-model="selectedInquiryTemplateId"
-          :placeholder="t('emails.excelTemplatePlaceholder')"
-          style="width: 100%"
-        >
-          <el-option
-            v-for="template in excelTemplates"
-            :key="template.id"
-            :value="template.id"
-            :label="`${template.name} (v${template.version})`"
-          >
-            <span>{{ template.name }} (v{{ template.version }})</span>
-            <el-tag v-if="template.isDefault" size="small" type="success" effect="plain" style="margin-left: 8px">
-              {{ t('emails.defaultTemplate') }}
-            </el-tag>
-          </el-option>
-        </el-select>
-      </el-form-item>
-      <p v-if="selectedExcelTemplate?.description" class="sub">{{ selectedExcelTemplate.description }}</p>
-    </el-form>
-    <template #footer>
-      <el-button @click="excelTemplateOpen = false">{{ common('cancel') }}</el-button>
-      <el-button
-        type="primary"
-        :disabled="!selectedInquiryTemplateId || excelTemplatesBusy"
-        @click="confirmExcelTemplate"
-      >
-        {{ t('emails.generateExcel') }}
-      </el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog
-    v-model="excelOpen"
-    :title="excelResult?.fileName || t('emails.excelPreview')"
-    width="min(1100px, 94vw)"
-    top="4vh"
-    append-to-body
-    :close-on-click-modal="false"
-    :close-on-press-escape="false"
-  >
-    <div v-loading="excelBusy" class="excel-preview">
-      <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
-      <template v-else-if="excelResult">
-        <div class="excel-model">
-          <template v-if="excelResult.model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</template>
-          <template v-else>{{ t('emails.excelDirectNote') }}</template>
-          <span v-if="excelResult.model && selectedExcelTemplate"> · {{ t('emails.excelTemplateUsed', { name: selectedExcelTemplate.name, version: selectedExcelTemplate.version }) }}</span>
-        </div>
-        <el-alert
-          v-if="excelResult.previewError"
-          type="warning"
-          :closable="false"
-          show-icon
-          :title="excelResult.previewError"
-        />
-        <el-tabs v-model="excelSheet">
-          <el-tab-pane
-            v-for="sheet in excelResult.sheets"
-            :key="sheet.name"
-            :label="sheet.name"
-            :name="sheet.name"
-          >
-            <p v-if="sheet.summary" class="sub">{{ sheet.summary }}</p>
-            <p v-if="Number(sheet.totalRows) > sheet.rows.length" class="sub">
-              {{ t('emails.excelPreviewRows', { shown: sheet.rows.length, total: sheet.totalRows }) }}
-            </p>
-            <div class="excel-grid">
-              <table>
-                <thead><tr><th v-for="c in sheet.columns" :key="c">{{ c }}</th></tr></thead>
-                <tbody>
-                  <tr v-for="(row, ri) in sheet.rows" :key="ri">
-                    <td v-for="(cell, ci) in row.cells" :key="ci">{{ cell }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </template>
-    </div>
-    <template #footer>
-      <el-button @click="excelOpen = false">{{ t('emails.close') }}</el-button>
-      <el-button
-        v-if="excelResult && auth.can('sales:inquiry:write')"
-        @click="openSourcingTransfer"
-      >
-        {{ t('emails.createSourcingCase') }}
-      </el-button>
-      <el-button v-if="excelResult && excelAvailable" :loading="excelBusy" @click="regenerateExcel">
-        {{ t('emails.switchTemplateAndRegenerate') }}
-      </el-button>
-      <el-button v-if="excelResult" type="primary" @click="downloadExcel">
-        {{ t('emails.downloadExcel') }}
-      </el-button>
-    </template>
-  </el-dialog>
-
-  <!-- 客户来自基础数据；联系人按客户联动但可留空，邮箱只显示主数据快照。 -->
-  <el-dialog
-    v-model="sourcingOpen"
-    :title="t('emails.sourcingTransferTitle')"
-    width="min(460px, 92vw)"
-    append-to-body
-  >
-    <p class="sourcing-hint">{{ t('emails.sourcingTransferHint') }}</p>
-    <el-form label-position="top">
-      <el-form-item :label="t('emails.sourcingCustomer')" required>
-        <CustomerSelect
-          v-model="sourcingForm.customerId"
-          :placeholder="t('emails.sourcingCustomerPlaceholder')"
-          @selected="selectSourcingCustomer"
-        />
-      </el-form-item>
-      <el-form-item :label="t('emails.sourcingContactOptional')">
-        <el-select
-          v-model="sourcingForm.contactId"
-          filterable
-          :loading="sourcingContactsLoading"
-          :disabled="!sourcingForm.customerId"
-          :placeholder="sourcingForm.customerId ? t('emails.sourcingContactPlaceholder') : t('emails.sourcingSelectCustomerFirst')"
-          style="width:100%"
-        >
-          <el-option
-            v-for="contact in sourcingContacts"
-            :key="contact.id"
-            :value="contact.id"
-            :label="sourcingContactLabel(contact)"
-          />
-        </el-select>
-        <div v-if="sourcingForm.customerId && !sourcingContactsLoading && !sourcingContacts.length" class="sourcing-contact-help">
-          {{ t('emails.sourcingNoActiveContacts') }}
-        </div>
-      </el-form-item>
-      <el-form-item :label="t('emails.sourcingContactEmail')">
-        <el-input
-          :model-value="selectedSourcingContact?.email || ''"
-          readonly
-          :placeholder="t('emails.sourcingContactEmailAuto')"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="sourcingOpen = false">{{ t('emails.close') }}</el-button>
-      <el-button
-        type="primary"
-        :loading="creatingSourcingCase"
-        :disabled="!sourcingForm.customerId"
-        @click="createSourcingCaseFromExcel"
-      >
-        {{ t('emails.createSourcingCase') }}
-      </el-button>
-    </template>
-  </el-dialog>
 
   <!-- 附件预览从前是这儿的一个对话框，**已经拿掉了**：预览一律新开一个
        标签页（见 openPreview）。一个 1000px 的对话框里看一份 A4 合同，等于
@@ -1498,7 +1317,6 @@ import {
   download,
   get,
   http,
-  mailExcelRequest,
   mailHostRequest,
   post,
   quietErrors,
@@ -1532,17 +1350,6 @@ import {
   type MailSort,
   type SortField,
 } from '../lib/mailSort'
-import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
-import { attachmentExcelSource } from '../lib/attachmentExcelSource'
-import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
-import { optionalSourcingContact } from '../lib/sourcingTransfer'
-import {
-  base64ToBytes,
-  excelPollAfterFailure,
-  hydrateExcelResult,
-  serverMessageOf,
-  type ExcelResult,
-} from '../lib/excelJobResult'
 import { mailDetailRows, replyToDiffers } from '../lib/mailDetails'
 import { printDocument } from '../lib/printDocument'
 import { SEP_LIST, SEP_RAIL, clampCol, clearWidth, readWidth, writeWidth, type Col } from '../lib/paneWidths'
@@ -1553,7 +1360,6 @@ import {
   selectableRows,
   toggleAll,
 } from '../lib/mailSelection'
-import type { InquiryTemplate } from '../lib/inquiryTemplates'
 import { customerDraftFromMail } from '../lib/mailCustomerDraft'
 import type { MailCustomerLink } from '../lib/mailCustomerRecognition'
 import { onLive } from '../live'
@@ -1586,14 +1392,13 @@ import { draftPreviewContext, draftToRow } from '../lib/draftRow'
 import { shouldReloadList } from '../lib/liveInbox'
 import { moreStatus, shouldLoadMore, type MoreState } from '../lib/infiniteList'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
+import MailExcelConverter from '../components/MailExcelConverter.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
 // styling the ERP — which is exactly what happened when these two sites were
 // left on v-html.
 import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
-import CustomerSelect from '../components/masterdata/CustomerSelect.vue'
-import { customerDisplayName } from '../lib/customerDisplay'
 import {
   Box,
   CircleClose,
@@ -2884,7 +2689,6 @@ function init() {
   applied = null
   applyRoute()
   checkSyncHealth()
-  loadExcelCapability()
   // Opening the mailbox pulls once rather than waiting up to two minutes for
   // the next poll. Somebody who just told a customer "resend it" opens this
   // page to look, and "already up to date" is the answer they need it to be.
@@ -2892,7 +2696,9 @@ function init() {
   refreshAttentionCount()
   loadDraftCount()
   refreshUnread()
-  resumeExcelJob()
+  // 「生成 Excel」：问一次有没有模型，接着等刷新前没等完的任务。解锁之后才做，
+  // 见 MailExcelConverter 的 start。
+  excel.value?.start()
   // Ask once, from the mailbox itself — this is the page whose news the
   // desktop notification carries, so the browser's prompt makes sense here.
   // Shell.vue does the actual notifying, and only when the person is away.
@@ -2916,7 +2722,7 @@ function init() {
 onUnmounted(
   onLive((e) => {
     if (e.type === 'mail.excel_job.changed') {
-      void refreshExcelJob(e.subject)
+      void excel.value?.refreshJob(e.subject)
       return
     }
     if (e.type !== 'mail.inbound') return
@@ -4383,17 +4189,6 @@ async function checkSyncHealth() {
   }
 }
 
-// 这个部署有没有接模型适配器。**只问一次**：它是部署配置，不会在一个人
-// 开着页面的时候变，而 checkSyncHealth 是一分钟一轮的——顺带问它等于每分钟
-// 多一次往返，一整天几百次，答案永远一样。
-async function loadExcelCapability() {
-  try {
-    const d = await get<{ excelAvailable: boolean }>('/my-mail-account')
-    excelAvailable.value = d.excelAvailable === true
-  } catch {
-    excelAvailable.value = false
-  }
-}
 
 // The banner has to be able to go away on its own.
 //
@@ -4519,589 +4314,44 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
 // 的地方。这里原本自己从 InboundMail 推了一个同名类型出来，两个 MailFile
 // 差在 contentType 是不是必填，于是传给组件的回调一直是对不上的。
 
-interface ExcelJob {
-  id: string
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-  result?: ExcelResult
-  errorCode?: string
-  errorMessage?: string
-  inquiryTemplateId?: string
-  inquiryTemplateCode?: string
-  inquiryTemplateVersion?: number
+// 「生成 Excel」整条在 MailExcelConverter 里（独立邮件窗口也用它）。这里只把
+// 正文、折叠区、附件条上的事件递过去；模板里的名字保持不变。
+const excel = ref<InstanceType<typeof MailExcelConverter> | null>(null)
+function openTextExcelMenu(event: { text?: string; attachmentId?: string; x: number; y: number }, mailId: string) {
+  excel.value?.openText(event, mailId)
 }
-
-interface SourcingCustomerContact {
-  id: string
-  name: string
-  department: string
-  title: string
-  email: string
-  isPrimary: boolean
-}
-
-type ExcelSource =
-  | { kind: 'text'; mailId: string; text: string }
-  | { kind: 'attachment'; mailId: string; attachmentId: string }
-
-const excelMenu = reactive({
-  open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
-})
-const customerCreateOpen = ref(false)
-const excelOpen = ref(false)
-const excelTemplateOpen = ref(false)
-const excelTemplatesBusy = ref(false)
-const excelTemplates = ref<InquiryTemplate[]>([])
-const selectedInquiryTemplateId = ref('')
-const pendingExcelSource = ref<ExcelSource | null>(null)
-const selectedExcelTemplate = computed(() =>
-  excelTemplates.value.find((template) => template.id === selectedInquiryTemplateId.value) ?? null,
-)
-const excelBusy = ref(false)
-const excelResult = ref<ExcelResult | null>(null)
-const excelJobId = ref('')
-const excelSheet = ref('')
-const excelAvailable = ref(false)
-const creatingSourcingCase = ref(false)
-// 转询盘是一次创建动作。请求成功但响应丢失时，重试继续使用同一个键，
-// 网关会重放第一次的结果，不会再开一张重复询盘。
-const sourcingTransferIdem = newIdempotencySession()
-const sourcingOpen = ref(false)
-const sourcingContactsLoading = ref(false)
-const sourcingContacts = ref<SourcingCustomerContact[]>([])
-// 转入采购必须关联主数据中的客户和联系人，姓名与邮箱只作为后端保存的快照。
-const sourcingForm = reactive({ customerId: '', customerName: '', contactId: '' })
-const selectedSourcingContact = computed(() =>
-  sourcingContacts.value.find((contact) => contact.id === sourcingForm.contactId) ?? null,
-)
-const convertedExcelSource = ref<ExcelSource | null>(null)
-// Results live in memory: asking for the same attachment or text again opens
-// the stored workbook instead of spending another model call. 重新生成 is the
-// explicit way to pay for a fresh read.
-const excelResultCache = new Map<string, ExcelResult>()
-// 计时器句柄写死成 number，不写 ReturnType<typeof setTimeout>：测试要用
-// node:zlib，于是 node 的类型进了全局，而 Node 的 setTimeout 返回的是
-// Timeout 对象、浏览器的返回 number。这三处跑在浏览器里，number 才是它
-// 们真正的样子——推导反而会挑错那一版。
-let excelPollTimer: number | null = null
-// 连着几次没问到结果。新任务开始归零，问到一次归零。
-let excelPollFailures = 0
-
-function excelCacheKey(source: ExcelSource, templateId = selectedInquiryTemplateId.value): string {
-  const sourceKey = source.kind === 'attachment'
-    ? `attachment:${source.mailId}:${source.attachmentId}`
-    : `text:${source.mailId}:${source.text}`
-  return `${sourceKey}:template:${templateId || 'direct'}`
-}
-
-onUnmounted(() => {
-  if (excelPollTimer) window.clearTimeout(excelPollTimer)
-  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
-  if (excelHideTimer) window.clearTimeout(excelHideTimer)
-})
-
-function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
-  cancelExcelMenuHide()
-  // x is the anchor's centre (the bubble is centred via CSS), so the clamp
-  // keeps half a bubble's width inside each edge.
-  excelMenu.x = Math.max(110, Math.min(x, window.innerWidth - 110))
-  excelMenu.y = Math.max(8, Math.min(y, window.innerHeight - 54))
-  excelMenu.source = source
-  excelMenu.disabledReason = disabledReason
-  excelMenu.open = true
-}
-
-// When the menu's source is a spreadsheet we can read directly, the entry
-// stays available even with no model configured.
-const excelMenuDirectFile = computed(() => (excelMenu.source ? directTableAttachment(excelMenu.source) : null))
-
-let excelHoverTimer: number | null = null
-let excelHideTimer: number | null = null
-
-// Hover opens the same bubble right-click opens; the brief delay keeps a
-// mouse crossing the attachments row from flashing it on every card.
-// mailId 是附件自己所属的那封信（组件传来的），不是当前打开的那封——见
-// lib/attachmentExcelSource 里那段为什么。
-function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile, mailId: string) {
-  const source = attachmentExcelSource(mailId, file.id)
-  if (!source) return
-  const current = excelMenu.source
-  if (excelMenu.open && current?.kind === 'attachment' && current.attachmentId === file.id) return
-  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
-  const card = event.currentTarget as HTMLElement
-  excelHoverTimer = window.setTimeout(() => {
-    const rect = card.getBoundingClientRect()
-    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 6, source,
-      file.stored ? '' : 'emails.attachmentNotStored')
-  }, 250)
-}
-
-function scheduleExcelMenuHide() {
-  if (excelHoverTimer) {
-    window.clearTimeout(excelHoverTimer)
-    excelHoverTimer = null
-  }
-  if (excelHideTimer) window.clearTimeout(excelHideTimer)
-  excelHideTimer = window.setTimeout(closeExcelMenu, 300)
-}
-
-function cancelExcelMenuHide() {
-  if (excelHoverTimer) {
-    window.clearTimeout(excelHoverTimer)
-    excelHoverTimer = null
-  }
-  if (excelHideTimer) {
-    window.clearTimeout(excelHideTimer)
-    excelHideTimer = null
-  }
-}
-
-// Plain-text bodies: the bubble opens when the selection is made; hovering
-// the highlighted range brings it back after a page click dismissed it (the
-// window click listener closes the bubble without touching the selection).
-function onPlainTextHover(event: MouseEvent) {
-  if (excelMenu.open || excelBusy.value) return
-  const pre = event.currentTarget as HTMLElement
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-  const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
-  if (anchorEl?.closest('pre.in-text') !== pre) return
-  const mailId = pre.dataset.mailId ?? ''
-  if (!mailId) return
-  const rect = sel.getRangeAt(0).getBoundingClientRect()
-  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return
-  const text = sel.toString().trim()
-  if (!text) return
-  positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 8, { kind: 'text', mailId, text })
-}
-
-function openTextExcelMenu(
-  event: { text?: string; attachmentId?: string; x: number; y: number },
-  mailId: string,
-) {
-  if (!mailId) return
-  if (event.attachmentId) {
-    positionExcelMenu(event.x, event.y, {
-      kind: 'attachment', mailId, attachmentId: event.attachmentId,
-    })
-    return
-  }
-  const text = event.text?.trim() ?? ''
-  if (!text) return
-  positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text })
-}
-
-// Window-level, not @mouseup on the <pre>: a bottom-to-top drag is usually
-// released above the text it selected — over the subject line, the toolbar —
-// and a listener on the element never hears that mouseup. The selection
-// itself knows which mail it lives in; where the finger lifted is
-// irrelevant.
-//
-// One tick of patience for each of this handler's problems: the selection is
-// only final a beat after mouseup, and the click that follows mouseup runs
-// the window-level closeExcelMenu — opening synchronously would be undone
-// before the user saw it.
-function onPlainTextMouseUp() {
-  window.setTimeout(() => {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
-    const focusEl = sel.focusNode instanceof Element ? sel.focusNode : sel.focusNode?.parentElement
-    const pre = (anchorEl?.closest('pre.in-text') ?? focusEl?.closest('pre.in-text')) as HTMLElement | null
-    if (!pre) return
-    const mailId = pre.dataset.mailId ?? ''
-    if (!mailId) return
-    // Clamp to the mail body. An overshooting drag has the subject line or a
-    // toolbar label in it, and those were never part of the mail.
-    const range = sel.getRangeAt(0).cloneRange()
-    const bounds = document.createRange()
-    bounds.selectNodeContents(pre)
-    if (range.compareBoundaryPoints(Range.START_TO_START, bounds) < 0) {
-      range.setStart(bounds.startContainer, bounds.startOffset)
-    }
-    if (range.compareBoundaryPoints(Range.END_TO_END, bounds) > 0) {
-      range.setEnd(bounds.endContainer, bounds.endOffset)
-    }
-    const text = range.toString().trim()
-    if (!text) return
-    const rect = range.getBoundingClientRect()
-    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 8, { kind: 'text', mailId, text })
-  }, 0)
-}
-
 function openAttachmentExcelMenu(event: MouseEvent, file: MailFile, mailId: string) {
-  const source = attachmentExcelSource(mailId, file.id)
-  if (!source) return
-  event.preventDefault()
-  positionExcelMenu(event.clientX, event.clientY, source,
-    file.stored ? '' : 'emails.attachmentNotStored')
+  excel.value?.openAttachmentMenu(event, file, mailId)
+}
+function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile, mailId: string) {
+  excel.value?.hoverAttachment(event, file, mailId)
+}
+function scheduleExcelMenuHide() {
+  excel.value?.scheduleHide()
+}
+function closeExcelMenu() {
+  excel.value?.close()
+}
+// 能不能不经模型、直接读成表：要找回这个附件本身。打开的那封，或者会话里
+// 属于这封信的那一条。
+function findExcelAttachment(mailId: string, attachmentId: string): MailFile | undefined {
+  const lists: (MailFile[] | undefined)[] = []
+  if (openedInbound.value && String(openedInbound.value.id) === mailId) lists.push(openedInbound.value.attachments)
+  for (const it of threadItems.value) {
+    if (threadAttachmentMailId(it) === mailId) lists.push(it.attachments)
+  }
+  for (const list of lists) {
+    const file = list?.find((a) => String(a.id) === attachmentId)
+    if (file) return file
+  }
+  return undefined
 }
 
-function closeExcelMenu() {
-  excelMenu.open = false
-}
+const customerCreateOpen = ref(false)
 
 function openCustomerFromSender() {
   if (!canCreateCustomerFromSender.value) return
   customerCreateOpen.value = true
-}
-window.addEventListener('click', closeExcelMenu)
-window.addEventListener('blur', closeExcelMenu)
-// Capture phase, because the reading pane scrolls in an inner container and
-// scroll events do not bubble. A fixed-position bubble that stays put while
-// its selection scrolls away is pointing at nothing.
-window.addEventListener('scroll', closeExcelMenu, true)
-window.addEventListener('mouseup', onPlainTextMouseUp)
-onUnmounted(() => {
-  window.removeEventListener('click', closeExcelMenu)
-  window.removeEventListener('blur', closeExcelMenu)
-  window.removeEventListener('scroll', closeExcelMenu, true)
-  window.removeEventListener('mouseup', onPlainTextMouseUp)
-})
-
-async function convertExcelSelection() {
-  const source = excelMenu.source
-  closeExcelMenu()
-  if (!source || excelBusy.value || excelMenu.disabledReason) return
-  // 有模型时先选模板，即使附件本身是 xlsx 也要按所选模板标准化。没有模型
-  // 时仍保留原表直接预览，避免破坏既有的基础查看能力。
-  const directFile = directTableAttachment(source)
-  if (!excelAvailable.value) {
-    if (directFile && (await openAttachmentDirect(directFile))) return
-    ElMessage.error(t('emails.excelUnavailable'))
-    return
-  }
-  await openExcelTemplatePicker(source)
-}
-
-async function loadExcelTemplates() {
-  excelTemplatesBusy.value = true
-  try {
-    const data = await get<{ templates: InquiryTemplate[] }>('/mail-inquiry-templates', undefined, mailExcelRequest)
-    excelTemplates.value = (data.templates ?? []).filter((template) => template.status === 'ACTIVE')
-    const selectedStillExists = excelTemplates.value.some((template) => template.id === selectedInquiryTemplateId.value)
-    if (!selectedStillExists) {
-      selectedInquiryTemplateId.value = excelTemplates.value.find((template) => template.isDefault)?.id
-        ?? excelTemplates.value[0]?.id
-        ?? ''
-    }
-  } finally {
-    excelTemplatesBusy.value = false
-  }
-}
-
-async function openExcelTemplatePicker(source: ExcelSource) {
-  pendingExcelSource.value = source
-  excelTemplateOpen.value = true
-  try {
-    await loadExcelTemplates()
-  } catch {
-    excelTemplateOpen.value = false
-  }
-}
-
-async function confirmExcelTemplate() {
-  const source = pendingExcelSource.value
-  const templateId = selectedInquiryTemplateId.value
-  if (!source || !templateId || excelTemplatesBusy.value) return
-  excelTemplateOpen.value = false
-  const cached = excelResultCache.get(excelCacheKey(source, templateId))
-  if (cached) {
-    convertedExcelSource.value = source
-    excelResult.value = cached
-    excelSheet.value = cached.sheets[0]?.name ?? ''
-    excelOpen.value = true
-    return
-  }
-  await startExcelConversion(source, templateId)
-}
-
-function directTableAttachment(source: ExcelSource): MailFile | null {
-  if (source.kind !== 'attachment') return null
-  const file = openedInbound.value?.attachments?.find((a) => String(a.id) === source.attachmentId)
-  if (!file?.downloadUrl || !isDirectTableFile(file.fileName, file.contentType)) return null
-  return file
-}
-
-// Reads the spreadsheet straight from its signed storage URL — the same
-// bytes the download button hands out — and presents the parsed preview.
-// Returns false when anything about the read fails, so the caller can fall
-// back to the model.
-async function openAttachmentDirect(file: MailFile): Promise<boolean> {
-  const mailId = openedInbound.value?.id
-  if (!mailId || !file.downloadUrl) return false
-  const source: ExcelSource = { kind: 'attachment', mailId, attachmentId: file.id }
-  excelResult.value = null
-  convertedExcelSource.value = source
-  excelSheet.value = ''
-  excelOpen.value = true
-  excelBusy.value = true
-  try {
-    const response = await fetch(file.downloadUrl)
-    if (!response.ok) throw new Error(`attachment fetch failed: ${response.status}`)
-    const data = await response.arrayBuffer()
-    const parsed = await parseTableFile(file.fileName, data)
-    const result: ExcelResult = {
-      fileName: file.fileName,
-      fileData: bytesToBase64(new Uint8Array(data)),
-      sheets: parsed.sheets.map((sheet) => ({
-        name: sheet.name,
-        summary: '',
-        columns: sheet.columns,
-        rows: sheet.rows.map((cells) => ({ cells })),
-        totalRows: String(sheet.totalRows),
-      })),
-      model: '',
-    }
-    excelResultCache.set(excelCacheKey(source, 'direct'), result)
-    excelResult.value = result
-    excelSheet.value = result.sheets[0]?.name ?? ''
-    return true
-  } catch {
-    excelResult.value = null
-    excelOpen.value = false
-    return false
-  } finally {
-    excelBusy.value = false
-  }
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  }
-  return btoa(binary)
-}
-
-async function startExcelConversion(source: ExcelSource, templateId = selectedInquiryTemplateId.value) {
-  excelResult.value = null
-  convertedExcelSource.value = source
-  excelSheet.value = ''
-  excelOpen.value = true
-  excelBusy.value = true
-  try {
-    const body = source.kind === 'text'
-      ? { selectedText: source.text, locale: locale.value, inquiryTemplateId: templateId }
-      : { attachmentId: source.attachmentId, locale: locale.value, inquiryTemplateId: templateId }
-    const response = await post<{ job: ExcelJob }>(
-      `/inbound-mails/${source.mailId}/excel`, body, mailExcelRequest,
-    )
-    excelJobId.value = response.job.id
-    sessionStorage.setItem('mailExcelJobId', response.job.id)
-    ElMessage.info(t('emails.excelQueued'))
-    scheduleExcelJobPoll(300)
-  } catch {
-    excelOpen.value = false
-    excelBusy.value = false
-  }
-}
-
-async function regenerateExcel() {
-  const source = convertedExcelSource.value
-  if (!source || excelBusy.value || !excelAvailable.value) return
-  excelOpen.value = false
-  await openExcelTemplatePicker(source)
-}
-
-function resumeExcelJob() {
-  const id = sessionStorage.getItem('mailExcelJobId') ?? ''
-  if (!id || excelJobId.value === id) return
-  excelJobId.value = id
-  excelPollFailures = 0
-  excelResult.value = null
-  excelBusy.value = true
-  excelOpen.value = true
-  scheduleExcelJobPoll(0)
-}
-
-function scheduleExcelJobPoll(delay = 1500) {
-  if (excelPollTimer) window.clearTimeout(excelPollTimer)
-  excelPollTimer = window.setTimeout(() => void refreshExcelJob(), delay)
-}
-
-async function refreshExcelJob(subject = '') {
-  const idFromEvent = subject.startsWith('EXCEL_JOB:') ? subject.slice('EXCEL_JOB:'.length) : ''
-  const id = excelJobId.value
-  if (!id || (idFromEvent && idFromEvent !== id)) return
-  try {
-    // quiet：问不到的那几次自己处理（见下面的 catch），不让每一次都弹红字。
-    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, {
-      ...mailExcelRequest,
-      quiet: true,
-    })
-    // The poll timer and the SSE hint race to fetch the same job; only the
-    // first response back may announce the terminal state, the later one
-    // finds the id already settled and stays silent.
-    if (excelJobId.value !== id) return
-    excelPollFailures = 0
-    const job = response.job
-    if (job.status === 'PENDING' || job.status === 'PROCESSING') {
-      scheduleExcelJobPoll()
-      return
-    }
-    excelBusy.value = false
-    excelJobId.value = ''
-    sessionStorage.removeItem('mailExcelJobId')
-    if (job.status === 'FAILED' || !job.result) {
-      excelOpen.value = false
-      ElMessage.error(job.errorMessage || t('emails.excelFailed'))
-      return
-    }
-    const delivered: ExcelResult = {
-      ...job.result,
-      inquiryTemplateId: job.inquiryTemplateId,
-      inquiryTemplateCode: job.inquiryTemplateCode,
-      inquiryTemplateVersion: job.inquiryTemplateVersion,
-    }
-    // 行数据不在响应里，在文件里：从 file_data 解出来。解不出来不是网络
-    // 问题，不能落到下面那个「继续轮询」的 catch 里——那会一直轮下去。
-    // 这时表格空着、说一句为什么，下载照常能用。
-    const result = await hydrateExcelResult(delivered).catch(
-      (): ExcelResult => ({ ...delivered, previewError: t('emails.excelPreviewUnreadable') }),
-    )
-    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
-    excelResult.value = result
-    if (convertedExcelSource.value) {
-      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), result)
-    }
-    excelSheet.value = result.sheets[0]?.name ?? ''
-    excelOpen.value = true
-    ElMessage.success(t('emails.excelReady'))
-  } catch (err: unknown) {
-    // 网络抖一下、网关重启一下、对象存储暂时取不到文件——3 秒后再问，中间
-    // 不弹字。但只问约一分钟（excelPollAfterFailure）：改之前这里是无限问
-    // 下去、每 3 秒弹一次红字，直到对象存储恢复。到点停下、关弹窗，把服务
-    // 端那句话弹一次（比如「暂时取不到，请稍后重试或重新转换」）。
-    // 邮箱解锁过期由全局处理，这里只需要不再问。
-    if (locked.value) return
-    excelPollFailures += 1
-    if (excelPollAfterFailure(excelPollFailures) === 'retry') {
-      scheduleExcelJobPoll(3000)
-      return
-    }
-    excelBusy.value = false
-    excelJobId.value = ''
-    sessionStorage.removeItem('mailExcelJobId')
-    excelOpen.value = false
-    ElMessage.error(serverMessageOf(err) ?? t('emails.excelFailed'))
-  }
-}
-
-// 先问客户，再转。询盘最后要变成报价和合同，那两步都要一个真客户；这里不
-// 问，就会在生成报价那一步才卡住——错得更晚，也更难查。
-function openSourcingTransfer() {
-  const result = excelResult.value
-  const sheet = result?.sheets[0]
-  if (!result || !convertedExcelSource.value || !sheet?.rows.length) return
-  if (Number(sheet.totalRows) > sheet.rows.length) {
-    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
-    return
-  }
-  sourcingForm.customerId = ''
-  sourcingForm.customerName = ''
-  sourcingForm.contactId = ''
-  sourcingContacts.value = []
-  sourcingOpen.value = true
-}
-
-function sourcingContactLabel(contact: SourcingCustomerContact) {
-  const role = [contact.department, contact.title].filter(Boolean).join(' / ')
-  const primary = contact.isPrimary ? ` · ${t('emails.sourcingPrimaryContact')}` : ''
-  const email = contact.email || t('emails.sourcingContactEmailMissing')
-  return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
-}
-
-async function selectSourcingCustomer(customer?: { id: string | number; name: string; shortName?: string }) {
-  sourcingForm.customerName = customerDisplayName(customer)
-  sourcingForm.contactId = ''
-  sourcingContacts.value = []
-  const customerId = String(customer?.id ?? sourcingForm.customerId ?? '')
-  if (!customerId) {
-    sourcingContactsLoading.value = false
-    return
-  }
-  sourcingContactsLoading.value = true
-  try {
-    const data = await get<{ contacts: SourcingCustomerContact[] }>(`/sourcing-customer-options/${customerId}/contacts`)
-    if (String(sourcingForm.customerId) !== customerId) return
-    sourcingContacts.value = data.contacts ?? []
-  } finally {
-    if (String(sourcingForm.customerId) === customerId) sourcingContactsLoading.value = false
-  }
-}
-
-async function createSourcingCaseFromExcel() {
-  const result = excelResult.value
-  const source = convertedExcelSource.value
-  const sheet = result?.sheets[0]
-  if (!result || !source || !sheet?.rows.length) return
-  if (!sourcingForm.customerId) {
-    ElMessage.warning(t('emails.sourcingCustomerRequired'))
-    return
-  }
-
-  const fieldByColumn: Record<string, string> = {
-    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
-    '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
-    '表面要求': 'surfaceRequirement', '涂层/镀层': 'coating', '公差': 'tolerance',
-    '卷重': 'coilWeight', '卷内径': 'coilId', '包装': 'packaging', '交期': 'delivery',
-    '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
-    '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
-  }
-  // LLM 结果每列携带模板字段标识（snake_case），按标识对齐——公司用模板
-  // 改过表头也不受影响；本地直读的结果没有标识，退回表头映射。价格列不
-  // 属于采购明细事实（由工厂报价产生），custom.* 自定义列进 custom_fields。
-  const columnKeys = sheet.columnKeys ?? []
-  const lines = sheet.rows.map((row) => {
-    const line: Record<string, string> & { customFields?: Record<string, string> } = {}
-    sheet.columns.forEach((column, index) => {
-      const key = columnKeys[index] ?? fieldByColumn[column]
-      if (!key || key === 'unit_price' || key === 'total_price') return
-      const cell = row.cells[index] ?? ''
-      if (key.startsWith('custom.')) {
-        ;(line.customFields ??= {})[key] = cell
-      } else {
-        line[key] = cell
-      }
-    })
-    return line
-  })
-  creatingSourcingCase.value = true
-  try {
-    const response = await post<{ sourcingCase: { id: string; caseNo: string } }>('/sourcing-cases', {
-      title: result.fileName.replace(/\.xlsx$/i, ''),
-      customerId: sourcingForm.customerId,
-      customerName: sourcingForm.customerName,
-      // protojson 的 int64 不接受空字符串。联系人可选时必须彻底省略字段，
-      // 不能把 el-select 的空值 "" 原样送到网关。
-      ...optionalSourcingContact(sourcingForm.contactId),
-      sourceMailId: source.mailId,
-      inquiryTemplateId: result.inquiryTemplateId || '0',
-      inquiryTemplateCode: result.inquiryTemplateCode || '',
-      inquiryTemplateVersion: result.inquiryTemplateVersion || 0,
-      lines,
-    }, withIdempotency(sourcingTransferIdem))
-    sourcingTransferIdem.reset()
-    ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
-    sourcingOpen.value = false
-    excelOpen.value = false
-    router.push(`/sales/inquiries?id=${response.sourcingCase.id}`)
-  } finally {
-    creatingSourcingCase.value = false
-  }
-}
-
-function downloadExcel() {
-  const result = excelResult.value
-  if (!result) return
-  const url = URL.createObjectURL(new Blob([base64ToBytes(result.fileData)], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = result.fileName
-  link.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 // 哪一封正在存。会话里每一封各有一颗「下载全部」，所以记的是信的编号而不是
@@ -6004,99 +5254,6 @@ async function doUnsuppress(row: Suppression) {
 .att-head .side-title {
   margin: 0;
 }
-.excel-context {
-  position: fixed;
-  z-index: 4000;
-  transform: translateX(-50%);
-  min-width: 190px;
-  max-width: 320px;
-  padding: 5px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 7px;
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--el-box-shadow-light);
-}
-.excel-context button {
-  width: 100%;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  text-align: left;
-  cursor: pointer;
-}
-.excel-context button:hover,
-.excel-context button:focus-visible {
-  background: var(--el-fill-color-light);
-  color: var(--el-color-primary);
-  outline: none;
-}
-.excel-context button:disabled {
-  color: var(--el-text-color-disabled);
-  cursor: not-allowed;
-}
-.excel-context button:disabled:hover,
-.excel-context button:disabled:focus-visible {
-  background: transparent;
-  color: var(--el-text-color-disabled);
-}
-.excel-context-reason {
-  max-width: 240px;
-  margin: 3px 8px 6px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.excel-preview {
-  min-height: 180px;
-}
-.excel-model {
-  margin-bottom: 8px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.sourcing-hint {
-  margin: 0 0 14px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.sourcing-contact-help {
-  margin-top: 6px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.excel-grid {
-  max-height: 58vh;
-  overflow: auto;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 5px;
-}
-.excel-grid table {
-  width: max-content;
-  min-width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.excel-grid th,
-.excel-grid td {
-  max-width: 360px;
-  padding: 7px 10px;
-  border-right: 1px solid var(--el-border-color-lighter);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  white-space: pre-wrap;
-  word-break: break-word;
-  text-align: left;
-  vertical-align: top;
-}
-.excel-grid th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--el-fill-color-light);
-  font-weight: 600;
-}
 
 .in-html {
   line-height: 1.6;
@@ -6114,21 +5271,6 @@ async function doUnsuppress(row: Suppression) {
    not, and this keeps a 2000px hero from forcing the scrollbar on its own. */
 .in-html :deep(table) {
   max-width: none;
-}
-.in-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  margin: 0;
-}
-/* 纯文本信里的网址。看起来要像链接——不然人还是不会去点它，而这正是
-   这次要修的那件事。见 lib/linkifyText。 */
-.in-text a {
-  color: var(--el-color-primary);
-  text-decoration: none;
-}
-.in-text a:hover {
-  text-decoration: underline;
 }
 
 .opened {

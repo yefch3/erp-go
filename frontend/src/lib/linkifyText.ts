@@ -96,8 +96,8 @@ export function linkifyText(text: string | undefined | null): string {
  * 走 frame 还白得一件事：MailBody 的文档里有 <base target="_blank">，链接
  * 自然在新标签页打开，不会把信本身换成目标网页。
  *
- * pre 的样式写在行内：frame 里是另一个文档，外面 .in-text 那条 scoped 规则
- * 到不了这里。
+ * pre 的样式写在行内：frame 里是另一个文档，页面上的 scoped 规则到不了这里。
+ * （页面上原来那条 .in-text 规则已随它的最后一个用处一起删了，2026-09-24。）
  */
 export function plainTextToHtml(text: string | undefined | null): string {
   return '<pre style="white-space:pre-wrap;word-break:break-word;margin:0;' +
