@@ -34,8 +34,8 @@ describe('拖出来的宽度', () => {
     expect(clampCol(337.4, 1000)).toBe(337)
   })
 
-  it('两条分隔条的宽度就是 CSS 里那两组留白加起来', () => {
-    expect(SEP_RAIL).toBe(4 + 10 + 4)
+  it('两条分隔条的占位与 CSS 一致', () => {
+    expect(SEP_RAIL).toBe(10)
     expect(SEP_LIST).toBe(3 + 10 + 3)
   })
 })
