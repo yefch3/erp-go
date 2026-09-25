@@ -3,6 +3,7 @@ module github.com/sgao19/erp-go/pkg
 go 1.25.0
 
 require (
+	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	codeberg.org/go-pdf/fpdf v0.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
@@ -38,3 +39,5 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/sgao19/erp-go/gen => ../gen

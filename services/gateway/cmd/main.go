@@ -166,6 +166,7 @@ func run(log *slog.Logger) error {
 		Access:                  iamv1.NewAccessServiceClient(iamConn),
 		Fx:                      fxv1.NewFxServiceClient(fxConn),
 		Customers:               mdv1.NewCustomerServiceClient(mdConn),
+		MasterDelete:            mdv1.NewMasterDataBulkDeleteServiceClient(mdConn),
 		Suppliers:               mdv1.NewSupplierServiceClient(mdConn),
 		CreditRatings:           mdv1.NewCreditRatingServiceClient(mdConn),
 		Ports:                   mdv1.NewPortServiceClient(mdConn),

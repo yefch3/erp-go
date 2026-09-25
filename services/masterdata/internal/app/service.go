@@ -22,7 +22,8 @@ type Service struct {
 	pool *pgxpool.Pool
 	q    *store.Queries
 	// Object storage for customer and supplier documents; nil until UseFiles.
-	files documentFiles
+	files      documentFiles
+	references ReferenceChecker
 }
 
 func New(pool *pgxpool.Pool) *Service {

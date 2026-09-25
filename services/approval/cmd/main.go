@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	"github.com/sgao19/erp-go/pkg/masterref"
 	"log/slog"
 	"net"
 	"os"
@@ -72,6 +74,7 @@ func run(log *slog.Logger) error {
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	apv1.RegisterApprovalServiceServer(srv, grpcin.New(svc))
+	commonv1.RegisterMasterDataReferenceServiceServer(srv, &masterref.Handler{Pool: pool})
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
