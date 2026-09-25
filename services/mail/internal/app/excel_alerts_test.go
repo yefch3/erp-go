@@ -4,8 +4,10 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // CloudWatch 上的告警按日志里的 event 字段匹配（deploy/aws/05-alerts.sh）。
@@ -40,5 +42,25 @@ func TestAlertScriptKnowsEveryExcelEvent(t *testing.T) {
 		if !slices.Contains(inCode, event) {
 			t.Errorf("05-alerts.sh 里有 %s，但代码从来不打这个 event——那条告警永远不会响", event)
 		}
+	}
+}
+
+// 问模型的总时长必须比「处理中太久就重新领」那条线短，还要给存对象、写库
+// 留出余地。那条线写在 SQL 里，这里读出来比。
+func TestTheModelBudgetStaysInsideTheReclaimWindow(t *testing.T) {
+	sql, err := os.ReadFile("../../db/queries/excel.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := string(sql)[strings.Index(string(sql), "-- name: ClaimExcelJob"):]
+	m := regexp.MustCompile(`status\s*=\s*'PROCESSING' AND started_at < now\(\) - interval '(\d+) minutes'`).FindStringSubmatch(claim)
+	if m == nil {
+		t.Fatal("ClaimExcelJob 里找不到「处理中超过几分钟重新领」那条线——是不是改了写法？")
+	}
+	minutes, _ := strconv.Atoi(m[1])
+	reclaim := time.Duration(minutes) * time.Minute
+	const room = 3 * time.Minute // 存对象（带退避重试）和写库
+	if excelModelBudget+room > reclaim {
+		t.Errorf("模型预算 %v + 收尾 %v 超过了重新领取的线 %v：还在跑的任务会被再领一遍", excelModelBudget, room, reclaim)
 	}
 }

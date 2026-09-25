@@ -45,8 +45,12 @@ func (c *TableExtractor) post(ctx context.Context, body []byte) (*http.Response,
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := c.client.Do(req)
 		if err != nil {
-			if ctx.Err() != nil || isTimeout(err) || attempt == maxAttempts {
+			if ctx.Err() != nil || isTimeout(err) {
 				return nil, fmt.Errorf("OpenAI request: %w", err)
+			}
+			if attempt == maxAttempts {
+				// 连着几次连不上，和连着几次被限流是一回事：对方这会儿够不着。
+				return nil, fmt.Errorf("%w: OpenAI request: %w", app.ErrModelBusy, err)
 			}
 			if err := c.pause(ctx, retryDelay(attempt, "")); err != nil {
 				return nil, err

@@ -155,6 +155,15 @@ func TestATimeoutIsNotRetriedButADroppedConnectionIs(t *testing.T) {
 	}
 }
 
+// 连着三次连不上：和连着被限流一样，归为「这会儿太忙」，专门的告警会响。
+func TestAConnectionThatKeepsDroppingIsReportedBusy(t *testing.T) {
+	drop := reply{err: errors.New("connection reset by peer")}
+	c, calls, _ := scripted(t, drop, drop, drop)
+	if err := extract(c); !errors.Is(err, app.ErrModelBusy) || *calls != maxAttempts {
+		t.Errorf("err %v, calls %d; want ErrModelBusy after %d calls", err, *calls, maxAttempts)
+	}
+}
+
 // 人走了（请求被取消）就别再等着重试。
 func TestWaitingStopsWhenTheCallerGivesUp(t *testing.T) {
 	c, calls, _ := scripted(t,

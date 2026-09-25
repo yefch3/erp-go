@@ -441,6 +441,16 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 	s.publishExcelJob(ctx, row)
 }
 
+// excelModelBudget 是一个任务问模型最多花多久，包括适配器里的重试。
+//
+// 它必须明显短于 ClaimExcelJob 里那条「处理中超过 15 分钟就当它死了、重新领」
+// 的线（db/queries/excel.sql）：超过那条线，另一个 worker 会把还在跑的任务
+// 再领一遍，模型再问一次、钱再花一次。按默认配置一次最多约 7 分钟（3 次 ×
+// 2 分钟超时 + 等待），本来碰不到；但 OPENAI_TIMEOUT 能调大，调到 5 分钟以上
+// 三次就可能越线——所以不靠「碰巧够不着」，在这里卡死。剩下的几分钟留给
+// 存对象、写库。TestTheModelBudgetStaysInsideTheReclaimWindow 钉着两边。
+const excelModelBudget = 10 * time.Minute
+
 // convertExcelJob 跑模型。返回 false 表示任务已经标成失败（或者连失败都标
 // 不上，那时日志里有）。
 func (s *Service) convertExcelJob(ctx context.Context, row store.MailExcelJob) (ExcelResult, bool) {
@@ -450,8 +460,11 @@ func (s *Service) convertExcelJob(ctx context.Context, row store.MailExcelJob) (
 		s.log.Error("decode excel job template columns", "job", row.ID, "err", decodeErr)
 		columns = nil
 	}
+	// 问模型最多花这么久，包括重试。见 excelModelBudget。
+	modelCtx, cancel := context.WithTimeout(ctx, excelModelBudget)
+	defer cancel()
 	result, err := s.ConvertInboundToExcel(
-		ctx, row.TenantID, row.OwnerID, row.InboundID,
+		modelCtx, row.TenantID, row.OwnerID, row.InboundID,
 		row.AttachmentID, row.SelectedText, row.Locale, columns,
 	)
 	// 先记账，再管状态。成败都要记——模型答了钱就花了。记账失败不该拖垮
