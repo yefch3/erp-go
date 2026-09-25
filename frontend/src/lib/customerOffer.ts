@@ -4,7 +4,7 @@ export interface Calculation {formula:number;factory:string;slitting:string;shor
 export interface OfferLine extends Product {factoryQuoteId:string;calculation:Calculation;calculatedPrice:string;unitPrice:string;amount:string}
 export interface Transport {quoteId:string;title:string;currency:string;price:string;remark:string;accepted:boolean;quantities:Record<string,string>}
 export interface LogisticsAllocation {productId:string;product:string;currency:string;amount:string}
-export interface CategorySelection {productId:string;category:string;quoteId:string;supplierFobUnitPrice?:string;productFreightUnitPrice?:string;cfrUnitPrice?:string;freightQuoteId?:string}
+export interface CategorySelection {productId:string;category:string;quoteId:string;supplierFobUnitPrice?:string;productFreightUnitPrice?:string;cfrUnitPrice?:string;freightQuoteId?:string;freightQuoteVersion?:number}
 export interface OfferSelectionSnapshot extends CategorySelection {product:Product;quote:Quote}
 export interface CategoryCalculation {quoteFx:string;quoteFxConfirmed:boolean;portCharge:string;inlandFreight:string;loss:string;interestRate:string;interestDays:string;note:string}
 export interface OfferNegotiation extends CategorySelection {initialPrice:string;customerCounterPrice:string;proposedPrice:string;status:string;note:string}
