@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -311,6 +312,29 @@ func (s *Service) sweepExcelPayloadsOnce(ctx context.Context) int {
 	return done
 }
 
+// RunExcelWorkers 起 n 个 worker 一起从队列里领任务，等它们都停下才返回。
+//
+// 原来只起一个，全公司的转换排一条队：一次平均 15 秒、慢的 45 秒，十个人同时
+// 点，最后一个要等几分钟。领任务那条查询是 SKIP LOCKED，几个 worker 同时领
+// 不会领到同一条，所以这里只是多开几个，不用任何协调。
+//
+// 固定 n 个而不是来一个开一个：每个在转的任务都把附件放在内存里、占着一个
+// 发给模型厂的请求，高峰时要有个上限（MAIL_EXCEL_WORKERS，默认 4）。
+func (s *Service) RunExcelWorkers(ctx context.Context, n int) {
+	if n < 1 {
+		n = 1
+	}
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.RunExcelWorker(ctx)
+		}()
+	}
+	wg.Wait()
+}
+
 // RunExcelWorker drains the durable extraction queue. SKIP LOCKED in the
 // claim query makes multiple mail replicas safe, and abandoned PROCESSING
 // rows become claimable again after the decision window in that query.
@@ -383,6 +407,8 @@ const (
 	excelEventResultRecovered    = "excel_result_recovered"    // 恢复路径走了一次，模型没跑
 	excelEventResultUnreachable  = "excel_result_unreachable"  // 预览/下载时从对象存储取不到
 	excelEventSweepRemoveFailed  = "excel_sweep_remove_failed" // 清理器删不掉对象
+	excelEventModelAccount       = "excel_model_account"       // 模型厂拒了这把 key：失效或余额用完，全公司都转不成
+	excelEventModelBusy          = "excel_model_busy"          // 限流或对方出错，重试几次仍不行
 )
 
 func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {

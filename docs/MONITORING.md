@@ -168,8 +168,10 @@ Agent（经 SSM 一条命令分发），补两条线：
 | `erp-mail-excel_row_write_failed` | 结果传上去了、库里那一行没写成（会自动恢复，但连着出现说明数据库有问题） |
 | `erp-mail-excel_result_unreachable` | 预览或下载时从对象存储取不到结果 |
 | `erp-mail-excel_sweep_remove_failed` | 清理器删不掉过期的结果 |
+| `erp-mail-excel_model_account` | 模型厂拒了 `OPENAI_API_KEY`：key 失效或余额用完，全公司都转不成——去 OpenAI 后台看账单和 key |
+| `erp-mail-excel_model_busy` | 限流或对方出错，自动重试三次仍不行（偶尔一次可不管；连着响说明碰到了账号的每分钟上限） |
 
-后五条按日志里**固定的 `event` 字段**匹配，不按那句话的文字——文字随便改，
+后七条按日志里**固定的 `event` 字段**匹配，不按那句话的文字——文字随便改，
 `event` 不能改，改了告警就静默失效。字段名定在
 `services/mail/internal/app/excel_jobs.go`，`TestAlertScriptKnowsEveryExcelEvent`
 钉着代码和脚本两边一致。「恢复成功」（`excel_result_recovered`）只记数不告警：

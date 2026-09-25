@@ -251,7 +251,7 @@ func run(log *slog.Logger) error {
 		SendDelay:      cfg.SendDelay,
 		DecisionWindow: cfg.DecisionWindow,
 	})
-	go svc.RunExcelWorker(ctx)
+	go svc.RunExcelWorkers(ctx, cfg.ExcelWorkers)
 	// 转换结果只在库里留一阵子（见 RunExcelPayloadSweeper）。和 worker 分开起：
 	// 那个在没配 OpenAI 时直接返回，而清理该照跑——功能关掉之后，先前留下的
 	// 那些字节更该被收走。

@@ -20,6 +20,7 @@ func TestAlertScriptKnowsEveryExcelEvent(t *testing.T) {
 	inCode := []string{
 		excelEventStorageUnreachable, excelEventStorageUnavailable, excelEventRowWriteFailed,
 		excelEventResultRecovered, excelEventResultUnreachable, excelEventSweepRemoveFailed,
+		excelEventModelAccount, excelEventModelBusy,
 	}
 	for _, event := range inCode {
 		if !strings.Contains(string(script), `"`+event+`"`) && !strings.Contains(string(script), " "+event+" ") {

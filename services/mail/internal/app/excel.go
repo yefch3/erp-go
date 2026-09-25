@@ -48,6 +48,17 @@ type TableExtractor interface {
 	Extract(ctx context.Context, in TableExtractionInput) (Extraction, error)
 }
 
+// 模型那头两类「不是这份文件的问题」。适配器把 HTTP 层的失败归进这两类，
+// 任务失败时据此给用户一句说得清的话、给运维一条专门的告警——原来一律是
+// 「智能转换失败，请稍后重试」，key 失效和表格读不懂看上去一模一样。
+var (
+	// ErrModelAccount：key 被拒、余额用完。一次都转不成、全公司同时受影响，
+	// 要有人去模型厂后台处理，重试没用。
+	ErrModelAccount = errors.New("model account refused the request")
+	// ErrModelBusy：限流或对方服务出错，自动重试几次仍不行。过一阵通常自己好。
+	ErrModelBusy = errors.New("model stayed unavailable after retries")
+)
+
 // Extraction 是一次模型调用的全部产出：结果、用的哪个模型、花了多少。
 //
 // Usage 即使在 err 非空时也可能是有值的——模型答了、钱花了，只是答出来的
@@ -420,6 +431,16 @@ func (s *Service) ConvertInboundToExcel(
 	// 失败也要把用量带出去。这几次照样计费，漏掉它们账就对不上真实账单。
 	spent := ExcelResult{Model: model, Usage: extracted.Usage}
 	if err != nil {
+		switch {
+		case errors.Is(err, ErrModelAccount):
+			s.log.Error("the model account refused the request",
+				"event", excelEventModelAccount, "mail", inboundID, "err", err)
+			return spent, apierr.Internal("MAIL_EXCEL_MODEL_ACCOUNT", "智能转换暂时用不了，已通知管理员处理").Wrap(err)
+		case errors.Is(err, ErrModelBusy):
+			s.log.Warn("the model stayed busy after retries",
+				"event", excelEventModelBusy, "mail", inboundID, "err", err)
+			return spent, apierr.Internal("MAIL_EXCEL_MODEL_BUSY", "智能转换这会儿太忙，请过几分钟再试").Wrap(err)
+		}
 		s.log.Error("table extraction failed", "mail", inboundID, "err", err)
 		return spent, apierr.Internal("MAIL_EXCEL_MODEL_FAILED", "智能转换失败，请稍后重试").Wrap(err)
 	}
