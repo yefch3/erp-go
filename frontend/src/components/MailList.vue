@@ -484,27 +484,15 @@ function ariaFor(m: MailRow) {
   background: var(--el-color-primary-light-9);
 }
 
-/* 正在读的那一封。比勾选的那档深一级，左边再加一道竖杠——两种"被选中"要
-   分得开：勾选是"我要对这几封做点什么"，当前是"我正在看这一封"，一个人
-   完全可能同时有这两种状态（勾了六封，正读着第三封）。
-   竖杠画在行里而不是靠 border-left，免得整行文字跟着往右挪 3px。 */
+/* 正在读的邮件只用稍深的浅蓝底，和已勾选的底色仍能区分。 */
 .row.current {
-  background: var(--el-color-primary-light-8);
-}
-.row.current::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--el-color-primary);
+  background: #dce7f3;
 }
 /* 鼠标压上去时那层白（.row:hover）会盖掉上面这块蓝，于是"我正在读的是哪
    一行"在鼠标扫过列表时一闪一闪。当前这一行不让它盖。 */
 .row.current:hover,
 .row.current:focus-within {
-  background: var(--el-color-primary-light-8);
+  background: #dce7f3;
 }
 /* 正在被拖走的那几行画淡：手上拿着的东西和还留在原地的东西要分得开，
    否则拖多封时看不出到底拿起了哪几封。 */

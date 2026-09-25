@@ -611,7 +611,7 @@
         class="list-col"
         :style="colW.list ? { flex: `0 0 ${colW.list}px` } : undefined"
       >
-      <div class="pane-head">
+      <div class="pane-head" :class="{ 'pane-head--mail': canMarkAllRead && !pickedRows.length && !tablePicked.length }">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
              a selection is for. Indeterminate when only some are ticked,
@@ -918,9 +918,28 @@
         >
           {{ t('emails.unreadOnly') }}
         </el-button>
-        <el-button v-if="canMarkAllRead" size="small" :loading="markingAll" @click="markAllRead">
-          {{ t('emails.markAllRead') }}
-        </el-button>
+        <el-dropdown
+          v-if="canMarkAllRead"
+          trigger="click"
+          placement="bottom-end"
+          :disabled="markingAll"
+          @command="onListCommand"
+        >
+          <el-button
+            class="list-more"
+            size="small"
+            :loading="markingAll"
+            :aria-label="t('emails.moreActions')"
+            :title="t('emails.moreActions')"
+          >
+            <el-icon v-if="!markingAll"><MoreFilled /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="markAllRead">{{ t('emails.markAllRead') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <!-- Junk out in one click — into the trash, not oblivion. The mail
              worth finding in a spam folder is the customer enquiry the filter
              got wrong, and that is noticed the next day. -->
@@ -1760,6 +1779,9 @@ const unreadOnly = ref(false)
 const canFilterUnread = computed(() => isInboundView.value && !isSearching.value)
 function toggleUnreadOnly() {
   pushState({ unread: !unreadOnly.value })
+}
+function onListCommand(command: string) {
+  if (command === 'markAllRead') void markAllRead()
 }
 // ------------------------------------------------ 合并会话 / 一封一行 ---
 // 收件箱列表一行代表什么：一条会话，还是一封信。见 lib/mailListMode。
@@ -4716,7 +4738,7 @@ async function doUnsuppress(row: Suppression) {
   gap: 8px;
   /* 挤不下就换行，不是把里面的字挤成一竖条。
      列表这一栏的宽度现在是人自己拖的，拖到 250px 也合理——那时这一条上的
-     「排序：日期 ↓ / 只看未读 / 全部已读」放不下。放不下有两种办法：把每
+     「排序：日期 ↓ / 只看未读 / 更多」放不下。放不下有两种办法：把每
      一样都压窄（于是「排序：日期」竖着排成三行，那正是这次要修的样子），
      或者整颗按钮挪到下一行。后者永远是对的：一颗按钮要么完整，要么不在。 */
   flex-wrap: wrap;
@@ -4727,6 +4749,17 @@ async function doUnsuppress(row: Suppression) {
   justify-content: flex-end;
   min-height: 28px;
   margin-bottom: 8px;
+}
+.pane-head--mail {
+  /* The everyday controls fit in one line at the normal list width. */
+  column-gap: 4px;
+}
+.pane-head--mail .sort-trigger {
+  padding-inline: 4px;
+}
+.list-more {
+  width: 28px;
+  padding-inline: 0;
 }
 .search-title {
   margin: 0;
