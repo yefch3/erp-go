@@ -83,7 +83,7 @@ func (s *Service) BulkDelete(ctx context.Context, tenant, operator int64, operat
 	if err != nil {
 		return out, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, "SET LOCAL lock_timeout='3s'")
 	if err != nil {
 		return out, err
