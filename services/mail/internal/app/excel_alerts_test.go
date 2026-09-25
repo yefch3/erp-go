@@ -52,7 +52,11 @@ func TestTheModelBudgetStaysInsideTheReclaimWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claim := string(sql)[strings.Index(string(sql), "-- name: ClaimExcelJob"):]
+	at := strings.Index(string(sql), "-- name: ClaimExcelJob")
+	if at < 0 {
+		t.Fatal("excel.sql 里找不到 ClaimExcelJob——改了名字的话，这里要跟着改")
+	}
+	claim := string(sql)[at:]
 	m := regexp.MustCompile(`status\s*=\s*'PROCESSING' AND started_at < now\(\) - interval '(\d+) minutes'`).FindStringSubmatch(claim)
 	if m == nil {
 		t.Fatal("ClaimExcelJob 里找不到「处理中超过几分钟重新领」那条线——是不是改了写法？")
