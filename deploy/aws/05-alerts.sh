@@ -79,6 +79,10 @@ excel excel_storage_unreachable "领转换任务时对象存储不通，任务�
 excel excel_row_write_failed    "转换结果传上去了、库里那一行没写成。下一次领走时会从对象存储恢复；连着出现说明数据库有问题"
 excel excel_result_unreachable  "预览或下载时从对象存储取不到转换结果"
 excel excel_sweep_remove_failed "清理器删不掉过期的转换结果，那一行会一直留着重试"
+# 模型厂那头。这两条单独告，是因为「智能转换失败」本身什么都没说：key 失效和
+# 一份读不懂的表格在兜底告警里是同一封信。
+excel excel_model_account "模型厂拒了 OPENAI_API_KEY：key 失效或余额用完。全公司的「生成 Excel」此刻都转不成——去 OpenAI 后台看账单和 key"
+excel excel_model_busy    "模型厂限流或出错，自动重试几次仍不行，这次转换失败了。偶尔一次可以不管；连着响说明用量碰到了账号的每分钟上限，或者对方在出故障"
 # 恢复成功只记数、不告警：它是好消息（模型没重跑）。但次数多起来说明库那
 # 一步经常写不成，那时该去看数据库。
 filter "erp-mail-excel_result_recovered" \
