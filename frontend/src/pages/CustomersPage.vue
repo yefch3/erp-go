@@ -12,6 +12,7 @@
     </div>
     <div class="customer-workspace">
       <el-card class="customer-list" shadow="never">
+      <div class="master-delete-toolbar"><MasterDataBulkDelete entity="CUSTOMER" @deleted="changeScope" /></div>
       <div class="filters">
         <el-input
           v-model="keyword"
@@ -220,6 +221,7 @@
 </template>
 
 <script setup lang="ts">
+import MasterDataBulkDelete from '../components/MasterDataBulkDelete.vue'
 import ReorderableTableHeader from "../components/ReorderableTableHeader.vue"
 import { useTableColumnOrder } from "../composables/useTableColumnOrder"
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -529,6 +531,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.master-delete-toolbar { display: flex; justify-content: flex-end; }
+.master-delete-toolbar:has(button) { margin-bottom: 12px; }
 .filters{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}.filter-actions{display:flex;align-items:center;gap:10px;margin-left:auto;white-space:nowrap}.filter-actions .el-button+.el-button{margin-left:0}.filter-search{width:min(300px,32%)}.filter-select{width:150px}.customer-workspace{display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px;align-items:start}.customer-workspace.collapsed{grid-template-columns:64px minmax(0,1fr)}.country-panel{position:sticky;top:16px}.country-panel :deep(.el-card__body){padding:10px}.country-panel__title{display:flex;align-items:center;justify-content:space-between;padding:4px 8px 10px;color:var(--el-text-color-secondary);font-size:13px;font-weight:600}.country-panel__title button{width:26px;height:26px;border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.country-item{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-radius:8px;padding:7px 9px;color:var(--el-text-color-regular);background:transparent;cursor:pointer;text-align:left}.country-item:hover{background:var(--el-fill-color-light)}.country-item.active{color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.country-item strong{min-width:28px;padding:2px 7px;border-radius:999px;color:inherit;background:var(--el-fill-color);font-size:12px;text-align:center}.customer-list{min-width:0}.customer-list :deep(.el-card__body){padding:16px 18px}.customer-table{width:100%;--el-table-row-hover-bg-color:var(--el-fill-color-light)}.customer-table :deep(.el-table__row){cursor:pointer}.customer-table :deep(th.el-table__cell){height:42px;padding:6px 0;color:var(--el-text-color-secondary);font-size:13px}.customer-table :deep(td.el-table__cell){padding:11px 0}.customer-identity{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:3px;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.customer-identity strong{max-width:100%;overflow:hidden;color:var(--el-text-color-primary);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.customer-identity span{max-width:100%;overflow:hidden;color:var(--el-text-color-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.muted,.stale-country{color:var(--el-text-color-secondary)}.customer-cards{display:none}.mobile-country{display:none;margin-bottom:10px}.mobile-country__title{display:flex;flex-direction:column;gap:2px;white-space:nowrap}.mobile-country__title span{color:var(--el-text-color-secondary);font-size:11px}.mobile-country__title strong{font-size:14px;font-weight:600}.country-select{width:100%}.pager{margin-top:12px;justify-content:flex-end}.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
 .bulk-owner-bar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--el-color-primary-light-7);border-radius:8px;background:var(--el-color-primary-light-9)}.bulk-owner-bar span{margin-right:auto;color:var(--el-text-color-regular)}
 @media(max-width:1450px){.customer-workspace,.customer-workspace.collapsed{grid-template-columns:1fr}.country-panel{display:none}.mobile-country{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 13px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-select{max-width:300px}}

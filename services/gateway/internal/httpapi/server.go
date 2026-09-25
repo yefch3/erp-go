@@ -36,12 +36,13 @@ import (
 )
 
 type Server struct {
-	IAM       iamv1.AuthServiceClient
-	Directory iamv1.DirectoryServiceClient
-	Platform  iamv1.PlatformServiceClient
-	Access    iamv1.AccessServiceClient
-	Customers mdv1.CustomerServiceClient
-	Suppliers mdv1.SupplierServiceClient
+	IAM          iamv1.AuthServiceClient
+	Directory    iamv1.DirectoryServiceClient
+	Platform     iamv1.PlatformServiceClient
+	Access       iamv1.AccessServiceClient
+	Customers    mdv1.CustomerServiceClient
+	MasterDelete mdv1.MasterDataBulkDeleteServiceClient
+	Suppliers    mdv1.SupplierServiceClient
 	// 信用评级（E3）：客户和供应商共用一套。
 	CreditRatings mdv1.CreditRatingServiceClient
 	Ports         mdv1.PortServiceClient
@@ -156,6 +157,9 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.auth)
 		// 挂在认证之后：防重的键按「哪家公司的哪个人」隔离，身份得先有。
 		r.Use(s.idempotent)
+		r.Get("/api/masterdata/bulk-delete/access", s.masterDeleteAccess)
+		r.Post("/api/masterdata/bulk-delete/preview", s.masterDeletePreview)
+		r.Post("/api/masterdata/bulk-delete/execute", s.masterDeleteExecute)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/access", s.customerAccessCapabilities)
 		r.With(s.perm("masterdata:customer:write")).Get("/api/customers/owner-options", s.customerOwnerOptions)

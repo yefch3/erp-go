@@ -58,6 +58,12 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool)
 	svc.UseFiles(filestore.New(files))
+	check, closeReferences, err := referenceChecker()
+	if err != nil {
+		return err
+	}
+	defer closeReferences()
+	svc.UseReferenceChecker(check)
 	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
 	if err != nil {
 		return err
@@ -67,6 +73,7 @@ func run(log *slog.Logger) error {
 	accessClient := iamv1.NewAccessServiceClient(iamConn)
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log), grpc.MaxRecvMsgSize(12<<20), grpc.MaxSendMsgSize(12<<20), grpc.ChainUnaryInterceptor(h.CustomerAccess(accessClient), h.SupplierAccess(accessClient)))
 	mdv1.RegisterCustomerServiceServer(srv, h)
+	mdv1.RegisterMasterDataBulkDeleteServiceServer(srv, &grpcin.BulkDeleteHandler{Service: svc, Access: accessClient})
 	mdv1.RegisterSupplierServiceServer(srv, h)
 	mdv1.RegisterPortServiceServer(srv, h)
 	mdv1.RegisterOptionServiceServer(srv, h)

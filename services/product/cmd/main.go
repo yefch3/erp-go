@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	"github.com/sgao19/erp-go/pkg/masterref"
 	"log/slog"
 	"net"
 	"os"
@@ -69,6 +71,7 @@ func run(log *slog.Logger) error {
 	pdv1.RegisterCatalogServiceServer(srv, h)
 	pdv1.RegisterAttachmentServiceServer(srv, h)
 	pdv1.RegisterAttributeServiceServer(srv, h)
+	commonv1.RegisterMasterDataReferenceServiceServer(srv, &masterref.Handler{Pool: pool})
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

@@ -9,7 +9,8 @@
     </div>
     <div class="port-workspace">
       <el-card class="port-list" shadow="never">
-        <div class="filters">
+        <div class="master-delete-toolbar"><MasterDataBulkDelete entity="PORT" @deleted="reloadAll" /></div>
+      <div class="filters">
           <el-input v-model="keyword" clearable :placeholder="t('ports.searchPlaceholder')" @keyup.enter="reload" @clear="reload" />
           <el-select v-model="status" @change="reloadAll"><el-option :label="t('ports.activeOnly')" value="ACTIVE"/><el-option :label="t('ports.allStatuses')" value="ALL"/><el-option :label="t('ports.inactiveOnly')" value="INACTIVE"/></el-select>
           <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
@@ -54,6 +55,7 @@
 </template>
 
 <script setup lang="ts">
+import MasterDataBulkDelete from '../components/MasterDataBulkDelete.vue'
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -150,6 +152,8 @@ load();loadCountries()
 </script>
 
 <style scoped>
+.master-delete-toolbar { display: flex; justify-content: flex-end; }
+.master-delete-toolbar:has(button) { margin-bottom: 12px; }
 .change-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.change-grid pre{margin:0;padding:12px;background:#f6f8fa;border-radius:8px;white-space:pre-wrap;overflow:auto}
 .page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.page-head h2{margin:0 0 5px}.page-head p,.secondary,.hint,.category-help,.vessel-placeholder p{color:#8b95a5}.page-head p{margin:0}.port-workspace{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.port-workspace.collapsed{grid-template-columns:72px minmax(0,1fr)}.category-panel{background:linear-gradient(180deg,#f3f8ff,#fff)}.category-title{font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}.category-title button{border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.category-item,.country-item{display:flex;width:100%;border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;font-size:15px;cursor:pointer;justify-content:space-between}.category-item.active,.country-item.active{background:#e8f2ff;color:#409eff;font-weight:700}.country-item{font-size:13px;margin-top:3px}.country-item strong{background:#eef1f5;border-radius:12px;min-width:30px;text-align:center}.category-subtitle{font-size:13px;font-weight:700;margin:18px 0 8px}.category-help{font-size:12px;line-height:1.7;margin-top:14px}.filters{display:flex;gap:12px;margin-bottom:16px}.filters .el-input{max-width:330px}.filters .el-select{width:140px}.secondary{font-size:12px;margin-top:3px}.pager{justify-content:flex-end;margin-top:16px}.hint{font-size:12px;margin-top:5px}.vessel-placeholder{text-align:center}.mobile-category{display:none;margin-bottom:12px}.port-name{display:flex;align-items:center;gap:7px}.favorite,.favorite-button.active{color:#f5a623}.favorite{font-size:17px}.favorite-button{border:0;background:transparent;padding:0;cursor:pointer;color:#a8b0bc;font-size:19px;line-height:1}.favorite-button:hover{color:#f5a623}.coordinate-row{display:flex;gap:12px}.switch-help{margin-left:10px;color:#8b95a5;font-size:12px}@media(max-width:850px){.port-workspace{grid-template-columns:1fr}.category-panel{display:none}.mobile-category{display:block}.filters{flex-wrap:wrap}.coordinate-row{flex-wrap:wrap}}
 .port-workspace{display:block}.country-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-strip>div{display:flex;flex-direction:column;gap:2px}.country-strip span{font-size:11px;color:var(--el-text-color-secondary)}.country-strip strong{font-size:14px}.country-strip .el-select{width:min(320px,48%)}.port-list :deep(.el-card__body){padding:12px 14px}.filters{align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}.filters .el-input{width:min(300px,28%)}.filters .el-select{width:140px}.filter-actions{display:flex;gap:8px;margin-left:auto}.filter-actions .el-button+.el-button{margin-left:0}.port-list :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.port-list :deep(td.el-table__cell){padding:6px 0;font-size:12px}.port-list :deep(.el-table__cell .cell){line-height:1.35;padding:0 7px}.port-name{gap:4px;font-size:12px}.port-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.secondary{font-size:11px;margin-top:1px}.favorite-button{font-size:16px}.pager{margin-top:8px}

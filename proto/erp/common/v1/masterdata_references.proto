@@ -1,0 +1,9 @@
+syntax = "proto3";
+package erp.common.v1;
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/common/v1;commonv1";
+service MasterDataReferenceService {
+  rpc CheckMasterDataReferences(CheckMasterDataReferencesRequest) returns (CheckMasterDataReferencesResponse);
+}
+message MasterDataReferenceCandidate { int64 id = 1; repeated string labels = 2; }
+message CheckMasterDataReferencesRequest { string entity = 1; repeated MasterDataReferenceCandidate candidates = 2; }
+message CheckMasterDataReferencesResponse { repeated int64 referenced_ids = 1; }

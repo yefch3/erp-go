@@ -1,0 +1,26 @@
+syntax = "proto3";
+package erp.masterdata.v1;
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1;masterdatav1";
+service MasterDataBulkDeleteService { rpc BulkDeleteMasterData(BulkDeleteMasterDataRequest) returns (BulkDeleteMasterDataResponse); }
+// Preview and execute are scoped to the authenticated tenant, not a request tenant.
+message BulkDeleteMasterDataRequest {
+  string entity = 1; // CUSTOMER / SUPPLIER / PORT
+  string start_at = 2; // inclusive RFC3339 instant
+  string end_at = 3; // exclusive RFC3339 instant
+  bool execute = 4;
+  repeated BulkDeleteMasterDataSelection selections = 5;
+}
+message BulkDeleteMasterDataSelection { int64 id = 1; string version = 2; }
+message BulkDeleteMasterDataRow {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string created_at = 4;
+  string version = 5;
+  string blocked_reason = 6;
+  repeated string labels = 7;
+}
+message BulkDeleteMasterDataResponse {
+  repeated BulkDeleteMasterDataRow rows = 1;
+  int32 deleted_count = 2;
+}

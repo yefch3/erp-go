@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	"github.com/sgao19/erp-go/pkg/masterref"
 	"github.com/shopspring/decimal"
 	"log/slog"
 	"net"
@@ -181,6 +183,7 @@ func run(log *slog.Logger) error {
 	prv1.RegisterSourcingServiceServer(srv, grpcin.NewSourcing(svc))
 	prv1.RegisterDailyPriceServiceServer(srv, grpcin.NewDailyPrice(svc))
 	prv1.RegisterInquiryTemplateServiceServer(srv, grpcin.NewInquiryTemplates(svc))
+	commonv1.RegisterMasterDataReferenceServiceServer(srv, &masterref.Handler{Pool: pool})
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

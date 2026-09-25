@@ -9,7 +9,8 @@
     </div>
     <div class="workspace">
       <el-card class="list-card" shadow="never">
-        <div class="filters">
+        <div class="master-delete-toolbar"><MasterDataBulkDelete entity="SUPPLIER" @deleted="bulkDeleteSaved" /></div>
+      <div class="filters">
           <el-input v-model="keyword" clearable :placeholder="t('suppliers.search')" @keyup.enter="load" />
           <el-select v-model="businessType" clearable :placeholder="t('suppliers.businessType')" @change="resetLoad"><el-option v-for="o in businessOptions" :key="o.code" :label="optionLabel(o.code)" :value="o.code" /></el-select>
           <el-select v-model="status" @change="resetLoad"><el-option :label="t('common.active')" value=""/><el-option :label="t('common.inactive')" value="INACTIVE"/><el-option :label="t('suppliers.allStatuses')" value="ALL"/></el-select>
@@ -67,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import MasterDataBulkDelete from '../components/MasterDataBulkDelete.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -98,6 +100,7 @@ function secondaryName(r:Supplier){const v=locale.value==='zh'?r.nameEn:r.nameZh
 function optionLabel(code:string){return businessRoleLabel(code,t,businessOptions.value.find(o=>o.code===code)?.label)}
 async function syncQuery(){await router.replace({query:masterDataListQuery({keyword:keyword.value,country:countryCode.value,businessType:businessType.value,status:status.value,page:page.value})})}
 async function load(){clearSelection();loading.value=true;try{await syncQuery();const d=await get<any>('/suppliers',{page:page.value,page_size:pageSize.value,keyword:keyword.value,country_code:countryCode.value,business_type:businessType.value,status:status.value});rows.value=d.suppliers||[];total.value=Number(d.meta?.total||0)}catch{rows.value=[];total.value=0}finally{loading.value=false}}
+async function bulkDeleteSaved(){page.value=1;await Promise.all([load(),loadGroups()])}
 async function loadGroups(){try{const d=await get<any>('/suppliers/countries');countries.value=(d.countries||[]) as CountryGroup[]}catch{countries.value=[]}}
 function resetLoad(){page.value=1;load()}
 function changePage(v:number){page.value=v;load()}
@@ -116,6 +119,8 @@ onMounted(async()=>{try{const [,business,payment,access]=await Promise.all([Prom
 </script>
 
 <style scoped>
+.master-delete-toolbar { display: flex; justify-content: flex-end; }
+.master-delete-toolbar:has(button) { margin-bottom: 12px; }
 .supplier-page{--navy:#18324a;--teal:#147d7b}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.page-head h2{margin:0;color:var(--navy)}.page-head p{margin:6px 0 0;color:#778899}.workspace{display:grid;grid-template-columns:225px 1fr;gap:16px}.country-panel h3{margin:2px 0 12px;color:var(--navy)}.country-panel button{width:100%;display:flex;justify-content:space-between;border:0;background:transparent;padding:10px 12px;border-radius:9px;color:#526372;cursor:pointer}.country-panel button.active{background:#e6f4f2;color:var(--teal)}.country-panel b{background:#edf1f4;border-radius:12px;padding:1px 9px}.filters{display:flex;gap:10px;margin-bottom:16px}.filters .el-input{max-width:280px}.filters .el-select{width:165px}.bulk-owner-bar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--el-color-primary-light-7);border-radius:8px;background:var(--el-color-primary-light-9)}.bulk-owner-bar span{margin-right:auto;color:var(--el-text-color-regular)}.name-cell{display:flex;flex-direction:column}.name-cell small{color:#8b99a5}.el-tag+.el-tag{margin-left:5px}.pager{justify-content:flex-end;margin-top:18px}.form-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}.form-grid .full{grid-column:1/-1}.form-grid .code-notice{margin-bottom:18px}.form-grid :deep(.el-select){width:100%}.caret{font-size:10px;margin-left:5px}.danger-item{color:#f56c6c}@media(max-width:900px){.workspace{grid-template-columns:1fr}.country-panel{display:none}.filters,.bulk-owner-bar{flex-wrap:wrap}.bulk-owner-bar span{width:100%;margin-right:0}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}}
 .workspace{display:block}.country-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-strip>div{display:flex;flex-direction:column;gap:2px}.country-strip span{font-size:11px;color:var(--el-text-color-secondary)}.country-strip strong{font-size:14px}.country-strip .el-select{width:min(320px,48%)}.list-card :deep(.el-card__body){padding:12px 14px}.filters{align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}.filters .el-input{width:min(280px,25%)}.filters .el-select{width:145px}.filter-actions{display:flex;gap:8px;margin-left:auto}.filter-actions .el-button+.el-button{margin-left:0}.bulk-owner-bar{gap:8px;padding:7px 10px;margin-bottom:10px}.list-card :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.list-card :deep(td.el-table__cell){padding:6px 0;font-size:12px}.list-card :deep(.el-table__cell .cell){line-height:1.35}.name-cell strong{font-size:13px}.name-cell small{font-size:11px}.list-card :deep(.el-tag){font-size:11px}.pager{margin-top:8px}
 @media(max-width:850px){.filters .el-input{width:100%;max-width:none}.filters .el-select{flex:1;min-width:135px}.filter-actions{margin-left:0}}
