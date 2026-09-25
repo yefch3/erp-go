@@ -1,6 +1,5 @@
 syntax = "proto3";
 package erp.common.v1;
-option go_package = "github.com/sgao19/erp-go/gen/go/erp/common/v1;commonv1";
 service MasterDataReferenceService {
   rpc CheckMasterDataReferences(CheckMasterDataReferencesRequest) returns (CheckMasterDataReferencesResponse);
 }

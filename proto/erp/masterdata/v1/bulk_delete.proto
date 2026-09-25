@@ -1,6 +1,5 @@
 syntax = "proto3";
 package erp.masterdata.v1;
-option go_package = "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1;masterdatav1";
 service MasterDataBulkDeleteService { rpc BulkDeleteMasterData(BulkDeleteMasterDataRequest) returns (BulkDeleteMasterDataResponse); }
 // Preview and execute are scoped to the authenticated tenant, not a request tenant.
 message BulkDeleteMasterDataRequest {
