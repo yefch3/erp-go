@@ -16,7 +16,7 @@ func categoryWorkspaceFixture() (OfferBody, OfferInquiry) {
 	source.Body.Products = []OfferProduct{{ID: "p1", Product: "Steel", Quantity: "20", Unit: "MT"}}
 	q := json.RawMessage(`{"quoteCategory":"FOB_USD","currency":"USD","prices":[{"productId":"p1","price":"10"}]}`)
 	source.Quotes = []OfferSourceQuote{{ID: "q1", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "q2", Kind: "PROCUREMENT", SubmittedAt: "2026-09-16", Version: 1, Body: q}, {ID: "ship", Kind: "LOGISTICS", SubmittedAt: "2026-09-16", Version: 1, Body: json.RawMessage(`{"company":"Carrier","freightRates":[{"productId":"p1","usdPrice":"2.5000"}]}`)}}
-	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1"}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2"}}, Transports: []OfferTransport{{QuoteID: "ship"}}, CategoryCalculations: map[string]CategoryCalculation{"FOB_USD": {InterestRate: "0", InterestDays: "360"}}}, source
+	return OfferBody{CategoryWorkflow: true, Customer: "Customer", CategorySelections: []OfferCategorySelection{{ProductID: "p1", Category: "FOB_USD", QuoteID: "q1", FreightQuoteID: "ship", FreightQuoteVersion: 1}, {ProductID: "p1", Category: "FOB_USD", QuoteID: "q2", FreightQuoteID: "ship", FreightQuoteVersion: 1}}, Transports: []OfferTransport{{QuoteID: "ship"}}, CategoryCalculations: map[string]CategoryCalculation{"FOB_USD": {InterestRate: "0", InterestDays: "360"}}}, source
 }
 
 func TestCategoryOfferPDFUsesSelectedCustomerPrices(t *testing.T) {
@@ -144,7 +144,7 @@ func TestCategoryWorkspaceCalculatesUnitPriceFormulasWithInterest(t *testing.T) 
 		t.Run(test.category, func(t *testing.T) {
 			b, source := categoryWorkspaceFixture()
 			source.Quotes[0].Body = json.RawMessage(test.quoteBody)
-			b.CategorySelections = []OfferCategorySelection{{ProductID: "p1", Category: test.category, QuoteID: "q1"}}
+			b.CategorySelections = []OfferCategorySelection{{ProductID: "p1", Category: test.category, QuoteID: "q1", FreightQuoteID: "ship", FreightQuoteVersion: 1}}
 			b.CategoryCalculations = map[string]CategoryCalculation{test.category: {
 				QuoteFX: test.fx, PortCharge: test.port, InlandFreight: test.inland, Loss: test.loss,
 				InterestRate: "6", InterestDays: "60",

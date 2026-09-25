@@ -204,14 +204,20 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		}
 
 		freightUnitPrice := decimal.Zero
-		freightQuoteID, latestSubmitted := "", ""
-		var latestVersion int64
+		freightQuoteID := ""
 		if selection.Category != "DIRECT_CFR_USD" {
+			if selection.FreightQuoteID == "" || selection.FreightQuoteVersion == 0 {
+				return b, apierr.Invalid("OFFER_CFR_FREIGHT_SELECTION", "请先为所选产品选择海运报价")
+			}
 			for _, quote := range source.Quotes {
-				if quote.Kind != "LOGISTICS" || quote.SubmittedAt == "" || quote.Historical {
+				if quote.ID != selection.FreightQuoteID || quote.Kind != "LOGISTICS" || quote.SubmittedAt == "" || quote.Historical {
 					continue
 				}
+				if quote.Version != selection.FreightQuoteVersion {
+					return b, apierr.Invalid("OFFER_CFR_FREIGHT_CHANGED", "所选海运报价已修改，请重新选择确认")
+				}
 				var body struct {
+					ValidUntil   string `json:"validUntil"`
 					FreightRates []struct {
 						ProductID string `json:"productId"`
 						USDPrice  string `json:"usdPrice"`
@@ -219,6 +225,12 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 				}
 				if err := json.Unmarshal(quote.Body, &body); err != nil {
 					return b, err
+				}
+				if body.ValidUntil != "" {
+					expires, err := time.Parse("2006-01-02", body.ValidUntil)
+					if err != nil || expires.Format("2006-01-02") < time.Now().UTC().Format("2006-01-02") {
+						return b, apierr.Invalid("OFFER_CFR_FREIGHT_EXPIRED", "所选海运报价已过期或有效期无效，请重新选择")
+					}
 				}
 				for _, rate := range body.FreightRates {
 					if rate.ProductID != selection.ProductID || strings.TrimSpace(rate.USDPrice) == "" {
@@ -228,13 +240,11 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 					if parseErr != nil || value.IsNegative() {
 						continue
 					}
-					if freightQuoteID == "" || quote.SubmittedAt > latestSubmitted || (quote.SubmittedAt == latestSubmitted && quote.Version > latestVersion) {
-						freightUnitPrice, freightQuoteID, latestSubmitted, latestVersion = value, quote.ID, quote.SubmittedAt, quote.Version
-					}
+					freightUnitPrice, freightQuoteID = value, quote.ID
 				}
 			}
 			if freightQuoteID == "" {
-				return b, apierr.Invalid("OFFER_CFR_FREIGHT", "所选产品尚无有效的产品海运单价")
+				return b, apierr.Invalid("OFFER_CFR_FREIGHT", "所选海运报价不可用或不包含该产品的有效海运单价，请重新选择")
 			}
 		}
 
@@ -297,6 +307,9 @@ func calculateCategorySelections(b OfferBody, source OfferInquiry, target string
 		}
 		selection.CFRUnitPrice = cfrUnitPrice.StringFixed(4)
 		selection.FreightQuoteID = freightQuoteID
+		if freightQuoteID == "" {
+			selection.FreightQuoteVersion = 0
+		}
 	}
 	return b, nil
 }

@@ -91,6 +91,7 @@ type OfferCategorySelection struct {
 	ProductFreightUnitPrice string `json:"productFreightUnitPrice,omitempty"`
 	CFRUnitPrice            string `json:"cfrUnitPrice,omitempty"`
 	FreightQuoteID          string `json:"freightQuoteId,omitempty"`
+	FreightQuoteVersion     int64  `json:"freightQuoteVersion,omitempty"`
 }
 type OfferBody struct {
 	CategoryWorkflow     bool                           `json:"categoryWorkflow,omitempty"`
