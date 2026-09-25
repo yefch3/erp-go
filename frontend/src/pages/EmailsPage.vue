@@ -4568,9 +4568,9 @@ async function doUnsuppress(row: Suppression) {
    went pale again underneath it. */
 .mailbox {
   display: flex;
-  /* 从前是 gap: 18px。现在两栏之间站着一条分隔条，那 18px 由「4 + 10 + 4」
-     凑出来：留白没变，中间那 10px 成了能抓住的东西。 */
-  gap: 4px;
+  /* Keep the 10px resize target, but let the mail content sit closer to the
+     folder rail instead of leaving a wide blank strip beside its scrollbar. */
+  gap: 2px;
   align-items: stretch;
   /* height 而不是 min-height，两个原因，第二个是 2026-09-21 查出来的。
 
@@ -4679,10 +4679,9 @@ async function doUnsuppress(row: Suppression) {
      below, which is correct — the list should respond to the width it can
      actually use. */
   background: var(--mail-ground);
-  /* 左边文件夹栏一直到工作区底部；这里的底部内边距曾让邮件
-     列表和阅读区各提前 14px 结束，三栏底边看起来参差不齐。上、左、
-     右的留白保留，底部交给两个自身滚动的列直接贴齐工作区。 */
-  padding: 14px 16px 0;
+  /* 左边文件夹栏一直到工作区底部；底部交给两个自身滚动的列直接贴齐工作区。
+     左侧只留 4px：旁边已有可拖动的分隔条，不再重复占用邮件文字的空间。 */
+  padding: 14px 16px 0 4px;
   /* 这里从前建着一个名叫 mailbox 的 CSS 容器，给邮件行的「窄了就收」用。
      **它已经删了**，连同那几条规则一起——见 MailList.vue 里那段说明。
 
