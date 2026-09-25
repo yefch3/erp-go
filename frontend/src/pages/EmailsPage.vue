@@ -4779,6 +4779,8 @@ async function doUnsuppress(row: Suppression) {
 /* The select-all box aligns with the per-row boxes below it, so the column
    reads as a column rather than as a stray control above a list. */
 .pick-all {
+  /* 和每一行的勾选框上下对齐：行左边留多少，这里就缩多少。 */
+  margin-left: var(--mail-row-inset);
   margin-right: -2px;
   height: 32px;
 }

@@ -463,7 +463,10 @@ function ariaFor(m: MailRow) {
   /* 高度由内容定。三行是常态，没有摘要的（投递记录、空正文）自然是两行，
      不必为它留一条空行——空着一行会让那一封看起来比邻居"轻"。
      三行约 76px，和 Foxmail 一档：再紧就分不出三行，再松一屏就少两封。 */
-  padding: 7px 14px;
+  /* 左边只留一点（--mail-row-inset），勾选框和工具条上的「全选」上下对齐。
+     从前左边也是 14px，勾选框再在一个 24px 的格子里居中，比「全选」往右缩了
+     19px，那一截空白什么都不装（2026-09-25 改）。 */
+  padding: 7px 14px 7px var(--mail-row-inset);
   border-bottom: 1px solid var(--mail-divider);
   background: var(--mail-surface);
   /* 箭头，不是小手。
@@ -533,9 +536,11 @@ function ariaFor(m: MailRow) {
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  /* 星标那颗字符最宽，24px 装得下；勾选框本身 14px，居中放。并排那会儿
-     两格加中间的空当是 50px，现在 24px。 */
-  width: 24px;
+  /* 这一纵就是勾选框那么宽（14px），勾选框的左边就是这一纵的左边，和「全选」
+     对得上。星标那颗字符有 16px，按钮给 20px 好点，居中放，两边各探出去一点
+     ——它和勾选框共用一条中线，看着还是一纵。
+     并排那会儿两格加中间的空当是 50px，叠起来后是 24px，现在 14px。 */
+  width: 14px;
 }
 .face {
   display: grid;
@@ -553,7 +558,7 @@ function ariaFor(m: MailRow) {
   flex: none;
   display: grid;
   place-items: center;
-  width: 100%;
+  width: 20px;
   /* 挨着勾选框下面那一行（主题那一行的高度）。 */
   height: 20px;
   padding: 0;
