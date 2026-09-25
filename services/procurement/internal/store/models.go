@@ -808,6 +808,7 @@ type PurchaseRequirement struct {
 	SourcePaymentTerms  string
 	SourceIncoterm      string
 	SourceValidUntil    pgtype.Date
+	SourceSalesRemark   string
 }
 
 type PurchaseSupplierConfirmation struct {

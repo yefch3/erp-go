@@ -57,6 +57,7 @@ type ContractShippingHandoff struct {
 	ContractVerifiedByName   string
 	PaymentRequestedAt       pgtype.Timestamptz
 	UpdatedAt                pgtype.Timestamptz
+	SourceSalesRemark        string
 }
 
 type ContractShippingHandoffCargo struct {

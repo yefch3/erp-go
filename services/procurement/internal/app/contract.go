@@ -20,6 +20,7 @@ import (
 // not generated again.
 type ContractEffective struct {
 	ContractID                int64  `json:"contract_id"`
+	SourceSalesRemark         string `json:"source_sales_remark"`
 	ContractNo                string `json:"contract_no"`
 	VersionID                 int64  `json:"version_id"`
 	VersionNo                 int32  `json:"version_no"`
@@ -122,8 +123,9 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 				UomID: line.UomID, UomCode: line.UomCode,
 				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate, Source: "CONTRACT",
 				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,
-				SourceUnitPrice: "0",
-				InitialStatus:   "WAITING_REQUOTE",
+				SourceUnitPrice:   "0",
+				SourceSalesRemark: e.SourceSalesRemark,
+				InitialStatus:     "WAITING_REQUOTE",
 			}
 			if len(snapshots) > 0 {
 				if err := applyContractProcurementSnapshot(e, line, line.Qty, snapshots[index], &params); err != nil {

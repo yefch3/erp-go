@@ -79,6 +79,9 @@ func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64,
 		if err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `UPDATE quotations SET source_sales_remark=$3 WHERE tenant_id=$1 AND id=$2`, op.TenantID, quotationID, strings.TrimSpace(view.Source.Body.Remark)); err != nil {
+			return err
+		}
 		for i, line := range b.Lines {
 			if err := q.AddQuotationItem(ctx, store.AddQuotationItemParams{TenantID: op.TenantID, QuotationID: quotationID, LineNo: int32(i + 1), ProductID: 0, ProductName: line.Product, Spec: offerSpecification(line.OfferProduct, view.Source), Qty: line.Quantity, UomCode: line.Unit, UnitPrice: line.UnitPrice, Amount: line.Amount, Remark: line.Remark}); err != nil {
 				return err

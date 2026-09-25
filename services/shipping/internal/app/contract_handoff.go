@@ -12,14 +12,15 @@ import (
 type EventClaim func(context.Context, pgx.Tx) error
 
 type ContractEffective struct {
-	ContractID   int64                       `json:"contract_id"`
-	ContractNo   string                      `json:"contract_no"`
-	VersionID    int64                       `json:"version_id"`
-	VersionNo    int32                       `json:"version_no"`
-	CustomerID   int64                       `json:"customer_id"`
-	CustomerName string                      `json:"customer_name"`
-	Shipments    []ContractEffectiveShipment `json:"shipments"`
-	Items        []ContractEffectiveItem     `json:"items"`
+	ContractID        int64                       `json:"contract_id"`
+	SourceSalesRemark string                      `json:"source_sales_remark"`
+	ContractNo        string                      `json:"contract_no"`
+	VersionID         int64                       `json:"version_id"`
+	VersionNo         int32                       `json:"version_no"`
+	CustomerID        int64                       `json:"customer_id"`
+	CustomerName      string                      `json:"customer_name"`
+	Shipments         []ContractEffectiveShipment `json:"shipments"`
+	Items             []ContractEffectiveItem     `json:"items"`
 }
 
 type ContractEffectiveItem struct {
@@ -75,7 +76,7 @@ func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, even
 				CustomerManaged: shipment.CustomerManaged, Currency: shipment.Currency, FreightAmount: shipment.FreightAmount,
 				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
 				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
-				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark, SourceSalesRemark: event.SourceSalesRemark,
 				InitialStatus: "WAITING_REQUOTE",
 			}); err != nil {
 				return err

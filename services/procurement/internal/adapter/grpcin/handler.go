@@ -62,7 +62,7 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 			SourceCurrency: r.SourceCurrency, SourceUnitPrice: r.SourceUnitPrice,
 			Moq: r.Moq, LeadTime: r.LeadTime,
 			SourcePaymentTerms: r.SourcePaymentTerms, SourceIncoterm: r.SourceIncoterm,
-			SourceValidUntil: r.SourceValidUntil,
+			SourceValidUntil: r.SourceValidUntil, SourceSalesRemark: r.SourceSalesRemark,
 		})
 	}
 	return &prv1.ListRequirementsResponse{
@@ -246,7 +246,7 @@ func requirementToProto(r store.GetRequirementRow) *prv1.Requirement {
 		SourceCurrency: r.SourceCurrency, SourceUnitPrice: r.SourceUnitPrice,
 		Moq: r.Moq, LeadTime: r.LeadTime,
 		SourcePaymentTerms: r.SourcePaymentTerms, SourceIncoterm: r.SourceIncoterm,
-		SourceValidUntil: r.SourceValidUntil,
+		SourceValidUntil: r.SourceValidUntil, SourceSalesRemark: r.SourceSalesRemark,
 	}
 }
 

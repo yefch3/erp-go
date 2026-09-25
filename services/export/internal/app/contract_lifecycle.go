@@ -385,6 +385,7 @@ type contractEffectiveEvent struct {
 	QuotationID               int64  `json:"quotation_id"`
 	QuotationNo               string `json:"quotation_no"`
 	SourceCustomerSelectionID int64  `json:"source_customer_selection_id"`
+	SourceSalesRemark         string `json:"source_sales_remark,omitempty"`
 	// 合同负责人（A1）：采购需求生而继承它作为属主——合同是谁谈的，
 	// 拆出来的采购动向就归谁看。
 	SalesEmployeeID       int64                    `json:"sales_employee_id"`
@@ -473,6 +474,9 @@ func (s *Service) hydrateEffectiveEvent(ctx context.Context, tenantID int64, vie
 		event.QuotationID = quotation.ID
 		event.QuotationNo = quotation.QuoteNo
 		event.SourceCustomerSelectionID = quotation.SourceCustomerSelectionID
+		if err := s.pool.QueryRow(ctx, `SELECT source_sales_remark FROM quotations WHERE tenant_id=$1 AND id=$2`, tenantID, quotation.ID).Scan(&event.SourceSalesRemark); err != nil {
+			return contractEffectiveEvent{}, err
+		}
 		shipments, err := s.ListQuotationShipments(ctx, tenantID, view.Contract.QuotationID)
 		if err != nil {
 			return contractEffectiveEvent{}, err
