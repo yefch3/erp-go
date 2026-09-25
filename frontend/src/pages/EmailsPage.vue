@@ -611,7 +611,7 @@
         class="list-col"
         :style="colW.list ? { flex: `0 0 ${colW.list}px` } : undefined"
       >
-      <div class="pane-head" :class="{ 'pane-head--mail': canMarkAllRead && !pickedRows.length && !tablePicked.length }">
+      <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
              has no header row, and the toolbar is where the actions are that
              a selection is for. Indeterminate when only some are ticked,
@@ -799,6 +799,7 @@
                  活在菜单里的话，人看着一份「怎么不是按日期排」的列表，而
                  按钮上写着「排序：日期 ↓」——那才是最难查的那种。 -->
             <span v-if="topBadge" class="top-badge" :title="topBadgeTitle">{{ topBadge }}</span>
+            <span v-if="unreadOnly" class="unread-badge">{{ t('emails.unreadOnly') }}</span>
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -874,6 +875,21 @@
               >
                 {{ t('emails.sortBar.messageMode') }}
               </el-dropdown-item>
+              <el-dropdown-item
+                v-if="canFilterUnread"
+                divided
+                command="filter:unread"
+                :class="{ 'sort-on': unreadOnly }"
+              >
+                {{ t('emails.unreadOnly') }}
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="canMarkAllRead"
+                command="action:markAllRead"
+                :disabled="markingAll"
+              >
+                {{ t('emails.markAllRead') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -904,42 +920,6 @@
              打开这一页时拉一次（syncOnOpen），之后守着 IDLE，服务器一有新信
              就推过来。一颗按钮摆在那儿反而是在说「不点它就收不到」，而那不
              是真的；真正没收到的时候点它也没用，那时该看的是上面那条横幅。 -->
-        <!-- Clears the unread marks of this view only — the button sits above
-             this list, so it does what this list shows.
-             Not in junk or the trash: nobody reads their spam folder to the
-             end, and what those two need is a way to be rid of it. -->
-        <!-- 只看未读。开着时按钮自己是实心的——筛选是一种「列表现在不完整」
-             的状态，而这件事必须从屏幕上看得出来，不能只存在地址栏里。 -->
-        <el-button
-          v-if="canFilterUnread"
-          size="small"
-          :type="unreadOnly ? 'primary' : ''"
-          @click="toggleUnreadOnly"
-        >
-          {{ t('emails.unreadOnly') }}
-        </el-button>
-        <el-dropdown
-          v-if="canMarkAllRead"
-          trigger="click"
-          placement="bottom-end"
-          :disabled="markingAll"
-          @command="onListCommand"
-        >
-          <el-button
-            class="list-more"
-            size="small"
-            :loading="markingAll"
-            :aria-label="t('emails.moreActions')"
-            :title="t('emails.moreActions')"
-          >
-            <el-icon v-if="!markingAll"><MoreFilled /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="markAllRead">{{ t('emails.markAllRead') }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
         <!-- Junk out in one click — into the trash, not oblivion. The mail
              worth finding in a spam folder is the customer enquiry the filter
              got wrong, and that is noticed the next day. -->
@@ -1726,6 +1706,14 @@ const sortFields = computed<SortField[]>(() => {
 // 排序菜单点了一项：`by:size`、`dir:asc`。规则（换一列用那一列的自然方向、
 // 方向是菜单里明写的两项）在 lib/mailSort 里，那儿测得到。
 function onSortCommand(cmd: string) {
+  if (cmd === 'filter:unread') {
+    toggleUnreadOnly()
+    return
+  }
+  if (cmd === 'action:markAllRead') {
+    void markAllRead()
+    return
+  }
   // 合并/单封不走 sortFromCommand：它不是排序，也不进地址栏——它存在服务端。
   // 混进那一族的后果是 sortParam 会把它编进地址栏，而地址栏里的值和服务端
   // 存的值从此可以不一致。
@@ -1779,9 +1767,6 @@ const unreadOnly = ref(false)
 const canFilterUnread = computed(() => isInboundView.value && !isSearching.value)
 function toggleUnreadOnly() {
   pushState({ unread: !unreadOnly.value })
-}
-function onListCommand(command: string) {
-  if (command === 'markAllRead') void markAllRead()
 }
 // ------------------------------------------------ 合并会话 / 一封一行 ---
 // 收件箱列表一行代表什么：一条会话，还是一封信。见 lib/mailListMode。
@@ -4736,11 +4721,7 @@ async function doUnsuppress(row: Suppression) {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 挤不下就换行，不是把里面的字挤成一竖条。
-     列表这一栏的宽度现在是人自己拖的，拖到 250px 也合理——那时这一条上的
-     「排序：日期 ↓ / 只看未读 / 更多」放不下。放不下有两种办法：把每
-     一样都压窄（于是「排序：日期」竖着排成三行，那正是这次要修的样子），
-     或者整颗按钮挪到下一行。后者永远是对的：一颗按钮要么完整，要么不在。 */
+  /* 批量操作较多时可以换行；日常列表只保留一个菜单按钮。 */
   flex-wrap: wrap;
   row-gap: 6px;
   /* 换到第二行的按钮靠右，跟着第一行那几颗的右边缘走，不是散落在左边。
@@ -4749,17 +4730,6 @@ async function doUnsuppress(row: Suppression) {
   justify-content: flex-end;
   min-height: 28px;
   margin-bottom: 8px;
-}
-.pane-head--mail {
-  /* The everyday controls fit in one line at the normal list width. */
-  column-gap: 4px;
-}
-.pane-head--mail .sort-trigger {
-  padding-inline: 4px;
-}
-.list-more {
-  width: 28px;
-  padding-inline: 0;
 }
 .search-title {
   margin: 0;
@@ -4780,6 +4750,13 @@ async function doUnsuppress(row: Suppression) {
   line-height: 1;
   color: var(--el-color-primary);
   letter-spacing: 1px;
+}
+.unread-badge {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 .sort-trigger {
   display: inline-flex;
