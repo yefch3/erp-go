@@ -3,7 +3,15 @@
     <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
     <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
   </div>
-  <div ref="gridElement" class="product-grid">
+  <div v-if="editable" class="product-fill-toolbar">
+    <span>{{ t('inquiryProducts.fillHint') }}</span>
+    <template v-if="selectedRows.length>1">
+      <strong>{{ t('inquiryProducts.selectedCells', { count: selectedRows.length }) }}</strong>
+      <button type="button" class="fill-down-action" @click="fillDownSelection">{{ t('inquiryProducts.fillDownAction') }}</button>
+    </template>
+    <button v-if="undoBatch" type="button" class="undo-fill" @click="undoLastFill">{{ t('inquiryProducts.undoFill') }}</button>
+  </div>
+  <div ref="gridElement" class="product-grid" @keydown="onGridKeydown">
     <table :style="{width:`max(100%, ${tableWidth}px)`}">
       <colgroup>
         <col v-if="cargoIds" style="width:56px" />
@@ -18,15 +26,15 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in visibleRows" :key="row.id">
+        <tr v-for="row in visibleRows" :key="rowKey(row)">
           <td v-if="cargoIds"><el-checkbox :model-value="cargoIds.includes(row.id)" @change="choose(row.id,!!$event)" /></td>
-          <td v-for="field in tableFields" :key="field.fieldKey" :class="{'product-sticky':field.fieldKey==='product'}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined">
+          <td v-for="field in tableFields" :key="field.fieldKey" :data-row-key="rowKey(row)" :data-field-key="field.fieldKey" :class="{'product-sticky':field.fieldKey==='product','cell-selected':editable&&isSelected(row,field.fieldKey)}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined" @pointerdown="startCellDrag($event,row,field.fieldKey)" @pointermove="moveCellDrag" @pointerup="endCellDrag" @pointercancel="cancelCellDrag" @dblclick="openCellOnDoubleClick(row,field.fieldKey)">
             <div class="product-cell">
               <template v-if="editable&&editingCell===cellKey(row,field.fieldKey)">
                 <el-date-picker v-if="field.dataType==='DATE'" :ref="setEditInput" :model-value="value(row,field.fieldKey)" value-format="YYYY-MM-DD" type="date" @update:model-value="setValue(row,field.fieldKey,String($event||''))" @change="stopEditing" @blur="stopEditing"/>
                 <el-input v-else :ref="setEditInput" class="inline-editor" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':multilineField(field)?'textarea':'text'" :autosize="multilineField(field)?field.fieldKey==='remarks'?{minRows:1}:{minRows:1,maxRows:8}:undefined" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))" @blur="stopEditing" @keydown.esc="stopEditing"/>
               </template>
-              <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="startEditing(row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
+              <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="selectCell($event,row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
               <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
               <button v-if="field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
             </div>
@@ -41,10 +49,12 @@
 </template>
 <script setup lang="ts">
 import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
+import {ElMessage} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
 import {inquiryProductFields,planInquiryColumns} from '../lib/inquiryProductLayout'
+import {fillProductColumn,firstSelectedValue,rowsBetween} from '../lib/inquiryColumnFill'
 const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[]}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
@@ -59,8 +69,16 @@ onMounted(()=>{
 })
 onBeforeUnmount(()=>gridObserver?.disconnect())
 const editingCell=ref(''),expandedTextCells=ref<string[]>([])
-const editInput=ref<{focus:()=>void}|null>(null)
-function setEditInput(instance:unknown){editInput.value=instance as {focus:()=>void}|null}
+const selectedRows=ref<Product[]>([]),selectedField=ref(''),anchorRow=ref<Product|null>(null),activeRow=ref<Product|null>(null)
+let cellDrag:{start:Product;key:string;initial:Product[];add:boolean;moved:boolean}|null=null
+let suppressNextCellClick=false
+const undoBatch=ref<{key:string;previous:{row:Product;value:string}[]}|null>(null)
+let editOriginalValue=''
+const rowKeys=new WeakMap<Product,string>()
+let nextRowKey=0
+function rowKey(row:Product){let key=rowKeys.get(row);if(!key){key=`inquiry-row-${++nextRowKey}`;rowKeys.set(row,key)}return key}
+const editInput=ref<{focus:()=>void;select?:()=>void}|null>(null)
+function setEditInput(instance:unknown){editInput.value=instance as {focus:()=>void;select?:()=>void}|null}
 const fallbackFields:TemplateField[]=[
  {fieldKey:'product',displayName:'产品',sortOrder:1,isRequired:true,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:true},
  {fieldKey:'specification',displayName:'规格',sortOrder:2,isRequired:false,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:false},
@@ -80,17 +98,126 @@ const columnWidths=computed(()=>columnPlan.value.widths)
 const tableWidth=computed(()=>columnPlan.value.totalWidth)
 const filtered=computed(()=>{const needle=search.value.trim().toLowerCase();return props.products.filter(p=>!needle||allFields.value.some(f=>productTemplateValue(p,f.fieldKey).toLowerCase().includes(needle)))})
 const visibleRows=computed(()=>filtered.value.slice((page.value-1)*size.value,page.value*size.value))
-watch(()=>props.editable,()=>{editingCell.value=''})
+watch(()=>props.editable,()=>{clearSelection()})
+watch(()=>props.products,()=>{clearSelection()})
+watch([search,page,size],()=>{clearSelection()})
 function choose(id:string,yes:boolean){const ids=props.cargoIds||[];emit('update:cargoIds',yes?[...new Set([...ids,id])]:ids.filter(x=>x!==id))}
 function value(product:Product,key:string){return productTemplateValue(product,key)}
 function setValue(product:Product,key:string,value:string){setProductTemplateValue(product,key,value)}
 function multilineField(field:TemplateField){
  return field.dataType==='TEXT'&&['product','material_standard','specification','remarks'].includes(field.fieldKey)
 }
-function cellKey(product:Product,key:string){return `${product.id}:${key}`}
-function startEditing(product:Product,key:string){
+function cellKey(product:Product,key:string){return `${rowKey(product)}:${key}`}
+function clearSelection(){editingCell.value='';selectedRows.value=[];selectedField.value='';anchorRow.value=null;activeRow.value=null}
+function isSelected(product:Product,key:string){return selectedField.value===key&&selectedRows.value.includes(product)}
+function startCellDrag(event:PointerEvent,product:Product,key:string){
+  if(!props.editable||event.button!==0||event.shiftKey||editingCell.value===cellKey(product,key))return
+  if(!(event.target as Element).closest('.cell-preview'))return
+  const add=event.ctrlKey||event.metaKey
+  const initial=add&&selectedField.value===key?[...selectedRows.value]:[]
+  cellDrag={start:product,key,initial,add,moved:false}
+  selectedRows.value=add?[...new Set([...initial,product])]:[product]
+  selectedField.value=key
+  activeRow.value=product
+  editingCell.value=''
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function moveCellDrag(event:PointerEvent){
+  if(!cellDrag)return
+  const cell=document.elementFromPoint(event.clientX,event.clientY)?.closest('td[data-row-key][data-field-key]') as HTMLElement|null
+  if(!cell||cell.dataset.fieldKey!==cellDrag.key)return
+  const target=visibleRows.value.find(row=>rowKey(row)===cell.dataset.rowKey)
+  if(!target)return
+  if(target!==cellDrag.start)cellDrag.moved=true
+  const range=rowsBetween(visibleRows.value,cellDrag.start,target)
+  selectedRows.value=cellDrag.add?[...new Set([...cellDrag.initial,...range])]:range
+}
+function endCellDrag(event:PointerEvent){
+  if(!cellDrag)return
+  moveCellDrag(event)
+  const {start,key,initial,add,moved}=cellDrag
+  cellDrag=null
+  if(add&&!moved){
+    selectedRows.value=initial.includes(start)?initial.filter(row=>row!==start):[...initial,start]
+  }
+  anchorRow.value=start
+  activeRow.value=start
+  ;((event.currentTarget as HTMLElement).querySelector('.cell-preview') as HTMLElement|null)?.focus({preventScroll:true})
+  suppressNextCellClick=true
+  window.setTimeout(()=>{suppressNextCellClick=false},0)
+}
+function cancelCellDrag(){if(cellDrag){cellDrag=null;clearSelection()}}
+function selectCell(event:MouseEvent,product:Product,key:string){
+  if(suppressNextCellClick){suppressNextCellClick=false;return}
+  if(event.shiftKey&&anchorRow.value&&selectedField.value===key){
+    const range=rowsBetween(visibleRows.value,anchorRow.value,product)
+    if(range.length){selectedRows.value=range;activeRow.value=product;editingCell.value='';return}
+  }
+  if((event.ctrlKey||event.metaKey)&&selectedField.value===key){
+    selectedRows.value=selectedRows.value.includes(product)?selectedRows.value.filter(row=>row!==product):[...selectedRows.value,product]
+    activeRow.value=product
+    editingCell.value=''
+    return
+  }
+  selectedRows.value=[product]
+  selectedField.value=key
+  anchorRow.value=product
+  activeRow.value=product
+  editingCell.value=''
+}
+function fillSelection(sourceValue:string){
+  if(selectedRows.value.length<2||!selectedField.value)return
+  const key=selectedField.value
+  undoBatch.value={key,previous:selectedRows.value.map(row=>({row,value:row===activeRow.value&&editingCell.value===cellKey(row,key)?editOriginalValue:value(row,key)}))}
+  const count=fillProductColumn(selectedRows.value,key,sourceValue)
+  stopEditing()
+  ElMessage.success(t('inquiryProducts.filledCells',{count}))
+}
+function undoLastFill(){
+  if(!undoBatch.value)return
+  const {key,previous}=undoBatch.value
+  for(const item of previous)setValue(item.row,key,item.value)
+  undoBatch.value=null
+  ElMessage.success(t('inquiryProducts.fillUndone'))
+}
+function fillCurrentSelection(){
+  if(!props.editable||selectedRows.value.length<2||!activeRow.value||!selectedField.value)return
+  fillSelection(value(activeRow.value,selectedField.value))
+}
+function fillDownSelection(){
+  if(!props.editable||selectedRows.value.length<2||!selectedField.value)return
+  fillSelection(firstSelectedValue(visibleRows.value,selectedRows.value,selectedField.value))
+}
+function onGridKeydown(event:KeyboardEvent){
+  if(!props.editable)return
+  const modifier=event.ctrlKey||event.metaKey
+  if(modifier&&event.key.toLowerCase()==='z'&&!editingCell.value&&undoBatch.value){event.preventDefault();undoLastFill();return}
+  if(modifier&&selectedRows.value.length>1&&event.key==='Enter'){
+    event.preventDefault()
+    event.stopPropagation()
+    fillCurrentSelection()
+  }else if(modifier&&selectedRows.value.length>1&&event.key.toLowerCase()==='d'){
+    event.preventDefault()
+    event.stopPropagation()
+    fillDownSelection()
+  }else if(!modifier&&!editingCell.value&&activeRow.value&&selectedField.value&&event.key==='F2'){
+    event.preventDefault();startEditing(activeRow.value,selectedField.value)
+  }else if(!modifier&&!event.altKey&&!editingCell.value&&activeRow.value&&selectedField.value&&event.key.length===1){
+    event.preventDefault()
+    const row=activeRow.value,key=selectedField.value
+    startEditing(row,key)
+    setValue(row,key,event.key)
+  }
+}
+function openCellOnDoubleClick(product:Product,key:string){
+ if(!props.editable||editingCell.value===cellKey(product,key))return
+ selectedRows.value=[product];selectedField.value=key;anchorRow.value=product;activeRow.value=product
+ startEditing(product,key)
+}
+function startEditing(product:Product,key:string,selectValue=false){
+ editOriginalValue=value(product,key)
  editingCell.value=cellKey(product,key)
- void nextTick(()=>editInput.value?.focus())
+ void nextTick(()=>{editInput.value?.focus();if(selectValue)editInput.value?.select?.()})
 }
 function stopEditing(){editingCell.value=''}
 function isTextExpanded(product:Product,key:string){return expandedTextCells.value.includes(cellKey(product,key))}
@@ -110,12 +237,14 @@ function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${fie
 .product-grid table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
 .product-grid th,.product-grid td{max-width:360px;padding:7px 10px;border-right:1px solid var(--el-border-color-lighter);border-bottom:1px solid var(--el-border-color-lighter);white-space:pre-wrap;word-break:break-word;text-align:left;vertical-align:top}
 .product-grid th{position:sticky;top:0;z-index:1;background:var(--el-fill-color-light);font-weight:600}
+.product-grid td.cell-selected{background:#dff1fc;box-shadow:inset 0 0 0 2px #43a9df}
+.product-grid td.cell-selected.product-sticky{background:#dff1fc}
 .product-grid .product-sticky{position:sticky;z-index:2;background:#fff}
 .product-grid th.product-sticky{z-index:3;background:var(--el-fill-color-light)}
 .product-grid-empty{text-align:center!important;color:#8a99a4}
-.product-cell{min-width:0;color:#263f53;font-size:13px;line-height:20px}
+.product-cell{position:relative;min-width:0;color:#263f53;font-size:13px;line-height:20px}
 .cell-preview,.cell-value{display:block;width:100%;min-height:24px;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;line-height:20px}
-.cell-preview{padding:2px 0;border:0;background:transparent;color:inherit;font:inherit;cursor:text}
+.cell-preview{padding:2px 0;border:0;background:transparent;color:inherit;font:inherit;cursor:cell;user-select:none;touch-action:none}
 .cell-preview:hover{background:#f0f8fc}
 .cell-preview:focus-visible,.cell-expand:focus-visible{outline:2px solid #55aee3;outline-offset:2px}
 .cell-preview--empty{color:#9aaab5}
@@ -127,8 +256,11 @@ function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${fie
 .inline-editor :deep(.el-textarea__inner){resize:none;overflow-wrap:anywhere}
 .product-toolbar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;padding:12px 14px;background:#f5f9fb;border:1px solid #e0e9ef;border-radius:10px}.product-toolbar .el-input{width:250px}.product-summary{display:flex;gap:8px 18px;align-items:center;flex:1;flex-wrap:wrap;color:#617487;font-size:13px}.product-summary b{color:#173f59}.required-mark{color:#e45b65}.cell-value{color:#263f53}:deep(.el-table){--el-table-header-bg-color:#f4f8fa;--el-table-row-hover-bg-color:#f0f8fa}:deep(.el-table th.el-table__cell){color:#486174;font-weight:600}:deep(.el-input__wrapper){border-radius:6px;box-shadow:0 0 0 1px #d2dee7 inset}
 .product-toolbar{margin:0 0 14px;padding:0;border:0;border-radius:0;background:transparent}
+.product-fill-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-5px 0 10px;color:#617487;font-size:12px}.product-fill-toolbar strong{color:#176994}
+.undo-fill{padding:0;border:0;background:transparent;color:#1684c4;font:inherit;cursor:pointer}
+.fill-down-action{padding:2px 8px;border:1px solid #b9def1;border-radius:4px;background:#edf8fe;color:#176994;font:inherit;cursor:pointer}
 .product-grid .product-cell,.product-grid .cell-value{color:var(--el-text-color-regular)}
 .table-footer{display:flex;justify-content:flex-end;margin-top:14px}
 .el-pagination{margin:0;max-width:100%;overflow-x:auto}
-@media(max-width:760px){.product-toolbar{align-items:flex-start}.product-toolbar .el-input{width:100%}.table-footer{justify-content:flex-start}}
+@media(max-width:760px){.product-toolbar{align-items:flex-start}.product-toolbar .el-input{width:100%}.product-fill-toolbar{min-height:54px;align-content:flex-start}.table-footer{justify-content:flex-start}}
 </style>
