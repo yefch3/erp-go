@@ -78,11 +78,11 @@
                 <article v-for="line in group.lines" :key="line.id" class="requote-product">
                   <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>{{ line.productCode || '未填写产品编码' }}</span></div><div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></div></header>
                   <div class="presale-reference"><span>售前参考</span><strong>{{ line.supplierName || '无售前供应商' }}</strong><span>{{ displaySourcePrice(line) }}</span><span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span></div>
-                  <div class="quote-options">
+                  <div class="quote-options factory-quote-cards">
                     <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:quote.selected}]">
                       <span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span>
-                      <div class="quote-meta"><el-tag size="small" effect="plain">{{ quoteCategoryLabel(quote.quoteCategory) }}</el-tag><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
-                      <div v-if="canOrder" class="quote-actions"><el-button link type="primary" @click="openQuoteEditor(line, quote)">编辑</el-button><el-button v-if="!quote.calculatedUnitPrice" link type="danger" @click="removeQuote(line, quote)">删除</el-button></div>
+                      <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.validUntil">有效至 {{ quote.validUntil }}</span></div>
+                      <div class="quote-actions"><el-button link type="primary" @click="quotePreview={line,quote}">详情</el-button><el-button v-if="canOrder" link type="primary" @click="openQuoteEditor(line, quote)">编辑</el-button><el-button v-if="canOrder" link type="danger" @click="removeQuote(line, quote)">删除</el-button></div>
                     </div>
                   </div>
                   <div v-if="!quotesFor(line.id).length" class="quote-empty"><span>暂无实单报价</span><small>使用上方按钮统一录入工厂报价</small></div>
@@ -96,44 +96,19 @@
               <div><span>第二步</span><strong>选定最终工厂报价</strong><small>逐个规格确认供应商与执行价格，可勾选自己负责的部分分批生成采购订单草稿。</small></div>
               <el-button @click="goToQuotes">返回工厂报价</el-button>
             </div>
-            <el-alert type="info" :closable="false" show-icon class="alert" title="报价按价格口径、产品和规格分层。先选工厂报价，只核算被选中的报价；可分批生成自己负责的采购草稿。" />
-            <section v-for="category in executionCategoryGroups" :key="category.key" class="pricing-category">
-              <header :class="['pricing-category__head',{'is-empty':!category.lineCount}]" @click="toggleTradeTerm(category.key,category.lineCount)"><div><el-icon v-if="category.lineCount" :class="['trade-term-chevron',{ 'is-expanded':isTradeTermExpanded(category.key) }]"><ArrowDown /></el-icon><span class="pricing-category__eyebrow">贸易条款</span><strong>{{ quoteCategoryLabel(category.key) }}</strong><span>{{ category.lineCount ? `${category.products.length} 种产品 · ${category.lineCount} 种规格` : '暂无报价' }}</span></div><el-tag v-if="category.lineCount" effect="plain">已核算 {{ category.calculatedCount }}/{{ category.lineCount }}</el-tag></header>
-              <div v-if="category.lineCount" v-show="isTradeTermExpanded(category.key)" class="category-calculation" @click.stop>
-                <div class="category-formula"><span>核算公式</span><strong>{{ categoryFormula(category.key) }}</strong><small>I = 1 + 年利率 × 计息天数 ÷ 360；当前采购阶段暂不计入物流费用。</small></div>
-                <div class="category-inputs">
-                  <label v-if="categoryNeedsFx(category.key)">汇率<el-input v-model="categoryCalculation(category.key).exchangeRate" placeholder="1 USD 可兑换多少 CNY" /></label>
-                  <label v-if="categoryNeedsInland(category.key)">产品内陆运费单价<el-input v-model="categoryCalculation(category.key).inlandFreight" placeholder="CNY / 计价单位" /></label>
-                  <label v-if="categoryNeedsPort(category.key)">港区港杂费单价<el-input v-model="categoryCalculation(category.key).portCharge" placeholder="CNY / 计价单位" /></label>
-                  <label v-if="category.key==='REPROCESSING_CNY'">损耗单价<el-input v-model="categoryCalculation(category.key).loss" placeholder="CNY / 计价单位" /></label>
-                  <label>年利率<el-input v-model="categoryCalculation(category.key).interestRate" placeholder="例如 6"><template #append>%</template></el-input></label>
-                  <label>计息天数<el-input v-model="categoryCalculation(category.key).interestDays" placeholder="例如 60"><template #append>天</template></el-input></label>
-                </div>
-              </div>
-              <section v-for="group in (isTradeTermExpanded(category.key) ? category.products : [])" :key="`${category.key}:${group.key}`" class="detail-product-group">
-                <button type="button" class="batch-product-heading" @click="toggleBatchProduct(activeBatch.key, `${category.key}:${group.key}`)">
-                  <el-icon :class="['batch-product-chevron', { 'is-expanded': isBatchProductExpanded(activeBatch.key, `${category.key}:${group.key}`) }]"><ArrowDown /></el-icon>
-                  <strong>{{ group.name }}</strong><span>{{ group.lines.length }} 个规格</span><span class="batch-product-total">合计 {{ requirementQuantitySummary(group.lines) }}</span>
-                </button>
-                <div v-show="isBatchProductExpanded(activeBatch.key, `${category.key}:${group.key}`)" class="detail-spec-list">
-                  <article v-for="line in group.lines" :key="`${category.key}:${line.id}`" class="requote-product">
-                    <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>售前参考：{{ displaySourcePrice(line) }}</span></div><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></header>
-                    <el-radio-group :model-value="selectedQuote[line.id]" class="quote-options" :disabled="!canOrder">
-                      <div v-for="quote in quotesForCategory(line.id, category.key)" :key="quote.id" :class="['quote-option', 'selection-quote-option', {selected:Number(selectedQuote[line.id])===Number(quote.id), 'is-saving':selectingQuoteId===quote.id}]" @click="canOrder && toggleQuoteSelection(line, quote)">
-                        <el-radio :value="Number(quote.id)" :disabled="!canOrder"><span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span></el-radio>
-                        <div class="quote-meta"><span>交期 {{ quote.expectedDate || '—' }}</span><span>{{ quote.paymentTerms }}</span><span v-if="quote.selectedByName">由 {{ quote.selectedByName }} 选定</span></div>
-                        <div v-if="Number(selectedQuote[line.id])===Number(quote.id)" class="quote-calculation">
-                          <div class="calculation-result"><span>核算价</span><strong>{{ quote.calculatedUnitPrice ? `USD ${formatMoney(quote.calculatedUnitPrice)}/${line.uomCode}` : '待核算' }}</strong><el-button size="small" type="primary" plain :loading="calculatingQuoteId===quote.id" @click.stop="calculateSelectedQuote(line, quote)">计算</el-button></div>
-                        </div>
-                      </div>
-                    </el-radio-group>
-                  </article>
-                </div>
-              </section>
-            </section>
-            <el-empty v-if="!executionCategoryGroups.length" description="暂无已分类的实单报价，请先返回录入报价" />
+            <el-alert type="info" :closable="false" show-icon class="alert" title="选定工厂报价后，直接按报价币种和单价生成采购订单草稿。" />
+              <el-table class="execution-quote-grid" :data="selectionQuoteRows" border max-height="480" row-key="key">
+                <el-table-column label="选定" width="75" fixed align="center"><template #default="{row}"><el-checkbox v-if="row.quote" :model-value="Number(selectedQuote[row.line.id])===Number(row.quote.id)" :disabled="!canOrder || !!selectingQuoteId" :aria-label="`选定 ${row.line.productName} ${row.line.spec} ${row.quote.supplierName}`" @change="toggleQuoteSelection(row.line,row.quote)" /></template></el-table-column>
+                <el-table-column label="产品" width="120" fixed><template #default="{row}">{{ row.line.productName || row.line.productCode || '—' }}</template></el-table-column>
+                <el-table-column label="规格" min-width="200"><template #default="{row}">{{ row.line.spec || '—' }}</template></el-table-column>
+                <el-table-column label="数量" width="105" align="right"><template #default="{row}">{{ formatQtyTwo(row.line.availableQty) }} {{ row.line.uomCode }}</template></el-table-column>
+                <el-table-column label="报价工厂" min-width="120"><template #default="{row}">{{ row.quote?.supplierName }}</template></el-table-column>
+                <el-table-column label="报价单价" width="125" align="right"><template #default="{row}">{{ row.quote ? row.quote.currency + ' ' + formatMoney(row.quote.unitPrice) : '—' }}</template></el-table-column>
+                <el-table-column label="交期" width="115"><template #default="{row}">{{ row.quote?.expectedDate || '—' }}</template></el-table-column>
+                <el-table-column label="操作" width="110" fixed="right"><template #default="{row}"><el-button link type="primary" @click="quotePreview=row">详情</el-button></template></el-table-column>
+              </el-table>
             <section class="draft-preview">
-              <div><strong>生成采购订单草稿</strong><span v-if="draftOrderGroups.length">已选择 {{ draftLineCount }} 个规格，预计生成 {{ draftOrderGroups.length }} 张草稿。</span><span v-else>选定并核算报价后，可在这里上传资料并生成草稿。</span></div>
+              <div><strong>生成采购订单草稿</strong><span v-if="draftOrderGroups.length">已选择 {{ draftLineCount }} 个规格，预计生成 {{ draftOrderGroups.length }} 张草稿。</span><span v-else>选定工厂报价后，可在这里上传资料并生成草稿。</span></div>
               <div v-for="group in draftOrderGroups" :key="group.key" class="draft-preview-row"><strong>{{ group.supplierName }}</strong><span>{{ group.currency }} · {{ group.expectedDate || '未填写交期' }} · {{ group.lines.length }} 个规格</span></div>
               <section class="execution-files">
                 <header><div><strong>本次订单采购资料</strong><span>随草稿写入采购订单，仅负责人、部门领导和最高权限账户可见。</span></div><div class="execution-file-toolbar"><small v-if="pendingDraftFiles.length">{{ pendingDraftFiles.length }} 个文件</small><label v-if="canOrder" class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择资料</label></div></header>
@@ -148,6 +123,28 @@
     </template>
     <el-card v-else shadow="never" v-loading="loading"><el-empty description="未找到这条实单询价"><el-button @click="backToBatchList">返回列表</el-button></el-empty></el-card>
 
+    <el-dialog :model-value="!!quotePreview" title="工厂报价详情" width="min(760px,94vw)" @close="quotePreview=null">
+      <template v-if="quotePreview">
+        <el-descriptions :column="2" border class="quote-preview-details">
+          <el-descriptions-item label="产品">{{ quotePreview.line.productName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="产品编码">{{ quotePreview.line.productCode || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="规格" :span="2">{{ quotePreview.line.spec || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="数量">{{ formatQtyTwo(quotePreview.line.availableQty) }} {{ quotePreview.line.uomCode }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ !quotePreview.quote ? '待报价' : quotePreview.quote.selected ? '已选定' : '已报价' }}</el-descriptions-item>
+          <el-descriptions-item label="报价工厂">{{ quotePreview.quote?.supplierName || '待录入报价' }}</el-descriptions-item>
+          <el-descriptions-item label="报价单价" :span="2">{{ quotePreview.quote ? `${quotePreview.quote.currency} ${formatMoney(quotePreview.quote.unitPrice)} / ${quotePreview.line.uomCode}` : '—' }}</el-descriptions-item>
+          <el-descriptions-item label="交期">{{ quotePreview.quote?.expectedDate || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="有效期">{{ quotePreview.quote?.validUntil || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="付款条件" :span="2">{{ quotePreview.quote?.paymentTerms || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="2">{{ quotePreview.quote?.remark || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="选定人">{{ quotePreview.quote?.selectedByName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="售前供应商">{{ quotePreview.line.supplierName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="售前参考价">{{ displaySourcePrice(quotePreview.line) }}</el-descriptions-item>
+          <el-descriptions-item label="售前付款条件" :span="2">{{ quotePreview.line.sourcePaymentTerms || '—' }}</el-descriptions-item>
+        </el-descriptions>
+      </template>
+      <template #footer><el-button v-if="canOrder && quotePreview?.quote" type="danger" plain @click="deletePreviewQuote">删除报价</el-button><el-button @click="quotePreview=null">关闭</el-button></template>
+    </el-dialog>
     <el-dialog v-model="batchQuoteOpen" title="添加一份工厂报价" width="780px" class="batch-quote-dialog" destroy-on-close>
       <div class="batch-dialog-intro"><strong>整份录入，减少重复操作</strong><span>公共条件只填一次，下面分别填写这家工厂愿意供应的产品单价。</span></div>
       <el-form label-position="top" class="batch-quote-form">
@@ -156,7 +153,6 @@
           <div class="batch-common-grid">
             <el-form-item label="工厂" required class="field-wide"><el-select v-model="batchQuoteForm.supplierId" filterable allow-create default-first-option clearable placeholder="输入新工厂名称或选择已有工厂" style="width:100%"><el-option v-for="supplier in suppliers" :key="supplier.id" :value="Number(supplier.id)" :label="`${supplier.code} · ${supplier.name}`" /></el-select></el-form-item>
             <el-form-item label="币种" required><el-select v-model="batchQuoteForm.currency" filterable allow-create default-first-option style="width:100%" @change="batchQuoteForm.currency=String(batchQuoteForm.currency).trim().toUpperCase()"><el-option v-for="currency in currencyOptions" :key="currency" :value="currency" /></el-select></el-form-item>
-            <el-form-item label="贸易条款" required><el-select v-model="batchQuoteForm.quoteCategory" placeholder="选择贸易条款" style="width:100%" @change="(value:string)=>batchQuoteForm.currency=categoryCurrency(value)"><el-option v-for="item in quoteCategoryOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
             <el-form-item label="预计交货日期"><el-date-picker v-model="batchQuoteForm.expectedDate" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
             <el-form-item label="报价有效期"><el-date-picker v-model="batchQuoteForm.validUntil" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
             <el-form-item label="付款条件" required class="field-wide"><el-select v-model="batchQuoteForm.paymentTerms" filterable allow-create default-first-option clearable placeholder="输入自定义条款或选择常用付款条件" style="width:100%"><el-option v-for="term in paymentTermOptions" :key="term" :label="term" :value="term" /></el-select></el-form-item>
@@ -185,7 +181,6 @@
       <el-form label-width="110px">
         <el-form-item label="工厂" required><el-select v-model="quoteForm.supplierId" filterable allow-create default-first-option clearable placeholder="输入新工厂名称或选择已有工厂" style="width:100%"><el-option v-for="supplier in suppliers" :key="supplier.id" :value="Number(supplier.id)" :label="`${supplier.code} · ${supplier.name}`" /></el-select></el-form-item>
         <el-form-item label="报价" required><div class="price-row"><el-select v-model="quoteForm.currency" filterable allow-create default-first-option @change="quoteForm.currency=String(quoteForm.currency).trim().toUpperCase()"><el-option v-for="currency in currencyOptions" :key="currency" :value="currency" /></el-select><el-input v-model="quoteForm.unitPrice" placeholder="单价" /></div></el-form-item>
-        <el-form-item label="贸易条款" required><el-select v-model="quoteForm.quoteCategory" style="width:100%" @change="(value:string)=>quoteForm.currency=categoryCurrency(value)"><el-option v-for="item in quoteCategoryOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="预计交货日期"><el-date-picker v-model="quoteForm.expectedDate" value-format="YYYY-MM-DD" clearable /></el-form-item>
         <el-form-item label="付款条件" required><el-select v-model="quoteForm.paymentTerms" filterable allow-create default-first-option clearable placeholder="输入自定义条款或选择常用付款条件" style="width:100%"><el-option v-for="term in paymentTermOptions" :key="term" :label="term" :value="term" /></el-select></el-form-item>
         <el-form-item label="报价有效期"><el-date-picker v-model="quoteForm.validUntil" value-format="YYYY-MM-DD" clearable /></el-form-item>
@@ -343,7 +338,6 @@ import { del, download, get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
-import { calculateExecutionReferencePrice, executionTradeTermFormula, type ExecutionCategoryCalculation } from '../lib/executionQuoteCalculation'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
@@ -544,51 +538,45 @@ const activeBatch = ref<PurchaseBatch | null>(null)
 const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
 const paymentTermOptions = ['T/T', '30%预付款，70%发货前付清', '信用证 L/C', '货到付款', '月结 30 天', '月结 60 天']
-const quoteCategoryOptions = [
-  {value:'FOB_USD',label:'FOB USD'},{value:'FOB_CNY',label:'FOB CNY'},{value:'ALL_IN_PORT_CNY',label:'一票到港 CNY'},
-  {value:'EX_FACTORY_CNY',label:'出厂价 CNY'},{value:'REPROCESSING_CNY',label:'再加工 CNY'},{value:'DIRECT_CFR_USD',label:'工厂直接报价 CFR USD'},
-]
 const executionQuotes = reactive<Record<string, ExecutionQuote[]>>({})
 const selectedQuote = reactive<Record<string, number>>({})
 const batchQuoteOpen = ref(false)
 const savingBatchQuote = ref(false)
-const batchQuoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', quoteCategory:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
+const batchQuoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
 const batchQuotePrices = reactive<Record<string, string>>({})
 const quoteOpen = ref(false)
+const quotePreview = ref<{line:Requirement;quote:ExecutionQuote|null}|null>(null)
 const quoteLine = ref<Requirement | null>(null)
 const quoteEditing = ref<ExecutionQuote | null>(null)
 const savingQuote = ref(false)
-const quoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', unitPrice:'', quoteCategory:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
-const categoryCalculations = reactive<Record<string, ExecutionCategoryCalculation>>({})
-const expandedTradeTerms = reactive<Record<string, boolean>>({})
-const calculatingQuoteId = ref('')
+const quoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', unitPrice:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
 const selectingQuoteId = ref('')
 const pendingDraftFiles = ref<File[]>([])
 const filePreviewOpen = ref(false)
 const filePreviewSource = ref<File | null>(null)
 const filePreviewTitle = ref('')
 const filePreviewType = ref('')
+// Keep every specification visible, including lines that have no factory quote yet.
+const factoryQuoteRows = computed(() => (activeBatch.value?.lines ?? []).flatMap<{key:string;line:Requirement;quote:ExecutionQuote|null}>(line => {
+  const quotes = quotesFor(line.id)
+  return quotes.length ? quotes.map(quote => ({key:`${line.id}:${quote.id}`,line,quote})) : [{key:`${line.id}:empty`,line,quote:null}]
+}))
+const selectionQuoteRows = computed(() => factoryQuoteRows.value.filter(row => row.quote))
 const selectedCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => Number(selectedQuote[line.id]) > 0).length)
 const quotedLineCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => quotesFor(line.id).length > 0).length)
-const calculatedSelectedCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => !!selectedCalculatedQuote(line)).length)
-const executionCategoryGroups = computed(() => quoteCategoryOptions.map((option) => {
-  const lines = (activeBatch.value?.lines ?? []).filter((line) => quotesForCategory(line.id, option.value).length)
-  return { key:option.value, products:groupBatchProducts(lines), lineCount:lines.length, calculatedCount:lines.filter((line) => quotesForCategory(line.id, option.value).some((quote) => quote.selected && !!quote.calculatedUnitPrice)).length }
-}).sort((a,b) => Number(b.lineCount>0)-Number(a.lineCount>0)))
 const detailStageLabel = computed(() => {
   const total = activeBatch.value?.lines.length ?? 0
   if (!total || quotedLineCount.value === 0) return '待实单询价'
   if (quotedLineCount.value < total) return '询价中'
   if (selectedCount.value === 0) return '待选择最终报价'
-  if (calculatedSelectedCount.value < selectedCount.value) return '已选择，待核算'
   return '可分批生成采购草稿'
 })
 const draftOrderGroups = computed(() => {
   const grouped = new Map<string, {key:string;supplierName:string;currency:string;expectedDate:string;paymentTerms:string;lines:{line:Requirement;quote:ExecutionQuote}[]}>()
   for (const line of activeBatch.value?.lines ?? []) {
     const quote = quotesFor(line.id).find((item) => Number(item.id) === Number(selectedQuote[line.id]))
-    if (!quote || !quote.calculatedUnitPrice || String(quote.selectedById) !== String(auth.employeeId)) continue
-    const key = [quote.selectedById, quote.supplierId, quote.currency, quote.quoteCategory, quote.expectedDate, quote.paymentTerms].join('|')
+    if (!quote || String(quote.selectedById) !== String(auth.employeeId)) continue
+    const key = [quote.selectedById, quote.supplierId, quote.currency, quote.expectedDate, quote.paymentTerms].join('|')
     const group = grouped.get(key) ?? { key, supplierName:quote.supplierName, currency:quote.currency, expectedDate:quote.expectedDate, paymentTerms:quote.paymentTerms, lines:[] }
     group.lines.push({ line, quote })
     grouped.set(key, group)
@@ -692,53 +680,12 @@ async function loadBatchQuotes(batch: PurchaseBatch) {
       delete selectedQuote[line.id]
     }
   }))
-  for (const key of Object.keys(expandedTradeTerms)) delete expandedTradeTerms[key]
-  for (const option of quoteCategoryOptions) expandedTradeTerms[option.value] = batch.lines.some((line) => quotesForCategory(line.id, option.value).length > 0)
-  for (const key of Object.keys(categoryCalculations)) delete categoryCalculations[key]
-  for (const option of quoteCategoryOptions) {
-    const savedQuote = batch.lines.flatMap((line) => quotesForCategory(line.id, option.value)).find((quote) => quote.calculationInput && quote.calculationInput !== '{}')
-    if (!savedQuote) continue
-    try { Object.assign(categoryCalculation(option.value), JSON.parse(savedQuote.calculationInput)) } catch { /* keep clean defaults */ }
-  }
   pendingDraftFiles.value = []
 }
 
 function backToBatchList() { router.push('/requirements') }
 
 function quotesFor(requirementId: string) { return executionQuotes[requirementId] ?? [] }
-function quotesForCategory(requirementId: string, category: string) { return quotesFor(requirementId).filter((quote) => quote.quoteCategory === category) }
-function quoteCategoryLabel(value: string) { return quoteCategoryOptions.find((item) => item.value === value)?.label ?? (value || '未设置贸易条款') }
-function categoryCurrency(value:string) { return ['FOB_USD','DIRECT_CFR_USD'].includes(value) ? 'USD' : 'CNY' }
-function categoryNeedsFx(value: string) { return ['FOB_CNY','ALL_IN_PORT_CNY','EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
-function categoryNeedsPort(value: string) { return ['ALL_IN_PORT_CNY','EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
-function categoryNeedsInland(value: string) { return ['EX_FACTORY_CNY','REPROCESSING_CNY'].includes(value) }
-function categoryCalculation(category: string) {
-  if (!categoryCalculations[category]) categoryCalculations[category] = { exchangeRate:'', portCharge:'', inlandFreight:'', loss:'', interestRate:'', interestDays:'' }
-  return categoryCalculations[category]!
-}
-function isTradeTermExpanded(category: string) { return !!expandedTradeTerms[category] }
-function toggleTradeTerm(category: string, lineCount = 1) { if (lineCount) expandedTradeTerms[category] = !expandedTradeTerms[category] }
-function categoryFormula(category: string) {
-  return executionTradeTermFormula[category] ?? '—'
-}
-function selectedCalculatedQuote(line: Requirement) { return quotesFor(line.id).find((quote) => quote.selected && !!quote.calculatedUnitPrice) }
-async function calculateSelectedQuote(line: Requirement, quote: ExecutionQuote) {
-  if (!quote.selected) { ElMessage.warning('请先选中这份报价'); return }
-  if (!quote.quoteCategory) { ElMessage.warning('这份旧报价没有贸易条款，不能参与核算'); return }
-  const input = categoryCalculation(quote.quoteCategory)
-  let result = 0
-  try { result = calculateExecutionReferencePrice(quote.quoteCategory, quote.unitPrice, input) }
-  catch (error) { ElMessage.warning(error instanceof Error ? error.message : '核算参数无效'); return }
-  calculatingQuoteId.value = quote.id
-  try {
-    const response = await post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes`, {
-      id:Number(quote.id),supplier_id:Number(quote.supplierId),currency:quote.currency,unit_price:quote.unitPrice,quote_category:quote.quoteCategory,incoterm:'',
-      expected_date:quote.expectedDate,payment_terms:quote.paymentTerms,valid_until:quote.validUntil,remark:quote.remark,calculated_unit_price:result.toFixed(6),calculation_input:JSON.stringify(input),
-    })
-    executionQuotes[line.id] = quotesFor(line.id).map((item) => item.id === quote.id ? response.quote : item)
-    ElMessage.success(`已核算 ${quote.supplierName} 的所选报价`)
-  } finally { calculatingQuoteId.value = '' }
-}
 function selectedLinesIn(group: PurchaseProductGroup) { return group.lines.filter((line) => Number(selectedQuote[line.id]) > 0).length }
 function formatMoney(value: string) { const amount = Number(value); return Number.isFinite(amount) ? amount.toFixed(2) : value || '—' }
 function formatFileSize(value: string) { const size=Number(value); return size>=1048576?`${(size/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(size/1024))} KB` }
@@ -756,7 +703,7 @@ function displaySourcePrice(line: Requirement) {
   return Number(line.sourceUnitPrice) > 0 ? `${line.sourceCurrency || ''} ${trimQty(line.sourceUnitPrice)}/${line.uomCode}` : '未带入售前价格'
 }
 function openBatchQuoteEditor() {
-  Object.assign(batchQuoteForm, { supplierId:null,currency:'CNY',quoteCategory:'',expectedDate:'',paymentTerms:'',validUntil:'',remark:'' })
+  Object.assign(batchQuoteForm, { supplierId:null,currency:'CNY',expectedDate:'',paymentTerms:'',validUntil:'',remark:'' })
   for (const key of Object.keys(batchQuotePrices)) delete batchQuotePrices[key]
   for (const line of activeBatch.value?.lines ?? []) batchQuotePrices[line.id] = ''
   batchQuoteOpen.value = true
@@ -773,8 +720,8 @@ async function resolveSupplier(value: number|string|null, currency: string, paym
 }
 async function saveBatchQuote() {
   const pricedLines = (activeBatch.value?.lines ?? []).filter((line) => String(batchQuotePrices[line.id] ?? '').trim() !== '')
-  if (!batchQuoteForm.supplierId || !batchQuoteForm.quoteCategory || !batchQuoteForm.paymentTerms.trim() || !pricedLines.length) {
-    ElMessage.warning('请选择工厂和贸易条款，填写付款条件，并至少填写一个产品单价')
+  if (!batchQuoteForm.supplierId || !batchQuoteForm.paymentTerms.trim() || !pricedLines.length) {
+    ElMessage.warning('请选择工厂，填写付款条件，并至少填写一个产品单价')
     return
   }
   batchQuoteForm.currency = batchQuoteForm.currency.trim().toUpperCase()
@@ -792,7 +739,7 @@ async function saveBatchQuote() {
     batchQuoteForm.supplierId = supplierId
     const results = await Promise.all(pricedLines.map((line) => post<{quote:ExecutionQuote}>(`/requirements/${line.id}/execution-quotes`, {
       id:0,supplier_id:supplierId,currency:batchQuoteForm.currency,unit_price:batchQuotePrices[line.id],
-      quote_category:batchQuoteForm.quoteCategory,incoterm:'',expected_date:batchQuoteForm.expectedDate,payment_terms:batchQuoteForm.paymentTerms,valid_until:batchQuoteForm.validUntil,remark:batchQuoteForm.remark,
+      expected_date:batchQuoteForm.expectedDate,payment_terms:batchQuoteForm.paymentTerms,valid_until:batchQuoteForm.validUntil,remark:batchQuoteForm.remark,
     })))
     results.forEach((result, index) => {
       const line = pricedLines[index]!
@@ -807,13 +754,13 @@ function openQuoteEditor(line: Requirement, quote: ExecutionQuote) {
   quoteEditing.value = quote
   Object.assign(quoteForm, {
     supplierId:Number(quote.supplierId),currency:quote.currency,unitPrice:quote.unitPrice,expectedDate:quote.expectedDate,
-    quoteCategory:quote.quoteCategory,paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark,
+    paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark,
   })
   quoteOpen.value = true
 }
 async function saveQuote() {
-  if (!quoteLine.value || !quoteForm.supplierId || !(Number(quoteForm.unitPrice)>0) || !quoteForm.quoteCategory || !quoteForm.paymentTerms.trim()) {
-    ElMessage.warning('请填写工厂、贸易条款、有效单价和付款条件')
+  if (!quoteLine.value || !quoteForm.supplierId || !(Number(quoteForm.unitPrice)>0) || !quoteForm.paymentTerms.trim()) {
+    ElMessage.warning('请填写工厂、有效单价和付款条件')
     return
   }
   quoteForm.currency = quoteForm.currency.trim().toUpperCase()
@@ -827,7 +774,7 @@ async function saveQuote() {
     quoteForm.supplierId = supplierId
     const result = await post<{quote:ExecutionQuote}>(`/requirements/${quoteLine.value.id}/execution-quotes`, {
       id:Number(quoteEditing.value?.id ?? 0),supplier_id:supplierId,currency:quoteForm.currency,unit_price:quoteForm.unitPrice,
-      quote_category:quoteForm.quoteCategory,incoterm:'',expected_date:quoteForm.expectedDate,payment_terms:quoteForm.paymentTerms,valid_until:quoteForm.validUntil,remark:quoteForm.remark,
+      expected_date:quoteForm.expectedDate,payment_terms:quoteForm.paymentTerms,valid_until:quoteForm.validUntil,remark:quoteForm.remark,
     })
     const list = quotesFor(quoteLine.value.id).filter((item) => item.id !== result.quote.id)
     executionQuotes[quoteLine.value.id] = [result.quote, ...list]
@@ -857,6 +804,12 @@ async function toggleQuoteSelection(line: Requirement, quote: ExecutionQuote) {
     throw error
   } finally { selectingQuoteId.value = '' }
 }
+async function deletePreviewQuote() {
+  const preview = quotePreview.value
+  if (!preview?.quote) return
+  await removeQuote(preview.line, preview.quote)
+  if (!quotesFor(preview.line.id).some(quote => quote.id === preview.quote?.id)) quotePreview.value = null
+}
 async function removeQuote(line: Requirement, quote: ExecutionQuote) {
   await ElMessageBox.confirm(`删除「${quote.supplierName}」的这条报价？`, '删除报价', { type:'warning' })
   await del(`/requirements/${line.id}/execution-quotes/${quote.id}`)
@@ -869,7 +822,7 @@ async function createDraftOrders() {
   const batch = activeBatch.value
   if (!batch) return
   const groups = draftOrderGroups.value
-  if (!groups.length) { ElMessage.warning('请先选定并核算报价，然后勾选要生成草稿的规格'); return }
+  if (!groups.length) { ElMessage.warning('请先选定自己负责的工厂报价'); return }
   saving.value = true
   let createdCount = 0
   try {
@@ -877,9 +830,9 @@ async function createDraftOrders() {
       const quote = group.lines[0]!.quote
       const created = await post<{id:string}>('/purchase-orders', {
         supplier_id:Number(quote.supplierId),currency:quote.currency,expected_date:quote.expectedDate,payable_due_date:'',
-        remark:[quote.paymentTerms, `贸易条款：${quoteCategoryLabel(quote.quoteCategory)}`].filter(Boolean).join('；'),fulfillment_mode:'DIRECT_SHIP',delivery_location_type:'CUSTOM',delivery_address:'按外销合同约定',
+        remark:quote.paymentTerms,fulfillment_mode:'DIRECT_SHIP',delivery_location_type:'CUSTOM',delivery_address:'按外销合同约定',
         source_change_reason:'实单重新询价后选定工厂',
-        lines:group.lines.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.calculatedUnitPrice,execution_quote_id:Number(quote.id)})),
+        lines:group.lines.map(({line,quote}) => ({requirement_id:Number(line.id),qty:line.availableQty,unit_price:quote.unitPrice,execution_quote_id:Number(quote.id)})),
       })
       createdCount += 1
       for (const file of pendingDraftFiles.value) {
@@ -1454,4 +1407,13 @@ onMounted(load)
   justify-content: flex-end;
 }
 .source-sales-remark{margin:0 0 14px;padding:13px 16px;border:1px solid #cfe3ea;border-radius:10px;background:#f4fafc;color:#17485d}.source-sales-remark strong{display:block}.source-sales-remark strong span{font-weight:400}.source-sales-remark p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#334e5c}
+.execution-quote-grid { width:100%; margin-top:12px; --el-table-border-color:#dce5ed; --el-table-header-bg-color:#f4f7fb; }
+.execution-quote-grid :deep(th.el-table__cell) { padding:7px 0; color:#294b60; font-size:12px; }
+.execution-quote-grid :deep(td.el-table__cell) { padding:6px 0; font-size:13px; vertical-align:top; }
+.execution-quote-grid :deep(.cell) { padding:0 8px; line-height:20px; word-break:normal; overflow-wrap:anywhere; }
+.execution-quote-grid :deep(.el-button + .el-button) { margin-left:8px; }
+.execution-quote-grid :deep(.el-checkbox) { height:22px; }
+.quote-preview-details :deep(.el-descriptions__content) { white-space:pre-wrap; overflow-wrap:anywhere; }
+.factory-quote-cards .quote-option { padding-right:170px; }
+@media(max-width:800px) { .factory-quote-cards .quote-option { padding-right:12px; } }
 </style>
