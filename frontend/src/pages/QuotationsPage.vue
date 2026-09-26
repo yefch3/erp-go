@@ -129,6 +129,7 @@
           {{ t('quotations.items') }}
           <span class="hint">{{ t('quotations.itemsHint') }}</span>
         </el-divider>
+        <ColumnFillRegion :rows="form.items" :fields="[{key:'spec',column:1},{key:'qty',column:2},{key:'unitPrice',column:3}]" :editable="!readOnly">
         <el-table :data="form.items" size="small">
           <el-table-column :label="t('quotations.product')" min-width="220">
             <template #default="{ row }">
@@ -165,6 +166,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </ColumnFillRegion>
         <template v-if="quotationShipments.length">
           <el-divider content-position="left">{{ t('quotations.freightBatches') }}</el-divider>
           <el-table :data="quotationShipments" size="small">
@@ -216,6 +218,7 @@
 </template>
 
 <script setup lang="ts">
+import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'

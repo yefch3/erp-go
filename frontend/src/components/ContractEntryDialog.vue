@@ -25,6 +25,7 @@
   </el-form>
   <template v-if="!history">
   <div class="lines-heading"><strong>客户成交明细</strong><div><el-button link type="primary" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button link type="primary" @click="addLine">添加产品</el-button></div></div>
+  <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]" :editable="!busy">
   <el-table :data="form.items" border max-height="340">
    <el-table-column label="产品名称" min-width="180"><template #default="{row}"><el-input v-model="row.productName"/></template></el-table-column>
    <el-table-column label="规格" min-width="160"><template #default="{row}"><el-input v-model="row.spec"/></template></el-table-column>
@@ -34,6 +35,7 @@
    <el-table-column label="金额" width="120" align="right"><template #default="{row}">{{amount(row)}}</template></el-table-column>
    <el-table-column width="65"><template #default="{$index}"><el-button link type="danger" @click="form.items.splice($index,1)">删除</el-button></template></el-table-column>
   </el-table>
+  </ColumnFillRegion>
   <div class="entry-total">客户合同合计：{{total}} {{form.currency}}</div>
   </template>
   <el-form label-position="top"><el-form-item :label="history?'备注':'合同条款／备注'"><el-input v-model="form.terms" type="textarea" :rows="3"/></el-form-item><el-form-item v-if="history" label="原合同附件（PDF）" required><input ref="fileInput" type="file" accept="application/pdf,.pdf" hidden @change="pickFile"/><el-button @click="fileInput?.click()">{{file||form.signedFileName?'更换附件':'选择合同文件'}}</el-button><span class="file-name">{{file?.name||form.signedFileName||'尚未选择文件'}}</span><small class="file-hint">保存草稿时可以暂缺文件，已上传的文件会随草稿保留。</small></el-form-item></el-form>
@@ -52,6 +54,7 @@ import {newIdempotencySession,withIdempotency} from '../lib/idempotency'
 import ContractLineImportDialog from './ContractLineImportDialog.vue'
 import type {ContractImportLine} from '../lib/contractLineImport'
 import ContractOperationButton from './ContractOperationButton.vue'
+import ColumnFillRegion from './ColumnFillRegion.vue'
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
