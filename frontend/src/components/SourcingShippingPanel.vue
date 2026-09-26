@@ -124,13 +124,15 @@
           <el-form-item :label="t('presalesShipping.estimatedArrival')"><el-date-picker v-model="form.estimatedArrival" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         </div>
         <div class="cargo-pricing-head"><div><h4>{{ t('presalesShipping.cargoFreight') }}</h4><p>{{ t('presalesShipping.unquotedCanBeBlank') }}</p></div><span>{{ t('presalesShipping.quotedCount', { quoted: quotedLineCount, total: form.lines.length }) }}</span></div>
-        <div class="table-scroll"><el-table :data="form.lines" border style="min-width:980px">
+        <div class="table-scroll"><ColumnFillRegion :rows="form.lines" :fields="[{key:'currency',column:1},{key:'chargeBasis',column:2},{key:'unitRate',column:3},{key:'totalFreight',column:4}]" :set-cell="setFreightLineCell">
+          <el-table :data="form.lines" border style="min-width:980px">
           <el-table-column :label="t('presalesShipping.cargoAndSpec')" min-width="240"><template #default="{ row }"><strong>{{ row.product }}</strong><small>{{ cargoSpecification(row) }}</small><small>{{ row.quantity }} {{ row.quantityUnit }}</small></template></el-table-column>
           <el-table-column :label="t('presalesShipping.currency')" width="105"><template #default="{ row }"><el-select v-model="row.currency" filterable allow-create default-first-option><el-option v-for="currency in currencyOptions" :key="currency" :label="currency" :value="currency" /></el-select></template></el-table-column>
           <el-table-column :label="t('presalesShipping.chargeBasis')" width="135"><template #default="{ row }"><el-select v-model="row.chargeBasis" @change="syncTotalFreight(row)"><el-option value="PER_TON" :label="t('presalesShipping.perTon')" /><el-option value="PER_CONTAINER" :label="t('presalesShipping.perContainer')" /><el-option value="PER_PIECE" :label="t('presalesShipping.perPiece')" /><el-option value="PER_SHIPMENT" :label="t('presalesShipping.perShipment')" /><el-option value="FIXED" :label="t('presalesShipping.fixedAmount')" /></el-select></template></el-table-column>
           <el-table-column :label="t('presalesShipping.unitPriceBlank')" width="160"><template #default="{ row }"><el-input v-model="row.unitRate" clearable inputmode="decimal" @input="syncTotalFreight(row)" /></template></el-table-column>
           <el-table-column :label="t('presalesShipping.totalFreight')" width="150"><template #default="{ row }"><el-input v-model="row.totalFreight" inputmode="decimal" /></template></el-table-column>
-        </el-table></div>
+          </el-table>
+        </ColumnFillRegion></div>
         <el-form-item :label="t('presalesShipping.note')"><el-input v-model="form.note" type="textarea" :rows="2" :placeholder="t('presalesShipping.notePlaceholder')" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="optionOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="saveOption">{{ t('presalesShipping.saveCompanyQuote') }}</el-button></template>
@@ -139,7 +141,8 @@
     <el-dialog v-model="planOpen" :title="t('presalesShipping.createManagerPlan')" width="min(1240px, 96vw)">
       <el-alert type="info" :closable="false" :title="t('presalesShipping.planDialogHint')" />
       <el-form label-width="110px" class="plan-form"><el-form-item :label="t('presalesShipping.managerNote')" required><el-input v-model="planForm.managerNote" type="textarea" :rows="2" /></el-form-item></el-form>
-      <div class="table-scroll"><el-table :data="planRows" border style="min-width:1120px">
+      <div class="table-scroll"><ColumnFillRegion :rows="planRows" :fields="[{key:'reason',column:7},{key:'risk',column:8}]" :can-fill-row="canFillPlanRow">
+        <el-table :data="planRows" border style="min-width:1120px">
         <el-table-column :label="t('presalesShipping.includeInPlan')" width="95" fixed="left"><template #default="{ row }"><el-checkbox v-model="row.selected">{{ row.selected ? t('presalesShipping.included') : t('presalesShipping.excluded') }}</el-checkbox></template></el-table-column>
         <el-table-column prop="product" :label="t('presalesShipping.cargoAndSpec')" min-width="180"/>
         <el-table-column prop="carrierForwarder" :label="t('presalesShipping.companyAndSubmitter')" min-width="190"><template #default="{ row }"><strong>{{ row.carrierForwarder }}</strong><small>{{ row.serviceOptionName || t('presalesShipping.defaultServiceOption') }} · {{ row.createdByName }}</small></template></el-table-column>
@@ -149,13 +152,15 @@
         <el-table-column :label="t('presalesShipping.priority')" width="90"><template #default="{ row }"><el-input-number v-model="row.priority" :min="1" controls-position="right" :disabled="!row.selected"/></template></el-table-column>
         <el-table-column :label="t('presalesShipping.reason')" min-width="180"><template #default="{ row }"><el-input v-model="row.reason" :disabled="!row.selected"/></template></el-table-column>
         <el-table-column :label="t('presalesShipping.risk')" min-width="160"><template #default="{ row }"><el-input v-model="row.risk" :disabled="!row.selected"/></template></el-table-column>
-      </el-table></div>
+        </el-table>
+      </ColumnFillRegion></div>
       <template #footer><el-button @click="planOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="savingPlan" @click="createPlan">{{ t('presalesShipping.confirmPlan') }}</el-button></template>
     </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import ColumnFillRegion from './ColumnFillRegion.vue'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -336,6 +341,8 @@ function syncTotalFreight(line: any) {
   if (line.chargeBasis === 'FIXED' || line.chargeBasis === 'PER_SHIPMENT') line.totalFreight = String(rate)
   else if ((line.chargeBasis === 'PER_TON' || line.chargeBasis === 'PER_PIECE') && Number.isFinite(quantity)) line.totalFreight = String(Number((rate * quantity).toFixed(6)))
 }
+function setFreightLineCell(row:object,key:string,value:unknown){(row as Record<string,unknown>)[key]=value;if(key==='chargeBasis'||key==='unitRate')syncTotalFreight(row)}
+function canFillPlanRow(row:object){return !!(row as {selected:boolean}).selected}
 async function saveOption() {
   const lines = form.lines.filter((line: any) => String(line.unitRate).trim() !== '')
   if (!String(form.carrierForwarder).trim()) { ElMessage.warning(t('presalesShipping.companyRequired')); return }

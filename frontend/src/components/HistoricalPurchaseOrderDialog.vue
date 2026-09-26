@@ -18,6 +18,7 @@
     </div>
     <el-alert v-if="importMessage" :title="importMessage" :type="importErrors.length ? 'warning' : 'success'" :closable="true" @close="importMessage=''" />
     <details v-if="importMessage && importErrors.length" class="history-tools"><summary>查看未导入的行（{{importErrors.length}}）</summary><div><div v-for="error in importErrors" :key="error">{{error}}</div></div></details>
+    <ColumnFillRegion :rows="form.lines" :fields="[{key:'spec',column:1},{key:'qty',column:2},{key:'uom',column:3},{key:'unitPrice',column:4}]" :editable="!confirmed">
     <el-table :data="form.lines" class="history-lines" size="small" max-height="380">
       <el-table-column label="产品名称 *" min-width="165"><template #default="{row}"><el-select  :model-value="row.productId !== '0' ? row.productId : row.productName" filterable allow-create default-first-option :disabled="confirmed" size="small" placeholder="选择产品或输入历史名称" @change="(value:string)=>chooseProduct(row,value)"><el-option v-if="row.productId!=='0' && !products.some(p=>p.id===row.productId)" :value="row.productId" :label="row.productName" /><el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" /></el-select></template></el-table-column>
       <el-table-column label="规格" min-width="170"><template #default="{row}"><el-input v-model="row.spec" :disabled="confirmed" size="small" maxlength="300" /></template></el-table-column>
@@ -27,6 +28,7 @@
       <el-table-column label="金额" width="120"><template #default="{row}">{{ amount(row) }}</template></el-table-column>
       <el-table-column v-if="!confirmed" width="65"><template #default="{$index}"><el-button link type="danger" @click="form.lines.splice($index,1)">移除</el-button></template></el-table-column>
     </el-table>
+    </ColumnFillRegion>
     <div class="history-tools"><el-button v-if="!confirmed" size="small" @click="form.lines.push(blankLine())">添加产品</el-button><span>空白价格表示未填写，补齐前不能登记到货或付款。</span></div>
     <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="备注（选填）" />
     <div class="history-tools"><label>原合同 / 订单附件（单个不超过 10 MB） <input type="file" multiple @change="selectFiles" /></label></div>
@@ -40,6 +42,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post, download, saveBlob } from '../api'
 import { historicalLineHeaders, parseHistoricalLines } from '../lib/historicalLineImport'
 import { useAuthStore } from '../stores/auth'
+import ColumnFillRegion from './ColumnFillRegion.vue'
 const excelInput=ref<HTMLInputElement>(),importing=ref(false),importMessage=ref(''),importErrors=ref<string[]>([])
 const auth=useAuthStore(),buyerName=ref(auth.employeeName)
 const products=ref<{id:string;code:string;name:string;baseUomCode:string}[]>([])

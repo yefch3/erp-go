@@ -18,6 +18,7 @@
         <el-form-item label="付款条件"><el-input v-model="form.paymentTerms" /></el-form-item>
         <el-form-item label="货代合同号（选填）"><el-input v-model="form.forwarderContractNo" maxlength="80" /></el-form-item>
       </div>
+      <ColumnFillRegion :rows="form.cargoItems" :fields="[{key:'productName',column:0},{key:'specification',column:1},{key:'quantity',column:2},{key:'uomCode',column:3},{key:'remark',column:4}]">
       <el-table :data="form.cargoItems" size="small" class="cargo-lines">
         <el-table-column label="产品名称" min-width="160"><template #default="{row}"><el-input v-model="row.productName" maxlength="200" /></template></el-table-column>
         <el-table-column label="规格" min-width="180"><template #default="{row}"><el-input v-model="row.specification" /></template></el-table-column>
@@ -26,6 +27,7 @@
         <el-table-column label="备注" min-width="140"><template #default="{row}"><el-input v-model="row.remark" /></template></el-table-column>
         <el-table-column width="65"><template #default="{$index}"><el-button link type="danger" @click="form.cargoItems.splice($index,1)">移除</el-button></template></el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <el-button class="add" size="small" @click="form.cargoItems.push(emptyLine())">添加产品</el-button>
       <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
     </el-form>
@@ -38,6 +40,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { get, post } from '../api'
 import ShippingContractNumberInput from './ShippingContractNumberInput.vue'
+import ColumnFillRegion from './ColumnFillRegion.vue'
 interface Cargo { productCode:string;productName:string;specification:string;quantity:string;uomCode:string;remark:string }
 interface ManualOrder { linkedContractId:string; id:string;manualOrderNo:string;contractNo:string;customerName:string;portOfLoading:string;portOfDischarge:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;remark:string;cargoItems:Cargo[];amountMissing?:boolean }
 const props=defineProps<{modelValue:boolean;orderId?:string;forwarders:{id:string;name:string}[];carriers:{id:string;name:string}[]}>()

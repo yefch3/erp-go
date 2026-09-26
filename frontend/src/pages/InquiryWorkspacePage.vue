@@ -103,6 +103,7 @@
        <label v-for="currency in nonUsdCurrencies" :key="currency" class="exchange-rate-field"><span>1 USD =</span><el-input v-model="editor.body.exchangeRates[currency]" inputmode="decimal" :placeholder="t('inquiryWorkspace.quotes.exchangeRatePlaceholder')"><template #append>{{currency}}</template></el-input></label>
       </section>
       <div class="logistics-section-title"><div><h4>{{t('inquiryWorkspace.quotes.applicableCargo')}}</h4><p>{{t('inquiryWorkspace.quotes.applicableCargoHint')}}</p></div></div>
+      <ColumnFillRegion :rows="item.body.products" :fields="[{key:'price',column:3},{key:'currency',column:4},{key:'unit',column:5}]" :can-fill-row="canFillFreightRow" :get-cell="getFreightCell" :set-cell="setFreightCell">
       <el-table :data="item.body.products" class="freight-rate-table" table-layout="fixed">
        <el-table-column :label="t('inquiryProducts.select')" width="62" align="center"><template #default="{row}"><el-checkbox :model-value="!!freightRateFor(row.id)" @change="toggleFreightProduct(row,!!$event)"/></template></el-table-column>
        <el-table-column prop="product" :label="t('inquiryProducts.fields.product')" min-width="150" show-overflow-tooltip/>
@@ -111,7 +112,9 @@
        <el-table-column :label="t('inquiryWorkspace.quotes.currency')" min-width="92"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.currency" maxlength="3"/></template></el-table-column>
        <el-table-column :label="t('inquiryWorkspace.quotes.pricingUnit')" min-width="100"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.unit" :placeholder="row.unit||'MT'"/></template></el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <div class="logistics-section-title"><div><h4>{{t('inquiryWorkspace.quotes.charges')}}</h4><p>{{t('inquiryWorkspace.quotes.chargesHint')}}</p></div><el-button @click="addCharge">{{t('inquiryWorkspace.quotes.addCharge')}}</el-button></div>
+      <ColumnFillRegion :rows="editor.body.charges" :fields="[{key:'name',column:0},{key:'amount',column:2},{key:'currency',column:3},{key:'unit',column:4},{key:'quantity',column:5},{key:'remark',column:6}]">
       <el-table :data="editor.body.charges" :max-height="420" table-layout="fixed">
        <el-table-column :label="t('inquiryWorkspace.quotes.chargeName')" min-width="130"><template #default="{row}"><el-input v-model="row.name"/></template></el-table-column>
        <el-table-column :label="t('inquiryWorkspace.quotes.applicableCargo')" min-width="150"><template #default="{row}"><el-select v-model="row.allocationType" @change="chargeAllocationChanged(row)"><el-option value="DIRECT" :label="t('inquiryWorkspace.quotes.directProduct')"/><el-option value="PER_TON" :label="t('inquiryWorkspace.quotes.perTon')"/><el-option value="FIXED" :label="t('inquiryWorkspace.quotes.fixedShipment')"/></el-select><el-select v-if="row.allocationType==='DIRECT'" v-model="row.productId" :placeholder="t('inquiryWorkspace.quotes.selectProduct')"><el-option v-for="p in item.body.products" :key="p.id" :value="p.id" :label="p.product"/></el-select></template></el-table-column>
@@ -122,6 +125,7 @@
        <el-table-column :label="t('inquiryProducts.fields.remark')" min-width="130"><template #default="{row}"><el-input v-model="row.remark"/></template></el-table-column>
        <el-table-column width="64"><template #default="{$index}"><el-button link type="danger" @click="editor!.body.charges.splice($index,1)">{{t('common.remove')}}</el-button></template></el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <div v-if="Object.keys(chargeTotals(editor.body.charges)).length" class="charge-summary"><span v-for="(v,k) in chargeTotals(editor.body.charges)" :key="k">{{t('inquiryWorkspace.quotes.totalCharges',{currency:k,total:v})}}</span><strong>{{t('inquiryWorkspace.quotes.usdChargesTotal',{total:currentUsdChargeTotal})}}</strong></div>
      </template>
      <div class="toolbar"><el-button type="primary" @click="saveQuote(false)">{{t('common.save')}}</el-button><el-button v-if="!editor.submittedAt" type="success" @click="saveQuote(true)">{{t('inquiryWorkspace.quotes.submitQuote')}}</el-button><el-button @click="editor=null">{{t('inquiryWorkspace.quotes.backToInquiry')}}</el-button></div>
@@ -157,6 +161,7 @@
  </main>
 </template>
 <script setup lang="ts">
+import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import {computed,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
@@ -426,6 +431,9 @@ async function portSearch(query=''){
 }
 async function companySuggestions(query:string,done:(items:{value:string}[])=>void){try{const r=await get<{suppliers?:{nameZh?:string;nameEn?:string;name?:string}[]}>('/suppliers',{keyword:query,page:1,page_size:50,status:'ACTIVE'});done((r.suppliers||[]).map(x=>({value:x.nameZh||x.nameEn||x.name||''})).filter(x=>x.value!==''))}catch{done([])}}
 function freightRateFor(productId:string){return editor.value?.body.freightRates.find(rate=>rate.productId===productId)}
+function canFillFreightRow(row:object){return !!freightRateFor((row as Product).id)}
+function getFreightCell(row:object,key:string){return (freightRateFor((row as Product).id) as unknown as Record<string,unknown>|undefined)?.[key]}
+function setFreightCell(row:object,key:string,value:unknown){const rate=freightRateFor((row as Product).id) as unknown as Record<string,unknown>|undefined;if(rate)rate[key]=value}
 function toggleFreightProduct(product:Product,selected:boolean){if(!editor.value)return;if(selected){if(!freightRateFor(product.id))editor.value.body.freightRates.push({productId:product.id,price:'',currency:editor.value.body.currency||'USD',unit:product.unit||'MT',remark:''})}else editor.value.body.freightRates=editor.value.body.freightRates.filter(rate=>rate.productId!==product.id);editor.value.body.cargoIds=editor.value.body.freightRates.map(rate=>rate.productId)}
 function chargeAllocationChanged(row:{allocationType?:string;productId?:string}){if(row.allocationType!=='DIRECT')row.productId=''}
 function addCharge(){if(!editor.value)return;editor.value.body.charges.push({name:'',amount:'',currency:editor.value.body.currency||'USD',unit:'SHIPMENT',quantity:'1',subtotal:'',remark:'',allocationType:'FIXED',productId:''})}

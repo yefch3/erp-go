@@ -634,6 +634,7 @@
         {{ t('contracts.items') }}
         <span class="hint">{{ t('contracts.editItemsHint') }}</span>
       </el-divider>
+      <ColumnFillRegion :rows="termsForm.items" :fields="[{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]">
       <el-table :data="termsForm.items" size="small" max-height="440">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
@@ -668,6 +669,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <div class="items-foot">
         <el-button @click="termsForm.items.push({ productId: '', spec: '', qty: '', unitPrice: '' })">
           {{ t('contracts.addItem') }}
@@ -698,6 +700,7 @@
         {{ t('contracts.items') }}
         <span class="hint">{{ t('contracts.changeItemsHint') }}</span>
       </el-divider>
+      <ColumnFillRegion :rows="changeForm.items" :fields="[{key:'spec',column:1},{key:'qty',column:2},{key:'unitPrice',column:3}]">
       <el-table :data="changeForm.items" size="small">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
@@ -727,6 +730,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <div class="items-foot">
         <el-button @click="changeForm.items.push({ productId: '', spec: '', qty: '', unitPrice: '' })">
           {{ t('contracts.addItem') }}
@@ -778,6 +782,7 @@
 </template>
 
 <script setup lang="ts">
+import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import ContractEntryDialog from '../components/ContractEntryDialog.vue'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
