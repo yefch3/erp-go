@@ -69,7 +69,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer mdConn.Close()
-	iamConn, err := dial(cfg.IAMAddr)
+	// iam's access answers are remembered for ten seconds; see grpcx.AnswerCache.
+	accessAnswers, _ := grpcx.CacheAccessAnswers(ctx, log)
+	iamConn, err := dial(cfg.IAMAddr, accessAnswers)
 	if err != nil {
 		return err
 	}
@@ -309,8 +311,9 @@ func run(log *slog.Logger) error {
 	return srv.Serve(lis)
 }
 
-func dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr,
+func dial(addr string, extra ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return grpc.NewClient(addr, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+		grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()),
+	}, extra...)...)
 }
