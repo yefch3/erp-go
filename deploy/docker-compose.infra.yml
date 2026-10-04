@@ -67,7 +67,17 @@ services:
       - "127.0.0.1:${KAFKA_PORT:-19092}:19092"
     volumes:
       - kafkadata:/var/lib/kafka/data
+    # 本地 `make up --wait` 靠它知道 Kafka 起好了，才接着建主题、跑迁移。
+    #
+    # 生产上没有任何东西读这个状态：业务服务在另一个 compose 文件里，启动不
+    # 等它；部署只看网关 healthz；Docker 不会因为 unhealthy 重启容器（进程
+    # 退出才重启，那是 restart 策略的事）。代价却不小——这条检查每 10 秒起
+    # 一个 JVM，每次吃 1.3–2.3 个核、约 2 秒（2026-10-04 压测逐秒采样抓到，
+    # 空闲时整机也每 12 秒冲到 64%）。所以生产的 deploy/.env 里设
+    # KAFKA_HEALTHCHECK_DISABLED=true 关掉它；本地默认照旧。
+    # 防「Kafka 卡死」应该看业务信号（消息积压），不是这里。
     healthcheck:
+      disable: ${KAFKA_HEALTHCHECK_DISABLED:-false}
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
       interval: 10s
       timeout: 10s
