@@ -319,6 +319,21 @@ DSN 没写的时候才填默认值）。但加之前先算总和——超了 100
 是真的。真到追不上的那天，按活跃度分级排期（活跃的两分钟，闲置的半小时）
 比调高并发好：它既缩短了一轮，又**减少**了对服务商的压力，而不是增加。
 
+### Kafka 健康检查：生产上关掉
+
+生产的 `deploy/.env` 里要有 `KAFKA_HEALTHCHECK_DISABLED=true`。
+
+那条健康检查每 10 秒起一个 JVM（`kafka-broker-api-versions`），每次吃
+1.3–2.3 个核、约 2 秒——2026-10-04 压测逐秒采样时抓到：没有任何请求的时候
+整机也每 12 秒冲到 64%，压测时这 2 秒里所有请求一起变慢。而生产上**没有
+任何东西读它的结果**：业务服务不等它、部署只看网关 healthz、Docker 不会
+因为 unhealthy 重启容器。本地 `make up --wait` 要靠它，所以默认是开的。
+
+改了这个变量要重建 Kafka 才生效（大约 30 秒收不到消息，消息在发件箱里排队、
+恢复后补发，不会丢）：
+
+    cd /opt/erp/repo && docker compose -f deploy/docker-compose.infra.yml up -d --no-deps kafka
+
 ---
 
 ## 六、上线前逐条确认
