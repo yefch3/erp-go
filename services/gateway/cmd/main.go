@@ -143,6 +143,8 @@ func run(log *slog.Logger) error {
 	revocations := httpapi.NewRevocationStore(cfg.RedisAddr, log)
 	defer revocations.Close()
 	go revocations.Run(ctx)
+	perms := httpapi.NewPermissionCache(httpapi.PermissionCacheTTL)
+	go perms.LogStats(ctx, log, 10*time.Minute)
 
 	// Failed-attempt budgets for login and mailbox verification. Redis rather
 	// than process memory so replicas share one count: three replicas each
@@ -191,6 +193,7 @@ func run(log *slog.Logger) error {
 		Unlock:                  unlock,
 		Idem:                    httpapi.NewIdemStore(cfg.RedisAddr, log),
 		Revocations:             revocations,
+		Perms:                   perms,
 		Limits:                  httpapi.NewRateLimiter(cfg.RedisAddr, log),
 		Throttle:                throttle,
 		GoogleClientID:          os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),

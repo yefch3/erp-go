@@ -80,6 +80,8 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
+	// Recent permission answers, see PermissionCache. Nil asks iam every time.
+	Perms *PermissionCache
 	// Limits bounds what one person or one source can cost: presses of 立即收信,
 	// and hits on the two routes strangers are meant to reach. Nil allows
 	// everything — see RateLimiter for why this one fails open.
@@ -157,6 +159,8 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.auth)
 		// 挂在认证之后：防重的键按「哪家公司的哪个人」隔离，身份得先有。
 		r.Use(s.idempotent)
+		// 改员工、角色、公司开关的写成功了，就把这家公司缓存的权限答案清掉。
+		r.Use(s.forgetPermissionsOnChange)
 		r.Get("/api/masterdata/bulk-delete/access", s.masterDeleteAccess)
 		r.Post("/api/masterdata/bulk-delete/preview", s.masterDeletePreview)
 		r.Post("/api/masterdata/bulk-delete/execute", s.masterDeleteExecute)
@@ -1041,11 +1045,22 @@ func (s *Server) allowed(ctx context.Context, code string) (bool, error) {
 	if !ok || op.EmployeeID == 0 {
 		return false, nil
 	}
+	key := permissionKey{tenant: op.TenantID, employee: op.EmployeeID, code: code}
+	var ticket permissionTicket
+	if s.Perms != nil {
+		var allowed, cached bool
+		if allowed, cached, ticket = s.Perms.lookup(key); cached {
+			return allowed, nil
+		}
+	}
 	resp, err := s.Access.CheckPermission(ctx, &iamv1.CheckPermissionRequest{
 		EmployeeId: op.EmployeeID, PermissionCode: code,
 	})
 	if err != nil {
 		return false, err
+	}
+	if s.Perms != nil {
+		s.Perms.store(key, resp.GetAllowed(), ticket)
 	}
 	return resp.GetAllowed(), nil
 }
