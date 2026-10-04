@@ -34,7 +34,8 @@ TEST_ENV := \
 	INVENTORY_TEST_DSN='postgres://erp_inventory:erp_inventory_pw@localhost:$(PG_PORT)/erp_inventory?sslmode=disable' \
 	PRODUCT_TEST_DSN='postgres://erp_product:erp_product_pw@localhost:$(PG_PORT)/erp_product?sslmode=disable' \
 	PROCUREMENT_MIGRATION_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement_migrations?sslmode=disable' \
-	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
+	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)' \
+	PROCUREMENT_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 
 .PHONY: help
 help: ## Show available targets

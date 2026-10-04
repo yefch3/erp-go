@@ -44,6 +44,13 @@ const (
 	// tenant rather than a person: a requirement belongs to the purchasing
 	// function, and there is no "owner" to send it to.
 	RequirementChanged = "requirement.changed"
+	// InquiryChanged: an inquiry was created, edited, submitted, withdrawn,
+	// quoted or deleted. Tenant-wide for the same reason as RequirementChanged:
+	// sales, purchasing and logistics all read the same inquiries, and the
+	// re-read goes through the permission-checked list. Deliberately no
+	// Subject: everyone in the tenant hears it, and which inquiry moved is
+	// itself information some of them may not see.
+	InquiryChanged = "inquiry.changed"
 	// MailInbound: new mail landed in this employee's inbox. Addressed to the
 	// mailbox owner alone — an inbox is personal, and a tenant-wide ping would
 	// make every open mailbox page refetch for mail none of them can see.
@@ -115,21 +122,36 @@ func (p *Publisher) ToEmployees(ctx context.Context, tenantID int64, employeeIDs
 	}
 }
 
-// ToTenant delivers one event to everybody in a tenant who has a page open.
+// ToTenant delivers events to everybody in a tenant who has a page open.
 // Same rules as ToEmployees: after the commit, never inside it, and a failure
-// is logged rather than propagated.
-func (p *Publisher) ToTenant(ctx context.Context, tenantID int64, e Event) {
-	if e.At.IsZero() {
-		e.At = time.Now().UTC()
+// is logged rather than propagated. Several events go out in one round trip,
+// so a change that several kinds of page care about costs Redis — and, when
+// Redis is unreachable, the request — one wait rather than one per kind.
+func (p *Publisher) ToTenant(ctx context.Context, tenantID int64, events ...Event) {
+	bodies := make([][]byte, 0, len(events))
+	for _, e := range events {
+		if e.At.IsZero() {
+			e.At = time.Now().UTC()
+		}
+		body, err := json.Marshal(e)
+		if err != nil {
+			p.log.Warn("livefeed: marshal failed", "err", err)
+			return
+		}
+		bodies = append(bodies, body)
 	}
-	body, err := json.Marshal(e)
-	if err != nil {
-		p.log.Warn("livefeed: marshal failed", "err", err)
+	if len(bodies) == 0 {
 		return
 	}
-	if err := p.rdb.Publish(ctx, broadcastChannel(tenantID), body).Err(); err != nil {
+	_, err := p.rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, body := range bodies {
+			pipe.Publish(ctx, broadcastChannel(tenantID), body)
+		}
+		return nil
+	})
+	if err != nil {
 		p.log.Warn("livefeed: broadcast failed",
-			"tenant", tenantID, "type", e.Type, "err", err)
+			"tenant", tenantID, "events", len(bodies), "err", err)
 	}
 }
 

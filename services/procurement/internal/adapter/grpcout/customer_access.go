@@ -8,7 +8,10 @@ import (
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/services/procurement/internal/app"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type CustomerAccess struct {
@@ -39,6 +42,44 @@ func (c *CustomerAccess) Check(ctx context.Context, id int64) (string, error) {
 	}
 	return customerSnapshotName(resp.GetCustomer()), nil
 }
+
+// CurrentNames reads a page of customers in one call. Until masterdata is on
+// a release that has the batch RPC — the two services are not replaced in
+// the same instant — it falls back to one GetCustomer per customer, which is
+// what the list did before. The fallback can go once every environment runs
+// a masterdata that serves GetCustomerNames (the release that introduced it).
+func (c *CustomerAccess) CurrentNames(ctx context.Context, ids []int64) (map[int64]app.CustomerCurrentName, error) {
+	out := make(map[int64]app.CustomerCurrentName, len(ids))
+	resp, err := c.customers.GetCustomerNames(ctx, &mdv1.GetCustomerNamesRequest{Ids: ids})
+	if status.Code(err) == codes.Unimplemented {
+		for _, id := range ids {
+			if _, done := out[id]; done {
+				continue
+			}
+			one, getErr := c.customers.GetCustomer(ctx, &mdv1.GetCustomerRequest{Id: id})
+			if status.Code(getErr) == codes.NotFound {
+				continue
+			}
+			if getErr != nil {
+				return nil, getErr
+			}
+			out[id] = app.CustomerCurrentName{Name: customerSnapshotName(one.GetCustomer()), Active: one.GetCustomer().GetStatus() == "ACTIVE"}
+		}
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, customer := range resp.GetCustomers() {
+		name := strings.TrimSpace(customer.GetShortName())
+		if name == "" {
+			name = strings.TrimSpace(customer.GetName())
+		}
+		out[customer.GetId()] = app.CustomerCurrentName{Name: name, Active: customer.GetStatus() == "ACTIVE"}
+	}
+	return out, nil
+}
+
 func (c *CustomerAccess) ResolveByName(ctx context.Context, name string) (int64, string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
