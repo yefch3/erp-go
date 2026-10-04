@@ -32,6 +32,7 @@ const (
 	CustomerService_MarkCustomerDocumentRemindersRead_FullMethodName = "/erp.masterdata.v1.CustomerService/MarkCustomerDocumentRemindersRead"
 	CustomerService_CreateCustomer_FullMethodName                    = "/erp.masterdata.v1.CustomerService/CreateCustomer"
 	CustomerService_GetCustomer_FullMethodName                       = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_GetCustomerNames_FullMethodName                  = "/erp.masterdata.v1.CustomerService/GetCustomerNames"
 	CustomerService_ListCustomers_FullMethodName                     = "/erp.masterdata.v1.CustomerService/ListCustomers"
 	CustomerService_UpdateCustomer_FullMethodName                    = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
 	CustomerService_UpdateCustomerProfile_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
@@ -83,6 +84,8 @@ type CustomerServiceClient interface {
 	MarkCustomerDocumentRemindersRead(ctx context.Context, in *MarkCustomerDocumentRemindersReadRequest, opts ...grpc.CallOption) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...grpc.CallOption) (*CreateCustomerResponse, error)
 	GetCustomer(ctx context.Context, in *GetCustomerRequest, opts ...grpc.CallOption) (*GetCustomerResponse, error)
+	// 一次取一批客户的当前名称和状态，给列表用；只返回调用人看得到的客户。
+	GetCustomerNames(ctx context.Context, in *GetCustomerNamesRequest, opts ...grpc.CallOption) (*GetCustomerNamesResponse, error)
 	ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error)
 	UpdateCustomer(ctx context.Context, in *UpdateCustomerRequest, opts ...grpc.CallOption) (*UpdateCustomerResponse, error)
 	UpdateCustomerProfile(ctx context.Context, in *UpdateCustomerProfileRequest, opts ...grpc.CallOption) (*UpdateCustomerProfileResponse, error)
@@ -258,6 +261,16 @@ func (c *customerServiceClient) GetCustomer(ctx context.Context, in *GetCustomer
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCustomerResponse)
 	err := c.cc.Invoke(ctx, CustomerService_GetCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) GetCustomerNames(ctx context.Context, in *GetCustomerNamesRequest, opts ...grpc.CallOption) (*GetCustomerNamesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCustomerNamesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetCustomerNames_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -574,6 +587,8 @@ type CustomerServiceServer interface {
 	MarkCustomerDocumentRemindersRead(context.Context, *MarkCustomerDocumentRemindersReadRequest) (*MarkCustomerDocumentRemindersReadResponse, error)
 	CreateCustomer(context.Context, *CreateCustomerRequest) (*CreateCustomerResponse, error)
 	GetCustomer(context.Context, *GetCustomerRequest) (*GetCustomerResponse, error)
+	// 一次取一批客户的当前名称和状态，给列表用；只返回调用人看得到的客户。
+	GetCustomerNames(context.Context, *GetCustomerNamesRequest) (*GetCustomerNamesResponse, error)
 	ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error)
 	UpdateCustomer(context.Context, *UpdateCustomerRequest) (*UpdateCustomerResponse, error)
 	UpdateCustomerProfile(context.Context, *UpdateCustomerProfileRequest) (*UpdateCustomerProfileResponse, error)
@@ -663,6 +678,9 @@ func (UnimplementedCustomerServiceServer) CreateCustomer(context.Context, *Creat
 }
 func (UnimplementedCustomerServiceServer) GetCustomer(context.Context, *GetCustomerRequest) (*GetCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) GetCustomerNames(context.Context, *GetCustomerNamesRequest) (*GetCustomerNamesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerNames not implemented")
 }
 func (UnimplementedCustomerServiceServer) ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomers not implemented")
@@ -1002,6 +1020,24 @@ func _CustomerService_GetCustomer_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CustomerServiceServer).GetCustomer(ctx, req.(*GetCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_GetCustomerNames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCustomerNamesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetCustomerNames(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetCustomerNames_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetCustomerNames(ctx, req.(*GetCustomerNamesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1586,6 +1622,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCustomer",
 			Handler:    _CustomerService_GetCustomer_Handler,
+		},
+		{
+			MethodName: "GetCustomerNames",
+			Handler:    _CustomerService_GetCustomerNames_Handler,
 		},
 		{
 			MethodName: "ListCustomers",

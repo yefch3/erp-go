@@ -173,7 +173,7 @@ import InquiryProducts from '../components/InquiryProducts.vue'
 import CustomerOfferEditor from '../components/CustomerOfferEditor.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
-import {onLive} from '../live'
+import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import type {InquiryTemplate} from '../lib/inquiryTemplates'
 import {parseTableFile} from '../lib/attachmentExcel'
@@ -324,13 +324,16 @@ function noteRefreshFailure(){
  refreshGate.value=afterFailure(refreshGate.value,Date.now())
  if(shouldWarn(refreshGate.value))ElMessage.error(t('inquiryWorkspace.messages.refreshFailed'))
 }
-async function reload(){
+// 返回是否拉成功：失败的那次由 liveRefresh 记着，退避窗口过了再补。
+async function reload():Promise<boolean>{
  try{
   if(item.value?.id){const r=await command('get',{id:item.value.id});item.value=normalizeInquiry(r.item)}else await loadList()
   refreshGate.value=afterSuccess()
+  return true
  }catch(e){
-  if(isAxiosError(e)&&[403,404].includes(e.response?.status||0)){item.value=null;preview.value=null;await router.replace({query:{}});await loadList();return}
+  if(isAxiosError(e)&&[403,404].includes(e.response?.status||0)){item.value=null;preview.value=null;await router.replace({query:{}});await loadList();return true}
   noteRefreshFailure()
+  return false
  }
 }
  function initialDetailTab(){return view.value==='SALES'||view.value==='QUOTATIONS'?'overview':'products'}
@@ -443,17 +446,14 @@ async function storeAttachment(file:File,quote:boolean){if(!item.value)return;if
 async function upload(e:Event,quote:boolean){const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file||!item.value)return;try{await storeAttachment(file,quote);ElMessage.success(t('inquiryWorkspace.messages.attachmentUploaded'))}catch(error){ElMessage.error(error instanceof Error?error.message:t('inquiryWorkspace.messages.attachmentFailed'))}finally{input.value=''}}
 async function initial(){item.value=null;editor.value=null;detailTab.value=initialDetailTab();state.value='';page.value=1;refreshGate.value=afterSuccess();const routeID=String(route.params.id||route.query.id||''),id=canonicalInquiryRouteID(routeID);if(id){if((view.value==='SALES'||view.value==='QUOTATIONS')&&!customerOptions.value.length){try{await loadCustomerOptions()}catch{/* 客户选项不可用时保留询盘快照。 */}}if(id!==routeID&&route.query.id!==undefined)await router.replace({query:{...route.query,id}});const r=await command('get',{id});item.value=normalizeInquiry(r.item)}else await loadList()}
 // 手上正在改东西的时候不要重拉，会把人填了一半的内容冲掉。退避窗口没过也
-// 不拉。这一串条件两处共用（定时器和实时推送），所以只写一次——两边不一致
-// 的样子是「推送来的时候会冲掉输入，定时器来的时候不会」。
+// 不拉。推送来了但现在拉不了，liveRefresh 会记着，能拉的时候补上。
 function canAutoRefresh(){return mayAttempt(refreshGate.value,Date.now())&&!editor.value&&!basicInfoEditable.value&&!busy.value}
-const stopLive=onLive(e=>{if(e.type==='requirement.changed'&&canAutoRefresh())void reload()})
-let timer:ReturnType<typeof setInterval>|undefined
-// 定时器**一直按 5 秒醒**，退不退避由 canAutoRefresh 里那个时间点说了算。
-// 不去改定时器本身的间隔：改间隔要 clearInterval 再 setInterval，而那正是
-// 「某一次忘了重新装上，于是再也不刷新了」的经典写法——这一页刚从那个坑里
-// 爬出来，不必换个姿势再掉一次。
-onMounted(()=>{void (async()=>{try{await loadTemplates();await initial()}catch{noteRefreshFailure()}})();timer=setInterval(()=>{if(canAutoRefresh())void reload()},5000)})
-onUnmounted(()=>{stopLive();if(timer)clearInterval(timer)})
+// 不再每 5 秒重拉整张列表：询盘有变化时服务端会推 inquiry.changed，听到才拉
+// （见 lib/liveRefresh，断线、后台标签页和两分钟兜底都在那里）。
+let liveRefresh:LiveRefresh|undefined
+// 进页面的第一次拉失败了也交给它：退避窗口过了自己补，不用等两分钟。
+onMounted(()=>{liveRefresh=useLiveRefresh(['inquiry.changed','requirement.changed'],{refresh:reload,canRefresh:canAutoRefresh});void (async()=>{try{await loadTemplates();await initial()}catch{noteRefreshFailure();liveRefresh?.owe()}})()})
+onUnmounted(()=>liveRefresh?.stop())
 watch(view,()=>void initial())
 </script>
 <style scoped>

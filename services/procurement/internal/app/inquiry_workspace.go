@@ -360,12 +360,19 @@ func applyInquiryTemplateDefaults(body *InquiryBody) {
 }
 
 func (s *Service) prepareInquiryTemplate(ctx context.Context, tenant int64, body *InquiryBody) error {
+	return s.prepareInquiryTemplateCached(ctx, tenant, body, nil)
+}
+
+// prepareInquiryTemplateCached is prepareInquiryTemplate with the template
+// lookups shared across one request: a list page shows many inquiries built
+// on the same one or two templates. A nil cache reads every time.
+func (s *Service) prepareInquiryTemplateCached(ctx context.Context, tenant int64, body *InquiryBody, cache map[int64]InquiryTemplateView) error {
 	var view InquiryTemplateView
 	var err error
 	if body.Template == nil || inquiryID(body.Template.ID) <= 0 {
-		view, err = s.GetDefaultInquiryTemplate(ctx, tenant)
+		view, err = s.inquiryTemplateView(ctx, tenant, 0, cache)
 	} else {
-		view, err = s.GetInquiryTemplate(ctx, tenant, inquiryID(body.Template.ID))
+		view, err = s.inquiryTemplateView(ctx, tenant, inquiryID(body.Template.ID), cache)
 		if err == nil && ((body.Template.TemplateCode != "" && body.Template.TemplateCode != view.Template.TemplateCode) || (body.Template.Version > 0 && body.Template.Version != view.Template.Version)) {
 			return apierr.Conflict("INQUIRY_TEMPLATE_CHANGED", "询盘模板版本不一致，请重新选择模板")
 		}
@@ -468,22 +475,12 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		}
 		if s.customers != nil {
 			if customerID == 0 && strings.TrimSpace(customerName) != "" {
-				if resolver, ok := s.customers.(CustomerNameResolver); ok {
-					resolvedID, resolvedName, resolveErr := resolver.ResolveByName(ctx, customerName)
-					if resolveErr != nil {
-						return nil, resolveErr
-					}
-					if resolvedID > 0 {
-						tag, updateErr := s.pool.Exec(ctx, `UPDATE sourcing_cases SET customer_id=$3,customer_name=$4 WHERE tenant_id=$1 AND id=$2 AND customer_id=0`, tenant, id, resolvedID, resolvedName)
-						if updateErr != nil {
-							return nil, updateErr
-						}
-						if tag.RowsAffected() == 1 {
-							customerID, customerName = resolvedID, resolvedName
-						} else if scanErr := s.pool.QueryRow(ctx, `SELECT customer_id,customer_name FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&customerID, &customerName); scanErr != nil {
-							return nil, scanErr
-						}
-					}
+				linkedID, linkedName, linkErr := s.linkInquiryCustomerByName(ctx, tenant, id, customerName)
+				if linkErr != nil {
+					return nil, linkErr
+				}
+				if linkedID > 0 {
+					customerID, customerName = linkedID, linkedName
 				}
 			}
 			if customerID > 0 {
@@ -518,62 +515,9 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		}
 	}
 	v.Legacy = len(raw) == 0
-	if len(raw) > 0 {
-		if err = json.Unmarshal(raw, &v.Body); err != nil {
-			return nil, err
-		}
-	} else {
-		old, e := s.GetSourcingCase(ctx, tenant, id)
-		if e != nil {
-			return nil, e
-		}
-		if old.Head.SourceFileKey != "" {
-			v.Body.Attachments = []InquiryAttachment{{Key: old.Head.SourceFileKey, Name: old.Head.SourceFileName}}
-		}
-		v.Body.Customer = old.Head.CustomerName
-		v.Body.CustomerID = strconv.FormatInt(old.Head.CustomerID, 10)
-		v.Body.Contact = old.Head.ContactName
-		v.Body.ContactID = strconv.FormatInt(old.Head.ContactID, 10)
-		if len(old.Lines) > 0 {
-			v.Body.DestinationPort = old.Lines[0].Port
-			v.Body.Delivery = old.Lines[0].Delivery
-			v.Body.Incoterm = old.Lines[0].Incoterm
-		}
-		for _, l := range old.Lines {
-			values := map[string]string{}
-			_ = json.Unmarshal(l.CustomFields, &values)
-			for key, value := range map[string]string{"material_standard": l.MaterialStandard, "grade": l.Grade, "thickness": l.Thickness, "width": l.Width, "length_or_form": l.LengthOrForm, "surface_requirement": l.SurfaceRequirement, "coating": l.Coating, "tolerance": l.Tolerance, "coil_weight": l.CoilWeight, "coil_id": l.CoilID, "payment_terms": l.PaymentTerms, "incoterm": l.Incoterm, "port": l.Port} {
-				if value != "" {
-					values[key] = value
-				}
-			}
-			v.Body.Products = append(v.Body.Products, InquiryProduct{ID: strconv.FormatInt(l.ID, 10), Product: l.Product, Specification: strings.Join(compactStrings([]string{l.MaterialStandard, l.Grade, l.Thickness, l.Width, l.LengthOrForm, l.SurfaceRequirement}), " · "), Quantity: l.Quantity, Unit: l.QuantityUnit, Delivery: l.Delivery, Packaging: l.Packaging, Remark: l.Remarks, CustomFields: values})
-		}
-	}
-	if customerID > 0 {
-		v.Body.CustomerID = strconv.FormatInt(customerID, 10)
-		v.Body.Customer = customerName
-	}
-	if contactID > 0 {
-		v.Body.ContactID = strconv.FormatInt(contactID, 10)
-		v.Body.Contact = contactName
-	}
-	if v.Body.Template == nil && templateID > 0 {
-		v.Body.Template = &InquiryTemplateSnapshot{ID: strconv.FormatInt(templateID, 10)}
-	}
-	if err = s.prepareInquiryTemplate(ctx, tenant, &v.Body); err != nil {
+	v.Body, err = s.inquiryBody(ctx, tenant, inquiryRow{id: id, body: raw, templateID: templateID, customerID: customerID, customerName: customerName, contactID: contactID, contactName: contactName}, nil)
+	if err != nil {
 		return nil, err
-	}
-	if v.Body.Products == nil {
-		v.Body.Products = []InquiryProduct{}
-	}
-	if v.Body.Attachments == nil {
-		v.Body.Attachments = []InquiryAttachment{}
-	}
-	for i := range v.Body.Products {
-		if v.Body.Products[i].CustomFields == nil {
-			v.Body.Products[i].CustomFields = map[string]string{}
-		}
 	}
 	v.Quotes = []InquiryQuoteView{}
 	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
@@ -618,88 +562,6 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		v.Quotes = append(v.Quotes, history...)
 	}
 	return &v, nil
-}
-
-func (s *Service) listInquiryWorkspace(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
-	visible := Visibility{All: true}
-	var err error
-	if in.View == "SALES" || in.View == "QUOTATIONS" {
-		visible, err = s.visibleSourcingTo(ctx, op)
-		if err != nil {
-			return InquiryResult{}, err
-		}
-	}
-	customerAll := true
-	var customerIDs []int64
-	if (in.View == "SALES" || in.View == "QUOTATIONS") && s.customers != nil {
-		customerIDs, customerAll, err = s.customers.VisibleIDs(ctx, op.ID)
-		if err != nil {
-			return InquiryResult{}, err
-		}
-	}
-	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND ($6 OR customer_id=0 OR customer_id=ANY($7::bigint[])) AND status<>'CANCELLED' AND deleted_at IS NULL AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR display_inquiry_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES", customerAll, customerIDs)
-	if err != nil {
-		return InquiryResult{}, err
-	}
-	ids := []int64{}
-	for rows.Next() {
-		var id int64
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return InquiryResult{}, err
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return InquiryResult{}, err
-	}
-	out := InquiryResult{Items: []InquiryView{}}
-	if in.Page < 1 {
-		in.Page = 1
-	}
-	if in.Size != 20 && in.Size != 50 && in.Size != 100 {
-		in.Size = 20
-	}
-	for _, id := range ids {
-		v, e := s.readInquiry(ctx, tenant, id, op, in.View)
-		if e != nil {
-			if in.View == "PROCUREMENT" || in.View == "LOGISTICS" {
-				var state string
-				_ = s.pool.QueryRow(ctx, `SELECT status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&state)
-				if state == "INTAKE_PENDING" {
-					continue
-				}
-			}
-			return InquiryResult{}, e
-		}
-		if in.View == "QUOTATIONS" && v.State != "INQUIRING" {
-			continue
-		}
-		state := v.State
-		if in.View == "PROCUREMENT" {
-			state = "WAITING"
-			if v.ProcurementCount > 0 {
-				state = "QUOTED"
-			}
-		}
-		if in.View == "LOGISTICS" {
-			state = "WAITING"
-			if v.LogisticsCount > 0 {
-				state = "QUOTED"
-			}
-		}
-		if in.State != "" && in.State != state {
-			continue
-		}
-		out.Total++
-		if out.Total > (in.Page-1)*in.Size && len(out.Items) < in.Size {
-			v.Quotes = nil
-			out.Items = append(out.Items, *v)
-		}
-	}
-	return out, nil
 }
 
 func validateInquiryBody(b InquiryBody, submit bool) error {
@@ -842,7 +704,7 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -904,7 +766,7 @@ func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Opera
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -1007,7 +869,7 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 		}
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -1062,7 +924,7 @@ func (s *Service) deleteInquiry(ctx context.Context, tenant int64, op Operator, 
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	return InquiryResult{}, nil
 }
 
@@ -1372,7 +1234,7 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, in.View)
 	return InquiryResult{Item: v}, err
 }

@@ -150,6 +150,7 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		}
 		return SourcingCaseView{}, err
 	}
+	s.nudgeInquiry(ctx, tenantID)
 	return s.GetSourcingCase(ctx, tenantID, id)
 }
 
@@ -362,6 +363,8 @@ WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); exec
 		if err != nil {
 			return SourcingCaseView{}, err
 		}
+		// INTAKE_PENDING → REVIEWING: the inquiry stops being 未提交 in every list.
+		s.nudgeInquiry(ctx, tenantID)
 		return s.GetSourcingCase(ctx, tenantID, caseID)
 	}
 	requiredFields, err := s.sourcingRequiredFields(ctx, tenantID, view.Head.InquiryTemplateID)

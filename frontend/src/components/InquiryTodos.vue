@@ -23,7 +23,7 @@
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {get,post} from '../api'
-import {onLive} from '../live'
+import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import type {Result} from '../lib/inquiryWorkspace'
 const emit=defineEmits<{count:[value:number]}>()
@@ -35,8 +35,10 @@ const taskOptions=computed(()=>[...new Set(rows.value.map(row=>row.taskKey))].ma
 const displayedRows=computed(()=>{const needle=keyword.value.trim().toLowerCase();return rows.value.filter(row=>(!taskFilter.value||row.taskKey===taskFilter.value)&&(!needle||`${row.number} ${row.customer} ${t(row.taskKey)}`.toLowerCase().includes(needle)))})
 function displayTime(value:string){if(!value)return '—';const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString(locale.value,{hour12:false})}
 let refreshing=false
-async function refresh(){
- if(refreshing)return;refreshing=true
+// 返回是否拉成功；失败的那次 liveRefresh 记着，下次心跳再补。
+async function refresh():Promise<boolean>{
+ // 上一次还没回来：这一次不算拉过——那一次可能是变化之前发出去的。
+ if(refreshing)return false;refreshing=true
  const out:InquiryTodoRow[]=[]
  try{
  const offerStates=auth.can('export:quotation:read')?(await post<{summaries:Record<string,{status:string;confirmedAt:string}>}>('/customer-offer',{action:'summaries'})).summaries:{}
@@ -50,12 +52,14 @@ async function refresh(){
   for(const status of ['DRAFT','PENDING_SIGN']){let contractPage=1,contractTotal=0;do{const r=await get<{contracts:{id:string;contractNo:string;customerName:string;salesEmployeeId:string}[];meta:{total:number}}>('/contracts',{status,page:contractPage,page_size:100});contractTotal=Number(r.meta?.total||0);for(const c of r.contracts||[]){if(auth.owns(c.salesEmployeeId))out.push({id:c.id,number:c.contractNo,customer:c.customerName,taskKey:status==='DRAFT'?'todos.inquiryTasks.contractDraft':'todos.inquiryTasks.contractSigning',path:'/contracts',completedAt:''})}contractPage++}while((contractPage-1)*100<contractTotal)}
  }
  rows.value=out;emit('count',out.length);error.value=''
- }catch{error.value=t('todos.inquiryUnavailable')}finally{refreshing=false}
+ return true
+ }catch{error.value=t('todos.inquiryUnavailable');return false}finally{refreshing=false}
 }
-const stopLive=onLive(e=>{if(e.type==='requirement.changed')void refresh()})
-let timer:ReturnType<typeof setInterval>|undefined
-onMounted(()=>{void refresh();timer=setInterval(()=>void refresh(),5000)})
-onUnmounted(()=>{stopLive();if(timer)clearInterval(timer)})
+// 询盘、采购需求、审批和单据有变化时服务端会推送，听到才重拉；不再每 5 秒
+// 把五种询盘列表、报价状态和合同全拉一遍（见 lib/liveRefresh）。
+let liveRefresh:LiveRefresh|undefined
+onMounted(()=>{liveRefresh=useLiveRefresh(['inquiry.changed','requirement.changed','todo.changed','doc.changed'],{refresh});void refresh().then(ok=>{if(!ok)liveRefresh?.owe()})})
+onUnmounted(()=>liveRefresh?.stop())
 </script>
 <style scoped>
 .inquiry-todos { margin-bottom: 26px; }

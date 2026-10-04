@@ -205,11 +205,14 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 //
 // Always after the commit. A hint about a change that then rolled back would
 // send browsers to read something that never happened.
-func (s *Service) nudge(ctx context.Context, tenantID int64) {
+//
+// also carries other hints raised by the same change, sent in the same round
+// trip (an inquiry write also tells inquiry pages, see nudgeInquiry).
+func (s *Service) nudge(ctx context.Context, tenantID int64, also ...livefeed.Event) {
 	if s.live == nil {
 		return
 	}
-	s.live.ToTenant(ctx, tenantID, livefeed.Event{Type: livefeed.RequirementChanged})
+	s.live.ToTenant(ctx, tenantID, append([]livefeed.Event{{Type: livefeed.RequirementChanged}}, also...)...)
 }
 
 // RequirementFilter narrows a requirement list.
