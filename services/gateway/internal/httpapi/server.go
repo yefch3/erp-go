@@ -80,8 +80,10 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
-	// Recent permission answers, see PermissionCache. Nil asks iam every time.
-	Perms *PermissionCache
+	// The cache on the iam connection, so a role or employee change can
+	// forget a company's remembered answers at once (see permcache.go). Nil
+	// means nothing to forget.
+	Answers *grpcx.AnswerCache
 	// Limits bounds what one person or one source can cost: presses of 立即收信,
 	// and hits on the two routes strangers are meant to reach. Nil allows
 	// everything — see RateLimiter for why this one fails open.
@@ -1045,22 +1047,11 @@ func (s *Server) allowed(ctx context.Context, code string) (bool, error) {
 	if !ok || op.EmployeeID == 0 {
 		return false, nil
 	}
-	key := permissionKey{tenant: op.TenantID, employee: op.EmployeeID, code: code}
-	var ticket permissionTicket
-	if s.Perms != nil {
-		var allowed, cached bool
-		if allowed, cached, ticket = s.Perms.lookup(key); cached {
-			return allowed, nil
-		}
-	}
 	resp, err := s.Access.CheckPermission(ctx, &iamv1.CheckPermissionRequest{
 		EmployeeId: op.EmployeeID, PermissionCode: code,
 	})
 	if err != nil {
 		return false, err
-	}
-	if s.Perms != nil {
-		s.Perms.store(key, resp.GetAllowed(), ticket)
 	}
 	return resp.GetAllowed(), nil
 }

@@ -49,12 +49,12 @@ func main() {
 // 留了余量装 zip 的头尾和 protobuf 的封装。改 MaxZipBytes 就要跟着改这里。
 const maxServiceResponseBytes = 48 << 20
 
-func dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr,
+func dial(addr string, extra ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return grpc.NewClient(addr, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(grpcx.UnaryClientPropagator()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxServiceResponseBytes)),
-	)
+	}, extra...)...)
 }
 
 func run(log *slog.Logger) error {
@@ -67,7 +67,9 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	iamConn, err := dial(cfg.IAMAddr)
+	// iam's access answers are remembered for ten seconds; see grpcx.AnswerCache.
+	accessAnswers, answers := grpcx.CacheAccessAnswers(ctx, log)
+	iamConn, err := dial(cfg.IAMAddr, accessAnswers)
 	if err != nil {
 		return err
 	}
@@ -143,8 +145,6 @@ func run(log *slog.Logger) error {
 	revocations := httpapi.NewRevocationStore(cfg.RedisAddr, log)
 	defer revocations.Close()
 	go revocations.Run(ctx)
-	perms := httpapi.NewPermissionCache(httpapi.PermissionCacheTTL)
-	go perms.LogStats(ctx, log, 10*time.Minute)
 
 	// Failed-attempt budgets for login and mailbox verification. Redis rather
 	// than process memory so replicas share one count: three replicas each
@@ -193,7 +193,7 @@ func run(log *slog.Logger) error {
 		Unlock:                  unlock,
 		Idem:                    httpapi.NewIdemStore(cfg.RedisAddr, log),
 		Revocations:             revocations,
-		Perms:                   perms,
+		Answers:                 answers,
 		Limits:                  httpapi.NewRateLimiter(cfg.RedisAddr, log),
 		Throttle:                throttle,
 		GoogleClientID:          os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
