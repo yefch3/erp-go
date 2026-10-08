@@ -450,10 +450,11 @@ function ariaFor(m: MailRow) {
   display: flex;
   /* Keep the two controls aligned with the two text lines. */
   align-items: flex-start;
-  gap: 6px;
   /* Two text lines and two aligned controls set a consistent compact height. */
-  /* 左边只留一点（--mail-row-inset），勾选框和工具条上的「全选」上下对齐。 */
-  padding: 6px 12px 6px var(--mail-row-inset);
+  /* 左边只留一点（--mail-row-inset），勾选框和工具条上的「全选」上下对齐。
+     其余的留白（上下 6px、右边 12px、勾选框那一纵和文字之间的 6px）不再
+     挂在行上，挪进了 .marks 和 .body 自己身上——见 .body 那段。 */
+  padding: 0 0 0 var(--mail-row-inset);
   border-bottom: 1px solid var(--mail-divider);
   background: var(--mail-surface);
   /* 箭头，不是小手。
@@ -512,6 +513,8 @@ function ariaFor(m: MailRow) {
   gap: 2px;
   /* Both actions occupy the same 20px column, including their hit areas. */
   width: 20px;
+  /* 行的上下留白在这一纵和 .body 上各自带着，勾选框、星标的位置和从前一样。 */
+  padding: 6px 0;
 }
 .face {
   display: grid;
@@ -558,11 +561,20 @@ function ariaFor(m: MailRow) {
 
 /* 两行竖着排。每一行自己占满整列的宽度，长了就省略号——这正是横排做不到
    的：横排里定宽的发件人不肯收缩，一挤就溢出来盖在邻居身上。 */
+/* 能点开信的地方是 .body，所以 .body 要**铺满这一行**（左边那一纵除外）。
+   从前行的留白挂在 .row 上：.body 只包住两行字，而左边那一纵（勾选框 +
+   星标 = 42px）比两行字（38px）高，行被撑高，字底下多出一条 11px 的空白，
+   加上顶上 6px、右边 12px、中间 6px——整行鼠标压上去都变色，点下半截靠下
+   却没反应（2026-10-07 报的「点下半部分点不进去」）。留白改由 .body 自己的
+   padding 带着、上下撑满，字的位置一像素不动，点哪儿都能打开。 */
 .body {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  align-self: stretch;
+  box-sizing: border-box;
+  padding: 6px 12px 6px 6px;
   min-width: 0;
   border: none;
   background: none;
