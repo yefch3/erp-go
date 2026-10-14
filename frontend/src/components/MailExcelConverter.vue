@@ -95,6 +95,14 @@
           <span v-if="excelResult.model && selectedExcelTemplate"> · {{ t('emails.excelTemplateUsed', { name: selectedExcelTemplate.name, version: selectedExcelTemplate.version }) }}</span>
         </div>
         <el-alert
+          v-if="missingQuantityRowsForTransfer.length"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('emails.sourcingQuantityNeedsReview', { count: missingQuantityRowsForTransfer.length, rows: missingQuantityRowLabels })"
+          class="quantity-review-alert"
+        />
+        <el-alert
           v-if="excelResult.previewError"
           type="warning"
           :closable="false"
@@ -116,7 +124,7 @@
               <table>
                 <thead><tr><th v-for="c in sheet.columns" :key="c">{{ c }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="(row, ri) in sheet.rows" :key="ri">
+                  <tr v-for="(row, ri) in sheet.rows" :key="ri" :class="{ 'quantity-missing-row': sheet === excelResult.sheets[0] && missingQuantityRowsForTransfer.includes(ri + 1) }">
                     <td v-for="(cell, ci) in row.cells" :key="ci">{{ cell }}</td>
                   </tr>
                 </tbody>
@@ -157,6 +165,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, mailExcelRequest, post } from '../api'
 import MailSourcingTransferDialog from './MailSourcingTransferDialog.vue'
+import { missingQuantityRows } from '../lib/mailSourcingQuantity'
 import type { MailFile } from './MailAttachments.vue'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { attachmentExcelSource } from '../lib/attachmentExcelSource'
@@ -228,6 +237,10 @@ const excelJobId = ref('')
 const excelSheet = ref('')
 const excelAvailable = ref(false)
 const sourcingOpen = ref(false)
+const missingQuantityRowsForTransfer = computed(() => excelResult.value?.sheets[0]
+  ? missingQuantityRows(excelResult.value.sheets[0]) : [])
+const missingQuantityRowLabels = computed(() => missingQuantityRowsForTransfer.value.slice(0, 12).join('、')
+  + (missingQuantityRowsForTransfer.value.length > 12 ? '…' : ''))
 const convertedExcelSource = ref<ExcelSource | null>(null)
 // Results live in memory: asking for the same attachment or text again opens
 // the stored workbook instead of spending another model call. 重新生成 is the
@@ -695,6 +708,7 @@ defineExpose({
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
+.quantity-review-alert { margin-bottom: 12px; }
 .sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
@@ -729,4 +743,5 @@ defineExpose({
   background: var(--el-fill-color-light);
   font-weight: 600;
 }
+.excel-grid .quantity-missing-row { background: var(--el-color-warning-light-9); }
 </style>
