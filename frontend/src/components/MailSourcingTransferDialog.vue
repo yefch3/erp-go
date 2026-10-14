@@ -12,6 +12,14 @@
     append-to-body
   >
     <p class="sourcing-hint">{{ t('emails.sourcingTransferHint') }}</p>
+    <el-alert
+      v-if="missingQuantityRowsForTransfer.length"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="t('emails.sourcingQuantityNeedsReview', { count: missingQuantityRowsForTransfer.length, rows: missingQuantityRowLabels })"
+      class="sourcing-quantity-warning"
+    />
     <el-form label-position="top">
       <el-form-item :label="t('emails.sourcingCustomer')" required>
         <CustomerSelect
@@ -72,6 +80,7 @@ import { customerDisplayName } from '../lib/customerDisplay'
 import type { ExcelResult } from '../lib/excelJobResult'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { optionalSourcingContact } from '../lib/sourcingTransfer'
+import { missingQuantityRows, quantityForIntake } from '../lib/mailSourcingQuantity'
 
 const props = defineProps<{
   modelValue: boolean
@@ -106,6 +115,10 @@ const form = reactive({ customerId: '', customerName: '', contactId: '' })
 const selectedContact = computed(() =>
   contacts.value.find((contact) => contact.id === form.contactId) ?? null,
 )
+const missingQuantityRowsForTransfer = computed(() => props.result?.sheets[0]
+  ? missingQuantityRows(props.result.sheets[0]) : [])
+const missingQuantityRowLabels = computed(() => missingQuantityRowsForTransfer.value.slice(0, 12).join('、')
+  + (missingQuantityRowsForTransfer.value.length > 12 ? '…' : ''))
 
 // 每次打开都从空白开始：上一次选的客户不该带到另一封信的询盘上。
 watch(() => props.modelValue, (isOpen) => {
@@ -158,6 +171,7 @@ async function create() {
     '卷重': 'coilWeight', '卷内径': 'coilId', '包装': 'packaging', '交期': 'delivery',
     '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
     '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
+    '需求数量': 'quantity', '询价数量': 'quantity', 'Quantity': 'quantity', 'Qty': 'quantity',
   }
   // LLM 结果每列携带模板字段标识（snake_case），按标识对齐——公司用模板
   // 改过表头也不受影响；本地直读的结果没有标识，退回表头映射。价格列不
@@ -172,7 +186,7 @@ async function create() {
       if (key.startsWith('custom.')) {
         ;(line.customFields ??= {})[key] = cell
       } else {
-        line[key] = cell
+        line[key] = key === 'quantity' ? quantityForIntake(cell) : cell
       }
     })
     return line
@@ -208,6 +222,7 @@ async function create() {
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
+.sourcing-quantity-warning { margin-bottom: 16px; }
 .sourcing-contact-help {
   margin-top: 6px;
   color: var(--el-text-color-secondary);
