@@ -80,7 +80,8 @@ import { customerDisplayName } from '../lib/customerDisplay'
 import type { ExcelResult } from '../lib/excelJobResult'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { optionalSourcingContact } from '../lib/sourcingTransfer'
-import { missingQuantityRows, quantityForIntake } from '../lib/mailSourcingQuantity'
+import { missingQuantityRows } from '../lib/mailSourcingQuantity'
+import { sourcingLinesFromSheet } from '../lib/mailSourcingLines'
 
 const props = defineProps<{
   modelValue: boolean
@@ -164,37 +165,12 @@ async function create() {
     return
   }
 
-  const fieldByColumn: Record<string, string> = {
-    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
-    '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
-    '表面要求': 'surfaceRequirement', '涂层/镀层': 'coating', '公差': 'tolerance',
-    '卷重': 'coilWeight', '卷内径': 'coilId', '包装': 'packaging', '交期': 'delivery',
-    '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
-    '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
-    '需求数量': 'quantity', '询价数量': 'quantity', 'Quantity': 'quantity', 'Qty': 'quantity',
-  }
-  // LLM 结果每列携带模板字段标识（snake_case），按标识对齐——公司用模板
-  // 改过表头也不受影响；本地直读的结果没有标识，退回表头映射。价格列不
-  // 属于采购明细事实（由工厂报价产生），custom.* 自定义列进 custom_fields。
-  const columnKeys = sheet.columnKeys ?? []
-  const lines = sheet.rows.map((row) => {
-    const line: Record<string, string> & { customFields?: Record<string, string> } = {}
-    sheet.columns.forEach((column, index) => {
-      const key = columnKeys[index] ?? fieldByColumn[column]
-      if (!key || key === 'unit_price' || key === 'total_price') return
-      const cell = row.cells[index] ?? ''
-      if (key.startsWith('custom.')) {
-        ;(line.customFields ??= {})[key] = cell
-      } else {
-        line[key] = key === 'quantity' ? quantityForIntake(cell) : cell
-      }
-    })
-    return line
-  })
+  const lines = sourcingLinesFromSheet(sheet)
   creating.value = true
   try {
     const response = await post<{ sourcingCase: { id: string; caseNo: string } }>('/sourcing-cases', {
       title: result.fileName.replace(/\.xlsx$/i, ''),
+      remark: result.sheets.map((item) => item.summary.trim()).filter(Boolean).join('\n\n'),
       customerId: form.customerId,
       customerName: form.customerName,
       // protojson 的 int64 不接受空字符串。联系人可选时必须彻底省略字段，

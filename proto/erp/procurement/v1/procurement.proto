@@ -188,6 +188,8 @@ message CreateCaseRequest {
   // Master-data contact selected for this customer. The gateway validates the
   // relationship and replaces the name/email snapshots with authoritative values.
   int64 contact_id = 15;
+  // Overall requirements extracted alongside the workbook rows.
+  string remark = 16;
 }
 
 message CreateCaseResponse { SourcingCase sourcing_case = 1; }
