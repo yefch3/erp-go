@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sgao19/erp-go/pkg/livefeed"
+	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
 
 // inquiryRow is the sourcing_cases slice an inquiry body is assembled from.
@@ -28,7 +29,11 @@ func (s *Service) inquiryBody(ctx context.Context, tenant int64, r inquiryRow, t
 		if err := json.Unmarshal(r.body, &body); err != nil {
 			return body, err
 		}
-	} else {
+	}
+	// A mail intake may initially store only the overall remark. Products are
+	// still sourced from the imported lines until the first workspace save.
+	// An explicitly saved empty product array must remain empty.
+	if body.Products == nil {
 		old, err := s.GetSourcingCase(ctx, tenant, r.id)
 		if err != nil {
 			return body, err
@@ -53,7 +58,7 @@ func (s *Service) inquiryBody(ctx context.Context, tenant int64, r inquiryRow, t
 					values[key] = value
 				}
 			}
-			body.Products = append(body.Products, InquiryProduct{ID: strconv.FormatInt(l.ID, 10), Product: l.Product, Specification: strings.Join(compactStrings([]string{l.MaterialStandard, l.Grade, l.Thickness, l.Width, l.LengthOrForm, l.SurfaceRequirement}), " · "), Quantity: l.Quantity, Unit: l.QuantityUnit, Delivery: l.Delivery, Packaging: l.Packaging, Remark: l.Remarks, CustomFields: values})
+			body.Products = append(body.Products, inquiryProductFromSourcingLine(l, values))
 		}
 	}
 	if r.customerID > 0 {
@@ -82,6 +87,16 @@ func (s *Service) inquiryBody(ctx context.Context, tenant int64, r inquiryRow, t
 		}
 	}
 	return body, nil
+}
+
+func inquiryProductFromSourcingLine(l store.ListSourcingLinesRow, values map[string]string) InquiryProduct {
+	product := InquiryProduct{ID: strconv.FormatInt(l.ID, 10), Product: l.Product, Specification: strings.Join(compactStrings([]string{l.MaterialStandard, l.Grade, l.Thickness, l.Width, l.LengthOrForm, l.SurfaceRequirement}), " · "), Quantity: l.Quantity, Unit: l.QuantityUnit, Delivery: l.Delivery, Packaging: l.Packaging, Remark: l.Remarks, CustomFields: values}
+	for _, key := range []string{"specification", "weight", "volume", "package_quantity"} {
+		if value := values[key]; value != "" {
+			setInquiryProductValue(&product, key, value)
+		}
+	}
+	return product
 }
 
 // inquiryTemplateView reads a template, or the tenant default for id 0,

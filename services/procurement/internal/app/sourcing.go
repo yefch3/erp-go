@@ -55,6 +55,7 @@ func reviewCustomFields(previous []byte, next map[string]string) []byte {
 }
 
 type NewSourcingCase struct {
+	Remark                                                  string
 	Title, CustomerName, ContactName, ContactEmail          string
 	SourceFileName, SourceContentType                       string
 	CustomerID, ContactID, SourceMailID, SourceAttachmentID int64
@@ -135,6 +136,14 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		id = head.ID
 		for i, line := range in.Lines {
 			if err := q.CreateSourcingLine(ctx, sourcingLineParams(tenantID, id, int32(i+1), line)); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(in.Remark) != "" {
+			// Products remain absent until the first workspace save and are
+			// assembled from the imported sourcing lines on reads.
+			_, err = tx.Exec(ctx, `UPDATE sourcing_cases SET inquiry_body=jsonb_build_object('remark',$3::text) WHERE tenant_id=$1 AND id=$2`, tenantID, id, strings.TrimSpace(in.Remark))
+			if err != nil {
 				return err
 			}
 		}
