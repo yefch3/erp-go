@@ -297,7 +297,7 @@ func (q *Queries) CorrectExistingContractVersion(ctx context.Context, arg Correc
 const countSignedAttachments = `-- name: CountSignedAttachments :one
 SELECT count(*) FROM contract_attachments
 WHERE tenant_id = $1 AND contract_version_id = $2
-  AND kind = 'SIGNED'
+  AND kind = 'SIGNED' AND signature_invalidated_at IS NULL
 `
 
 type CountSignedAttachmentsParams struct {
@@ -723,7 +723,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    CASE WHEN a.signature_invalidated_at IS NOT NULL THEN 'STALE_SIGNED' ELSE a.kind END::text AS kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -874,7 +874,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    CASE WHEN a.signature_invalidated_at IS NOT NULL THEN 'STALE_SIGNED' ELSE a.kind END::text AS kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -975,7 +975,7 @@ LEFT JOIN LATERAL (
     -- 25000.00000000000000000000；两位与合同金额、已收款同一个刻度。
     SELECT round(sum(sh.shipped * li.unit_price), 2) AS shipped_amount
     FROM (
-        SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+        SELECT CASE WHEN c.entry_source='STANDARD' THEN coalesce(ci.spec,'') ELSE '' END AS progress_spec, cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
                CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
                CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
                sum(cs.qty) AS shipped
@@ -983,21 +983,21 @@ LEFT JOIN LATERAL (
         LEFT JOIN contract_items ci
           ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
         WHERE cs.tenant_id = c.tenant_id AND cs.contract_id = c.id
-        GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+        GROUP BY CASE WHEN c.entry_source='STANDARD' THEN coalesce(ci.spec,'') ELSE '' END, cs.product_id, coalesce(cs.sku_id, 0),
                  CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
                  CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
     ) sh
     JOIN (
-        SELECT product_id, coalesce(sku_id, 0) AS sku_id,
+        SELECT CASE WHEN c.entry_source='STANDARD' THEN spec ELSE '' END AS progress_spec, product_id, coalesce(sku_id, 0) AS sku_id,
                CASE WHEN product_id = 0 THEN product_name ELSE '' END AS fallback_product_name,
                CASE WHEN product_id = 0 THEN uom_code ELSE '' END AS fallback_uom_code,
                CASE WHEN sum(qty) > 0 THEN sum(amount) / sum(qty) ELSE 0 END AS unit_price
         FROM contract_items
         WHERE tenant_id = c.tenant_id AND contract_version_id = c.current_version_id
-        GROUP BY product_id, coalesce(sku_id, 0),
+        GROUP BY CASE WHEN c.entry_source='STANDARD' THEN spec ELSE '' END, product_id, coalesce(sku_id, 0),
                  CASE WHEN product_id = 0 THEN product_name ELSE '' END,
                  CASE WHEN product_id = 0 THEN uom_code ELSE '' END
-    ) li ON li.product_id = sh.product_id
+    ) li ON li.progress_spec=sh.progress_spec AND li.product_id = sh.product_id
         AND li.sku_id = sh.sku_id
         AND li.fallback_product_name = sh.fallback_product_name
         AND li.fallback_uom_code = sh.fallback_uom_code
@@ -1827,23 +1827,23 @@ func (q *Queries) SetContractVersionStatus(ctx context.Context, arg SetContractV
 
 const shipmentProgressOf = `-- name: ShipmentProgressOf :many
 WITH current_items AS (
-    SELECT i.id, i.tenant_id, i.contract_version_id, i.line_no, i.product_id, i.sku_id, i.product_code, i.product_name, i.spec, i.qty, i.uom_id, i.uom_code, i.unit_price, i.amount, i.hs_code, i.remark, i.opening_procured_qty, i.opening_arrived_qty, i.opening_shipped_qty,
+    SELECT i.id, i.tenant_id, i.contract_version_id, i.line_no, i.product_id, i.sku_id, i.product_code, i.product_name, i.spec, i.qty, i.uom_id, i.uom_code, i.unit_price, i.amount, i.hs_code, i.remark, i.opening_procured_qty, i.opening_arrived_qty, i.opening_shipped_qty, CASE WHEN c.entry_source='STANDARD' THEN i.spec ELSE '' END AS progress_spec,
            CASE WHEN i.product_id = 0 THEN i.product_name ELSE '' END AS fallback_product_name,
            CASE WHEN i.product_id = 0 THEN i.uom_code ELSE '' END AS fallback_uom_code
-    FROM contract_items i
+    FROM contract_items i JOIN contract_versions cv ON cv.id=i.contract_version_id JOIN contracts c ON c.id=cv.contract_id
     WHERE i.tenant_id = $1::bigint
       AND i.contract_version_id = $2::bigint
 ), shipped AS (
-    SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+    SELECT CASE WHEN c.entry_source='STANDARD' THEN coalesce(ci.spec,'') ELSE '' END AS progress_spec, cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
            CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
            CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
            sum(cs.qty) AS shipped
-    FROM contract_shipments cs
+    FROM contract_shipments cs JOIN contracts c ON c.id=cs.contract_id AND c.tenant_id=cs.tenant_id
     LEFT JOIN contract_items ci
       ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
     WHERE cs.tenant_id = $1::bigint
       AND cs.contract_id = $3::bigint
-    GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+    GROUP BY CASE WHEN c.entry_source='STANDARD' THEN coalesce(ci.spec,'') ELSE '' END, cs.product_id, coalesce(cs.sku_id, 0),
              CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
              CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
 )
@@ -1852,18 +1852,18 @@ SELECT
     i.product_id,
     coalesce(i.sku_id, 0)::bigint AS sku_id,
     max(i.product_code)::text   AS product_code,
-    max(i.product_name)::text   AS product_name,
+    (max(i.product_name) || CASE WHEN i.progress_spec<>'' THEN ' · '||i.progress_spec ELSE '' END)::text AS product_name,
     max(i.uom_code)::text       AS uom_code,
     sum(i.qty)::text            AS qty,
     (sum(i.opening_shipped_qty) + coalesce(max(sh.shipped), 0))::text AS shipped_qty,
     (sum(i.qty) - sum(i.opening_shipped_qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
 FROM current_items i
 LEFT JOIN shipped sh
-  ON sh.product_id = i.product_id
+  ON sh.progress_spec=i.progress_spec AND sh.product_id = i.product_id
  AND sh.sku_id = coalesce(i.sku_id, 0)
  AND sh.fallback_product_name = i.fallback_product_name
  AND sh.fallback_uom_code = i.fallback_uom_code
-GROUP BY i.product_id, coalesce(i.sku_id, 0), i.fallback_product_name, i.fallback_uom_code
+GROUP BY i.progress_spec, i.product_id, coalesce(i.sku_id, 0), i.fallback_product_name, i.fallback_uom_code
 ORDER BY min(i.line_no)
 `
 

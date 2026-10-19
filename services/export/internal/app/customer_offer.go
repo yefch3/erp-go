@@ -109,13 +109,11 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		return "", err
 	}
 	view.CanEdit = canWrite && ownerVisible && view.Status != "CONFIRMED"
-	if (view.Body.CategoryWorkflow || cmd.Body.CategoryWorkflow) && cmd.Action == "confirm" {
-		return "", apierr.Invalid("OFFER_CATEGORY_FORMULA_PENDING", "分类公式尚未配置，请先保存和核对候选方案")
-	}
+
 	switch cmd.Action {
 	case "get":
 	case "pdf":
-		if view.Body.CategoryWorkflow {
+		if view.Body.CategoryWorkflow && view.Status != "CONFIRMED" {
 			if view.Revision == 0 {
 				return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
 			}
@@ -127,8 +125,10 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return string(out), nil
 		}
 		if view.Status != "CONFIRMED" {
-			if err := validateOfferPricing(view.Body, source); err != nil {
-				return "", err
+			if !view.Body.CategoryWorkflow {
+				if err := validateOfferPricing(view.Body, source); err != nil {
+					return "", err
+				}
 			}
 		}
 		if view.Revision == 0 {
@@ -145,7 +145,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
 		}
 		var data []byte
-		if view.Body.CategoryWorkflow {
+		if view.Body.CategoryWorkflow && view.Status != "CONFIRMED" {
 			data, err = categoryOfferWorkbook(view)
 		} else {
 			if view.Status != "CONFIRMED" {
@@ -165,8 +165,10 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", err
 		}
 		if view.Status != "CONFIRMED" {
-			if err := validateOfferPricing(view.Body, source); err != nil {
-				return "", err
+			if !view.Body.CategoryWorkflow {
+				if err := validateOfferPricing(view.Body, source); err != nil {
+					return "", err
+				}
 			}
 			if cmd.Revision != view.Revision || view.Revision == 0 {
 				return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后检查再确认")

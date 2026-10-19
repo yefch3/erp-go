@@ -44,19 +44,20 @@ type Contract struct {
 }
 
 type ContractAttachment struct {
-	ID                int64
-	TenantID          int64
-	ContractID        int64
-	ContractVersionID *int64
-	Kind              string
-	FileName          string
-	FileKey           string
-	ContentType       string
-	SizeBytes         int64
-	UploadedAt        pgtype.Timestamptz
-	UploadedBy        int64
-	UploaderName      string
-	Source            string
+	ID                     int64
+	TenantID               int64
+	ContractID             int64
+	ContractVersionID      *int64
+	Kind                   string
+	FileName               string
+	FileKey                string
+	ContentType            string
+	SizeBytes              int64
+	UploadedAt             pgtype.Timestamptz
+	UploadedBy             int64
+	UploaderName           string
+	Source                 string
+	SignatureInvalidatedAt pgtype.Timestamptz
 }
 
 type ContractCorrection struct {

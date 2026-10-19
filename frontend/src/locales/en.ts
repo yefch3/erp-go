@@ -1,4 +1,5 @@
 export default {
+ contractRepair: {"accepted": "Final choice", "confirm": "Customer accepted - Create contract", "confirmTitle": "Confirm customer acceptance", "confirmHint": "Confirm the final option and selling price for each specification. Acceptance freezes the quotation and creates a contract draft. Approval, signing and finance release are still required.", "failed": "Could not create the contract. Review the information and retry.", "staleSigned": "Previous signed copy (content changed)", "deliveryRequired": "Enter the delivery date before submitting.", "deliveryLabel": "Delivery date (required for approval)", "productPlaceholder": "Enter a product name or search the catalog", "unit": "Unit", "signatureHint": "After editing the draft, previous signed copies are retained for reference. Upload a signed copy matching the revised content."},
  masterDelete: {
   "button": "Delete by date",
   "title": "Delete records by creation date",

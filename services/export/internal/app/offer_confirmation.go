@@ -18,6 +18,18 @@ import (
 
 func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64, view OfferView) error {
 	b := view.Body
+	if b.CategoryWorkflow {
+		var err error
+		b, err = categoryContractBody(b)
+		if err != nil {
+			return err
+		}
+	}
+	ownerID := offerID(view.Source.OwnerID)
+	if ownerID <= 0 {
+		return apierr.Invalid("OFFER_OWNER_REQUIRED", "请先明确询盘负责销售")
+	}
+	ownerName := view.Source.Owner
 	for _, line := range b.Lines {
 		if strings.TrimSpace(line.UnitPrice) == "" {
 			return apierr.Invalid("OFFER_PRICE_REQUIRED", "请在客户选定物流后核对最终单价，再确认成交")
@@ -75,7 +87,7 @@ func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64,
 		}
 		q := s.q.WithTx(tx)
 		baseAmount := total.DivRound(rate, 2).StringFixed(2)
-		quotationID, err := q.CreateQuotation(ctx, store.CreateQuotationParams{TenantID: op.TenantID, QuoteNo: quoteNo, CustomerID: offerID(b.CustomerID), CustomerName: b.Customer, ContactID: offerID(b.ContactID), ContactName: b.Contact, Currency: b.Currency, Incoterm: b.Incoterm, PortOfLoading: b.LoadingPort, PortOfDischarge: b.DestinationPort, PaymentMethod: b.Payment, ValidUntil: b.ValidUntil, FxRate: rate.StringFixed(8), FxRateAt: tsFrom(at), FxSource: "MANUAL_EFFECTIVE", FxBaseCurrency: "USD", TotalAmount: b.Total, BaseAmount: baseAmount, Remark: b.Remark, SalesEmployeeID: op.EmployeeID, SalesEmployee: op.Name, CreatedBy: op.EmployeeID, SourceSourcingCaseID: id})
+		quotationID, err := q.CreateQuotation(ctx, store.CreateQuotationParams{TenantID: op.TenantID, QuoteNo: quoteNo, CustomerID: offerID(b.CustomerID), CustomerName: b.Customer, ContactID: offerID(b.ContactID), ContactName: b.Contact, Currency: b.Currency, Incoterm: b.Incoterm, PortOfLoading: b.LoadingPort, PortOfDischarge: b.DestinationPort, PaymentMethod: b.Payment, ValidUntil: b.ValidUntil, FxRate: rate.StringFixed(8), FxRateAt: tsFrom(at), FxSource: "MANUAL_EFFECTIVE", FxBaseCurrency: "USD", TotalAmount: b.Total, BaseAmount: baseAmount, Remark: b.Remark, SalesEmployeeID: ownerID, SalesEmployee: ownerName, CreatedBy: op.EmployeeID, SourceSourcingCaseID: id})
 		if err != nil {
 			return err
 		}
@@ -90,7 +102,7 @@ func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64,
 		if _, err := tx.Exec(ctx, `UPDATE quotations SET status='ACCEPTED',responded_at=now() WHERE tenant_id=$1 AND id=$2`, op.TenantID, quotationID); err != nil {
 			return err
 		}
-		contractID, err := q.CreateContract(ctx, store.CreateContractParams{TenantID: op.TenantID, ContractNo: contractNo, QuotationID: quotationID, QuoteNo: quoteNo, CustomerID: offerID(b.CustomerID), CustomerName: b.Customer, SalesEmployeeID: op.EmployeeID, SalesEmployee: op.Name, CreatedBy: op.EmployeeID})
+		contractID, err := q.CreateContract(ctx, store.CreateContractParams{TenantID: op.TenantID, ContractNo: contractNo, QuotationID: quotationID, QuoteNo: quoteNo, CustomerID: offerID(b.CustomerID), CustomerName: b.Customer, SalesEmployeeID: ownerID, SalesEmployee: ownerName, CreatedBy: op.EmployeeID})
 		if err != nil {
 			return err
 		}
@@ -103,7 +115,15 @@ func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64,
 				return err
 			}
 		}
-		_, err = tx.Exec(ctx, `UPDATE customer_offers SET quotation_id=$3,contract_id=$4,confirmed_at=now(),updated_at=now(),updated_by=$5,revision=revision+1 WHERE tenant_id=$1 AND case_id=$2`, op.TenantID, id, quotationID, contractID, op.EmployeeID)
+		frozenBody, err := json.Marshal(b)
+		if err != nil {
+			return err
+		}
+		frozenSource, err := json.Marshal(view.Source)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE customer_offers SET quotation_id=$3,contract_id=$4,confirmed_at=now(),updated_at=now(),updated_by=$5,body=$6,source_snapshot=$7,revision=revision+1 WHERE tenant_id=$1 AND case_id=$2`, op.TenantID, id, quotationID, contractID, op.EmployeeID, frozenBody, frozenSource)
 		return err
 	})
 }
