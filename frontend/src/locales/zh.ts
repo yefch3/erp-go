@@ -1,4 +1,5 @@
 export default {
+ contractRepair: {"accepted": "客户最终选择", "confirm": "客户已确认，生成合同", "confirmTitle": "客户确认成交", "confirmHint": "确认每个规格的最终方案和对客单价。确认后将冻结成交报价并生成合同草稿，仍须上级确认、签署及财务放行。", "failed": "生成合同失败，请核对后重试", "staleSigned": "旧签回件（内容已修改）", "deliveryRequired": "提交前请先填写交货日期", "deliveryLabel": "交货日期（提交确认前必填）", "productPlaceholder": "输入产品名称，或搜索已有产品", "unit": "单位", "signatureHint": "修改草稿内容后，原签回件仅作留档；须上传与新内容一致的签回件。"},
  masterDelete: {
   "button": "按时间批量删除",
   "title": "按创建时间批量删除",

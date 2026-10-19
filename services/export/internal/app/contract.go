@@ -288,6 +288,9 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
 		return ContractView{}, err
 	}
+	if err := validBusinessDate(terms.DeliveryDate, "EX_DELIVERY_DATE_INVALID", "交货日期"); err != nil {
+		return ContractView{}, err
+	}
 	if view.Version.Status != "DRAFT" {
 		return ContractView{}, apierr.Conflict("EX_CONTRACT_NOT_DRAFT",
 			"只有草稿版本可以修改，已提交审批的版本请先撤回或重新变更").
@@ -343,6 +346,17 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		if rows == 0 {
 			// Someone submitted it between the read and this write.
 			return apierr.Conflict("EX_CONTRACT_NOT_DRAFT", "只有草稿版本可以修改")
+		}
+		// A countersigned file proves the pre-edit document, not new commercial terms.
+		if view.Contract.EntrySource == "STANDARD" && (len(items) > 0 ||
+			orDefault(terms.BuyerName, view.Version.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
+			orDefault(terms.SellerName, view.Version.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
+			orDefault(terms.Incoterm, view.Version.Incoterm) != view.Version.Incoterm || terms.PortOfLoading != view.Version.PortOfLoading ||
+			terms.PortOfDischarge != view.Version.PortOfDischarge || terms.PaymentMethod != view.Version.PaymentMethod ||
+			terms.DeliveryDate != view.Version.DeliveryDate || terms.Text != view.Version.Terms) {
+			if _, err := tx.Exec(ctx, `UPDATE contract_attachments SET signature_invalidated_at=now() WHERE tenant_id=$1 AND contract_version_id=$2 AND kind='SIGNED' AND signature_invalidated_at IS NULL`, tenantID, view.Version.ID); err != nil {
+				return err
+			}
 		}
 		// 到期日跟着草稿一起改，不留痕：草稿还不是承诺。生效之后再改才
 		// 需要写理由，那条路走客户对账页上的「改到期日」。
@@ -462,6 +476,11 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 		}
 		if locked.Status != view.Contract.Status {
 			return apierr.Conflict("EX_CHANGE_CHANGED", "合同状态已变化，请刷新")
+		}
+		if view.Contract.EntrySource == "STANDARD" {
+			if err := s.checkShippedContractLines(ctx, tenantID, id, lines); err != nil {
+				return err
+			}
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
 			TenantID: tenantID, ContractID: id, VersionNo: nextVersionNo,

@@ -15,7 +15,7 @@
    <template v-else>
    <el-form-item label="客户合同币种" required><el-select v-model="form.currency"><el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c"/></el-select></el-form-item>
    <el-form-item label="原／客户合同号"><el-input v-model="form.externalContractNo"/></el-form-item>
-   <el-form-item label="交货日期"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
+   <el-form-item :label="t('contractRepair.deliveryLabel')"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
    <el-form-item label="贸易条款"><el-select v-model="form.incoterm" filterable allow-create default-first-option><el-option v-for="v in ['FOB','CFR','CIF','EXW','FCA','DAP','DDP']" :key="v" :value="v" :label="v"/></el-select></el-form-item>
    <el-form-item label="付款条件"><el-input v-model="form.paymentMethod" placeholder="按客户合同填写"/></el-form-item>
    <el-form-item label="应收到账日"><el-date-picker v-model="form.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable/></el-form-item>
@@ -45,6 +45,8 @@
 </template>
 <script setup lang="ts">
 import {computed,reactive,ref,watch} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {contractLineAmount,contractTotal} from '../lib/contractEditing'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {get,post,quietErrors} from '../api'
 import {isDialogDismissed} from '../lib/dialogActions'
@@ -55,6 +57,7 @@ import ContractLineImportDialog from './ContractLineImportDialog.vue'
 import type {ContractImportLine} from '../lib/contractLineImport'
 import ContractOperationButton from './ContractOperationButton.vue'
 import ColumnFillRegion from './ColumnFillRegion.vue'
+const {t}=useI18n()
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
@@ -66,8 +69,8 @@ function showEntryError(error:unknown){if(isDialogDismissed(error))return;entryE
 function appendImported(lines:ContractImportLine[]){form.items=form.items.filter(l=>[l.productName,l.spec,l.qty,l.uomCode,l.unitPrice].some(v=>v.trim()));form.items.push(...lines);ElMessage.success(`已追加 ${lines.length} 条产品明细，请核对后保存合同`)}
 const idem=newIdempotencySession()
 function addLine(){form.items.push({productId:'0',productName:'',spec:'',qty:'',uomCode:'',unitPrice:''})}
-function amount(l:Line){const n=Number(l.qty)*Number(l.unitPrice);return Number.isFinite(n)?n.toFixed(2):'—'}
-const total=computed(()=>form.items.reduce((s,l)=>s+(Number(amount(l))||0),0).toFixed(2))
+function amount(l:Line){return contractLineAmount(l)}
+const total=computed(()=>contractTotal(form.items))
 async function searchCustomers(keyword:string){try{customers.value=(await get<{customers:any[]}>('/customers',{keyword,page_size:50},quietErrors)).customers||[]}catch(error){showEntryError(error)}}
 function selectCustomer(){const c=customers.value.find(c=>String(c.id)===form.customerId);form.customerName=c?customerOptionLabel(c):''}
 function pickFile(e:Event){file.value=(e.target as HTMLInputElement).files?.[0]||null}

@@ -139,7 +139,7 @@
 
 
     <!-- Detail: terms, lines, version history -->
-    <el-drawer v-model="detailOpen" size="min(1040px,100vw)">
+    <el-drawer v-model="detailOpen" size="min(1140px,100vw)" class="contract-workspace">
       <template #header><span class="contract-drawer-title">{{ detail?.contract.contractNo ?? '' }}</span></template>
       <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
         <div class="detail-head">
@@ -152,7 +152,7 @@
             </span>
             <span v-if="isInForce && detail.contract.entrySource!=='HISTORICAL_RECORD'" class="in-force">{{ t('contracts.inForce') }}</span>
           </div>
-          <div class="detail-actions">
+          <div v-if="['EXISTING_CONTRACT','HISTORICAL_RECORD'].includes(detail.contract.entrySource||'')" class="detail-actions">
             <template v-if="myConfirmationTask"><ContractOperationButton label="同意" description="同意当前待确认事项；终止申请通过后停止剩余履约，普通合同通过后进入签署。" type="success" @click="confirmContract('APPROVE')"/><ContractOperationButton label="退回修改" description="将当前申请退回负责销售，并填写需要调整的内容。" type="warning" @click="confirmContract('RETURN')"/></template>
             <ContractOperationButton v-if="canTransfer" :label="t('ownership.transfer')" description="将合同交给管理范围内的另一名销售负责，保留交接原因和原办理记录。" @click="openTransfer"/>
             <template v-if="canWrite && isMine && detail.contract.entrySource!=='HISTORICAL_RECORD'">
@@ -173,11 +173,47 @@
             </template>
             <span v-else-if="canWrite && !isMine" class="not-mine">{{ t('contracts.notOwner') }}</span>
           </div>
+          <div v-if="!['EXISTING_CONTRACT','HISTORICAL_RECORD'].includes(detail.contract.entrySource||'')" id="contract-management-actions" class="detail-actions">
+        <ContractWorkflowPanel :contract="detail.contract" :version-status="detail.version.status" :compact="true" :show-records="detailTab==='records'" :can-edit="canWrite && isMine" @records="workflowRecords=$event" :has-primary="!!myConfirmationTask || (canWrite && isMine && (editable || detail.contract.status==='PENDING_SIGN'))" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()">
+          <template #primary>
+            <el-button v-if="myConfirmationTask" type="primary" @click="confirmContract('APPROVE')">同意</el-button>
+            <template v-else-if="canWrite && isMine">
+              <el-button v-if="editable" type="primary" @click="submit(detail.contract)">提交上级确认</el-button>
+              <el-button v-else-if="detail.contract.status==='PENDING_SIGN'" type="primary" @click="hasSignedCopy?sign(detail.contract):(detailTab='files')">{{hasSignedCopy?'开始执行':'上传签回件'}}</el-button>
+            </template>
+          </template>
+          <template #management>
+            <el-dropdown-item v-if="myConfirmationTask" @click="confirmContract('RETURN')"><span class="management-icon" aria-hidden="true">↶</span><span class="management-label">退回修改</span></el-dropdown-item>
+            <el-dropdown-item :disabled="!editable || !canWrite || !isMine" @click="openTerms"><span class="management-icon" aria-hidden="true">✎</span><div class="management-item"><span class="management-label">编辑草稿</span><small v-if="!editable">仅限可编辑的草稿或退回版本</small><small v-else-if="!canWrite||!isMine">只有负责销售可以操作</small></div></el-dropdown-item>
+            <el-dropdown-item :disabled="!canWrite || !isMine || !['EXECUTING','EFFECTIVE'].includes(detail.contract.status)" @click="openSupplement"><span class="management-icon" aria-hidden="true">＋</span><div class="management-item"><span class="management-label">补充合同资料</span><small>{{!canWrite||!isMine?'只有负责销售可以操作':!['EXECUTING','EFFECTIVE'].includes(detail.contract.status)?'合同执行后可补充':'原合同号、应收日期等'}}</small></div></el-dropdown-item>
+            <el-dropdown-item :disabled="!canTransfer" @click="openTransfer"><span class="management-icon" aria-hidden="true">⇄</span><div class="management-item"><span class="management-label">转移负责人</span><small v-if="!canTransfer">需要负责人转移权限</small></div></el-dropdown-item>
+          </template>
+        </ContractWorkflowPanel>
+          </div>
         </div>
 
+        <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="contract-overview">
+          <div class="overview-customer"><span>签约客户</span><strong>{{detail.version.buyerName}}</strong></div>
+          <div><span>合同金额 · {{detail.version.currency}}</span><strong>{{detail.version.totalAmount}}</strong></div>
+          <div><span>产品明细</span><strong>{{detail.items.length}} <small>项</small></strong></div>
+          <div><span>交货日期</span><strong>{{detail.version.deliveryDate||'待填写'}}</strong></div>
+        </div>
         <el-alert v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" title="历史合同资料：商品、交付及付款约定以原合同附件为准；记录金额不计入系统应收款。" type="info" :closable="false" show-icon/>
-        <ContractWorkflowPanel v-else :contract="detail.contract" :version-status="detail.version.status" :can-edit="canWrite && isMine" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()"/>
-        <section class="basic-info-panel">
+
+        <ContractWorkflowPanel v-if="detail.contract.entrySource==='EXISTING_CONTRACT'" :contract="detail.contract" :version-status="detail.version.status" :compact="true" :show-records="detailTab==='records'" :can-edit="canWrite && isMine" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()"/>
+        <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="tab-refresh"><el-button text aria-label="刷新合同" title="刷新合同" :loading="loadingDetail" @click="openDetail(detail.contract.id)">↻</el-button></div>
+        <el-tabs v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" v-model="detailTab" class="contract-tabs">
+          <el-tab-pane :label="`产品明细 (${detail.items.length})`" name="items"/>
+          <el-tab-pane label="合同资料" name="terms"/>
+          <el-tab-pane :label="`合同文件 (${files.length})`" name="files"/>
+          <el-tab-pane label="发运与船期" name="shipping"/>
+          <el-tab-pane label="收款进度" name="receipts"/>
+          <el-tab-pane label="审批与记录" name="records"/>
+        </el-tabs>
+        <el-table v-if="detailTab==='records' && workflowRecords.length && detail.contract.entrySource!=='EXISTING_CONTRACT'" :data="workflowRecords" size="small" max-height="280"><el-table-column prop="label" label="操作" width="140"/><el-table-column prop="reason" label="原因／核对说明" min-width="200"/><el-table-column prop="actor" label="操作人" width="110"/><el-table-column prop="at" label="时间" width="200"/></el-table>
+        <el-empty v-if="detailTab==='shipping'&&!detail.shipments?.length&&!vessels.length&&!acceptedOffer?.transports.length" description="暂无发运或船期记录"/>
+        <el-empty v-if="detailTab==='receipts'&&!receiptProgress" description="暂无收款进度或当前账号无查看权限"/>
+        <section v-show="showDetailTab('terms')" class="basic-info-panel">
           <div class="basic-info-heading">
             <span class="basic-info-title">合同基本信息</span>
             <span class="basic-info-hint">{{detail.contract.entrySource==='HISTORICAL_RECORD'?'原合同基本资料':'签约、交付与执行资料'}}</span>
@@ -231,33 +267,26 @@
         </el-descriptions>
         </section>
 
-        <details v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="detail-section" open>
-          <summary class="detail-section-summary">
+        <section data-contract-items v-show="showDetailTab('items')" v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="detail-section">
+          <div class="detail-section-summary">
             <span class="section-summary-title">{{ t('contracts.items') }}</span>
             <span class="section-summary-meta">{{ detail.items.length }} 项 · {{ detail.version.totalAmount }} {{ detail.version.currency }}</span>
-          </summary>
+          </div>
         <div class="detail-section-body">
-        <el-table max-height="440" :data="detail.items" size="small">
-          <el-table-column prop="lineNo" label="#" width="45" />
-          <el-table-column :label="t('contracts.product')" min-width="200">
-            <template #default="{ row }">
-              <div class="product-name">{{ row.productName }}</div>
-              <div class="product-spec">{{ row.productCode }}<template v-if="row.spec"> · {{ row.spec }}</template></div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('contracts.hsCode')" width="110">
-            <template #default="{ row }"><span class="sub">{{ row.hsCode || '—' }}</span></template>
-          </el-table-column>
-          <el-table-column :label="t('contracts.qty')" width="120" align="right">
-            <template #default="{ row }">{{ trimZeros(row.qty) }} {{ row.uomCode }}</template>
-          </el-table-column>
-          <el-table-column :label="t('contracts.unitPrice')" width="100" align="right">
-            <template #default="{ row }">{{ row.unitPrice }}</template>
-          </el-table-column>
-          <el-table-column :label="t('contracts.lineAmount')" width="110" align="right">
-            <template #default="{ row }">{{ row.amount }}</template>
-          </el-table-column>
+        <div class="items-toolbar"><el-input v-model="itemSearch" clearable placeholder="搜索产品、规格、编码或备注" aria-label="搜索合同产品"/><span>{{filteredContractItems.length}} / {{detail.items.length}} 项 · {{detail.version.currency}}</span></div>
+        <el-table :data="pagedContractItems" height="clamp(220px, calc(100vh - 440px), 600px)" size="small" border stripe class="contract-items-table" row-key="lineNo">
+          <el-table-column prop="lineNo" label="#" width="48" fixed/>
+          <el-table-column prop="productName" :label="t('contracts.product')" min-width="190" fixed show-overflow-tooltip/>
+          <el-table-column prop="spec" label="规格" min-width="245" show-overflow-tooltip/>
+          <el-table-column v-if="detail.items.some(i=>i.productCode)" prop="productCode" label="产品编码" min-width="110" show-overflow-tooltip/>
+          <el-table-column v-if="detail.items.some(i=>i.hsCode)" prop="hsCode" :label="t('contracts.hsCode')" width="105"/>
+          <el-table-column :label="t('contracts.qty')" width="100" align="right"><template #default="{row}">{{trimZeros(row.qty)}}</template></el-table-column>
+          <el-table-column prop="uomCode" label="单位" width="65"/>
+          <el-table-column prop="unitPrice" :label="t('contracts.unitPrice')" width="115" align="right"/>
+          <el-table-column prop="amount" :label="t('contracts.lineAmount')" width="125" align="right"/>
+          <el-table-column v-if="detail.items.some(i=>i.remark)" prop="remark" label="备注" min-width="200" show-overflow-tooltip/>
         </el-table>
+        <el-pagination v-model:current-page="itemPage" v-model:page-size="itemPageSize" :page-sizes="[25,50,100,200]" :total="filteredContractItems.length" layout="total, sizes, prev, pager, next" class="items-pagination"/>
         <div class="totals">
           <span class="total-label">{{ t('contracts.total') }}</span>
           <strong class="total-value">{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
@@ -280,13 +309,13 @@
           </span>
         </div>
         </div>
-        </details>
+        </section>
 
-        <details v-if="acceptedOffer?.transports.length" class="detail-section" open>
-          <summary class="detail-section-summary">
+        <section v-show="showDetailTab('shipping')" v-if="acceptedOffer?.transports.length" class="detail-section">
+          <div class="detail-section-summary">
             <span class="section-summary-title">客户运输方案</span>
             <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 查看客户选择及对应货物</span>
-          </summary>
+          </div>
           <div class="detail-section-body">
           <el-table :data="acceptedOffer.transports" max-height="300" stripe>
             <el-table-column prop="title" label="方案" min-width="120"/>
@@ -295,13 +324,13 @@
             <el-table-column label="对应产品数量" min-width="220"><template #default="{row}"><span class="cargo-summary">{{allocatedProducts(row.quantities)||'—'}}</span></template></el-table-column>
           </el-table>
           </div>
-        </details>
+        </section>
 
-        <details class="detail-section">
-          <summary class="detail-section-summary">
+        <section v-show="showDetailTab('files')" class="detail-section">
+          <div class="detail-section-summary">
             <span class="section-summary-title">{{ t('contracts.files') }}</span>
             <span class="section-summary-meta">{{ files.length }} 个文件 · 保存合同拟稿、签署件及补充资料</span>
-          </summary>
+          </div>
           <div class="detail-section-body">
         <div v-if="canWrite && isMine && detail.contract.status!=='COMPLETED'" class="upload-bar">
           <el-select v-model="uploadKind" style="width: 150px">
@@ -309,13 +338,13 @@
           </el-select>
           <input ref="fileInput" type="file" hidden @change="upload" />
           <el-button :loading="uploading" @click="fileInput?.click()">{{ t('contracts.upload') }}</el-button>
-          <span class="hint">签署件归属当前合同；开始执行后保留签署记录</span>
+          <span class="hint">{{t('contractRepair.signatureHint')}}</span>
         </div>
         <el-table :data="files" size="small" max-height="320" stripe>
           <el-table-column :label="t('contracts.fileKind')" width="170">
             <template #default="{ row }">
               <el-tag size="small" :type="row.kind === 'SIGNED' ? 'success' : 'info'" effect="plain">
-                {{ t(`contracts.fileKinds.${row.kind}`) }}
+                {{ row.kind==='STALE_SIGNED'?t('contractRepair.staleSigned'):t(`contracts.fileKinds.${row.kind}`) }}
               </el-tag>
               <!-- A scan somebody uploaded and an envelope the platform sent
                    back are not equal evidence, so they never look equal. -->
@@ -356,14 +385,14 @@
           <template #empty>{{ t('contracts.noFiles') }}</template>
         </el-table>
           </div>
-        </details>
+        </section>
 
         <template v-if="transfers.length">
-          <details class="detail-section">
-            <summary class="detail-section-summary">
+          <section v-show="showDetailTab('records')" class="detail-section">
+            <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('ownership.history') }}</span>
               <span class="section-summary-meta">{{ transfers.length }} 条 · {{ t('ownership.historyHint') }}</span>
-            </summary>
+            </div>
             <div class="detail-section-body">
           <el-table :data="transfers" size="small">
             <el-table-column :label="t('ownership.at')" width="130">
@@ -383,18 +412,18 @@
             </el-table-column>
           </el-table>
             </div>
-          </details>
+          </section>
         </template>
 
         <!-- What has physically left the warehouse. Kept beside the contract
              rather than inside it: an approved version is frozen because it
              records what was agreed, and shipping keeps moving afterwards. -->
         <template v-if="detail.shipments?.length">
-          <details class="detail-section">
-            <summary class="detail-section-summary">
+          <section v-show="showDetailTab('shipping')" class="detail-section">
+            <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.shipping') }}</span>
               <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 查看各产品已发货和待发货数量</span>
-            </summary>
+            </div>
             <div class="detail-section-body">
           <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
             {{ t('contracts.overShipped') }}
@@ -425,7 +454,7 @@
             </el-table-column>
           </el-table>
             </div>
-          </details>
+          </section>
         </template>
 
         <!-- Which boat the goods are on. "Where is my customer's order" is the
@@ -433,11 +462,11 @@
              different document, so it is fetched and shown here rather than
              leaving sales to ring the forwarder. -->
         <template v-if="vessels.length">
-          <details class="detail-section">
-            <summary class="detail-section-summary">
+          <section v-show="showDetailTab('shipping')" class="detail-section">
+            <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.vessels') }}</span>
               <span class="section-summary-meta">{{ vessels.length }} 条船期</span>
-            </summary>
+            </div>
             <div class="detail-section-body">
           <el-table :data="vessels" size="small">
             <el-table-column :label="t('contracts.vessel')" min-width="190">
@@ -467,18 +496,18 @@
             </el-table-column>
           </el-table>
             </div>
-          </details>
+          </section>
         </template>
 
         <!-- Collection. The salesperson's question is not "did finance file
              it" but "has my customer paid", so the answer belongs on the
              contract, not only in the finance queue. -->
         <template v-if="receiptProgress && auth.can('export:receipt:read')">
-          <details class="detail-section">
-            <summary class="detail-section-summary">
+          <section v-show="showDetailTab('receipts')" class="detail-section">
+            <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.receipts') }}</span>
               <span class="section-summary-meta">已收 {{ receiptProgress.receivedAmount }} / 合同 {{ receiptProgress.totalAmount }} {{ receiptProgress.currency }}</span>
-            </summary>
+            </div>
             <div class="detail-section-body">
           <div class="recv">
             <span>{{ t('contracts.contracted') }} <b class="num">{{ receiptProgress.totalAmount }}</b></span>
@@ -514,14 +543,14 @@
             </el-table-column>
           </el-table>
             </div>
-          </details>
+          </section>
         </template>
 
-        <details v-if="canSeeApproval && approvals.length" class="detail-section approval-panel">
-          <summary class="detail-section-summary">
+        <section v-show="showDetailTab('records')" v-if="canSeeApproval && approvals.length" class="detail-section approval-panel">
+          <div class="detail-section-summary">
             <span class="section-summary-title">审批进度</span>
             <span class="section-summary-meta">{{ approvals.length }} 轮 · 上级确认及退回修改意见</span>
-          </summary>
+          </div>
           <div class="detail-section-body approval-body">
           <div class="approval-history">
             <div v-for="(inst,i) in approvals" :key="inst.instance.id" class="approval-round">
@@ -550,13 +579,13 @@
             </div>
           </div>
           </div>
-        </details>
+        </section>
 
-        <details class="detail-section">
-          <summary class="detail-section-summary">
+        <section v-show="showDetailTab('records')" class="detail-section">
+          <div class="detail-section-summary">
             <span class="section-summary-title">{{ t('contracts.versions') }}</span>
             <span class="section-summary-meta">{{ detail.versions.length }} 个版本 · 查看已保存的历史合同记录</span>
-          </summary>
+          </div>
           <div class="detail-section-body">
         <el-table :data="detail.versions" size="small" @row-click="(row: VersionRow) => openDetail(detail!.contract.id, row.id)">
           <el-table-column :label="t('contracts.version')" width="70">
@@ -580,7 +609,7 @@
           </el-table-column>
         </el-table>
           </div>
-        </details>
+        </section>
       </div>
     </el-drawer>
 
@@ -641,9 +670,9 @@
             <el-autocomplete
               v-model="row.productName"
               :fetch-suggestions="suggestContractProducts"
-              placeholder="输入产品名称，或搜索已有产品"
+              :placeholder="t('contractRepair.productPlaceholder')"
               style="width:100%"
-              @input="row.productId='0'"
+              @input="row.productId='0';row.skuId='0';row.productCode=''"
               @select="selectContractProduct(row,$event)"
             />
           </template>
@@ -654,7 +683,7 @@
         <el-table-column :label="t('contracts.qty')" width="110">
           <template #default="{ row }"><el-input v-model="row.qty" /></template>
         </el-table-column>
-        <el-table-column label="单位" width="100"><template #default="{row}"><el-input v-model="row.uomCode"/></template></el-table-column>
+        <el-table-column :label="t('contractRepair.unit')" width="100"><template #default="{row}"><el-input v-model="row.uomCode" :disabled="!!row.productId && row.productId!=='0'"/></template></el-table-column>
         <el-table-column :label="t('contracts.unitPrice')" width="110">
           <template #default="{ row }"><el-input v-model="row.unitPrice" /></template>
         </el-table-column>
@@ -704,15 +733,7 @@
       <el-table :data="changeForm.items" size="small">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
-            <el-select
-              v-model="row.productId"
-              filterable
-              clearable
-              style="width: 100%"
-              :placeholder="t('contracts.pickProduct')"
-            >
-              <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
-            </el-select>
+            <el-autocomplete v-model="row.productName" :fetch-suggestions="suggestContractProducts" :placeholder="t('contractRepair.productPlaceholder')" style="width:100%" @input="row.productId='0';row.skuId='0';row.productCode=''" @select="selectContractProduct(row,$event)"/>
           </template>
         </el-table-column>
         <el-table-column :label="t('contracts.spec')" width="150">
@@ -721,6 +742,7 @@
         <el-table-column :label="t('contracts.qty')" width="110">
           <template #default="{ row }"><el-input v-model="row.qty" /></template>
         </el-table-column>
+        <el-table-column :label="t('contractRepair.unit')" width="90"><template #default="{row}"><el-input v-model="row.uomCode" :disabled="!!row.productId && row.productId!=='0'"/></template></el-table-column>
         <el-table-column :label="t('contracts.unitPrice')" width="110">
           <template #default="{ row }"><el-input v-model="row.unitPrice" /></template>
         </el-table-column>
@@ -787,6 +809,7 @@ import ContractEntryDialog from '../components/ContractEntryDialog.vue'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
 import {contractItemPayload} from '../lib/contractItem'
+import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -856,6 +879,8 @@ interface Version {
 }
 type VersionRow = Pick<Version, 'id' | 'versionNo' | 'status' | 'currency' | 'totalAmount' | 'deliveryDate' | 'changeReason'>
 interface Item {
+  skuId?: string
+  remark?: string
   lineNo: number
   productId: string
   productCode: string
@@ -954,7 +979,7 @@ interface Quote { id: string; quoteNo: string; customerName: string; currency: s
 interface Product { id: string; code: string; name: string; uomCode?: string }
 interface ContractPort { id: string; unlocode: string; nameZh: string; nameEn: string; countryCode: string }
 interface OptionItem { code: string; label: string }
-interface ChangeLine { productName?:string;uomCode?:string; productId: string; spec: string; qty: string; unitPrice: string }
+type ChangeLine = ContractEditLine
 
 const STATUSES = ['DRAFT','CANCELLED','PAUSED','TERMINATING','TERMINATED','PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
 const ownerFilter=ref('')
@@ -987,6 +1012,15 @@ const contracts = ref<Contract[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Detail | null>(null)
+const workflowRecords=ref<{label:string;reason:string;actor:string;at:string}[]>([])
+const detailTab=ref('items'),itemSearch=ref(''),itemPage=ref(1),itemPageSize=ref(100)
+const showDetailTab=(tab:string)=>detail.value?.contract.entrySource==='HISTORICAL_RECORD'||detailTab.value===tab
+const filteredContractItems=computed(()=>{const q=itemSearch.value.trim().toLocaleLowerCase();return (detail.value?.items||[]).filter(i=>!q||[i.productName,i.spec,i.productCode,i.hsCode,i.remark].some(v=>v?.toLocaleLowerCase().includes(q)))})
+const pagedContractItems=computed(()=>filteredContractItems.value.slice((itemPage.value-1)*itemPageSize.value,itemPage.value*itemPageSize.value))
+watch([itemSearch,itemPageSize],()=>{itemPage.value=1})
+watch(()=>detail.value?.contract.id,()=>{detailTab.value='items';itemSearch.value='';itemPage.value=1;workflowRecords.value=[]})
+watch(()=>filteredContractItems.value.length, n=>{itemPage.value=Math.min(itemPage.value,Math.max(1,Math.ceil(n/itemPageSize.value)))})
+
 
 // Shipping more than the contract now says was sold means the contract was
 // reduced after goods had already left. No rule gets that right on its own,
@@ -1467,7 +1501,7 @@ async function suggestContractProducts(query:string,done:(rows:(Product & {value
   try{await searchProducts(query);done(products.value.map(p=>({...p,value:p.name})))}catch{done([])}
 }
 function selectContractProduct(row:ChangeLine,product:Product){
-  row.productId=String(product.id);row.productName=product.name
+  row.productId=String(product.id);row.productName=product.name;row.skuId='0';row.productCode=product.code
   if(product.uomCode)row.uomCode=product.uomCode
 }
 function openTerms() {
@@ -1493,7 +1527,7 @@ async function saveTerms() {
   const { items, externalContractNo, ...terms } = termsForm
   saving.value = true
   try {
-    await put(`/contracts/${detail.value!.contract.id}`, { terms, items: items.map(contractItemPayload), externalContractNo })
+    await put(`/contracts/${detail.value!.contract.id}`, { terms, items: JSON.stringify(items)===JSON.stringify(toLines(detail.value!.items))?[]:items.map(contractItemPayload), externalContractNo })
     ElMessage.success(t('contracts.updated'))
     termsOpen.value = false
     await openDetail(detail.value!.contract.id)
@@ -1680,7 +1714,7 @@ function humanSize(bytes: string): string {
 
 function toLines(items: Item[]): ChangeLine[] {
   return items.map((i) => ({
-    productName:i.productName,uomCode:i.uomCode,productId: i.productId, spec: i.spec, qty: trimZeros(i.qty), unitPrice: i.unitPrice,
+    ...editableContractLine(i), qty: trimZeros(i.qty),
   }))
 }
 
@@ -1688,12 +1722,7 @@ function toLines(items: Item[]): ChangeLine[] {
 // ones stored; this just keeps the editor oriented while typing.
 // Used by both the change form and the direct-creation form: neither cares
 // about anything but the two numbers.
-function lineAmount(row: { qty: string; unitPrice: string }): string {
-  const qty = Number(row.qty)
-  const price = Number(row.unitPrice)
-  if (!Number.isFinite(qty) || !Number.isFinite(price)) return '—'
-  return (Math.round(qty * price * 100) / 100).toFixed(2)
-}
+function lineAmount(row: { qty: string; unitPrice: string }): string { return contractLineAmount(row) }
 
 function remainingQty(total: string, completed: string): string {
   const left = Math.max(0, Number(total || 0) - Number(completed || 0))
@@ -1709,14 +1738,7 @@ function remainingMoney(total: string, received: string): string {
   return Math.max(0, Number(total || 0) - Number(received || 0)).toFixed(2)
 }
 
-function previewTotal(lines: ChangeLine[]): string {
-  return lines
-    .reduce((sum, row) => {
-      const amount = Number(lineAmount(row))
-      return Number.isFinite(amount) ? sum + amount : sum
-    }, 0)
-    .toFixed(2)
-}
+function previewTotal(lines: ChangeLine[]): string { return contractTotal(lines) }
 
 async function saveChange() {
   if (!changeForm.reason.trim()) {
@@ -1728,7 +1750,7 @@ async function saveChange() {
     await post(`/contracts/${detail.value!.contract.id}/change`, {
       changeReason: changeForm.reason,
       terms: { deliveryDate: changeForm.deliveryDate },
-      items: changeForm.items.map(contractItemPayload),
+      items: JSON.stringify(changeForm.items)===JSON.stringify(toLines(detail.value!.items))?[]:changeForm.items.map(contractItemPayload),
     })
     ElMessage.success(t('contracts.changeCreated'))
     changeOpen.value = false
@@ -1740,6 +1762,7 @@ async function saveChange() {
 }
 
 async function submit(row: { id: string }) {
+  if(detail.value?.contract.id===row.id&&!detail.value.version.deliveryDate){ElMessage.warning(t('contractRepair.deliveryRequired'));openTerms();return}
   await post(`/contracts/${row.id}/submit`)
   ElMessage.success(t('contracts.submitted'))
   if (detailOpen.value) await openDetail(row.id)
@@ -2098,4 +2121,10 @@ onUnmounted(stopListening)
   font-size: 16px;
   font-weight: 600;
 }
+.management-item small{display:block;font-size:12px;color:#64748b}.tab-refresh{float:right;position:relative;z-index:1;margin-top:8px}.contract-tabs{padding-right:40px}
+</style>
+
+<style scoped>
+:global(.contract-workspace .el-drawer__header){margin-bottom:0;padding:16px 20px}:global(.contract-workspace .el-drawer__body){padding:0 20px 20px}.contract-detail [data-contract-items]>.detail-section-summary{display:none}.contract-overview{display:grid;grid-template-columns:2fr 1.2fr .7fr 1fr;gap:20px;padding:12px 0 16px;border-bottom:1px solid #e2e8f0}.contract-overview span{display:block;font-size:12px;color:#64748b;margin-bottom:4px}.contract-overview strong{font-size:18px;color:#173e54;font-weight:600}.contract-overview small{font-size:12px;font-weight:400}.overview-customer{min-width:0}.overview-customer strong{display:block;overflow-wrap:anywhere}.contract-tabs{margin-top:8px}.contract-tabs :deep(.el-tabs__header){margin-bottom:0}.contract-detail .detail-head{padding:10px 12px;margin-bottom:0}.contract-detail .detail-section{margin:0;border:0;border-radius:0}.contract-detail .detail-section-summary{min-height:38px;padding:0;background:white;cursor:default}.contract-detail .detail-section-summary::before{display:none}.contract-detail .section-summary-title{font-size:14px}.contract-detail .section-summary-meta{font-size:12px}.contract-detail .detail-section-body{padding:8px 0;border:0}.items-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.items-toolbar .el-input{max-width:330px}.items-toolbar>span{font-size:12px;color:#64748b;white-space:nowrap}.items-pagination{margin-top:10px}.contract-items-table :deep(.el-table__cell){padding:6px 0!important;font-variant-numeric:tabular-nums}.contract-detail .totals{margin:10px 0;padding:0}.contract-detail .total-value{font-size:18px}.contract-detail .snapshot{font-size:11px;padding:6px 10px}.contract-detail .basic-info-panel{padding:12px 0;border:0}.contract-detail :deep(.el-descriptions__cell){padding:8px 10px!important;font-size:13px!important}
+@media(max-width:720px){.contract-overview{grid-template-columns:1fr 1fr;gap:12px}.contract-overview strong{font-size:15px}.items-toolbar{flex-wrap:wrap}.items-pagination{overflow:auto}}
 </style>

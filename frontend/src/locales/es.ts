@@ -1,4 +1,5 @@
 export default {
+ contractRepair: {"accepted": "Selección final", "confirm": "Cliente confirmó - Crear contrato", "confirmTitle": "Confirmar aceptación del cliente", "confirmHint": "Confirme la opción final y el precio de venta de cada especificación. Se guardará la cotización definitiva y se creará un borrador de contrato. Aún requiere aprobación, firma y autorización financiera.", "failed": "No se pudo crear el contrato. Revise los datos e inténtelo de nuevo.", "staleSigned": "Firma anterior (contenido modificado)", "deliveryRequired": "Indique la fecha de entrega antes de enviar.", "deliveryLabel": "Fecha de entrega (obligatoria para aprobación)", "productPlaceholder": "Escriba un producto o busque en el catálogo", "unit": "Unidad", "signatureHint": "Al editar el borrador, las firmas anteriores se conservan como referencia. Adjunte una copia firmada que corresponda al contenido revisado."},
  masterDelete: {
   "button": "Eliminar por fecha",
   "title": "Eliminar por fecha de creación",

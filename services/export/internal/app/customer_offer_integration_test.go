@@ -133,7 +133,7 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	if _, err := call(1, OfferCommand{Action: "save", CaseID: "901", Body: body}); err == nil {
 		t.Fatal("stale save accepted")
 	}
-	confirmed, err := call(1, OfferCommand{Action: "confirm", CaseID: "901", Revision: saved.Revision})
+	confirmed, err := call(3, OfferCommand{Action: "confirm", CaseID: "901", Revision: saved.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +144,9 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	contract, err := svc.GetContract(ctx, tenant, offerID(confirmed.ContractID), 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if contract.Contract.SalesEmployeeID != 1 {
+		t.Fatal("manager confirmation changed sales owner")
 	}
 	var salesRemark string
 	if err := pool.QueryRow(ctx, `SELECT source_sales_remark FROM quotations WHERE tenant_id=$1 AND id=$2`, tenant, contract.Contract.QuotationID).Scan(&salesRemark); err != nil || salesRemark != "original sales inquiry note" {
