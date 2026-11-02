@@ -56,6 +56,13 @@ func TestInquiryBasicInfoKeepsSubmittedQuotes(t *testing.T) {
 			if got[i].ID != want[i].ID || got[i].Version != want[i].Version || got[i].UpdatedAt != want[i].UpdatedAt || got[i].UpdatedBy != want[i].UpdatedBy {
 				t.Fatalf("%s: quote %d changed: was %s v%d %s %s, now %s v%d %s %s", what, i, want[i].ID, want[i].Version, want[i].UpdatedBy, want[i].UpdatedAt, got[i].ID, got[i].Version, got[i].UpdatedBy, got[i].UpdatedAt)
 			}
+			// export 判断客户报价的核价是否过期，比的正是这几样（offer_pricing_snapshot.go）。
+			// 它们不变，销售选中这份报价做的客户报价就不会因为改基本信息而失效。
+			gotBody, _ := json.Marshal(got[i].Body)
+			wantBody, _ := json.Marshal(want[i].Body)
+			if got[i].SubmittedAt != want[i].SubmittedAt || got[i].Author != want[i].Author || string(gotBody) != string(wantBody) {
+				t.Fatalf("%s: quote %d content changed: submitted %q→%q author %q→%q body %s→%s", what, i, want[i].SubmittedAt, got[i].SubmittedAt, want[i].Author, got[i].Author, wantBody, gotBody)
+			}
 		}
 	}
 	same("procurement", call(201, InquiryCommand{Action: "get", View: "PROCUREMENT", ID: submitted.ID}).Item.Quotes, procurement)
