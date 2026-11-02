@@ -727,10 +727,10 @@ func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Opera
 		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "询盘不存在")
 	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		var owner, revision int64
+		var owner, revision, templateID int64
 		var state string
 		var raw []byte
-		if err := tx.QueryRow(ctx, `SELECT owner_id,inquiry_revision,status,inquiry_body FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' FOR UPDATE`, tenant, id).Scan(&owner, &revision, &state, &raw); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT owner_id,inquiry_revision,status,inquiry_body,inquiry_template_id FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND status<>'CANCELLED' FOR UPDATE`, tenant, id).Scan(&owner, &revision, &state, &raw, &templateID); err != nil {
 			if err == pgx.ErrNoRows {
 				return apierr.NotFound("INQUIRY_NOT_FOUND", "询盘不存在")
 			}
@@ -743,7 +743,15 @@ func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Opera
 			return apierr.Conflict("INQUIRY_CHANGED", "询盘已变化，请刷新后重试")
 		}
 		var body InquiryBody
-		if err := json.Unmarshal(raw, &body); err != nil {
+		if len(raw) == 0 {
+			// 老询盘没有 inquiry_body：和保存报价一样先补出详情页看到的整张询盘再改。
+			// 不走 readInquiry——SALES 视图会按客户名回写本行，而本行正被这个事务锁着。
+			legacy, err := s.inquiryBody(ctx, tenant, inquiryRow{id: id, templateID: templateID}, nil)
+			if err != nil {
+				return err
+			}
+			body = legacy
+		} else if err := json.Unmarshal(raw, &body); err != nil {
 			return err
 		}
 		body.CustomerID = in.Body.CustomerID
@@ -760,6 +768,19 @@ func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Opera
 		}
 		if _, err = tx.Exec(ctx, `UPDATE sourcing_cases SET inquiry_body=$3,customer_id=$4,customer_name=$5,contact_id=$6,contact_name=$7,inquiry_revision=inquiry_revision+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenant, id, updated, inquiryID(body.CustomerID), body.Customer, inquiryID(body.ContactID), body.Contact); err != nil {
 			return err
+		}
+		// 轮次既是防旧页面覆盖的令牌，也是报价归属的「轮」。改基本信息只换令牌、不开新一轮
+		// （开新一轮清空报价的是撤回），所以把锁内读到的这一轮报价和采购/物流附件原样带到新轮次。
+		// 报价的 version、updated_* 不动：搬轮次不算谁改了报价，version 一变，开着的编辑器和
+		// 客户报价引用的来源报价（按 id+version 认）都会失效。
+		// 只搬这一轮：更早轮次里留下的报价已被重报过（如 SC-20260919-000067 第 3 轮），要继续藏着。
+		for _, statement := range []string{
+			`UPDATE inquiry_quotes SET inquiry_revision=inquiry_revision+1 WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3`,
+			`UPDATE inquiry_attachments SET revision=revision+1 WHERE tenant_id=$1 AND case_id=$2 AND kind<>'SALES' AND revision=$3`,
+		} {
+			if _, err = tx.Exec(ctx, statement, tenant, id, revision); err != nil {
+				return err
+			}
 		}
 		return s.recordInquiryAction(ctx, tx, tenant, id, op, "updateBasic")
 	})
