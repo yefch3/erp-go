@@ -72,7 +72,7 @@
        <section v-for="group in pagedQuoteProductGroups" :key="group.key" class="quote-product-group">
         <button type="button" class="quote-product-group__heading" :aria-expanded="isQuoteProductExpanded(group.key)" @click="toggleQuoteProductGroup(group.key)">
          <el-icon class="product-group__chevron" :class="{'is-expanded':isQuoteProductExpanded(group.key)}"><ArrowDown/></el-icon>
-         <strong>{{group.name}}</strong>
+         <strong :title="group.name">{{group.name}}</strong>
          <span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span>
          <span>{{t('inquiryWorkspace.quotes.quotedProgress',{quoted:quotedProductsInGroup(group.products),total:group.products.length})}}</span>
          <b>{{groupedQuantity(group.products)}}</b>
@@ -84,7 +84,7 @@
          <div v-for="product in group.products" :key="product.id" class="quote-specification-grid quote-specification-row" :class="{'has-factory-price':editor.body.quoteCategory==='REPROCESSING_CNY'}">
           <el-checkbox :model-value="!!priceFor(product.id)" @change="toggleProduct(product.id,!!$event)"/>
           <span class="quote-specification-row__material" :title="materialSummary(product)">{{materialSummary(product)||'—'}}</span>
-          <span class="quote-specification-row__size" :title="namedSpecification(product)">{{namedSpecification(product)}}</span>
+          <div class="quote-specification-row__size" :class="{'is-from-description':quoteSpecification(product).source==='description'}" :title="quoteSpecification(product).value"><small v-if="quoteSpecification(product).source==='description'" class="quote-specification-row__size-hint">{{t('inquiryWorkspace.quotes.specificationFromDescription')}}</small><span class="quote-specification-row__size-value">{{quoteSpecification(product).value}}</span><small v-if="specificationAuxiliaryFields(product,item.body.template?.fields).length" class="quote-specification-row__auxiliary"><span v-for="field in specificationAuxiliaryFields(product,item.body.template?.fields)" :key="field.key"><b>{{listFieldLabel(field)}}</b>{{field.value}}</span></small></div>
           <strong>{{groupedQuantity([product])}}</strong>
           <el-input v-if="editor.body.quoteCategory==='REPROCESSING_CNY'&&priceFor(product.id)" v-model="priceFor(product.id)!.factoryPrice" inputmode="decimal" @paste="paste($event,product.id)"/><span v-else-if="editor.body.quoteCategory==='REPROCESSING_CNY'" class="quote-field-empty">—</span>
           <el-input v-if="priceFor(product.id)" v-model="priceFor(product.id)!.price" inputmode="decimal" @paste="paste($event,product.id)"/><span v-else class="quote-field-empty">—</span>
@@ -180,7 +180,7 @@ import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
 import {buildInquiryProductsXlsx,exportableInquiryFields,safeInquiryExportName} from '../lib/inquiryProductExport'
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type QuoteBody,type Product} from '../lib/inquiryWorkspace'
-import {dimensionFields,groupedQuantity,groupInquiryProducts,materialSummary,specificationAuxiliaryFields,type InquiryListField} from '../lib/inquiryList'
+import {dimensionFields,groupedQuantity,groupInquiryProducts,materialSummary,specificationAuxiliaryFields,specificationDisplay,type InquiryListField} from '../lib/inquiryList'
 import {procurementQuoteCategories,procurementQuoteCategory,procurementQuoteCurrency} from '../lib/quoteClassification'
 import {afterFailure,afterSuccess,idleGate,mayAttempt,shouldWarn,type RefreshGate} from '../lib/refreshBackoff'
 import {useTableColumnOrder,type TableColumnDefinition} from '../composables/useTableColumnOrder'
@@ -297,6 +297,9 @@ function displayInquiryNumber(row:Inquiry){
 }
 function listFieldLabel(field:InquiryListField){const key=`inquiryProducts.fields.${field.label}`;return te(key)?t(key):field.label}
 function namedSpecification(product:Product){const dimensions=dimensionFields(product);if(!dimensions.length)return product.specification.trim()||'—';return dimensions.map(field=>`${listFieldLabel(field).replace(/\s*[（(]mm[）)]/gi,'')} ${field.value}`).join(' × ')}
+// 报价表的尺寸规格：结构化尺寸照旧带字段名显示；都空时才退到产品名「|」之后那段，
+// 由界面标灰并注明出处——多数询盘按 5 列模板转入，规格全在产品名里。
+function quoteSpecification(product:Product){const display=specificationDisplay(product);return display.source==='dimensions'?{...display,value:namedSpecification(product)}:display}
 async function handleListAction(action:string,row:Inquiry){
  if(action==='view'){await open(row);return}
  if(action!=='delete'||!auth.can('sales:inquiry:delete')||!row.canDelete)return
@@ -618,7 +621,7 @@ watch(view,()=>void initial())
 .quote-product-group:last-child { border-bottom:0; }
 .quote-product-group__heading { display:grid; grid-template-columns:20px minmax(180px,1.5fr) minmax(95px,.55fr) minmax(145px,.75fr) minmax(125px,.7fr); align-items:center; gap:14px; width:100%; min-height:54px; padding:10px 16px; color:#315063; background:#fff; border:0; font:inherit; text-align:left; cursor:pointer; transition:background-color .18s ease; }
 .quote-product-group__heading:hover,.quote-product-group__heading:focus-visible { background:#f0f8fb; outline:none; }
-.quote-product-group__heading strong { overflow:hidden; color:#123e58; font-size:15px; text-overflow:ellipsis; white-space:nowrap; }
+.quote-product-group__heading strong { min-width:0; color:#123e58; font-size:15px; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
 .quote-product-group__heading span { color:#667c8a; font-size:13px; }
 .quote-product-group__heading b { color:#17475e; text-align:right; white-space:nowrap; }
 .quote-specification-list { overflow-x:auto; border-top:1px solid #dce9ef; }
@@ -631,6 +634,13 @@ watch(view,()=>void initial())
 .quote-specification-row>strong { color:#173f56; }
 .quote-specification-row :deep(.el-date-editor),.quote-specification-row :deep(.el-input) { width:100%; }
 .quote-field-empty { color:#9aa8b1; text-align:center; }
+.quote-specification-row__size { min-width:0; color:#334f60; }
+.quote-specification-row__size-value { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.quote-specification-row__size.is-from-description .quote-specification-row__size-value { color:#7a8b98; line-height:1.45; white-space:normal; overflow-wrap:anywhere; }
+.quote-specification-row__size-hint { display:block; margin-bottom:2px; color:#9aa8b1; font-size:11px; line-height:1.3; }
+.quote-specification-row__auxiliary { display:flex; gap:2px 12px; flex-wrap:wrap; margin-top:4px; color:#718390; font-size:12px; line-height:1.4; }
+.quote-specification-row__auxiliary span { min-width:0; overflow-wrap:anywhere; }
+.quote-specification-row__auxiliary b { margin-right:4px; color:#536d7d; font-weight:600; }
 @media (max-width:1100px) { .overview-grid { grid-template-columns:1fr; } }
 @media (max-width: 760px) {
   .inquiry-workspace { padding: 0; }
