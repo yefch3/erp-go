@@ -49,6 +49,7 @@
      </div></el-tab-pane>
      <el-tab-pane :label="t('inquiryWorkspace.detail.productRequirements',{count:item.body.products.length})" name="products"><section class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
      <el-tab-pane v-if="view!=='SALES'" :label="view==='QUOTATIONS'?t('inquiryWorkspace.quoteComparisonCalculation'):t('inquiryWorkspace.detail.submittedQuotes',{count:item.quotes?.length||0})" name="quotes">
+     <div v-if="department&&item.body.remark?.trim()" class="sales-remark sales-remark--quotes"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><ClampedText class="sales-remark__text" :text="item.body.remark.trim()" :lines="3"/></div>
      <section v-if="!editor&&view!=='QUOTATIONS'" class="business-card quotes-section">
       <div class="section-title">
        <div><h3>{{ quoteSectionTitle }}</h3><p>{{t('inquiryWorkspace.quotes.listHint')}}</p></div>
@@ -162,6 +163,7 @@
 </template>
 <script setup lang="ts">
 import ColumnFillRegion from '../components/ColumnFillRegion.vue'
+import ClampedText from '../components/ClampedText.vue'
 import {computed,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
@@ -692,4 +694,6 @@ watch(view,()=>void initial())
  .list-compact .list-pagination{margin-top:10px}
  @media(max-width:600px){.list-compact .list-toolbar>.el-input{width:100%}}
 .sales-remark{margin:14px 0;padding:12px 16px;border:1px solid #cfe3ea;border-radius:10px;background:#f4fafc;color:#17485d}.sales-remark p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#334e5c}
+/* 报价页签顶上那块：点「添加报价」「编辑」都会切到这里，备注得跟着在眼前。 */
+.sales-remark--quotes{margin:0 0 16px}.sales-remark__text{margin-top:6px;color:#334e5c}
 </style>

@@ -622,6 +622,8 @@ basicsSaved: "Basic information saved",
     activate: 'Activate',
     requestFailed: 'Request failed',
     networkError: 'Network error',
+    expandAll: 'Show all',
+    collapse: 'Show less',
   },
   products: {
     title: 'Products',

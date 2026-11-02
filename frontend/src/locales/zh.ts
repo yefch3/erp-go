@@ -623,6 +623,8 @@ basicsSaved: "基本资料已保存",
     activate: '启用',
     requestFailed: '请求失败',
     networkError: '网络错误',
+    expandAll: '展开全部',
+    collapse: '收起',
   },
   products: {
     title: '产品管理',

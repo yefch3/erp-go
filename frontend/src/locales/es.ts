@@ -631,6 +631,8 @@ basicsSaved: "Datos básicos guardados",
     activate: 'Activar',
     requestFailed: 'Solicitud fallida',
     networkError: 'Error de red',
+    expandAll: 'Mostrar todo',
+    collapse: 'Mostrar menos',
   },
   products: {
     title: 'Productos',
