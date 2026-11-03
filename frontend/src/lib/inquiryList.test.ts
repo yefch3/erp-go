@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest'
-import { dimensionFields,dimensionSummary,groupedQuantity,groupInquiryProducts,inquiryListFields,productSummary,specificationAuxiliaryFields } from './inquiryList'
+import { descriptionSpecification,dimensionFields,dimensionSummary,groupedQuantity,groupInquiryProducts,inquiryListFields,productSummary,specificationAuxiliaryFields,specificationDisplay } from './inquiryList'
 import type { Product } from './inquiryWorkspace'
 
 const product:Product={id:'1',product:'热轧卷',specification:'legacy spec',quantity:'20',unit:'MT',delivery:'',weight:'',volume:'',packaging:'',remark:'',customFields:{material_standard:'ASTM A36',thickness:'2.0',width:'1250',surface_requirement:'涂油'}}
@@ -35,5 +35,27 @@ describe('inquiry list product presentation',()=>{
     expect(groups).toHaveLength(5)
     expect(groups.every(group=>group.products.length===10)).toBe(true)
     expect(groups.every(group=>group.specifications.length===2)).toBe(true)
+  })
+  it('falls back from size fields to specification text to the product description',()=>{
+    const described='HOT ROLLED TEAR DROP / PLANCHAS LAC ESTRIADAS (HRFP) | Size: 2.00 x 1200 x 2400 | QUALITY: ASTM A36/ | COIL I.D.: 700MM/750MM | MAX. WEIGHT: Mínimo 6mt max'
+    const bare={...product,product:described,specification:'',customFields:{}}
+    expect(specificationDisplay(product)).toEqual({source:'dimensions',value:'2.0 mm × 1250 mm'})
+    expect(specificationDisplay({...product,product:described})).toEqual({source:'dimensions',value:'2.0 mm × 1250 mm'})
+    expect(specificationDisplay({...bare,specification:' 2.0*1250*C '})).toEqual({source:'specification',value:'2.0*1250*C'})
+    expect(specificationDisplay(bare)).toEqual({source:'description',value:'Size: 2.00 x 1200 x 2400 | QUALITY: ASTM A36/ | COIL I.D.: 700MM/750MM | MAX. WEIGHT: Mínimo 6mt max'})
+    expect(specificationDisplay({...bare,product:'热轧卷'})).toEqual({source:'none',value:'—'})
+  })
+  it('takes only what follows the first bar of a product description',()=>{
+    expect(descriptionSpecification('PPGI | 0.5 x 1000 | RAL 9002')).toBe('0.5 x 1000 | RAL 9002')
+    expect(descriptionSpecification('PPGI|0.5 x 1000')).toBe('0.5 x 1000')
+    expect(descriptionSpecification('PPGI | ')).toBe('')
+    expect(descriptionSpecification('PPGI 0.5 x 1000')).toBe('')
+    expect(descriptionSpecification('')).toBe('')
+  })
+  it('lists populated template fields beside the size for the quote grid',()=>{
+    const template=[{fieldKey:'coil_id',displayName:'卷内径',sortOrder:1,isRequired:false,defaultValue:'',dataType:'TEXT',isCustom:true,isCore:false}]
+    const fields=specificationAuxiliaryFields({...product,customFields:{...product.customFields,coil_id:'508'}},template)
+    expect(fields.find(field=>field.key==='coil_id')).toEqual({key:'coil_id',label:'卷内径',value:'508'})
+    expect(specificationAuxiliaryFields({...product,customFields:{}},template)).toEqual([])
   })
 })
