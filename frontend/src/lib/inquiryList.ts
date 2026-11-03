@@ -29,6 +29,27 @@ export function dimensionSummary(product:Product):string {
   return dimensionFields(product).map(field=>field.value).join(' × ')
 }
 
+// 模板里没有规格列时（如只有 5 列的 A005），转 Excel 的 AI 只能把 Size、
+// QUALITY 之类塞进产品名，用「|」隔开。报价表拿第一个「|」之后的整段兜底，
+// 不去拆成字段：产品名是自由文本，拆错比不拆更糟。
+export function descriptionSpecification(name:string):string {
+  const index=name.indexOf('|')
+  return index<0?'':name.slice(index+1).trim()
+}
+
+export interface SpecificationDisplay { source:'dimensions'|'specification'|'description'|'none'; value:string }
+
+// 尺寸字段 → 规格文本 → 产品名「|」之后 → —。已有结构化尺寸的照旧，只有
+// 前两样都空时才去产品名里取，并告诉调用方取自哪里，好让界面标出来。
+export function specificationDisplay(product:Product):SpecificationDisplay {
+  const dimensions=dimensionSummary(product)
+  if(dimensions)return {source:'dimensions',value:dimensions}
+  const specification=product.specification.trim()
+  if(specification)return {source:'specification',value:specification}
+  const description=descriptionSpecification(product.product)
+  return description?{source:'description',value:description}:{source:'none',value:'—'}
+}
+
 export function productSummary(product:Product|undefined):string {
   if(!product)return '—'
   return [product.product.trim(),materialSummary(product),dimensionSummary(product)||product.specification.trim()].filter(Boolean).join(' / ')||'—'

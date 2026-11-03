@@ -374,9 +374,13 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	   -- 或者短收关单了，是履约的生命周期。钱有没有付完是另一件事，一张
 	   -- 货已结案、尾款还没付的单必须留在待核销页上。别把两者「改一致」。
 	   AND (CASE WHEN $2::bool THEN cl.id IS NOT NULL ELSE cl.id IS NULL END)
+	   -- 物流应付的单号是货代合同号，物流和财务手里拿的却常是外销合同号；
+	   -- 采购单另有业务单据号。三样都得能搜到。
 	   AND ($3::text = ''
 	        OR po.po_no ILIKE '%' || $3::text || '%'
-	        OR po.supplier_name ILIKE '%' || $3::text || '%')
+	        OR po.supplier_name ILIKE '%' || $3::text || '%'
+	        OR po.export_contract_no ILIKE '%' || $3::text || '%'
+	        OR po.business_document_no ILIKE '%' || $3::text || '%')
 	   AND ($4::bool = false
 	        OR (po.payable_due_date IS NOT NULL AND po.payable_due_date < current_date))
 	   AND ($5::bool = false OR po.payable_due_date IS NULL)
