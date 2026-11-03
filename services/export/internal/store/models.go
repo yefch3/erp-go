@@ -84,6 +84,15 @@ type ContractDueChange struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type ContractHandoffPlan struct {
+	TenantID          int64
+	ContractVersionID int64
+	Revision          int64
+	Batches           []byte
+	UpdatedBy         int64
+	UpdatedAt         pgtype.Timestamptz
+}
+
 type ContractHistoryDraft struct {
 	ID         int64
 	TenantID   int64

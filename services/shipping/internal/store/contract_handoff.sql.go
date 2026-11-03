@@ -12,7 +12,7 @@ import (
 )
 
 const getContractShippingHandoffForUpdate = `-- name: GetContractShippingHandoffForUpdate :one
-SELECT id, tenant_id, contract_id, contract_no, contract_version_id, version_no, customer_id, customer_name, batch_no, shipment_group_key, carrier_forwarder, service_option_name, customer_managed, currency, freight_amount, charge_basis, port_of_loading, port_of_discharge, estimated_departure, estimated_arrival, valid_until, remark, status, schedule_id, created_at, final_forwarder_id, final_forwarder_name, actual_carrier_id, actual_carrier_name, final_service_option, final_currency, final_freight_amount, final_etd, final_eta, payment_terms, forwarder_contract_no, approval_instance_id, return_reason, operator_id, operator_name, signed_contract_key, signed_contract_name, signed_contract_uploaded_at, contract_verified_at, contract_verified_by, contract_verified_by_name, payment_requested_at, updated_at, source_sales_remark FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
+SELECT id, tenant_id, contract_id, contract_no, contract_version_id, version_no, customer_id, customer_name, batch_no, shipment_group_key, carrier_forwarder, service_option_name, customer_managed, currency, freight_amount, charge_basis, port_of_loading, port_of_discharge, estimated_departure, estimated_arrival, valid_until, remark, status, schedule_id, created_at, final_forwarder_id, final_forwarder_name, actual_carrier_id, actual_carrier_name, final_service_option, final_currency, final_freight_amount, final_etd, final_eta, payment_terms, forwarder_contract_no, approval_instance_id, return_reason, operator_id, operator_name, signed_contract_key, signed_contract_name, signed_contract_uploaded_at, contract_verified_at, contract_verified_by, contract_verified_by_name, payment_requested_at, updated_at, source_sales_remark, presale_references_json, allocation_status FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
 `
 
 type GetContractShippingHandoffForUpdateParams struct {
@@ -73,6 +73,8 @@ func (q *Queries) GetContractShippingHandoffForUpdate(ctx context.Context, arg G
 		&i.PaymentRequestedAt,
 		&i.UpdatedAt,
 		&i.SourceSalesRemark,
+		&i.PresaleReferencesJson,
+		&i.AllocationStatus,
 	)
 	return i, err
 }
