@@ -399,31 +399,35 @@ type contractEffectiveEvent struct {
 }
 
 type effectiveEventShipment struct {
-	BatchNo            int32  `json:"batch_no"`
-	ShipmentGroupKey   string `json:"shipment_group_key"`
-	CarrierForwarder   string `json:"carrier_forwarder"`
-	ServiceOptionName  string `json:"service_option_name"`
-	CustomerManaged    bool   `json:"customer_managed"`
-	Currency           string `json:"currency"`
-	FreightAmount      string `json:"freight_amount"`
-	ChargeBasis        string `json:"charge_basis"`
-	PortOfLoading      string `json:"port_of_loading"`
-	PortOfDischarge    string `json:"port_of_discharge"`
-	EstimatedDeparture string `json:"estimated_departure"`
-	EstimatedArrival   string `json:"estimated_arrival"`
-	ValidUntil         string `json:"valid_until"`
-	Remark             string `json:"remark"`
+	Items              []effectiveEventItem `json:"items,omitempty"`
+	AllocationStatus   string               `json:"allocation_status,omitempty"`
+	PresaleReferences  json.RawMessage      `json:"presale_references,omitempty"`
+	BatchNo            int32                `json:"batch_no"`
+	ShipmentGroupKey   string               `json:"shipment_group_key"`
+	CarrierForwarder   string               `json:"carrier_forwarder"`
+	ServiceOptionName  string               `json:"service_option_name"`
+	CustomerManaged    bool                 `json:"customer_managed"`
+	Currency           string               `json:"currency"`
+	FreightAmount      string               `json:"freight_amount"`
+	ChargeBasis        string               `json:"charge_basis"`
+	PortOfLoading      string               `json:"port_of_loading"`
+	PortOfDischarge    string               `json:"port_of_discharge"`
+	EstimatedDeparture string               `json:"estimated_departure"`
+	EstimatedArrival   string               `json:"estimated_arrival"`
+	ValidUntil         string               `json:"valid_until"`
+	Remark             string               `json:"remark"`
 }
 
 type effectiveEventItem struct {
-	LineNo      int32  `json:"line_no"`
-	ItemID      int64  `json:"contract_item_id"`
-	ProductID   int64  `json:"product_id"`
-	SkuID       int64  `json:"sku_id,omitempty"`
-	ProductCode string `json:"product_code"`
-	ProductName string `json:"product_name"`
-	Spec        string `json:"spec,omitempty"`
-	Qty         string `json:"qty"`
+	PresaleReference json.RawMessage `json:"presale_reference,omitempty"`
+	LineNo           int32           `json:"line_no"`
+	ItemID           int64           `json:"contract_item_id"`
+	ProductID        int64           `json:"product_id"`
+	SkuID            int64           `json:"sku_id,omitempty"`
+	ProductCode      string          `json:"product_code"`
+	ProductName      string          `json:"product_name"`
+	Spec             string          `json:"spec,omitempty"`
+	Qty              string          `json:"qty"`
 	// RequiredQty is the part this ERP must still procure. Empty on events
 	// produced by older versions and therefore interpreted as Qty.
 	RequiredQty       string `json:"required_qty,omitempty"`
@@ -466,6 +470,7 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 
 func (s *Service) hydrateEffectiveEvent(ctx context.Context, tenantID int64, view ContractView) (contractEffectiveEvent, error) {
 	event := effectiveEvent(view)
+	event.SourceSalesRemark = view.Version.Terms
 	if view.Contract.QuotationID != 0 {
 		quotation, _, err := s.GetQuotation(ctx, tenantID, view.Contract.QuotationID)
 		if err != nil {
@@ -499,6 +504,9 @@ func (s *Service) hydrateEffectiveEvent(ctx context.Context, tenantID int64, vie
 			BatchNo: 1, Currency: event.Currency, FreightAmount: "0",
 			PortOfLoading: event.PortOfLoading, PortOfDischarge: event.PortOfDischarge,
 		})
+	}
+	if err := s.hydrateHandoffDetails(ctx, tenantID, view, &event); err != nil {
+		return event, err
 	}
 	return event, nil
 }

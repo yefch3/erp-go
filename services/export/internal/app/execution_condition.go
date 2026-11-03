@@ -52,17 +52,6 @@ func (s *Service) ConfirmContractExecutionCondition(ctx context.Context, tenantI
 	// Finance-only opening rows and historical takeover contracts belong in
 	// receivables, but must not fabricate a new purchasing/logistics run.
 	releaseDownstream := view.Contract.CustomerID != 0 && view.Contract.EntrySource != "EXISTING_CONTRACT"
-	var payload []byte
-	if releaseDownstream {
-		event, eventErr := s.hydrateEffectiveEvent(ctx, tenantID, view)
-		if eventErr != nil {
-			return ExecutionConditionConfirmation{}, eventErr
-		}
-		payload, err = json.Marshal(event)
-		if err != nil {
-			return ExecutionConditionConfirmation{}, err
-		}
-	}
 
 	result := ExecutionConditionConfirmation{}
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
@@ -84,6 +73,17 @@ func (s *Service) ConfirmContractExecutionCondition(ctx context.Context, tenantI
 		}
 		if status != "EXECUTING" || currentVersionID != view.Version.ID {
 			return apierr.Conflict("EX_CONTRACT_RELEASE_CHANGED", "合同状态或版本已变化，请刷新后重试")
+		}
+		var payload []byte
+		if releaseDownstream {
+			event, e := s.hydrateEffectiveEvent(ctx, tenantID, view)
+			if e != nil {
+				return e
+			}
+			payload, e = json.Marshal(event)
+			if e != nil {
+				return e
+			}
 		}
 		err = tx.QueryRow(ctx, `UPDATE contracts SET execution_condition_type=$3,
 			condition_confirmed_at=now(),condition_confirmation_note=$4,

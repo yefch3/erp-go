@@ -231,7 +231,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2
 `
@@ -242,51 +242,53 @@ type GetRequirementParams struct {
 }
 
 type GetRequirementRow struct {
-	ID                  int64
-	ContractID          int64
-	ContractNo          string
-	ContractVersionID   int64
-	VersionNo           int32
-	ContractItemID      int64
-	CustomerName        string
-	ProductID           int64
-	SkuID               int64
-	ProductCode         string
-	ProductName         string
-	Spec                string
-	UomID               int64
-	UomCode             string
-	RequiredQty         string
-	OrderedQty          string
-	ReceivedQty         string
-	RequiredDate        string
-	Source              string
-	Status              string
-	ClosedReason        string
-	CreatedAt           pgtype.Timestamptz
-	OwnerID             int64
-	OwnerName           string
-	QuotationID         int64
-	QuotationNo         string
-	CostScenarioID      int64
-	CostScenarioNo      string
-	SourcingCaseID      int64
-	SourcingLineID      int64
-	SupplierQuoteLineID int64
-	SupplierID          int64
-	SupplierCode        string
-	SupplierName        string
-	FactoryID           int64
-	FactoryCode         string
-	FactoryName         string
-	SourceCurrency      string
-	SourceUnitPrice     string
-	Moq                 string
-	LeadTime            string
-	SourcePaymentTerms  string
-	SourceIncoterm      string
-	SourceValidUntil    string
-	SourceSalesRemark   string
+	ID                   int64
+	ContractID           int64
+	ContractNo           string
+	ContractVersionID    int64
+	VersionNo            int32
+	ContractItemID       int64
+	CustomerName         string
+	ProductID            int64
+	SkuID                int64
+	ProductCode          string
+	ProductName          string
+	Spec                 string
+	UomID                int64
+	UomCode              string
+	RequiredQty          string
+	OrderedQty           string
+	ReceivedQty          string
+	RequiredDate         string
+	Source               string
+	Status               string
+	ClosedReason         string
+	CreatedAt            pgtype.Timestamptz
+	OwnerID              int64
+	OwnerName            string
+	QuotationID          int64
+	QuotationNo          string
+	CostScenarioID       int64
+	CostScenarioNo       string
+	SourcingCaseID       int64
+	SourcingLineID       int64
+	SupplierQuoteLineID  int64
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	SourceCurrency       string
+	SourceUnitPrice      string
+	Moq                  string
+	LeadTime             string
+	SourcePaymentTerms   string
+	SourceIncoterm       string
+	SourceValidUntil     string
+	SourceSalesRemark    string
+	ContractItemRemark   string
+	PresaleReferenceJson string
 }
 
 func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) (GetRequirementRow, error) {
@@ -338,6 +340,8 @@ func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) 
 		&i.SourceIncoterm,
 		&i.SourceValidUntil,
 		&i.SourceSalesRemark,
+		&i.ContractItemRemark,
+		&i.PresaleReferenceJson,
 	)
 	return i, err
 }
@@ -362,7 +366,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json,
     count(*) OVER () AS total
 FROM purchase_requirements
 LEFT JOIN LATERAL (
@@ -404,54 +408,56 @@ type ListRequirementsParams struct {
 }
 
 type ListRequirementsRow struct {
-	ID                  int64
-	ContractID          int64
-	ContractNo          string
-	ContractVersionID   int64
-	VersionNo           int32
-	ContractItemID      int64
-	CustomerName        string
-	ProductID           int64
-	SkuID               int64
-	ProductCode         string
-	ProductName         string
-	Spec                string
-	UomID               int64
-	UomCode             string
-	RequiredQty         string
-	OrderedQty          string
-	ReservedQty         string
-	AvailableQty        string
-	ReceivedQty         string
-	RequiredDate        string
-	Source              string
-	Status              string
-	ClosedReason        string
-	CreatedAt           pgtype.Timestamptz
-	OwnerID             int64
-	OwnerName           string
-	QuotationID         int64
-	QuotationNo         string
-	CostScenarioID      int64
-	CostScenarioNo      string
-	SourcingCaseID      int64
-	SourcingLineID      int64
-	SupplierQuoteLineID int64
-	SupplierID          int64
-	SupplierCode        string
-	SupplierName        string
-	FactoryID           int64
-	FactoryCode         string
-	FactoryName         string
-	SourceCurrency      string
-	SourceUnitPrice     string
-	Moq                 string
-	LeadTime            string
-	SourcePaymentTerms  string
-	SourceIncoterm      string
-	SourceValidUntil    string
-	SourceSalesRemark   string
-	Total               int64
+	ID                   int64
+	ContractID           int64
+	ContractNo           string
+	ContractVersionID    int64
+	VersionNo            int32
+	ContractItemID       int64
+	CustomerName         string
+	ProductID            int64
+	SkuID                int64
+	ProductCode          string
+	ProductName          string
+	Spec                 string
+	UomID                int64
+	UomCode              string
+	RequiredQty          string
+	OrderedQty           string
+	ReservedQty          string
+	AvailableQty         string
+	ReceivedQty          string
+	RequiredDate         string
+	Source               string
+	Status               string
+	ClosedReason         string
+	CreatedAt            pgtype.Timestamptz
+	OwnerID              int64
+	OwnerName            string
+	QuotationID          int64
+	QuotationNo          string
+	CostScenarioID       int64
+	CostScenarioNo       string
+	SourcingCaseID       int64
+	SourcingLineID       int64
+	SupplierQuoteLineID  int64
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	SourceCurrency       string
+	SourceUnitPrice      string
+	Moq                  string
+	LeadTime             string
+	SourcePaymentTerms   string
+	SourceIncoterm       string
+	SourceValidUntil     string
+	SourceSalesRemark    string
+	ContractItemRemark   string
+	PresaleReferenceJson string
+	Total                int64
 }
 
 func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsParams) ([]ListRequirementsRow, error) {
@@ -520,6 +526,8 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 			&i.SourceIncoterm,
 			&i.SourceValidUntil,
 			&i.SourceSalesRemark,
+			&i.ContractItemRemark,
+			&i.PresaleReferenceJson,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -706,7 +714,7 @@ INSERT INTO purchase_requirements (
     owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
     sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
     factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
-    source_payment_terms, source_incoterm, source_valid_until, source_sales_remark, status
+    source_payment_terms, source_incoterm, source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json, status
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -736,7 +744,8 @@ INSERT INTO purchase_requirements (
     $33::text, $34::text,
     nullif($35::text,'')::date,
     $36::text,
-    coalesce(nullif($37::text,''),'PENDING')
+    $37::text, $38::text,
+    coalesce(nullif($39::text,''),'PENDING')
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -763,6 +772,7 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     source_incoterm     = excluded.source_incoterm,
     source_valid_until  = excluded.source_valid_until,
     source_sales_remark = excluded.source_sales_remark,
+    contract_item_remark = excluded.contract_item_remark, presale_reference_json = excluded.presale_reference_json,
     status = CASE
                  WHEN purchase_requirements.ordered_qty = 0
                       AND purchase_requirements.status IN ('WAITING_REQUOTE','PENDING','SUPERSEDED','CANCELLED')
@@ -790,43 +800,45 @@ RETURNING id
 `
 
 type UpsertRequirementParams struct {
-	TenantID            int64
-	ContractID          int64
-	ContractNo          string
-	ContractVersionID   int64
-	VersionNo           int32
-	ContractItemID      int64
-	CustomerName        string
-	ProductID           int64
-	SkuID               int64
-	ProductCode         string
-	ProductName         string
-	Spec                string
-	UomID               int64
-	UomCode             string
-	RequiredQty         string
-	RequiredDate        string
-	Source              string
-	OwnerID             int64
-	OwnerName           string
-	QuotationID         int64
-	QuotationNo         string
-	SourcingCaseID      int64
-	SourcingLineID      int64
-	SupplierQuoteLineID int64
-	SupplierID          int64
-	SupplierName        string
-	FactoryID           int64
-	FactoryName         string
-	SourceCurrency      string
-	SourceUnitPrice     string
-	Moq                 string
-	LeadTime            string
-	SourcePaymentTerms  string
-	SourceIncoterm      string
-	SourceValidUntil    string
-	SourceSalesRemark   string
-	InitialStatus       string
+	TenantID             int64
+	ContractID           int64
+	ContractNo           string
+	ContractVersionID    int64
+	VersionNo            int32
+	ContractItemID       int64
+	CustomerName         string
+	ProductID            int64
+	SkuID                int64
+	ProductCode          string
+	ProductName          string
+	Spec                 string
+	UomID                int64
+	UomCode              string
+	RequiredQty          string
+	RequiredDate         string
+	Source               string
+	OwnerID              int64
+	OwnerName            string
+	QuotationID          int64
+	QuotationNo          string
+	SourcingCaseID       int64
+	SourcingLineID       int64
+	SupplierQuoteLineID  int64
+	SupplierID           int64
+	SupplierName         string
+	FactoryID            int64
+	FactoryName          string
+	SourceCurrency       string
+	SourceUnitPrice      string
+	Moq                  string
+	LeadTime             string
+	SourcePaymentTerms   string
+	SourceIncoterm       string
+	SourceValidUntil     string
+	SourceSalesRemark    string
+	ContractItemRemark   string
+	PresaleReferenceJson string
+	InitialStatus        string
 }
 
 // Money and quantities cross this boundary as text, same rule as export: Go
@@ -878,6 +890,8 @@ func (q *Queries) UpsertRequirement(ctx context.Context, arg UpsertRequirementPa
 		arg.SourceIncoterm,
 		arg.SourceValidUntil,
 		arg.SourceSalesRemark,
+		arg.ContractItemRemark,
+		arg.PresaleReferenceJson,
 		arg.InitialStatus,
 	)
 	var id int64

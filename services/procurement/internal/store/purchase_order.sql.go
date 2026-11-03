@@ -207,7 +207,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 const createPurchaseOrderItem = `-- name: CreatePurchaseOrderItem :one
 INSERT INTO purchase_order_items (
     tenant_id, po_id, requirement_id, product_id, sku_id,
-    product_code, product_name, spec, uom_id, uom_code, qty, unit_price, amount
+    product_code, product_name, spec, uom_id, uom_code, qty, unit_price, amount, contract_item_remark
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -221,25 +221,27 @@ INSERT INTO purchase_order_items (
     $10::text,
     $11::text::numeric,
     $12::text::numeric,
-    $13::text::numeric
+    $13::text::numeric,
+    $14::text
 )
 RETURNING id
 `
 
 type CreatePurchaseOrderItemParams struct {
-	TenantID      int64
-	PoID          int64
-	RequirementID int64
-	ProductID     int64
-	SkuID         int64
-	ProductCode   string
-	ProductName   string
-	Spec          string
-	UomID         int64
-	UomCode       string
-	Qty           string
-	UnitPrice     string
-	Amount        string
+	TenantID           int64
+	PoID               int64
+	RequirementID      int64
+	ProductID          int64
+	SkuID              int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	UomID              int64
+	UomCode            string
+	Qty                string
+	UnitPrice          string
+	Amount             string
+	ContractItemRemark string
 }
 
 func (q *Queries) CreatePurchaseOrderItem(ctx context.Context, arg CreatePurchaseOrderItemParams) (int64, error) {
@@ -257,6 +259,7 @@ func (q *Queries) CreatePurchaseOrderItem(ctx context.Context, arg CreatePurchas
 		arg.Qty,
 		arg.UnitPrice,
 		arg.Amount,
+		arg.ContractItemRemark,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1000,7 +1003,7 @@ func (q *Queries) PurchaseOrderByInstance(ctx context.Context, arg PurchaseOrder
 }
 
 const purchaseOrderItems = `-- name: PurchaseOrderItems :many
-SELECT
+SELECT i.contract_item_remark,
     i.id, i.requirement_id, i.product_id, coalesce(i.sku_id, 0)::bigint AS sku_id,
     i.product_code, i.product_name, i.spec, i.uom_id, i.uom_code,
     i.qty::text          AS qty,
@@ -1022,23 +1025,24 @@ type PurchaseOrderItemsParams struct {
 }
 
 type PurchaseOrderItemsRow struct {
-	ID            int64
-	RequirementID int64
-	ProductID     int64
-	SkuID         int64
-	ProductCode   string
-	ProductName   string
-	Spec          string
-	UomID         int64
-	UomCode       string
-	Qty           string
-	UnitPrice     string
-	Amount        string
-	ReceivedQty   string
-	ContractNo    string
-	CustomerName  string
-	Source        string
-	ContractOwner string
+	ContractItemRemark string
+	ID                 int64
+	RequirementID      int64
+	ProductID          int64
+	SkuID              int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	UomID              int64
+	UomCode            string
+	Qty                string
+	UnitPrice          string
+	Amount             string
+	ReceivedQty        string
+	ContractNo         string
+	CustomerName       string
+	Source             string
+	ContractOwner      string
 }
 
 func (q *Queries) PurchaseOrderItems(ctx context.Context, arg PurchaseOrderItemsParams) ([]PurchaseOrderItemsRow, error) {
@@ -1051,6 +1055,7 @@ func (q *Queries) PurchaseOrderItems(ctx context.Context, arg PurchaseOrderItems
 	for rows.Next() {
 		var i PurchaseOrderItemsRow
 		if err := rows.Scan(
+			&i.ContractItemRemark,
 			&i.ID,
 			&i.RequirementID,
 			&i.ProductID,
@@ -1265,7 +1270,7 @@ func (q *Queries) ReopenRequirement(ctx context.Context, arg ReopenRequirementPa
 const requirementsForOrder = `-- name: RequirementsForOrder :many
 
 SELECT
-    id, contract_id, contract_no, contract_item_id, customer_name, source,
+    id, contract_id, contract_no, contract_item_id, customer_name, source, contract_item_remark,
     product_id, coalesce(sku_id, 0)::bigint AS sku_id,
     product_code, product_name, spec, uom_id, uom_code, status,
     quotation_id, quotation_no, cost_scenario_id,
@@ -1298,6 +1303,7 @@ type RequirementsForOrderRow struct {
 	ContractItemID        int64
 	CustomerName          string
 	Source                string
+	ContractItemRemark    string
 	ProductID             int64
 	SkuID                 int64
 	ProductCode           string
@@ -1345,6 +1351,7 @@ func (q *Queries) RequirementsForOrder(ctx context.Context, arg RequirementsForO
 			&i.ContractItemID,
 			&i.CustomerName,
 			&i.Source,
+			&i.ContractItemRemark,
 			&i.ProductID,
 			&i.SkuID,
 			&i.ProductCode,

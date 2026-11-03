@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -35,23 +36,35 @@ type ContractEffectiveItem struct {
 }
 
 type ContractEffectiveShipment struct {
-	BatchNo            int32  `json:"batch_no"`
-	ShipmentGroupKey   string `json:"shipment_group_key"`
-	CarrierForwarder   string `json:"carrier_forwarder"`
-	ServiceOptionName  string `json:"service_option_name"`
-	CustomerManaged    bool   `json:"customer_managed"`
-	Currency           string `json:"currency"`
-	FreightAmount      string `json:"freight_amount"`
-	ChargeBasis        string `json:"charge_basis"`
-	PortOfLoading      string `json:"port_of_loading"`
-	PortOfDischarge    string `json:"port_of_discharge"`
-	EstimatedDeparture string `json:"estimated_departure"`
-	EstimatedArrival   string `json:"estimated_arrival"`
-	ValidUntil         string `json:"valid_until"`
-	Remark             string `json:"remark"`
+	Items              []ContractEffectiveItem `json:"items"`
+	AllocationStatus   string                  `json:"allocation_status"`
+	PresaleReferences  json.RawMessage         `json:"presale_references"`
+	BatchNo            int32                   `json:"batch_no"`
+	ShipmentGroupKey   string                  `json:"shipment_group_key"`
+	CarrierForwarder   string                  `json:"carrier_forwarder"`
+	ServiceOptionName  string                  `json:"service_option_name"`
+	CustomerManaged    bool                    `json:"customer_managed"`
+	Currency           string                  `json:"currency"`
+	FreightAmount      string                  `json:"freight_amount"`
+	ChargeBasis        string                  `json:"charge_basis"`
+	PortOfLoading      string                  `json:"port_of_loading"`
+	PortOfDischarge    string                  `json:"port_of_discharge"`
+	EstimatedDeparture string                  `json:"estimated_departure"`
+	EstimatedArrival   string                  `json:"estimated_arrival"`
+	ValidUntil         string                  `json:"valid_until"`
+	Remark             string                  `json:"remark"`
 }
 
 func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, event ContractEffective, claim EventClaim) error {
+	if len(event.Shipments) > 1 {
+		for _, batch := range event.Shipments {
+			if batch.Items == nil {
+				raw, _ := json.Marshal(event.Shipments)
+				event.Shipments = []ContractEffectiveShipment{{BatchNo: 1, Currency: batch.Currency, FreightAmount: "0", PortOfLoading: batch.PortOfLoading, PortOfDischarge: batch.PortOfDischarge, Items: event.Items, AllocationStatus: "PENDING_ALLOCATION", PresaleReferences: raw, Remark: "运输批次未分配货物，请核对"}}
+				break
+			}
+		}
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := claim(ctx, tx); err != nil {
 			return err
@@ -88,7 +101,14 @@ func (s *Service) HandoffsFromContract(ctx context.Context, tenantID int64, even
 			if _, err := tx.Exec(ctx, `DELETE FROM contract_shipping_handoff_cargo WHERE tenant_id=$1 AND handoff_id=$2`, tenantID, handoffID); err != nil {
 				return err
 			}
-			for _, item := range event.Items {
+			if _, err := tx.Exec(ctx, `UPDATE contract_shipping_handoffs SET presale_references_json=$3,allocation_status=$4 WHERE tenant_id=$1 AND id=$2`, tenantID, handoffID, string(shipment.PresaleReferences), shipment.AllocationStatus); err != nil {
+				return err
+			}
+			cargo := shipment.Items
+			if cargo == nil {
+				cargo = event.Items
+			}
+			for _, item := range cargo {
 				if _, err := tx.Exec(ctx, `INSERT INTO contract_shipping_handoff_cargo (tenant_id,handoff_id,contract_item_id,line_no,product_code,product_name,specification,quantity,uom_code,remark) VALUES($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9,$10)`, tenantID, handoffID, item.ContractItemID, item.LineNo, item.ProductCode, item.ProductName, item.Spec, item.Qty, item.UomCode, item.Remark); err != nil {
 					return err
 				}

@@ -6,7 +6,7 @@
 -- outstanding quantity at the same time. open_qty is what is left to order —
 -- a requirement may be spread over several orders.
 SELECT
-    id, contract_id, contract_no, contract_item_id, customer_name, source,
+    id, contract_id, contract_no, contract_item_id, customer_name, source, contract_item_remark,
     product_id, coalesce(sku_id, 0)::bigint AS sku_id,
     product_code, product_name, spec, uom_id, uom_code, status,
     quotation_id, quotation_no, cost_scenario_id,
@@ -171,7 +171,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND po_id = sqlc.arg(po_id)::bigin
 -- name: CreatePurchaseOrderItem :one
 INSERT INTO purchase_order_items (
     tenant_id, po_id, requirement_id, product_id, sku_id,
-    product_code, product_name, spec, uom_id, uom_code, qty, unit_price, amount
+    product_code, product_name, spec, uom_id, uom_code, qty, unit_price, amount, contract_item_remark
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(po_id)::bigint,
@@ -185,7 +185,8 @@ INSERT INTO purchase_order_items (
     sqlc.arg(uom_code)::text,
     sqlc.arg(qty)::text::numeric,
     sqlc.arg(unit_price)::text::numeric,
-    sqlc.arg(amount)::text::numeric
+    sqlc.arg(amount)::text::numeric,
+    sqlc.arg(contract_item_remark)::text
 )
 RETURNING id;
 
@@ -305,7 +306,7 @@ UPDATE purchase_orders SET
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: PurchaseOrderItems :many
-SELECT
+SELECT i.contract_item_remark,
     i.id, i.requirement_id, i.product_id, coalesce(i.sku_id, 0)::bigint AS sku_id,
     i.product_code, i.product_name, i.spec, i.uom_id, i.uom_code,
     i.qty::text          AS qty,

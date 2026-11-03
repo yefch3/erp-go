@@ -254,6 +254,8 @@ message ContractShippingHandoff {
   int64 linked_contract_id = 50;
   // Original sales inquiry note, distinct from the execution plan remark.
   string source_sales_remark = 51;
+  string presale_references_json = 52;
+  string allocation_status = 53;
 }
 message LinkManualShippingContractRequest { int64 id = 1; int64 contract_id = 2; string contract_no = 3; }
 message LinkManualShippingContractResponse { ContractShippingHandoff order = 1; }
