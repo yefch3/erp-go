@@ -260,6 +260,7 @@
       <FilePreviewDialog v-model="draftFilePreviewOpen" :source="draftFilePreviewSource" :title="draftFilePreviewTitle" :content-type="draftFilePreviewType" />
 
       <el-table :data="detailItems" size="small">
+        <el-table-column prop="contractItemRemark" label="合同明细备注" min-width="200" show-overflow-tooltip/>
         <el-table-column :label="t('orders.product')" min-width="180">
           <template #default="{ row }">
             <div>{{ row.productName }}</div>
@@ -658,6 +659,7 @@ interface OrderItem {
   contractNo: string
   customerName: string
   source: string
+  contractItemRemark?:string
   contractOwner: string
 }
 interface Receipt {

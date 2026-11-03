@@ -43,13 +43,13 @@ func (s *Service) ContractWorkflow(ctx context.Context, tenant int64, cmd Workfl
 		return nil, apierr.Permission("EX_ACTOR_MISMATCH", "操作身份或租户不匹配")
 	}
 	permission := "export:contract:write"
-	if cmd.Action == "get" {
+	if cmd.Action == "get" || cmd.Action == "handoff_get" {
 		permission = "export:contract:read"
 	}
 	if err := s.RequireAnyPermission(ctx, permission); err != nil {
 		return nil, err
 	}
-	if cmd.Action != "get" && !strings.HasPrefix(cmd.Action, "history_") && strings.TrimSpace(cmd.Reason) == "" {
+	if cmd.Action != "get" && cmd.Action != "handoff_get" && !strings.HasPrefix(cmd.Action, "history_") && strings.TrimSpace(cmd.Reason) == "" {
 		return nil, apierr.Invalid("EX_ACTION_REASON", "请填写操作原因或核对说明")
 	}
 	if strings.HasPrefix(cmd.Action, "history_") {
@@ -58,6 +58,9 @@ func (s *Service) ContractWorkflow(ctx context.Context, tenant int64, cmd Workfl
 	view, err := s.GetContractFor(ctx, tenant, cmd.ID, 0, op)
 	if err != nil {
 		return nil, err
+	}
+	if cmd.Action == "handoff_get" {
+		return s.handoffPlan(ctx, tenant, view)
 	}
 	if cmd.Action == "get" {
 		return s.workflowView(ctx, tenant, cmd.ID)
@@ -72,6 +75,9 @@ func (s *Service) ContractWorkflow(ctx context.Context, tenant int64, cmd Workfl
 		return nil, apierr.Conflict("EX_HISTORY_RECORD_ONLY", "历史合同是资料记录，不走新单审批或履约操作")
 	}
 
+	if cmd.Action == "handoff_save" {
+		return s.saveHandoffPlan(ctx, tenant, view, cmd, op)
+	}
 	if cmd.Action == "terminate" {
 		return s.requestTermination(ctx, tenant, cmd, op, view)
 	}

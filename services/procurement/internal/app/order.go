@@ -463,7 +463,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			ProductCode: r.ProductCode, ProductName: r.ProductName, Spec: r.Spec,
 			UomID: r.UomID, UomCode: r.UomCode,
 			Qty: p.qty.String(), UnitPrice: p.price.String(),
-			Amount: p.qty.Mul(p.price).StringFixed(2),
+			Amount: p.qty.Mul(p.price).StringFixed(2), ContractItemRemark: r.ContractItemRemark,
 		})
 		if err != nil {
 			return head, err

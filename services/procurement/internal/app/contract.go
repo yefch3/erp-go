@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -43,19 +44,21 @@ type ContractEffective struct {
 }
 
 type ContractLine struct {
-	LineNo            int32  `json:"line_no"`
-	ItemID            int64  `json:"contract_item_id"`
-	ProductID         int64  `json:"product_id"`
-	SkuID             int64  `json:"sku_id"`
-	ProductCode       string `json:"product_code"`
-	ProductName       string `json:"product_name"`
-	Qty               string `json:"qty"`
-	RequiredQty       string `json:"required_qty"`
-	UomID             int64  `json:"uom_id"`
-	UomCode           string `json:"uom_code"`
-	Spec              string `json:"spec"`
-	PurchaseUnitPrice string `json:"purchase_unit_price"`
-	OpeningArrivedQty string `json:"opening_arrived_qty"`
+	Remark            string          `json:"remark"`
+	PresaleReference  json.RawMessage `json:"presale_reference"`
+	LineNo            int32           `json:"line_no"`
+	ItemID            int64           `json:"contract_item_id"`
+	ProductID         int64           `json:"product_id"`
+	SkuID             int64           `json:"sku_id"`
+	ProductCode       string          `json:"product_code"`
+	ProductName       string          `json:"product_name"`
+	Qty               string          `json:"qty"`
+	RequiredQty       string          `json:"required_qty"`
+	UomID             int64           `json:"uom_id"`
+	UomCode           string          `json:"uom_code"`
+	Spec              string          `json:"spec"`
+	PurchaseUnitPrice string          `json:"purchase_unit_price"`
+	OpeningArrivedQty string          `json:"opening_arrived_qty"`
 }
 
 // RequirementsFromContract creates one gross purchase requirement for each
@@ -124,8 +127,9 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate, Source: "CONTRACT",
 				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,
 				SourceUnitPrice:   "0",
-				SourceSalesRemark: e.SourceSalesRemark,
-				InitialStatus:     "WAITING_REQUOTE",
+				SourceSalesRemark: e.SourceSalesRemark, ContractItemRemark: line.Remark, PresaleReferenceJson: string(line.PresaleReference),
+				QuotationID: e.QuotationID, QuotationNo: e.QuotationNo,
+				InitialStatus: "WAITING_REQUOTE",
 			}
 			if len(snapshots) > 0 {
 				if err := applyContractProcurementSnapshot(e, line, line.Qty, snapshots[index], &params); err != nil {

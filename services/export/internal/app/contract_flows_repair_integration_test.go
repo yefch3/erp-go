@@ -73,6 +73,19 @@ func TestCategoryOfferContractLifecycle(t *testing.T) {
 	if err != nil || v.Contract.SalesEmployeeID != 1 || v.Version.TotalAmount != "305.00" {
 		t.Fatal("owner or amount mismatch", v, err)
 	}
+	// The handoff must use the accepted frozen supplier quote, even when the
+	// editable inquiry has since changed its source quote content.
+	for i := range source.Quotes {
+		source.Quotes[i].Body = json.RawMessage(`{"company":"changed after acceptance"}`)
+	}
+	event, err := svc.hydrateEffectiveEvent(ctx, tenant, v)
+	if err != nil || len(event.Items) != 1 || len(event.Items[0].PresaleReference) == 0 {
+		t.Fatalf("missing frozen supplier reference: %+v %v", event, err)
+	}
+	var reference map[string]any
+	if err := json.Unmarshal(event.Items[0].PresaleReference, &reference); err != nil || reference["id"] != confirmed.Body.Lines[0].FactoryQuoteID {
+		t.Fatal("wrong accepted supplier reference", reference, err)
+	}
 	owner := Operator{ID: 1, Name: "Sales"}
 	sales := grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenant, EmployeeID: 1, Name: "Sales"})
 	if _, _, err = svc.SubmitContract(sales, tenant, id, owner); err != nil {

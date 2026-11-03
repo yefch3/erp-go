@@ -77,7 +77,9 @@
               <div v-show="isBatchProductExpanded(activeBatch.key, group.key)" class="detail-spec-list">
                 <article v-for="line in group.lines" :key="line.id" class="requote-product">
                   <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>{{ line.productCode || '未填写产品编码' }}</span></div><div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></div></header>
-                  <div class="presale-reference"><span>售前参考</span><strong>{{ line.supplierName || '无售前供应商' }}</strong><span>{{ displaySourcePrice(line) }}</span><span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span></div>
+                  <p v-if="line.contractItemRemark" class="source-sales-remark"><strong>合同明细备注：</strong>{{line.contractItemRemark}}</p>
+                  <PresaleReference :json="line.presaleReferenceJson"/>
+                  <div v-if="!line.presaleReferenceJson" class="presale-reference"><span>售前参考</span><strong>{{ line.supplierName || '无售前供应商' }}</strong><span>{{ displaySourcePrice(line) }}</span><span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span></div>
                   <div class="quote-options factory-quote-cards">
                     <div v-for="quote in quotesFor(line.id)" :key="quote.id" :class="['quote-option', {selected:quote.selected}]">
                       <span class="quote-main"><strong>{{ quote.supplierName }}</strong><b>{{ quote.currency }} {{ formatMoney(quote.unitPrice) }}/{{ line.uomCode }}</b></span>
@@ -329,6 +331,7 @@
 </template>
 
 <script setup lang="ts">
+import PresaleReference from '../components/PresaleReference.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
@@ -375,6 +378,8 @@ interface Requirement {
   moq: string
   leadTime: string
   sourcePaymentTerms: string
+  contractItemRemark?:string
+  presaleReferenceJson?:string
   sourceSalesRemark: string
   sourceIncoterm: string
   sourceValidUntil: string

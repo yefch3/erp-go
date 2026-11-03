@@ -58,6 +58,8 @@ type ContractShippingHandoff struct {
 	PaymentRequestedAt       pgtype.Timestamptz
 	UpdatedAt                pgtype.Timestamptz
 	SourceSalesRemark        string
+	PresaleReferencesJson    string
+	AllocationStatus         string
 }
 
 type ContractShippingHandoffCargo struct {

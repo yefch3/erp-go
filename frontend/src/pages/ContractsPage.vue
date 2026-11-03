@@ -211,6 +211,7 @@
           <el-tab-pane label="审批与记录" name="records"/>
         </el-tabs>
         <el-table v-if="detailTab==='records' && workflowRecords.length && detail.contract.entrySource!=='EXISTING_CONTRACT'" :data="workflowRecords" size="small" max-height="280"><el-table-column prop="label" label="操作" width="140"/><el-table-column prop="reason" label="原因／核对说明" min-width="200"/><el-table-column prop="actor" label="操作人" width="110"/><el-table-column prop="at" label="时间" width="200"/></el-table>
+        <ContractHandoffPlan v-if="detailTab==='shipping' && detail.contract.entrySource==='STANDARD'" :contract-id="detail.contract.id" :version-id="detail.version.id" :items="detail.items" :can-edit="canWrite && isMine && !detail.contract.conditionConfirmedAt && ['DRAFT','REJECTED','PENDING_SIGN','EXECUTING'].includes(detail.contract.status)"/>
         <el-empty v-if="detailTab==='shipping'&&!detail.shipments?.length&&!vessels.length&&!acceptedOffer?.transports.length" description="暂无发运或船期记录"/>
         <el-empty v-if="detailTab==='receipts'&&!receiptProgress" description="暂无收款进度或当前账号无查看权限"/>
         <section v-show="showDetailTab('terms')" class="basic-info-panel">
@@ -805,6 +806,7 @@
 
 <script setup lang="ts">
 import ColumnFillRegion from '../components/ColumnFillRegion.vue'
+import ContractHandoffPlan from '../components/ContractHandoffPlan.vue'
 import ContractEntryDialog from '../components/ContractEntryDialog.vue'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
@@ -879,6 +881,7 @@ interface Version {
 }
 type VersionRow = Pick<Version, 'id' | 'versionNo' | 'status' | 'currency' | 'totalAmount' | 'deliveryDate' | 'changeReason'>
 interface Item {
+ id:string
   skuId?: string
   remark?: string
   lineNo: number

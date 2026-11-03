@@ -24,7 +24,7 @@
         <el-table-column v-for="column in handoffColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
           <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="handoffColumns.canMoveLeft(column.key)" :can-move-right="handoffColumns.canMoveRight(column.key)" @move-left="handoffColumns.moveBy(column.key,-1)" @move-right="handoffColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
-            <div v-if="column.key==='contractNo'"><div class="contract-no">{{ row.contractNo }}</div><div v-if="row.manualOrderNo" class="sub">物流实单：{{ row.manualOrderNo }}</div><div v-if="row.manualOrderNo" class="sub">补录 · {{ Number(row.linkedContractId)>0 ? '合同已关联' : '合同待关联' }}</div></div>
+            <div v-if="column.key==='contractNo'"><div class="contract-no">{{ row.contractNo }}</div><div v-if="!row.manualOrderNo" class="sub">第 {{row.batchNo}} 批<span v-if="row.allocationStatus==='PENDING_ALLOCATION'"> · 待分配货物</span></div><div v-if="row.manualOrderNo" class="sub">物流实单：{{ row.manualOrderNo }}</div><div v-if="row.manualOrderNo" class="sub">补录 · {{ Number(row.linkedContractId)>0 ? '合同已关联' : '合同待关联' }}</div></div>
             <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
             <span v-else-if="column.key==='route'">{{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}</span>
             <template v-else-if="column.key==='parties'"><div>{{ row.finalForwarderName || t('shipping.d4NotConfirmed') }}</div><div class="sub">{{ row.actualCarrierName || row.carrierForwarder || '—' }}</div></template>
@@ -42,7 +42,7 @@
       <div class="detail-content">
       <template v-if="detail">
         <div v-if="detail.manualOrderNo" class="submit-selection"><span>{{ detail.manualOrderNo }} · 合同号：{{ detail.contractNo }}（{{ Number(detail.linkedContractId)>0 ? '已关联' : '待关联' }}）</span><el-button v-if="Number(detail.linkedContractId)>0 && auth.can('export:contract:read')" @click="router.push({path:'/contracts',query:{id:detail.linkedContractId}})">查看销售合同</el-button><el-button v-if="auth.can('shipping:schedule:write') && !Number(detail.linkedContractId)" @click="linkNumber=detail.contractNo;linkContractId='0';linkOpen=true">关联合同</el-button><el-button v-if="auth.can('shipping:schedule:write') && ['DRAFT','RETURNED'].includes(detail.status)" @click="manualOrderId=detail.id;detailOpen=false;manualOpen=true">补齐资料</el-button></div>
-        <div class="detail-hero"><div><span>{{ detail.customerName }}</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
+        <div class="detail-hero"><div><span>{{ detail.customerName }} · 第 {{detail.batchNo}} 批</span><strong>{{ detail.portOfLoading || '—' }} → {{ detail.portOfDischarge || '—' }}</strong></div><el-tag :type="statusType(detail.status)" effect="plain">{{ statusLabel(detail.status) }}</el-tag></div>
         <section v-if="detail.sourceSalesRemark?.trim()" class="source-sales-remark"><strong>{{ t('inquiryWorkspace.detail.salesRemark') }}</strong><p>{{ detail.sourceSalesRemark }}</p></section>
         <div v-if="detail.status === 'PENDING_APPROVAL' && approvalTaskId" class="submit-selection">
           <span>{{ t('shipping.d4ApprovalHint') }}</span>
@@ -54,7 +54,9 @@
             </el-dropdown-menu></template>
           </el-dropdown>
         </div>
-        <section v-if="!detail.manualOrderNo" class="reference-card">
+        <el-alert v-if="detail.allocationStatus==='PENDING_ALLOCATION'" title="本任务尚未明确分批数量，货物清单是整份合同参考，请先核对分批安排，不能把每项参考方案都作为全量运输。" type="warning" :closable="false"/>
+        <PresaleReference :json="detail.presaleReferencesJson"/>
+        <section v-if="!detail.manualOrderNo && !detail.presaleReferencesJson" class="reference-card">
           <div class="section-title">{{ t('shipping.d4PresalesReference') }}<span>{{ t('shipping.d4ReferenceOnly') }}</span></div>
           <el-descriptions :column="2" size="small">
             <el-descriptions-item :label="t('shipping.d4Forwarder')">{{ detail.carrierForwarder || '—' }}</el-descriptions-item><el-descriptions-item :label="t('shipping.d4Plan')">{{ detail.serviceOptionName || '—' }}</el-descriptions-item>
@@ -125,6 +127,7 @@
 </template>
 
 <script setup lang="ts">
+import PresaleReference from '../components/PresaleReference.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -141,7 +144,7 @@ const approvalTaskId = ref('')
 const approvalOverride = ref(false)
 const props=withDefaults(defineProps<{mode?:'inquiry'|'orders'}>(),{mode:'inquiry'}); const mode=computed(()=>props.mode)
 interface CargoItem { id:string;contractItemId:string;lineNo:number;productCode:string;productName:string;specification:string;quantity:string;uomCode:string;remark:string }
-interface Handoff { linkedContractId?:string; manualOrderNo?:string;amountMissing?:boolean; id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;remark:string;sourceSalesRemark:string;status:string;scheduleId:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string;cargoItems:CargoItem[] }
+interface Handoff {presaleReferencesJson?:string;allocationStatus?:string; linkedContractId?:string; manualOrderNo?:string;amountMissing?:boolean; id:string;contractNo:string;customerName:string;batchNo:number;carrierForwarder:string;serviceOptionName:string;currency:string;freightAmount:string;portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;remark:string;sourceSalesRemark:string;status:string;scheduleId:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;returnReason:string;signedContractName:string;signedContractUrl:string;signedContractUploadedAt:string;contractVerifiedAt:string;contractVerifiedByName:string;paymentRequestedAt:string;cargoItems:CargoItem[] }
 interface Party { id:string;name:string }
 interface RequoteOption { id:string;handoffId:string;forwarderId:string;forwarderName:string;actualCarrierId:string;actualCarrierName:string;serviceOption:string;currency:string;freightAmount:string;etd:string;eta:string;paymentTerms:string;remark:string;createdByName:string;createdAt:string;updatedAt:string }
 const linkOpen=ref(false),linkNumber=ref(''),linkContractId=ref('0')

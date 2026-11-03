@@ -18,7 +18,7 @@ INSERT INTO purchase_requirements (
     owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
     sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
     factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
-    source_payment_terms, source_incoterm, source_valid_until, source_sales_remark, status
+    source_payment_terms, source_incoterm, source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json, status
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -48,6 +48,7 @@ INSERT INTO purchase_requirements (
     sqlc.arg(source_payment_terms)::text, sqlc.arg(source_incoterm)::text,
     nullif(sqlc.arg(source_valid_until)::text,'')::date,
     sqlc.arg(source_sales_remark)::text,
+    sqlc.arg(contract_item_remark)::text, sqlc.arg(presale_reference_json)::text,
     coalesce(nullif(sqlc.arg(initial_status)::text,''),'PENDING')
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
@@ -75,6 +76,7 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     source_incoterm     = excluded.source_incoterm,
     source_valid_until  = excluded.source_valid_until,
     source_sales_remark = excluded.source_sales_remark,
+    contract_item_remark = excluded.contract_item_remark, presale_reference_json = excluded.presale_reference_json,
     status = CASE
                  WHEN purchase_requirements.ordered_qty = 0
                       AND purchase_requirements.status IN ('WAITING_REQUOTE','PENDING','SUPERSEDED','CANCELLED')
@@ -146,7 +148,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json,
     count(*) OVER () AS total
 FROM purchase_requirements
 LEFT JOIN LATERAL (
@@ -193,7 +195,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
-    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2;
 
