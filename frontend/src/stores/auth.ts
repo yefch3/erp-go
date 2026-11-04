@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { get, post, quietErrors } from '../api'
+import { claimUnstampedTokens, keepTokensFor } from '../lib/mailUnlock'
 
 interface Employee {
   id: string
@@ -92,6 +93,9 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('employeeEmail', data.employee.email ?? '')
       localStorage.setItem('employeeDepartment', data.employee.departmentName ?? '')
       localStorage.setItem('permissions', JSON.stringify(data.permissionCodes))
+      // Mailbox unlock tokens outlive an ERP session on purpose; they are kept
+      // only if the person signing in now is the one who verified them.
+      keepTokensFor(data.employee.id)
       if (this.mustChangePassword) {
         localStorage.setItem('mustChangePassword', '1')
       } else {
@@ -150,6 +154,9 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('employeeName', this.employeeName)
       localStorage.setItem('employeeEmail', this.employeeEmail)
       localStorage.setItem('employeeDepartment', this.employeeDepartment)
+      // The server has just said who this session is; tokens saved before
+      // they carried an owner are this person's from here on.
+      claimUnstampedTokens(this.employeeId)
     },
     // Permissions and the harmless identity cache are both refreshed on boot.
     // The cookie is the real session; localStorage may outlive an older login
