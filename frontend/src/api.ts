@@ -1,5 +1,4 @@
 import axios, { type AxiosRequestConfig } from 'axios'
-import { UNLOCK_STORAGE_KEYS } from './lib/mailUnlock'
 import { ElMessage } from 'element-plus'
 import { i18n } from './i18n'
 import { router } from './router'
@@ -78,8 +77,9 @@ http.interceptors.request.use((cfg) => {
     if (csrf) cfg.headers['X-CSRF-Token'] = csrf
   }
   // The mailbox unlock proof. localStorage, same as before: the real
-  // boundaries are the server-side 12-hour expiry and 退出邮箱, which
-  // revokes the token immediately.
+  // boundaries are the server-side expiry (idle time, renewed while used —
+  // see the gateway's UnlockStore) and 退出邮箱, which revokes the token
+  // immediately. The token only opens mail for the person it was minted for.
   const unlock = localStorage.getItem('mailUnlock')
   if (unlock) cfg.headers['X-Mail-Unlock'] = unlock
   return cfg
@@ -165,7 +165,13 @@ function expired() {
   // cookie this code cannot touch, already refused server-side. What must go
   // is everything that makes the router and the pages believe a session
   // still exists.
-  for (const k of ['employeeId', 'employeeName', 'employeeEmail', 'permissions', ...UNLOCK_STORAGE_KEYS]) {
+  //
+  // The mailbox unlock tokens are deliberately NOT in this list. An expired
+  // ERP session says nothing about the mailbox: the server-side token is
+  // still alive, and wiping the browser's copy made people re-enter their
+  // mail authorisation code after every lapsed login. Whether they survive
+  // is decided at the next sign-in, by who signs in (keepTokensFor).
+  for (const k of ['employeeId', 'employeeName', 'employeeEmail', 'permissions']) {
     localStorage.removeItem(k)
   }
   if (redirecting || location.pathname === '/login') return

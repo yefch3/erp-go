@@ -129,9 +129,14 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("gateway: redis at %s: %w", cfg.RedisAddr, err)
 	}
 
-	// Mailbox unlock tokens. Twelve hours by default: verify once in the
-	// morning, locked again by the next working day.
-	unlockTTL := 12 * time.Hour
+	// Mailbox unlock tokens. A year by default, counted from the last time
+	// the mailbox was used (Check renews a half-spent token), so in practice
+	// one verification lasts until somebody signs out of the mailbox, changes
+	// computer, or the mail host stops accepting the code. The unlock is a
+	// second gate on top of the ERP login, not a daily ritual: 2026-11 the
+	// customer asked for "enter the code once, never again", and the old 12h
+	// then 30-day windows were what kept asking.
+	unlockTTL := 365 * 24 * time.Hour
 	if v := os.Getenv("MAIL_UNLOCK_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			unlockTTL = d
