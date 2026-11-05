@@ -105,8 +105,13 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if err := s.checkCustomerAccess(ctx, offerID(view.Body.CustomerID)); err != nil {
-		return "", err
+	// IAM's employee scope authorizes a supervisor to work on this team's
+	// quotation snapshot, without granting access to the customer master.
+	teamQuotation := s.scopes != nil && ownerVisible && offerID(source.OwnerID) > 0 && offerID(source.OwnerID) != op.EmployeeID
+	if !teamQuotation {
+		if err := s.checkCustomerAccess(ctx, offerID(view.Body.CustomerID)); err != nil {
+			return "", err
+		}
 	}
 	view.CanEdit = canWrite && ownerVisible && view.Status != "CONFIRMED"
 
@@ -161,8 +166,12 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.xlsx", "fileData": data})
 		return string(out), nil
 	case "confirm":
-		if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
-			return "", err
+		if !teamQuotation {
+			if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
+				return "", err
+			}
+		} else if offerID(view.Body.CustomerID) <= 0 {
+			return "", apierr.Invalid("OFFER_CUSTOMER_REQUIRED", "请先由负责销售选择客户")
 		}
 		if view.Status != "CONFIRMED" {
 			if !view.Body.CategoryWorkflow {
@@ -195,8 +204,12 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		cmd.Body.Customer = source.Body.Customer
 		cmd.Body.ContactID = source.Body.ContactID
 		cmd.Body.Contact = source.Body.Contact
-		if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
-			return "", err
+		if !teamQuotation {
+			if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
+				return "", err
+			}
+		} else if offerID(cmd.Body.CustomerID) <= 0 {
+			return "", apierr.Invalid("OFFER_CUSTOMER_REQUIRED", "请先由负责销售选择客户")
 		}
 		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
 		cmd.Body.CategoryWorkflow = cmd.Body.CategoryWorkflow || view.Body.CategoryWorkflow

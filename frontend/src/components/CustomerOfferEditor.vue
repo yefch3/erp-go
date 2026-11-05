@@ -60,7 +60,11 @@
     </section>
    </template>
    <template v-else>
-    <el-alert v-if="selectionChanged&&customerRows.length" :title="t('inquiryWorkspace.offer.changedAlert')" type="warning" :closable="false" show-icon/>
+    <el-alert v-if="sourceChanges.selectionChanged&&customerRows.length" :title="t('inquiryWorkspace.offer.selectionPendingAlert')" type="warning" :closable="false" show-icon/>
+    <el-alert v-if="sourceChanges.sources.length" :title="t('inquiryWorkspace.offer.sourceChangedAlert')" type="warning" :closable="false" show-icon>
+     <ul><li v-for="change in sourceChanges.sources" :key="change.id">{{sourceChangeDescription(change)}}</li></ul>
+    </el-alert>
+    <el-alert v-if="offer.status==='CONFIRMED'" :title="t('inquiryWorkspace.offer.confirmedSnapshotHint')" type="info" :closable="false" show-icon/>
     <section class="workspace-card customer-information"><div class="card-heading"><div><h3>{{t('inquiryWorkspace.offer.quoteInfo')}}</h3><p>{{t('inquiryWorkspace.offer.quoteInfoHint')}}</p></div><span v-if="offer.body.selectionSavedAt" class="saved-at">{{t('inquiryWorkspace.offer.savedAt',{time:displayTime(offer.body.selectionSavedAt)})}}</span></div>
      <el-form class="customer-fields" label-position="top" :disabled="!editable"><el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')"><el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')"><el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')"><el-input v-model="offer.body.payment"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')"><el-input v-model="offer.body.remark" type="textarea" :rows="2"/></el-form-item></el-form>
     </section>
@@ -154,6 +158,7 @@ import {productTemplateValue,type Quote,type Product,type Price} from '../lib/in
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
 import {formatCfrUnitPrice,offerSpecification as specification} from '../lib/customerOffer'
 import {procurementQuoteCategories} from '../lib/quoteClassification'
+import {offerSourceChanges} from '../lib/offerSourceChanges'
 const props=defineProps<{caseId:string;sourceVersion?:string;mode:'compare'|'offer'}>()
 const emit=defineEmits<{navigate:[tab:string]}>()
 const router=useRouter(),{t,locale}=useI18n(),offer=ref<Offer|null>(null),busy=ref(false),error=ref(''),search=ref(''),preview=ref<Quote|null>(null),savedBody=ref('')
@@ -214,7 +219,12 @@ function effectiveCustomerPrice(row:Candidate){return negotiationFor(row).propos
 function normalizeProposedPrice(row:Candidate){const negotiation=negotiationFor(row),raw=negotiation.proposedPrice.trim();if(!raw)return;if(/^\d+(\.\d{1,4})?$/.test(raw))negotiation.proposedPrice=raw}
 function selectionKey(s:CategorySelection){return `${s.productId}:${s.category}:${s.quoteId}`}
 const selectedFreightQuoteIds=computed(()=>[...new Set(selections.value.filter(item=>!!item.freightQuoteVersion).map(item=>item.freightQuoteId).filter((id):id is string=>!!id))])
-const selectionChanged=computed(()=>{if(!offer.value)return false;const b=offer.value.body;const basis=(s:CategorySelection)=>`${selectionKey(s)}:${s.freightQuoteId||''}:${s.freightQuoteVersion||0}:${s.cfrUnitPrice||''}`;const current=selections.value.map(basis).sort(),staged=(b.customerSelections||[]).map(basis).sort();if(JSON.stringify(current)!==JSON.stringify(staged))return true;if(JSON.stringify(selectedFreightQuoteIds.value.slice().sort())!==JSON.stringify((b.customerLogistics||[]).map(q=>q.id).sort()))return true;return [...(b.customerSelections||[]).map(s=>s.quote),...(b.customerLogistics||[])].some(old=>{const q=offer.value!.source.quotes.find(q=>q.id===old.id);return !q||q.version!==old.version||JSON.stringify(q.body)!==JSON.stringify(old.body)})})
+const sourceChanges=computed(()=>offer.value?offerSourceChanges(offer.value.body,offer.value.source.quotes):{selectionChanged:false,sources:[]})
+function sourceChangeDescription(change:ReturnType<typeof offerSourceChanges>['sources'][number]){
+ const products=change.productIds.map(id=>{const p=offer.value?.body.customerSelections?.find(s=>s.productId===id)?.product;return p?`${p.product} · ${specificationSentence(p)}`:id}).join('；')
+ const reason=t(change.removed?'inquiryWorkspace.offer.sourceRemoved':change.oldVersion!==change.newVersion?'inquiryWorkspace.offer.sourceVersionChanged':'inquiryWorkspace.offer.sourceContentChanged',{oldVersion:change.oldVersion,newVersion:change.newVersion})
+ return `${change.company}${products?` · ${products}`:''}：${reason}`
+}
 function priceOf(p:Price){return formatCfrUnitPrice(p.price||p.factoryPrice||p.fobPrice)||'—'}
 function routeOf(q:Quote){return[q.body.route,q.body.carrier&&q.body.carrier!==q.body.company?q.body.carrier:'',[q.body.loadingPort,q.body.destinationPort].filter(Boolean).join(' → ')].filter(Boolean).join(' · ')||t('inquiryWorkspace.offer.routeMissing')}
 function productName(id:string){return customerRows.value.find(r=>r.product.id===id)?.product.product||offer.value?.source.body.products.find(p=>p.id===id)?.product||id}

@@ -632,7 +632,9 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 	// Approval involvement grants read access to this document's recorded
 	// customer snapshot, not to the customer master record or write operations.
 	// mustOwnContract still checks customer access independently on writes.
-	if !involved {
+	teamQuotation := s.scopes != nil && view.Contract.EntrySource == "STANDARD" && view.Contract.QuotationID > 0 &&
+		op.ID > 0 && view.Contract.SalesEmployeeID != op.ID && allowedOwner(visible, view.Contract.SalesEmployeeID)
+	if !involved && !teamQuotation {
 		if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
 			return ContractView{}, err
 		}
@@ -730,7 +732,11 @@ func (s *Service) ListContracts(ctx context.Context, tenantID int64, keyword str
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs,
+	var teamReaderID int64
+	if s.scopes != nil {
+		teamReaderID = op.ID
+	}
+	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs, TeamReaderID: teamReaderID,
 
 		SalesEmployeeID: ownerID, TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,

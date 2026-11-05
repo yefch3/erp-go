@@ -113,7 +113,9 @@ WHERE c.status <> 'DELETED' AND c.tenant_id = sqlc.arg(tenant_id)::bigint
        OR c.external_contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
   AND (sqlc.arg(customer_access_all)::boolean OR c.customer_id=ANY(sqlc.arg(customer_access_ids)::bigint[])
-       OR c.id=ANY(sqlc.arg(involved_ids)::bigint[]))
+       OR c.id=ANY(sqlc.arg(involved_ids)::bigint[])
+       OR (c.entry_source='STANDARD' AND c.quotation_id IS NOT NULL
+           AND sqlc.arg(team_reader_id)::bigint>0 AND c.sales_employee_id<>sqlc.arg(team_reader_id)::bigint))
 ORDER BY c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 

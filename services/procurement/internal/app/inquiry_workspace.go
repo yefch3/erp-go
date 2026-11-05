@@ -473,7 +473,10 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		if err = s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
 			return nil, err
 		}
-		if s.customers != nil {
+		// The case was authorized against IAM above. Team quotation readers
+		// consume its recorded customer snapshot, not customer master data.
+		teamQuotation := view == "QUOTATIONS" && s.scopes != nil && owner > 0 && owner != op.ID
+		if s.customers != nil && !teamQuotation {
 			if customerID == 0 && strings.TrimSpace(customerName) != "" {
 				linkedID, linkedName, linkErr := s.linkInquiryCustomerByName(ctx, tenant, id, customerName)
 				if linkErr != nil {

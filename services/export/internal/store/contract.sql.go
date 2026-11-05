@@ -1294,9 +1294,11 @@ WHERE c.status <> 'DELETED' AND c.tenant_id = $1::bigint
        OR c.external_contract_no ILIKE '%' || $8::text || '%'
        OR c.customer_name ILIKE '%' || $8::text || '%')
   AND ($9::boolean OR c.customer_id=ANY($10::bigint[])
-       OR c.id=ANY($4::bigint[]))
+       OR c.id=ANY($4::bigint[])
+       OR (c.entry_source='STANDARD' AND c.quotation_id IS NOT NULL
+           AND $11::bigint>0 AND c.sales_employee_id<>$11::bigint))
 ORDER BY c.id DESC
-LIMIT $12::int OFFSET $11::int
+LIMIT $13::int OFFSET $12::int
 `
 
 type ListContractsParams struct {
@@ -1310,6 +1312,7 @@ type ListContractsParams struct {
 	Keyword           string
 	CustomerAccessAll bool
 	CustomerAccessIds []int64
+	TeamReaderID      int64
 	RowOffset         int32
 	RowLimit          int32
 }
@@ -1351,6 +1354,7 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 		arg.Keyword,
 		arg.CustomerAccessAll,
 		arg.CustomerAccessIds,
+		arg.TeamReaderID,
 		arg.RowOffset,
 		arg.RowLimit,
 	)

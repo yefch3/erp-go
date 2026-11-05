@@ -88,6 +88,7 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	source := &d2OfferSource{inquiry: OfferInquiry{ID: "901", Number: "D2-INQUIRY", OwnerID: "1", Owner: "D2 Sales", State: "INQUIRING"}}
 	source.inquiry.Body.Delivery = "2026-10-01"
 	source.inquiry.Body.Customer = "Negotiated customer"
+	source.inquiry.Body.CustomerID = "7"
 	source.inquiry.Body.Remark = "original sales inquiry note"
 	source.inquiry.Body.Products = []OfferProduct{{ID: "p1", Product: "Steel", Quantity: "100", Unit: "MT"}}
 	svc := New(pool, Deps{Approvals: d2Approvals{}, Files: d2Files{}, OfferSource: source, Scopes: d2OfferScopes{}, Rates: d2OfferRates{}, Numbering: &d2OfferNumber{}})

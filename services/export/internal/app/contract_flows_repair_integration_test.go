@@ -34,7 +34,7 @@ func TestCategoryOfferContractLifecycle(t *testing.T) {
 	source.Body.CustomerID = "7"
 	source.Body.Customer = "Customer"
 	body.Delivery = "2026-12-01"
-	svc := New(pool, Deps{OfferSource: &d2OfferSource{inquiry: source}, Scopes: d2OfferScopes{}, Rates: d2OfferRates{}, Numbering: &d2OfferNumber{}, Customers: dueCustomerStub{}, Approvals: d2Approvals{}, Files: d2Files{}})
+	svc := New(pool, Deps{OfferSource: &d2OfferSource{inquiry: source}, Scopes: offerTeamScopes{}, Rates: d2OfferRates{}, Numbering: &d2OfferNumber{}, Customers: offerTeamCustomers{}, Approvals: d2Approvals{}, Files: d2Files{}})
 	call := func(cmd OfferCommand) (OfferView, error) {
 		raw, _ := json.Marshal(cmd)
 		out, e := svc.CustomerOffer(ctx, string(raw))
@@ -69,9 +69,59 @@ func TestCategoryOfferContractLifecycle(t *testing.T) {
 		t.Fatal("confirmation duplicated", err)
 	}
 	id := offerID(confirmed.ContractID)
+	for _, actor := range []int64{1, 3, 4} {
+		actorCtx := grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenant, EmployeeID: actor})
+		raw, err := svc.CustomerOffer(actorCtx, `{"action":"summaries"}`)
+		var result struct {
+			Summaries map[string]map[string]string `json:"summaries"`
+		}
+		if err != nil || json.Unmarshal([]byte(raw), &result) != nil {
+			t.Fatalf("quotation summaries: %s %v", raw, err)
+		}
+		if got := result.Summaries["991"]["status"]; (got == "CONFIRMED") != (actor != 4) {
+			t.Fatalf("actor %d quotation status scope: %q", actor, got)
+		}
+	}
 	v, err := svc.GetContract(ctx, tenant, id, 0)
 	if err != nil || v.Contract.SalesEmployeeID != 1 || v.Version.TotalAmount != "305.00" {
 		t.Fatal("owner or amount mismatch", v, err)
+	}
+	var createdBy int64
+	if err := pool.QueryRow(ctx, "SELECT created_by FROM contracts WHERE tenant_id=$1 AND id=$2", tenant, id).Scan(&createdBy); err != nil {
+		t.Fatal(err)
+	}
+	if createdBy != 3 {
+		t.Fatal("actual confirming manager was not recorded")
+	}
+	if _, err := svc.GetContractFor(ctx, tenant, id, 0, Operator{ID: 3}); err != nil {
+		t.Fatalf("manager cannot read generated contract: %v", err)
+	}
+	for _, actor := range []int64{3, 4} {
+		rows, total, err := svc.ListContracts(ctx, tenant, "", 0, "", 1, 20, Operator{ID: actor})
+		if err != nil || (total == 1 && len(rows) == 1 && rows[0].ID == id) != (actor == 3) || (actor == 4 && total != 0) {
+			t.Fatalf("actor %d contract list scope: total=%d rows=%v err=%v", actor, total, rows, err)
+		}
+	}
+	if err := svc.mustOwnContract(ctx, Operator{ID: 3}, v); err == nil {
+		t.Fatal("team quotation granted contract write access")
+	}
+	if _, err := svc.GetContractFor(ctx, tenant+1, id, 0, Operator{ID: 3}); err == nil {
+		t.Fatal("cross tenant read allowed")
+	}
+	if _, err := svc.GetContractFor(ctx, tenant, id, 0, Operator{ID: 4}); err == nil {
+		t.Fatal("unrelated manager read allowed")
+	}
+	request, _ := json.Marshal(OfferCommand{Action: "confirm", CaseID: "991", Revision: saved.Revision})
+	outsider := grpcx.WithOperator(context.Background(), grpcx.Operator{TenantID: tenant, EmployeeID: 4})
+	if _, err := svc.CustomerOffer(outsider, string(request)); err == nil {
+		t.Fatal("unrelated manager confirmed team quotation")
+	}
+	snapshot, err := svc.AcceptedContractOffer(ctx, tenant, id)
+	var accepted struct {
+		Transports []OfferTransport `json:"transports"`
+	}
+	if err != nil || json.Unmarshal([]byte(snapshot), &accepted) != nil || accepted.Transports == nil {
+		t.Fatalf("null transport read model: %s %v", snapshot, err)
 	}
 	// The handoff must use the accepted frozen supplier quote, even when the
 	// editable inquiry has since changed its source quote content.
