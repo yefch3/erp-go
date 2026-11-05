@@ -811,6 +811,7 @@ import ContractEntryDialog from '../components/ContractEntryDialog.vue'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
 import {contractItemPayload} from '../lib/contractItem'
+import {parseContractOfferSnapshot} from '../lib/contractOfferSnapshot'
 import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1373,7 +1374,7 @@ async function createDirect() {
     saving.value = false
   }
 }
-const acceptedOffer=computed(()=>{try{return JSON.parse(detail.value?.acceptedOfferJson||'null') as {contact:string;transports:{quoteId:string;title:string;currency:string;price:string;accepted:boolean;quantities:Record<string,string>}[];lines:{id:string;product:string;unit:string}[]}|null}catch{return null}})
+const acceptedOffer=computed(()=>parseContractOfferSnapshot(detail.value?.acceptedOfferJson))
 function allocatedProducts(quantities:Record<string,string>){return Object.entries(quantities||{}).map(([id,qty])=>{const line=acceptedOffer.value?.lines.find(l=>l.id===id);return `${line?.product||id}: ${qty} ${line?.unit||''}`}).join('；')}
 const myConfirmationTask=ref(''),myConfirmationOverride=ref(false),supplementOpen=ref(false),supplementForm=reactive({externalContractNo:'',due:''})
 async function loadMyConfirmation(id:string){

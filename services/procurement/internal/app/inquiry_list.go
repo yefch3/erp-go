@@ -201,11 +201,11 @@ func (s *Service) inquiryListCandidates(ctx context.Context, tenant int64, op Op
 		CASE WHEN $8 THEN `+inquiryQuoteCount("c", "PROCUREMENT")+` ELSE 0 END,
 		CASE WHEN $8 THEN `+inquiryQuoteCount("c", "LOGISTICS")+` ELSE 0 END
 		FROM sourcing_cases c
-		WHERE c.tenant_id=$1 AND ($6 OR c.customer_id=0 OR c.customer_id=ANY($7::bigint[])) AND c.status<>'CANCELLED' AND c.deleted_at IS NULL
+		WHERE c.tenant_id=$1 AND ($6 OR c.customer_id=0 OR c.customer_id=ANY($7::bigint[]) OR ($9 AND c.owner_id>0 AND c.owner_id<>$10)) AND c.status<>'CANCELLED' AND c.deleted_at IS NULL
 		AND ($5 OR (c.status<>'INTAKE_PENDING' AND c.handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR c.owner_id=ANY($3::bigint[]))
 		AND ($4='' OR c.case_no ILIKE '%'||$4||'%' OR c.display_inquiry_no ILIKE '%'||$4||'%' OR c.customer_name ILIKE '%'||$4||'%' OR c.inquiry_body::text ILIKE '%'||$4||'%')
 		ORDER BY c.updated_at DESC,c.id DESC`,
-		tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES", customerAll, customerIDs, countsQuotes)
+		tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES", customerAll, customerIDs, countsQuotes, in.View == "QUOTATIONS" && s.scopes != nil, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +258,16 @@ func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator
 		return items, err
 	}
 	if (view == "SALES" || view == "QUOTATIONS") && s.customers != nil {
-		if err = s.refreshInquiryCustomers(ctx, tenant, page, byID); err != nil {
+		customerPage := page
+		if view == "QUOTATIONS" && s.scopes != nil {
+			customerPage = nil
+			for _, id := range page {
+				if l := byID[id]; l != nil && inquiryID(l.view.OwnerID) == op.ID {
+					customerPage = append(customerPage, id)
+				}
+			}
+		}
+		if err = s.refreshInquiryCustomers(ctx, tenant, customerPage, byID); err != nil {
 			return nil, err
 		}
 	}

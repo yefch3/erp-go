@@ -16,7 +16,16 @@ func (s *Service) offerSummaries(ctx context.Context, op grpcx.Operator) (string
 	if err != nil {
 		return "", err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT case_id,CASE WHEN confirmed_at IS NULL THEN 'QUOTED' ELSE 'CONFIRMED' END,COALESCE(to_char(confirmed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'') FROM customer_offers WHERE tenant_id=$1 AND ($5 OR body->>'customerId'=ANY(SELECT unnest($6::bigint[])::text)) AND ($2 OR updated_by=$3 OR updated_by=ANY($4::bigint[]))`, op.TenantID, visible.All, op.EmployeeID, visible.EmployeeIDs, customerAll, customerIDs)
+	// Team visibility follows the responsible salesperson, not the last editor.
+	// Older snapshots without an owner retain their existing editor-based scope.
+	rows, err := s.pool.Query(ctx, `WITH offers AS (
+		SELECT *,COALESCE(NULLIF(source_snapshot->>'ownerId',''),updated_by::text) AS owner_id
+		FROM customer_offers WHERE tenant_id=$1
+	) SELECT case_id,CASE WHEN confirmed_at IS NULL THEN 'QUOTED' ELSE 'CONFIRMED' END,
+	COALESCE(to_char(confirmed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'')
+	FROM offers WHERE ($2 OR owner_id=$3::bigint::text OR owner_id=ANY(SELECT unnest($4::bigint[])::text))
+	AND ($5 OR body->>'customerId'=ANY(SELECT unnest($6::bigint[])::text)
+		OR ($7 AND owner_id<>$3::bigint::text))`, op.TenantID, visible.All, op.EmployeeID, visible.EmployeeIDs, customerAll, customerIDs, s.scopes != nil)
 	if err != nil {
 		return "", err
 	}
