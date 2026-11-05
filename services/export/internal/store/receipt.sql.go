@@ -768,6 +768,7 @@ WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = $1::bigint
   AND ($6::bool = false OR c.receivable_due_date IS NULL)
   AND ($7::text = ''
        OR c.contract_no ILIKE '%' || $7::text || '%'
+       OR c.external_contract_no ILIKE '%' || $7::text || '%'
        OR c.customer_name ILIKE '%' || $7::text || '%')
 ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
 LIMIT $9::int OFFSET $8::int

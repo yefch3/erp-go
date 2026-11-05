@@ -1293,7 +1293,8 @@ WHERE c.status <> 'DELETED' AND c.tenant_id = $1::bigint
        OR c.contract_no ILIKE '%' || $8::text || '%'
        OR c.external_contract_no ILIKE '%' || $8::text || '%'
        OR c.customer_name ILIKE '%' || $8::text || '%')
-  AND ($9::boolean OR c.customer_id=ANY($10::bigint[]))
+  AND ($9::boolean OR c.customer_id=ANY($10::bigint[])
+       OR c.id=ANY($4::bigint[]))
 ORDER BY c.id DESC
 LIMIT $12::int OFFSET $11::int
 `

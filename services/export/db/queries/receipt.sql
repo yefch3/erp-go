@@ -284,6 +284,7 @@ WHERE c.entry_source <> 'HISTORICAL_RECORD' AND c.tenant_id = sqlc.arg(tenant_id
   AND (sqlc.arg(unset_only)::bool = false OR c.receivable_due_date IS NULL)
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR c.external_contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;

@@ -479,7 +479,7 @@ basicsSaved: "Basic information saved",
     effectiveDate: 'Effective', owner: 'Owner',
     ofTotal: 'of {total}', unsetTag: 'No terms',
     overdueBy: '{n} days overdue', dueToday: 'Due today', dueIn: 'in {n} days',
-    empty: 'Nothing outstanding — all collected', emptyOverdue: 'Nothing overdue',
+    empty: 'No pending receivables match the current filters', emptyOverdue: 'Nothing overdue',
     remindersTitle: 'Receivable alerts', markAllRead: 'Mark all read', noReminders: 'No receivable alerts',
   },
   blReminders: {
