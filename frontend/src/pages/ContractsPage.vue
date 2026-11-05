@@ -29,9 +29,9 @@
             <el-button v-if="column.key==='contractNo'" link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button>
             <span v-else-if="column.key==='externalNo'">{{row.externalContractNo||'—'}}</span>
             <span v-else-if="column.key==='customer'">{{contractCustomerName(row)}}</span>
-            <template v-else-if="column.key==='amount'"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span></template>
+            <template v-else-if="column.key==='amount'"><span class="list-number">{{ formatListAmount(row.totalAmount) }}</span> <span class="list-currency">{{ row.currency }}</span><small v-if="isPendingContractChange(row)" class="list-version-note">{{t('contracts.changeAmountVersion',{version:row.versionNo})}}</small></template>
             <span v-else-if="column.key==='owner'">{{ row.salesEmployee || '—' }}</span>
-            <el-tag v-else-if="column.key==='status'" size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
+            <el-tag v-else-if="column.key==='status'" size="small" :type="statusType(row.status)">{{isPendingContractChange(row)?t('contracts.changeState',{status:contractStatusLabel(row.status)}):contractStatusLabel(row.status)}}</el-tag>
             <span v-else-if="column.key==='updatedAt'" class="list-time">{{ formatListTime(row.updatedAt) }}</span>
           </template>
         </el-table-column>
@@ -145,7 +145,7 @@
         <div class="detail-head">
           <div class="detail-statuses">
             <el-tag :type="statusType(detail.contract.status)">
-              {{ contractStatusLabel(detail.contract.status) }}
+              {{versionPresentation?.phase==='finance'?t('contracts.changeFinanceState'):versionPresentation?t('contracts.changeState',{status:contractStatusLabel(detail.contract.status)}):contractStatusLabel(detail.contract.status)}}
             </el-tag>
             <span v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="version-chip">
               v{{ detail.version.versionNo }} · {{ t(`contracts.versionStatuses.${detail.version.status}`) }}
@@ -192,6 +192,15 @@
           </div>
         </div>
 
+        <section v-if="versionPresentation" class="contract-change-summary" aria-label="合同变更版本">
+          <strong>{{t('contracts.sameContractChange',{contract:detail.contract.contractNo})}}</strong>
+          <div v-if="versionPresentation.phase==='pending'" class="contract-change-versions">
+            <span>{{t('contracts.originalSignedVersion',{version:versionPresentation.signed.versionNo})}} · {{versionPresentation.signed.totalAmount}} {{versionPresentation.signed.currency}}</span>
+            <span>{{t('contracts.pendingChangeVersion',{version:versionPresentation.latest.versionNo})}} · {{t(`contracts.versionStatuses.${versionPresentation.latest.status}`)}} · {{versionPresentation.latest.totalAmount}} {{versionPresentation.latest.currency}}</span>
+          </div>
+          <p>{{t(versionPresentation.phase==='pending'?'contracts.changeProcessHint':'contracts.changeFinanceHint')}}</p>
+          <small>{{t('contracts.viewingVersion',{version:detail.version.versionNo})}}</small>
+        </section>
         <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="contract-overview">
           <div class="overview-customer"><span>签约客户</span><strong>{{detail.version.buyerName}}</strong></div>
           <div><span>合同金额 · {{detail.version.currency}}</span><strong>{{detail.version.totalAmount}}</strong></div>
@@ -717,7 +726,7 @@
 
     <!-- Open a change version -->
     <el-dialog v-model="changeOpen" :title="t('contracts.change')" width="min(820px,94vw)">
-      <el-alert :title="t('contracts.changeHint')" type="warning" :closable="false" show-icon class="alert" />
+      <el-alert :title="t(detail?.contract.entrySource==='STANDARD'?'contracts.changeProcessHint':'contracts.changeHint')" type="warning" :closable="false" show-icon class="alert" />
       <el-form label-width="110px">
         <el-form-item :label="t('contracts.changeReason')" required>
           <el-input v-model="changeForm.reason" type="textarea" :rows="2" :placeholder="t('contracts.changeReasonHint')" />
@@ -812,6 +821,7 @@ import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
 import {contractItemPayload} from '../lib/contractItem'
 import {parseContractOfferSnapshot} from '../lib/contractOfferSnapshot'
+import {isPendingContractChange,contractVersionPresentation} from '../lib/contractVersionPresentation'
 import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1447,6 +1457,7 @@ const cancellable = computed(
     detail.value?.contract.currentVersionId === '0',
 )
 const isInForce = computed(() => detail.value?.contract.currentVersionId === detail.value?.version.id)
+const versionPresentation=computed(()=>detail.value?contractVersionPresentation(detail.value.contract,detail.value.versions):null)
 
 async function load() {
   loading.value = true
@@ -1967,6 +1978,10 @@ onUnmounted(stopListening)
 .cargo-summary{display:block;max-height:76px;overflow:auto;line-height:1.6}
 .detail-head{padding:16px 18px;border:1px solid var(--detail-border);border-radius:10px;background:#f3f8fa}
 .detail-statuses{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.contract-change-summary{margin:0 0 14px;padding:12px 16px;border:1px solid #e2c27c;border-radius:8px;background:#fffaf0;color:#685024}
+.contract-change-versions{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:8px;font-variant-numeric:tabular-nums}
+.contract-change-summary p{margin:8px 0;line-height:1.6}
+.contract-change-summary small,.list-version-note{display:block;color:#786441;font-size:12px;line-height:1.5}
 .detail-statuses .version-chip,.detail-statuses .in-force{margin-left:0}
 .detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .detail-actions :deep(.el-button+.el-button){margin-left:0}
