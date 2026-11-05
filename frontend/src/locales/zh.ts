@@ -479,7 +479,7 @@ basicsSaved: "基本资料已保存",
     dueEmpty: '留空表示还没定',
     dueSaved: '到期日已更新',
     overdueBy: '逾期 {n} 天', dueToday: '今天到期', dueIn: '还有 {n} 天',
-    empty: '没有待收的合同——钱都收齐了', emptyOverdue: '没有逾期的合同',
+    empty: '当前条件下没有待处理的应收合同', emptyOverdue: '没有逾期的合同',
     remindersTitle: '应收提醒', markAllRead: '全部已读', noReminders: '暂无应收提醒',
   },
   blReminders: {

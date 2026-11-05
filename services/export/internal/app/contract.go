@@ -623,14 +623,19 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 	}
 	// Either it is within the scope, or you were asked to approve it. Being
 	// handed a task on a document has to imply the right to read it.
-	if !allowedOwner(visible, view.Contract.SalesEmployeeID) &&
-		!contains(s.involvedIn(ctx, op, BizTypeContract), id) {
+	involved := contains(s.involvedIn(ctx, op, BizTypeContract), id)
+	if !allowedOwner(visible, view.Contract.SalesEmployeeID) && !involved {
 		// Deliberately "not found" rather than "forbidden": telling someone a
 		// contract exists but is none of their business is itself a leak.
 		return ContractView{}, apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
 	}
-	if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
-		return ContractView{}, err
+	// Approval involvement grants read access to this document's recorded
+	// customer snapshot, not to the customer master record or write operations.
+	// mustOwnContract still checks customer access independently on writes.
+	if !involved {
+		if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
+			return ContractView{}, err
+		}
 	}
 	return view, nil
 }

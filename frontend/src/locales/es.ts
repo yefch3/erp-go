@@ -479,7 +479,7 @@ basicsSaved: "Datos básicos guardados",
     effectiveDate: 'En vigor', owner: 'Responsable',
     ofTotal: 'de {total}', unsetTag: 'Sin plazo',
     overdueBy: '{n} días vencido', dueToday: 'Vence hoy', dueIn: 'en {n} días',
-    empty: 'Nada pendiente — todo cobrado', emptyOverdue: 'Nada vencido',
+    empty: 'No hay cuentas pendientes con los filtros actuales', emptyOverdue: 'Nada vencido',
     remindersTitle: 'Avisos de cobro', markAllRead: 'Marcar todo leído', noReminders: 'Sin avisos de cobro',
   },
   blReminders: {
