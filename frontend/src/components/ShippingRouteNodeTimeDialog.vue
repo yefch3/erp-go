@@ -98,7 +98,7 @@ function resetForm() {
   })
 }
 
-watch(open, value => { if (value) resetForm() })
+watch(open, value => { if (value) resetForm() }, { immediate: true })
 
 async function save() {
   saving.value = true
