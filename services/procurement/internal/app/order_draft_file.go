@@ -45,7 +45,7 @@ func (s *Service) UploadOrderDraftFile(ctx context.Context, tenantID, poID int64
 	if err != nil {
 		return OrderDraftFile{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
 	if err := tx.QueryRow(ctx, `SELECT status FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).Scan(&status); err == pgx.ErrNoRows {
 		return OrderDraftFile{}, apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
