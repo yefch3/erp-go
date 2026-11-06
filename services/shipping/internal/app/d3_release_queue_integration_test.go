@@ -52,3 +52,108 @@ func TestD3ReleasedContractStopsBeforeShippingSchedule(t *testing.T) {
 		t.Fatal("D3 task crossed the shipping-schedule fence")
 	}
 }
+
+func TestBatchSchedulesAndRetries(t *testing.T) {
+	if os.Getenv("SHIPPING_TEST_DSN") == "" {
+		t.Skip("SHIPPING_TEST_DSN required")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, os.Getenv("SHIPPING_TEST_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenant := time.Now().UnixNano()
+	defer func() {
+		cleanupShippingTenant(ctx, pool, tenant)
+		_, _ = pool.Exec(ctx, "DELETE FROM contract_shipping_handoffs WHERE tenant_id=$1", tenant)
+	}()
+	svc := New(pool)
+	var ids []int64
+	for _, batch := range []int{1, 2} {
+		var id int64
+		err = pool.QueryRow(ctx, `INSERT INTO contract_shipping_handoffs (tenant_id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,batch_no,currency,freight_amount,port_of_loading,port_of_discharge,status,final_forwarder_id,final_forwarder_name,final_currency,final_freight_amount) VALUES ($1,101,'AUDIT-TWO-BATCH',1001,1,1,'Audit customer',$2,'USD',100,'Shanghai','Los Angeles','PAYMENT_REQUESTED',1,'Audit forwarder','USD',100) RETURNING id`, tenant, batch).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	var scheduleIDs []int64
+	for i, id := range ids {
+		in := validInput()
+		in.ContractHandoffID = id
+		type result struct {
+			id  int64
+			err error
+		}
+		results := make(chan result, 4)
+		for range 4 {
+			go func() {
+				created, e := svc.CreateSchedule(ctx, tenant, in, Operator{ID: 1, Name: "Audit"}, false)
+				results <- result{id: created.ID, err: e}
+			}()
+		}
+		var firstID int64
+		for range 4 {
+			r := <-results
+			if r.err != nil {
+				t.Errorf("batch %d concurrent creation failed: %v", i+1, r.err)
+				continue
+			}
+			if firstID != 0 && firstID != r.id {
+				t.Errorf("batch %d created different schedules: %d and %d", i+1, firstID, r.id)
+			}
+			firstID = r.id
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+		again, e := svc.CreateSchedule(ctx, tenant, in, Operator{ID: 1, Name: "Audit"}, false)
+		if e != nil || again.ID != firstID {
+			t.Fatalf("retry batch %d: %v", i+1, e)
+		}
+		scheduleIDs = append(scheduleIDs, firstID)
+	}
+	if scheduleIDs[0] == scheduleIDs[1] {
+		t.Fatal("different batches share the same schedule")
+	}
+}
+
+func TestShippingVerificationRetryPreservesAuditAndSchedule(t *testing.T) {
+	dsn := os.Getenv("SHIPPING_TEST_DSN")
+	if dsn == "" {
+		t.Skip("SHIPPING_TEST_DSN required")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenant := time.Now().UnixNano()
+	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM contract_shipping_handoffs WHERE tenant_id=$1", tenant) }()
+	var id int64
+	err = pool.QueryRow(ctx, `INSERT INTO contract_shipping_handoffs (tenant_id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,batch_no,currency,freight_amount,port_of_loading,port_of_discharge,status,signed_contract_key) VALUES ($1,101,'AUDIT-RETRY',1001,1,1,'Audit customer',1,'USD',100,'Shanghai','Los Angeles','CONTRACT_UPLOADED','test.pdf') RETURNING id`, tenant).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool)
+	first, err := svc.VerifyShippingContract(ctx, tenant, id, Operator{ID: 1, Name: "First verifier"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := svc.VerifyShippingContract(ctx, tenant, id, Operator{ID: 2, Name: "Retry verifier"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ContractVerifiedAt != again.ContractVerifiedAt || again.ContractVerifiedByName != "First verifier" {
+		t.Fatal("retry overwrote audit")
+	}
+	if _, err = pool.Exec(ctx, "UPDATE contract_shipping_handoffs SET status='SCHEDULED' WHERE tenant_id=$1 AND id=$2", tenant, id); err != nil {
+		t.Fatal(err)
+	}
+	again, err = svc.VerifyShippingContract(ctx, tenant, id, Operator{ID: 2})
+	if err != nil || again.Status != "SCHEDULED" {
+		t.Fatal("retry changed scheduled status", err)
+	}
+}

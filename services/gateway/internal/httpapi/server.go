@@ -1249,6 +1249,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		codes.FailedPrecondition: http.StatusConflict,
 		codes.PermissionDenied:   http.StatusForbidden,
 		codes.Unauthenticated:    http.StatusUnauthorized,
+		codes.Unavailable:        http.StatusServiceUnavailable,
 		// "later", not "no". Without this a service saying somebody has run
 		// out of attempts reaches the browser as a 500, and the page shows an
 		// internal error instead of the wait it was told to report.
@@ -1261,6 +1262,11 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	if bizCode == "" {
 		bizCode = "INTERNAL"
 	}
+	message := st.Message()
+	if st.Code() == codes.Unavailable {
+		bizCode = "SERVICE_UNAVAILABLE"
+		message = "服务暂时不可用，请在服务恢复后重试"
+	}
 	// Internal gRPC failures used to vanish after being translated into a
 	// generic HTTP 500, leaving the browser with only Axios' "Request failed"
 	// text and the service logs completely clean. Business refusals are normal
@@ -1270,7 +1276,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	// 记成 ERROR 就等于每次部署都点着 erp-gateway-errors（2026-09-15 实测：
 	// 一次部署，网关和采购同时报警，日志里是 "the client connection is
 	// closing"）。记 WARN：查得到，不告警。
-	if httpCode == http.StatusInternalServerError && s.Log != nil {
+	if httpCode >= http.StatusInternalServerError && s.Log != nil {
 		level := slog.LevelError
 		if st.Code() == codes.Canceled || strings.Contains(st.Message(), "the client connection is closing") {
 			level = slog.LevelWarn
@@ -1278,7 +1284,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		s.Log.Log(context.Background(), level, "upstream gRPC request failed",
 			"grpc_code", st.Code().String(), "business_code", bizCode, "err", st.Message())
 	}
-	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
+	s.writeErrorMeta(w, httpCode, bizCode, message, apierr.MetaFromStatus(err))
 }
 
 // decodeBody parses a JSON request body directly into the gRPC request
