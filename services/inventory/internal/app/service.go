@@ -44,10 +44,11 @@ type Catalog interface {
 }
 
 type Service struct {
-	pool      *pgxpool.Pool
-	q         *store.Queries
-	numbering Numbering
-	catalog   Catalog
+	pool            *pgxpool.Pool
+	q               *store.Queries
+	numbering       Numbering
+	catalog         Catalog
+	deliveryQuality DeliveryQualityGuard
 }
 
 func New(pool *pgxpool.Pool, numbering Numbering, catalogs ...Catalog) *Service {

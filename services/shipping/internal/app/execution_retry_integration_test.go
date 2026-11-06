@@ -29,6 +29,7 @@ func TestExecutionRetriesPreserveTimesAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	attachPassedDeliveryFixture(t, ctx, svc, pool, tenant, schedule.ID)
 	detail, err := svc.GetScheduleDetails(ctx, tenant, schedule.ID)
 	if err != nil {
 		t.Fatal(err)

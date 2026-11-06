@@ -133,6 +133,8 @@ func run(log *slog.Logger) error {
 		Seller:      app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
 	})
 
+	svc.UseDeliveryQualityGuard(grpcout.NewDeliveryQuality(prConn))
+
 	// Outbound: committed outbox rows become Kafka messages. Business code
 	// never touches the producer.
 	producer := kafkax.NewProducer(cfg.KafkaBrokers)

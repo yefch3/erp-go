@@ -582,6 +582,7 @@ import { del, download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
+import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
@@ -960,7 +961,7 @@ function moreActions(row: Order): { key: string; label: string }[] {
 	}
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
-  add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
+  add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
@@ -1364,8 +1365,8 @@ async function previewDraftFile(file:OrderDraftFile){
   }finally{previewingDraftFileId.value=''}
 }
 async function deleteDraftFile(file:OrderDraftFile){if(!detail.value)return;await ElMessageBox.confirm(`删除资料“${file.fileName}”？`,'删除资料',{type:'warning'});await del(`/purchase-orders/${detail.value.id}/draft-files/${file.id}`);detailDraftFiles.value=detailDraftFiles.value.filter(item=>item.id!==file.id);ElMessage.success('采购资料已删除')}
-function qualityOverallLabel(task:QualityDetail){if(task.lines.every(l=>l.finalResult==='PASS'))return '合格';if(task.lines.some(l=>l.finalResult==='FAIL'))return '不合格';return '部分合格'}
-function qualityResultType(task:QualityDetail){return task.lines.every(l=>l.finalResult==='PASS')?'success':task.lines.some(l=>l.finalResult==='FAIL')?'danger':'warning'}
+function qualityOverallLabel(task:QualityDetail){if(task.status!=='COMPLETED')return t(`quality.statuses.${task.status}`);if(hasPassedDeliveryInspection([task]))return t('quality.results.PASS');if(task.lines.some(l=>l.finalResult==='FAIL'))return t('quality.results.FAIL');return t('quality.results.PARTIAL')}
+function qualityResultType(task:QualityDetail){return hasPassedDeliveryInspection([task])?'success':task.lines.some(l=>l.finalResult==='FAIL')?'danger':'warning'}
 function qualityActionLabel(v:string){return ({REWORK:'返工',REPLACEMENT:'换货',CANCEL_SHORTAGE:'取消缺少数量'} as Record<string,string>)[v]||v}
 async function saveQualityHandling(task:QualityDetail){const action=qualityAction[task.id],note=(qualityNote[task.id]||'').trim();if(!action||!note){ElMessage.warning('请选择处理方式并填写处理结果');return}saving.value=true;try{await post(`/purchase-orders/${detail.value?.id}/quality-inspections/handling`,{task_id:Number(task.id),action,result_note:note});ElMessage.success('采购处理结果已保存');if(detail.value)await openDetail(detail.value)}finally{saving.value=false}}
 
@@ -1581,6 +1582,11 @@ function outstandingOf(item: OrderItem): number {
 }
 
 async function openReceive(row: Order) {
+  const q = await get<{ tasks: QualityDetail[] }>(`/purchase-orders/${row.id}/quality-inspections`)
+  if (!hasPassedDeliveryInspection(q.tasks ?? [])) {
+    ElMessage.warning(t('quality.deliveryRequired'))
+    return
+  }
   receiving.value = row
   const d = await get<{ items: OrderItem[] }>(`/purchase-orders/${row.id}`)
   receiveItems.value = d.items ?? []

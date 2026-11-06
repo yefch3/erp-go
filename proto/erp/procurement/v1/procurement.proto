@@ -796,6 +796,9 @@ service PurchaseOrderService {
   rpc SetBankTransactionClaim(SetBankTransactionClaimRequest) returns (SetBankTransactionClaimResponse);
   // Correct identifying information on a finance-only opening record.
   rpc UpdateManualPayable(UpdateManualPayableRequest) returns (UpdateManualPayableResponse);
+  // Read-only delivery gate for inventory and shipping. Missing inspection
+  // evidence fails closed; this never grants access to purchase prices.
+  rpc CheckDeliveryQuality(CheckDeliveryQualityRequest) returns (CheckDeliveryQualityResponse);
 }
 
 
@@ -3181,3 +3184,20 @@ message HistoricalOrderLine {
  string unit_price = 6;
 }
 message SaveHistoricalOrderResponse { int64 id = 1; string po_no = 2; string status = 3; }
+
+message DeliveryQualityContractLine {
+  int64 contract_item_id = 1;
+  // Cumulative quantity whose shipment must be covered by passed inspections.
+  string qty = 2;
+}
+message CheckDeliveryQualityRequest {
+  repeated int64 po_ids = 1;
+  int64 contract_id = 2;
+  repeated int64 contract_item_ids = 3;
+  repeated DeliveryQualityContractLine lines = 4;
+}
+message CheckDeliveryQualityResponse {
+  bool allowed = 1;
+  string reason = 2;
+  string code = 3;
+}

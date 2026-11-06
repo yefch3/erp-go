@@ -62,8 +62,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer productConn.Close()
+	procurementConn, err := grpc.NewClient(cfg.ProcurementAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+	if err != nil {
+		return err
+	}
+	defer procurementConn.Close()
 
 	svc := app.New(pool, grpcout.NewNumbering(mdConn), grpcout.NewCatalog(productConn))
+	svc.UseDeliveryQualityGuard(grpcout.NewDeliveryQuality(procurementConn))
 
 	// Outbound: allocation results become StockAllocated messages, which is
 	// what procurement acts on. Business code never touches the producer.

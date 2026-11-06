@@ -317,6 +317,9 @@ func (s *Service) ConfirmOutbound(ctx context.Context, tenantID, outboundID int6
 			return apierr.Invalid("IV_OUTBOUND_NOT_DRAFT", "只有待出库的单据可以确认出库").
 				WithMeta("status", head.Status)
 		}
+		if err := s.checkOutboundQuality(ctx, tx, tenantID, head.ID); err != nil {
+			return err
+		}
 
 		items, err := q.OutboundItemsOf(ctx, store.OutboundItemsOfParams{
 			TenantID: tenantID, OutboundID: head.ID,

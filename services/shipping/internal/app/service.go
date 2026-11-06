@@ -35,7 +35,8 @@ type ApprovalSubmission struct {
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
-	contractGuard ContractGuard
+	contractGuard   ContractGuard
+	deliveryQuality DeliveryQualityGuard
 	// 按角色找人（E2 提单提醒的收件人来源）。
 	directory        Directory
 	db               databasePinger
@@ -636,6 +637,19 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		}
 		if !transitions[current.Status][next] {
 			return apierr.Conflict("SHIPPING_STATUS_TRANSITION_INVALID", fmt.Sprintf("不能从 %s 直接变更为 %s", current.Status, next))
+		}
+		firstDispatch := next == "SAILED"
+		if next == "IN_TRANSIT" || next == "ARRIVED" {
+			dispatched, err := recordedDispatch(ctx, tx, current)
+			if err != nil {
+				return err
+			}
+			firstDispatch = !dispatched
+		}
+		if firstDispatch {
+			if err := s.checkDeliveryQuality(ctx, tx, current); err != nil {
+				return err
+			}
 		}
 		out, err = q.UpdateScheduleStatus(ctx, store.UpdateScheduleStatusParams{TenantID: tenantID, ID: id, Status: next, UpdatedBy: op.ID, UpdatedByName: op.Name})
 		if err != nil {

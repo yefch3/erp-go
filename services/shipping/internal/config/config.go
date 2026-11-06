@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	ExportAddr            string
+	ProcurementAddr       string
 	DSN                   string
 	GRPCPort              string
 	IAMAddr               string
@@ -36,6 +37,7 @@ func Load() Config {
 		DSN:                   env("DB_DSN", "postgres://erp_shipping:erp_shipping_pw@localhost:5433/erp_shipping?sslmode=disable"),
 		GRPCPort:              env("GRPC_PORT", "9009"),
 		ExportAddr:            env("EXPORT_ADDR", "localhost:9006"),
+		ProcurementAddr:       env("PROCUREMENT_ADDR", "localhost:9007"),
 		IAMAddr:               env("IAM_ADDR", "localhost:9001"),
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
 		MinioEndpoint:         env("MINIO_ENDPOINT", "localhost:19000"),

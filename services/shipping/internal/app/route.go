@@ -349,6 +349,11 @@ func (s *Service) RemoveRouteNode(ctx context.Context, tenantID, id, nodeID int6
 			return err
 		}
 		currentNodeID, progress, status := deriveProgress(nodes)
+		if current.Status != "DELAYED" && current.Status != status {
+			if err = s.checkDerivedDeliveryQuality(ctx, tx, current, status); err != nil {
+				return err
+			}
+		}
 		if _, err = q.UpdateScheduleProgress(ctx, store.UpdateScheduleProgressParams{TenantID: tenantID, ID: id, CurrentRouteNodeID: &currentNodeID, CurrentProgress: progress, UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
 			return err
 		}
@@ -465,6 +470,23 @@ func deriveProgress(nodes []store.ShippingRouteNode) (int64, string, string) {
 	if len(nodes) == 0 {
 		return 0, "", "PLANNED"
 	}
+	// Reaching the loading port and skipping planned calls do not dispatch
+	// cargo. Keep their visible position without turning an ETA correction or
+	// route removal into evidence that the goods have already sailed.
+	dispatched := false
+	for _, n := range nodes {
+		if n.NodeType == "ORIGIN" {
+			dispatched = dispatched || n.NodeStatus == "DEPARTED" || n.ActualDepartureAt.Valid
+		} else {
+			dispatched = dispatched || n.NodeStatus == "APPROACHING" || n.NodeStatus == "ARRIVED" || n.NodeStatus == "DEPARTED" || n.ActualArrivalAt.Valid || n.ActualDepartureAt.Valid
+		}
+	}
+	movementStatus := func(status string) string {
+		if !dispatched {
+			return "PLANNED"
+		}
+		return status
+	}
 	for i := len(nodes) - 1; i >= 0; i-- {
 		n := nodes[i]
 		switch n.NodeStatus {
@@ -473,9 +495,9 @@ func deriveProgress(nodes []store.ShippingRouteNode) (int64, string, string) {
 			if n.NodeType == "DESTINATION" {
 				status = "ARRIVED"
 			}
-			return n.ID, "已抵达 " + n.PortName, status
+			return n.ID, "已抵达 " + n.PortName, movementStatus(status)
 		case "APPROACHING":
-			return n.ID, "驶往 " + n.PortName, "IN_TRANSIT"
+			return n.ID, "驶往 " + n.PortName, movementStatus("IN_TRANSIT")
 		case "DEPARTED", "SKIPPED":
 			if i+1 < len(nodes) {
 				next := nodes[i+1]
@@ -483,9 +505,9 @@ func deriveProgress(nodes []store.ShippingRouteNode) (int64, string, string) {
 				if n.NodeType == "ORIGIN" {
 					status = "SAILED"
 				}
-				return next.ID, "驶往 " + next.PortName, status
+				return next.ID, "驶往 " + next.PortName, movementStatus(status)
 			}
-			return n.ID, "已离开 " + n.PortName, "IN_TRANSIT"
+			return n.ID, "已离开 " + n.PortName, movementStatus("IN_TRANSIT")
 		}
 	}
 	return nodes[0].ID, "等待离开 " + nodes[0].PortName, "PLANNED"
@@ -495,7 +517,7 @@ func deriveProgress(nodes []store.ShippingRouteNode) (int64, string, string) {
 // ETA/ETD values are intentionally untouched. Every changed field is appended
 // to the schedule history, and terminal changes are synchronized to the
 // schedule summary and its ETA reminder lifecycle.
-func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current store.ShippingSchedule, node store.ShippingRouteNode, in ProgressInput, op Operator, financeRecipients []int64) (store.ShippingSchedule, error) {
+func (s *Service) updateNodeTimes(ctx context.Context, tx pgx.Tx, q *store.Queries, current store.ShippingSchedule, node store.ShippingRouteNode, in ProgressInput, op Operator, financeRecipients []int64) (store.ShippingSchedule, error) {
 	latestETA, err := parseTimestamp(in.LatestETAAt, "预计到港时间")
 	if err != nil {
 		return store.ShippingSchedule{}, err
@@ -541,6 +563,19 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 	}
 	if !changed {
 		return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_NODE_TIMES_UNCHANGED", "港口时间没有变化")
+	}
+	actualMovement := node.NodeType == "ORIGIN" && actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture)
+	if node.NodeType != "ORIGIN" && ((actualArrival.Valid && !sameTimestamp(node.ActualArrivalAt, actualArrival)) || (actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture))) {
+		dispatched, err := recordedDispatch(ctx, tx, current)
+		if err != nil {
+			return store.ShippingSchedule{}, err
+		}
+		actualMovement = !dispatched
+	}
+	if actualMovement {
+		if err := s.checkDeliveryQuality(ctx, tx, current); err != nil {
+			return store.ShippingSchedule{}, err
+		}
 	}
 
 	routeNodes, err := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: current.TenantID, ScheduleID: current.ID})
@@ -647,6 +682,11 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 		return store.ShippingSchedule{}, err
 	}
 	currentNodeID, progress, status := deriveProgress(nodes)
+	if !actualMovement && current.Status != status {
+		if err = s.checkDerivedDeliveryQuality(ctx, tx, current, status); err != nil {
+			return store.ShippingSchedule{}, err
+		}
+	}
 	out, err = q.UpdateScheduleProgress(ctx, store.UpdateScheduleProgressParams{TenantID: current.TenantID, ID: current.ID, CurrentRouteNodeID: &currentNodeID, CurrentProgress: progress, UpdatedBy: op.ID, UpdatedByName: op.Name})
 	if err != nil {
 		return store.ShippingSchedule{}, err
@@ -723,6 +763,17 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 		progress := ""
 		switch in.Action {
 		case "APPROACH":
+			if node.NodeType != "ORIGIN" {
+				dispatched, err := recordedDispatch(ctx, tx, current)
+				if err != nil {
+					return err
+				}
+				if !dispatched {
+					if err := s.checkDeliveryQuality(ctx, tx, current); err != nil {
+						return err
+					}
+				}
+			}
 			if err = q.ResetOtherApproachingRouteNodes(ctx, store.ResetOtherApproachingRouteNodesParams{TenantID: tenantID, ScheduleID: id, ID: node.ID}); err != nil {
 				return err
 			}
@@ -740,6 +791,19 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			if previous.Valid && (!actual.Valid || sameTimestamp(previous, actual)) {
 				out = current
 				return nil
+			}
+			firstDispatch := in.Action == "DEPART" && node.NodeType == "ORIGIN"
+			if node.NodeType != "ORIGIN" {
+				dispatched, err := recordedDispatch(ctx, tx, current)
+				if err != nil {
+					return err
+				}
+				firstDispatch = !dispatched
+			}
+			if firstDispatch {
+				if err := s.checkDeliveryQuality(ctx, tx, current); err != nil {
+					return err
+				}
 			}
 			if !actual.Valid {
 				actual = pgtype.Timestamptz{Time: time.Now(), Valid: true}
@@ -845,7 +909,7 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			}
 			progress = current.CurrentProgress
 		case "UPDATE_TIMES":
-			out, err = s.updateNodeTimes(ctx, q, current, node, in, op, financeRecipients)
+			out, err = s.updateNodeTimes(ctx, tx, q, current, node, in, op, financeRecipients)
 			progress = current.CurrentProgress
 		default:
 			return apierr.Invalid("SHIPPING_PROGRESS_ACTION_INVALID", "进度动作无效")
