@@ -407,6 +407,34 @@ func (s *Service) SaveProductionMilestone(ctx context.Context, tenantID, poID in
 	attachments, _ := json.Marshal(milestone.Attachments)
 	var id int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		if milestone.Node == "SENT_TO_PORT" {
+			// An actual sent-to-port date is a delivery action, whereas the
+			// planned date can be maintained before inspection. Serialize this
+			// node on the PO so concurrent first writes cannot bypass the gate.
+			var status string
+			if err := tx.QueryRow(ctx, `SELECT status FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).Scan(&status); err != nil {
+				return err
+			}
+			if status != poOrdered && status != poPartial && status != poReceived {
+				return apierr.Conflict("PO_PRODUCTION_NOT_ORDERED", "只有已下单采购单可以维护生产进度")
+			}
+			var previousActual string
+			err := tx.QueryRow(ctx, `SELECT coalesce(actual_date::text,'') FROM purchase_production_milestones WHERE tenant_id=$1 AND po_id=$2 AND node='SENT_TO_PORT' FOR UPDATE`, tenantID, poID).Scan(&previousActual)
+			if err != nil && err != pgx.ErrNoRows {
+				return err
+			}
+			// Re-saving an already recorded fact may update notes or plans; it
+			// does not create a second delivery or rewrite its actual date.
+			if milestone.ActualDate != "" && milestone.ActualDate != previousActual {
+				quality, err := checkOrderDeliveryQuality(ctx, tx, tenantID, poID)
+				if err != nil {
+					return err
+				}
+				if !quality.Allowed {
+					return apierr.Conflict(quality.Code, quality.Reason)
+				}
+			}
+		}
 		if err := tx.QueryRow(ctx, `INSERT INTO purchase_production_milestones (tenant_id,po_id,node,planned_date,actual_date,owner_id,owner_name,remark,attachments,updated_by_id,updated_by_name) VALUES ($1,$2,$3,nullif($4,'')::date,nullif($5,'')::date,$6,$7,$8,$9,$10,$11) ON CONFLICT (tenant_id,po_id,node) DO UPDATE SET planned_date=EXCLUDED.planned_date,actual_date=EXCLUDED.actual_date,owner_id=EXCLUDED.owner_id,owner_name=EXCLUDED.owner_name,remark=EXCLUDED.remark,attachments=EXCLUDED.attachments,updated_by_id=EXCLUDED.updated_by_id,updated_by_name=EXCLUDED.updated_by_name,updated_at=now() RETURNING id`, tenantID, poID, milestone.Node, milestone.PlannedDate, milestone.ActualDate, milestone.OwnerID, milestone.OwnerName, strings.TrimSpace(milestone.Remark), attachments, op.ID, op.Name).Scan(&id); err != nil {
 			return err
 		}

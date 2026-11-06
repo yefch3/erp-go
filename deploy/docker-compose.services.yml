@@ -206,6 +206,7 @@ services:
       GRPC_PORT: "9008"
       MASTERDATA_ADDR: masterdata:9002
       PRODUCT_ADDR: product:9004
+      PROCUREMENT_ADDR: procurement:9007
       KAFKA_BROKERS: kafka:9092
       CONTRACT_TOPIC: erp.export.contract.v1
       STOCK_TOPIC: erp.inventory.stock.v1
@@ -277,6 +278,7 @@ services:
       CONTRACT_CONSUMER_GROUP: shipping.contract.v1
       GRPC_PORT: "9009"
       EXPORT_ADDR: export:9006
+      PROCUREMENT_ADDR: procurement:9007
       IAM_ADDR: iam:9001
       MASTERDATA_ADDR: masterdata:9002
       # Empty REDIS_ADDR silently disables the arrival-reminder live push

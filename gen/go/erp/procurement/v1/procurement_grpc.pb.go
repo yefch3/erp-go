@@ -3181,6 +3181,7 @@ const (
 	PurchaseOrderService_CreateBankAccount_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
 	PurchaseOrderService_SetBankTransactionClaim_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
 	PurchaseOrderService_UpdateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
+	PurchaseOrderService_CheckDeliveryQuality_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CheckDeliveryQuality"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -3368,6 +3369,9 @@ type PurchaseOrderServiceClient interface {
 	SetBankTransactionClaim(ctx context.Context, in *SetBankTransactionClaimRequest, opts ...grpc.CallOption) (*SetBankTransactionClaimResponse, error)
 	// Correct identifying information on a finance-only opening record.
 	UpdateManualPayable(ctx context.Context, in *UpdateManualPayableRequest, opts ...grpc.CallOption) (*UpdateManualPayableResponse, error)
+	// Read-only delivery gate for inventory and shipping. Missing inspection
+	// evidence fails closed; this never grants access to purchase prices.
+	CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -4398,6 +4402,16 @@ func (c *purchaseOrderServiceClient) UpdateManualPayable(ctx context.Context, in
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckDeliveryQualityResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CheckDeliveryQuality_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -4583,6 +4597,9 @@ type PurchaseOrderServiceServer interface {
 	SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error)
 	// Correct identifying information on a finance-only opening record.
 	UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error)
+	// Read-only delivery gate for inventory and shipping. Missing inspection
+	// evidence fails closed; this never grants access to purchase prices.
+	CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -4898,6 +4915,9 @@ func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionClaim(context.C
 }
 func (UnimplementedPurchaseOrderServiceServer) UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateManualPayable not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckDeliveryQuality not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -6756,6 +6776,24 @@ func _PurchaseOrderService_UpdateManualPayable_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CheckDeliveryQuality_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckDeliveryQualityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CheckDeliveryQuality(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CheckDeliveryQuality_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CheckDeliveryQuality(ctx, req.(*CheckDeliveryQualityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -7170,6 +7208,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateManualPayable",
 			Handler:    _PurchaseOrderService_UpdateManualPayable_Handler,
+		},
+		{
+			MethodName: "CheckDeliveryQuality",
+			Handler:    _PurchaseOrderService_CheckDeliveryQuality_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

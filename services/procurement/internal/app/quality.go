@@ -139,7 +139,7 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	if businessType != "PROCUREMENT" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_TYPE_INVALID", "仅采购订单可以申请工厂出货前质检")
 	}
-	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" {
+	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" && status != "RECEIVED" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_NOT_ORDERED", "采购单尚未进入已下单状态，不能申请质检")
 	}
 	// A purchase order has one whole-order inspection task. Locking the order

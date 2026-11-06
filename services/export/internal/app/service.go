@@ -185,22 +185,23 @@ type Deps struct {
 }
 
 type Service struct {
-	offerSource OfferSource
-	pool        *pgxpool.Pool
-	q           *store.Queries
-	customers   Customers
-	products    Products
-	rates       Rates
-	number      Numbering
-	approvals   Approvals
-	files       Files
-	scopes      Scopes
-	live        *livefeed.Publisher
-	involved    Involvement
-	directory   Directory
-	seller      Seller
-	bank        BankLedger
-	log         *slog.Logger
+	deliveryQuality DeliveryQualityGuard
+	offerSource     OfferSource
+	pool            *pgxpool.Pool
+	q               *store.Queries
+	customers       Customers
+	products        Products
+	rates           Rates
+	number          Numbering
+	approvals       Approvals
+	files           Files
+	scopes          Scopes
+	live            *livefeed.Publisher
+	involved        Involvement
+	directory       Directory
+	seller          Seller
+	bank            BankLedger
+	log             *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {

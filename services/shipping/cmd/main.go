@@ -91,8 +91,14 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer exportConn.Close()
+	procurementConn, err := dial(cfg.ProcurementAddr)
+	if err != nil {
+		return err
+	}
+	defer procurementConn.Close()
 	svc := app.New(pool, grpcout.NewFiles(files))
 	svc.UseContractGuard(grpcout.NewContractGuard(exportConn))
+	svc.UseDeliveryQualityGuard(grpcout.NewDeliveryQuality(procurementConn))
 	svc.UseAccessControl(grpcout.NewScopes(iamConn), grpcout.NewCustomerAccess(masterdataConn))
 	svc.UseDirectory(grpcout.NewDirectory(iamConn))
 	svc.UseApprovals(grpcout.NewApprovals(approvalConn))

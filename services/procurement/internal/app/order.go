@@ -1016,6 +1016,13 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 			return apierr.Conflict("PO_NOT_RECEIVABLE", "只有已下单的采购单可以收货").
 				WithMeta("status", head.Status)
 		}
+		quality, err := checkOrderDeliveryQuality(ctx, tx, tenantID, poID)
+		if err != nil {
+			return err
+		}
+		if !quality.Allowed {
+			return apierr.Conflict(quality.Code, quality.Reason)
+		}
 		items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
 			TenantID: tenantID, PoID: poID,
 		})
