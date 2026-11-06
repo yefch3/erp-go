@@ -44,8 +44,8 @@ func TestBLReminderSweep(t *testing.T) {
 		etd := time.Now().UTC().AddDate(0, 0, -departedDaysAgo).Format("2006-01-02")
 		if err := pool.QueryRow(ctx, `INSERT INTO shipping_schedules
 			(tenant_id, schedule_no, vessel_name, voyage_no, port_of_loading, port_of_discharge,
-			 etd, eta, original_eta, responsible_employee_id, responsible_name, status, created_by, updated_by)
-			VALUES ($1,$2,'MV TEST','V001','宁波','Valparaiso',$3::date,$3::date + 30,$3::date + 30,$4,'船务',$5,1,1)
+			 etd, atd, eta, original_eta, responsible_employee_id, responsible_name, status, created_by, updated_by)
+			VALUES ($1,$2,'MV TEST','V001','宁波','Valparaiso',$3::date,$3::date,$3::date + 30,$3::date + 30,$4,'船务',$5,1,1)
 			RETURNING id`, tenantID, no, etd, owner, status).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
@@ -58,6 +58,15 @@ func TestBLReminderSweep(t *testing.T) {
 	done := mk("SC-BL-DONE", 10, "IN_TRANSIT")   // 已有正本——不催
 	mk("SC-BL-ARRIVED", 10, "ARRIVED")           // 已到港——不催
 	draft := mk("SC-BL-DRAFT", 10, "IN_TRANSIT") // 只有草稿——仍该催
+	missingActual := mk("SC-BL-NO-ACTUAL", 10, "IN_TRANSIT")
+	planned := mk("SC-BL-PLANNED", 10, "PLANNED")
+	recentActual := mk("SC-BL-ACTUAL-RECENT", 20, "SAILED")
+	if _, err := pool.Exec(ctx, `UPDATE shipping_schedules SET atd=NULL WHERE tenant_id=$1 AND id IN ($2,$3)`, tenantID, missingActual, planned); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE shipping_schedules SET atd=current_date-1 WHERE tenant_id=$1 AND id=$2`, tenantID, recentActual); err != nil {
+		t.Fatal(err)
+	}
 
 	addDoc := func(scheduleID int64, category string) {
 		if _, err := pool.Exec(ctx, `INSERT INTO shipping_documents
@@ -97,7 +106,7 @@ func TestBLReminderSweep(t *testing.T) {
 	}
 	rows.Close()
 
-	for _, no := range []string{"SC-BL-FRESH", "SC-BL-DONE", "SC-BL-ARRIVED"} {
+	for _, no := range []string{"SC-BL-FRESH", "SC-BL-DONE", "SC-BL-ARRIVED", "SC-BL-NO-ACTUAL", "SC-BL-PLANNED", "SC-BL-ACTUAL-RECENT"} {
 		for _, rcpt := range []int64{81, 82, owner} {
 			if _, ok := got[key{no, rcpt}]; ok {
 				t.Fatalf("%s 不该催：开船未满三天 / 已有正本 / 已到港", no)
@@ -197,8 +206,8 @@ func TestBLReminderAsksEachCompanyForItsOwnLogisticsTeam(t *testing.T) {
 		etd := time.Now().AddDate(0, 0, -5).Format("2006-01-02")
 		if _, err := pool.Exec(ctx, `INSERT INTO shipping_schedules
 			(tenant_id, schedule_no, vessel_name, voyage_no, port_of_loading, port_of_discharge,
-			 etd, eta, original_eta, responsible_employee_id, responsible_name, status, created_by, updated_by)
-			VALUES ($1,$2,'MV TEST','V1','宁波','Valparaiso',$3::date,$3::date + 30,$3::date + 30,71,'船务','IN_TRANSIT',1,1)`,
+			 etd, atd, eta, original_eta, responsible_employee_id, responsible_name, status, created_by, updated_by)
+			VALUES ($1,$2,'MV TEST','V1','宁波','Valparaiso',$3::date,$3::date,$3::date + 30,$3::date + 30,71,'船务','IN_TRANSIT',1,1)`,
 			tid, "SC-T-"+time.Now().Format("150405.000000")+"-"+itoaTest(tid%97), etd); err != nil {
 			t.Fatal(err)
 		}

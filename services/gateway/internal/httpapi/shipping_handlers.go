@@ -39,22 +39,30 @@ func (s *Server) resolveActivePort(r *http.Request, id int64) (*mdv1.Port, error
 }
 
 // resolveShippingMasterdata 以主数据 ID 为准，并把当时名称、代码和时区保存为历史快照。
-func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput, requirePorts bool) error {
+func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput, requirePorts bool, previous ...*shippingv1.Schedule) error {
 	if in == nil {
 		return nil
 	}
 	// 从已委托合同建立船期时，客户和承运方由 shipping 服务在事务内读取
 	// 委托记录并覆盖请求值。历史合同保存的是业务快照，即使对应主数据后来
 	// 停用或迁移，也不能阻断履约；这里仅校验本次重新选择的港口。
-	fromHandoff := in.GetContractHandoffId() > 0
-	if !fromHandoff && in.GetCustomerId() > 0 {
+	var current *shippingv1.Schedule
+	if len(previous) > 0 {
+		current = previous[0]
+	}
+	fromHandoff := current == nil && in.GetContractHandoffId() > 0
+	if current != nil && in.GetCustomerId() == current.GetCustomerId() {
+		in.CustomerName = current.GetCustomerName()
+	} else if !fromHandoff && in.GetCustomerId() > 0 {
 		customer, err := s.resolveActiveCustomer(r.Context(), in.GetCustomerId())
 		if err != nil {
 			return err
 		}
 		in.CustomerName = customerSnapshotName(customer)
 	}
-	if !fromHandoff && in.GetCarrierId() > 0 {
+	if current != nil && in.GetCarrierId() == current.GetCarrierId() {
+		in.CarrierForwarder = current.GetCarrierForwarder()
+	} else if !fromHandoff && in.GetCarrierId() > 0 {
 		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())
 		if err != nil {
 			return err
@@ -68,7 +76,9 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		}
 		in.CarrierForwarder = supplier.GetName()
 	}
-	if requirePorts || in.GetLoadingPortId() > 0 {
+	if current != nil && in.GetLoadingPortId() == current.GetLoadingPortId() {
+		in.PortOfLoading, in.LoadingPortCode, in.LoadingPortTimezone = current.GetPortOfLoading(), current.GetLoadingPortCode(), current.GetLoadingPortTimezone()
+	} else if requirePorts || in.GetLoadingPortId() > 0 {
 		loading, err := s.resolveActivePort(r, in.GetLoadingPortId())
 		if err != nil {
 			return err
@@ -77,7 +87,9 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		in.LoadingPortCode = loading.GetUnlocode()
 		in.LoadingPortTimezone = loading.GetTimezone()
 	}
-	if requirePorts || in.GetDischargePortId() > 0 {
+	if current != nil && in.GetDischargePortId() == current.GetDischargePortId() {
+		in.PortOfDischarge, in.DischargePortCode, in.DischargePortTimezone = current.GetPortOfDischarge(), current.GetDischargePortCode(), current.GetDischargePortTimezone()
+	} else if requirePorts || in.GetDischargePortId() > 0 {
 		discharge, err := s.resolveActivePort(r, in.GetDischargePortId())
 		if err != nil {
 			return err
@@ -426,7 +438,12 @@ func (s *Server) updateShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), false); err != nil {
+	current, err := s.Shipping.GetSchedule(r.Context(), &shippingv1.GetScheduleRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), false, current.GetSchedule()); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}

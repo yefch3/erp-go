@@ -113,6 +113,13 @@ func TestBatchSchedulesAndRetries(t *testing.T) {
 			t.Fatalf("retry batch %d: %v", i+1, e)
 		}
 		scheduleIDs = append(scheduleIDs, firstID)
+		edit := validInput()
+		edit.ContractID = 0
+		edit.BookingNo = "BOOK-RETRY"
+		updated, e := svc.UpdateSchedule(ctx, tenant, firstID, edit, "补充订舱资料", Operator{ID: 1, Name: "Audit"}, true)
+		if e != nil || updated.ContractID == nil || *updated.ContractID != 101 || updated.ContractNo != "AUDIT-TWO-BATCH" {
+			t.Fatalf("basic edit lost handoff contract: %+v err=%v", updated, e)
+		}
 	}
 	if scheduleIDs[0] == scheduleIDs[1] {
 		t.Fatal("different batches share the same schedule")

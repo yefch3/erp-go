@@ -413,6 +413,16 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
+	if current.ContractHandoffID != nil {
+		handoff, err := s.q.GetContractShippingHandoffForUpdate(ctx, store.GetContractShippingHandoffForUpdateParams{TenantID: tenantID, ID: *current.ContractHandoffID})
+		if err != nil {
+			return store.ShippingSchedule{}, err
+		}
+		in.ContractID, in.ContractNo = handoff.ContractID, handoff.ContractNo
+		in.CustomerID, in.CustomerName = handoff.CustomerID, handoff.CustomerName
+	} else if current.ContractID != nil && in.ContractID == 0 && in.ContractNo == current.ContractNo {
+		in.ContractID = *current.ContractID
+	}
 	// 只有实际更换负责人时才检查候选范围；客户负责人可以保留原负责人并维护其可见船期。
 	if in.ResponsibleEmployeeID != current.ResponsibleEmployeeID {
 		if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
@@ -424,10 +434,6 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		return store.ShippingSchedule{}, err
 	}
 	if err = s.rejectDuplicate(ctx, s.q, tenantID, id, p, confirmed); err != nil {
-		return store.ShippingSchedule{}, err
-	}
-	alertPlans, err := s.scheduleChangeAlertPlans(ctx, tenantID, current, p)
-	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
 	var out store.ShippingSchedule
@@ -442,6 +448,10 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		}
 		if current.Status == "COMPLETED" || current.Status == "CANCELLED" {
 			return apierr.Conflict("SHIPPING_FINAL_STATE", "已完成或已取消的船期不能编辑")
+		}
+		alertPlans, err := s.scheduleChangeAlertPlans(ctx, tenantID, current, p)
+		if err != nil {
+			return err
 		}
 		// Actual departure/arrival belong to progress tracking. A basic edit
 		// must preserve them instead of accepting or clearing those timestamps.
@@ -502,7 +512,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			if destinationID == 0 {
 				return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
 			}
-			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
+			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta, p.DischargePortTimezone), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
 				return err
 			}
 			changeDays := int32(p.Eta.Time.Sub(current.Eta.Time).Hours() / 24)
@@ -618,6 +628,10 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 			}
 		}
 		if current.Status == next {
+			if next == "COMPLETED" {
+				out = current
+				return nil
+			}
 			return apierr.Conflict("SHIPPING_STATUS_UNCHANGED", "船期已经是该状态")
 		}
 		if !transitions[current.Status][next] {

@@ -221,7 +221,21 @@
         </el-tabs>
         <el-table v-if="detailTab==='records' && workflowRecords.length && detail.contract.entrySource!=='EXISTING_CONTRACT'" :data="workflowRecords" size="small" max-height="280"><el-table-column prop="label" label="操作" width="140"/><el-table-column prop="reason" label="原因／核对说明" min-width="200"/><el-table-column prop="actor" label="操作人" width="110"/><el-table-column prop="at" label="时间" width="200"/></el-table>
         <ContractHandoffPlan v-if="detailTab==='shipping' && detail.contract.entrySource==='STANDARD'" :contract-id="detail.contract.id" :version-id="detail.version.id" :items="detail.items" :can-edit="canWrite && isMine && !detail.contract.conditionConfirmedAt && ['DRAFT','REJECTED','PENDING_SIGN','EXECUTING'].includes(detail.contract.status)"/>
-        <el-empty v-if="detailTab==='shipping'&&!detail.shipments?.length&&!vessels.length&&!acceptedOffer?.transports.length" description="暂无发运或船期记录"/>
+        <el-alert v-if="detailTab==='shipping'&&vesselsLoadFailed" title="船期资料暂时无法加载，请刷新合同后重试" type="warning" :closable="false"/>
+        <el-empty v-if="detailTab==='shipping'&&!vesselsLoadFailed&&!detail.shipments?.length&&!vessels.length&&!formalSchedules.length&&!acceptedOffer?.transports.length" description="暂无发运或船期记录"/>
+        <section v-if="formalSchedules.length" v-show="showDetailTab('shipping')" class="detail-section">
+          <div class="detail-section-summary"><span class="section-summary-title">正式船期与运输批次</span><span class="section-summary-meta">{{formalSchedules.length}} 批，按各批实际进度显示</span></div>
+          <div class="detail-section-body"><el-table :data="formalSchedules" size="small">
+            <el-table-column label="批次" width="75"><template #default="{row}">第 {{row.batchNo}} 批</template></el-table-column>
+            <el-table-column label="船期 / 船名航次" min-width="210"><template #default="{row}">{{row.scheduleNo}}<div class="sub">{{row.vesselName||'—'}} / {{row.voyageNo||'—'}}</div></template></el-table-column>
+            <el-table-column label="本批货物" min-width="250"><template #default="{row}">{{row.cargoItems.map((item:FormalShippingCargo)=>`${item.productName} ${item.specification} ${trimQty(item.quantity)} ${item.uomCode}`).join('；')||'—'}}</template></el-table-column>
+            <el-table-column label="货代 / 航线" min-width="180"><template #default="{row}">{{row.carrierForwarder||'—'}}<div class="sub">{{row.portOfLoading}} → {{row.portOfDischarge}}</div></template></el-table-column>
+            <el-table-column label="订舱号 / 提单号" min-width="170"><template #default="{row}">{{row.bookingNo||'—'}}<div class="sub">{{row.billOfLadingNo||'—'}}</div></template></el-table-column>
+            <el-table-column label="预计离港 / 到港" width="185"><template #default="{row}">{{row.etd||'—'}} → {{row.eta||'—'}}</template></el-table-column>
+            <el-table-column label="实际离港 / 到港" width="185"><template #default="{row}">{{row.atd||'—'}} → {{row.ata||'—'}}</template></el-table-column>
+            <el-table-column label="本批状态" width="100" fixed="right"><template #default="{row}">{{shippingStatusLabel(row,t)}}</template></el-table-column>
+          </el-table></div>
+        </section>
         <el-empty v-if="detailTab==='receipts'&&!receiptProgress" description="暂无收款进度或当前账号无查看权限"/>
         <section v-show="showDetailTab('terms')" class="basic-info-panel">
           <div class="basic-info-heading">
@@ -432,7 +446,7 @@
           <section v-show="showDetailTab('shipping')" class="detail-section">
             <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.shipping') }}</span>
-              <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 查看各产品已发货和待发货数量</span>
+              <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 已发货数量按出运记录统计；船期进度单独展示</span>
             </div>
             <div class="detail-section-body">
           <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
@@ -816,6 +830,7 @@
 <script setup lang="ts">
 import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import ContractHandoffPlan from '../components/ContractHandoffPlan.vue'
+import { shippingStatusLabel } from '../shipping'
 import ContractEntryDialog from '../components/ContractEntryDialog.vue'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
@@ -935,6 +950,8 @@ interface Vessel {
   status: string
   qty: string
 }
+interface FormalShippingCargo {productName:string;specification:string;quantity:string;uomCode:string}
+interface FormalShippingSchedule {id:string;scheduleNo:string;batchNo:number;vesselName:string;voyageNo:string;carrierForwarder:string;bookingNo:string;billOfLadingNo:string;portOfLoading:string;portOfDischarge:string;etd:string;eta:string;atd:string;ata:string;status:string;cargoItems:FormalShippingCargo[]}
 interface Shipment {
   productId: string
   productName: string
@@ -1416,6 +1433,8 @@ const canTransfer = auth.can('export:ownership:transfer')
 const isMine = computed(() => auth.owns(detail.value?.contract.salesEmployeeId ?? ''))
 const transfers = ref<Transfer[]>([])
 const vessels = ref<Vessel[]>([])
+const formalSchedules = ref<FormalShippingSchedule[]>([])
+const vesselsLoadFailed = ref(false)
 const receipts = ref<ContractReceipt[]>([])
 const receiptProgress = ref<ReceiptProgress | null>(null)
 const transferOpen = ref(false)
@@ -1621,11 +1640,17 @@ if(detail.value?.contract.entrySource==='HISTORICAL_RECORD'||!auth.can('export:r
 }
 
 async function loadVessels(contractId: string) {
+  vessels.value = []
+  formalSchedules.value = []
+  vesselsLoadFailed.value = false
   try {
-    vessels.value =
-      (await get<{ vessels: Vessel[] }>(`/contracts/${contractId}/vessels`)).vessels ?? []
+    const data = await get<{ vessels: Vessel[]; schedules: FormalShippingSchedule[] }>(`/contracts/${contractId}/vessels`)
+    vessels.value = data.vessels ?? []
+    formalSchedules.value = data.schedules ?? []
   } catch {
     vessels.value = []
+    formalSchedules.value = []
+    vesselsLoadFailed.value = true
   }
 }
 

@@ -43,11 +43,15 @@ type ProgressInput struct {
 	RouteVersion                              int32
 }
 
-func dateTimestamp(d pgtype.Date) pgtype.Timestamptz {
+func dateTimestamp(d pgtype.Date, timezone string) pgtype.Timestamptz {
 	if !d.Valid {
 		return pgtype.Timestamptz{}
 	}
-	return pgtype.Timestamptz{Time: d.Time.UTC(), Valid: true}
+	location, err := time.LoadLocation(strings.TrimSpace(timezone))
+	if err != nil {
+		location = time.UTC
+	}
+	return pgtype.Timestamptz{Time: time.Date(d.Time.Year(), d.Time.Month(), d.Time.Day(), 0, 0, 0, 0, location).UTC(), Valid: true}
 }
 
 func parseTimestamp(value, field string) (pgtype.Timestamptz, error) {
@@ -119,7 +123,7 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	origin, err := q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, SequenceNo: 1, NodeType: "ORIGIN",
 		PortID: s.LoadingPortID, PortCode: s.LoadingPortCode, PortName: s.PortOfLoading,
-		Timezone: s.LoadingPortTimezone, OriginalEtdAt: dateTimestamp(s.Etd),
+		Timezone: s.LoadingPortTimezone, OriginalEtdAt: dateTimestamp(s.Etd, s.LoadingPortTimezone),
 		CreatedBy: op.ID, CreatedByName: op.Name,
 	})
 	if err != nil {
@@ -128,7 +132,7 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	_, err = q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, SequenceNo: 2, NodeType: "DESTINATION",
 		PortID: s.DischargePortID, PortCode: s.DischargePortCode, PortName: s.PortOfDischarge,
-		Timezone: s.DischargePortTimezone, OriginalEtaAt: dateTimestamp(s.Eta),
+		Timezone: s.DischargePortTimezone, OriginalEtaAt: dateTimestamp(s.Eta, s.DischargePortTimezone),
 		CreatedBy: op.ID, CreatedByName: op.Name,
 	})
 	if err != nil {
@@ -729,6 +733,14 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			if e != nil {
 				return e
 			}
+			previous := node.ActualArrivalAt
+			if in.Action == "DEPART" {
+				previous = node.ActualDepartureAt
+			}
+			if previous.Valid && (!actual.Valid || sameTimestamp(previous, actual)) {
+				out = current
+				return nil
+			}
 			if !actual.Valid {
 				actual = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 			}
@@ -754,13 +766,13 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 				_, err = q.SetRouteNodeArrival(ctx, store.SetRouteNodeArrivalParams{TenantID: tenantID, ScheduleID: id, ID: node.ID, ActualArrivalAt: actual, UpdatedBy: op.ID, UpdatedByName: op.Name})
 				progress = "已抵达 " + node.PortName
 				if node.NodeType == "DESTINATION" {
-					out, err = q.SetScheduleATA(ctx, store.SetScheduleATAParams{TenantID: tenantID, ID: id, Ata: pgtype.Date{Time: actual.Time, Valid: true}, UpdatedBy: op.ID, UpdatedByName: op.Name})
+					out, err = q.SetScheduleATA(ctx, store.SetScheduleATAParams{TenantID: tenantID, ID: id, Ata: timestampEventDate(actual, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 				}
 			} else {
 				_, err = q.SetRouteNodeDeparture(ctx, store.SetRouteNodeDepartureParams{TenantID: tenantID, ScheduleID: id, ID: node.ID, ActualDepartureAt: actual, UpdatedBy: op.ID, UpdatedByName: op.Name})
 				progress = "已离开 " + node.PortName
 				if node.NodeType == "ORIGIN" {
-					out, err = q.SetScheduleATD(ctx, store.SetScheduleATDParams{TenantID: tenantID, ID: id, Atd: pgtype.Date{Time: actual.Time, Valid: true}, UpdatedBy: op.ID, UpdatedByName: op.Name})
+					out, err = q.SetScheduleATD(ctx, store.SetScheduleATDParams{TenantID: tenantID, ID: id, Atd: timestampEventDate(actual, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 				}
 			}
 		case "SKIP":
@@ -783,14 +795,14 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			}
 			for i := range routeNodes {
 				if routeNodes[i].ID == node.ID {
-					routeNodes[i].LatestEtaAt = dateTimestamp(newETA)
+					routeNodes[i].LatestEtaAt = dateTimestamp(newETA, node.Timezone)
 					break
 				}
 			}
 			if e = validateRouteTimeline(routeNodes, true, false); e != nil {
 				return e
 			}
-			_, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: node.ID, LatestEtaAt: dateTimestamp(newETA), UpdatedBy: op.ID, UpdatedByName: op.Name})
+			_, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: node.ID, LatestEtaAt: dateTimestamp(newETA, node.Timezone), UpdatedBy: op.ID, UpdatedByName: op.Name})
 			if err != nil {
 				return err
 			}
