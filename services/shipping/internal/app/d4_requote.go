@@ -312,7 +312,7 @@ func (s *Service) SaveShippingContract(ctx context.Context, tenantID, id int64, 
 	return s.GetContractHandoff(ctx, tenantID, id)
 }
 func (s *Service) VerifyShippingContract(ctx context.Context, tenantID, id int64, op Operator) (ContractHandoff, error) {
-	cmd, err := s.pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET contract_verified_at=now(),contract_verified_by=$3,contract_verified_by_name=$4,payment_requested_at=now(),status='PAYMENT_REQUESTED',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='CONTRACT_UPLOADED' AND signed_contract_key<>''`, tenantID, id, op.ID, op.Name)
+	cmd, err := s.pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET contract_verified_at=coalesce(contract_verified_at,now()),contract_verified_by=CASE WHEN contract_verified_at IS NULL THEN $3 ELSE contract_verified_by END,contract_verified_by_name=CASE WHEN contract_verified_at IS NULL THEN $4 ELSE contract_verified_by_name END,payment_requested_at=coalesce(payment_requested_at,now()),status=CASE WHEN status='SCHEDULED' THEN status ELSE 'PAYMENT_REQUESTED' END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('CONTRACT_UPLOADED','PAYMENT_REQUESTED','SCHEDULED') AND signed_contract_key<>''`, tenantID, id, op.ID, op.Name)
 	if err != nil {
 		return ContractHandoff{}, err
 	}

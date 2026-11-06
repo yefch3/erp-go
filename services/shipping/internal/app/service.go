@@ -217,6 +217,9 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		if err != nil {
 			return store.ShippingSchedule{}, err
 		}
+		if handoff.Status == "SCHEDULED" && handoff.ScheduleID != nil {
+			return s.q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: *handoff.ScheduleID})
+		}
 		if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
 			return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
 		}
@@ -247,8 +250,10 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
-	if err = s.rejectDuplicate(ctx, s.q, tenantID, 0, p, confirmed); err != nil {
-		return store.ShippingSchedule{}, err
+	if in.ContractHandoffID == 0 {
+		if err = s.rejectDuplicate(ctx, s.q, tenantID, 0, p, confirmed); err != nil {
+			return store.ShippingSchedule{}, err
+		}
 	}
 	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
 	if in.ContractHandoffID != 0 {
@@ -267,21 +272,12 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 			if lockErr != nil {
 				return lockErr
 			}
+			if handoff.Status == "SCHEDULED" && handoff.ScheduleID != nil {
+				out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: *handoff.ScheduleID})
+				return err
+			}
 			if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
 				return apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
-			}
-			// D6 当前采用一份合同一次运输。事务级顾问锁把并发点击串行化，
-			// 随后的存在性检查确保同一合同只能有一条未取消的正式船期。
-			if _, lockErr = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, fmt.Sprintf("shipping-contract:%d:%d", tenantID, handoff.ContractID)); lockErr != nil {
-				return lockErr
-			}
-			var existingNo string
-			lockErr = tx.QueryRow(ctx, `SELECT schedule_no FROM shipping_schedules WHERE tenant_id=$1 AND contract_id=$2 AND status<>'CANCELLED' LIMIT 1`, tenantID, handoff.ContractID).Scan(&existingNo)
-			if lockErr == nil {
-				return apierr.Conflict("SHIPPING_CONTRACT_ALREADY_SCHEDULED", "该合同已建立正式船期："+existingNo)
-			}
-			if !errors.Is(lockErr, pgx.ErrNoRows) {
-				return lockErr
 			}
 		}
 		out, err = q.CreateSchedule(ctx, p)

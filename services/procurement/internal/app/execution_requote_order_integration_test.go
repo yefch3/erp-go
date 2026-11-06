@@ -233,3 +233,92 @@ func TestExecutionRequoteKeepsSeparateDeliveryGroups(t *testing.T) {
 	}
 
 }
+
+func TestContractVerificationRetry(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_order_draft_files WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_order_execution_files WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_order_items WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_orders WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_execution_inquiry_files WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_execution_supplier_quotes WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_requirements WHERE tenant_id=$1`, tenantID)
+	}()
+
+	var requirementID, firstQuoteID, revisedQuoteID int64
+	contractID := tenantID%1000000 + 9000
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements
+		(tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,
+		 product_id,product_code,product_name,uom_id,uom_code,required_qty,status)
+		VALUES ($1,$2,'CT-REQUOTE-RETRY',1,$2,11,'P-11','热轧钢板',7,'MT',5,'WAITING_REQUOTE') RETURNING id`,
+		tenantID, contractID).Scan(&requirementID); err != nil {
+		t.Fatal(err)
+	}
+	for index, quote := range []struct {
+		price string
+		id    *int64
+	}{{"50", &firstQuoteID}, {"55", &revisedQuoteID}} {
+		if err = pool.QueryRow(ctx, `INSERT INTO purchase_execution_supplier_quotes
+			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price,selected,selected_by_id,quote_category,incoterm,calculated_unit_price)
+			VALUES ($1,$2,6,'S6','测试工厂','CNY',$3,$4,$5,'FOB_CNY','FOB',$3) RETURNING id`, tenantID, requirementID, quote.price, index == 0, func() int64 {
+			if index == 0 {
+				return 5
+			}
+			return 0
+		}()).Scan(quote.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := New(pool, Deps{Numbering: &sequenceNumbering{}, Suppliers: supplierMapDirectoryStub{
+		6: {ID: 6, Code: "S6", Name: "测试工厂", Currency: "CNY", Status: "ACTIVE"},
+	}})
+	input := func(price string, quoteID int64) CreateOrderInput {
+		return CreateOrderInput{
+			SupplierID: 6, Currency: "CNY", ExpectedDate: "2026-10-20",
+			FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "CUSTOM",
+			DeliveryAddress: "按外销合同约定", Remark: "T/T",
+			Lines: []OrderLine{{RequirementID: requirementID, Qty: "5", UnitPrice: price, ExecutionQuoteID: quoteID}},
+		}
+	}
+	op := Operator{ID: 5, Name: "采购员"}
+	first, err := svc.CreateOrder(ctx, tenantID, input("50", firstQuoteID), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.approvals = &d7ApprovalStub{}
+	_, instance, err := svc.SubmitOrder(ctx, tenantID, first.ID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := svc.ApplyApprovalDecision(ctx, tenantID, first.ID, instance, "APPROVED", "", noopClaim)
+	if err != nil || state != "ORDERED" {
+		t.Fatalf("approval: %s %v", state, err)
+	}
+	_, err = svc.SaveOrderContract(ctx, tenantID, first.ID, "TEST-PO", "T/T", contractKeyPrefix(tenantID, first.ID)+"signed.pdf", "signed.pdf", op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.VerifyOrderContract(ctx, tenantID, first.ID, op)
+	if err != nil || result.PaymentRequestedAt == "" {
+		t.Fatalf("finance verification: %v", err)
+	}
+	// Emulate a successful first service update followed by an interrupted request.
+	again, err := svc.VerifyOrderContract(ctx, tenantID, first.ID, Operator{ID: 6, Name: "重试财务"})
+	if err != nil {
+		t.Fatalf("verification retry failed: %v", err)
+	}
+	if again.ContractVerifiedAt != result.ContractVerifiedAt || again.PaymentRequestedAt != result.PaymentRequestedAt || again.ContractVerifiedByName != op.Name || again.PaymentRequestedByName != op.Name {
+		t.Fatal("verification retry overwrote the original audit")
+	}
+}
