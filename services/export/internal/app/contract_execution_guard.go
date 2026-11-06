@@ -8,6 +8,12 @@ import (
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
+// Delivery operators may obtain an execution verdict without gaining access
+// to contract prices, customer files or receipt records.
+func (s *Service) AuthorizeContractExecutionCheck(ctx context.Context) error {
+	return s.RequireAnyPermission(ctx, "export:contract:read", "procurement:order:write", "procurement:requirement:write", "procurement:receipt:write", "inventory:stock:write", "shipping:schedule:write", "shipping:progress:write", "shipping:route:write", "export:shipment:write")
+}
+
 func (s *Service) CheckContractExecution(ctx context.Context, tenant, id int64) (bool, string, error) {
 	actor, ok := grpcx.OperatorFromContext(ctx)
 	if !ok || actor.TenantID <= 0 || actor.EmployeeID <= 0 {
@@ -16,7 +22,7 @@ func (s *Service) CheckContractExecution(ctx context.Context, tenant, id int64) 
 	if actor.TenantID != tenant {
 		return false, "", apierr.Permission("EX_TENANT_MISMATCH", "租户不匹配")
 	}
-	if err := s.RequireAnyPermission(ctx, "export:contract:read", "procurement:order:write", "procurement:requirement:write", "shipping:schedule:write", "export:shipment:write"); err != nil {
+	if err := s.AuthorizeContractExecutionCheck(ctx); err != nil {
 		return false, "", err
 	}
 	if tenant <= 0 || id <= 0 {

@@ -207,6 +207,7 @@ services:
       MASTERDATA_ADDR: masterdata:9002
       PRODUCT_ADDR: product:9004
       PROCUREMENT_ADDR: procurement:9007
+      EXPORT_ADDR: export:9006
       KAFKA_BROKERS: kafka:9092
       CONTRACT_TOPIC: erp.export.contract.v1
       STOCK_TOPIC: erp.inventory.stock.v1

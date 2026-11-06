@@ -55,6 +55,7 @@ func newOutboundQualityFixture(t *testing.T, source string, extraPurchase bool) 
 	}
 	f := &outboundQualityFixture{ctx: ctx, pool: pool, tenant: time.Now().UnixNano()}
 	f.svc = New(pool, &outboundQualityNumbering{})
+	f.svc.UseContractGuard(&outboundContractStub{})
 	t.Cleanup(func() {
 		for _, table := range []string{"outbound_item_stocks", "outbound_items", "outbounds", "stock_reservation_lines", "stock_reservations", "stock_locks", "stock_ledger", "stocks", "outbox_events", "warehouses"} {
 			if _, err := pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", f.tenant); err != nil {

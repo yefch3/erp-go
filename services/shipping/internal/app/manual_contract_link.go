@@ -24,6 +24,9 @@ func linkManualContract(ctx context.Context, tx pgx.Tx, tenant, id, contractID i
 	if oldID > 0 && oldID != contractID {
 		return apierr.Conflict("SHIPPING_CONTRACT_ALREADY_LINKED", "该物流单已关联合同，不能直接更换为另一份合同")
 	}
+	if err := lockDeliveryContract(ctx, tx, tenant, contractID); err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `UPDATE manual_shipping_orders SET linked_contract_id=$3,original_contract_no=CASE WHEN linked_contract_id=0 THEN $4 ELSE original_contract_no END,linked_by=CASE WHEN linked_contract_id=0 THEN $5 ELSE linked_by END,linked_at=coalesce(linked_at,now()) WHERE tenant_id=$1 AND handoff_id=$2`, tenant, id, contractID, oldNo, op.ID)
 	if err != nil {
 		return err

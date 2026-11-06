@@ -29,6 +29,7 @@ func newDeliveryQualityFixture(t *testing.T) deliveryQualityFixture {
 	}
 	f := deliveryQualityFixture{pool: pool, tenant: time.Now().UnixNano()}
 	f.svc = New(pool, Deps{Numbering: &sequenceNumbering{}, Warehouses: warehouseDirectoryStub{warehouse: Warehouse{ID: 3, Type: "NORMAL", Status: "ACTIVE"}}})
+	f.svc.UseContractGuard(&deliveryContractGuardStub{})
 	t.Cleanup(func() {
 		for _, table := range []string{"quality_inspection_tasks", "purchase_inspections", "purchase_receipt_exceptions", "purchase_receipts", "purchase_production_milestones", "outbox_events", "purchase_order_items", "purchase_orders", "purchase_requirements"} {
 			_, _ = pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", f.tenant)

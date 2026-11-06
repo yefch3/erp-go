@@ -564,8 +564,12 @@ func (s *Service) updateNodeTimes(ctx context.Context, tx pgx.Tx, q *store.Queri
 	if !changed {
 		return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_NODE_TIMES_UNCHANGED", "港口时间没有变化")
 	}
-	actualMovement := node.NodeType == "ORIGIN" && actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture)
-	if node.NodeType != "ORIGIN" && ((actualArrival.Valid && !sameTimestamp(node.ActualArrivalAt, actualArrival)) || (actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture))) {
+	actualMovement := false
+	newActualMovement := node.NodeType == "ORIGIN" && actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture)
+	if node.NodeType != "ORIGIN" {
+		newActualMovement = (actualArrival.Valid && !sameTimestamp(node.ActualArrivalAt, actualArrival)) || (actualDeparture.Valid && !sameTimestamp(node.ActualDepartureAt, actualDeparture))
+	}
+	if newActualMovement {
 		dispatched, err := recordedDispatch(ctx, tx, current)
 		if err != nil {
 			return store.ShippingSchedule{}, err
@@ -792,8 +796,8 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 				out = current
 				return nil
 			}
-			firstDispatch := in.Action == "DEPART" && node.NodeType == "ORIGIN"
-			if node.NodeType != "ORIGIN" {
+			firstDispatch := false
+			if node.NodeType != "ORIGIN" || in.Action == "DEPART" {
 				dispatched, err := recordedDispatch(ctx, tx, current)
 				if err != nil {
 					return err

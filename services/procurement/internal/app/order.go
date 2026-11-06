@@ -1016,6 +1016,17 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 			return apierr.Conflict("PO_NOT_RECEIVABLE", "只有已下单的采购单可以收货").
 				WithMeta("status", head.Status)
 		}
+		if directDelivery {
+			// Each additional direct-delivery batch is new fulfilment. Goods
+			// received into our custody remain receivable for an existing PO.
+			itemIDs := make([]int64, 0, len(want))
+			for itemID := range want {
+				itemIDs = append(itemIDs, itemID)
+			}
+			if err := s.checkDeliveryContractExecution(ctx, tx, tenantID, poID, itemIDs); err != nil {
+				return err
+			}
+		}
 		quality, err := checkOrderDeliveryQuality(ctx, tx, tenantID, poID)
 		if err != nil {
 			return err

@@ -49,6 +49,7 @@ type Service struct {
 	numbering       Numbering
 	catalog         Catalog
 	deliveryQuality DeliveryQualityGuard
+	contractGuard   ContractGuard
 }
 
 func New(pool *pgxpool.Pool, numbering Numbering, catalogs ...Catalog) *Service {

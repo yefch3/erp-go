@@ -623,7 +623,7 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		if err != nil {
 			return err
 		}
-		if s.contractGuard != nil && current.ContractID != nil && (next == "SAILED" || next == "PLANNED") {
+		if s.contractGuard != nil && current.ContractID != nil && next == "PLANNED" {
 			if err := s.contractGuard.Check(ctx, *current.ContractID); err != nil {
 				return err
 			}
@@ -638,8 +638,8 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		if !transitions[current.Status][next] {
 			return apierr.Conflict("SHIPPING_STATUS_TRANSITION_INVALID", fmt.Sprintf("不能从 %s 直接变更为 %s", current.Status, next))
 		}
-		firstDispatch := next == "SAILED"
-		if next == "IN_TRANSIT" || next == "ARRIVED" {
+		firstDispatch := false
+		if next == "SAILED" || next == "IN_TRANSIT" || next == "ARRIVED" {
 			dispatched, err := recordedDispatch(ctx, tx, current)
 			if err != nil {
 				return err
