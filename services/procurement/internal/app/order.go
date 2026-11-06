@@ -356,8 +356,8 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 
 	// A final requote may be generated again after an approver returns it, or
 	// after the browser only managed to create some of the supplier groups.
-	// Continue the existing editable document for this contract and supplier
-	// instead of trying to insert the same business document number again.
+	// Continue only the same buyer's document for this exact requirement set.
+	// Other supplier groups must retain their own documents and lines.
 	// This also makes the UI's multi-supplier loop safe to retry.
 	reusedExecutionDraft := false
 	if allExecutionRequote && executionContractID > 0 {
@@ -365,10 +365,23 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		var existingStatus string
 		err := tx.QueryRow(ctx, `SELECT id,status FROM purchase_orders
 			WHERE tenant_id=$1 AND business_type='PROCUREMENT' AND source_business_id=$2 AND supplier_id=$3
-			  AND status IN ('DRAFT','REJECTED','PENDING_APPROVAL')
-			ORDER BY id DESC LIMIT 1 FOR UPDATE`, tenantID, executionContractID, in.SupplierID).Scan(&existingID, &existingStatus)
+			  AND buyer_id=$4 AND status IN ('DRAFT','REJECTED','PENDING_APPROVAL')
+			  AND (SELECT array_agg(i.requirement_id ORDER BY i.requirement_id)
+			       FROM purchase_order_items i WHERE i.tenant_id=$1 AND i.po_id=purchase_orders.id)
+			      = ARRAY(SELECT unnest($5::bigint[]) ORDER BY 1)
+			ORDER BY id DESC LIMIT 1 FOR UPDATE`, tenantID, executionContractID, in.SupplierID, op.ID, ids).Scan(&existingID, &existingStatus)
 		if err != nil && err != pgx.ErrNoRows {
 			return head, err
+		}
+		var overlaps bool
+		if overlapErr := tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM purchase_order_items i JOIN purchase_orders o ON o.id=i.po_id AND o.tenant_id=i.tenant_id
+			WHERE i.tenant_id=$1 AND i.requirement_id=ANY($2::bigint[]) AND o.id<>$3
+			  AND o.status IN ('DRAFT','REJECTED','PENDING_APPROVAL'))`, tenantID, ids, existingID).Scan(&overlaps); overlapErr != nil {
+			return head, overlapErr
+		}
+		if overlaps {
+			return head, apierr.Conflict("PO_EXECUTION_DRAFT_OVERLAP", "部分规格已存在于其他采购草稿或审批单，请先处理原采购单")
 		}
 		if err == nil {
 			if existingStatus == poPending {
@@ -407,7 +420,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	for attempt := 0; !reusedExecutionDraft && attempt < 2; attempt++ {
 		no := executionContractNo
 		var err error
-		if !allExecutionRequote || no == "" {
+		if !allExecutionRequote || no == "" || attempt > 0 {
 			no, err = s.numbering.Next(ctx, "PURCHASE_ORDER")
 			if err != nil {
 				return head, err

@@ -891,7 +891,7 @@ function primaryAction(row: Order): RowAction | null {
 	if (Number(row.sourceBusinessId) > 0 && row.status === 'ORDERED') {
 		if (!row.signedContractUploadedAt && canWrite) return { key:'contract', label:'上传签署合同', tone:'primary', run:()=>openContract(row) }
 		if (!row.contractVerifiedAt && canFinanceVerify) return { key:'verifyContract', label:'核验签署合同', tone:'success', run:()=>void verifyContract(row) }
-		return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
+		if (!row.contractVerifiedAt) return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
 	}
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
     return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
@@ -955,8 +955,8 @@ function moreActions(row: Order): { key: string; label: string }[] {
 	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
 		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
 		add('verifyContract','核验签署合同',canFinanceVerify&&!!row.signedContractUploadedAt&&!row.contractVerifiedAt)
-		add('quality', t('quality.apply'), canRequestQuality)
-		return out
+		add('quality', t('quality.apply'), canRequestQuality && !row.contractVerifiedAt)
+		if (!row.contractVerifiedAt) return out
 	}
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
