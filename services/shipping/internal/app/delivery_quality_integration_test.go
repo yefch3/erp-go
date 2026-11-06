@@ -62,6 +62,7 @@ func deliveryTestDB(t *testing.T) (context.Context, *pgxpool.Pool, int64) {
 
 func deliverySchedules(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenant int64, svc *Service, count int) []store.ShippingSchedule {
 	t.Helper()
+	svc.UseContractGuard(workflowAllowedContract{})
 	event := ContractEffective{ContractID: 41, ContractNo: "CT-QUALITY", VersionID: 42, VersionNo: 1, CustomerID: 1, CustomerName: "质检客户"}
 	for i := 0; i < count; i++ {
 		event.Shipments = append(event.Shipments, ContractEffectiveShipment{BatchNo: int32(i + 1), Currency: "USD", FreightAmount: "0", PortOfLoading: "Shanghai", PortOfDischarge: "Hamburg", AllocationStatus: "ALLOCATED", Items: []ContractEffectiveItem{{ContractItemID: 101, LineNo: 1, ProductName: "钢材", Qty: "10", UomCode: "MT"}}})
@@ -121,6 +122,7 @@ func attachPassedDeliveryFixture(t *testing.T, ctx context.Context, svc *Service
 		t.Fatal(err)
 	}
 	svc.UseDeliveryQualityGuard(&deliveryQualityStub{})
+	svc.UseContractGuard(workflowAllowedContract{})
 }
 
 func TestQualityGateAllowsPlanningButBlocksEveryActualDispatchPath(t *testing.T) {

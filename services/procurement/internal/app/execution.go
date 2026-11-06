@@ -426,6 +426,13 @@ func (s *Service) SaveProductionMilestone(ctx context.Context, tenantID, poID in
 			// Re-saving an already recorded fact may update notes or plans; it
 			// does not create a second delivery or rewrite its actual date.
 			if milestone.ActualDate != "" && milestone.ActualDate != previousActual {
+				// An existing actual departure may be corrected during aftermath
+				// handling. Only its first recording starts new fulfilment.
+				if previousActual == "" {
+					if err := s.checkDeliveryContractExecution(ctx, tx, tenantID, poID, nil); err != nil {
+						return err
+					}
+				}
 				quality, err := checkOrderDeliveryQuality(ctx, tx, tenantID, poID)
 				if err != nil {
 					return err

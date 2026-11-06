@@ -317,6 +317,12 @@ func (s *Service) ConfirmOutbound(ctx context.Context, tenantID, outboundID int6
 			return apierr.Invalid("IV_OUTBOUND_NOT_DRAFT", "只有待出库的单据可以确认出库").
 				WithMeta("status", head.Status)
 		}
+		if head.RefType != RefTypeContract {
+			return apierr.Conflict("IV_CONTRACT_SOURCE_REQUIRED", "出库单缺少有效合同关联，不能确认出库")
+		}
+		if err := s.checkOutboundContract(ctx, head.RefID); err != nil {
+			return err
+		}
 		if err := s.checkOutboundQuality(ctx, tx, tenantID, head.ID); err != nil {
 			return err
 		}
