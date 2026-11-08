@@ -215,16 +215,18 @@
           <el-tab-pane :label="`产品明细 (${detail.items.length})`" name="items"/>
           <el-tab-pane label="合同资料" name="terms"/>
           <el-tab-pane :label="`合同文件 (${files.length})`" name="files"/>
-          <el-tab-pane label="发运与船期" name="shipping"/>
+          <el-tab-pane label="交付安排" name="shipping"/>
           <el-tab-pane label="收款进度" name="receipts"/>
           <el-tab-pane label="审批与记录" name="records"/>
         </el-tabs>
         <el-table v-if="detailTab==='records' && workflowRecords.length && detail.contract.entrySource!=='EXISTING_CONTRACT'" :data="workflowRecords" size="small" max-height="280"><el-table-column prop="label" label="操作" width="140"/><el-table-column prop="reason" label="原因／核对说明" min-width="200"/><el-table-column prop="actor" label="操作人" width="110"/><el-table-column prop="at" label="时间" width="200"/></el-table>
-        <ContractHandoffPlan v-if="detailTab==='shipping' && detail.contract.entrySource==='STANDARD'" :contract-id="detail.contract.id" :version-id="detail.version.id" :items="detail.items" :can-edit="canWrite && isMine && !detail.contract.conditionConfirmedAt && ['DRAFT','REJECTED','PENDING_SIGN','EXECUTING'].includes(detail.contract.status)"/>
-        <el-alert v-if="detailTab==='shipping'&&vesselsLoadFailed" title="船期资料暂时无法加载，请刷新合同后重试" type="warning" :closable="false"/>
-        <el-empty v-if="detailTab==='shipping'&&!vesselsLoadFailed&&!detail.shipments?.length&&!vessels.length&&!formalSchedules.length&&!acceptedOffer?.transports.length" description="暂无发运或船期记录"/>
-        <section v-if="formalSchedules.length" v-show="showDetailTab('shipping')" class="detail-section">
-          <div class="detail-section-summary"><span class="section-summary-title">正式船期与运输批次</span><span class="section-summary-meta">{{formalSchedules.length}} 批，按各批实际进度显示</span></div>
+        <ContractHandoffPlan v-if="detailTab==='shipping' && !showDeliveryProgress && detail.contract.entrySource==='STANDARD'" :contract-id="detail.contract.id" :version-id="detail.version.id" :items="detail.items" :can-edit="canWrite && isMine && !detail.contract.conditionConfirmedAt && ['DRAFT','REJECTED','PENDING_SIGN','EXECUTING'].includes(detail.contract.status)"/>
+        <el-alert v-if="detailTab==='shipping' && !showDeliveryProgress" title="此处记录客户要求的交货批次和备注。财务放行后，由物流模块安排实际发运与船期；船期可以提前安排，交货必须质检合格。" type="info" :closable="false" show-icon/>
+        <el-alert v-if="detailTab==='shipping' && showDeliveryProgress" title="此处仅查看交付进度。实际发运、船期及运输状态由物流模块维护。" type="info" :closable="false" show-icon/>
+        <el-alert v-if="detailTab==='shipping'&&showDeliveryProgress&&vesselsLoadFailed" title="物流进度暂时无法加载，请刷新合同后重试" type="warning" :closable="false"/>
+        <el-empty v-if="detailTab==='shipping'&&showDeliveryProgress&&!vesselsLoadFailed&&!vessels.length&&!formalSchedules.length&&!detail.shipments?.length" description="暂无实际发运或船期进度，等待物流安排"/>
+        <section v-if="showDeliveryProgress && formalSchedules.length" v-show="showDetailTab('shipping')" class="detail-section">
+          <div class="detail-section-summary"><span class="section-summary-title">物流运输进度</span><span class="section-summary-meta">{{formalSchedules.length}} 批 · 由物流模块维护，此处只读</span></div>
           <div class="detail-section-body"><el-table :data="formalSchedules" size="small">
             <el-table-column label="批次" width="75"><template #default="{row}">第 {{row.batchNo}} 批</template></el-table-column>
             <el-table-column label="船期 / 船名航次" min-width="210"><template #default="{row}">{{row.scheduleNo}}<div class="sub">{{row.vesselName||'—'}} / {{row.voyageNo||'—'}}</div></template></el-table-column>
@@ -335,10 +337,10 @@
         </div>
         </section>
 
-        <section v-show="showDetailTab('shipping')" v-if="acceptedOffer?.transports.length" class="detail-section">
+        <section v-show="showDetailTab('terms')" v-if="acceptedOffer?.transports.length" class="detail-section">
           <div class="detail-section-summary">
-            <span class="section-summary-title">客户运输方案</span>
-            <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 查看客户选择及对应货物</span>
+            <span class="section-summary-title">售前运输参考方案</span>
+            <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 报价成交记录，实际发运由物流安排</span>
           </div>
           <div class="detail-section-body">
           <el-table :data="acceptedOffer.transports" max-height="300" stripe>
@@ -442,7 +444,7 @@
         <!-- What has physically left the warehouse. Kept beside the contract
              rather than inside it: an approved version is frozen because it
              records what was agreed, and shipping keeps moving afterwards. -->
-        <template v-if="detail.shipments?.length">
+        <template v-if="showDeliveryProgress && detail.shipments?.length">
           <section v-show="showDetailTab('shipping')" class="detail-section">
             <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.shipping') }}</span>
@@ -485,7 +487,7 @@
              most-asked question on an export desk, and the answer lives on a
              different document, so it is fetched and shown here rather than
              leaving sales to ring the forwarder. -->
-        <template v-if="vessels.length">
+        <template v-if="showDeliveryProgress && vessels.length">
           <section v-show="showDetailTab('shipping')" class="detail-section">
             <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.vessels') }}</span>
@@ -1043,6 +1045,8 @@ const contracts = ref<Contract[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Detail | null>(null)
+// Signing starts finance review; execution tasks begin only after finance release.
+const showDeliveryProgress = computed(() => !!detail.value?.contract.conditionConfirmedAt || ['EFFECTIVE','COMPLETED'].includes(detail.value?.contract.status ?? ''))
 const workflowRecords=ref<{label:string;reason:string;actor:string;at:string}[]>([])
 const detailTab=ref('items'),itemSearch=ref(''),itemPage=ref(1),itemPageSize=ref(100)
 const showDetailTab=(tab:string)=>detail.value?.contract.entrySource==='HISTORICAL_RECORD'||detailTab.value===tab

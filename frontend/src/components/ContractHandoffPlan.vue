@@ -1,8 +1,8 @@
 <template>
  <section v-loading="loading" class="handoff-plan">
-  <div class="plan-heading"><div><strong>运输分批交接</strong><p>每批只交接实际分配的货物。此处不更改合同金额和签署条款；财务放行后冻结。</p></div><div v-if="canEdit"><el-button @click="addBatch">添加批次</el-button><el-button type="primary" :disabled="!balanced" @click="save">保存分批</el-button></div></div>
+  <div class="plan-heading"><div><strong>交货分批与备注</strong><p>按客户要求分配每批交货数量，并填写批次说明；财务放行后交给采购和物流执行。</p></div><div v-if="canEdit"><el-button @click="addBatch">添加批次</el-button><el-button type="primary" :disabled="!balanced" @click="save">保存分批</el-button></div></div>
   <el-alert v-if="error" :title="error" type="error" :closable="false"/>
-  <el-alert v-if="!plan.revision" title="尚未保存分批：默认按整份合同交接；有多个旧运输方案但缺少数量分配时，将生成一项待分配任务。" type="info" :closable="false"/>
+  <el-alert v-if="!plan.revision" title="尚未保存分批：默认整份合同一次交货。需要分批时，请填写各批数量和批次说明后保存。" type="info" :closable="false"/>
   <div class="batch-names"><div v-for="(batch,index) in plan.batches" :key="batch.batchNo"><span>第 {{batch.batchNo}} 批</span><el-input v-model="batch.title" :disabled="!canEdit" placeholder="批次说明"/><el-button v-if="canEdit&&plan.batches.length>1" link type="danger" @click="plan.batches.splice(index,1)">移除</el-button></div></div>
   <el-table :data="items" border size="small" max-height="380" row-key="id">
    <el-table-column prop="productName" label="产品" min-width="180" fixed show-overflow-tooltip/>

@@ -806,6 +806,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/api/approvals/actionable-task", s.actionableApprovalTask)
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
+		r.Get("/api/home/execution-todos", s.listExecutionTodos)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
 		// 审批服务会逐任务校验 assignee。部门负责人来自组织架构，未必另有
 		// “审批人”角色，因此这里不再用静态角色权限挡住本人收到的任务。
