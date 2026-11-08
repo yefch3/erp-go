@@ -83,6 +83,16 @@
       <template v-if="activeTab === 'pending'">
         <div v-loading="loading" class="pending-content">
           <InquiryTodos @count="inquiryPendingCount=$event" />
+          <el-alert v-if="executionTasksError" title="合同执行待办暂时无法加载，请刷新重试" type="warning" :closable="false" show-icon />
+          <section v-if="visibleFinanceTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>合同执行条件确认</h3><p>销售已上传客户签回件并开始执行，等待财务核对付款条件后放行。</p></div><el-tag type="warning" effect="plain">{{visibleFinanceTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleFinanceTasks" class="home-table">
+              <el-table-column label="合同 / 客户" min-width="230"><template #default="{row}"><div class="item-title">{{row.contractNo}}</div><div class="item-meta">{{row.customerName}}</div></template></el-table-column>
+              <el-table-column label="合同金额" width="160" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column label="状态" width="130"><template #default><el-tag type="warning">待财务放行</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="160"><template #default="{row}"><router-link :to="{path:'/customer-recon',query:{keyword:row.contractNo,condition:row.id}}" class="doc-link">确认执行条件</router-link></template></el-table-column>
+            </el-table>
+          </section>
           <section v-if="visibleQualityTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3><p>{{ t('quality.todoHint') }}</p></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
             <el-table :data="visibleQualityTasks" class="home-table sourcing-todo-table">
@@ -105,7 +115,7 @@
             <el-table :data="visibleExecutionProcurementTasks" class="home-table sourcing-todo-table">
               <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
               <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单采购待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · {{ row.productNames }}</div><div class="item-summary">共 {{ row.productCount }} 项产品，要求到货 {{ row.requiredDate || '待确认' }}</div></template></el-table-column>
-              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
               <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
             </el-table>
           </section>
@@ -114,7 +124,7 @@
             <el-table :data="visibleExecutionShippingTasks" class="home-table sourcing-todo-table">
               <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
               <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
-              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
               <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/shipping/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
             </el-table>
           </section>
@@ -130,7 +140,7 @@
           </section>
           <section v-if="visibleShippingTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>船运补充任务</h3><p>销售退回指定报价，或向全部船运人员发布新增船运公司任务。</p></div><el-tag type="warning" effect="plain">{{ shippingTasks.length }} 项</el-tag></div>
-            <el-table :data="visibleShippingTasks" class="home-table sourcing-todo-table"><el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">需要补充船运报价</div></template></el-table-column><el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">{{ shippingReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||'全部货物' }} · {{ row.carrierForwarder||'新增船运公司' }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column><el-table-column label="发布于" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column><el-table-column label="操作" width="76" align="center" fixed="right"><template #default="{row}"><el-dropdown trigger="click" @command="handleShippingTaskAction($event,row)"><el-button text circle aria-label="操作"><span aria-hidden="true">•••</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="open">进入船运询价</el-dropdown-item><el-dropdown-item command="resolve" divided>完成任务</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column></el-table>
+            <el-table :data="visibleShippingTasks" class="home-table sourcing-todo-table"><el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">需要补充船运报价</div></template></el-table-column><el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">{{ shippingReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||'全部货物' }} · {{ row.carrierForwarder||'新增船运公司' }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column><el-table-column label="发布于" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column><el-table-column label="操作" width="76" align="center" fixed="right"><template #default="{row}"><el-dropdown trigger="click" @command="handleShippingTaskAction($event,row)"><el-button text circle aria-label="操作"><span aria-hidden="true">•••</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="open">进入船运询价</el-dropdown-item><el-dropdown-item command="resolve" divided>完成任务</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column></el-table>
           </section>
           <div v-if="todos.length" class="todo-source-head approval-source-head"><div><h3>{{ t('todos.approvalTasks') }}</h3></div></div>
         <el-table v-if="todos.length" :data="todos" class="home-table">
@@ -156,7 +166,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!executionTasksError&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -255,6 +265,7 @@ interface ProcurementTaskCase { id:string; caseNo:string; customerName:string; t
 interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; requestType:string; productName:string; supplierName:string; reason:string; createdAt:string; assignedBuyerId:string|number; status:string }
 interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string; finalRecheckTaskId?:string|number }
 interface ExecutionRequirement { id:string; contractId:string; contractNo:string; customerName:string; productName:string; requiredDate:string; status:string }
+interface FinanceExecutionTask {id:string;contractNo:string;customerName:string;currency:string;totalAmount:string}
 interface ExecutionProcurementTask { key:string; contractNo:string; customerName:string; productNames:string; productCount:number; requiredDate:string }
 interface ExecutionShippingTask { id:string; contractNo:string; customerName:string; batchNo:number; portOfLoading:string; portOfDischarge:string; status:string }
 interface QualityTodoTask { id:string; taskNo:string; poNo:string; supplierName:string; batchNo:number; expectedDate:string; status:string }
@@ -291,6 +302,9 @@ const executionProcurementTasks = ref<ExecutionProcurementTask[]>([])
 const executionProcurementTasksAvailable = ref(false)
 const executionShippingTasks = ref<ExecutionShippingTask[]>([])
 const executionShippingTasksAvailable = ref(false)
+const financeTasks=ref<FinanceExecutionTask[]>([])
+const executionTasksError=ref(false)
+const visibleFinanceTasks=computed(()=>financeTasks.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(value=>value.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
 const qualityTasks = ref<QualityTodoTask[]>([])
 const qualityTasksAvailable = ref(false)
 const qualityProcurementTasks=ref<QualityProcurementTodo[]>([])
@@ -315,8 +329,8 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
-const combinedPendingAvailable = computed(() => inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
+const combinedPendingTotal = computed(() => financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
+const combinedPendingAvailable = computed(() => financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
@@ -423,48 +437,18 @@ async function loadQualityTasks() {
 }
 async function loadQualityProcurementTasks(){if(!auth.can('procurement:order:read')){qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false;return}try{const data=await get<{tasks:QualityProcurementTodo[]}>('/quality/procurement-todos',{},quietErrors);qualityProcurementTasks.value=data.tasks??[];qualityProcurementTasksAvailable.value=true}catch{qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false}}
 
-async function loadExecutionProcurementTasks() {
-  if (!auth.can('procurement:requirement:read')) {
-    executionProcurementTasks.value = []
-    executionProcurementTasksAvailable.value = false
-    return
-  }
+async function loadExecutionTasks() {
+  financeTasks.value=[];executionProcurementTasks.value=[];executionShippingTasks.value=[];executionTasksError.value=false
+  executionProcurementTasksAvailable.value=false;executionShippingTasksAvailable.value=false
   try {
-    const data = await get<{ requirements: ExecutionRequirement[] }>('/requirements', { page: 1, page_size: 200, status: 'WAITING_REQUOTE' }, quietErrors)
-    const groups = new Map<string, ExecutionRequirement[]>()
-    for (const row of data.requirements ?? []) {
-      const key = row.contractId || row.contractNo
-      groups.set(key, [...(groups.get(key) ?? []), row])
-    }
-    executionProcurementTasks.value = [...groups.entries()].map(([key, rows]) => ({
-      key,
-      contractNo: rows[0]?.contractNo ?? '',
-      customerName: rows[0]?.customerName ?? '',
-      productNames: [...new Set(rows.map(row => row.productName).filter(Boolean))].join('、'),
-      productCount: rows.length,
-      requiredDate: [...rows.map(row => row.requiredDate).filter(Boolean)].sort()[0] ?? '',
-    }))
-    executionProcurementTasksAvailable.value = true
-  } catch {
-    executionProcurementTasks.value = []
-    executionProcurementTasksAvailable.value = false
-  }
-}
-
-async function loadExecutionShippingTasks() {
-  if (!auth.can('shipping:schedule:read')) {
-    executionShippingTasks.value = []
-    executionShippingTasksAvailable.value = false
-    return
-  }
-  try {
-    const data = await get<{ handoffs: ExecutionShippingTask[] }>('/shipping/contract-handoffs', {}, quietErrors)
-    executionShippingTasks.value = (data.handoffs ?? []).filter(row => row.status === 'WAITING_REQUOTE')
-    executionShippingTasksAvailable.value = true
-  } catch {
-    executionShippingTasks.value = []
-    executionShippingTasksAvailable.value = false
-  }
+    const data=await get<{finance:FinanceExecutionTask[];procurement:ExecutionRequirement[];shipping:ExecutionShippingTask[]}>('/home/execution-todos',{},quietErrors)
+    financeTasks.value=data.finance??[]
+    executionShippingTasks.value=data.shipping??[]
+    const groups=new Map<string,ExecutionRequirement[]>()
+    for(const row of data.procurement??[]){const key=row.contractId||row.contractNo;groups.set(key,[...(groups.get(key)??[]),row])}
+    executionProcurementTasks.value=[...groups.entries()].map(([key,rows])=>({key,contractNo:rows[0]?.contractNo??'',customerName:rows[0]?.customerName??'',productNames:[...new Set(rows.map(row=>row.productName).filter(Boolean))].join('、'),productCount:rows.length,requiredDate:[...rows.map(row=>row.requiredDate).filter(Boolean)].sort()[0]??''}))
+    executionProcurementTasksAvailable.value=true;executionShippingTasksAvailable.value=true
+  } catch {executionTasksError.value=true}
 }
 function shippingReworkLabel(value:string){return value==='ADD_CARRIER'?'增加船运公司':value==='REQUOTE'?'更新船运报价/船期':'重新议价'}
 function handleShippingTaskAction(command:string,row:ShippingReworkTask){if(command==='open'){void router.push('/shipping/sourcing');return}if(command==='resolve')void resolveShippingTask(row)}
@@ -574,8 +558,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(),loadQualityProcurementTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionProcurementTasks(), loadExecutionShippingTasks(), loadQualityTasks(),loadQualityProcurementTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {
