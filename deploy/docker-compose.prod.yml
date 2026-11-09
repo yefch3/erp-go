@@ -234,6 +234,12 @@ services:
       # 0 until TLS exists (the IP-only phase serves plain http); flipped to
       # 1 in .env the day the domain and certificate land. DEPLOY.md 三.
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      # 文件中转 /api/storage/relay 要认得自己的桶：和各业务服务读同一组变量，
+      # 网关信的桶和服务签的桶永远是同一个。
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
     # The base file publishes 8080 on every interface, which is right for a
     # laptop and wrong behind nginx: the proxy is the one public door.
     # !override replaces the list instead of appending to it.

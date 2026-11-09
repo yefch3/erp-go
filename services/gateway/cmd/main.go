@@ -215,6 +215,7 @@ func run(log *slog.Logger) error {
 		JWTSecret:         cfg.JWTSecret,
 		TokenTTL:          cfg.JWTTTL,
 		Log:               log,
+		Storage:           httpapi.NewStorageRelay(cfg.StorageEndpoint, cfg.StoragePublicEndpoint, cfg.StorageBucket, cfg.StorageUseSSL),
 	}
 
 	httpSrv := &http.Server{
