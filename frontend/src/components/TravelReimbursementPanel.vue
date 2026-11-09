@@ -7,7 +7,7 @@
       <el-table-column type="expand"><template #default="{row}"><div class="details">
         <div class="detail-grid"><span>出差：{{row.tripStart}} 至 {{row.tripEnd}}</span><span>路线：{{row.origin}} → {{row.destination}}</span><span>事由：{{row.purpose}}</span><span>收款账户：{{row.paymentAccount}}</span></div>
         <el-alert v-if="row.rejectionReason" type="error" :closable="false" :title="`退回原因：${row.rejectionReason}`" />
-        <h4>报销凭证</h4><div class="files"><a v-for="f in row.files" :key="f.id" :href="f.url" target="_blank" rel="noopener">{{fileType[f.category]||f.category}} · {{f.fileName}}</a><span v-if="!row.files?.length">暂无凭证</span></div>
+        <h4>报销凭证</h4><div class="files"><a v-for="f in row.files" :key="f.id" href="#" @click.prevent="openFile(f)">{{fileType[f.category]||f.category}} · {{f.fileName}}</a><span v-if="!row.files?.length">暂无凭证</span></div>
       </div></template></el-table-column>
       <el-table-column prop="claimNo" label="报销单号" min-width="180" />
       <el-table-column prop="claimantName" label="报销人" width="110" /><el-table-column prop="departmentName" label="部门" width="130" />
@@ -47,9 +47,10 @@
 <script setup lang="ts">
 import {computed,onMounted,reactive,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
-import {get,patch,post} from '../api'
+import {get,patch,post,quietErrors} from '../api'
 import {useAuthStore} from '../stores/auth'
 import {getActionableApproval} from '../lib/approvalAction'
+import {relayFailureReason,saveViaRelay,uploadViaRelay} from '../lib/storageRelay'
 type Claim=Record<string,any>
 const auth=useAuthStore(),rows=ref<Claim[]>([]),approvalTasks=ref<Record<string,string>>({}),approvalOverrides=ref<Record<string,boolean>>({}),loading=ref(false),saving=ref(false),formOpen=ref(false),payOpen=ref(false),editing=ref<Claim|null>(null),paying=ref<Claim|null>(null),picked=ref<File[]>([]),fileCategory=ref('INVOICE')
 const myID=computed(()=>String(auth.employeeId||localStorage.getItem('employeeId')||'')),canManage=auth.can('procurement:reimbursement:manage'),currencies=['CNY','USD','EUR','GBP','JPY','HKD','CAD','AUD']
@@ -66,8 +67,19 @@ async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(!overr
 function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
 function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{tripStart:row.tripStart,tripEnd:row.tripEnd,origin:row.origin,destination:row.destination,purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
 function pickFiles(e:Event){picked.value=Array.from((e.target as HTMLInputElement).files||[])}
-async function uploadFiles(id:string){for(const file of picked.value){const signed=await post<{objectKey:string;uploadUrl:string}>(`/travel-reimbursements/${id}/files/presign`,{file_name:file.name,category:fileCategory.value});const result=await fetch(signed.uploadUrl,{method:'PUT',body:file,headers:{'Content-Type':file.type||'application/octet-stream'}});if(!result.ok)throw new Error('凭证上传失败');await post(`/travel-reimbursements/${id}/files`,{object_key:signed.objectKey,file_name:file.name,category:fileCategory.value})}}
-async function save(submitAfterSave=false){if(!form.tripStart||!form.tripEnd||!form.origin.trim()||!form.destination.trim()||!form.purpose.trim()||!form.amount.trim()||!form.paymentAccount.trim()){ElMessage.warning('请填写所有必填项');return}saving.value=true;try{const result=editing.value?await patch<{reimbursement:Claim}>(`/travel-reimbursements/${editing.value.id}`,form):await post<{reimbursement:Claim}>('/travel-reimbursements',form);await uploadFiles(result.reimbursement.id);if(submitAfterSave){await post(`/travel-reimbursements/${result.reimbursement.id}/submit`,{});ElMessage.success('报销已提交，等待部门负责人确认')}else{ElMessage.success('报销草稿已保存')}formOpen.value=false;await load()}finally{saving.value=false}}
+// 凭证经网关中转进存储（lib/storageRelay.ts）——国内直连存储会连接超时。传成功一份就从待传
+// 列表里拿掉一份：中途失败再点一次只补传剩下的，不会把已登记的再登记一遍。
+// 三步都 quiet：失败由 save 连着「单子已保存、文件还在列表里」一起说，不让通用 toast 再说一遍。
+async function uploadFiles(id:string){for(const file of [...picked.value]){const signed=await post<{objectKey:string;uploadUrl:string}>(`/travel-reimbursements/${id}/files/presign`,{file_name:file.name,category:fileCategory.value},quietErrors);try{await uploadViaRelay(signed.uploadUrl,file)}catch(err){throw new Error(`凭证「${file.name}」上传失败：${relayFailureReason(err)||'请稍后再试'}`)}await post(`/travel-reimbursements/${id}/files`,{object_key:signed.objectKey,file_name:file.name,category:fileCategory.value},quietErrors);picked.value=picked.value.filter(f=>f!==file)}}
+async function openFile(f:Claim){try{await saveViaRelay(f.url,f.fileName)}catch(err){ElMessage.error(`凭证打开失败：${relayFailureReason(err)||'请稍后再试'}`)}}
+async function save(submitAfterSave=false){if(!form.tripStart||!form.tripEnd||!form.origin.trim()||!form.destination.trim()||!form.purpose.trim()||!form.amount.trim()||!form.paymentAccount.trim()){ElMessage.warning('请填写所有必填项');return}saving.value=true;try{const result=editing.value?await patch<{reimbursement:Claim}>(`/travel-reimbursements/${editing.value.id}`,form):await post<{reimbursement:Claim}>('/travel-reimbursements',form);
+// 单子已经落库：从这里起再点保存就是改这一张，不是再建一张。
+editing.value=result.reimbursement;
+// 上传失败不关对话框：单子留着、原因说清楚；没传上去的文件还在待传列表里，再点一次保存只补它们。
+// 以前这里什么都不说，员工只能一遍遍点。load() 放在 catch 外面：它自己要是失败，照常往上抛。
+let uploadError:unknown=null;try{await uploadFiles(result.reimbursement.id)}catch(err){uploadError=err}
+if(uploadError){const reason=uploadError instanceof Error?uploadError.message:(relayFailureReason(uploadError)||'凭证上传失败');ElMessage.error({message:`${reason}。报销单已保存为草稿，没传上去的文件还在列表里，再点一次保存会继续上传。`,duration:8000});await load();return}
+if(submitAfterSave){await post(`/travel-reimbursements/${result.reimbursement.id}/submit`,{});ElMessage.success('报销已提交，等待部门负责人确认')}else{ElMessage.success('报销草稿已保存')}formOpen.value=false;await load()}finally{saving.value=false}}
 async function submit(row:Claim){await post(`/travel-reimbursements/${row.id}/submit`,{});ElMessage.success('已提交，等待部门负责人确认');await load()}
 function openPay(row:Claim){paying.value=row;Object.assign(pay,{paidAt:new Date().toISOString().slice(0,10),paymentAccount:row.paymentAccount,paymentReference:''});payOpen.value=true}
 async function savePay(){if(!paying.value||!pay.paidAt||!pay.paymentAccount.trim()){ElMessage.warning('请填写付款日期和账户');return}saving.value=true;try{await post(`/travel-reimbursements/${paying.value.id}/pay`,pay);payOpen.value=false;ElMessage.success('付款已登记');await load()}finally{saving.value=false}}

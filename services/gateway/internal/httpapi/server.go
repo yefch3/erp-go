@@ -114,6 +114,9 @@ type Server struct {
 	// they signed in.
 	TokenTTL time.Duration
 	Log      *slog.Logger
+	// Storage carries files between the browser and the object store when
+	// the browser cannot reach the store itself; see storage_relay.go.
+	Storage *StorageRelay
 }
 
 func (s *Server) Router() http.Handler {
@@ -163,6 +166,11 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.idempotent)
 		// 改员工、角色、公司开关的写成功了，就把这家公司缓存的权限答案清掉。
 		r.Use(s.forgetPermissionsOnChange)
+		// 文件中转：浏览器连不上对象存储时（天津办公室实测连接超时），由网关替它
+		// 收发。不挂业务权限：能进来的只有本系统自己那个桶的签名地址，而签名是
+		// 业务服务查过权限之后才发的——它就是权限。见 storage_relay.go。
+		r.Put("/api/storage/relay", s.relayUpload)
+		r.Get("/api/storage/relay", s.relayDownload)
 		r.Get("/api/masterdata/bulk-delete/access", s.masterDeleteAccess)
 		r.Post("/api/masterdata/bulk-delete/preview", s.masterDeletePreview)
 		r.Post("/api/masterdata/bulk-delete/execute", s.masterDeleteExecute)

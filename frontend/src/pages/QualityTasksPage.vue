@@ -155,7 +155,7 @@
             <el-button type="primary" plain :loading="uploading" :disabled="!picked.length" @click="uploadFiles">{{ t('quality.upload') }}</el-button>
           </div>
           <el-table :data="task.files" size="small">
-            <el-table-column prop="fileName" :label="t('quality.fileName')"><template #default="{ row }"><a :href="row.downloadUrl" target="_blank">{{ row.fileName }}</a></template></el-table-column>
+            <el-table-column prop="fileName" :label="t('quality.fileName')"><template #default="{ row }"><a href="#" @click.prevent="openFile(row)">{{ row.fileName }}</a></template></el-table-column>
             <el-table-column :label="t('quality.category')" width="160"><template #default="{ row }">{{ row.category ? t(`quality.categories.${row.category}`) : '—' }}</template></el-table-column>
             <el-table-column prop="uploadedByName" :label="t('quality.uploader')" width="150" />
             <el-table-column :label="t('quality.uploadedAt')" width="180"><template #default="{ row }">{{ fmt(row.uploadedAt) }}</template></el-table-column>
@@ -181,6 +181,7 @@ import { useRoute } from 'vue-router'
 import { get, post, patch, del } from '../api'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import { relayFailureReason, saveViaRelay, uploadViaRelay } from '../lib/storageRelay'
 type QLine={id:string;productName:string;spec:string;uomCode:string;requestedQty:string;qualifiedQty:string;unresolvedQty:string;finalResult:string;approvedReleaseQty:string}
 type RoundLine={taskLineId:string;result:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string}
 type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:any[]}
@@ -238,7 +239,10 @@ function applyResult(id:string){const r=roundOf[id];if(r.result==='PASS'){r.qual
 function syncBad(id:string){const r=roundOf[id];const inspected=Number(r.inspectedQty);const qualified=Number(r.qualifiedQty);r.unqualifiedQty=String(Math.max(0,inspected-qualified));if(qualified===0&&inspected>0)r.result='FAIL';else if(qualified>=inspected&&inspected>0)r.result='PASS';else if(qualified>0&&qualified<inspected)r.result='PARTIAL'}
 async function submitRound(){if(!task.value)return;saving.value=true;try{await post(`/quality/tasks/${task.value.id}/rounds`,{inspected_at:round.inspectedAt||new Date().toISOString(),inspection_location:round.location||task.value.inspectionLocation,remark:round.remark,lines:unresolvedLines.value.map(l=>{const line=roundOf[l.id];return{task_line_id:Number(l.id),result:line.result,inspected_qty:line.inspectedQty,qualified_qty:line.qualifiedQty,unqualified_qty:line.unqualifiedQty,issue_description:line.issueDescription,handling_suggestion:line.handlingSuggestion}})});ElMessage.success(t('quality.roundSaved'));round.remark='';await refresh()}finally{saving.value=false}}
 function pickFiles(e:Event){picked.value=Array.from((e.target as HTMLInputElement).files||[])}
-async function uploadFiles(){if(!task.value||!picked.value.length)return;uploading.value=true;try{const latestRound=Number(task.value.rounds.at(-1)?.id||0);for(const file of picked.value){const p=await post<{fileKey:string;uploadUrl:string}>(`/quality/tasks/${task.value.id}/files/presign`,{file_name:file.name});const put=await fetch(p.uploadUrl,{method:'PUT',body:file,headers:{'Content-Type':file.type||'application/octet-stream'}});if(!put.ok)throw new Error(t('quality.uploadFailed'));await post(`/quality/tasks/${task.value.id}/files`,{file_key:p.fileKey,file_name:file.name,content_type:file.type,size_bytes:file.size,category:fileCategory.value,round_id:latestRound,supplemental:task.value.status==='COMPLETED'})}picked.value=[];ElMessage.success(t('quality.uploaded'));await refresh()}finally{uploading.value=false}}
+// 资料经网关中转进存储（lib/storageRelay.ts）——国内直连存储会连接超时。传成功一份就从待传
+// 列表里拿掉一份：中途失败时再点只补传剩下的；失败原因连着文件名一起说，以前这里什么都不提示。
+async function uploadFiles(){if(!task.value||!picked.value.length)return;uploading.value=true;try{const latestRound=Number(task.value.rounds.at(-1)?.id||0);let failed=false;for(const file of [...picked.value]){const p=await post<{fileKey:string;uploadUrl:string}>(`/quality/tasks/${task.value.id}/files/presign`,{file_name:file.name});try{await uploadViaRelay(p.uploadUrl,file)}catch(err){ElMessage.error({message:`${t('quality.uploadFailed')}：${file.name}（${relayFailureReason(err)||t('common.networkError')}）`,duration:8000});failed=true;break}await post(`/quality/tasks/${task.value.id}/files`,{file_key:p.fileKey,file_name:file.name,content_type:file.type,size_bytes:file.size,category:fileCategory.value,round_id:latestRound,supplemental:task.value.status==='COMPLETED'});picked.value=picked.value.filter(f=>f!==file)}if(!failed)ElMessage.success(t('quality.uploaded'));await refresh()}finally{uploading.value=false}}
+async function openFile(row:{downloadUrl:string;fileName:string}){try{await saveViaRelay(row.downloadUrl,row.fileName)}catch(err){ElMessage.error(`${t('quality.openFailed')}：${relayFailureReason(err)||t('common.networkError')}`)}}
 onMounted(async()=>{await load();await openRequestedTask();const access=await get<{canDelete:boolean}>('/quality/access');canDelete.value=access.canDelete})
 watch(()=>route.query.task,()=>{void openRequestedTask()})
 </script>

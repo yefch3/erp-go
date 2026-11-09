@@ -13,6 +13,7 @@ BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 # thing in both places. ?= yields to values set in the environment.
 PG_PORT    ?= 5433
 REDIS_PORT ?= 6380
+MINIO_PORT ?= 19000
 PROTO_BASE_REF ?= origin/main
 
 # Switches for the DB-backed integration tests. Deliberately NOT part of
@@ -35,6 +36,7 @@ TEST_ENV := \
 	PRODUCT_TEST_DSN='postgres://erp_product:erp_product_pw@localhost:$(PG_PORT)/erp_product?sslmode=disable' \
 	PROCUREMENT_MIGRATION_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement_migrations?sslmode=disable' \
 	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)' \
+	GATEWAY_TEST_MINIO='127.0.0.1:$(MINIO_PORT)' \
 	PROCUREMENT_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 
 .PHONY: help

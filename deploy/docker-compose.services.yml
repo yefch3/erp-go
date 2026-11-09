@@ -395,6 +395,11 @@ services:
       SHIPPING_ADDR: shipping:9009
       MAIL_ADDR: mail:9010
       REDIS_ADDR: redis:6379
+      # 文件中转 /api/storage/relay：网关替连不上对象存储的浏览器收发文件。
+      # 对内连 minio:9000，发出去的 Host 仍是签名里写的 localhost:19000。
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_BUCKET: erp-files
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
