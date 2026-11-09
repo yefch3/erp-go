@@ -139,10 +139,26 @@ jobs:
       #
       # MODULES / FRONTEND 只是把范围收窄，跑的仍然是同一个 ci 目标——本地
       # `make ci-pr` 跑的和这里一模一样。
+      # 对象存储中转（/api/storage/relay）的真签名往返测试要一个真的 S3。
+      # MinIO 的官方镜像必须带 `server /data` 这条命令，而 services 块传不了命令，
+      # 所以用一步 docker run。账号密码是 compose 里的开发默认值，和上面 Postgres
+      # 的一样不是秘密。桶由测试自己建（blobstore.ensureBucket）。
+      - name: Start MinIO for the storage relay round-trip
+        run: |
+          docker run -d --name minio -p 19000:9000 \
+            -e MINIO_ROOT_USER=erp -e MINIO_ROOT_PASSWORD=erp_dev_password \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:19000/minio/health/live && exit 0
+            sleep 1
+          done
+          echo "MinIO did not become healthy"; docker logs minio; exit 1
+
       - name: ci
         env:
           PG_PORT: "5432"
           REDIS_PORT: "6379"
+          MINIO_PORT: "19000"
         run: make ci MODULES="${{ steps.scope.outputs.modules }}" FRONTEND="${{ steps.scope.outputs.frontend }}"
 
       # 只在 main 上保存，理由见 Restore 那一步。always()：这次 CI 红了缓存
