@@ -1005,9 +1005,12 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 		if err != nil {
 			return err
 		}
-		var historyPricesMissing bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historyPricesMissing); err != nil {
+		var historical, historyPricesMissing bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2),EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historical, &historyPricesMissing); err != nil {
 			return err
+		}
+		if historical && head.SupplierID == 0 {
+			return apierr.Conflict("PO_SUPPLIER_MISSING", "请先在补齐资料中填写供应商，再登记到货")
 		}
 		if historyPricesMissing {
 			return apierr.Conflict("PO_PRICE_MISSING", "历史采购单价格尚未补齐，不能登记到货")

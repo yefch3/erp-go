@@ -11,9 +11,13 @@ func (s *Server) saveHistoricalOrder(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
-		s.writeGRPCError(w, err)
-		return
+	// Historical orders may be recorded before their supplier is known. A
+	// supplied ID still follows the same master-data access checks as before.
+	if req.GetSupplierId() != 0 {
+		if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
 	}
 	for _, line := range req.Lines {
 		line.ProductCode = ""

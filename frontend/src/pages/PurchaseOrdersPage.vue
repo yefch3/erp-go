@@ -36,7 +36,7 @@
             <div class="sub">{{ formatTime(row.createdAt) }}</div>
            </template>
            <template v-else-if="column.key==='supplier'">
-            <div>{{ row.supplierName }}</div>
+            <div>{{ row.supplierName || (row.historical ? '待补充供应商' : '—') }}</div>
             <div class="sub">{{ t('orders.buyer') }} {{ row.buyerName || '—' }}</div>
            </template>
            <template v-else-if="column.key==='batch'">
@@ -232,7 +232,7 @@
         <el-button size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
       </div>
       <el-descriptions :column="3" border size="small" class="desc">
-        <el-descriptions-item :label="t('orders.supplier')">{{ detail?.supplierName }}</el-descriptions-item>
+        <el-descriptions-item :label="t('orders.supplier')">{{ detail?.supplierName || (detail?.historical ? '待补充供应商' : '—') }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.amount')">
           {{ detail?.currency }} {{ detail?.totalAmount }}
         </el-descriptions-item>

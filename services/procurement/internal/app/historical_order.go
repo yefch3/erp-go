@@ -60,9 +60,16 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 			return out, err
 		}
 	}
-	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
-	if err != nil {
-		return out, err
+	var supplier Supplier
+	var err error
+	if in.SupplierID < 0 {
+		return out, apierr.Invalid("PO_SUPPLIER_INVALID", "请选择有效供应商，或留空后补")
+	}
+	if in.SupplierID > 0 {
+		supplier, err = s.supplierForOrder(ctx, in.SupplierID)
+		if err != nil {
+			return out, err
+		}
 	}
 	in.PONo = strings.TrimSpace(in.PONo)
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
@@ -150,8 +157,8 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 			if e := tx.QueryRow(ctx, `SELECT supplier_id,currency,payment_requested_at IS NOT NULL FROM purchase_orders WHERE tenant_id=$1 AND id=$2`, tenantID, in.ID).Scan(&oldSupplier, &oldCurrency, &paid); e != nil {
 				return e
 			}
-			if oldSupplier != in.SupplierID || oldCurrency != in.Currency || paid {
-				return apierr.Conflict("PO_HISTORY_LOCKED", "已确认单不能更换供应商、币种，申请付款后不能修改")
+			if (oldSupplier != 0 && oldSupplier != in.SupplierID) || oldCurrency != in.Currency || paid {
+				return apierr.Conflict("PO_HISTORY_LOCKED", "已确认单只能补填空缺供应商，不能更换已有供应商或币种，申请付款后不能修改")
 			}
 			var count int
 			if e := tx.QueryRow(ctx, `SELECT count(*) FROM purchase_order_items WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.ID).Scan(&count); e != nil {
@@ -268,6 +275,20 @@ func (s *Service) RequireHistoricalPrices(ctx context.Context, tenantID, id int6
 	}
 	if m.Historical && !m.PricesComplete {
 		return apierr.Conflict("PO_PRICE_MISSING", "历史采购单价格尚未补齐，不能登记到货或付款")
+	}
+	return nil
+}
+
+// A historical record may be confirmed without a supplier, but fulfilment
+// must wait until the supplier snapshot can be written to receipts/payments.
+func (s *Service) RequireHistoricalSupplier(ctx context.Context, tenantID, id int64) error {
+	var missing bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_orders o JOIN historical_purchase_orders h ON h.tenant_id=o.tenant_id AND h.po_id=o.id WHERE o.tenant_id=$1 AND o.id=$2 AND o.supplier_id=0)`, tenantID, id).Scan(&missing)
+	if err != nil {
+		return err
+	}
+	if missing {
+		return apierr.Conflict("PO_SUPPLIER_MISSING", "请先在补齐资料中填写供应商，再登记到货或申请付款")
 	}
 	return nil
 }
