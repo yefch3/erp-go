@@ -69,6 +69,9 @@ func (s *Service) SaveOrderContract(ctx context.Context, tenantID, orderID int64
 }
 
 func (s *Service) VerifyOrderContract(ctx context.Context, tenantID, orderID int64, op Operator) (OrderContractState, error) {
+	if err := s.RequireHistoricalSupplier(ctx, tenantID, orderID); err != nil {
+		return OrderContractState{}, err
+	}
 	cmd, err := s.pool.Exec(ctx, `UPDATE purchase_orders SET contract_verified_at=coalesce(contract_verified_at,now()),contract_verified_by=CASE WHEN contract_verified_at IS NULL THEN $3 ELSE contract_verified_by END,contract_verified_by_name=CASE WHEN contract_verified_at IS NULL THEN $4 ELSE contract_verified_by_name END,payment_requested_at=coalesce(payment_requested_at,now()),payment_requested_by=CASE WHEN payment_requested_at IS NULL THEN $3 ELSE payment_requested_by END,payment_requested_by_name=CASE WHEN payment_requested_at IS NULL THEN $4 ELSE payment_requested_by_name END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='ORDERED' AND signed_contract_key<>'' AND (payment_requested_at IS NULL OR contract_verified_at IS NOT NULL)`, tenantID, orderID, op.ID, op.Name)
 	if err != nil {
 		return OrderContractState{}, err
@@ -81,6 +84,9 @@ func (s *Service) VerifyOrderContract(ctx context.Context, tenantID, orderID int
 }
 
 func (s *Service) RequestOrderPayment(ctx context.Context, tenantID, orderID int64, op Operator) (OrderContractState, error) {
+	if err := s.RequireHistoricalSupplier(ctx, tenantID, orderID); err != nil {
+		return OrderContractState{}, err
+	}
 	if err := s.RequireHistoricalPrices(ctx, tenantID, orderID); err != nil {
 		return OrderContractState{}, err
 	}
