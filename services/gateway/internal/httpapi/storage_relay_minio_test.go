@@ -33,18 +33,18 @@ func TestStorageRelayAgainstMinIO(t *testing.T) {
 	bucket := env("MINIO_BUCKET", "erp-files")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	store, err := blobstore.New(ctx, blobstore.Config{
+	// 一份配置，两头用：业务服务拿它签地址，网关拿它认地址。生产上也是这个关系。
+	cfg := blobstore.Config{
 		Endpoint:  endpoint,
 		AccessKey: env("MINIO_ACCESS_KEY", "erp"),
 		SecretKey: env("MINIO_SECRET_KEY", "erp_dev_password"),
 		Bucket:    bucket,
-	})
+	}
+	store, err := blobstore.New(ctx, cfg)
 	if err != nil {
 		t.Fatalf("minio at %s: %v", endpoint, err)
 	}
-
-	// 业务服务签地址时用的就是浏览器那一侧的主机；本机跑时两侧是同一个。
-	s := &Server{Storage: NewStorageRelay(endpoint, endpoint, bucket, false)}
+	s := &Server{Storage: mustRelay(cfg)}
 	key := "relay-test/" + time.Now().UTC().Format("20060102T150405.000000000") + "-质检 照片 (1).jpg"
 	t.Cleanup(func() { _ = store.Remove(context.Background(), key) })
 

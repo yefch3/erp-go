@@ -1029,7 +1029,7 @@ CREATE TABLE contract_items (
 上传是三步：`presign` 拿签名 URL → 浏览器 **PUT 直传对象存储** → `register` 登记落库。
 文件字节**不经过网关**，一份 30 MB 的扫描件不会变成一个 30 MB 的请求体。
 
-> **2026-11-09 补：直传在国内走不通。** 天津办公室 F12 实测浏览器到 S3 是 `net::ERR_CONNECTION_TIMED_OUT`（时通时不通），桶里从上线起国内员工直传成功 0 次，而经网关中转的供应商资料、询价附件都传上去了。于是网关加了 `/api/storage/relay`（`services/gateway/internal/httpapi/storage_relay.go`）：页面照旧先 `presign`，然后不自己连存储，而是把文件连同签名地址交给网关（地址放 `X-Storage-Url` 头，不进 access log），网关核对那是本系统自己那个桶的签名地址之后代为 PUT，Host 头保持签名里的那个；读文件同理，转回时一律 `Content-Disposition: attachment` + `nosniff`，用户上传的 HTML 不会在本站域名下当页面跑。业务服务一行不改，签名仍由存储验证，网关不持存储密钥，文件只在内存里过、不落盘。前端入口是 `frontend/src/lib/storageRelay.ts`；目前质检资料、报销凭证两处（上传和查看）已切换，其余直传功能国内同事用到时照此切换。
+> **2026-11-09 补：直传在国内走不通。** 天津办公室 F12 实测浏览器连签名地址那台主机是 `net::ERR_CONNECTION_TIMED_OUT`，桶里从上线起国内员工直传成功 0 次，而经网关中转的供应商资料、询价附件都传上去了。于是网关加了 `/api/storage/relay`（`services/gateway/internal/httpapi/storage_relay.go`）：页面照旧先 `presign`，然后不自己连存储，而是把文件连同签名地址交给网关（地址放 `X-Storage-Url` 头，不进 access log），网关核对那是本系统自己那个桶的签名地址之后代为 PUT，Host 头保持签名里的那个；读文件同理，转回时一律 `Content-Disposition: attachment` + `nosniff`，用户上传的 HTML 不会在本站域名下当页面跑。业务服务一行不改，签名仍由存储验证，网关不持存储密钥；文件在网关里只过内存（前门 nginx 收请求体时会落一个临时文件，请求结束即删）。**「自己的地址」长什么样不是按配置拼的，是 `blobstore.PresignedShapes` 向签名库要来的**：对着 AWS，签出来的主机是 `<桶>.s3.dualstack.<区域>.amazonaws.com`，不是 `<桶>.<MINIO_PUBLIC_ENDPOINT>`——第一版照后者手拼，测试里的「生产地址」也是照它手写的，于是测试全绿、11-09 上线到 11-11 生产上 27 次上传全被网关挡在门口。现在认地址的规则和测试里的生产地址都出自真的签名代码（`blobstore.NewOffline`），网关因此也要和业务服务一样的 `MINIO_REGION`（区域是主机名的一部分）；启动日志 `storage relay ready signed_host=… dial_host=…` 写明它认的是哪台。前端入口是 `frontend/src/lib/storageRelay.ts`；目前质检资料、报销凭证两处（上传和查看）已切换，其余直传功能国内同事用到时照此切换。
 
 - **附件绑定到版本而不是合同**。变更会产生新版本并需要客户重新签署，
   「客户到底签的是哪一版」只有靠 `contract_version_id` 才答得出来。

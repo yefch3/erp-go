@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/sgao19/erp-go/pkg/blobstore"
 )
 
 // 这组测试里的「存储」是一个假的 S3：记下到它那儿的每个请求，按吩咐应答。
@@ -40,7 +44,124 @@ func fakeStore(t *testing.T, status int, headers map[string]string, body string)
 // 开发环境的形状：浏览器拿到的地址写着 localhost:19000，网关实际要连的是另一个
 // 主机（这里是假存储的地址）。签名盖住了 Host，所以连谁可以变、Host 不能变。
 func relayFor(store *httptest.Server) *StorageRelay {
-	return NewStorageRelay(strings.TrimPrefix(store.URL, "http://"), "localhost:19000", "erp-files", false)
+	return mustRelay(blobstore.Config{
+		Endpoint: strings.TrimPrefix(store.URL, "http://"), PublicEndpoint: "localhost:19000", Bucket: "erp-files",
+	})
+}
+
+func mustRelay(cfg blobstore.Config) *StorageRelay {
+	sr, err := NewStorageRelay(cfg)
+	if err != nil {
+		panic(err)
+	}
+	return sr
+}
+
+// 生产的存储配置，照 deploy/.env 的形状抄的（端点、区域、桶名的写法），密钥是
+// 编的。测试里凡是要「生产地址」的地方，都拿它交给真的签名代码去签——不手写。
+// 手写的那个版本就是 2026-11-09 上线即挂的原因：它少了一段 dualstack。
+var productionStorage = blobstore.Config{
+	Endpoint: "s3.us-west-2.amazonaws.com", PublicEndpoint: "s3.us-west-2.amazonaws.com",
+	AccessKey: "AKIAEXAMPLE", SecretKey: "example", UseSSL: true,
+	Bucket: "erp-files-564623062079", Region: "us-west-2",
+}
+
+// signedByTheStore 是业务服务签地址的四条路，一条不落。
+func signedByTheStore(t *testing.T, cfg blobstore.Config, key string) map[string]string {
+	t.Helper()
+	store, err := blobstore.NewOffline(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	out := map[string]string{}
+	for name, sign := range map[string]func() (string, error){
+		"PresignedPut": func() (string, error) {
+			u, err := store.PresignedPut(ctx, key, 10*time.Minute)
+			return urlString(u), err
+		},
+		"PresignedGet": func() (string, error) {
+			u, err := store.PresignedGet(ctx, key, 10*time.Minute)
+			return urlString(u), err
+		},
+		"PresignedGetAs": func() (string, error) {
+			u, err := store.PresignedGetAs(ctx, key, "发票.xlsx", 10*time.Minute)
+			return urlString(u), err
+		},
+		"PresignedGetInline": func() (string, error) {
+			u, err := store.PresignedGetInline(ctx, key, "application/pdf", 10*time.Minute)
+			return urlString(u), err
+		},
+	} {
+		raw, err := sign()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		out[name] = raw
+	}
+	return out
+}
+
+func urlString(u interface{ String() string }) string {
+	if u == nil {
+		return ""
+	}
+	return u.String()
+}
+
+// 这一条就是生产上那次故障的回放：按生产配置签出来的地址，中转必须认，而且
+// 原样去连（生产上对内对外是同一台）。第一版在这里答的是「不是本系统的文件存储」。
+func TestStorageRelayAcceptsWhatTheProductionStoreSigns(t *testing.T) {
+	relay := mustRelay(productionStorage)
+	for name, raw := range signedByTheStore(t, productionStorage, "travel-reimbursements/4/4/1762-发票 (1).xlsx") {
+		dial, host, err := relay.target(raw)
+		if err != nil {
+			t.Fatalf("%s: the relay refused an address its own store signed: %v\n%s", name, err, raw)
+		}
+		if dial.String() != raw {
+			t.Fatalf("%s: production address rewritten on the way to the store:\n got %s\nwant %s", name, dial, raw)
+		}
+		if !strings.HasSuffix(host, ".amazonaws.com") || !strings.HasPrefix(host, productionStorage.Bucket+".") {
+			t.Fatalf("%s: Host header %q", name, host)
+		}
+	}
+}
+
+// 开发环境同理：签的是 localhost:19000，连的是 minio:9000，Host 头不变。
+func TestStorageRelayAcceptsWhatTheDevStoreSigns(t *testing.T) {
+	cfg := blobstore.Config{Endpoint: "minio:9000", PublicEndpoint: "localhost:19000", AccessKey: "erp", SecretKey: "erp_dev_password", Bucket: "erp-files"}
+	relay := mustRelay(cfg)
+	for name, raw := range signedByTheStore(t, cfg, "quality/4/1/1762-质检 照片 (1).jpg") {
+		dial, host, err := relay.target(raw)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, raw)
+		}
+		if host != "localhost:19000" || dial.Host != "minio:9000" {
+			t.Fatalf("%s: dial %s host %s", name, dial.Host, host)
+		}
+		if want := strings.Replace(raw, "localhost:19000", "minio:9000", 1); dial.String() != want {
+			t.Fatalf("%s: path or query changed on the way to the store:\n got %s\nwant %s", name, dial, want)
+		}
+	}
+}
+
+// 区域是 AWS 签名主机名的一部分。网关少配一个 MINIO_REGION，认的就是别的区域的
+// 地址，真的反而全拒——compose 里那一行因此不能删，这条测试替它站岗。
+func TestStorageRelayNeedsTheSameRegionAsTheSigner(t *testing.T) {
+	forgetful := productionStorage
+	forgetful.Region = ""
+	relay := mustRelay(forgetful)
+	for name, raw := range signedByTheStore(t, productionStorage, "quality/4/1/a.jpg") {
+		if _, _, err := relay.target(raw); err == nil {
+			t.Fatalf("%s: a relay without the region accepted an address signed with it; the region no longer matters and this test can go", name)
+		}
+	}
+}
+
+func TestStorageRelayIsNotBuiltFromAConfigurationThatCannotSign(t *testing.T) {
+	if _, err := NewStorageRelay(blobstore.Config{Endpoint: "localhost:19000"}); err == nil {
+		t.Fatal("a relay was built without a bucket")
+	}
 }
 
 // 一个 minio-go 签出来的直传地址的样子：路径式、中文文件名已百分号编码。
@@ -167,43 +288,68 @@ func TestStorageRelayRefusesAddressesOutsideOurStore(t *testing.T) {
 	}
 }
 
-func TestStorageRelayTargetKeepsTheSignedHostWhileDialingTheInternalOne(t *testing.T) {
-	// 开发环境：对外 localhost:19000，对内 minio:9000。
-	dev := NewStorageRelay("minio:9000", "localhost:19000", "erp-files", false)
-	dial, host, err := dev.target(signedPut)
-	if err != nil {
-		t.Fatal(err)
+// 别的桶、别的区域、别的写法——只要不是签名库会签出来的那一种，就不认。
+// 这里的「错地址」可以手写：它们是反例，写错了最多是多拒一个。
+func TestStorageRelayRefusesProductionLookalikes(t *testing.T) {
+	relay := mustRelay(productionStorage)
+	signed := "?X-Amz-Credential=x&X-Amz-Signature=y"
+	for name, raw := range map[string]string{
+		"another bucket, same store":         "https://other-bucket.s3.dualstack.us-west-2.amazonaws.com/x.pdf" + signed,
+		"our bucket, another region":         "https://erp-files-564623062079.s3.dualstack.us-east-1.amazonaws.com/x.pdf" + signed,
+		"the name the first version assumed": "https://erp-files-564623062079.s3.us-west-2.amazonaws.com/x.pdf" + signed,
+		"path-style on the endpoint":         "https://s3.us-west-2.amazonaws.com/erp-files-564623062079/x.pdf" + signed,
+		"our host as a prefix":               "https://erp-files-564623062079.s3.dualstack.us-west-2.amazonaws.com.evil.example/x.pdf" + signed,
+		"plain http":                         "http://erp-files-564623062079.s3.dualstack.us-west-2.amazonaws.com/x.pdf" + signed,
+		"no key":                             "https://erp-files-564623062079.s3.dualstack.us-west-2.amazonaws.com/" + signed,
+		// U+212A KELVIN SIGN：Unicode 大小写折叠下它等于 k，但它不是 k。
+		"a Kelvin sign for the k": "https://erp-files-564623062079.s3.dualstac\u212A.us-west-2.amazonaws.com/x.pdf" + signed,
+	} {
+		if _, _, err := relay.target(raw); err == nil {
+			t.Fatalf("%s was accepted: %s", name, raw)
+		}
 	}
-	if dial.Host != "minio:9000" || host != "localhost:19000" {
-		t.Fatalf("dial %s host %s", dial.Host, host)
-	}
-	if !strings.Contains(dial.String(), "/1762-%E7%85%A7%E7%89%87.jpg?X-Amz-Algorithm=") {
-		t.Fatalf("encoded path or query altered: %s", dial.String())
-	}
-	// 虚拟主机式的桶名前缀跟着一起换。
-	dial, host, err = dev.target("http://erp-files.localhost:19000/quality/4/1/a.jpg?X-Amz-Credential=x&X-Amz-Signature=y")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dial.Host != "erp-files.minio:9000" || host != "erp-files.localhost:19000" {
-		t.Fatalf("virtual-hosted dial %s host %s", dial.Host, host)
-	}
+}
 
-	// 生产：对内对外同一个地址，什么都不改写。AWS 对没有点的桶名用虚拟主机式。
-	prod := NewStorageRelay("s3.us-west-2.amazonaws.com", "s3.us-west-2.amazonaws.com", "erp-files-564623062079", true)
-	raw := "https://erp-files-564623062079.s3.us-west-2.amazonaws.com/travel-reimbursements/4/2/1762-a.pdf?X-Amz-Credential=x&X-Amz-Signature=y"
-	dial, host, err = prod.target(raw)
-	if err != nil {
-		t.Fatal(err)
+// 拒绝一个地址时，日志里要有「收到哪台、本该是哪台」，而且不能有签名。
+// 第一版没记这一行：生产上认错主机两天，日志里只有一串 400。
+func TestStorageRelayLogsWhichHostItRefused(t *testing.T) {
+	var logged bytes.Buffer
+	s := &Server{Storage: mustRelay(productionStorage), Log: slog.New(slog.NewTextHandler(&logged, nil))}
+	raw := "https://erp-files-564623062079.s3.us-west-2.amazonaws.com/x.pdf?X-Amz-Credential=cred123&X-Amz-Signature=sig456"
+
+	w := httptest.NewRecorder()
+	s.relayUpload(w, relayRequest(http.MethodPut, raw, bytes.NewReader([]byte("x")), ""))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
-	if dial.String() != raw || host != "erp-files-564623062079.s3.us-west-2.amazonaws.com" {
-		t.Fatalf("production address rewritten: %s (host %s)", dial, host)
+	for _, want := range []string{
+		"storage relay refused an address",
+		"offered_host=erp-files-564623062079.s3.us-west-2.amazonaws.com",
+		"signed_host=erp-files-564623062079.s3.dualstack.us-west-2.amazonaws.com",
+	} {
+		if !strings.Contains(logged.String(), want) {
+			t.Fatalf("log is missing %q:\n%s", want, logged.String())
+		}
 	}
-	if _, _, err := prod.target("https://other-bucket.s3.us-west-2.amazonaws.com/x?X-Amz-Credential=x&X-Amz-Signature=y"); err == nil {
-		t.Fatal("another bucket on the same AWS host was accepted")
+	for _, secret := range []string{"cred123", "sig456", "X-Amz-Signature"} {
+		if strings.Contains(logged.String(), secret) {
+			t.Fatalf("%s leaked into the log:\n%s", secret, logged.String())
+		}
 	}
-	if _, _, err := prod.target("https://s3.us-west-2.amazonaws.com/erp-files-564623062079/x?X-Amz-Credential=x&X-Amz-Signature=y"); err != nil {
-		t.Fatalf("path-style address for our own bucket rejected: %v", err)
+}
+
+func TestStorageRelayLogAttrsNameBothHosts(t *testing.T) {
+	dev := mustRelay(blobstore.Config{Endpoint: "minio:9000", PublicEndpoint: "localhost:19000", Bucket: "erp-files"})
+	got := fmt.Sprint(dev.LogAttrs()...)
+	for _, want := range []string{"localhost:19000", "minio:9000", "/erp-files/"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("LogAttrs %q is missing %q", got, want)
+		}
+	}
+	prod := fmt.Sprint(mustRelay(productionStorage).LogAttrs()...)
+	if strings.Count(prod, "erp-files-564623062079.s3.dualstack.us-west-2.amazonaws.com") != 2 {
+		t.Fatalf("production signs and dials the same host; LogAttrs says %q", prod)
 	}
 }
 
@@ -229,7 +375,7 @@ func TestStorageRelayLogsNeverCarryTheSignature(t *testing.T) {
 	var logged bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logged, nil))
 
-	unreachable := &Server{Storage: NewStorageRelay("127.0.0.1:1", "localhost:19000", "erp-files", false), Log: logger}
+	unreachable := &Server{Storage: mustRelay(blobstore.Config{Endpoint: "127.0.0.1:1", PublicEndpoint: "localhost:19000", Bucket: "erp-files"}), Log: logger}
 	w := httptest.NewRecorder()
 	unreachable.relayUpload(w, relayRequest(http.MethodPut, signedPut, bytes.NewReader([]byte("x")), ""))
 	if w.Code != http.StatusBadGateway {
@@ -273,7 +419,7 @@ func TestStorageRelayStaysQuietWhenTheBrowserHangsUp(t *testing.T) {
 
 func TestStorageRelayUploadReportsUnreachableStore(t *testing.T) {
 	// 127.0.0.1:1 没人听：连接立刻被拒，和「连不上」是同一类错。
-	s := &Server{Storage: NewStorageRelay("127.0.0.1:1", "localhost:19000", "erp-files", false)}
+	s := &Server{Storage: mustRelay(blobstore.Config{Endpoint: "127.0.0.1:1", PublicEndpoint: "localhost:19000", Bucket: "erp-files"})}
 
 	w := httptest.NewRecorder()
 	s.relayUpload(w, relayRequest(http.MethodPut, signedPut, bytes.NewReader([]byte("x")), ""))
@@ -398,5 +544,56 @@ func TestStorageRelayAnswersUnavailableWhenNotConfigured(t *testing.T) {
 		if env := decodeEnvelope(t, w); env.Code != "STORAGE_RELAY_UNAVAILABLE" {
 			t.Fatalf("%s: code %q", method, env.Code)
 		}
+	}
+}
+
+// 走真的路由，而不是直接调处理函数：登录、CSRF、防重、权限缓存这几层中间件
+// 都在前面，任何一层去读请求体、给它设上限或者改了方法匹配，直接调函数的测试
+// 都看不见。5 MB 比任何一个 JSON 接口的上限都大，过得去才说明这条路没被谁
+// 顺手卡住。
+func TestStorageRelayThroughTheRealRouter(t *testing.T) {
+	store, calls := fakeStore(t, http.StatusOK, map[string]string{"Content-Type": "image/jpeg"}, "stored bytes")
+	s := renewServer(t, time.Hour, nil)
+	s.Storage = relayFor(store)
+	router := s.Router()
+	token := tokenAged(t, time.Minute, 12*time.Hour, 42, time.Time{})
+	payload := bytes.Repeat([]byte("0123456789abcdef"), 5<<20/16)
+
+	request := func(method string, body io.Reader, session, csrf bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/api/storage/relay", body)
+		req.Header.Set(StorageURLHeader, signedPut)
+		if session {
+			req.AddCookie(&http.Cookie{Name: SessionCookie, Value: token})
+			req.AddCookie(&http.Cookie{Name: CSRFCookie, Value: "echo"})
+		}
+		if csrf {
+			req.Header.Set(CSRFHeader, "echo")
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := request(http.MethodPut, bytes.NewReader(payload), false, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("an upload without a session: status %d, want 401", rec.Code)
+	}
+	if rec := request(http.MethodPut, bytes.NewReader(payload), true, false); rec.Code != http.StatusForbidden {
+		t.Fatalf("an upload without the CSRF echo: status %d, want 403", rec.Code)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("a refused upload reached the store: %d calls", len(*calls))
+	}
+
+	rec := request(http.MethodPut, bytes.NewReader(payload), true, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload through the router: status %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(*calls) != 1 || !bytes.Equal((*calls)[0].body, payload) {
+		t.Fatalf("the store did not receive the 5 MB body intact: %d calls", len(*calls))
+	}
+
+	rec = request(http.MethodGet, nil, true, false)
+	if rec.Code != http.StatusOK || rec.Body.String() != "stored bytes" {
+		t.Fatalf("download through the router: status %d body %q", rec.Code, rec.Body.String())
 	}
 }

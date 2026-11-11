@@ -25,6 +25,7 @@ import (
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
@@ -166,6 +167,24 @@ func run(log *slog.Logger) error {
 		oauthRedirect = "http://localhost:8080/api/oauth/google/callback"
 	}
 
+	// 文件中转认的是「业务服务签出来的地址」，所以拿和它们同一组存储配置去问
+	// 签名库（见 httpapi.NewStorageRelay）。起不来不该连登录一起带倒：记下来，
+	// /api/storage/relay 会答 503。起来了也记一行——上线后拿这行和业务服务的
+	// 存储配置对一眼，比等人点一次上传再看报错快。
+	relay, err := httpapi.NewStorageRelay(blobstore.Config{
+		Endpoint:       cfg.StorageEndpoint,
+		PublicEndpoint: cfg.StoragePublicEndpoint,
+		Bucket:         cfg.StorageBucket,
+		UseSSL:         cfg.StorageUseSSL,
+		Region:         cfg.StorageRegion,
+	})
+	if err != nil {
+		log.Error("storage relay disabled: uploads and downloads that go through the gateway will answer 503", "err", err.Error())
+		relay = nil
+	} else {
+		log.Info("storage relay ready", relay.LogAttrs()...)
+	}
+
 	srv := &httpapi.Server{
 		IAM:                     iamv1.NewAuthServiceClient(iamConn),
 		Directory:               iamv1.NewDirectoryServiceClient(iamConn),
@@ -215,7 +234,7 @@ func run(log *slog.Logger) error {
 		JWTSecret:         cfg.JWTSecret,
 		TokenTTL:          cfg.JWTTTL,
 		Log:               log,
-		Storage:           httpapi.NewStorageRelay(cfg.StorageEndpoint, cfg.StoragePublicEndpoint, cfg.StorageBucket, cfg.StorageUseSSL),
+		Storage:           relay,
 	}
 
 	httpSrv := &http.Server{
