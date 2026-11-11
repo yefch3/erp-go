@@ -600,6 +600,7 @@ basicsSaved: "基本资料已保存",
     freightBatch:'货运批次', presalesReference:'售前参考', route:'航线', estimatedSailing:'预计开船 / 到港', customerManaged:'客户自理运输', createFromHandoff:'建立正式船期',
     handoffStatuses:{WAITING_REQUOTE:'待重新询价',DRAFT:'草稿',RETURNED:'已退回修改',PENDING_APPROVAL:'审批中',APPROVED:'待上传合同',CONTRACT_UPLOADED:'待财务审核',CONTRACT_VERIFIED:'合同已核验',PAYMENT_REQUESTED:'已委托',PENDING:'待建立船期',SCHEDULED:'已建立船期',CUSTOMER_MANAGED:'客户自理',SUPERSEDED:'已被新版取代'},
   },
+  uploadList: { add: '添加文件', addMore: '继续添加', hint: '可以一次选多个，也可以分几次添加；每个文件单独选类型。单个不超过 {max} MB。', category: '文件类型', waiting: '待上传', uploading: '上传中…', failed: '上传失败：{reason}', tooLarge: '{names} 超过 {max} MB，没有添加', empty: '{names} 是空文件，没有添加', duplicate: '{names} 已经在列表里了', sameName: '已经交过同名文件，确认不是同一份' },
   common: {
     back: '返回',
     deactivationImpact: '确定停用“{name}”吗？共有 {total} 条进行中业务可能受到影响。', historyRetained: '已有订单、船期和历史记录会保留；该资料只会禁止用于新业务。', lifecycleReasonPlaceholder: '请输入本次停用或恢复原因', lifecycleReasonRequired: '必须填写原因', confirmDeactivate: '确认停用', confirmActivate: '确认恢复', activationReason: '确定恢复“{name}”吗？请填写恢复原因。',

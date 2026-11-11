@@ -608,6 +608,7 @@ basicsSaved: "Datos básicos guardados",
     viewFormalSchedule:'Ver itinerario formal',
     handoffStatuses:{WAITING_REQUOTE:'Pendiente de nueva cotización',DRAFT:'Borrador',RETURNED:'Devuelto',PENDING_APPROVAL:'En aprobación',APPROVED:'Pendiente de contrato',CONTRACT_UPLOADED:'Revisión financiera',CONTRACT_VERIFIED:'Contrato verificado',PAYMENT_REQUESTED:'Delegada',PENDING:'Pendiente de itinerario',SCHEDULED:'Itinerario creado',CUSTOMER_MANAGED:'Gestionado por cliente',SUPERSEDED:'Sustituido'},
   },
+  uploadList: { add: 'Añadir archivos', addMore: 'Añadir más', hint: 'Seleccione varios a la vez o añádalos por partes; indique el tipo de cada archivo. Máximo {max} MB por archivo.', category: 'Tipo de archivo', waiting: 'Pendiente', uploading: 'Subiendo…', failed: 'Error al subir: {reason}', tooLarge: '{names}: supera {max} MB, no se añadió', empty: '{names}: archivo vacío, no se añadió', duplicate: '{names}: ya está en la lista', sameName: 'ya se subió un archivo con este nombre; compruebe que no sea el mismo' },
   common: {
     back: 'Volver',
     deactivationImpact: '¿Desactivar {name}? {total} registro(s) activo(s) pueden verse afectados.', historyRetained: 'Los pedidos, itinerarios y el historial existentes se conservarán; solo se bloqueará para nuevos negocios.', lifecycleReasonPlaceholder: 'Introduce el motivo del cambio', lifecycleReasonRequired: 'El motivo es obligatorio', confirmDeactivate: 'Confirmar desactivación', confirmActivate: 'Confirmar reactivación', activationReason: '¿Reactivar {name}? Introduce el motivo.',

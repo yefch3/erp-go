@@ -599,6 +599,7 @@ basicsSaved: "Basic information saved",
     viewFormalSchedule:'View formal schedule',
     handoffStatuses:{WAITING_REQUOTE:'Awaiting re-quotation',DRAFT:'Draft',RETURNED:'Returned',PENDING_APPROVAL:'In approval',APPROVED:'Awaiting contract',CONTRACT_UPLOADED:'Finance review',CONTRACT_VERIFIED:'Contract verified',PAYMENT_REQUESTED:'Delegated',PENDING:'Awaiting schedule',SCHEDULED:'Schedule created',CUSTOMER_MANAGED:'Customer managed',SUPERSEDED:'Superseded'},
   },
+  uploadList: { add: 'Add files', addMore: 'Add more', hint: 'Select several at once or add them in batches; set the type of each file. Up to {max} MB per file.', category: 'File type', waiting: 'Waiting', uploading: 'Uploading…', failed: 'Upload failed: {reason}', tooLarge: '{names}: larger than {max} MB, not added', empty: '{names}: empty file, not added', duplicate: '{names}: already in the list', sameName: 'a file with this name was already uploaded — check it is not the same one' },
   common: {
     back: 'Back',
     deactivationImpact: 'Deactivate {name}? {total} active business record(s) may be affected.', historyRetained: 'Existing orders, schedules and history will be retained; this record will only be blocked from new business.', lifecycleReasonPlaceholder: 'Enter the reason for this change', lifecycleReasonRequired: 'A reason is required', confirmDeactivate: 'Confirm deactivation', confirmActivate: 'Confirm reactivation', activationReason: 'Reactivate {name}? Enter the reason for restoring it.',
