@@ -12,16 +12,18 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sgao19/erp-go/pkg/blobstore"
 )
 
 // 文件中转：浏览器连不上对象存储时，由网关替它收发。
 //
 // 系统里的附件一直是「预签名直传」：服务签一个十分钟有效的地址，浏览器拿着
 // 它直接把文件 PUT 进对象存储，文件字节不经过网关。这在美国和南美一直好好的。
-// 2026-11-09 天津办公室的 F12 给出了另一面：`net::ERR_CONNECTION_TIMED_OUT`
-// ——国内到 us-west-2 S3 的连接时通时不通，而到本站的连接每天都在用、一直是
-// 通的。桶里从上线到那天，国内员工直传成功的次数是 0（质检资料、报销凭证各
-// 0 份），走网关中转的供应商资料和询价附件却都传上去了。
+// 2026-11-09 天津办公室的 F12 给出了另一面：浏览器连签名地址里那台主机，
+// `net::ERR_CONNECTION_TIMED_OUT`；而到本站的连接他们每天都在用、一直是通的。
+// 桶里从上线到那天，国内员工直传成功的次数是 0（质检资料、报销凭证各 0 份），
+// 走网关中转的供应商资料和询价附件却都传上去了。
 //
 // 所以多一条路：页面照旧先向业务服务要签名地址，然后不自己去存储，而是把
 // 文件连同那个地址交给网关；网关连存储、把字节送过去、把存储的回答带回来。
@@ -31,8 +33,17 @@ import (
 // 桶、带没带签名，都在 target 里查；查不过的一律不连。签名本身仍由存储验证，
 // 网关不持有也不需要存储的密钥——它转发的权限就是那个地址里的签名。
 //
-// 文件只在内存里过一遍：PUT 的字节边收边转，GET 的字节边读边写，请求结束
-// 不在网关上留任何东西。
+// **「自己的地址长什么样」不是按配置拼的，是问签名的那个库要来的**
+// （blobstore.PresignedShapes）。第一版是拼的：`<桶>.<MINIO_PUBLIC_ENDPOINT>`，
+// 看着理所当然。而对着 AWS，签名库签出来的主机是
+// `<桶>.s3.dualstack.<区域>.amazonaws.com`——多一段 dualstack，区域也在里面。
+// 于是 2026-11-09 上线到 11-11，生产上 27 次上传全部被这里当成「不是本系统的
+// 文件存储」挡了回去，一次都没走到存储；而测试全绿，因为测试里的「生产地址」
+// 是照同一个想当然写的。现在测试里的生产地址由真的签名代码签（NewOffline），
+// 认地址的规则和它出自同一处。
+//
+// 网关这一步文件只在内存里过：PUT 的字节边收边转，GET 的字节边读边写。前门
+// nginx 收请求体时会先落一个临时文件，请求结束即删（它的默认行为，不归这里管）。
 
 // StorageURLHeader 是页面把签名地址交给中转时用的请求头。放头里而不是 query：
 // query 会原样进 nginx 的 access log，签名也就跟着进去了。
@@ -47,26 +58,24 @@ const storageRelayUploadTimeout = 10 * time.Minute
 
 // StorageRelay 知道怎么从一个签名地址认出自己的存储，以及实际该连到哪儿。
 type StorageRelay struct {
-	scheme string
-	// publicHost 是签名地址里写的主机（浏览器眼里的存储），internalHost 是网关
-	// 实际连接的主机。开发环境两者不同（localhost:19000 / minio:9000）；生产
-	// 一样。签名盖住了 Host，所以连谁可以换，发出去的 Host 头必须是签名时那个。
-	publicHost   string
-	internalHost string
-	bucket       string
-	client       *http.Client
-	maxBytes     int64
+	// signed 是业务服务签给浏览器的地址的样子：协议、主机、键前面那段路径。
+	signed blobstore.URLShape
+	// dialHost 非空时，实际连接换成这台主机——开发环境签的是 localhost:19000，
+	// 网关在容器里够得着的是 minio:9000。签名盖住了 Host，所以连谁可以换，
+	// 发出去的 Host 头必须还是签名时那个。生产上两边是同一台，这里为空。
+	dialHost string
+	client   *http.Client
+	maxBytes int64
 }
 
-// NewStorageRelay 用和各业务服务同一组 MINIO_* 变量建中转，这样一份
-// deploy/.env 管所有人，不会出现网关认的桶和服务签的桶不是同一个。
-func NewStorageRelay(endpoint, publicEndpoint, bucket string, useSSL bool) *StorageRelay {
-	if publicEndpoint == "" {
-		publicEndpoint = endpoint
-	}
-	scheme := "http"
-	if useSSL {
-		scheme = "https"
+// NewStorageRelay 按存储配置建中转。cfg 必须和签地址的业务服务用同一组值
+// （Endpoint、PublicEndpoint、Bucket、UseSSL、Region；密钥用不着）——所以网关
+// 读的是和它们同名的 MINIO_* 变量，一份 deploy/.env 管所有人。区域尤其不能
+// 漏：对着 AWS 它是主机名的一部分，漏了认的就是另一个区域的地址。
+func NewStorageRelay(cfg blobstore.Config) (*StorageRelay, error) {
+	signed, internal, err := blobstore.PresignedShapes(cfg)
+	if err != nil {
+		return nil, err
 	}
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -74,17 +83,34 @@ func NewStorageRelay(endpoint, publicEndpoint, bucket string, useSSL bool) *Stor
 	}
 	transport = transport.Clone()
 	transport.ResponseHeaderTimeout = 60 * time.Second
-	return &StorageRelay{
-		scheme:       scheme,
-		publicHost:   publicEndpoint,
-		internalHost: endpoint,
-		bucket:       bucket,
-		maxBytes:     storageRelayMaxBytes,
+	sr := &StorageRelay{
+		signed:   signed,
+		maxBytes: storageRelayMaxBytes,
 		client: &http.Client{
 			Transport: transport,
 			// 存储答 3xx（比如区域不对的 301）就是出了错，不替它跟过去。
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
+	}
+	// 只换主机。协议和路径都签过名、换不得；两边除主机外还有别的不一样时，
+	// 就按签名的地址原样去连（够不着会答 502，原因写在日志里）。
+	if !signed.SameHost(internal.Host) &&
+		internal.Scheme == signed.Scheme && internal.PathPrefix == signed.PathPrefix {
+		sr.dialHost = internal.Host
+	}
+	return sr, nil
+}
+
+// LogAttrs 是启动时记一行用的：网关认哪个地址、实际连哪台。上线后拿这一行
+// 核对，比等人点一次上传再看报错快得多。
+func (sr *StorageRelay) LogAttrs() []any {
+	dial := sr.dialHost
+	if dial == "" {
+		dial = sr.signed.Host
+	}
+	return []any{
+		"signed_host", sr.signed.Host, "dial_host", dial,
+		"scheme", sr.signed.Scheme, "path_prefix", sr.signed.PathPrefix,
 	}
 }
 
@@ -100,8 +126,8 @@ func (sr *StorageRelay) target(raw string) (dial *url.URL, host string, err erro
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, "", errors.New("不是一个完整的地址")
 	}
-	if u.Scheme != sr.scheme {
-		return nil, "", fmt.Errorf("地址应以 %s:// 开头", sr.scheme)
+	if u.Scheme != sr.signed.Scheme {
+		return nil, "", fmt.Errorf("地址应以 %s:// 开头", sr.signed.Scheme)
 	}
 	if u.User != nil {
 		return nil, "", errors.New("地址不能带用户名")
@@ -112,21 +138,12 @@ func (sr *StorageRelay) target(raw string) (dial *url.URL, host string, err erro
 		strings.Contains(u.Path, "/./") || strings.HasSuffix(u.Path, "/.") || strings.Contains(u.Path, "//") {
 		return nil, "", errors.New("地址里的路径不正常")
 	}
-	virtualHost := sr.bucket + "." + sr.publicHost
-	switch {
-	case strings.EqualFold(u.Host, sr.publicHost):
-		// 路径式：/<桶>/<键>
-		prefix := "/" + sr.bucket + "/"
-		if !strings.HasPrefix(u.Path, prefix) || len(u.Path) <= len(prefix) {
-			return nil, "", errors.New("不是本系统的存储桶")
-		}
-	case strings.EqualFold(u.Host, virtualHost):
-		// 虚拟主机式：<桶>.<主机>/<键>
-		if len(u.Path) < 2 {
-			return nil, "", errors.New("地址里没有文件")
-		}
-	default:
+	if !sr.signed.SameHost(u.Host) {
 		return nil, "", errors.New("不是本系统的文件存储")
+	}
+	// 主机对了，再看键前面那段：路径式的存储，桶名在路径里。
+	if !sr.signed.Covers(u) {
+		return nil, "", errors.New("不是本系统的存储桶")
 	}
 	q := u.Query()
 	if q.Get("X-Amz-Signature") == "" || q.Get("X-Amz-Credential") == "" {
@@ -134,14 +151,22 @@ func (sr *StorageRelay) target(raw string) (dial *url.URL, host string, err erro
 	}
 
 	dialURL := *u
-	if !strings.EqualFold(sr.internalHost, sr.publicHost) {
-		if strings.EqualFold(u.Host, sr.publicHost) {
-			dialURL.Host = sr.internalHost
-		} else {
-			dialURL.Host = sr.bucket + "." + sr.internalHost
-		}
+	if sr.dialHost != "" {
+		dialURL.Host = sr.dialHost
 	}
 	return &dialURL, u.Host, nil
+}
+
+// offeredHost 只取主机，给日志用：整条地址里有签名，不能记。
+func offeredHost(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	if len(u.Host) > 255 {
+		return u.Host[:255]
+	}
+	return u.Host
 }
 
 func (s *Server) storageRelayReady(w http.ResponseWriter, r *http.Request) (dial *url.URL, host string, ok bool) {
@@ -149,8 +174,15 @@ func (s *Server) storageRelayReady(w http.ResponseWriter, r *http.Request) (dial
 		s.writeError(w, http.StatusServiceUnavailable, "STORAGE_RELAY_UNAVAILABLE", "文件中转未配置")
 		return nil, "", false
 	}
-	dial, host, err := s.Storage.target(r.Header.Get(StorageURLHeader))
+	raw := r.Header.Get(StorageURLHeader)
+	dial, host, err := s.Storage.target(raw)
 	if err != nil {
+		// 记下来的是「收到哪台主机、本该是哪台」。第一版没记，结果生产上认错主机
+		// 两天，日志里只有一串 400；有这一行，对一眼就知道是谁和谁没对上。
+		if s.Log != nil {
+			s.Log.Warn("storage relay refused an address", "reason", err.Error(),
+				"offered_host", offeredHost(raw), "signed_host", s.Storage.signed.Host)
+		}
 		s.writeError(w, http.StatusBadRequest, "STORAGE_RELAY_URL_REJECTED", "文件地址无效："+err.Error())
 		return nil, "", false
 	}

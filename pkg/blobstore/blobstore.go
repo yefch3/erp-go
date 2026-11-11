@@ -41,6 +41,24 @@ type Store struct {
 }
 
 func New(ctx context.Context, cfg Config) (*Store, error) {
+	s, err := NewOffline(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureBucket(ctx); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// NewOffline is New without the bucket check, so it makes no network call.
+//
+// It is for code that only signs, and for tests that have to sign for a store
+// they cannot reach — production's included: what a presigned URL looks like
+// is decided entirely by the configuration, and a test that wants to know
+// should ask the signer rather than write the answer down (see URLShape).
+// Reads and writes through it work only if the bucket happens to exist.
+func NewOffline(cfg Config) (*Store, error) {
 	c, err := dial(cfg, cfg.Endpoint)
 	if err != nil {
 		return nil, err
@@ -50,9 +68,6 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		if s.presign, err = dial(cfg, cfg.PublicEndpoint); err != nil {
 			return nil, err
 		}
-	}
-	if err := s.ensureBucket(ctx); err != nil {
-		return nil, err
 	}
 	return s, nil
 }
@@ -71,6 +86,122 @@ func dial(cfg Config, endpoint string) (*minio.Client, error) {
 		return nil, fmt.Errorf("blobstore: connect %s: %w", endpoint, err)
 	}
 	return c, nil
+}
+
+// URLShape is where the presigned URLs of a Config point: the scheme, the
+// host, and the part of the path that comes before the object key.
+//
+// It exists because the answer cannot be written down by hand. For an Amazon
+// endpoint the client does not sign for the endpoint it was given; it signs
+// for a per-region, dual-stack, virtual-hosted name derived from it —
+// "s3.us-west-2.amazonaws.com" becomes
+// "<bucket>.s3.dualstack.us-west-2.amazonaws.com" — and which name that is
+// depends on the region, on how the bucket is spelt and on the version of the
+// library. The gateway's file relay once carried its own idea of that name.
+// It was the obvious one, it was wrong, and for two days in production it
+// turned away every upload it was built to carry (2026-11-09 to 11-11) while
+// every test, written against the same idea, stayed green.
+//
+// So whoever has to recognise a presigned URL asks here, and is answered by
+// the client that signs them.
+type URLShape struct {
+	Scheme string // "http" or "https"
+	Host   string // as signed, port included when the endpoint has one
+	// PathPrefix is "/" for a virtual-hosted bucket (the bucket is in the
+	// host) and "/<bucket>/" for path-style (MinIO, and most non-Amazon
+	// stores).
+	PathPrefix string
+}
+
+// Covers reports whether u addresses an object of this store: same scheme,
+// same host, and a key after the prefix. Nothing but the host's letter case
+// is normalised, because the signature was computed over the URL as written.
+func (s URLShape) Covers(u *url.URL) bool {
+	return u != nil &&
+		u.Scheme == s.Scheme &&
+		s.SameHost(u.Host) &&
+		strings.HasPrefix(u.Path, s.PathPrefix) &&
+		len(u.Path) > len(s.PathPrefix)
+}
+
+// SameHost reports whether host is this store's host, ignoring ASCII letter
+// case and nothing else.
+//
+// Not strings.EqualFold: that folds Unicode, under which the Kelvin sign
+// (U+212A) equals "k" — a host that is not ours, written to compare as if it
+// were. Where such a name would resolve is beside the point; a check whose
+// job is to recognise one exact host should not have an opinion about
+// alphabets.
+func (s URLShape) SameHost(host string) bool {
+	if s.Host == "" || len(host) != len(s.Host) {
+		return false
+	}
+	for i := 0; i < len(host); i++ {
+		a, b := host[i], s.Host[i]
+		if a >= utf8RuneSelf || b >= utf8RuneSelf {
+			return false
+		}
+		if 'A' <= a && a <= 'Z' {
+			a += 'a' - 'A'
+		}
+		if 'A' <= b && b <= 'Z' {
+			b += 'a' - 'A'
+		}
+		if a != b {
+			return false
+		}
+	}
+	return true
+}
+
+// utf8RuneSelf is utf8.RuneSelf: bytes below it are ASCII.
+const utf8RuneSelf = 0x80
+
+// shapeProbeKey is the object name signed to learn a shape. It is never
+// stored and never sent anywhere.
+const shapeProbeKey = "shape-probe"
+
+// PresignedShapes reports the shape of the URLs cfg signs for browsers
+// (public: PublicEndpoint, or Endpoint when that is empty) and the shape the
+// same objects have when addressed through Endpoint from inside this process
+// (internal). The two are identical wherever the two endpoints are.
+//
+// It needs neither the network nor real credentials: a throwaway name is
+// signed with placeholder keys and only its address is kept. cfg must carry
+// the same Endpoint, PublicEndpoint, UseSSL, Bucket and Region as the Config
+// the signing service runs with — the region most of all, since on Amazon it
+// is part of the host.
+func PresignedShapes(cfg Config) (public, internal URLShape, err error) {
+	if internal, err = shapeOf(cfg, cfg.Endpoint); err != nil {
+		return URLShape{}, URLShape{}, err
+	}
+	if cfg.PublicEndpoint == "" || cfg.PublicEndpoint == cfg.Endpoint {
+		return internal, internal, nil
+	}
+	if public, err = shapeOf(cfg, cfg.PublicEndpoint); err != nil {
+		return URLShape{}, URLShape{}, err
+	}
+	return public, internal, nil
+}
+
+func shapeOf(cfg Config, endpoint string) (URLShape, error) {
+	// The signature is thrown away, so the keys only have to exist: the
+	// client refuses to presign anonymously.
+	cfg.AccessKey, cfg.SecretKey = shapeProbeKey, shapeProbeKey
+	c, err := dial(cfg, endpoint)
+	if err != nil {
+		return URLShape{}, err
+	}
+	u, err := c.PresignedPutObject(context.Background(), cfg.Bucket, shapeProbeKey, time.Minute)
+	if err != nil {
+		return URLShape{}, fmt.Errorf("blobstore: learn the URL shape of %s: %w", endpoint, err)
+	}
+	prefix, ok := strings.CutSuffix(u.Path, shapeProbeKey)
+	if !ok || !strings.HasPrefix(prefix, "/") || u.Host == "" {
+		return URLShape{}, fmt.Errorf("blobstore: learn the URL shape of %s: unexpected address %s://%s%s",
+			endpoint, u.Scheme, u.Host, u.Path)
+	}
+	return URLShape{Scheme: u.Scheme, Host: u.Host, PathPrefix: prefix}, nil
 }
 
 func (s *Store) ensureBucket(ctx context.Context) error {

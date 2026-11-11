@@ -35,6 +35,10 @@ type Config struct {
 	StoragePublicEndpoint string
 	StorageBucket         string
 	StorageUseSSL         bool
+	// StorageRegion must be the region the services sign with. On Amazon it
+	// is part of the signed host name, so leaving it out makes the relay
+	// recognise a different region's addresses and refuse the real ones.
+	StorageRegion string
 }
 
 func Load() Config {
@@ -60,6 +64,7 @@ func Load() Config {
 		StoragePublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
 		StorageBucket:         env("MINIO_BUCKET", "erp-files"),
 		StorageUseSSL:         os.Getenv("MINIO_USE_SSL") == "true",
+		StorageRegion:         env("MINIO_REGION", ""),
 	}
 }
 

@@ -272,7 +272,7 @@ EXTRA_TENANT_ADMIN_PASSWORD=（只写在 .env，别处都不出现）
 | `MINIO_USE_SSL` | 空 | `1` |
 | `MINIO_REGION` | 空 | 桶所在区域，如 `cn-hangzhou`（不能靠自动发现，服务在容器里探不到公网 endpoint） |
 
-**网关也读这几个变量（2026-11-09 起）。** 附件原本只在业务服务和浏览器之间走：服务签地址、浏览器直传。天津办公室实测浏览器到 S3 是 `ERR_CONNECTION_TIMED_OUT`（时通时不通；桶里从上线起国内员工直传成功 0 次），所以网关多了一条中转路 `/api/storage/relay`——浏览器把文件连同签名地址交给网关，网关代为连存储，读文件同理。网关只替「自己的桶」转，认桶靠的就是上面这组变量（`MINIO_ENDPOINT` / `MINIO_PUBLIC_ENDPOINT` / `MINIO_BUCKET` / `MINIO_USE_SSL`，prod 覆盖文件已经接上），换云厂商时跟着一起生效，不用另配。目前走中转的是质检资料和报销凭证（上传和查看）；其余直传功能国内同事用到时照此切换。文件只在网关内存里过一遍，不落盘。
+**网关也读这几个变量（2026-11-09 起）。** 附件原本只在业务服务和浏览器之间走：服务签地址、浏览器直传。天津办公室实测浏览器连签名地址那台主机是 `ERR_CONNECTION_TIMED_OUT`（桶里从上线起国内员工直传成功 0 次），所以网关多了一条中转路 `/api/storage/relay`——浏览器把文件连同签名地址交给网关，网关代为连存储，读文件同理。网关只替「自己的桶」转，认桶靠的就是上面这组变量（`MINIO_ENDPOINT` / `MINIO_PUBLIC_ENDPOINT` / `MINIO_BUCKET` / `MINIO_USE_SSL` / `MINIO_REGION`，prod 覆盖文件已经接上），换云厂商时跟着一起生效，不用另配。**这组值必须和业务服务的一字不差，区域也算**：签名地址的主机名是签名库按它们推出来的（AWS 上是 `<桶>.s3.dualstack.<区域>.amazonaws.com`），网关用同一个库、同一组值去认；差一个，认的就是另一台主机，上传全部 400「不是本系统的文件存储」——2026-11-09 第一版上线后就是这样挂了两天（那版是手拼的主机名）。**上线后核对**：网关启动日志里有一行 `storage relay ready signed_host=… dial_host=…`，`docker inspect` 对一下网关和 procurement 的 `MINIO_*` 五个值；被拒的地址会记 `storage relay refused an address offered_host=… signed_host=…`。目前走中转的是质检资料和报销凭证（上传和查看）；其余直传功能国内同事用到时照此切换。文件在网关里只过内存；前门 nginx 收请求体时会在 `/var/lib/nginx/body` 落一个临时文件，请求结束即删（默认行为，实测目录为空），服务器上不留存。
 
 三个容易踩的点：
 
