@@ -83,3 +83,63 @@ func TestExecutionTodosUseActionPermissionsAndLifecycle(t *testing.T) {
 		})
 	}
 }
+
+type purchaseFinanceOrdersStub struct {
+	prv1.PurchaseOrderServiceClient
+}
+
+func (purchaseFinanceOrdersStub) ListOrders(_ context.Context, r *prv1.ListOrdersRequest, _ ...grpc.CallOption) (*prv1.ListOrdersResponse, error) {
+	if r.Status != "PENDING_CONTRACT" {
+		return nil, status.Error(codes.InvalidArgument, "wrong finance queue filter")
+	}
+	if r.GetPage().GetPage() == 1 {
+		return &prv1.ListOrdersResponse{Orders: []*prv1.PurchaseOrder{
+			{Id: 1, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10},
+			{Id: 2, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", ContractVerifiedAt: "verified"},
+			{Id: 3, Status: "CANCELLED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded"},
+			{Id: 4, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", ClosedAt: "closed"},
+			{Id: 5, Status: "ORDERED", BusinessType: "PROCUREMENT", SignedContractUploadedAt: "uploaded"},
+			{Id: 6, Status: "ORDERED", BusinessType: "LOGISTICS", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded"},
+		}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+	}
+	return &prv1.ListOrdersResponse{Orders: []*prv1.PurchaseOrder{{Id: 7, PoNo: "PO-PENDING-FINANCE", Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", SignedContractName: "signed.pdf"}}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+}
+
+func TestPurchaseFinanceTodosRequireReviewPermissionAndCurrentSignedContract(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		permissions map[string]bool
+		want        int
+	}{
+		{"reader only", map[string]bool{"procurement:order:read": true}, 0},
+		{"finance without order access", map[string]bool{"procurement:recon:write": true}, 0},
+		{"finance reviewer", map[string]bool{"procurement:order:read": true, "procurement:recon:write": true}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{Access: homeAccessStub{allowed: tc.permissions}, Orders: purchaseFinanceOrdersStub{}}
+			req := httptest.NewRequest("GET", "/api/home/execution-todos", nil)
+			req = req.WithContext(grpcx.WithOperator(req.Context(), grpcx.Operator{TenantID: 1, EmployeeID: 9}))
+			rec := httptest.NewRecorder()
+			s.listExecutionTodos(rec, req)
+			if rec.Code != 200 {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var response struct {
+				Data struct {
+					PurchaseFinance []struct {
+						ID string `json:"id"`
+					} `json:"purchaseFinance"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Data.PurchaseFinance) != tc.want {
+				t.Fatalf("wrong tasks: %s", rec.Body.String())
+			}
+			if tc.want > 0 && response.Data.PurchaseFinance[0].ID != "7" {
+				t.Fatalf("unverifiable or closed order was included: %s", rec.Body.String())
+			}
+		})
+	}
+}

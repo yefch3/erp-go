@@ -84,6 +84,17 @@
         <div v-loading="loading" class="pending-content">
           <InquiryTodos @count="inquiryPendingCount=$event" />
           <el-alert v-if="executionTasksError" title="合同执行待办暂时无法加载，请刷新重试" type="warning" :closable="false" show-icon />
+          <section v-if="showPurchaseFinanceSection" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>采购合同财务核验</h3><p>采购已上传双方签署合同，请查看合同附件并核验。</p></div><el-tag v-if="!executionTasksError" :type="visiblePurchaseFinanceTasks.length?'warning':'info'" effect="plain">{{visiblePurchaseFinanceTasks.length}} 项</el-tag></div>
+            <el-table v-if="visiblePurchaseFinanceTasks.length" :data="visiblePurchaseFinanceTasks" class="home-table purchase-finance-todos">
+              <el-table-column label="采购单 / 供应商" width="260"><template #default="{row}"><div class="item-title">{{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div></template></el-table-column>
+              <el-table-column label="采购金额" width="140" align="right" class-name="purchase-amount"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column label="签署合同文件" min-width="260"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-attachment-link" title="进入核验页面查看合同附件"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg><span>{{row.signedContractName}}</span></router-link></template></el-table-column>
+              <el-table-column label="状态" width="120" align="center"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="125" fixed="right" align="center"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">进入核验</router-link></template></el-table-column>
+            </el-table>
+            <p v-else-if="!executionTasksError" class="item-meta">{{purchaseFinanceTasks.length?'没有符合当前筛选条件的待核验采购合同。':'暂无待核验采购合同。采购上传签署合同后会自动出现在这里；已核验的合同不会重复显示。'}} <router-link to="/supplier-recon?view=contracts" class="doc-link">前往出账</router-link></p>
+          </section>
           <section v-if="visibleFinanceTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>合同执行条件确认</h3><p>销售已上传客户签回件并开始执行，等待财务核对付款条件后放行。</p></div><el-tag type="warning" effect="plain">{{visibleFinanceTasks.length}} 项</el-tag></div>
             <el-table :data="visibleFinanceTasks" class="home-table">
@@ -166,7 +177,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!executionTasksError&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!executionTasksError&&!showPurchaseFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -266,6 +277,7 @@ interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; reque
 interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string; finalRecheckTaskId?:string|number }
 interface ExecutionRequirement { id:string; contractId:string; contractNo:string; customerName:string; productName:string; requiredDate:string; status:string }
 interface FinanceExecutionTask {id:string;contractNo:string;customerName:string;currency:string;totalAmount:string}
+interface PurchaseFinanceTask {id:string;poNo:string;supplierName:string;exportContractNo:string;currency:string;totalAmount:string;signedContractName:string}
 interface ExecutionProcurementTask { key:string; contractNo:string; customerName:string; productNames:string; productCount:number; requiredDate:string }
 interface ExecutionShippingTask { id:string; contractNo:string; customerName:string; batchNo:number; portOfLoading:string; portOfDischarge:string; status:string }
 interface QualityTodoTask { id:string; taskNo:string; poNo:string; supplierName:string; batchNo:number; expectedDate:string; status:string }
@@ -281,6 +293,7 @@ const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const showPurchaseFinanceSection=computed(()=>auth.can('procurement:order:read')&&auth.can('procurement:recon:write')&&(!bizType.value||bizType.value==='PURCHASE_ORDER'))
 const today = computed(() => new Intl.DateTimeFormat(
   locale.value === 'zh' ? 'zh-CN' : locale.value === 'es' ? 'es-ES' : 'en-US',
   { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' },
@@ -303,6 +316,8 @@ const executionProcurementTasksAvailable = ref(false)
 const executionShippingTasks = ref<ExecutionShippingTask[]>([])
 const executionShippingTasksAvailable = ref(false)
 const financeTasks=ref<FinanceExecutionTask[]>([])
+const purchaseFinanceTasks=ref<PurchaseFinanceTask[]>([])
+const visiblePurchaseFinanceTasks=computed(()=>purchaseFinanceTasks.value.filter(row=>(!bizType.value||bizType.value==='PURCHASE_ORDER')&&(!keyword.value.trim()||[row.poNo,row.supplierName,row.exportContractNo,row.signedContractName].some(value=>String(value||'').toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())))))
 const executionTasksError=ref(false)
 const visibleFinanceTasks=computed(()=>financeTasks.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(value=>value.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
 const qualityTasks = ref<QualityTodoTask[]>([])
@@ -329,8 +344,8 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
-const combinedPendingAvailable = computed(() => financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
+const combinedPendingTotal = computed(() => purchaseFinanceTasks.value.length + financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
+const combinedPendingAvailable = computed(() => purchaseFinanceTasks.value.length>0 || financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
@@ -438,11 +453,11 @@ async function loadQualityTasks() {
 async function loadQualityProcurementTasks(){if(!auth.can('procurement:order:read')){qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false;return}try{const data=await get<{tasks:QualityProcurementTodo[]}>('/quality/procurement-todos',{},quietErrors);qualityProcurementTasks.value=data.tasks??[];qualityProcurementTasksAvailable.value=true}catch{qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false}}
 
 async function loadExecutionTasks() {
-  financeTasks.value=[];executionProcurementTasks.value=[];executionShippingTasks.value=[];executionTasksError.value=false
+  purchaseFinanceTasks.value=[];financeTasks.value=[];executionProcurementTasks.value=[];executionShippingTasks.value=[];executionTasksError.value=false
   executionProcurementTasksAvailable.value=false;executionShippingTasksAvailable.value=false
   try {
-    const data=await get<{finance:FinanceExecutionTask[];procurement:ExecutionRequirement[];shipping:ExecutionShippingTask[]}>('/home/execution-todos',{},quietErrors)
-    financeTasks.value=data.finance??[]
+    const data=await get<{finance:FinanceExecutionTask[];purchaseFinance:PurchaseFinanceTask[];procurement:ExecutionRequirement[];shipping:ExecutionShippingTask[]}>('/home/execution-todos',{},quietErrors)
+    purchaseFinanceTasks.value=data.purchaseFinance??[];financeTasks.value=data.finance??[]
     executionShippingTasks.value=data.shipping??[]
     const groups=new Map<string,ExecutionRequirement[]>()
     for(const row of data.procurement??[]){const key=row.contractId||row.contractNo;groups.set(key,[...(groups.get(key)??[]),row])}
@@ -724,6 +739,18 @@ onUnmounted(() => {
 .reminder-filters { grid-template-columns: minmax(240px, 1fr) 160px 160px 140px auto auto; }
 .source-error { margin-bottom: 14px; }
 .home-table { width: 100%; }
+.home-page :deep(.purchase-finance-todos :is(th,td).el-table__cell > .cell){text-align:left!important}
+.home-page :deep(.purchase-finance-todos :is(th,td).el-table__cell.is-right > .cell){text-align:right!important}
+.home-page :deep(.purchase-finance-todos :is(th,td).el-table__cell.is-center > .cell){text-align:center!important}
+.home-page :deep(.purchase-finance-todos td.el-table__cell){vertical-align:middle;padding-top:14px;padding-bottom:14px}
+.home-page :deep(.purchase-finance-todos :is(th,td).el-table__cell > .cell){padding-left:14px;padding-right:14px}
+.home-page :deep(.purchase-finance-todos :is(th,td).purchase-amount > .cell){padding-right:24px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.purchase-attachment-link{display:flex;align-items:flex-start;gap:7px;line-height:22px;color:var(--el-color-primary);text-decoration:none}
+.purchase-attachment-link svg{flex-shrink:0;margin-top:2px}
+.purchase-attachment-link span{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.purchase-attachment-link:hover span{text-decoration:underline}
+.purchase-review-link{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:30px;padding:0 12px;border:1px solid var(--el-color-primary-light-5);border-radius:4px;background:var(--el-color-primary-light-9);color:var(--el-color-primary);font-size:13px;font-weight:500;text-decoration:none}
+.purchase-review-link:hover{background:var(--el-color-primary);border-color:var(--el-color-primary);color:#fff}
 .item-title { color: var(--el-text-color-primary); font-weight: 600; }
 .unread-dot { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--el-color-primary); vertical-align: 1px; }
 .item-meta, .item-summary { margin-top: 5px; color: var(--el-text-color-secondary); font-size: 13px; }

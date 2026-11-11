@@ -20,20 +20,41 @@ import (
 // Keep the source services' tenant/data scopes and recheck contract execution
 // before presenting any outstanding departmental work.
 func (s *Server) listExecutionTodos(w http.ResponseWriter, r *http.Request) {
-	result := map[string][]json.RawMessage{"finance": {}, "procurement": {}, "shipping": {}}
+	result := map[string][]json.RawMessage{"finance": {}, "procurement": {}, "shipping": {}, "purchaseFinance": {}}
 	appendRow := func(source string, row proto.Message) {
 		data, _ := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(row)
 		result[source] = append(result[source], data)
 	}
 	allowed := map[string]bool{}
 
-	for _, permission := range []string{"export:receipt:write", "procurement:order:write", "shipping:schedule:write"} {
+	for _, permission := range []string{"export:receipt:write", "procurement:order:write", "shipping:schedule:write", "procurement:order:read", "procurement:recon:write"} {
 		yes, err := s.hasPermission(r, permission)
 		if err != nil {
 			s.writeGRPCError(w, err)
 			return
 		}
 		allowed[permission] = yes
+	}
+	// The list service still enforces tenant and purchase-order data scope.
+	// Reading orders alone never assigns a financial verification task.
+	if allowed["procurement:order:read"] && allowed["procurement:recon:write"] {
+		for page := int32(1); ; page++ {
+			data, err := s.Orders.ListOrders(r.Context(), &prv1.ListOrdersRequest{Status: "PENDING_CONTRACT", Page: &commonv1.PageRequest{Page: page, PageSize: 200}})
+			if err != nil {
+				s.writeGRPCError(w, err)
+				return
+			}
+			for _, row := range data.GetOrders() {
+				if row.GetStatus() != "ORDERED" || row.GetSourceBusinessId() <= 0 || row.GetBusinessType() != "PROCUREMENT" || row.GetClosedAt() != "" || row.GetSignedContractUploadedAt() == "" || row.GetContractVerifiedAt() != "" {
+					continue
+				}
+				item, _ := json.Marshal(map[string]string{"id": strconv.FormatInt(row.GetId(), 10), "poNo": row.GetPoNo(), "supplierName": row.GetSupplierName(), "exportContractNo": row.GetExportContractNo(), "currency": row.GetCurrency(), "totalAmount": row.GetTotalAmount(), "signedContractName": row.GetSignedContractName(), "signedContractUploadedAt": row.GetSignedContractUploadedAt()})
+				result["purchaseFinance"] = append(result["purchaseFinance"], item)
+			}
+			if len(data.GetOrders()) == 0 || int64(page)*200 >= data.GetMeta().GetTotal() {
+				break
+			}
+		}
 	}
 	executable := map[int64]bool{}
 	check := func(id int64) (bool, error) {
