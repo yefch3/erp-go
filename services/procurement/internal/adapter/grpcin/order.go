@@ -607,6 +607,9 @@ func (h *OrderHandler) CloseOrder(ctx context.Context, req *prv1.CloseOrderReque
 
 func executionToProto(execution app.OrderExecution) *prv1.GetOrderExecutionResponse {
 	out := &prv1.GetOrderExecutionResponse{}
+	for _, row := range execution.FollowUps {
+		out.FollowUps = append(out.FollowUps, followUpToProto(row))
+	}
 	for _, row := range execution.Confirmations {
 		out.Confirmations = append(out.Confirmations, confirmationToProto(row))
 	}

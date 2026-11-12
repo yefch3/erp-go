@@ -64,6 +64,7 @@ const (
 	ShippingService_PresignContractShippingContractUpload_FullMethodName = "/erp.shipping.v1.ShippingService/PresignContractShippingContractUpload"
 	ShippingService_VerifyContractShippingContract_FullMethodName        = "/erp.shipping.v1.ShippingService/VerifyContractShippingContract"
 	ShippingService_MarkContractShippingPaymentRequested_FullMethodName  = "/erp.shipping.v1.ShippingService/MarkContractShippingPaymentRequested"
+	ShippingService_GetCargoScheduleProgress_FullMethodName              = "/erp.shipping.v1.ShippingService/GetCargoScheduleProgress"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -120,6 +121,8 @@ type ShippingServiceClient interface {
 	PresignContractShippingContractUpload(ctx context.Context, in *PresignContractShippingContractUploadRequest, opts ...grpc.CallOption) (*PresignContractShippingContractUploadResponse, error)
 	VerifyContractShippingContract(ctx context.Context, in *VerifyContractShippingContractRequest, opts ...grpc.CallOption) (*VerifyContractShippingContractResponse, error)
 	MarkContractShippingPaymentRequested(ctx context.Context, in *MarkContractShippingPaymentRequestedRequest, opts ...grpc.CallOption) (*MarkContractShippingPaymentRequestedResponse, error)
+	// Internal, narrow projection for authorized purchase-order fulfillment views.
+	GetCargoScheduleProgress(ctx context.Context, in *GetCargoScheduleProgressRequest, opts ...grpc.CallOption) (*GetCargoScheduleProgressResponse, error)
 }
 
 type shippingServiceClient struct {
@@ -580,6 +583,16 @@ func (c *shippingServiceClient) MarkContractShippingPaymentRequested(ctx context
 	return out, nil
 }
 
+func (c *shippingServiceClient) GetCargoScheduleProgress(ctx context.Context, in *GetCargoScheduleProgressRequest, opts ...grpc.CallOption) (*GetCargoScheduleProgressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCargoScheduleProgressResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetCargoScheduleProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShippingServiceServer is the server API for ShippingService service.
 // All implementations must embed UnimplementedShippingServiceServer
 // for forward compatibility.
@@ -634,6 +647,8 @@ type ShippingServiceServer interface {
 	PresignContractShippingContractUpload(context.Context, *PresignContractShippingContractUploadRequest) (*PresignContractShippingContractUploadResponse, error)
 	VerifyContractShippingContract(context.Context, *VerifyContractShippingContractRequest) (*VerifyContractShippingContractResponse, error)
 	MarkContractShippingPaymentRequested(context.Context, *MarkContractShippingPaymentRequestedRequest) (*MarkContractShippingPaymentRequestedResponse, error)
+	// Internal, narrow projection for authorized purchase-order fulfillment views.
+	GetCargoScheduleProgress(context.Context, *GetCargoScheduleProgressRequest) (*GetCargoScheduleProgressResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
 }
 
@@ -778,6 +793,9 @@ func (UnimplementedShippingServiceServer) VerifyContractShippingContract(context
 }
 func (UnimplementedShippingServiceServer) MarkContractShippingPaymentRequested(context.Context, *MarkContractShippingPaymentRequestedRequest) (*MarkContractShippingPaymentRequestedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkContractShippingPaymentRequested not implemented")
+}
+func (UnimplementedShippingServiceServer) GetCargoScheduleProgress(context.Context, *GetCargoScheduleProgressRequest) (*GetCargoScheduleProgressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCargoScheduleProgress not implemented")
 }
 func (UnimplementedShippingServiceServer) mustEmbedUnimplementedShippingServiceServer() {}
 func (UnimplementedShippingServiceServer) testEmbeddedByValue()                         {}
@@ -1610,6 +1628,24 @@ func _ShippingService_MarkContractShippingPaymentRequested_Handler(srv interface
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_GetCargoScheduleProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCargoScheduleProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetCargoScheduleProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetCargoScheduleProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetCargoScheduleProgress(ctx, req.(*GetCargoScheduleProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShippingService_ServiceDesc is the grpc.ServiceDesc for ShippingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1796,6 +1832,10 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkContractShippingPaymentRequested",
 			Handler:    _ShippingService_MarkContractShippingPaymentRequested_Handler,
+		},
+		{
+			MethodName: "GetCargoScheduleProgress",
+			Handler:    _ShippingService_GetCargoScheduleProgress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

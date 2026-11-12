@@ -603,6 +603,16 @@ type PurchaseOrderExecutionFile struct {
 	LinkedAt pgtype.Timestamptz
 }
 
+type PurchaseOrderFollowUp struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	Note          string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type PurchaseOrderImport struct {
 	ID                 int64
 	TenantID           int64

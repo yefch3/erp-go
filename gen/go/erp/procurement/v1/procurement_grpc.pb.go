@@ -3182,6 +3182,7 @@ const (
 	PurchaseOrderService_SetBankTransactionClaim_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
 	PurchaseOrderService_UpdateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
 	PurchaseOrderService_CheckDeliveryQuality_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CheckDeliveryQuality"
+	PurchaseOrderService_AddOrderFollowUp_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AddOrderFollowUp"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -3372,6 +3373,7 @@ type PurchaseOrderServiceClient interface {
 	// Read-only delivery gate for inventory and shipping. Missing inspection
 	// evidence fails closed; this never grants access to purchase prices.
 	CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error)
+	AddOrderFollowUp(ctx context.Context, in *AddOrderFollowUpRequest, opts ...grpc.CallOption) (*AddOrderFollowUpResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -4412,6 +4414,16 @@ func (c *purchaseOrderServiceClient) CheckDeliveryQuality(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) AddOrderFollowUp(ctx context.Context, in *AddOrderFollowUpRequest, opts ...grpc.CallOption) (*AddOrderFollowUpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddOrderFollowUpResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AddOrderFollowUp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -4600,6 +4612,7 @@ type PurchaseOrderServiceServer interface {
 	// Read-only delivery gate for inventory and shipping. Missing inspection
 	// evidence fails closed; this never grants access to purchase prices.
 	CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error)
+	AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -4918,6 +4931,9 @@ func (UnimplementedPurchaseOrderServiceServer) UpdateManualPayable(context.Conte
 }
 func (UnimplementedPurchaseOrderServiceServer) CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckDeliveryQuality not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddOrderFollowUp not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -6794,6 +6810,24 @@ func _PurchaseOrderService_CheckDeliveryQuality_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_AddOrderFollowUp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddOrderFollowUpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AddOrderFollowUp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AddOrderFollowUp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AddOrderFollowUp(ctx, req.(*AddOrderFollowUpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -7212,6 +7246,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckDeliveryQuality",
 			Handler:    _PurchaseOrderService_CheckDeliveryQuality_Handler,
+		},
+		{
+			MethodName: "AddOrderFollowUp",
+			Handler:    _PurchaseOrderService_AddOrderFollowUp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

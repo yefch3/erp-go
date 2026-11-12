@@ -686,6 +686,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/documents", s.getOrderDocuments)
 		r.With(s.perm("procurement:order:send")).Post("/api/purchase-orders/{id}/send", s.sendPurchaseOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/execution", s.getOrderExecution)
+		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/follow-ups", s.addOrderFollowUp)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/logistics-progress", s.getOrderLogisticsProgress)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/supplier-confirmations", s.recordSupplierConfirmation)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
 		// D5 出厂前质检是采购交接给独立质检部门的业务任务，不走审批流。

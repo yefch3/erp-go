@@ -799,6 +799,7 @@ service PurchaseOrderService {
   // Read-only delivery gate for inventory and shipping. Missing inspection
   // evidence fails closed; this never grants access to purchase prices.
   rpc CheckDeliveryQuality(CheckDeliveryQualityRequest) returns (CheckDeliveryQualityResponse);
+  rpc AddOrderFollowUp(AddOrderFollowUpRequest) returns (AddOrderFollowUpResponse);
 }
 
 
@@ -1389,6 +1390,7 @@ message GetOrderExecutionResponse {
   repeated ReceiptException exceptions = 3;
   repeated ProductionReminder reminders = 4;
   repeated PurchaseInspection inspections = 5;
+  repeated OrderFollowUp follow_ups = 6;
 }
 
 message PurchaseInspection {
@@ -3201,3 +3203,12 @@ message CheckDeliveryQualityResponse {
   string reason = 2;
   string code = 3;
 }
+
+message OrderFollowUp {
+  int64 id = 1;
+  string note = 2;
+  string created_by = 3;
+  string created_at = 4;
+}
+message AddOrderFollowUpRequest { int64 id = 1; string note = 2; }
+message AddOrderFollowUpResponse { OrderFollowUp follow_up = 1; }

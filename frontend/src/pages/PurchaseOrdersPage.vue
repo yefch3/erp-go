@@ -379,7 +379,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="executionOpen" :title="t('orders.executionFor', { no: executing?.poNo })" width="960px">
+    <el-dialog v-model="executionOpen" class="fulfillment-dialog" :title="t('orders.executionFor', { no: executing?.poNo })" width="min(1100px, 94vw)">
       <el-tabs v-model="executionTab">
         <el-tab-pane :label="t('orders.confirmations')" name="confirmation">
           <div class="execution-section-head">
@@ -416,31 +416,23 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane :label="t('orders.production')" name="production">
-          <el-alert v-for="reminder in execution.reminders.filter(r => r.status === 'OPEN')" :key="reminder.id" type="warning" :closable="false" class="alert">
-            {{ t('orders.delayReminder', { node: productionNodeLabel(reminder.node), date: reminder.plannedDate, contracts: reminder.relatedContracts || '—' }) }}
-          </el-alert>
-          <section v-if="canProduction" class="execution-editor">
-            <div class="execution-section-head">
-              <div><strong>{{ t('orders.updateProduction') }}</strong><div class="sub">{{ t('orders.updateProductionHint') }}</div></div>
-            </div>
-            <el-form label-position="top" class="execution-form-grid">
-              <el-form-item :label="t('orders.productionNode')"><el-select v-model="milestoneForm.node"><el-option v-for="node in productionNodes" :key="node" :value="node" :label="productionNodeLabel(node)" /></el-select></el-form-item>
-              <el-form-item :label="t('orders.plannedDate')"><el-date-picker v-model="milestoneForm.plannedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-              <el-form-item :label="t('orders.actualDate')"><el-date-picker v-model="milestoneForm.actualDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-              <el-form-item :label="t('orders.owner')"><el-input v-model="milestoneForm.ownerName" /></el-form-item>
-              <el-form-item class="span-all" :label="t('orders.remark')"><el-input v-model="milestoneForm.remark" type="textarea" :rows="2" /></el-form-item>
-              <el-collapse class="span-all optional-fields">
-                <el-collapse-item :title="t('orders.optionalAttachment')" name="attachment">
-                  <div class="execution-form-grid attachment-grid">
-                    <el-form-item :label="t('orders.attachmentName')"><el-input v-model="milestoneForm.fileName" /></el-form-item>
-                    <el-form-item :label="t('orders.attachmentUrl')"><el-input v-model="milestoneForm.fileUrl" /></el-form-item>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
-            </el-form>
-            <el-button type="primary" :loading="saving" @click="submitMilestone">{{ t('orders.saveMilestone') }}</el-button>
-          </section>
+        <el-tab-pane :label="t('purchaseFulfillment.followUps')" name="followUps">
+          <template v-if="canProduction && !executing?.closedAt && executing?.status!=='CANCELLED'">
+            <el-input v-model="followUpNote" type="textarea" :rows="3" maxlength="4000" show-word-limit :placeholder="t('purchaseFulfillment.notePlaceholder')" />
+            <el-button class="execution-note" type="primary" :loading="saving" @click="saveFollowUp">{{t('purchaseFulfillment.addNote')}}</el-button>
+          </template>
+          <el-table :data="execution.followUps" size="small" class="history-table" :empty-text="t('purchaseFulfillment.noNotes')">
+            <el-table-column :label="t('purchaseFulfillment.time')" width="180"><template #default="{row}">{{formatFollowUpTime(row.createdAt)}}</template></el-table-column>
+            <el-table-column prop="createdBy" :label="t('purchaseFulfillment.author')" width="150" />
+            <el-table-column prop="note" :label="t('purchaseFulfillment.note')" min-width="350"><template #default="{row}"><span class="follow-up-text">{{row.note}}</span></template></el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane :label="t('purchaseFulfillment.progress')" name="progress">
+          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" />
+        </el-tab-pane>
+        <el-tab-pane :label="t('purchaseFulfillment.history')" name="history">
+          <el-alert :title="t('purchaseFulfillment.historyHint')" type="info" :closable="false" />
+          <h3>{{t('purchaseFulfillment.productionHistory')}}</h3>
           <el-table :data="execution.milestones" size="small" class="history-table">
             <el-table-column :label="t('orders.productionNode')" width="150"><template #default="{row}">{{ productionNodeLabel(row.node) }}</template></el-table-column>
             <el-table-column prop="plannedDate" :label="t('orders.plannedDate')" width="110" />
@@ -448,6 +440,17 @@
             <el-table-column prop="ownerName" :label="t('orders.owner')" width="120" />
             <el-table-column prop="remark" :label="t('orders.remark')" min-width="160" />
             <el-table-column :label="t('orders.attachments')" min-width="160"><template #default="{row}"><a v-for="file in row.attachments" :key="file.fileUrl" :href="file.fileUrl" target="_blank">{{ file.fileName }}</a></template></el-table-column>
+          </el-table>
+          <h3>{{t('purchaseFulfillment.inspectionHistory')}}</h3>
+          <el-table :data="execution.inspections" size="small" class="history-table">
+            <el-table-column prop="receiptNo" :label="t('orders.receiptNo')" width="150" />
+            <el-table-column :label="t('orders.inspectionResult')" width="90"><template #default="{row}"><el-tag size="small" effect="plain" :type="row.result === 'PASS' ? 'success' : 'danger'">{{ t(`orders.inspectionResults.${row.result}`) }}</el-tag></template></el-table-column>
+            <el-table-column prop="inspectedQty" :label="t('orders.inspectedQty')" width="90" />
+            <el-table-column prop="defectQty" :label="t('orders.defectQty')" width="90" />
+            <el-table-column prop="note" :label="t('orders.remark')" min-width="150" />
+            <el-table-column :label="t('orders.attachments')" min-width="130"><template #default="{row}"><a v-for="file in row.attachments" :key="file.fileUrl" :href="file.fileUrl" target="_blank">{{ file.fileName }}</a></template></el-table-column>
+            <el-table-column :label="t('common.status')" width="90"><template #default="{row}">{{ t(`orders.inspectionStatuses.${row.status}`) }}</template></el-table-column>
+            <el-table-column :label="t('orders.disposition')" min-width="140"><template #default="{row}"><template v-if="row.disposition">{{ t(`orders.dispositions.${row.disposition}`) }}<span v-if="row.dispositionNote" class="sub"> {{ row.dispositionNote }}</span></template><span v-else>—</span></template></el-table-column>
           </el-table>
         </el-tab-pane>
 
@@ -472,30 +475,7 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane :label="t('orders.inspections')" name="inspections">
-          <el-form v-if="canException" label-width="100px" inline>
-            <el-form-item :label="t('orders.receiptNo')" required><el-select v-model="inspectionForm.receiptId" style="width:180px"><el-option v-for="receipt in executionReceipts" :key="receipt.id" :value="Number(receipt.id)" :label="receipt.receiptNo" /></el-select></el-form-item>
-            <el-form-item :label="t('orders.product')"><el-select v-model="inspectionForm.itemId" clearable style="width:200px"><el-option v-for="item in executionItems" :key="item.id" :value="Number(item.id)" :label="item.productName" /></el-select></el-form-item>
-            <el-form-item :label="t('orders.inspectionResult')"><el-select v-model="inspectionForm.result" style="width:130px"><el-option value="PASS" :label="t('orders.inspectionResults.PASS')" /><el-option value="FAIL" :label="t('orders.inspectionResults.FAIL')" /></el-select></el-form-item>
-            <el-form-item :label="t('orders.inspectedQty')"><el-input v-model="inspectionForm.inspectedQty" style="width:120px" /></el-form-item>
-            <el-form-item v-if="inspectionForm.result === 'FAIL'" :label="t('orders.defectQty')"><el-input v-model="inspectionForm.defectQty" style="width:120px" /></el-form-item>
-            <el-form-item :label="t('orders.attachmentName')"><el-input v-model="inspectionForm.fileName" style="width:180px" /></el-form-item>
-            <el-form-item :label="t('orders.attachmentUrl')"><el-input v-model="inspectionForm.fileUrl" style="width:260px" /></el-form-item>
-          </el-form>
-          <el-input v-if="canException" v-model="inspectionForm.note" type="textarea" :rows="2" :placeholder="t('orders.inspectionNote')" class="execution-note" />
-          <el-button v-if="canException" type="primary" :loading="saving" @click="submitInspection">{{ t('orders.recordInspection') }}</el-button>
-          <el-table :data="execution.inspections" size="small" class="history-table">
-            <el-table-column prop="receiptNo" :label="t('orders.receiptNo')" width="150" />
-            <el-table-column :label="t('orders.inspectionResult')" width="90"><template #default="{row}"><el-tag size="small" effect="plain" :type="row.result === 'PASS' ? 'success' : 'danger'">{{ t(`orders.inspectionResults.${row.result}`) }}</el-tag></template></el-table-column>
-            <el-table-column prop="inspectedQty" :label="t('orders.inspectedQty')" width="90" />
-            <el-table-column prop="defectQty" :label="t('orders.defectQty')" width="90" />
-            <el-table-column prop="note" :label="t('orders.remark')" min-width="150" />
-            <el-table-column :label="t('orders.attachments')" min-width="130"><template #default="{row}"><a v-for="file in row.attachments" :key="file.fileUrl" :href="file.fileUrl" target="_blank">{{ file.fileName }}</a></template></el-table-column>
-            <el-table-column :label="t('common.status')" width="90"><template #default="{row}">{{ t(`orders.inspectionStatuses.${row.status}`) }}</template></el-table-column>
-            <el-table-column :label="t('orders.disposition')" min-width="140"><template #default="{row}"><template v-if="row.disposition">{{ t(`orders.dispositions.${row.disposition}`) }}<span v-if="row.dispositionNote" class="sub"> {{ row.dispositionNote }}</span></template><span v-else>—</span></template></el-table-column>
-            <el-table-column :label="t('common.actions')" width="90"><template #default="{row}"><el-button v-if="canException && row.status === 'OPEN'" link type="primary" @click="openDisposition(row)">{{ t('orders.dispose') }}</el-button></template></el-table-column>
-          </el-table>
-        </el-tab-pane>
+
       </el-tabs>
     </el-dialog>
 
@@ -590,6 +570,7 @@ import { del, download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
+import PurchaseFulfillmentProgress from '../components/PurchaseFulfillmentProgress.vue'
 import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
@@ -712,7 +693,8 @@ interface ProductionMilestone { id: string; node: string; plannedDate: string; a
 interface ReceiptException { id: string; exceptionType: string; qty: string; description: string; status: string; resolution: string }
 interface ProductionReminder { id: string; node: string; plannedDate: string; buyerName: string; relatedContracts: string; status: string }
 interface PurchaseInspection { id: string; receiptNo: string; result: string; inspectedQty: string; defectQty: string; note: string; attachments: ProductionAttachment[]; status: string; disposition: string; dispositionNote: string }
-interface Execution { confirmations: SupplierConfirmation[]; milestones: ProductionMilestone[]; exceptions: ReceiptException[]; reminders: ProductionReminder[]; inspections: PurchaseInspection[] }
+interface OrderFollowUp { id:string;note:string;createdBy:string;createdAt:string }
+interface Execution { followUps:OrderFollowUp[]; confirmations: SupplierConfirmation[]; milestones: ProductionMilestone[]; exceptions: ReceiptException[]; reminders: ProductionReminder[]; inspections: PurchaseInspection[] }
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -795,18 +777,16 @@ const cancelReason = ref('')
 
 const executionOpen = ref(false)
 const executionTab = ref('confirmation')
+const followUpNote=ref('')
 const executing = ref<Order | null>(null)
 const executionItems = ref<OrderItem[]>([])
 const executionReceipts = ref<Receipt[]>([])
-const execution = reactive<Execution>({ confirmations: [], milestones: [], exceptions: [], reminders: [], inspections: [] })
+const execution = reactive<Execution>({ followUps:[], confirmations: [], milestones: [], exceptions: [], reminders: [], inspections: [] })
 const confirmationQty = reactive<Record<string, string>>({})
 const confirmationPrice = reactive<Record<string, string>>({})
 const confirmationForm = reactive({ confirmedDate: '', expectedDate: '', remark: '' })
-const productionNodes = ['PENDING_SCHEDULE', 'SCHEDULED', 'IN_PRODUCTION', 'QUALITY_INSPECTION', 'READY_TO_SHIP', 'SENT_TO_PORT']
-const milestoneForm = reactive({ node: 'PENDING_SCHEDULE', plannedDate: '', actualDate: '', ownerName: '', fileName: '', fileUrl: '', remark: '' })
 const exceptionTypes = ['WRONG_PRODUCT', 'UNIT_MISMATCH', 'SHORT_SHIPMENT', 'DAMAGE', 'QUALITY_DISPUTE', 'RETURN']
 const exceptionForm = reactive<{ type: string; receiptId?: number; itemId?: number; qty: string; actualProduct: string; actualUom: string; description: string }>({ type: 'SHORT_SHIPMENT', receiptId: undefined, itemId: undefined, qty: '', actualProduct: '', actualUom: '', description: '' })
-const inspectionForm = reactive({ receiptId: 0, itemId: 0, result: 'PASS', inspectedQty: '0', defectQty: '0', fileName: '', fileUrl: '', note: '' })
 const dispositionKinds = ['RETURN', 'DEDUCTION', 'CONCESSION', 'REWORK']
 const closeShortOpen = ref(false)
 const closingOrder = ref<Order | null>(null)
@@ -1387,6 +1367,7 @@ async function downloadOrder(row: Order, format: string) {
 async function loadExecution() {
   if (!executing.value) return
   const data = await get<Execution>(`/purchase-orders/${executing.value.id}/execution`)
+  execution.followUps = data.followUps ?? []
   execution.confirmations = data.confirmations ?? []
   execution.milestones = data.milestones ?? []
   execution.exceptions = data.exceptions ?? []
@@ -1396,6 +1377,8 @@ async function loadExecution() {
 
 async function openExecution(row: Order) {
   executing.value = row
+  executionTab.value='confirmation'
+  followUpNote.value=''
   const detailData = await get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`)
   executionItems.value = detailData.items ?? []
   executionReceipts.value = detailData.receipts ?? []
@@ -1405,11 +1388,6 @@ async function openExecution(row: Order) {
   confirmationForm.confirmedDate = new Date().toISOString().slice(0, 10)
   confirmationForm.expectedDate = row.expectedDate
   confirmationForm.remark = ''
-  // 质检默认对着最新一张收货单——多数时候检的就是刚到的那批。
-  inspectionForm.receiptId = Number(executionReceipts.value[0]?.id ?? 0)
-  inspectionForm.result = 'PASS'
-  inspectionForm.inspectedQty = '0'
-  inspectionForm.defectQty = '0'
   await loadExecution()
   executionOpen.value = true
 }
@@ -1428,20 +1406,18 @@ async function submitConfirmation() {
   } finally { saving.value = false }
 }
 
-function productionNodeLabel(node: string): string { return t(`orders.productionNodes.${node}`) }
+function formatFollowUpTime(value:string){if(!value)return '—';const date=new Date(value.replace(' ','T').replace(/([+-]\d{2})$/,'$1:00'));return Number.isNaN(date.getTime())?value:date.toLocaleString()}
 
-async function submitMilestone() {
-  saving.value = true
-  try {
-    const attachments = milestoneForm.fileName && milestoneForm.fileUrl ? [{ file_name: milestoneForm.fileName, file_url: milestoneForm.fileUrl }] : []
-    await post(`/purchase-orders/${executing.value?.id}/production-milestones`, {
-      node: milestoneForm.node, planned_date: milestoneForm.plannedDate, actual_date: milestoneForm.actualDate,
-      owner_name: milestoneForm.ownerName, remark: milestoneForm.remark, attachments,
-    })
-    ElMessage.success(t('orders.milestoneSaved'))
-    await loadExecution()
-  } finally { saving.value = false }
+async function saveFollowUp() {
+  if(!executing.value || saving.value)return
+  const note=followUpNote.value.trim()
+  if(!note){ElMessage.warning(t('purchaseFulfillment.noteRequired'));return}
+  saving.value=true
+  try{await post(`/purchase-orders/${executing.value.id}/follow-ups`,{note});followUpNote.value='';await loadExecution();ElMessage.success(t('purchaseFulfillment.noteSaved'))}
+  finally{saving.value=false}
 }
+
+function productionNodeLabel(node: string): string { return t(`orders.productionNodes.${node}`) }
 
 async function submitException() {
   saving.value = true
@@ -1467,23 +1443,6 @@ async function resolveException(row: ReceiptException) {
   await post(`/purchase-orders/${executing.value?.id}/exceptions/${row.id}/resolve`, { resolution: value })
   ElMessage.success(t('orders.exceptionResolved'))
   await loadExecution()
-}
-
-async function submitInspection() {
-  saving.value = true
-  try {
-    const attachments = inspectionForm.fileName && inspectionForm.fileUrl ? [{ file_name: inspectionForm.fileName, file_url: inspectionForm.fileUrl }] : []
-    await post(`/purchase-orders/${executing.value?.id}/inspections`, {
-      receipt_id: inspectionForm.receiptId, po_item_id: inspectionForm.itemId, result: inspectionForm.result,
-      inspected_qty: inspectionForm.inspectedQty, defect_qty: inspectionForm.result === 'FAIL' ? inspectionForm.defectQty : '0',
-      note: inspectionForm.note, attachments,
-    })
-    ElMessage.success(t('orders.inspectionSaved'))
-    inspectionForm.note = ''
-    inspectionForm.fileName = ''
-    inspectionForm.fileUrl = ''
-    await loadExecution()
-  } finally { saving.value = false }
 }
 
 function openDisposition(row: PurchaseInspection) {
@@ -1730,6 +1689,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.follow-up-text{white-space:pre-wrap;overflow-wrap:anywhere}
+:global(.fulfillment-dialog .el-dialog__body){max-height:calc(100vh - 220px);overflow-y:auto}
+
 .requote-card{margin-bottom:16px;border-color:#cfeaf5}.requote-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.requote-head strong{color:#173a4d;font-size:17px}.requote-head p{margin:5px 0 0;color:#647789;font-size:13px}.requote-actions{display:flex;align-items:center;gap:10px}.batch-common{display:grid;grid-template-columns:220px minmax(280px,1fr) 220px;gap:14px;margin:16px 0 4px}.batch-table :deep(.el-select){width:100%}.contract-state{padding:10px 12px;border-radius:8px;background:#f2f8fb;color:#52697a}.quality-apply-head{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}.quality-apply-head :deep(.el-input),.quality-apply-head :deep(.el-date-editor){width:100%}
 .head-note,
 .sub {
