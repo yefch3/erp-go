@@ -178,9 +178,18 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			ContractOwner: it.ContractOwner, ContractItemRemark: it.ContractItemRemark,
 		})
 	}
+	receiptDetails, err := h.svc.ReceiptDetails(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	outReceipts := make([]*prv1.PurchaseReceipt, 0, len(receipts))
 	for _, r := range receipts {
-		outReceipts = append(outReceipts, &prv1.PurchaseReceipt{
+		metadata := receiptDetails[r.ID]
+		proofs := make([]*prv1.ReceiptProofFile, 0, len(metadata.Proofs))
+		for _, f := range metadata.Proofs {
+			proofs = append(proofs, &prv1.ReceiptProofFile{Id: f.ID, FileName: f.FileName, ContentType: f.ContentType, SizeBytes: f.SizeBytes})
+		}
+		outReceipts = append(outReceipts, &prv1.PurchaseReceipt{ActualDeliveryDate: metadata.ActualDeliveryDate, ProofFiles: proofs,
 			Id: r.ID, ReceiptNo: r.ReceiptNo, WarehouseId: r.WarehouseID,
 			OperatorName: r.OperatorName, Remark: r.Remark,
 			TotalQty: r.TotalQty, ReceivedAt: ts(r.ReceivedAt),
@@ -444,8 +453,12 @@ func (h *OrderHandler) ReceiveOrder(ctx context.Context, req *prv1.ReceiveOrderR
 	for _, l := range req.GetLines() {
 		lines = append(lines, app.ReceiptLine{POItemID: l.GetPoItemId(), Qty: l.GetQty()})
 	}
+	meta := app.ReceiptDetails{ActualDeliveryDate: req.GetActualDeliveryDate(), RequestKey: req.GetRequestKey()}
+	for _, f := range req.GetProofFiles() {
+		meta.Proofs = append(meta.Proofs, app.ReceiptProof{FileName: f.GetFileName(), ContentType: f.GetContentType(), Data: f.GetFileData()})
+	}
 	no, err := h.svc.ReceiveOrder(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetWarehouseId(),
-		lines, req.GetRemark(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+		lines, req.GetRemark(), app.Operator{ID: op.EmployeeID, Name: op.Name}, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -654,4 +667,15 @@ func milestoneToProto(row app.ProductionMilestone) *prv1.ProductionMilestone {
 
 func exceptionToProto(row app.ReceiptException) *prv1.ReceiptException {
 	return &prv1.ReceiptException{Id: row.ID, ReceiptId: row.ReceiptID, PoItemId: row.POItemID, ExceptionType: row.Type, Qty: row.Qty, ActualProduct: row.ActualProduct, ActualUom: row.ActualUOM, Description: row.Description, Status: row.Status, Resolution: row.Resolution, ReportedBy: row.ReportedBy, ReportedAt: row.ReportedAt, ResolvedBy: row.ResolvedBy, ResolvedAt: row.ResolvedAt}
+}
+
+func (h *OrderHandler) DownloadReceiptProof(ctx context.Context, req *prv1.DownloadReceiptProofRequest) (*prv1.DownloadReceiptProofResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetPoId()); err != nil {
+		return nil, err
+	}
+	f, err := h.svc.DownloadReceiptProof(ctx, grpcx.TenantID(ctx), req.GetPoId(), req.GetFileId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.DownloadReceiptProofResponse{FileName: f.FileName, ContentType: f.ContentType, FileData: f.Data}, nil
 }

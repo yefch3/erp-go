@@ -744,6 +744,15 @@ type PurchaseReceipt struct {
 	ReceivedAt   pgtype.Timestamptz
 }
 
+type PurchaseReceiptDeliveryDetail struct {
+	ReceiptID          int64
+	TenantID           int64
+	PoID               int64
+	ActualDeliveryDate pgtype.Date
+	RequestKey         string
+	RequestHash        string
+}
+
 type PurchaseReceiptException struct {
 	ID             int64
 	TenantID       int64
@@ -771,6 +780,17 @@ type PurchaseReceiptItem struct {
 	ReceiptID int64
 	PoItemID  int64
 	Qty       pgtype.Numeric
+}
+
+type PurchaseReceiptProofFile struct {
+	ID          int64
+	TenantID    int64
+	PoID        int64
+	ReceiptID   int64
+	FileName    string
+	ContentType string
+	FileData    []byte
+	SizeBytes   int64
 }
 
 type PurchaseRequirement struct {

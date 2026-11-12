@@ -183,7 +183,7 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) receiveOrder(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ReceiveOrderRequest{}
-	if !s.decodeBody(w, r, req) {
+	if !s.decodeBodyLimit(w, r, req, 8<<20) {
 		return
 	}
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -395,4 +395,16 @@ func (s *Server) closePurchaseOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) downloadReceiptProof(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	resp, err := s.Orders.DownloadReceiptProof(r.Context(), &prv1.DownloadReceiptProofRequest{PoId: idFromPath(r), FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", resp.GetContentType())
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	_, _ = w.Write(resp.GetFileData())
 }

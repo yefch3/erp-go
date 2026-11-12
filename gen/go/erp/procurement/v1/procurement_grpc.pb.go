@@ -3102,6 +3102,7 @@ const (
 	PurchaseOrderService_GetExternalPayable_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
 	PurchaseOrderService_CancelOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_DownloadReceiptProof_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DownloadReceiptProof"
 	PurchaseOrderService_GetOrderDocuments_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
 	PurchaseOrderService_BeginOrderSend_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
 	PurchaseOrderService_CompleteOrderSend_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
@@ -3231,6 +3232,7 @@ type PurchaseOrderServiceClient interface {
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
+	DownloadReceiptProof(ctx context.Context, in *DownloadReceiptProofRequest, opts ...grpc.CallOption) (*DownloadReceiptProofResponse, error)
 	GetOrderDocuments(ctx context.Context, in *GetOrderDocumentsRequest, opts ...grpc.CallOption) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(ctx context.Context, in *BeginOrderSendRequest, opts ...grpc.CallOption) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(ctx context.Context, in *CompleteOrderSendRequest, opts ...grpc.CallOption) (*CompleteOrderSendResponse, error)
@@ -3608,6 +3610,16 @@ func (c *purchaseOrderServiceClient) ReceiveOrder(ctx context.Context, in *Recei
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReceiveOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_ReceiveOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) DownloadReceiptProof(ctx context.Context, in *DownloadReceiptProofRequest, opts ...grpc.CallOption) (*DownloadReceiptProofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadReceiptProofResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DownloadReceiptProof_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4470,6 +4482,7 @@ type PurchaseOrderServiceServer interface {
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
+	DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error)
 	GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(context.Context, *BeginOrderSendRequest) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(context.Context, *CompleteOrderSendRequest) (*CompleteOrderSendResponse, error)
@@ -4691,6 +4704,9 @@ func (UnimplementedPurchaseOrderServiceServer) CancelOrder(context.Context, *Can
 }
 func (UnimplementedPurchaseOrderServiceServer) ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadReceiptProof not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrderDocuments not implemented")
@@ -5366,6 +5382,24 @@ func _PurchaseOrderService_ReceiveOrder_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).ReceiveOrder(ctx, req.(*ReceiveOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_DownloadReceiptProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadReceiptProofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DownloadReceiptProof(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DownloadReceiptProof_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DownloadReceiptProof(ctx, req.(*DownloadReceiptProofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6926,6 +6960,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReceiveOrder",
 			Handler:    _PurchaseOrderService_ReceiveOrder_Handler,
+		},
+		{
+			MethodName: "DownloadReceiptProof",
+			Handler:    _PurchaseOrderService_DownloadReceiptProof_Handler,
 		},
 		{
 			MethodName: "GetOrderDocuments",

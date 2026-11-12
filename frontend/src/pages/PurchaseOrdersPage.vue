@@ -9,8 +9,8 @@
         <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
         <el-radio-button value="PENDING_CONTRACT">{{ t('orders.statuses.PENDING_CONTRACT') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
-        <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
-        <el-radio-button value="RECEIVED_OPEN">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
+        <el-radio-button value="PARTIALLY_RECEIVED">{{ t('purchaseFulfillment.partialFilter') }}</el-radio-button>
+        <el-radio-button value="RECEIVED_OPEN">{{ t('purchaseFulfillment.completeFilter') }}</el-radio-button>
         <el-radio-button value="HISTORY">{{ t('orders.statuses.HISTORY') }}</el-radio-button>
       </el-radio-group>
 
@@ -287,32 +287,14 @@
         <el-table-column :label="t('orders.amount')" width="110" align="right">
           <template #default="{ row }"><span class="num">{{ row.amount }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('orders.received')" width="100" align="right">
+        <el-table-column :label="t(detail?.fulfillmentMode==='WAREHOUSE'?'purchaseFulfillment.completeWarehouse':'purchaseFulfillment.completeDelivery')" width="100" align="right">
           <template #default="{ row }">
             <span class="num" :class="{ dim: Number(row.receivedQty) === 0 }">{{ trim(row.receivedQty) }}</span>
           </template>
         </el-table-column>
       </el-table>
 
-      <section v-if="qualityDetails.length" class="quality-summary">
-        <div class="side-title">出货前质检结果（只读）</div>
-        <el-card v-for="task in qualityDetails" :key="task.id" shadow="never" class="quality-summary-card">
-          <div class="quality-summary-head"><strong>{{ task.taskNo }}</strong><el-tag :type="qualityResultType(task)">{{ qualityOverallLabel(task) }}</el-tag></div>
-          <el-table :data="task.lines" size="small">
-            <el-table-column prop="productName" label="产品" min-width="160" />
-            <el-table-column label="送检 / 合格 / 不合格" min-width="210"><template #default="{row}">{{ trim(row.requestedQty) }} / {{ trim(row.qualifiedQty) }} / {{ trim(String(Number(row.requestedQty)-Number(row.qualifiedQty))) }} {{ row.uomCode }}</template></el-table-column>
-            <el-table-column prop="issueDescription" label="异常说明" min-width="180"><template #default="{row}">{{row.issueDescription||'—'}}</template></el-table-column>
-          </el-table>
-          <div v-if="task.files?.length" class="quality-files"><b>质检附件：</b><a v-for="file in task.files" :key="file.id" :href="file.downloadUrl" target="_blank">{{file.fileName}}</a></div>
-          <el-alert v-if="task.procurementHandlingStatus==='PENDING'" type="warning" :closable="false" show-icon title="质检存在未合格数量，请采购记录处理结果后安排复检；当前不能先发货。" />
-          <div v-if="task.procurementHandlingStatus==='PENDING'" class="quality-handle">
-            <el-select v-model="qualityAction[task.id]" placeholder="选择处理方式"><el-option value="REWORK" label="返工"/><el-option value="REPLACEMENT" label="换货"/><el-option value="CANCEL_SHORTAGE" label="取消缺少数量"/></el-select>
-            <el-input v-model="qualityNote[task.id]" placeholder="填写与工厂确认的处理结果" />
-            <el-button type="primary" :loading="saving" @click="saveQualityHandling(task)">保存处理结果</el-button>
-          </div>
-          <div v-else-if="task.procurementHandlingStatus==='COMPLETED'" class="sub">采购处理：{{qualityActionLabel(task.procurementHandlingAction)}} · {{task.procurementHandlingNote}} · {{task.procurementHandledByName}}</div>
-        </el-card>
-      </section>
+      <PurchaseQualityPanel v-if="detailOpen && detail" :order-id="detail.id" :can-request="canRequestQuality" @request="openQualityApplication(detail!)" />
 
       <template v-if="detailReceipts.length">
         <div class="side-title">{{ t('orders.receipts') }}</div>
@@ -333,40 +315,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="receiveOpen" :title="t('orders.receiveFor', { no: receiving?.poNo })" width="760px">
-      <el-alert type="info" :closable="false" show-icon class="alert">
-        {{ t('orders.receiveHint') }}
-      </el-alert>
-      <el-form label-width="80px">
-        <el-form-item :label="t('orders.warehouse')" required>
-          <el-select v-model="receiveWarehouse" style="width: 220px">
-            <el-option v-for="w in portWarehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <el-table :data="receiveItems" size="small">
-        <el-table-column :label="t('orders.product')" min-width="180">
-          <template #default="{ row }">{{ row.productName }}</template>
-        </el-table-column>
-        <el-table-column :label="t('orders.orderQty')" width="100" align="right">
-          <template #default="{ row }"><span class="num">{{ trim(row.qty) }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('orders.alreadyReceived')" width="110" align="right">
-          <template #default="{ row }">
-            <span class="num" :class="{ dim: Number(row.receivedQty) === 0 }">{{ trim(row.receivedQty) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.receiveNow')" width="140">
-          <template #default="{ row }">
-            <el-input v-model="receiveQty[row.id]" size="small" :disabled="outstandingOf(row) <= 0" />
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="receiveOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitReceive">{{ t('orders.confirmReceipt') }}</el-button>
-      </template>
-    </el-dialog>
+
 
     <el-dialog v-model="cancelOpen" :title="t('orders.cancelTitle')" width="460px">
       <el-alert type="warning" :closable="false" show-icon class="alert">
@@ -384,7 +333,7 @@
         <el-tab-pane :label="t('purchaseFulfillment.overview')" name="overview">
           <section class="confirmation-section">
             <div class="execution-section-head">
-              <h3>{{ t('orders.confirmations') }}</h3>
+              <h3>{{ t('purchaseFulfillment.feedback') }}</h3>
               <el-button v-if="canEditConfirmation && latestConfirmation && !editingConfirmation" type="primary" plain @click="startConfirmationEdit">{{ t('purchaseFulfillment.editConfirmation') }}</el-button>
             </div>
             <div class="confirmation-facts">
@@ -422,7 +371,7 @@
               </el-collapse-item>
             </el-collapse>
           </section>
-          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" />
+          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" />
           <el-collapse class="legacy-history">
             <el-collapse-item :title="t('purchaseFulfillment.historicalMaterials')" name="legacy">
           <el-alert :title="t('purchaseFulfillment.historyHint')" type="info" :closable="false" />
@@ -574,6 +523,8 @@ import { del, download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
+import PurchaseQualityPanel from '../components/PurchaseQualityPanel.vue'
+import {deliveryStatusKey} from '../lib/purchaseDelivery'
 import PurchaseFulfillmentProgress from '../components/PurchaseFulfillmentProgress.vue'
 import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
 import { getActionableApproval } from '../lib/approvalAction'
@@ -717,7 +668,6 @@ const historyOpen=ref(false), historyId=ref('')
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
 const canCancel = auth.can('procurement:order:cancel')
-const canReceive = auth.can('procurement:receipt:write')
 const canProduction = auth.can('procurement:production:write')
 const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
@@ -763,14 +713,7 @@ const draftFilePreviewType = ref('')
 const previewingDraftFileId = ref('')
 interface QualityDetail {id:string;taskNo:string;status:string;lines:Array<{productName:string;requestedQty:string;qualifiedQty:string;uomCode:string;finalResult:string;issueDescription:string}>;files:Array<{id:string;fileName:string;downloadUrl:string}>;procurementHandlingStatus:string;procurementHandlingAction:string;procurementHandlingNote:string;procurementHandledByName:string}
 const qualityDetails=ref<QualityDetail[]>([])
-const qualityAction=reactive<Record<string,string>>({})
-const qualityNote=reactive<Record<string,string>>({})
 
-const receiveOpen = ref(false)
-const receiving = ref<Order | null>(null)
-const receiveItems = ref<OrderItem[]>([])
-const receiveQty = reactive<Record<string, string>>({})
-const receiveWarehouse = ref(0)
 const warehouses = ref<Warehouse[]>([])
 const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType === 'PORT_TERMINAL'))
 
@@ -831,6 +774,7 @@ function canViewFulfillment(row: Order) {
   return ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && (!Number(row.sourceBusinessId) || Boolean(row.contractVerifiedAt))
 }
 function showOrderStage(row: Order) {
+  if (['PARTIALLY_RECEIVED','RECEIVED'].includes(row.status)) return true
   return row.status !== (status.value === 'RECEIVED_OPEN' ? 'RECEIVED' : status.value) || !canViewFulfillment(row)
 }
 
@@ -895,8 +839,6 @@ function primaryAction(row: Order): RowAction | null {
 		if (!row.signedContractUploadedAt && canWrite) return { key:'contract', label:'上传签署合同', tone:'primary', run:()=>openContract(row) }
 		if (!row.contractVerifiedAt) return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
 	}
-  if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
-    return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
   // 收满、还没结案——当前该做的就是宣布这单到此为止（A3）。
   if (row.status === 'RECEIVED' && !row.closedAt && canClose)
     return { key: 'close', label: t('orders.closeOrder'), tone: 'primary', run: () => void closeOrder(row) }
@@ -959,7 +901,6 @@ function moreActions(row: Order): { key: string; label: string }[] {
 		add('quality', t('quality.apply'), canRequestQuality && !row.contractVerifiedAt)
 		if (!row.contractVerifiedAt) return out
 	}
-  add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
   add('execution', t('purchaseFulfillment.view'), canViewFulfillment(row))
   add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
@@ -1033,7 +974,7 @@ function runOrderAction(row: Order, key: string) {
     case 'rejectDecision': void actOnOrderApproval(row, 'REJECT'); break
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
-    case 'receive': openReceive(row); break
+    case 'receive': void router.push(row.fulfillmentMode==='WAREHOUSE'?'/warehouses/arrivals':'/shipping/deliveries'); break
     case 'execution': openExecution(row); break
     case 'downloadXlsx': void downloadOrder(row, 'xlsx'); break
     case 'downloadPdf': void downloadOrder(row, 'pdf'); break
@@ -1362,11 +1303,6 @@ async function previewDraftFile(file:OrderDraftFile){
   }finally{previewingDraftFileId.value=''}
 }
 async function deleteDraftFile(file:OrderDraftFile){if(!detail.value)return;await ElMessageBox.confirm(`删除资料“${file.fileName}”？`,'删除资料',{type:'warning'});await del(`/purchase-orders/${detail.value.id}/draft-files/${file.id}`);detailDraftFiles.value=detailDraftFiles.value.filter(item=>item.id!==file.id);ElMessage.success('采购资料已删除')}
-function qualityOverallLabel(task:QualityDetail){if(task.status!=='COMPLETED')return t(`quality.statuses.${task.status}`);if(hasPassedDeliveryInspection([task]))return t('quality.results.PASS');if(task.lines.some(l=>l.finalResult==='FAIL'))return t('quality.results.FAIL');return t('quality.results.PARTIAL')}
-function qualityResultType(task:QualityDetail){return hasPassedDeliveryInspection([task])?'success':task.lines.some(l=>l.finalResult==='FAIL')?'danger':'warning'}
-function qualityActionLabel(v:string){return ({REWORK:'返工',REPLACEMENT:'换货',CANCEL_SHORTAGE:'取消缺少数量'} as Record<string,string>)[v]||v}
-async function saveQualityHandling(task:QualityDetail){const action=qualityAction[task.id],note=(qualityNote[task.id]||'').trim();if(!action||!note){ElMessage.warning('请选择处理方式并填写处理结果');return}saving.value=true;try{await post(`/purchase-orders/${detail.value?.id}/quality-inspections/handling`,{task_id:Number(task.id),action,result_note:note});ElMessage.success('采购处理结果已保存');if(detail.value)await openDetail(detail.value)}finally{saving.value=false}}
-
 async function downloadOrder(row: Order, format: string) {
   if (format !== 'xlsx' && format !== 'pdf') return
   downloadingId.value = Number(row.id)
@@ -1531,51 +1467,6 @@ function outstandingOf(item: OrderItem): number {
   return Number(item.qty ?? 0) - Number(item.receivedQty ?? 0)
 }
 
-async function openReceive(row: Order) {
-  const q = await get<{ tasks: QualityDetail[] }>(`/purchase-orders/${row.id}/quality-inspections`)
-  if (!hasPassedDeliveryInspection(q.tasks ?? [])) {
-    ElMessage.warning(t('quality.deliveryRequired'))
-    return
-  }
-  receiving.value = row
-  const d = await get<{ items: OrderItem[] }>(`/purchase-orders/${row.id}`)
-  receiveItems.value = d.items ?? []
-  Object.keys(receiveQty).forEach((k) => delete receiveQty[k])
-  // Pre-fill with everything still outstanding: a full delivery is the common
-  // case, and a short one is edited down.
-  receiveItems.value.forEach((it) => {
-    const left = outstandingOf(it)
-    receiveQty[it.id] = left > 0 ? String(left) : ''
-  })
-  if (!warehouses.value.length) {
-    warehouses.value = (await get<{ warehouses: Warehouse[] }>('/warehouses')).warehouses ?? []
-  }
-  receiveWarehouse.value = Number(portWarehouses.value[0]?.id ?? 0)
-  receiveOpen.value = true
-}
-
-async function submitReceive() {
-  const lines = receiveItems.value
-    .filter((it) => Number(receiveQty[it.id] ?? 0) > 0)
-    .map((it) => ({ po_item_id: Number(it.id), qty: receiveQty[it.id] }))
-  if (!lines.length) {
-    ElMessage.warning(t('orders.receiveSomething'))
-    return
-  }
-  saving.value = true
-  try {
-    const res = await post<{ receiptNo: string }>(`/purchase-orders/${receiving.value?.id}/receive`, {
-      warehouse_id: receiveWarehouse.value,
-      lines,
-    })
-    ElMessage.success(t('orders.receiptDone', { no: res.receiptNo }))
-    receiveOpen.value = false
-    load()
-  } finally {
-    saving.value = false
-  }
-}
-
 function statusType(s: string): 'info' | 'warning' | 'primary' | 'success' | 'danger' {
   if (s === 'DRAFT') return 'info'
   if (s === 'PENDING_APPROVAL') return 'warning'
@@ -1594,7 +1485,7 @@ function handleOrderAction(row: Order, command: string) {
     return
   }
   if (command === 'receive') {
-    void openReceive(row)
+    void router.push(row.fulfillmentMode==='WAREHOUSE'?'/warehouses/arrivals':'/shipping/deliveries')
     return
   }
   if (command === 'execution') {
@@ -1611,7 +1502,7 @@ function orderStatusLabel(row: Order): string {
   if (row.status === 'ORDERED' && Number(row.sourceBusinessId) > 0 && !row.contractVerifiedAt)
     return t('orders.statuses.PENDING_FINANCE')
   if (row.status === 'ORDERED') return t('orders.businessStatuses.ORDERED')
-  return t(`orders.statuses.${row.status}`)
+  return t(deliveryStatusKey(row))
 }
 
 function trim(v: string): string {
@@ -1628,7 +1519,7 @@ function formatTime(v: string): string {
 // "waiting" to "placed" while this page is open and nobody touched it.
 const stopListening = onLive((event) => {
   if (event.type !== 'requirement.changed' && event.type !== 'doc.changed') return
-  if (createOpen.value || receiveOpen.value || cancelOpen.value) return
+  if (createOpen.value || cancelOpen.value) return
   load()
 })
 onUnmounted(stopListening)
