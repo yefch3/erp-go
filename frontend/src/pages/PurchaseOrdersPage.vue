@@ -73,7 +73,7 @@
                 @command="(key: string) => runOrderAction(row, key)"
               >
                 <el-button class="more-actions-trigger" size="small" type="primary" plain @click.stop>
-                  {{ t('orders.moreActions') }}<span class="drop-arrow">⌄</span>
+                  {{ t('orders.moreActions') }}<span class="drop-arrow" aria-hidden="true">▼</span>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -1801,8 +1801,8 @@ onMounted(async () => {
   min-width: 92px;
 }
 .drop-arrow {
-  margin-left: 4px;
-  font-size: 12px;
+  margin-left: 7px;
+  font-size: 10px;
 }
 .prod {
   font-weight: 500;
