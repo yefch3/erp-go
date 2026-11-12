@@ -56,6 +56,8 @@ service ShippingService {
   rpc PresignContractShippingContractUpload(PresignContractShippingContractUploadRequest) returns (PresignContractShippingContractUploadResponse);
   rpc VerifyContractShippingContract(VerifyContractShippingContractRequest) returns (VerifyContractShippingContractResponse);
   rpc MarkContractShippingPaymentRequested(MarkContractShippingPaymentRequestedRequest) returns (MarkContractShippingPaymentRequestedResponse);
+  // Internal, narrow projection for authorized purchase-order fulfillment views.
+  rpc GetCargoScheduleProgress(GetCargoScheduleProgressRequest) returns (GetCargoScheduleProgressResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -606,3 +608,20 @@ message VerifyContractShippingContractRequest { int64 id = 1; }
 message VerifyContractShippingContractResponse { ContractShippingHandoff handoff = 1; }
 message MarkContractShippingPaymentRequestedRequest { int64 id = 1; }
 message MarkContractShippingPaymentRequestedResponse { ContractShippingHandoff handoff = 1; }
+
+message GetCargoScheduleProgressRequest {
+  int64 schedule_id = 1;
+  int64 contract_id = 2;
+  repeated int64 contract_item_ids = 3;
+}
+message CargoScheduleProgress {
+  int64 id = 1;
+  int64 contract_id = 2;
+  string schedule_no = 3;
+  string status = 4;
+  string etd = 5;
+  string eta = 6;
+  string atd = 7;
+  string ata = 8;
+}
+message GetCargoScheduleProgressResponse { CargoScheduleProgress schedule = 1; }

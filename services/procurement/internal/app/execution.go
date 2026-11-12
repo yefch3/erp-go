@@ -66,6 +66,7 @@ type ProductionReminder struct {
 }
 
 type OrderExecution struct {
+	FollowUps     []OrderFollowUp
 	Confirmations []SupplierConfirmation
 	Milestones    []ProductionMilestone
 	Exceptions    []ReceiptException
@@ -562,6 +563,11 @@ func (s *Service) GetOrderExecution(ctx context.Context, tenantID, poID int64) (
 		return OrderExecution{}, err
 	}
 	var out OrderExecution
+	followUps, err := s.orderFollowUps(ctx, tenantID, poID)
+	if err != nil {
+		return out, err
+	}
+	out.FollowUps = followUps
 	confirmations, err := s.pool.Query(ctx, `SELECT id,status,confirmed_date::text,coalesce(confirmed_expected_date::text,''),remark,coalesce(approval_instance_id,0),created_by_name,created_at::text FROM purchase_supplier_confirmations WHERE tenant_id=$1 AND po_id=$2 ORDER BY created_at DESC,id DESC`, tenantID, poID)
 	if err != nil {
 		return out, err
