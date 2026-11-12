@@ -237,7 +237,7 @@
           {{ detail?.currency }} {{ detail?.totalAmount }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('common.status')">
-          {{ detail ? t(`orders.statuses.${detail.status}`) : '' }}
+          {{ detail ? orderStatusLabel(detail) : '' }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
@@ -248,6 +248,14 @@
           <template v-else>—</template>
         </el-descriptions-item>
       </el-descriptions>
+
+      <section v-if="detail?.signedContractUploadedAt" class="order-draft-files">
+        <div class="side-title">双方签署的采购合同</div>
+        <p><a v-if="detail.signedContractUrl" :href="detail.signedContractUrl" target="_blank" rel="noopener noreferrer">{{detail.signedContractName}} · 查看合同附件</a><span v-else>{{detail.signedContractName}}（附件链接暂不可用，请刷新）</span></p>
+        <p class="sub">付款条件：{{detail.paymentTerms||'—'}}</p>
+        <p class="sub">{{detail.contractVerifiedAt?'已完成财务核验':'等待财务在“出账 → 待合同核验”中核验签署合同。'}}</p>
+        <p v-if="detail.contractVerifiedAt" class="sub">核验人：{{detail.contractVerifiedByName||'—'}}；核验时间：{{formatTime(detail.contractVerifiedAt)}}</p>
+      </section>
 
       <section v-if="detailDraftFiles.length" class="order-draft-files">
         <div class="side-title">采购资料</div>
@@ -730,7 +738,6 @@ const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
-const canFinanceVerify = auth.can('procurement:recon:write')
 const canRequestQuality = auth.can('quality:task:request')
 
 const rows = ref<Order[]>([])
@@ -891,7 +898,6 @@ function primaryAction(row: Order): RowAction | null {
     return { key: 'edit', label: t('orders.editAndResubmit'), tone: 'warning', run: () => void openEdit(row) }
 	if (Number(row.sourceBusinessId) > 0 && row.status === 'ORDERED') {
 		if (!row.signedContractUploadedAt && canWrite) return { key:'contract', label:'上传签署合同', tone:'primary', run:()=>openContract(row) }
-		if (!row.contractVerifiedAt && canFinanceVerify) return { key:'verifyContract', label:'核验签署合同', tone:'success', run:()=>void verifyContract(row) }
 		if (!row.contractVerifiedAt) return { key:'detail', label:'查看合同状态', tone:'primary', run:()=>void openDetail(row) }
 	}
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
@@ -955,7 +961,6 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
 	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
 		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
-		add('verifyContract','核验签署合同',canFinanceVerify&&!!row.signedContractUploadedAt&&!row.contractVerifiedAt)
 		add('quality', t('quality.apply'), canRequestQuality && !row.contractVerifiedAt)
 		if (!row.contractVerifiedAt) return out
 	}
@@ -1040,7 +1045,6 @@ function runOrderAction(row: Order, key: string) {
     case 'close': void closeOrder(row); break
     case 'cancel': openCancel(row); break
 	case 'contract': openContract(row); break
-	case 'verifyContract': void verifyContract(row); break
 	case 'quality': void openQualityApplication(row); break
 	}
 }
@@ -1164,8 +1168,6 @@ async function openCreate(preselect?: string[]) {
 function selectContractFile(file:any){contractFile.value=file.raw as File;contractFiles.value=[file]}
 function openContract(row:Order){contractOrder.value=row;contractForm.contractNo=row.businessDocumentNo||row.poNo;contractForm.paymentTerms=row.paymentTerms||row.remark||'';contractFile.value=null;contractFiles.value=[];contractOpen.value=true}
 async function saveContract(){const row=contractOrder.value,file=contractFile.value;if(!row||!file){ElMessage.warning('请选择双方签署合同文件');return}if(!contractForm.contractNo.trim()||!contractForm.paymentTerms.trim()){ElMessage.warning('请填写采购合同号和付款条件');return}saving.value=true;try{const signed=await post<{fileKey:string;uploadUrl:string}>(`/purchase-orders/${row.id}/contract/presign`,{file_name:file.name});const putResult=await fetch(signed.uploadUrl,{method:'PUT',body:file});if(!putResult.ok)throw new Error('合同文件上传失败');await post(`/purchase-orders/${row.id}/contract`,{contract_no:contractForm.contractNo,payment_terms:contractForm.paymentTerms,file_key:signed.fileKey,file_name:file.name});ElMessage.success('签署合同已保存，等待财务审核');contractOpen.value=false;status.value='PENDING_CONTRACT';await router.replace({path:'/purchase-orders',query:{status:'PENDING_CONTRACT',order:row.id}});await reload()}finally{saving.value=false}}
-async function verifyContract(row:Order){await ElMessageBox.confirm(`确认“${row.signedContractName}”是当前工厂双方签署的采购合同？`,'核验采购合同',{type:'warning'});await post(`/purchase-orders/${row.id}/contract/verify`,{});ElMessage.success('采购合同已核验');await reload()}
-
 async function openEdit(row: Order) {
  if(row.historical){historyId.value=row.id;historyOpen.value=true;return}
   const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([

@@ -9,7 +9,13 @@
       <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
     </el-radio-group>
     <TravelReimbursementPanel v-if="isReimbursement" />
-    <div v-show="!isReimbursement" class="legacy-recon">
+    <el-radio-group v-if="!isReimbursement" :model-value="isContractReview?'contracts':isDone?'done':'open'" class="tabs" @update:model-value="switchTab">
+      <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
+      <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
+      <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
+    </el-radio-group>
+    <PurchaseContractReviewPanel v-if="!isReimbursement&&isContractReview" :order-id="String(route.query.order||'')" :initial-keyword="String(route.query.keyword||'')" @verified="reload"/>
+    <div v-show="!isReimbursement&&!isContractReview" class="legacy-recon">
 
     <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-position="top">
@@ -59,10 +65,6 @@
         <!-- 主页签：供应商对账下面的两个子页。状态放在地址的 query 里，
              前进/后退和分享链接都对；菜单高亮看的是 route.path，不受
              query 影响，仍然稳稳停在「供应商对账」上。 -->
-        <el-radio-group :model-value="isDone ? 'done' : 'open'" class="tabs" @update:model-value="switchTab">
-          <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
-          <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
-        </el-radio-group>
         <!-- 次级筛子，只在待核销那一档下有意义：已完成的单不用再催。 -->
         <el-radio-group v-if="!isDone" v-model="view" @change="reload">
           <el-radio-button value="">{{ t('supplierRecon.viewAll') }}</el-radio-button>
@@ -412,6 +414,7 @@ import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import TravelReimbursementPanel from '../components/TravelReimbursementPanel.vue'
+import PurchaseContractReviewPanel from '../components/PurchaseContractReviewPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -421,6 +424,8 @@ const auth = useAuthStore()
 // 「看得见按钮、点下去 403」，或者更糟，反过来。
 const canWrite = auth.can('procurement:recon:write')
 const canReadRecon = auth.can('procurement:recon:read')
+const canReviewContracts=auth.can('procurement:recon:write')&&auth.can('procurement:order:read')
+const isContractReview=computed(()=>route.query.view==='contracts')
 const isReimbursement = computed(() => route.query.section === 'travel' || !canReadRecon)
 function switchSection(value: string | number | boolean | undefined) {
   void router.push({ path: route.path, query: value === 'travel' ? { section: 'travel' } : {} })
@@ -531,6 +536,7 @@ function switchTab(v: string | number | boolean | undefined) {
   const q: Record<string, string> = {}
   if (keyword.value) q.keyword = keyword.value
   if (v === 'done') q.view = 'done'
+  if (v === 'contracts') q.view = 'contracts'
   void router.push({ path: route.path, query: q })
 }
 
@@ -585,6 +591,7 @@ async function openManual() {
 }
 
 async function load() {
+  if(isContractReview.value)return
   loading.value = true
   try {
     const d = await fetchPage({
@@ -609,6 +616,7 @@ async function load() {
 }
 
 async function loadMetrics() {
+  if(isContractReview.value)return
   const [overdue, unset, sample] = await Promise.all([
     fetchPage({ page: 1, page_size: 1, overdue: '1' }),
     fetchPage({ page: 1, page_size: 1, unset: '1' }),
@@ -938,6 +946,7 @@ watch(isDone, () => {
   files.value = {}
   reload()
 })
+watch(isContractReview,active=>{if(!active)reload()})
 
 watch(isReimbursement, (active) => {
   if (!active) { load(); loadMetrics() }
