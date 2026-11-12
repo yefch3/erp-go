@@ -97,3 +97,16 @@ export function relayFailureReason(err: unknown): string {
   }
   return ''
 }
+
+/**
+ * 是不是「等到超时」的那种失败。
+ *
+ * 一批文件里有一份等满了时限，多半是整条路不通；调用方据此停下，不让后面每一
+ * 份都再等一轮。axios 的超时带 code ECONNABORTED（开了 clarifyTimeoutError 的
+ * 版本是 ETIMEDOUT）。服务端回了话的失败——哪怕是 502——不算：那是很快就知道的。
+ */
+export function relayTimedOut(err: unknown): boolean {
+  if (!err || typeof err !== 'object' || !('code' in err)) return false
+  const code = (err as { code?: unknown }).code
+  return code === 'ECONNABORTED' || code === 'ETIMEDOUT'
+}

@@ -11,6 +11,7 @@ import {
   RELAY_UPLOAD_TIMEOUT_MS,
   fetchViaRelay,
   relayFailureReason,
+  relayTimedOut,
   saveViaRelay,
   uploadViaRelay,
   type RelayTransport,
@@ -108,5 +109,21 @@ describe('relayFailureReason', () => {
     expect(relayFailureReason({ message: 42 })).toBe('')
     expect(relayFailureReason(null)).toBe('')
     expect(relayFailureReason('boom')).toBe('')
+  })
+})
+
+describe('relayTimedOut', () => {
+  it('只认「等到超时」，服务端回了话的失败不算', () => {
+    expect(relayTimedOut({ code: 'ECONNABORTED', message: 'timeout of 600000ms exceeded' })).toBe(true)
+    expect(relayTimedOut({ code: 'ETIMEDOUT' })).toBe(true)
+    // axios 真正抛出来的样子：一个带 code 的 Error。
+    expect(relayTimedOut(Object.assign(new Error('timeout of 600000ms exceeded'), { name: 'AxiosError', code: 'ECONNABORTED' }))).toBe(true)
+    // 网络断了是立刻知道的，后面的文件各自很快失败，不必停。
+    expect(relayTimedOut({ code: 'ERR_NETWORK', message: 'Network Error' })).toBe(false)
+    // 网关的拒绝是信封，code 是业务码。
+    expect(relayTimedOut({ success: false, code: 'STORAGE_RELAY_UNREACHABLE', message: '服务器连不上文件存储' })).toBe(false)
+    expect(relayTimedOut(new Error('boom'))).toBe(false)
+    expect(relayTimedOut(null)).toBe(false)
+    expect(relayTimedOut('ECONNABORTED')).toBe(false)
   })
 })
