@@ -80,6 +80,7 @@ export const router = createRouter({
         { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
         { path: 'shipping/requirements', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'inquiry' }, meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/orders', component: () => import('./pages/ShippingRequirementsPage.vue'), props: { mode: 'orders' }, meta: { permission: 'shipping:schedule:read' } },
+        { path: 'shipping/deliveries', component: () => import('./pages/PurchaseDeliveriesPage.vue'), meta: { permission: 'procurement:receipt:write' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。

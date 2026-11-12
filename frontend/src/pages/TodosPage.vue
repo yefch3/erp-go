@@ -104,6 +104,10 @@
               <el-table-column label="操作" width="160"><template #default="{row}"><router-link :to="{path:'/customer-recon',query:{keyword:row.contractNo,condition:row.id}}" class="doc-link">确认执行条件</router-link></template></el-table-column>
             </el-table>
           </section>
+          <section v-if="visibleDeliveryTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>待交货</h3><p>整单质检已合格，由物流登记实际交货；船期安排不计入交货数量。</p></div><el-tag type="warning">{{deliveryTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleDeliveryTasks" class="home-table"><el-table-column prop="poNo" label="采购单号" min-width="180"/><el-table-column prop="supplierName" label="供应商" min-width="180"/><el-table-column prop="expectedDate" label="采购要求日期" width="150"/><el-table-column label="状态" width="150"><template #default><el-tag type="success">整单质检合格</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{row}"><router-link :to="{path:'/shipping/deliveries',query:{order:row.id}}" class="doc-link">登记交货</router-link></template></el-table-column></el-table>
+          </section>
           <section v-if="visibleQualityTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3><p>{{ t('quality.todoHint') }}</p></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
             <el-table :data="visibleQualityTasks" class="home-table sourcing-todo-table">
@@ -177,7 +181,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!executionTasksError&&!showPurchaseFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!visibleDeliveryTasks.length&&!executionTasksError&&!showPurchaseFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -249,6 +253,8 @@
 </template>
 
 <script setup lang="ts">
+import {hasPassedDeliveryInspection,type DeliveryQualityTask} from '../lib/deliveryQuality'
+
 import InquiryTodos from '../components/InquiryTodos.vue'
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus'
@@ -320,6 +326,9 @@ const purchaseFinanceTasks=ref<PurchaseFinanceTask[]>([])
 const visiblePurchaseFinanceTasks=computed(()=>purchaseFinanceTasks.value.filter(row=>(!bizType.value||bizType.value==='PURCHASE_ORDER')&&(!keyword.value.trim()||[row.poNo,row.supplierName,row.exportContractNo,row.signedContractName].some(value=>String(value||'').toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())))))
 const executionTasksError=ref(false)
 const visibleFinanceTasks=computed(()=>financeTasks.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(value=>value.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
+type DeliveryTodo={id:string;poNo:string;supplierName:string;expectedDate:string;fulfillmentMode:string;businessType:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
+const deliveryTasks=ref<DeliveryTodo[]>([])
+const visibleDeliveryTasks=computed(()=>deliveryTasks.value.filter(row=>!keyword.value||[row.poNo,row.supplierName].some(text=>text.toLowerCase().includes(keyword.value.toLowerCase()))))
 const qualityTasks = ref<QualityTodoTask[]>([])
 const qualityTasksAvailable = ref(false)
 const qualityProcurementTasks=ref<QualityProcurementTodo[]>([])
@@ -344,8 +353,8 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => purchaseFinanceTasks.value.length + financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
-const combinedPendingAvailable = computed(() => purchaseFinanceTasks.value.length>0 || financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
+const combinedPendingTotal = computed(() => deliveryTasks.value.length + purchaseFinanceTasks.value.length + financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
+const combinedPendingAvailable = computed(() => deliveryTasks.value.length>0 || purchaseFinanceTasks.value.length>0 || financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
@@ -449,6 +458,16 @@ async function loadQualityTasks() {
     qualityTasks.value = []
     qualityTasksAvailable.value = false
   }
+}
+async function loadDeliveryTasks(){
+ if(!auth.can('procurement:receipt:write')||!auth.can('procurement:order:read')){deliveryTasks.value=[];return}
+ try{
+  const orders:DeliveryTodo[]=[]
+  for(const status of ['ORDERED','PARTIALLY_RECEIVED']){let page=1,total=0;do{const d=await get<{orders:DeliveryTodo[];meta:{total:string}}>('/purchase-orders',{status,page,page_size:100},quietErrors);orders.push(...(d.orders||[]));total=Number(d.meta?.total||0);page++}while((page-1)*100<total)}
+  const candidates=orders.filter(row=>row.fulfillmentMode!=='WAREHOUSE'&&row.businessType!=='LOGISTICS'&&!row.closedAt&&(!Number(row.sourceBusinessId)||row.contractVerifiedAt)),qualified:DeliveryTodo[]=[]
+  for(let index=0;index<candidates.length;index+=8){const batch=await Promise.all(candidates.slice(index,index+8).map(async row=>{try{const d=await get<{tasks:DeliveryQualityTask[]}>(`/purchase-orders/${row.id}/quality-inspections`,{},quietErrors);return hasPassedDeliveryInspection(d.tasks||[])?row:null}catch{return null}}));qualified.push(...batch.filter((row):row is DeliveryTodo=>row!==null))}
+  deliveryTasks.value=qualified
+ }catch{deliveryTasks.value=[]}
 }
 async function loadQualityProcurementTasks(){if(!auth.can('procurement:order:read')){qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false;return}try{const data=await get<{tasks:QualityProcurementTodo[]}>('/quality/procurement-todos',{},quietErrors);qualityProcurementTasks.value=data.tasks??[];qualityProcurementTasksAvailable.value=true}catch{qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false}}
 
@@ -573,8 +592,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {

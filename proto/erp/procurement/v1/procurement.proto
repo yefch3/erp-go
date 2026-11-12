@@ -648,6 +648,7 @@ service PurchaseOrderService {
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
+  rpc DownloadReceiptProof(DownloadReceiptProofRequest) returns (DownloadReceiptProofResponse);
   rpc GetOrderDocuments(GetOrderDocumentsRequest) returns (GetOrderDocumentsResponse);
   rpc BeginOrderSend(BeginOrderSendRequest) returns (BeginOrderSendResponse);
   rpc CompleteOrderSend(CompleteOrderSendRequest) returns (CompleteOrderSendResponse);
@@ -1171,6 +1172,8 @@ message PurchaseReceipt {
   string remark = 5;
   string total_qty = 6;
   string received_at = 7;
+  string actual_delivery_date = 8;
+  repeated ReceiptProofFile proof_files = 9;
 }
 
 message ListOrdersRequest {
@@ -1285,6 +1288,9 @@ message ReceiveOrderRequest {
   int64 warehouse_id = 2;
   string remark = 3;
   repeated ReceiveOrderLine lines = 4;
+  string actual_delivery_date = 5;
+  repeated ReceiptProofUpload proof_files = 6;
+  string request_key = 7;
 }
 
 message ReceiveOrderResponse {
@@ -3212,3 +3218,8 @@ message OrderFollowUp {
 }
 message AddOrderFollowUpRequest { int64 id = 1; string note = 2; }
 message AddOrderFollowUpResponse { OrderFollowUp follow_up = 1; }
+
+message ReceiptProofUpload { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+message ReceiptProofFile { int64 id = 1; string file_name = 2; string content_type = 3; int64 size_bytes = 4; }
+message DownloadReceiptProofRequest { int64 po_id = 1; int64 file_id = 2; }
+message DownloadReceiptProofResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }

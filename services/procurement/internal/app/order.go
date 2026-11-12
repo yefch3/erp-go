@@ -964,7 +964,15 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 // warehouseID 大于 0 表示货物进入公司管理的仓库，会发送库存入账事件；
 // warehouseID 等于 0 表示直接交付港口、客户或指定地点，只更新采购交付进度，
 // 不写入库存。两条路径共用同一套累计数量校验，避免重复或超量收货。
-func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator) (string, error) {
+func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator, details ...ReceiptDetails) (string, error) {
+	var meta ReceiptDetails
+	if len(details) > 0 {
+		meta = details[0]
+	}
+	meta, requestHash, err := prepareReceiptDetails(meta, warehouseID, lines, remark)
+	if err != nil {
+		return "", err
+	}
 	if len(lines) == 0 {
 		return "", apierr.Invalid("PO_RECEIPT_LINES_REQUIRED", "收货明细不能为空")
 	}
@@ -994,7 +1002,7 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 	}
 
 	receiptNo := ""
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
 			TenantID: tenantID, ID: poID,
@@ -1004,6 +1012,23 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 		}
 		if err != nil {
 			return err
+		}
+		if meta.RequestKey != "" {
+			var existingNo, existingHash string
+			e := tx.QueryRow(ctx, `SELECT r.receipt_no,d.request_hash FROM purchase_receipt_delivery_details d JOIN purchase_receipts r ON r.id=d.receipt_id AND r.tenant_id=d.tenant_id WHERE d.tenant_id=$1 AND d.po_id=$2 AND d.request_key=$3`, tenantID, poID, meta.RequestKey).Scan(&existingNo, &existingHash)
+			if e == nil {
+				if existingHash != requestHash {
+					return apierr.Conflict("PO_DELIVERY_REQUEST_CHANGED", "同一交接请求不能更改内容")
+				}
+				receiptNo = existingNo
+				return nil
+			}
+			if e != pgx.ErrNoRows {
+				return e
+			}
+		}
+		if (meta.ActualDeliveryDate != "" || meta.RequestKey != "" || len(meta.Proofs) > 0) && ((head.FulfillmentMode == "WAREHOUSE" && directDelivery) || (head.FulfillmentMode != "WAREHOUSE" && !directDelivery)) {
+			return apierr.Invalid("PO_DELIVERY_MODE_MISMATCH", "交接方式与采购单约定不一致")
 		}
 		var historical, historyPricesMissing bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2),EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historical, &historyPricesMissing); err != nil {
@@ -1104,6 +1129,9 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 			OperatorID: op.ID, OperatorName: op.Name, Remark: remark,
 		})
 		if err != nil {
+			return err
+		}
+		if err := saveReceiptDetails(ctx, tx, tenantID, poID, receipt.ID, meta, requestHash); err != nil {
 			return err
 		}
 		receiptNo = receipt.ReceiptNo

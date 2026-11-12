@@ -802,6 +802,7 @@ func (s *Server) Router() http.Handler {
 		// Receiving is warehouse work, so it rides on the stock permission
 		// rather than the buyer's.
 		r.With(s.perm("procurement:receipt:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/receipt-proofs/{fileId}/download", s.downloadReceiptProof)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.

@@ -12,6 +12,7 @@
     <el-card shadow="never">
       <el-table :data="pagedRows" v-loading="loading" row-key="id">
         <el-table-column :label="t('warehouse.receipts.receiptNo')" min-width="170"><template #default="{row}"><strong>{{row.receiptNo}}</strong><div class="sub">{{formatTime(row.receivedAt)}}</div></template></el-table-column>
+        <el-table-column :label="t('purchaseFulfillment.actualHandoffDate')" width="125"><template #default="{row}">{{row.actualDeliveryDate||row.receivedAt.slice(0,10)}}</template></el-table-column>
         <el-table-column :label="t('warehouse.receipts.purchaseOrder')" min-width="150" prop="poNo"/>
         <el-table-column :label="t('warehouse.receipts.supplier')" min-width="180" prop="supplierName"/>
         <el-table-column :label="t('warehouse.receipts.typeLocation')" min-width="220"><template #default="{row}"><el-tag size="small" :type="isDirectReceipt(row)?'info':'success'">{{isDirectReceipt(row)?t('warehouse.receipts.direct'):t('warehouse.receipts.warehouse')}}</el-tag><div class="sub destination">{{row.destination}}</div></template></el-table-column>
@@ -32,7 +33,7 @@ import { useI18n } from 'vue-i18n'
 import { get } from '../api'
 
 interface Order {id:string;poNo:string;supplierName:string;fulfillmentMode:string;deliveryLocationType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;warehouseName:string;receivedQty:string}
-interface Receipt {id:string;receiptNo:string;warehouseId:string;operatorName:string;remark:string;totalQty:string;receivedAt:string}
+interface Receipt {id:string;receiptNo:string;warehouseId:string;operatorName:string;remark:string;totalQty:string;receivedAt:string;actualDeliveryDate:string}
 interface ReceiptRow extends Receipt {poNo:string;supplierName:string;destination:string}
 const route=useRoute(),router=useRouter(),{t,locale}=useI18n(),loading=ref(false),rows=ref<ReceiptRow[]>([]),pageNo=ref(1),pageSize=100,warehouseNames=ref<Record<string,string>>({})
 const keyword=ref(String(route.query.keyword??'')),deliveryType=ref(String(route.query.type??'ALL'))
