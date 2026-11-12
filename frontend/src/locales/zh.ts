@@ -299,6 +299,7 @@ basicsSaved: "基本资料已保存",
     intakes: '待复核询盘', inquiries: '客户询盘', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘',
   },
   inquiryWorkspace: {
+    quoteDeletion: { title: '删除工厂报价', confirm: '确定删除“{company}”的整份报价？删除后采购和销售将不再看到该报价；已加入客户报价的来源会标记为已移除，请通知销售检查并重新选择。', deleted: '工厂报价已删除' },
     quoteComparisonCalculation: '报价比较与核算',
     inquiryTitle: '客户询盘', inquirySubtitle: '整理客户需求，提交询价并跟进处理进度。', quotationTitle: '客户报价', quotationSubtitle: '查看采购与物流已提交的报价。',
     templates: '询盘模板', fromMailbox: '从邮箱转入询盘', uploadOrCreate: '上传或新建客户询盘', manualEntry: '少量产品手工录入', search: '搜索编号、客户、产品或规格', departmentSearch: '搜索询盘编号、客户、产品或规格', allStatuses: '全部状态',

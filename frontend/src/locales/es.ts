@@ -299,6 +299,7 @@ basicsSaved: "Datos básicos guardados",
     intakes: 'Consultas por revisar', inquiries: 'Consultas de clientes', inquiryTemplates: 'Plantillas de consulta', quotations: 'Cotizaciones a clientes', backToInquiries: 'Volver a consultas de clientes',
   },
   inquiryWorkspace: {
+    quoteDeletion: { title: 'Eliminar oferta de fábrica', confirm: '¿Eliminar toda la oferta de {company}? Dejará de mostrarse en Compras y Ventas. Su origen en las ofertas al cliente quedará marcado como eliminado; avise a Ventas para revisar y volver a elegir.', deleted: 'Oferta de fábrica eliminada' },
     quoteComparisonCalculation: 'Comparación y cálculo de ofertas',
     inquiryTitle: 'Consultas de clientes', inquirySubtitle: 'Organice los requisitos, envíe solicitudes de cotización y siga el avance.', quotationTitle: 'Cotizaciones a clientes', quotationSubtitle: 'Revise las cotizaciones enviadas por Compras y Logística.',
     templates: 'Plantillas de consulta', fromMailbox: 'Crear desde el buzón', uploadOrCreate: 'Subir o crear consulta', manualEntry: 'Introducir pocos productos', search: 'Buscar número, cliente, producto o especificación', departmentSearch: 'Buscar consulta, cliente, producto o especificación', allStatuses: 'Todos los estados',

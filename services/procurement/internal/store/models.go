@@ -283,6 +283,7 @@ type InquiryQuote struct {
 	UpdatedByName   string
 	UpdatedAt       pgtype.Timestamptz
 	Version         int64
+	DeletedAt       pgtype.Timestamptz
 }
 
 type InquiryTemplate struct {

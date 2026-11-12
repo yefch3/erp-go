@@ -144,6 +144,7 @@ type InquiryQuoteView struct {
 	UpdatedBy   string           `json:"updatedBy"`
 	UpdatedAt   string           `json:"updatedAt"`
 	CanEdit     bool             `json:"canEdit"`
+	CanDelete   bool             `json:"canDelete"`
 }
 type InquiryView struct {
 	ID               string             `json:"id"`
@@ -447,6 +448,11 @@ func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operato
 			return InquiryResult{}, apierr.Permission("INQUIRY_QUOTE_READ_ONLY", "销售只能查看报价")
 		}
 		return s.saveInquiryQuote(ctx, tenant, op, in)
+	case "deleteQuote":
+		if in.View != "PROCUREMENT" {
+			return InquiryResult{}, apierr.Permission("INQUIRY_QUOTE_DELETE_PERMISSION", "仅采购可删除工厂报价")
+		}
+		return s.deleteInquiryQuote(ctx, tenant, op, in)
 	default:
 		return InquiryResult{}, apierr.Invalid("INQUIRY_COMMAND", "无效操作")
 	}
@@ -523,7 +529,7 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		return nil, err
 	}
 	v.Quotes = []InquiryQuoteView{}
-	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
+	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND deleted_at IS NULL AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
 	if err != nil {
 		return nil, err
 	}
@@ -551,6 +557,7 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 			}
 		}
 		q.CanEdit = q.Kind == view && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && s.inquiryAllowed(ctx, op, view, true) == nil
+		q.CanDelete = q.CanEdit && view == "PROCUREMENT" && v.State == "INQUIRING"
 		v.Quotes = append(v.Quotes, q)
 	}
 	if err = rows.Err(); err != nil {
@@ -1216,7 +1223,10 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 		var author, version int64
 		var kind string
 		var submitted bool
-		if e = tx.QueryRow(ctx, `SELECT created_by,version,kind,submitted_at IS NOT NULL FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND id=$3 AND inquiry_revision=$4 FOR UPDATE`, tenant, id, quoteID, revision).Scan(&author, &version, &kind, &submitted); e != nil {
+		if e = tx.QueryRow(ctx, `SELECT created_by,version,kind,submitted_at IS NOT NULL FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND id=$3 AND inquiry_revision=$4 AND deleted_at IS NULL FOR UPDATE`, tenant, id, quoteID, revision).Scan(&author, &version, &kind, &submitted); e != nil {
+			if e == pgx.ErrNoRows {
+				return apierr.Conflict("INQUIRY_QUOTE_CHANGED", "报价已修改或删除，请刷新")
+			}
 			return e
 		}
 		if kind != in.View || (!submitted && author != op.ID) {

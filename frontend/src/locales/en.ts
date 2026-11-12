@@ -299,6 +299,7 @@ basicsSaved: "Basic information saved",
     intakes: 'Inquiries to review', inquiries: 'Customer inquiries', inquiryTemplates: 'Inquiry templates', quotations: 'Customer quotations', backToInquiries: 'Back to customer inquiries',
   },
   inquiryWorkspace: {
+    quoteDeletion: { title: 'Delete factory quote', confirm: 'Delete the entire quote from {company}? It will disappear from procurement and sales. Any recorded customer-offer source will be marked as removed; ask sales to review and reselect it.', deleted: 'Factory quote deleted' },
     quoteComparisonCalculation: 'Quote comparison and calculation',
     inquiryTitle: 'Customer inquiries', inquirySubtitle: 'Organize customer requirements, submit RFQs, and track progress.', quotationTitle: 'Customer quotations', quotationSubtitle: 'Review quotations submitted by Procurement and Shipping.',
     templates: 'Inquiry templates', fromMailbox: 'Create from mailbox', uploadOrCreate: 'Upload or create inquiry', manualEntry: 'Enter a few products manually', search: 'Search number, customer, product, or specification', departmentSearch: 'Search inquiry number, customer, product, or specification', allStatuses: 'All statuses',
