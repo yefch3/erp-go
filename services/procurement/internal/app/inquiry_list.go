@@ -224,7 +224,7 @@ func (s *Service) inquiryListCandidates(ctx context.Context, tenant int64, op Op
 // inquiryQuoteCount is the number of submitted quotes of one kind on the
 // inquiry's current revision — what readInquiry counts as it reads them.
 func inquiryQuoteCount(alias, kind string) string {
-	return `(SELECT count(*) FROM inquiry_quotes q WHERE q.tenant_id=` + alias + `.tenant_id AND q.case_id=` + alias + `.id AND q.inquiry_revision=` + alias + `.inquiry_revision AND q.submitted_at IS NOT NULL AND q.kind='` + kind + `')`
+	return `(SELECT count(*) FROM inquiry_quotes q WHERE q.tenant_id=` + alias + `.tenant_id AND q.case_id=` + alias + `.id AND q.inquiry_revision=` + alias + `.inquiry_revision AND q.deleted_at IS NULL AND q.submitted_at IS NOT NULL AND q.kind='` + kind + `')`
 }
 
 // inquiryListState is the state a view filters on. The bool is false for a
