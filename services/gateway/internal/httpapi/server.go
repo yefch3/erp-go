@@ -425,6 +425,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/manual-orders/{id}/link-contract", s.linkManualShippingContract)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}", s.getContractShippingHandoff)
+		r.With(s.perm("shipping:schedule:read"), s.perm("procurement:order:read")).Get("/api/shipping/contract-handoffs/{id}/purchase-deliveries", s.getHandoffPurchaseDeliveries)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/requote-options", s.listContractShippingRequoteOptions)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/draft", s.saveContractShippingRequoteDraft)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/select-draft", s.selectContractShippingRequoteDraft)
@@ -799,9 +800,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections", s.recordInspection)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections/{inspectionId}/resolve", s.resolveInspection)
 		r.With(s.perm("procurement:order:close")).Post("/api/purchase-orders/{id}/close", s.closePurchaseOrder)
-		// Receiving is warehouse work, so it rides on the stock permission
-		// rather than the buyer's.
-		r.With(s.perm("procurement:receipt:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		// Factory handover is confirmed by procurement; physical warehouse
+		// receipt retains its own permission. The handler checks the persisted
+		// fulfillment mode before choosing the action permission.
+		r.With(s.perm("procurement:order:read")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/receipt-proofs/{fileId}/download", s.downloadReceiptProof)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so

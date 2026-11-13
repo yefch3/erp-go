@@ -73,6 +73,7 @@
             <template #empty>{{ t('shipping.noCargoDetails') }}</template>
           </el-table>
         </section>
+        <ShippingPurchaseDeliverySummary v-if="mode==='orders' && detail && auth.can('procurement:order:read')" :key="detail.id" :handoff-id="detail.id"/>
         <section v-if="mode === 'inquiry'" class="stage-card is-current">
           <div class="section-title"><b>1</b>{{ t('shipping.candidatePlans') }}<span>{{ t('shipping.candidateHint') }}</span></div>
           <div v-if="requoteOptions.length" class="candidate-list">
@@ -127,6 +128,7 @@
 </template>
 
 <script setup lang="ts">
+import ShippingPurchaseDeliverySummary from '../components/ShippingPurchaseDeliverySummary.vue'
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

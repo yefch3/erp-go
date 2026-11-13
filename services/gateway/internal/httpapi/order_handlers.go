@@ -187,6 +187,28 @@ func (s *Server) receiveOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	order, err := s.Orders.GetOrder(r.Context(), &prv1.GetOrderRequest{Id: req.Id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	permission := "procurement:order:write"
+	if order.GetOrder().GetFulfillmentMode() == "WAREHOUSE" {
+		permission = "procurement:receipt:write"
+	}
+	allowed, err := s.allowed(r.Context(), permission)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		s.writeError(w, http.StatusForbidden, "AUTH_PERMISSION_DENIED", "工厂交货由采购确认，仓库入库由仓库人员登记")
+		return
+	}
+	if (order.GetOrder().GetFulfillmentMode() == "WAREHOUSE") != (req.GetWarehouseId() > 0) {
+		s.writeError(w, http.StatusBadRequest, "PO_DELIVERY_MODE_MISMATCH", "交接方式与采购单约定不一致")
+		return
+	}
 	resp, err := s.Orders.ReceiveOrder(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
