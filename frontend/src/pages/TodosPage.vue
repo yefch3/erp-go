@@ -105,8 +105,8 @@
             </el-table>
           </section>
           <section v-if="visibleDeliveryTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>待交货</h3><p>整单质检已合格，由物流登记实际交货；船期安排不计入交货数量。</p></div><el-tag type="warning">{{deliveryTasks.length}} 项</el-tag></div>
-            <el-table :data="visibleDeliveryTasks" class="home-table"><el-table-column prop="poNo" label="采购单号" min-width="180"/><el-table-column prop="supplierName" label="供应商" min-width="180"/><el-table-column prop="expectedDate" label="采购要求日期" width="150"/><el-table-column label="状态" width="150"><template #default><el-tag type="success">整单质检合格</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{row}"><router-link :to="{path:'/shipping/deliveries',query:{order:row.id}}" class="doc-link">登记交货</router-link></template></el-table-column></el-table>
+            <div class="todo-source-head"><div><h3>待确认工厂交货</h3><p>整单质检已合格，由采购确认实际交货；部分交货后继续确认剩余数量。</p></div><el-tag type="warning">{{deliveryTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleDeliveryTasks" class="home-table"><el-table-column prop="poNo" label="采购单号" min-width="180"/><el-table-column prop="supplierName" label="供应商" min-width="180"/><el-table-column prop="expectedDate" label="采购要求日期" width="150"/><el-table-column prop="progressText" label="交货进度" min-width="200"/><el-table-column label="状态" width="150"><template #default><el-tag type="success">整单质检合格</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{order:row.id,fulfillment:'1'}}" class="doc-link">确认工厂交货</router-link></template></el-table-column></el-table>
           </section>
           <section v-if="visibleQualityTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3><p>{{ t('quality.todoHint') }}</p></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
@@ -326,7 +326,7 @@ const purchaseFinanceTasks=ref<PurchaseFinanceTask[]>([])
 const visiblePurchaseFinanceTasks=computed(()=>purchaseFinanceTasks.value.filter(row=>(!bizType.value||bizType.value==='PURCHASE_ORDER')&&(!keyword.value.trim()||[row.poNo,row.supplierName,row.exportContractNo,row.signedContractName].some(value=>String(value||'').toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())))))
 const executionTasksError=ref(false)
 const visibleFinanceTasks=computed(()=>financeTasks.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(value=>value.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
-type DeliveryTodo={id:string;poNo:string;supplierName:string;expectedDate:string;fulfillmentMode:string;businessType:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
+type DeliveryTodo={progressText?:string;id:string;poNo:string;supplierName:string;expectedDate:string;fulfillmentMode:string;businessType:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
 const deliveryTasks=ref<DeliveryTodo[]>([])
 const visibleDeliveryTasks=computed(()=>deliveryTasks.value.filter(row=>!keyword.value||[row.poNo,row.supplierName].some(text=>text.toLowerCase().includes(keyword.value.toLowerCase()))))
 const qualityTasks = ref<QualityTodoTask[]>([])
@@ -460,12 +460,12 @@ async function loadQualityTasks() {
   }
 }
 async function loadDeliveryTasks(){
- if(!auth.can('procurement:receipt:write')||!auth.can('procurement:order:read')){deliveryTasks.value=[];return}
+ if(!auth.can('procurement:order:write')||!auth.can('procurement:order:read')){deliveryTasks.value=[];return}
  try{
   const orders:DeliveryTodo[]=[]
   for(const status of ['ORDERED','PARTIALLY_RECEIVED']){let page=1,total=0;do{const d=await get<{orders:DeliveryTodo[];meta:{total:string}}>('/purchase-orders',{status,page,page_size:100},quietErrors);orders.push(...(d.orders||[]));total=Number(d.meta?.total||0);page++}while((page-1)*100<total)}
   const candidates=orders.filter(row=>row.fulfillmentMode!=='WAREHOUSE'&&row.businessType!=='LOGISTICS'&&!row.closedAt&&(!Number(row.sourceBusinessId)||row.contractVerifiedAt)),qualified:DeliveryTodo[]=[]
-  for(let index=0;index<candidates.length;index+=8){const batch=await Promise.all(candidates.slice(index,index+8).map(async row=>{try{const d=await get<{tasks:DeliveryQualityTask[]}>(`/purchase-orders/${row.id}/quality-inspections`,{},quietErrors);return hasPassedDeliveryInspection(d.tasks||[])?row:null}catch{return null}}));qualified.push(...batch.filter((row):row is DeliveryTodo=>row!==null))}
+  for(let index=0;index<candidates.length;index+=8){const batch=await Promise.all(candidates.slice(index,index+8).map(async row=>{try{const d=await get<{tasks:DeliveryQualityTask[]}>(`/purchase-orders/${row.id}/quality-inspections`,{},quietErrors);if(!hasPassedDeliveryInspection(d.tasks||[]))return null;const detail=await get<{items:{qty:string;receivedQty:string;uomCode:string}[]}>(`/purchase-orders/${row.id}`,{},quietErrors);row.progressText=(detail.items??[]).map(item=>`已交 ${Number(item.receivedQty)} / ${Number(item.qty)} ${item.uomCode}，剩余 ${Math.max(0,Number(item.qty)-Number(item.receivedQty))} ${item.uomCode}`).join('；');return row}catch{return null}}));qualified.push(...batch.filter((row):row is DeliveryTodo=>row!==null))}
   deliveryTasks.value=qualified
  }catch{deliveryTasks.value=[]}
 }

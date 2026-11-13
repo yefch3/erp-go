@@ -489,7 +489,7 @@ const childDefaults: Record<string,string[]> = {
   sales: ['/sales/inquiries','/sales/quotations','/sales/settings/inquiry-templates','/contracts'],
   procurement: ['/procurement/sourcing','/requirements','/purchase-orders'],
   warehouse: ['/products','/warehouses','/warehouses/profiles','/warehouses/arrivals','/warehouses/receipts','/stocks','/outbounds','/warehouses/imports'],
-  logistics: ['/shipping/deliveries','/shipping/sourcing','/shipping/requirements','/shipping/orders','/shipping/schedules'],
+  logistics: ['/shipping/sourcing','/shipping/requirements','/shipping/orders','/shipping/schedules'],
   finance: ['/customer-recon','/supplier-recon','/fx'],
   basic: ['/basic/employees','/basic/customers','/basic/ports','/basic/suppliers','/basic/excel-usage','/platform/tenants'],
   system: ['/settings/approvals','/mail/export-log'],
@@ -599,7 +599,6 @@ const salesActive = computed(() =>
 
 // 物流分成售前询价、合同执行后的实单询价和正式船期管理。
 const logisticsItems = computed(() => sortByOrder([
-  ...(auth.can('procurement:receipt:write')&&auth.can('procurement:order:read')?[{key:'/shipping/deliveries',path:'/shipping/deliveries',label:'采购交货'}]:[]),
   ...(auth.can('shipping:sourcing:read')
     ? [{ key: '/shipping/sourcing', path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
     : []),

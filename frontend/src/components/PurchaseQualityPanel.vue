@@ -52,7 +52,7 @@ import {fetchViaRelay} from '../lib/storageRelay'
 import {useAuthStore} from '../stores/auth'
 import FilePreviewDialog from './FilePreviewDialog.vue'
 const props=withDefaults(defineProps<{orderId:string;allowHandling?:boolean;canRequest?:boolean}>(),{allowHandling:true,canRequest:false})
-const emit=defineEmits<{(event:'request'):void}>(),{t}=useI18n(),auth=useAuthStore()
+const emit=defineEmits<{(event:'request'):void;(event:'release-change',allowed:boolean):void}>(),{t}=useI18n(),auth=useAuthStore()
 type Line=DeliveryQualityTask['lines'][number]&{id:string;productName:string;uomCode:string;unresolvedQty:string;issueDescription:string}
 type Round={id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:{taskLineId:string;result:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string;handlingSuggestion:string}[]}
 type QualityFile={id:string;roundId:string;fileName:string;downloadUrl:string;uploadedByName:string}
@@ -69,7 +69,7 @@ const resultLabel=(value:string)=>({PASS:'合格',FAIL:'不合格',PARTIAL:'部�
 const actionLabel=(value:string)=>({REWORK:'返工',REPLACEMENT:'换货',CANCEL_SHORTAGE:'取消缺少数量'}[value]||value)
 const taskStatus=(task:Task)=>hasPassedDeliveryInspection([task])?'整单质检合格':({WAITING:'待质检',IN_PROGRESS:'质检中',REINSPECTION:'待复检',COMPLETED:'尚未全部合格'}[task.status]||task.status)
 let generation=0,alive=true
-async function load(){const request=++generation;loading.value=true;try{const d=await get<{tasks:Task[]}>(`/purchase-orders/${props.orderId}/quality-inspections`,{},quietErrors);if(!alive||request!==generation)return;tasks.value=d.tasks||[];failed.value=false}catch{if(alive&&request===generation)failed.value=true}finally{if(alive&&request===generation)loading.value=false}}
+async function load(){const request=++generation;loading.value=true;try{const d=await get<{tasks:Task[]}>(`/purchase-orders/${props.orderId}/quality-inspections`,{},quietErrors);if(!alive||request!==generation)return;tasks.value=d.tasks||[];failed.value=false;emit('release-change',hasPassedDeliveryInspection(tasks.value))}catch{if(alive&&request===generation){failed.value=true;emit('release-change',false)}}finally{if(alive&&request===generation)loading.value=false}}
 async function readReport(taskId:string,fileId:string,download:boolean){fileLoading.value=fileId;try{const d=await get<{tasks:Task[]}>(`/purchase-orders/${props.orderId}/quality-inspections`);const file=d.tasks.find(task=>task.id===taskId)?.files.find(file=>file.id===fileId);if(!file?.downloadUrl)throw new Error('报告地址不可用');const blob=await fetchViaRelay(file.downloadUrl);if(download)saveBlob(blob,file.fileName);else{previewName.value=file.fileName;previewBlob.value=blob;previewOpen.value=true}}catch{ElMessage.error('报告读取失败，请刷新重试')}finally{fileLoading.value=''}}
 async function saveHandling(task:Task){if(!canHandle.value||saving.value)return;const action=actions[task.id],note=notes[task.id]?.trim();if(!action||!note){ElMessage.warning('请选择处理方式并填写供应商处理结果');return}saving.value=true;try{await post(`/purchase-orders/${props.orderId}/quality-inspections/handling`,{task_id:Number(task.id),action,result_note:note});ElMessage.success('供应商处理结果已保存，等待质检复检');await load()}finally{saving.value=false}}
 watch(()=>props.orderId,()=>{tasks.value=[];failed.value=false;detailOpen.value=false;void load()},{immediate:true})

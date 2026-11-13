@@ -64,7 +64,7 @@
           </template>
         </el-table-column>
         <!-- 所有行操作统一收在更多操作中。 -->
-        <el-table-column :label="t('common.actions')" min-width="180" align="center" fixed="right">
+        <el-table-column :label="t('common.actions')" width="115" align="center" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-dropdown
@@ -371,7 +371,7 @@
               </el-collapse-item>
             </el-collapse>
           </section>
-          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" />
+          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" @delivery-saved="refreshAfterDelivery" />
           <el-collapse class="legacy-history">
             <el-collapse-item :title="t('purchaseFulfillment.historicalMaterials')" name="legacy">
           <el-alert :title="t('purchaseFulfillment.historyHint')" type="info" :closable="false" />
@@ -654,12 +654,12 @@ interface Execution { followUps:OrderFollowUp[]; confirmations: SupplierConfirma
 const { t } = useI18n()
 const auth = useAuthStore()
 const orderColumnDefaults = computed<TableColumnDefinition[]>(() => [
-  { key: 'poNo', label: t('orders.poNo'), minWidth: 170 },
-  { key: 'supplier', label: t('orders.supplier'), minWidth: 180 },
-  { key: 'batch', label: t('orders.purchaseBatch'), minWidth: 175 },
-  { key: 'amount', label: t('orders.amount'), minWidth: 155, align: 'right' },
-  { key: 'expectedDate', label: t('orders.requiredArrivalDate'), minWidth: 145, align: 'center' },
-  { key: 'status', label: t('common.status'), minWidth: 170, align: 'center' },
+  { key: 'poNo', label: t('orders.poNo'), minWidth: 155 },
+  { key: 'supplier', label: t('orders.supplier'), minWidth: 155 },
+  { key: 'batch', label: t('orders.purchaseBatch'), minWidth: 120 },
+  { key: 'amount', label: t('orders.amount'), minWidth: 120, align: 'right' },
+  { key: 'expectedDate', label: t('orders.requiredArrivalDate'), minWidth: 120, align: 'center' },
+  { key: 'status', label: t('common.status'), minWidth: 145, align: 'center' },
 ])
 const orderColumns = useTableColumnOrder('purchase-order-list', orderColumnDefaults)
 const route = useRoute()
@@ -974,7 +974,7 @@ function runOrderAction(row: Order, key: string) {
     case 'rejectDecision': void actOnOrderApproval(row, 'REJECT'); break
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
-    case 'receive': void router.push(row.fulfillmentMode==='WAREHOUSE'?'/warehouses/arrivals':'/shipping/deliveries'); break
+    case 'receive': if(row.fulfillmentMode==='WAREHOUSE')void router.push('/warehouses/arrivals');else void openExecution(row); break
     case 'execution': openExecution(row); break
     case 'downloadXlsx': void downloadOrder(row, 'xlsx'); break
     case 'downloadPdf': void downloadOrder(row, 'pdf'); break
@@ -1340,6 +1340,11 @@ async function openExecution(row: Order) {
   executionOpen.value = true
 }
 
+async function refreshAfterDelivery(){
+  await load()
+  if(executing.value){const d=await get<{order:Order;items:OrderItem[];receipts:Receipt[]}>(`/purchase-orders/${executing.value.id}`);executing.value=d.order;executionItems.value=d.items??[];executionReceipts.value=d.receipts??[]}
+}
+
 async function submitConfirmation() {
   if (!canEditConfirmation.value || saving.value) return
   saving.value = true
@@ -1485,7 +1490,7 @@ function handleOrderAction(row: Order, command: string) {
     return
   }
   if (command === 'receive') {
-    void router.push(row.fulfillmentMode==='WAREHOUSE'?'/warehouses/arrivals':'/shipping/deliveries')
+    if(row.fulfillmentMode==='WAREHOUSE')void router.push('/warehouses/arrivals');else void openExecution(row)
     return
   }
   if (command === 'execution') {
@@ -1542,7 +1547,7 @@ onMounted(async () => {
       detailItems.value = detailResponse.items ?? []
       detailReceipts.value = detailResponse.receipts ?? []
       qualityDetails.value=qualityResponse.tasks??[]
-      detailOpen.value = true
+      if(route.query.fulfillment==='1'){keyword.value=detailResponse.order.poNo;status.value=detailResponse.order.status==='RECEIVED'?'RECEIVED_OPEN':detailResponse.order.status;await load();await openExecution(detailResponse.order)}else detailOpen.value = true
       router.replace({ path: '/purchase-orders' })
     } catch {
       // The normal API error toast already explains an invalid or stale id.
