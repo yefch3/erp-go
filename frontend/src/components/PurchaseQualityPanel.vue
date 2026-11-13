@@ -36,7 +36,7 @@
           <el-alert title="请记录供应商处理结果；返工或换货完成后仍需质检复检合格，不能先交货。" type="warning" :closable="false"/>
           <el-select v-model="actions[task.id]" placeholder="处理方式"><el-option label="返工" value="REWORK"/><el-option label="换货" value="REPLACEMENT"/><el-option label="取消缺少数量" value="CANCEL_SHORTAGE"/></el-select><el-input v-model="notes[task.id]" placeholder="填写供应商处理结果"/><el-button type="primary" :loading="saving" @click="saveHandling(task)">保存处理结果</el-button>
         </div>
-        <p v-else-if="task.procurementHandlingNote" class="muted">采购处理：{{actionLabel(task.procurementHandlingAction)}} · {{task.procurementHandlingNote}} · {{task.procurementHandledByName}}</p>
+        <p v-else-if="task.procurementHandlingNote" class="muted">{{task.procurementHandlingAction ? '采购处理' : '系统处理'}}：<template v-if="task.procurementHandlingAction">{{actionLabel(task.procurementHandlingAction)}} · </template>{{task.procurementHandlingNote}}<template v-if="task.procurementHandledByName"> · {{task.procurementHandledByName}}</template></p>
       </section>
     </el-dialog>
     <FilePreviewDialog v-model="previewOpen" :source="previewBlob" :title="previewName" :content-type="previewBlob?.type"/>

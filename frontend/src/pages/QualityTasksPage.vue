@@ -179,6 +179,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { get, post, patch, del } from '../api'
+import { qualityStatusKey } from '../lib/qualityStatus'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import { relayFailureReason, saveViaRelay, uploadViaRelay } from '../lib/storageRelay'
@@ -228,7 +229,7 @@ async function saveBasics(){
 const tab=ref('PENDING'), keyword=ref(''), page=ref(1), total=ref(0), loading=ref(false), saving=ref(false), uploading=ref(false), detailOpen=ref(false); const rows=ref<QTask[]>([]), task=ref<QTask|null>(null)
 const round=reactive({inspectedAt:'',location:'',remark:''}); const roundOf=reactive<Record<string,any>>({}); const categories=['PHOTO','VIDEO','REPORT','THIRD_PARTY','OTHER']; const fileCategory=ref('PHOTO'); const picked=ref<File[]>([])
 const unresolvedLines=computed(()=>task.value?.lines.filter(l=>Number(l.unresolvedQty)>0)||[])
-const fmt=(v:string)=>v?new Date(v).toLocaleString():'—'; const trim=(v:string)=>String(Number(v)); const statusLabel=(s:string)=>t(`quality.statuses.${s==='COMPLETED'?'COMPLETED':'WAITING'}`); const resultLabel=(s?:string)=>t(`quality.results.${s||'PENDING'}`); const lineName=(id:string)=>task.value?.lines.find(l=>String(l.id)===String(id))?.productName||id
+const fmt=(v:string)=>v?new Date(v).toLocaleString():'—'; const trim=(v:string)=>String(Number(v)); const statusLabel=(s?:string)=>{const key=qualityStatusKey(s);return key?t(key):'—'}; const resultLabel=(s?:string)=>t(`quality.results.${s||'PENDING'}`); const lineName=(id:string)=>task.value?.lines.find(l=>String(l.id)===String(id))?.productName||id
 function prepare(){if(!task.value)return;round.inspectedAt=new Date().toISOString();round.location=task.value.inspectionLocation||'';for(const l of task.value.lines){if(Number(l.unresolvedQty)>0)roundOf[l.id]={result:'PASS',inspectedQty:trim(l.unresolvedQty),qualifiedQty:trim(l.unresolvedQty),unqualifiedQty:'0',issueDescription:'',handlingSuggestion:''}}}
 async function load(){loading.value=true;try{const d=await get<{tasks:QTask[];meta:{total:number}}>('/quality/tasks',{tab:tab.value,page:page.value,page_size: 100,keyword:keyword.value});rows.value=d.tasks||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
 function reload(){page.value=1;void load()}

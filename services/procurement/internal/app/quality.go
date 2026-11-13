@@ -416,7 +416,10 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 			return QualityTask{}, err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,procurement_handling_status=CASE WHEN $7>0 THEN 'PENDING' WHEN procurement_handling_status='PENDING' THEN 'COMPLETED' ELSE procurement_handling_status END,procurement_handling_action=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN 'REINSPECTION_PASS' ELSE procurement_handling_action END,procurement_handling_note=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN '复检全部合格，系统自动完成采购异常待办' ELSE procurement_handling_note END,procurement_handled_at=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN now() ELSE procurement_handled_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location), unresolvedCount)
+	// Automatic retest completion closes the pending follow-up, not a manual
+	// procurement action. Preserve its action/operator and the database enum;
+	// record the automatic closure in the status, note and timestamp only.
+	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,procurement_handling_status=CASE WHEN $7>0 THEN 'PENDING' WHEN procurement_handling_status='PENDING' THEN 'COMPLETED' ELSE procurement_handling_status END,procurement_handling_note=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN '复检全部合格，系统自动完成采购跟进待办' ELSE procurement_handling_note END,procurement_handled_at=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN now() ELSE procurement_handled_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location), unresolvedCount)
 	if err != nil {
 		return QualityTask{}, err
 	}
