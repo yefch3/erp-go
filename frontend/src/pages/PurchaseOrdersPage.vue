@@ -331,6 +331,8 @@
     <el-dialog v-model="executionOpen" class="fulfillment-dialog" top="6vh" :title="t('purchaseFulfillment.title', { no: executing?.poNo })" width="min(1100px, 94vw)">
       <el-tabs v-model="executionTab">
         <el-tab-pane :label="t('purchaseFulfillment.overview')" name="overview">
+          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" @delivery-saved="refreshAfterDelivery">
+          <template #supplier>
           <section class="confirmation-section">
             <div class="execution-section-head">
               <h3>{{ t('purchaseFulfillment.feedback') }}</h3>
@@ -340,7 +342,8 @@
               <div><span>{{ t('purchaseFulfillment.requiredDate') }}</span><strong>{{ executing?.expectedDate || '—' }}</strong></div>
               <div><span>{{ t('purchaseFulfillment.supplierDate') }}</span><strong :class="{ 'pending-date': !latestConfirmation?.confirmedExpectedDate }">{{ latestConfirmation?.confirmedExpectedDate || t('purchaseFulfillment.datePending') }}</strong></div>
               <div><span>{{ t('common.status') }}</span><strong>{{ latestConfirmation ? confirmationStatusLabel(latestConfirmation.status) : t('orders.confirmTags.NONE') }}</strong></div>
-              <div v-if="latestConfirmation"><span>{{ t('orders.confirmedDate') }} / {{ t('orders.operator') }}</span><strong>{{ latestConfirmation.confirmedDate }} · {{ latestConfirmation.createdBy || '—' }}</strong></div>
+              <div v-if="latestConfirmation"><span>{{ t('orders.confirmedDate') }}</span><strong>{{ latestConfirmation.confirmedDate }}</strong></div>
+              <div v-if="latestConfirmation"><span>{{ t('orders.operator') }}</span><strong>{{ latestConfirmation.createdBy || '—' }}</strong></div>
             </div>
             <el-alert v-if="!latestConfirmation" :title="t('purchaseFulfillment.unconfirmedHint')" type="info" :closable="false" class="alert" />
             <el-form v-if="editingConfirmation" label-width="120px" inline>
@@ -349,10 +352,10 @@
             </el-form>
             <el-table :data="executionItems" size="small">
               <el-table-column prop="productName" :label="t('orders.product')" min-width="240" show-overflow-tooltip />
-              <el-table-column :label="t('orders.orderQty')" width="115" align="right"><template #default="{row}">{{ trim(row.qty) }} {{ row.uomCode }}</template></el-table-column>
-              <el-table-column :label="t('orders.confirmedQty')" width="145" align="right"><template #default="{row}"><el-input v-if="editingConfirmation" v-model="confirmationQty[row.id]" size="small" /><span v-else>{{ confirmedLine(row)?.confirmedQty ?? '—' }} {{ confirmedLine(row) ? row.uomCode : '' }}</span></template></el-table-column>
-              <el-table-column :label="t('orders.unitPrice')" width="115" align="right"><template #default="{row}">{{ trim(row.unitPrice) }}</template></el-table-column>
-              <el-table-column :label="t('orders.confirmedPrice')" width="145" align="right"><template #default="{row}"><el-input v-if="editingConfirmation" v-model="confirmationPrice[row.id]" size="small" /><span v-else>{{ confirmedLine(row)?.confirmedUnitPrice ?? '—' }}</span></template></el-table-column>
+              <el-table-column :label="t('purchaseFulfillment.quantity')" width="115" align="right"><template #default="{row}">{{ trim(row.qty) }} {{ row.uomCode }}</template></el-table-column>
+              <el-table-column :label="t('orders.confirmedQty')" width="145" align="right"><template #default="{row}"><el-input v-if="editingConfirmation" v-model="confirmationQty[row.id]" size="small" /><span v-else>{{ confirmedLine(row) ? trim(confirmedLine(row)!.confirmedQty) : '—' }} {{ confirmedLine(row) ? row.uomCode : '' }}</span></template></el-table-column>
+              <el-table-column :label="`采购单价 (${executing?.currency || '—'})`" width="155" align="right"><template #default="{row}">{{ confirmationMoney(row.unitPrice) }}</template></el-table-column>
+              <el-table-column :label="`确认单价 (${executing?.currency || '—'})`" width="155" align="right"><template #default="{row}"><el-input v-if="editingConfirmation" v-model="confirmationPrice[row.id]" size="small" /><span v-else>{{ confirmedLine(row) ? confirmationMoney(confirmedLine(row)!.confirmedUnitPrice) : '—' }}</span></template></el-table-column>
             </el-table>
             <template v-if="editingConfirmation">
               <el-input v-model="confirmationForm.remark" type="textarea" :rows="2" :placeholder="t('orders.confirmRemark')" class="execution-note" />
@@ -371,7 +374,8 @@
               </el-collapse-item>
             </el-collapse>
           </section>
-          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" @delivery-saved="refreshAfterDelivery" />
+          </template>
+          </PurchaseFulfillmentProgress>
           <el-collapse class="legacy-history">
             <el-collapse-item :title="t('purchaseFulfillment.historicalMaterials')" name="legacy">
           <el-alert :title="t('purchaseFulfillment.historyHint')" type="info" :closable="false" />
@@ -1362,6 +1366,8 @@ async function submitConfirmation() {
   } finally { saving.value = false }
 }
 
+function confirmationMoney(value:string){const n=Number(value);return Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4}):'—'}
+
 function formatFollowUpTime(value:string){if(!value)return '—';const date=new Date(value.replace(' ','T').replace(/([+-]\d{2})$/,'$1:00'));return Number.isNaN(date.getTime())?value:date.toLocaleString()}
 
 async function saveFollowUp() {
@@ -1753,4 +1759,9 @@ onMounted(async () => {
   .execution-form-grid { grid-template-columns: 1fr; }
   .span-all { grid-column: auto; }
 }
+</style>
+
+<style scoped>
+.confirmation-section{padding:14px;margin-bottom:0}.confirmation-section h3{font-size:16px;color:var(--el-text-color-primary)}.confirmation-facts{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 20px;margin:10px 0 12px;font-size:13px}.confirmation-facts>div{gap:10px}.execution-section-head{margin-bottom:10px}.confirmation-history{margin-top:10px}.confirmation-history :deep(.el-collapse-item__header){height:34px;font-size:12px}.confirmation-section :deep(.el-table__cell){padding:6px 0}.confirmation-section :deep(.cell){line-height:22px}:global(.fulfillment-dialog .el-dialog__body){padding-top:4px}
+@media(max-width:750px){.confirmation-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
