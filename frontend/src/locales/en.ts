@@ -588,6 +588,13 @@ basicsSaved: "Basic information saved",
     required: 'Code and name are required', created: 'Department created', updated: 'Department updated',
   },
   shipping: {
+    todoRetryInquiry: "Requote",
+    todoViewOrder: "View order",
+    todoOpenError: "Could not open this transport batch. Refresh or check access.",
+    todoInvalidBatch: "Invalid transport batch. Open it again from your tasks.",
+    todoUnknownStage: "The current transport stage is unknown. Refresh and try again.",
+    todoBatchTitle: "Batch {n}",
+
     title: 'Shipping schedules',
     executionInquiryTitle: 'Contract logistics enquiries', executionInquiryHint: 'Created after Finance confirms execution conditions. Pre-sales freight is reference-only; current prices still need to be requested.',
     executionInquiryEmpty: 'No contract freight enquiries', executionInquirySearch: 'Search contract, customer, port or pre-sales reference',
