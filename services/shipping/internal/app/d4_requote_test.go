@@ -46,3 +46,36 @@ func TestD4RequoteLeavesActualCarrierForVesselNomination(t *testing.T) {
 		t.Fatalf("actual carrier and contract number should be optional before vessel nomination/contract upload: %v", err)
 	}
 }
+
+func TestD4RequoteAllowsBlankNotesAndStillRequiresCommercialTerms(t *testing.T) {
+	in := FinalRequoteInput{
+		FinalForwarderID: 9, FinalForwarderName: "Test Forwarder",
+		FinalCurrency: "USD", FinalFreightAmount: "100",
+		FinalETD: "2026-11-25", FinalETA: "2026-12-10", PaymentTerms: "T/T",
+	}
+	if _, err := validateFinalRequote(in); err != nil {
+		t.Fatalf("scheme description and remark must both be optional: %v", err)
+	}
+	for _, missing := range []string{"forwarder", "currency", "amount", "etd", "eta", "payment"} {
+		t.Run(missing, func(t *testing.T) {
+			invalid := in
+			switch missing {
+			case "forwarder":
+				invalid.FinalForwarderID = 0
+			case "currency":
+				invalid.FinalCurrency = ""
+			case "amount":
+				invalid.FinalFreightAmount = ""
+			case "etd":
+				invalid.FinalETD = ""
+			case "eta":
+				invalid.FinalETA = ""
+			case "payment":
+				invalid.PaymentTerms = ""
+			}
+			if _, err := validateFinalRequote(invalid); err == nil {
+				t.Fatal("optional notes must not bypass required commercial terms")
+			}
+		})
+	}
+}
