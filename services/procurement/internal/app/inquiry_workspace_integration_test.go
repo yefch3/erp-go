@@ -88,7 +88,10 @@ func TestD1InquiryLifecycle(t *testing.T) {
 	buyer = call(201, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, QuoteID: quote.ID, QuoteVersion: quote.Version, Quote: q, Submit: true})
 	quote = buyer.Quotes[0]
 	q.Prices[0].Price = "15.67"
-	call(202, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, QuoteID: quote.ID, QuoteVersion: quote.Version, Quote: q})
+	if _, err := s.InquiryWorkspace(ctx, tenant, Operator{ID: 202}, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, QuoteID: quote.ID, QuoteVersion: quote.Version, Quote: q}); err == nil {
+		t.Fatal("non-author overwrote a submitted quote")
+	}
+	call(201, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, QuoteID: quote.ID, QuoteVersion: quote.Version, Quote: q})
 	sales = call(101, InquiryCommand{Action: "get", View: "QUOTATIONS", ID: current.ID})
 	if len(sales.Quotes) != 1 || sales.Quotes[0].Body.Prices[0].Price != "15.67" {
 		t.Fatal("submitted edit not synchronized")
