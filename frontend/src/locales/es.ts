@@ -597,6 +597,13 @@ basicsSaved: "Datos básicos guardados",
     required: 'El código y el nombre son obligatorios', created: 'Departamento creado', updated: 'Departamento actualizado',
   },
   shipping: {
+    todoRetryInquiry: "Volver a cotizar",
+    todoViewOrder: "Ver pedido",
+    todoOpenError: "No se pudo abrir este lote. Actualice o revise los permisos.",
+    todoInvalidBatch: "Lote no válido. Ábralo de nuevo desde las tareas.",
+    todoUnknownStage: "La etapa de transporte es desconocida. Actualice e inténtelo de nuevo.",
+    todoBatchTitle: "Lote {n}",
+
     title: 'Calendario marítimo',
     executionInquiryTitle: 'Consultas logísticas de contrato', executionInquiryHint: 'Se crean cuando Finanzas confirma las condiciones de ejecución. El flete de preventa es solo una referencia; aún deben solicitarse precios actuales.',
     executionInquiryEmpty: 'No hay consultas logísticas de contrato', executionInquirySearch: 'Buscar contrato, cliente, puerto o referencia de preventa',

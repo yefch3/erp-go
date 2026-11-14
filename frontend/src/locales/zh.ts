@@ -590,6 +590,13 @@ basicsSaved: "基本资料已保存",
     required: '部门编码和名称必填', created: '部门已创建', updated: '部门已更新',
   },
   shipping: {
+    todoRetryInquiry: "重新询价",
+    todoViewOrder: "查看实单",
+    todoOpenError: "无法打开对应运输批次，请刷新或检查访问权限。",
+    todoInvalidBatch: "运输批次标识无效，请从待办重新打开。",
+    todoUnknownStage: "该运输任务的当前阶段无法识别，请刷新后重试。",
+    todoBatchTitle: "第 {n} 批",
+
     title: '船期管理',
     executionInquiryTitle: '实单物流询价', executionInquiryHint: '财务确认合同执行条件后生成；售前物流报价只作参考，当前等待重新询价。',
     executionInquiryEmpty: '暂无实单物流询价任务', executionInquirySearch: '搜索合同、客户、港口或售前参考',

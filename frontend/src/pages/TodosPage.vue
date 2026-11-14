@@ -135,12 +135,12 @@
             </el-table>
           </section>
           <section v-if="visibleExecutionShippingTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>实单物流询价</h3><p>合同已满足执行条件，等待物流按运输批次重新询价。</p></div><el-tag type="warning" effect="plain">{{ executionShippingTasks.length }} 项</el-tag></div>
+            <div class="todo-source-head"><div><h3>实单物流询价</h3><p>合同已满足执行条件，等待物流处理对应运输批次的询价。</p></div><el-tag type="warning" effect="plain">{{ executionShippingTasks.length }} 项</el-tag></div>
             <el-table :data="visibleExecutionShippingTasks" class="home-table sourcing-todo-table">
-              <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
-              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
+              <el-table-column label="优先级" width="145"><template #default="{row}"><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">{{ t(shippingTodoEntry(row)?.actionKey || 'shipping.todoViewOrder') }}</div></template></el-table-column>
+              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
               <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/shipping/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
+              <el-table-column label="操作" width="150" fixed="right"><template #default="{row}"><router-link v-if="shippingTodoEntry(row)" :to="shippingTodoEntry(row)!.to" class="doc-link">{{ t(shippingTodoEntry(row)!.actionKey) }}</router-link><span v-else>{{t('todos.noSourceLink')}}</span></template></el-table-column>
             </el-table>
           </section>
           <section v-if="visibleProcurementTasks.length" class="todo-source-section">
@@ -176,7 +176,7 @@
           <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('todos.waitingForMe') }}</el-tag></template></el-table-column>
           <el-table-column :label="t('common.actions')" width="150" fixed="right">
             <template #default="{ row }">
-              <router-link v-if="approvalSourceLink(row.instance)" :to="approvalSourceLink(row.instance)!" class="doc-link">{{ t('todos.goToSource') }}</router-link>
+              <router-link v-if="approvalSourceLink(row.instance)" :to="approvalSourceLink(row.instance)!" class="doc-link">{{ t(row.instance.bizType==='SHIPPING_REQUOTE'?'shipping.todoViewOrder':'todos.goToSource') }}</router-link>
               <span v-else class="no-link">{{ t('todos.noSourceLink') }}</span>
             </template>
           </el-table-column>
@@ -253,6 +253,7 @@
 </template>
 
 <script setup lang="ts">
+import {shippingTodoEntry} from '../lib/shippingTodoEntry'
 import {hasPassedDeliveryInspection,type DeliveryQualityTask} from '../lib/deliveryQuality'
 
 import InquiryTodos from '../components/InquiryTodos.vue'
