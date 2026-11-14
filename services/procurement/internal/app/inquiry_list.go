@@ -130,6 +130,7 @@ type inquiryCandidate struct {
 	id                     int64
 	status, handoff        string
 	procurement, logistics int
+	personalQuoteStatus    string
 }
 
 // listInquiryWorkspace answers one page of the inquiry list.
@@ -159,6 +160,11 @@ func (s *Service) listInquiryWorkspace(ctx context.Context, tenant int64, op Ope
 	page := []int64{}
 	for _, c := range candidates {
 		state, listed := inquiryListState(in.View, c)
+		// QUOTED remains a backwards-compatible department-wide filter. New
+		// clients filter the three personal states shown in the list instead.
+		if (in.View == "PROCUREMENT" || in.View == "LOGISTICS") && in.State != "QUOTED" {
+			state = c.personalQuoteStatus
+		}
 		if !listed || (in.State != "" && in.State != state) {
 			continue
 		}
@@ -199,7 +205,8 @@ func (s *Service) inquiryListCandidates(ctx context.Context, tenant int64, op Op
 	countsQuotes := in.View == "PROCUREMENT" || in.View == "LOGISTICS"
 	rows, err := s.pool.Query(ctx, `SELECT c.id,c.status,c.handoff_status,
 		CASE WHEN $8 THEN `+inquiryQuoteCount("c", "PROCUREMENT")+` ELSE 0 END,
-		CASE WHEN $8 THEN `+inquiryQuoteCount("c", "LOGISTICS")+` ELSE 0 END
+		CASE WHEN $8 THEN `+inquiryQuoteCount("c", "LOGISTICS")+` ELSE 0 END,
+		`+inquiryPersonalQuoteStatus("c", in.View, "$10")+`
 		FROM sourcing_cases c
 		WHERE c.tenant_id=$1 AND ($6 OR c.customer_id=0 OR c.customer_id=ANY($7::bigint[]) OR ($9 AND c.owner_id>0 AND c.owner_id<>$10)) AND c.status<>'CANCELLED' AND c.deleted_at IS NULL
 		AND ($5 OR (c.status<>'INTAKE_PENDING' AND c.handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR c.owner_id=ANY($3::bigint[]))
@@ -213,7 +220,7 @@ func (s *Service) inquiryListCandidates(ctx context.Context, tenant int64, op Op
 	candidates := []inquiryCandidate{}
 	for rows.Next() {
 		var c inquiryCandidate
-		if err = rows.Scan(&c.id, &c.status, &c.handoff, &c.procurement, &c.logistics); err != nil {
+		if err = rows.Scan(&c.id, &c.status, &c.handoff, &c.procurement, &c.logistics, &c.personalQuoteStatus); err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, c)
@@ -253,7 +260,7 @@ func inquiryListState(view string, c inquiryCandidate) (string, bool) {
 // never shows, with the shared lookups done once for the whole page.
 func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator, view string, page []int64) ([]InquiryView, error) {
 	items := []InquiryView{}
-	byID, err := s.loadInquiryPage(ctx, tenant, view, page)
+	byID, err := s.loadInquiryPage(ctx, tenant, op.ID, view, page)
 	if err != nil || len(byID) == 0 {
 		return items, err
 	}
@@ -309,14 +316,14 @@ func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator
 // query and this one an inquiry can be withdrawn or deleted; outside SALES a
 // row that is no longer INQUIRING is dropped here, as readInquiry would
 // refuse it, so buyers and forwarders never see a withdrawn inquiry.
-func (s *Service) loadInquiryPage(ctx context.Context, tenant int64, view string, ids []int64) (map[int64]*inquiryPageRow, error) {
+func (s *Service) loadInquiryPage(ctx context.Context, tenant, operator int64, view string, ids []int64) (map[int64]*inquiryPageRow, error) {
 	byID := map[int64]*inquiryPageRow{}
 	if len(ids) == 0 {
 		return byID, nil
 	}
 	rows, err := s.pool.Query(ctx, `SELECT c.id,c.id::text,c.case_no,c.display_inquiry_no,c.owner_id,c.owner_name,c.status,c.handoff_status,c.inquiry_revision,coalesce(c.inquiry_submitted_at::text,''),c.inquiry_body,c.source_mail_id,c.inquiry_template_id,c.customer_id,c.customer_name,c.contact_id,c.contact_name,
-		`+inquiryQuoteCount("c", "PROCUREMENT")+`,`+inquiryQuoteCount("c", "LOGISTICS")+`
-		FROM sourcing_cases c WHERE c.tenant_id=$1 AND c.id=ANY($2::bigint[]) AND c.status<>'CANCELLED' AND c.deleted_at IS NULL`, tenant, ids)
+		`+inquiryQuoteCount("c", "PROCUREMENT")+`,`+inquiryQuoteCount("c", "LOGISTICS")+`,`+inquiryPersonalQuoteStatus("c", view, "$3")+`
+		FROM sourcing_cases c WHERE c.tenant_id=$1 AND c.id=ANY($2::bigint[]) AND c.status<>'CANCELLED' AND c.deleted_at IS NULL`, tenant, ids, operator)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +332,7 @@ func (s *Service) loadInquiryPage(ctx context.Context, tenant int64, view string
 		var l inquiryPageRow
 		var owner, source int64
 		var status, handoff string
-		if err = rows.Scan(&l.row.id, &l.view.ID, &l.view.Number, &l.view.DisplayInquiryNo, &owner, &l.view.Owner, &status, &handoff, &l.view.Revision, &l.view.SubmittedAt, &l.row.body, &source, &l.row.templateID, &l.row.customerID, &l.row.customerName, &l.row.contactID, &l.row.contactName, &l.view.ProcurementCount, &l.view.LogisticsCount); err != nil {
+		if err = rows.Scan(&l.row.id, &l.view.ID, &l.view.Number, &l.view.DisplayInquiryNo, &owner, &l.view.Owner, &status, &handoff, &l.view.Revision, &l.view.SubmittedAt, &l.row.body, &source, &l.row.templateID, &l.row.customerID, &l.row.customerName, &l.row.contactID, &l.row.contactName, &l.view.ProcurementCount, &l.view.LogisticsCount, &l.view.PersonalQuoteStatus); err != nil {
 			return nil, err
 		}
 		l.view.OwnerID = strconv.FormatInt(owner, 10)

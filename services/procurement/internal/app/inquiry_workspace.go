@@ -147,25 +147,26 @@ type InquiryQuoteView struct {
 	CanDelete   bool             `json:"canDelete"`
 }
 type InquiryView struct {
-	ID               string             `json:"id"`
-	Number           string             `json:"number"`
-	DisplayInquiryNo string             `json:"displayInquiryNo"`
-	OwnerID          string             `json:"ownerId"`
-	Owner            string             `json:"owner"`
-	State            string             `json:"state"`
-	Revision         int64              `json:"revision"`
-	SubmittedAt      string             `json:"submittedAt"`
-	Body             InquiryBody        `json:"body"`
-	Quotes           []InquiryQuoteView `json:"quotes"`
-	ProcurementCount int                `json:"procurementCount"`
-	LogisticsCount   int                `json:"logisticsCount"`
-	CanEdit          bool               `json:"canEdit"`
-	CanDelete        bool               `json:"canDelete"`
-	ReadOnlyReason   string             `json:"readOnlyReason,omitempty"`
-	CanWithdraw      bool               `json:"canWithdraw"`
-	WithdrawReason   string             `json:"withdrawReason,omitempty"`
-	SourceMailID     string             `json:"sourceMailId"`
-	Legacy           bool               `json:"legacy"`
+	ID                  string             `json:"id"`
+	Number              string             `json:"number"`
+	DisplayInquiryNo    string             `json:"displayInquiryNo"`
+	OwnerID             string             `json:"ownerId"`
+	Owner               string             `json:"owner"`
+	State               string             `json:"state"`
+	Revision            int64              `json:"revision"`
+	SubmittedAt         string             `json:"submittedAt"`
+	Body                InquiryBody        `json:"body"`
+	Quotes              []InquiryQuoteView `json:"quotes"`
+	ProcurementCount    int                `json:"procurementCount"`
+	LogisticsCount      int                `json:"logisticsCount"`
+	PersonalQuoteStatus string             `json:"personalQuoteStatus,omitempty"`
+	CanEdit             bool               `json:"canEdit"`
+	CanDelete           bool               `json:"canDelete"`
+	ReadOnlyReason      string             `json:"readOnlyReason,omitempty"`
+	CanWithdraw         bool               `json:"canWithdraw"`
+	WithdrawReason      string             `json:"withdrawReason,omitempty"`
+	SourceMailID        string             `json:"sourceMailId"`
+	Legacy              bool               `json:"legacy"`
 }
 type InquiryCommand struct {
 	FileData     []byte           `json:"fileData"`
@@ -556,8 +557,9 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 				continue
 			}
 		}
-		q.CanEdit = q.Kind == view && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && s.inquiryAllowed(ctx, op, view, true) == nil
-		q.CanDelete = q.CanEdit && view == "PROCUREMENT" && v.State == "INQUIRING"
+		canWrite := q.Kind == view && s.inquiryAllowed(ctx, op, view, true) == nil
+		q.CanEdit = canWrite && q.AuthorID == strconv.FormatInt(op.ID, 10)
+		q.CanDelete = canWrite && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && view == "PROCUREMENT" && v.State == "INQUIRING"
 		v.Quotes = append(v.Quotes, q)
 	}
 	if err = rows.Err(); err != nil {
@@ -570,6 +572,11 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 			return nil, e
 		}
 		v.Quotes = append(v.Quotes, history...)
+	}
+	if view == "PROCUREMENT" || view == "LOGISTICS" {
+		if err = s.pool.QueryRow(ctx, `SELECT `+inquiryPersonalQuoteStatus("c", view, "$3")+` FROM sourcing_cases c WHERE c.tenant_id=$1 AND c.id=$2`, tenant, id, op.ID).Scan(&v.PersonalQuoteStatus); err != nil {
+			return nil, err
+		}
 	}
 	return &v, nil
 }
@@ -1217,7 +1224,9 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 			return e
 		}
 		if quoteID == 0 {
-			_, e = tx.Exec(ctx, `INSERT INTO inquiry_quotes(tenant_id,case_id,inquiry_revision,kind,body,created_by,created_by_name,submitted_at,submitted_by,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN now() END,CASE WHEN $8 THEN $6::bigint END,$6,$7)`, tenant, id, revision, in.View, data, op.ID, op.Name, in.Submit)
+			// The inquiry lock serializes saves. Use write time, not transaction
+			// start time: a transaction that waited for that lock must appear later.
+			_, e = tx.Exec(ctx, `INSERT INTO inquiry_quotes(tenant_id,case_id,inquiry_revision,kind,body,created_by,created_by_name,submitted_at,submitted_by,updated_by,updated_by_name,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN clock_timestamp() END,CASE WHEN $8 THEN $6::bigint END,$6,$7,clock_timestamp())`, tenant, id, revision, in.View, data, op.ID, op.Name, in.Submit)
 			return e
 		}
 		var author, version int64
@@ -1229,8 +1238,8 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 			}
 			return e
 		}
-		if kind != in.View || (!submitted && author != op.ID) {
-			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "未提交报价仅填写人可编辑")
+		if kind != in.View || author != op.ID {
+			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "只能修改自己的报价；请基于他人已提交报价新建自己的报价")
 		}
 		if submitted {
 			if err := validateInquiryQuote(&in.Quote, body.Products, in.View, true); err != nil {
@@ -1241,7 +1250,7 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 		if version != in.QuoteVersion {
 			return apierr.Conflict("INQUIRY_QUOTE_CHANGED", "报价已由其他人修改，请刷新")
 		}
-		_, e = tx.Exec(ctx, `UPDATE inquiry_quotes SET body=$4,updated_by=$5,updated_by_name=$6,updated_at=now(),version=version+1,submitted_at=CASE WHEN $7 AND submitted_at IS NULL THEN now() ELSE submitted_at END,submitted_by=CASE WHEN $7 AND submitted_by IS NULL THEN $5::bigint ELSE submitted_by END WHERE tenant_id=$1 AND case_id=$2 AND id=$3`, tenant, id, quoteID, data, op.ID, op.Name, in.Submit)
+		_, e = tx.Exec(ctx, `UPDATE inquiry_quotes SET body=$4,updated_by=$5,updated_by_name=$6,updated_at=clock_timestamp(),version=version+1,submitted_at=CASE WHEN $7 AND submitted_at IS NULL THEN clock_timestamp() ELSE submitted_at END,submitted_by=CASE WHEN $7 AND submitted_by IS NULL THEN $5::bigint ELSE submitted_by END WHERE tenant_id=$1 AND case_id=$2 AND id=$3`, tenant, id, quoteID, data, op.ID, op.Name, in.Submit)
 		return e
 	})
 	if err != nil {
