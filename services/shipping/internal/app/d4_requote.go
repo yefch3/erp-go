@@ -113,8 +113,8 @@ func validateFinalRequote(in FinalRequoteInput) (decimal.Decimal, error) {
 	if err != nil || !amount.IsPositive() {
 		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_AMOUNT", "请填写有效的最终物流费用")
 	}
-	if in.FinalForwarderID == 0 || strings.TrimSpace(in.FinalForwarderName) == "" || strings.TrimSpace(in.FinalServiceOption) == "" || strings.TrimSpace(in.FinalCurrency) == "" || !validD4Date(in.FinalETD) || !validD4Date(in.FinalETA) || strings.TrimSpace(in.PaymentTerms) == "" {
-		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_TERMS_REQUIRED", "请完整填写最终货代、运输方案、费用、预计船期和付款条件")
+	if in.FinalForwarderID == 0 || strings.TrimSpace(in.FinalForwarderName) == "" || strings.TrimSpace(in.FinalCurrency) == "" || !validD4Date(in.FinalETD) || !validD4Date(in.FinalETA) || strings.TrimSpace(in.PaymentTerms) == "" {
+		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_TERMS_REQUIRED", "请完整填写最终货代、费用、预计船期和付款条件")
 	}
 	return amount, nil
 }
