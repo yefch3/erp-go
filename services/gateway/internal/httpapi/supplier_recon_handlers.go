@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -62,6 +64,40 @@ func (s *Server) recordPurchaseOrderPayment(w http.ResponseWriter, r *http.Reque
 func (s *Server) createManualPayable(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateManualPayableRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.BusinessType = strings.ToUpper(strings.TrimSpace(req.BusinessType))
+	// Snapshot metadata is always resolved server-side, never trusted from
+	// the finance form. A matching number alone must not establish a link.
+	req.SourceSupplierId = 0
+	req.ExportContractNo = ""
+	req.BusinessDocumentNo = ""
+	req.PaymentTerms = ""
+	if req.BusinessType == "LOGISTICS" {
+		result, err := s.Shipping.GetContractShippingHandoff(r.Context(), &shippingv1.GetContractShippingHandoffRequest{Id: req.SourceBusinessId})
+		if err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
+		source := result.GetHandoff()
+		if !historicalLogisticsPayableSource(source) {
+			s.writeError(w, http.StatusBadRequest, "HISTORICAL_LOGISTICS_REQUIRED", "请选择已进入船期管理的历史物流订单")
+			return
+		}
+		req.OrderNo = source.ManualOrderNo
+		req.SourceSupplierId = source.FinalForwarderId
+		if source.FinalForwarderName != "" {
+			req.SupplierName = source.FinalForwarderName
+		}
+		req.Currency = source.FinalCurrency
+		if !source.AmountMissing {
+			req.TotalAmount = source.FinalFreightAmount
+		}
+		req.ExportContractNo = source.ContractNo
+		req.BusinessDocumentNo = source.ForwarderContractNo
+		req.PaymentTerms = source.PaymentTerms
+	} else if req.SourceBusinessId != 0 {
+		s.writeError(w, http.StatusBadRequest, "HISTORICAL_LOGISTICS_REQUIRED", "关联物流订单时请选择物流付款")
 		return
 	}
 	resp, err := s.Orders.CreateManualPayable(r.Context(), req)
@@ -197,4 +233,40 @@ func (s *Server) removeReconFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func historicalLogisticsPayableSource(v *shippingv1.ContractShippingHandoff) bool {
+	return v != nil && v.Id > 0 && v.ManualOrderNo != "" && v.ScheduleId > 0 && v.Status == "SCHEDULED"
+}
+
+// Finance receives only the historical order fields needed to create a payable.
+// No sales contract payload, cargo, attachments or existing payments are exposed.
+func (s *Server) listHistoricalLogisticsPayableOptions(w http.ResponseWriter, r *http.Request) {
+	// Reuse the finance service's full-ledger scope check before projecting
+	// shipping references to a finance role.
+	if _, err := s.Orders.ListSupplierRecon(r.Context(), &prv1.ListSupplierReconRequest{Page: 1, PageSize: 1}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	result, err := s.Shipping.ListContractShippingHandoffs(r.Context(), &shippingv1.ListContractShippingHandoffsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	type option struct {
+		ID            int64  `json:"id,string"`
+		OrderNo       string `json:"orderNo"`
+		SupplierName  string `json:"supplierName"`
+		Currency      string `json:"currency"`
+		Amount        string `json:"amount"`
+		AmountMissing bool   `json:"amountMissing"`
+		ContractNo    string `json:"contractNo"`
+	}
+	items := []option{}
+	for _, v := range result.GetHandoffs() {
+		if historicalLogisticsPayableSource(v) {
+			items = append(items, option{v.Id, v.ManualOrderNo, v.FinalForwarderName, v.FinalCurrency, v.FinalFreightAmount, v.AmountMissing, v.ContractNo})
+		}
+	}
+	s.writeJSON(w, map[string]any{"items": items})
 }

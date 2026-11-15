@@ -21,7 +21,6 @@ func TestManualOrderValidation(t *testing.T) {
 		name string
 		edit func(*ContractHandoff)
 	}{
-		{"missing reference", func(v *ContractHandoff) { v.ContractNo = " " }},
 		{"negative price", func(v *ContractHandoff) { v.FinalFreightAmount = "-1" }},
 		{"price precision", func(v *ContractHandoff) { v.FinalFreightAmount = "0.001" }},
 		{"date order", func(v *ContractHandoff) { v.FinalETD = "2026-09-22"; v.FinalETA = "2026-09-01" }},
@@ -40,6 +39,13 @@ func TestManualOrderValidation(t *testing.T) {
 	}
 }
 
+func TestManualOrderOptionalContractReference(t *testing.T) {
+	v := ContractHandoff{ContractNo: " ", FinalCurrency: "USD"}
+	if err := validateManualOrder(&v); err != nil || v.ContractNo != "" {
+		t.Fatalf("blank historical reference: %v", err)
+	}
+}
+
 func TestManualShippingOrderLifecycle(t *testing.T) {
 	dsn := os.Getenv("SHIPPING_TEST_DSN")
 	if dsn == "" {
@@ -53,92 +59,69 @@ func TestManualShippingOrderLifecycle(t *testing.T) {
 	defer pool.Close()
 	tenant := time.Now().UnixNano() / 1000
 	defer func() {
+		_, _ = pool.Exec(ctx, `UPDATE shipping_schedules SET contract_handoff_id=NULL WHERE tenant_id IN ($1,$2)`, tenant, tenant+1)
 		_, _ = pool.Exec(ctx, `DELETE FROM contract_shipping_handoffs WHERE tenant_id IN ($1,$2)`, tenant, tenant+1)
+		_, _ = pool.Exec(ctx, `DELETE FROM shipping_schedules WHERE tenant_id IN ($1,$2)`, tenant, tenant+1)
 	}()
 	svc := New(pool)
-	op := Operator{ID: 10, Name: "manual test"}
-	input := ContractHandoff{ManualOrderNo: "HISTORY-1", ContractNo: "CONTRACT-NOT-IN-SYSTEM", FinalCurrency: "USD", CustomerName: "历史客户", CargoItems: []ContractShippingCargoItem{{ProductName: "钢卷", Quantity: "12.5", UomCode: "MT"}, {ProductName: "钢管", Quantity: "30", UomCode: "PCS"}}}
+	op := Operator{ID: 10, Name: "historical test"}
+	input := ContractHandoff{ManualOrderNo: "HISTORY-1", FinalCurrency: "USD", CustomerName: "独立历史客户", PortOfLoading: "上海", PortOfDischarge: "洛杉矶", FinalETD: "2027-02-01", FinalETA: "2027-02-15", PaymentTerms: "历史约定", Remark: "独立历史物流测试", CargoItems: []ContractShippingCargoItem{{ProductName: "钢板", Quantity: "12.5", UomCode: "MT"}}}
 	first, err := svc.SaveManualShippingOrder(ctx, tenant, input, op)
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.UseContractGuard(manualRejectContract{})
-	if err = svc.checkHandoffExecution(ctx, tenant, first.ID); err != nil {
-		t.Fatal("unlinked manual order incorrectly requires a contract", err)
+	if first.ContractNo != "" || first.LinkedContractID != 0 || first.ContractID != 0 || first.Status != "SCHEDULED" || first.ScheduleID == 0 || first.ApprovalInstanceID != 0 || first.ContractVerifiedAt != "" || first.PaymentRequestedAt != "" || len(first.CargoItems) != 1 {
+		t.Fatalf("unexpected history flow: %+v", first)
 	}
-	if err = svc.checkHandoffExecution(ctx, tenant+1, first.ID); err == nil {
-		t.Fatal("cross tenant guard bypass")
+	schedule, _, err := svc.GetSchedule(ctx, tenant, first.ScheduleID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if first.ID == 0 || first.ContractID != 0 || first.Status != "DRAFT" || !first.AmountMissing || len(first.CargoItems) != 2 || first.ScheduleID != 0 || first.PaymentRequestedAt != "" {
-		t.Fatalf("unexpected state: %+v", first)
+	if schedule.CustomerName != input.CustomerName || schedule.PortOfLoading != input.PortOfLoading || schedule.ContractID != nil || schedule.ContractNo != "" || schedule.ResponsibleEmployeeID != op.ID || schedule.Status != "PLANNED" || schedule.Remark != input.Remark {
+		t.Fatalf("schedule input lost: %+v", schedule)
+	}
+	details, err := svc.GetScheduleDetails(ctx, tenant, first.ScheduleID)
+	if err != nil || len(details.Route) != 2 {
+		t.Fatalf("initial route: %v", err)
+	}
+	identities, err := svc.ScheduleIdentities(ctx, tenant, []int64{first.ScheduleID})
+	if err != nil || identities[first.ScheduleID].ManualOrderNo != first.ManualOrderNo {
+		t.Fatalf("history identity: %v", err)
 	}
 	if _, err = svc.SaveManualShippingOrder(ctx, tenant, input, op); err == nil {
-		t.Fatal("duplicate order accepted")
-	}
-	second, err := svc.SaveManualShippingOrder(ctx, tenant+1, input, op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.GetContractHandoff(ctx, tenant, second.ID); err == nil {
-		t.Fatal("cross tenant read")
-	}
-	first.FinalFreightAmount = "125.50"
-	if _, err = svc.SaveManualShippingOrder(ctx, tenant+1, first, op); err == nil {
-		t.Fatal("cross tenant edit")
-	}
-	first, err = svc.SaveManualShippingOrder(ctx, tenant, first, op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.AmountMissing || first.FinalFreightAmount != "125.50" || len(first.CargoItems) != 2 {
-		t.Fatal("edit did not persist")
-	}
-	input.ManualOrderNo = ""
-	extra, err := svc.SaveManualShippingOrder(ctx, tenant, input, op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if extra.ManualOrderNo == "" || extra.ID == first.ID {
-		t.Fatal("independent order not created")
-	}
-	linked, linkErr := svc.LinkManualShippingContract(ctx, tenant, first.ID, 501, "CT-501", op)
-	if linkErr != nil {
-		t.Fatal(linkErr)
-	}
-	if linked.LinkedContractID != 501 || linked.ContractNo != "CT-501" || linked.ContractID != 0 || linked.Status != first.Status {
-		t.Fatal("link altered workflow or failed", linked)
-	}
-	var original string
-	if err = pool.QueryRow(ctx, `SELECT original_contract_no FROM manual_shipping_orders WHERE tenant_id=$1 AND handoff_id=$2`, tenant, first.ID).Scan(&original); err != nil || original != "CONTRACT-NOT-IN-SYSTEM" {
-		t.Fatal("original reference lost", original, err)
-	}
-	if _, err = svc.LinkManualShippingContract(ctx, tenant+1, first.ID, 501, "CT-501", op); err == nil {
-		t.Fatal("cross tenant link")
-	}
-	if _, err = svc.LinkManualShippingContract(ctx, tenant, first.ID, 502, "CT-502", op); err == nil {
-		t.Fatal("silent relink")
-	}
-	linked.ContractNo = "changed"
-	if _, err = svc.SaveManualShippingOrder(ctx, tenant, linked, op); err == nil {
-		t.Fatal("linked number changed")
-	}
-	first, err = svc.LinkManualShippingContract(ctx, tenant, first.ID, 501, "CT-501", op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := svc.ListD4ContractHandoffs(ctx, tenant, "")
-	if err != nil || len(rows) != 2 {
-		t.Fatalf("list: %v %v", len(rows), err)
-	}
-	_, err = pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET status='PENDING_APPROVAL' WHERE tenant_id=$1 AND id=$2`, tenant, first.ID)
-	if err != nil {
-		t.Fatal(err)
+		t.Fatal("duplicate historical number accepted")
 	}
 	if _, err = svc.SaveManualShippingOrder(ctx, tenant, first, op); err == nil {
-		t.Fatal("editing approved flow accepted")
+		t.Fatal("scheduled history edited through import instead of schedule")
 	}
-	input.CargoItems[0].Quantity = "invalid"
+	if _, err = svc.GetContractHandoff(ctx, tenant+1, first.ID); err == nil {
+		t.Fatal("cross tenant history read")
+	}
+	if _, _, err = svc.GetSchedule(ctx, tenant+1, first.ScheduleID); err == nil {
+		t.Fatal("cross tenant schedule read")
+	}
+	input.ManualOrderNo = ""
+	input.ContractNo = "HISTORICAL-REFERENCE"
+	input.FinalFreightAmount = "125.50"
+	second, err := svc.SaveManualShippingOrder(ctx, tenant, input, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID || second.ManualOrderNo == "" || second.ScheduleID == first.ScheduleID || second.LinkedContractID != 0 || second.FinalFreightAmount != "125.50" {
+		t.Fatal("independent history failed")
+	}
+	var countBefore, countAfter int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM contract_shipping_handoffs WHERE tenant_id=$1`, tenant).Scan(&countBefore)
+	input.PortOfLoading = ""
 	if _, err = svc.SaveManualShippingOrder(ctx, tenant, input, op); err == nil {
-		t.Fatal("invalid row accepted")
+		t.Fatal("missing schedule information accepted")
+	}
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM contract_shipping_handoffs WHERE tenant_id=$1`, tenant).Scan(&countAfter)
+	if countAfter != countBefore {
+		t.Fatal("failed history left a draft behind")
+	}
+	svc.UseContractGuard(manualRejectContract{})
+	if err = svc.checkHandoffExecution(ctx, tenant, first.ID); err != nil {
+		t.Fatal("unlinked history requires normal contract", err)
 	}
 }

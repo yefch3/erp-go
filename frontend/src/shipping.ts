@@ -1,6 +1,8 @@
 export interface ShippingSchedule {
   id: string
   scheduleNo: string
+  manualOrderNo?: string
+  contractHandoffId?: string
   transportBatchNo?: number
   contractId: string
   contractNo: string
@@ -46,7 +48,8 @@ export interface ShippingSchedule {
   freightAmount: string
 }
 
-export function shippingBusinessLabel(value: {contractNo?: string; transportBatchNo?: number}, translate: (key:string, params?: Record<string,unknown>)=>string): string {
+export function shippingBusinessLabel(value: {contractNo?: string; transportBatchNo?: number; manualOrderNo?:string}, translate: (key:string, params?: Record<string,unknown>)=>string): string {
+  if(value.manualOrderNo)return `${value.manualOrderNo} · 历史补录`
   const contract=value.contractNo?.trim() || translate('shipping.unlinkedContract')
   return `${contract} · ${value.transportBatchNo && value.transportBatchNo>0 ? translate('shipping.transportBatchLabel',{batch:value.transportBatchNo}) : translate('shipping.unlinkedBatch')}`
 }

@@ -2687,6 +2687,12 @@ message CreateManualPayableRequest {
   string paid_at = 6;
   string note = 7;
   string due_date = 8;
+  string business_type = 9;
+  int64 source_business_id = 10;
+  int64 source_supplier_id = 11;
+  string export_contract_no = 12;
+  string business_document_no = 13;
+  string payment_terms = 14;
 }
 message CreateManualPayableResponse { SupplierReconRow row = 1; }
 message ReversePurchaseOrderPaymentResponse {

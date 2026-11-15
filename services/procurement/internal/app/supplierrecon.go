@@ -71,9 +71,12 @@ type SupplierReconRow struct {
 }
 
 type ManualPayableInput struct {
-	SupplierName, OrderNo, Currency string
-	TotalAmount, PaidAmount         string
-	PaidAt, DueDate, Note           string
+	BusinessType                                       string
+	SourceBusinessID, SourceSupplierID                 int64
+	ExportContractNo, BusinessDocumentNo, PaymentTerms string
+	SupplierName, OrderNo, Currency                    string
+	TotalAmount, PaidAmount                            string
+	PaidAt, DueDate, Note                              string
 }
 
 // CreateManualPayable records an opening supplier balance without creating a
@@ -82,6 +85,13 @@ type ManualPayableInput struct {
 func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in ManualPayableInput, op Operator) (SupplierReconRow, error) {
 	if err := s.requireFullScope(ctx, op); err != nil {
 		return SupplierReconRow{}, err
+	}
+	in.BusinessType = strings.ToUpper(strings.TrimSpace(in.BusinessType))
+	if in.BusinessType == "" {
+		in.BusinessType = "MANUAL"
+	}
+	if in.BusinessType != "MANUAL" && in.BusinessType != "LOGISTICS" || in.SourceBusinessID < 0 || in.SourceSupplierID < 0 || (in.BusinessType == "LOGISTICS") != (in.SourceBusinessID > 0) {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_SOURCE_INVALID", "请选择有效的历史物流订单")
 	}
 	in.SupplierName = strings.TrimSpace(in.SupplierName)
 	in.OrderNo = strings.TrimSpace(in.OrderNo)
@@ -117,14 +127,22 @@ func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in Ma
 	}
 	var poID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// One account per historical logistics source, including simultaneous
+		// requests and accounts already marked complete. The existing unique
+		// source index is the final arbiter; never upsert or overwrite payments.
 		err := tx.QueryRow(ctx, `INSERT INTO purchase_orders
-			(tenant_id, po_no, supplier_id, supplier_code, supplier_name, currency,
-			 total_amount, status, buyer_id, buyer_name, remark, ordered_at, payable_due_date)
-			VALUES ($1,$2,0,'',$3,$4,$5::numeric,'ORDERED',$6,$7,$8,now(),nullif($9::text,'')::date) RETURNING id`,
-			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note), strings.TrimSpace(in.DueDate)).Scan(&poID)
+            (tenant_id,po_no,supplier_id,supplier_code,supplier_name,currency,total_amount,status,buyer_id,buyer_name,remark,ordered_at,payable_due_date,
+             business_type,source_business_id,export_contract_no,business_document_no,payment_terms,payment_requested_at,payment_requested_by,payment_requested_by_name)
+            VALUES($1::bigint,$2::text,$10::bigint,'',$3::text,$4::text,$5::numeric,'ORDERED',$6::bigint,$7::text,$8::text,now(),nullif($9::text,'')::date,
+             $11::text,$12::bigint,$13::text,$14::text,$15::text,CASE WHEN $11::text='LOGISTICS' THEN now() END,CASE WHEN $11::text='LOGISTICS' THEN $6::bigint ELSE 0::bigint END,CASE WHEN $11::text='LOGISTICS' THEN $7::text ELSE '' END) RETURNING id`,
+			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note), strings.TrimSpace(in.DueDate),
+			in.SourceSupplierID, in.BusinessType, in.SourceBusinessID, in.ExportContractNo, in.BusinessDocumentNo, in.PaymentTerms).Scan(&poID)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				if in.BusinessType == "LOGISTICS" {
+					return apierr.Conflict("PR_LOGISTICS_ACCOUNT_EXISTS", "该历史物流订单已建立账目，请在出账中查找并登记付款，不要重复建账")
+				}
 				return apierr.Conflict("PR_MANUAL_PAYABLE_NO_TAKEN", "该合同号/采购单号已存在")
 			}
 			return err
@@ -161,18 +179,18 @@ func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
 		return SupplierReconRow{}, err
 	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		var supplierID int64
+		var supplierID, sourceID int64
 		var oldSupplier, oldNo, oldDue string
-		err := tx.QueryRow(ctx, `SELECT supplier_id,supplier_name,po_no,coalesce(payable_due_date::text,'')
+		err := tx.QueryRow(ctx, `SELECT supplier_id,supplier_name,po_no,coalesce(payable_due_date::text,''),source_business_id
 			FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).
-			Scan(&supplierID, &oldSupplier, &oldNo, &oldDue)
+			Scan(&supplierID, &oldSupplier, &oldNo, &oldDue, &sourceID)
 		if err == pgx.ErrNoRows {
 			return apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 		}
 		if err != nil {
 			return err
 		}
-		if supplierID != 0 {
+		if supplierID != 0 || sourceID != 0 {
 			return apierr.Conflict("PR_MANUAL_PAYABLE_ONLY", "系统生成的采购单请在采购订单中修改")
 		}
 		if oldSupplier == supplierName && oldNo == orderNo && oldDue == dueDate {

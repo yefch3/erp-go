@@ -15,12 +15,14 @@ func (s *Server) saveManualShippingOrder(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if v := req.Order; v != nil {
-		ref, err := s.resolveShippingContract(r.Context(), v.LinkedContractId, v.ContractNo, false)
-		if err != nil {
-			s.writeGRPCError(w, err)
-			return
-		}
-		if ref != nil {
+		// Historical references are optional free text; never infer a link.
+		v.ContractNo = strings.TrimSpace(v.ContractNo)
+		if v.LinkedContractId != 0 {
+			ref, err := s.resolveShippingContract(r.Context(), v.LinkedContractId, v.ContractNo, true)
+			if err != nil {
+				s.writeGRPCError(w, err)
+				return
+			}
 			v.LinkedContractId = ref.Id
 			v.ContractNo = ref.ContractNo
 		}

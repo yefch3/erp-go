@@ -116,6 +116,8 @@ message Schedule {
   string freight_currency = 43;
   string freight_amount = 44;
   int32 transport_batch_no = 45;
+  string manual_order_no = 46;
+  int64 contract_handoff_id = 47;
 }
 
 message RouteNode {

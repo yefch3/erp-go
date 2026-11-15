@@ -17,24 +17,31 @@
     <PurchaseContractReviewPanel v-if="!isReimbursement&&isContractReview" :order-id="String(route.query.order||'')" :initial-keyword="String(route.query.keyword||'')" @verified="reload"/>
     <div v-show="!isReimbursement&&!isContractReview" class="legacy-recon">
 
-    <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
-      <el-form label-position="top">
-        <el-form-item :label="t('supplierRecon.manualSupplier')" required>
-          <el-select v-model="manualForm.supplierName" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%">
+    <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(640px, 96vw)" top="4vh" class="finance-manual-dialog" :close-on-click-modal="false" destroy-on-close>
+      <el-form label-position="top" size="small">
+        <el-form-item label="业务类型"><el-radio-group v-model="manualBusinessType" @change="resetManualSource"><el-radio-button value="MANUAL">其他付款</el-radio-button><el-radio-button value="LOGISTICS">历史物流付款</el-radio-button></el-radio-group></el-form-item>
+        <el-form-item v-if="manualBusinessType==='LOGISTICS'" label="关联历史物流订单" required>
+          <el-select v-model="manualSourceId" filterable clearable :loading="historyOptionsLoading" placeholder="搜索或选择历史物流订单" style="width:100%" @change="applyHistoryOrder"><el-option v-for="item in historyOptions" :key="item.id" :value="item.id" :label="`${item.orderNo} · ${item.supplierName||'货代待补齐'}${item.contractNo?' · '+item.contractNo:''}`" /></el-select>
+        </el-form-item>
+        <p v-if="manualBusinessType==='LOGISTICS'" class="manual-source-hint">关联后按物流订单建账，同一订单只建一次；已有账目请直接登记付款。缺失资料可在此补齐。</p>
+        <el-form-item :label="manualBusinessType==='LOGISTICS'?'货代 / 收款方':t('supplierRecon.manualSupplier')" required>
+          <el-select v-model="manualForm.supplierName" :disabled="manualBusinessType==='LOGISTICS' && !!selectedHistory?.supplierName" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%">
             <el-option v-for="name in manualSupplierOptions" :key="name" :label="name" :value="name" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('supplierRecon.manualOrder')" required>
+        <el-form-item v-if="manualBusinessType!=='LOGISTICS'" :label="t('supplierRecon.manualOrder')" required>
           <el-select v-model="manualForm.orderNo" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%" @change="applyManualOrder">
             <el-option v-for="item in manualOrderOptions" :key="item.poNo" :label="`${item.poNo} · ${item.supplierName}`" :value="item.poNo" />
           </el-select>
         </el-form-item>
         <div class="manual-grid">
-          <el-form-item :label="t('supplierRecon.manualTotal')" required><el-input v-model="manualForm.totalAmount"><template #prepend><el-select v-model="manualForm.currency" filterable allow-create default-first-option :placeholder="t('supplierRecon.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
+          <el-form-item :label="manualBusinessType==='LOGISTICS'?'物流总费用':t('supplierRecon.manualTotal')" required><el-input v-model="manualForm.totalAmount" :readonly="manualBusinessType==='LOGISTICS' && !!selectedHistory && !selectedHistory.amountMissing"><template #prepend><el-select v-model="manualForm.currency" :disabled="manualBusinessType==='LOGISTICS'" filterable allow-create default-first-option :placeholder="t('supplierRecon.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
           <el-form-item :label="t('supplierRecon.manualPaid')"><el-input v-model="manualForm.paidAmount" /></el-form-item>
         </div>
+        <div class="manual-grid">
         <el-form-item :label="t('supplierRecon.manualDate')"><el-date-picker v-model="manualForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
         <el-form-item :label="t('supplierRecon.manualDueDate')"><el-date-picker v-model="manualForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" /></el-form-item>
+        </div>
         <el-form-item :label="t('supplierRecon.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
@@ -161,7 +168,7 @@
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
                  而财务没有 procurement:order:read——给所有人挂链接等于每一行
                  都放了一个点下去必然 403 的入口。 -->
-            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{t('shipping.logisticsContractNo')}}：{{row.businessDocumentNo||t('shipping.contractNumberUnset')}}</span> <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">{{t('shipping.systemGenerated')}}</el-tag><div class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
+            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{row.businessDocumentNo?t('shipping.logisticsContractNo'):'物流订单'}}：{{row.businessDocumentNo||row.poNo}}</span> <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">{{t('shipping.systemGenerated')}}</el-tag><div v-if="row.businessDocumentNo && row.businessDocumentNo!==row.poNo" class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
             <router-link v-else-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
@@ -238,7 +245,7 @@
               <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
-                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
+                <el-dropdown-item v-if="row.manuallyEntered && !Number(row.sourceBusinessId)" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
                 <el-dropdown-item
                   v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt"
                   divided
@@ -269,7 +276,7 @@
 
     <el-dialog v-model="detailOpen" :title="t('supplierRecon.detailTitle')" width="min(860px, 96vw)">
       <template v-if="detailRow">
-        <p class="close-target">{{ detailRow.poNo }} · {{ detailRow.supplierName }}</p>
+        <p class="close-target">{{ detailRow.poNo }} · {{ detailRow.supplierName }} <el-button v-if="detailRow.businessType==='LOGISTICS' && Number(detailRow.sourceBusinessId)>0 && auth.can('shipping:schedule:read')" link type="primary" @click="openLinkedLogistics(detailRow)">查看关联物流订单</el-button></p>
         <el-descriptions :column="3" border class="detail-summary">
           <el-descriptions-item :label="t('supplierRecon.manualTotal')">{{ detailRow.currency }} {{ detailRow.orderedAmount }}</el-descriptions-item>
           <el-descriptions-item :label="t('supplierRecon.manualPaid')">{{ detailRow.paidAmount }}</el-descriptions-item>
@@ -432,17 +439,28 @@ const isReimbursement = computed(() => route.query.section === 'travel' || !canR
 function switchSection(value: string | number | boolean | undefined) {
   void router.push({ path: route.path, query: value === 'travel' ? { section: 'travel' } : {} })
 }
+interface HistoryPayableOption {id:string;orderNo:string;supplierName:string;currency:string;amount:string;amountMissing:boolean;contractNo:string}
+const manualBusinessType=ref('MANUAL'),manualSourceId=ref(''),historyOptions=ref<HistoryPayableOption[]>([]),historyOptionsLoading=ref(false)
+const selectedHistory=computed(()=>historyOptions.value.find(item=>item.id===manualSourceId.value))
+function resetManualSource(){manualSourceId.value='';Object.assign(manualForm,{supplierName:'',orderNo:'',currency:'CNY',totalAmount:'',paidAmount:'',paidAt:'',dueDate:'',note:''});if(manualBusinessType.value==='LOGISTICS')void loadHistoryOptions()}
+function applyHistoryOrder(){const item=selectedHistory.value;Object.assign(manualForm,{supplierName:item?.supplierName||'',orderNo:item?.orderNo||'',currency:item?.currency||'USD',totalAmount:item&&!item.amountMissing?item.amount:'',paidAmount:'',paidAt:'',dueDate:'',note:''})}
 const manualOpen = ref(false)
 const manualBusy = ref(false)
 const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
 
+async function openLinkedLogistics(row:Row){
+ const result=await get<{handoff:{scheduleId:string}}>(`/shipping/contract-handoffs/${row.sourceBusinessId}`)
+ if(Number(result.handoff.scheduleId)>0)await router.push(`/shipping/${result.handoff.scheduleId}`)
+ else await router.push({path:'/shipping/orders',query:{handoff:row.sourceBusinessId}})
+}
 async function saveManual() {
+  if(manualBusinessType.value==='LOGISTICS'&&!manualSourceId.value){ElMessage.warning('请选择关联的历史物流订单');return}
   if (!manualForm.supplierName.trim() || !manualForm.orderNo.trim() || !manualForm.totalAmount.trim()) {
     ElMessage.warning(t('supplierRecon.manualRequired')); return
   }
   manualBusy.value = true
   try {
-    await post('/supplier-recon/manual', manualForm)
+    await post('/supplier-recon/manual', {...manualForm,businessType:manualBusinessType.value,sourceBusinessId:manualBusinessType.value==='LOGISTICS'?manualSourceId.value:'0'})
     manualOpen.value = false
     Object.assign(manualForm, { supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
     ElMessage.success(t('supplierRecon.manualSaved'))
@@ -580,7 +598,14 @@ async function fetchPage(params: Record<string, string | number>) {
   return get<{ items: Row[]; total: string }>('/supplier-recon', params)
 }
 
+async function loadHistoryOptions(){
+ historyOptionsLoading.value=true
+ try{historyOptions.value=(await get<{items:HistoryPayableOption[]}>('/supplier-recon/historical-logistics')).items||[]}
+ catch{historyOptions.value=[]}
+ finally{historyOptionsLoading.value=false}
+}
 async function openManual() {
+  manualBusinessType.value='MANUAL';resetManualSource();historyOptions.value=[]
   manualOpen.value = true
   try {
     const [open, done] = await Promise.all([
@@ -981,7 +1006,7 @@ onMounted(() => {
   gap: 14px;
   min-width: 0;
 }
-.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+:global(.finance-manual-dialog .el-dialog__body){max-height:calc(88vh - 120px);overflow-y:auto;padding:12px 20px}:global(.finance-manual-dialog .el-dialog__footer){border-top:1px solid #e5edf2;padding-top:12px}:global(.finance-manual-dialog .el-form-item){margin-bottom:14px}.manual-source-hint{font-size:12px;color:#6b7e8b;line-height:1.6;margin:0 0 14px}.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
 .metrics {
   display: grid;
