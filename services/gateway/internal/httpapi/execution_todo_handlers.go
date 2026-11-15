@@ -20,7 +20,7 @@ import (
 // Keep the source services' tenant/data scopes and recheck contract execution
 // before presenting any outstanding departmental work.
 func (s *Server) listExecutionTodos(w http.ResponseWriter, r *http.Request) {
-	result := map[string][]json.RawMessage{"finance": {}, "procurement": {}, "shipping": {}, "purchaseFinance": {}}
+	result := map[string][]json.RawMessage{"finance": {}, "procurement": {}, "shipping": {}, "purchaseFinance": {}, "logisticsFinance": {}}
 	appendRow := func(source string, row proto.Message) {
 		data, _ := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(row)
 		result[source] = append(result[source], data)
@@ -38,6 +38,23 @@ func (s *Server) listExecutionTodos(w http.ResponseWriter, r *http.Request) {
 	// The list service still enforces tenant and purchase-order data scope.
 	// Reading orders alone never assigns a financial verification task.
 	if allowed["procurement:order:read"] && allowed["procurement:recon:write"] {
+		for page := int32(1); ; page++ {
+			data, err := s.Orders.ListSupplierRecon(r.Context(), &prv1.ListSupplierReconRequest{BusinessType: "LOGISTICS", Page: page, PageSize: 200})
+			if err != nil {
+				s.writeGRPCError(w, err)
+				return
+			}
+			for _, row := range data.GetItems() {
+				if row.GetBusinessType() != "LOGISTICS" || row.GetSourceBusinessId() <= 0 || row.GetOrderStatus() != "ORDERED" || row.GetClosedAt() != "" || row.GetSignedContractName() == "" || row.GetRequestedAt() != "" {
+					continue
+				}
+				item, _ := json.Marshal(map[string]any{"id": strconv.FormatInt(row.GetPoId(), 10), "poNo": row.GetPoNo(), "businessType": "LOGISTICS", "sourceBusinessId": strconv.FormatInt(row.GetSourceBusinessId(), 10), "supplierName": row.GetSupplierName(), "exportContractNo": row.GetExportContractNo(), "businessDocumentNo": row.GetBusinessDocumentNo(), "businessDocumentNoGenerated": row.GetBusinessDocumentNoGenerated(), "transportBatchNo": row.GetTransportBatchNo(), "currency": row.GetCurrency(), "totalAmount": row.GetOrderedAmount(), "signedContractName": row.GetSignedContractName()})
+				result["logisticsFinance"] = append(result["logisticsFinance"], item)
+			}
+			if len(data.GetItems()) == 0 || int64(page)*200 >= data.GetTotal() {
+				break
+			}
+		}
 		for page := int32(1); ; page++ {
 			data, err := s.Orders.ListOrders(r.Context(), &prv1.ListOrdersRequest{Status: "PENDING_CONTRACT", Page: &commonv1.PageRequest{Page: page, PageSize: 200}})
 			if err != nil {

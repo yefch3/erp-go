@@ -221,7 +221,7 @@ func (s *Server) saveContractShippingContract(w http.ResponseWriter, r *http.Req
 		return
 	}
 	h := resp.GetHandoff()
-	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
+	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), BusinessDocumentNoGenerated: h.GetForwarderContractNoGenerated(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -257,7 +257,7 @@ func (s *Server) requestContractShippingPayment(w http.ResponseWriter, r *http.R
 		s.writeGRPCError(w, status.Error(codes.FailedPrecondition, "货代合同经财务上级或老板核验后才能申请付款"))
 		return
 	}
-	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
+	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), BusinessDocumentNoGenerated: h.GetForwarderContractNoGenerated(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

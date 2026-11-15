@@ -161,7 +161,7 @@
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
                  而财务没有 procurement:order:read——给所有人挂链接等于每一行
                  都放了一个点下去必然 403 的入口。 -->
-            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{t('shipping.logisticsContractNo')}}：{{row.businessDocumentNo||t('shipping.contractNumberUnset')}}</span><div class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
+            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{t('shipping.logisticsContractNo')}}：{{row.businessDocumentNo||t('shipping.contractNumberUnset')}}</span> <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">{{t('shipping.systemGenerated')}}</el-tag><div class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
             <router-link v-else-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
@@ -482,6 +482,7 @@ interface Row {
   exportContractNo: string
   businessDocumentNo: string
   transportBatchNo?: number
+  businessDocumentNoGenerated?: boolean
   paymentTerms: string
   signedContractName: string
   requestedByName: string

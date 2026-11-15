@@ -32,15 +32,16 @@ import (
 
 // SupplierReconRow 是一张采购单在核销这件事上的当前样子。
 type SupplierReconRow struct {
-	POID         int64
-	PONo         string
-	SupplierID   int64
-	SupplierName string
-	Currency     string
-	OrderStatus  string
-	BuyerName    string
-	OrderedDate  string
-	ExpectedDate string
+	BusinessDocumentNoGenerated bool
+	POID                        int64
+	PONo                        string
+	SupplierID                  int64
+	SupplierName                string
+	Currency                    string
+	OrderStatus                 string
+	BuyerName                   string
+	OrderedDate                 string
+	ExpectedDate                string
 	// 应付到期日 = 下单当天 + 供应商账期。**空串表示没配账期**，不是
 	// 「今天到期」——那种情况下 DueUnset 为真，OverdueDays 无意义。
 	DueDate string
@@ -279,7 +280,7 @@ const reconSelect = `
 	       coalesce(cl.closed_by_name, '')                  AS closed_by_name,
 	       coalesce(cl.created_at::text, '')                AS closed_at,
 	       po.business_type,po.source_business_id,po.export_contract_no,
-	       po.business_document_no,po.payment_terms,po.signed_contract_name,po.transport_batch_no,
+	       po.business_document_no,po.payment_terms,po.signed_contract_name,po.transport_batch_no,po.business_document_no_generated,
 	       po.payment_requested_by_name,coalesce(po.payment_requested_at::text,'')`
 
 // reconFrom：已付是**算出来的**，不是存的状态——冲销是负行，求和天然反映
@@ -404,7 +405,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
-			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.RequestedByName, &r.RequestedAt,
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.BusinessDocumentNoGenerated, &r.RequestedByName, &r.RequestedAt,
 			&total); err != nil {
 			return nil, 0, err
 		}
@@ -425,7 +426,7 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
-			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.RequestedByName, &r.RequestedAt)
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.BusinessDocumentNoGenerated, &r.RequestedByName, &r.RequestedAt)
 	if err == pgx.ErrNoRows {
 		return SupplierReconRow{}, apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 	}
