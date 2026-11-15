@@ -296,7 +296,7 @@ func (s *Service) SaveShippingContract(ctx context.Context, tenantID, id int64, 
 		return ContractHandoff{}, err
 	}
 	key, name, contractNo = strings.TrimSpace(key), strings.TrimSpace(name), strings.TrimSpace(contractNo)
-	if key == "" || name == "" || contractNo == "" || !strings.HasPrefix(key, shippingContractPrefix(tenantID, id)) {
+	if key == "" || name == "" || !strings.HasPrefix(key, shippingContractPrefix(tenantID, id)) {
 		return ContractHandoff{}, apierr.Invalid("SHIPPING_CONTRACT_FILE_MISMATCH", "合同文件与正式船期任务不匹配")
 	}
 	if _, _, err := s.files.Stat(ctx, key); err != nil {

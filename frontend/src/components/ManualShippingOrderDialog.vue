@@ -16,7 +16,8 @@
         <el-form-item label="预计开船日期"><el-date-picker v-model="form.finalEtd" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="预计到港日期"><el-date-picker v-model="form.finalEta" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="付款条件"><el-input v-model="form.paymentTerms" /></el-form-item>
-        <el-form-item label="货代合同号（选填）"><el-input v-model="form.forwarderContractNo" maxlength="80" /></el-form-item>
+        <el-form-item :label="t('shipping.optionalLogisticsContractNo')"><el-input v-model="form.forwarderContractNo" maxlength="80" :placeholder="t('shipping.contractNoPlaceholder')" /></el-form-item>
+
       </div>
       <ColumnFillRegion :rows="form.cargoItems" :fields="[{key:'productName',column:0},{key:'specification',column:1},{key:'quantity',column:2},{key:'uomCode',column:3},{key:'remark',column:4}]">
       <el-table :data="form.cargoItems" size="small" class="cargo-lines">
@@ -37,10 +38,12 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { get, post } from '../api'
 import ShippingContractNumberInput from './ShippingContractNumberInput.vue'
 import ColumnFillRegion from './ColumnFillRegion.vue'
+const { t }=useI18n()
 interface Cargo { productCode:string;productName:string;specification:string;quantity:string;uomCode:string;remark:string }
 interface ManualOrder { linkedContractId:string; id:string;manualOrderNo:string;contractNo:string;customerName:string;portOfLoading:string;portOfDischarge:string;finalForwarderId:string;finalForwarderName:string;actualCarrierId:string;actualCarrierName:string;finalServiceOption:string;finalCurrency:string;finalFreightAmount:string;finalEtd:string;finalEta:string;paymentTerms:string;forwarderContractNo:string;remark:string;cargoItems:Cargo[];amountMissing?:boolean }
 const props=defineProps<{modelValue:boolean;orderId?:string;forwarders:{id:string;name:string}[];carriers:{id:string;name:string}[]}>()

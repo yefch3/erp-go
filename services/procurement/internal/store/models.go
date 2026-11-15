@@ -569,6 +569,7 @@ type PurchaseOrder struct {
 	PaymentRequestedAt       pgtype.Timestamptz
 	PaymentRequestedBy       int64
 	PaymentRequestedByName   string
+	TransportBatchNo         int32
 }
 
 type PurchaseOrderDraftFile struct {
