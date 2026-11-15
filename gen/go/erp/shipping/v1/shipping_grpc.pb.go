@@ -19,6 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ShippingService_GetContractDispatchProgress_FullMethodName           = "/erp.shipping.v1.ShippingService/GetContractDispatchProgress"
+	ShippingService_CorrectPortMetadata_FullMethodName                   = "/erp.shipping.v1.ShippingService/CorrectPortMetadata"
 	ShippingService_SaveManualShippingOrder_FullMethodName               = "/erp.shipping.v1.ShippingService/SaveManualShippingOrder"
 	ShippingService_LinkManualShippingContract_FullMethodName            = "/erp.shipping.v1.ShippingService/LinkManualShippingContract"
 	ShippingService_GetModuleStatus_FullMethodName                       = "/erp.shipping.v1.ShippingService/GetModuleStatus"
@@ -74,6 +76,10 @@ const (
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 type ShippingServiceClient interface {
+	// Narrow facts for an already-authorized sales contract, without freight.
+	GetContractDispatchProgress(ctx context.Context, in *GetContractDispatchProgressRequest, opts ...grpc.CallOption) (*GetContractDispatchProgressResponse, error)
+	// Correct only the masterdata identity of an existing terminal port.
+	CorrectPortMetadata(ctx context.Context, in *CorrectPortMetadataRequest, opts ...grpc.CallOption) (*CorrectPortMetadataResponse, error)
 	SaveManualShippingOrder(ctx context.Context, in *SaveManualShippingOrderRequest, opts ...grpc.CallOption) (*SaveManualShippingOrderResponse, error)
 	LinkManualShippingContract(ctx context.Context, in *LinkManualShippingContractRequest, opts ...grpc.CallOption) (*LinkManualShippingContractResponse, error)
 	GetModuleStatus(ctx context.Context, in *GetModuleStatusRequest, opts ...grpc.CallOption) (*GetModuleStatusResponse, error)
@@ -131,6 +137,26 @@ type shippingServiceClient struct {
 
 func NewShippingServiceClient(cc grpc.ClientConnInterface) ShippingServiceClient {
 	return &shippingServiceClient{cc}
+}
+
+func (c *shippingServiceClient) GetContractDispatchProgress(ctx context.Context, in *GetContractDispatchProgressRequest, opts ...grpc.CallOption) (*GetContractDispatchProgressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetContractDispatchProgressResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetContractDispatchProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) CorrectPortMetadata(ctx context.Context, in *CorrectPortMetadataRequest, opts ...grpc.CallOption) (*CorrectPortMetadataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CorrectPortMetadataResponse)
+	err := c.cc.Invoke(ctx, ShippingService_CorrectPortMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *shippingServiceClient) SaveManualShippingOrder(ctx context.Context, in *SaveManualShippingOrderRequest, opts ...grpc.CallOption) (*SaveManualShippingOrderResponse, error) {
@@ -600,6 +626,10 @@ func (c *shippingServiceClient) GetCargoScheduleProgress(ctx context.Context, in
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 type ShippingServiceServer interface {
+	// Narrow facts for an already-authorized sales contract, without freight.
+	GetContractDispatchProgress(context.Context, *GetContractDispatchProgressRequest) (*GetContractDispatchProgressResponse, error)
+	// Correct only the masterdata identity of an existing terminal port.
+	CorrectPortMetadata(context.Context, *CorrectPortMetadataRequest) (*CorrectPortMetadataResponse, error)
 	SaveManualShippingOrder(context.Context, *SaveManualShippingOrderRequest) (*SaveManualShippingOrderResponse, error)
 	LinkManualShippingContract(context.Context, *LinkManualShippingContractRequest) (*LinkManualShippingContractResponse, error)
 	GetModuleStatus(context.Context, *GetModuleStatusRequest) (*GetModuleStatusResponse, error)
@@ -659,6 +689,12 @@ type ShippingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedShippingServiceServer struct{}
 
+func (UnimplementedShippingServiceServer) GetContractDispatchProgress(context.Context, *GetContractDispatchProgressRequest) (*GetContractDispatchProgressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetContractDispatchProgress not implemented")
+}
+func (UnimplementedShippingServiceServer) CorrectPortMetadata(context.Context, *CorrectPortMetadataRequest) (*CorrectPortMetadataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CorrectPortMetadata not implemented")
+}
 func (UnimplementedShippingServiceServer) SaveManualShippingOrder(context.Context, *SaveManualShippingOrderRequest) (*SaveManualShippingOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveManualShippingOrder not implemented")
 }
@@ -816,6 +852,42 @@ func RegisterShippingServiceServer(s grpc.ServiceRegistrar, srv ShippingServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ShippingService_ServiceDesc, srv)
+}
+
+func _ShippingService_GetContractDispatchProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetContractDispatchProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetContractDispatchProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetContractDispatchProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetContractDispatchProgress(ctx, req.(*GetContractDispatchProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_CorrectPortMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CorrectPortMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).CorrectPortMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_CorrectPortMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).CorrectPortMetadata(ctx, req.(*CorrectPortMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ShippingService_SaveManualShippingOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1653,6 +1725,14 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.shipping.v1.ShippingService",
 	HandlerType: (*ShippingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetContractDispatchProgress",
+			Handler:    _ShippingService_GetContractDispatchProgress_Handler,
+		},
+		{
+			MethodName: "CorrectPortMetadata",
+			Handler:    _ShippingService_CorrectPortMetadata_Handler,
+		},
 		{
 			MethodName: "SaveManualShippingOrder",
 			Handler:    _ShippingService_SaveManualShippingOrder_Handler,

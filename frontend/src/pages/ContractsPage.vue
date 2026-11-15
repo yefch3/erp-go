@@ -216,13 +216,14 @@
           <el-tab-pane label="合同资料" name="terms"/>
           <el-tab-pane :label="`合同文件 (${files.length})`" name="files"/>
           <el-tab-pane label="交付安排" name="shipping"/>
-          <el-tab-pane label="收款进度" name="receipts"/>
+          <el-tab-pane :label="auth.can('export:receipt:read')?'收款进度':'结清状态'" name="receipts"/>
           <el-tab-pane label="审批与记录" name="records"/>
         </el-tabs>
         <el-table v-if="detailTab==='records' && workflowRecords.length && detail.contract.entrySource!=='EXISTING_CONTRACT'" :data="workflowRecords" size="small" max-height="280"><el-table-column prop="label" label="操作" width="140"/><el-table-column prop="reason" label="原因／核对说明" min-width="200"/><el-table-column prop="actor" label="操作人" width="110"/><el-table-column prop="at" label="时间" width="200"/></el-table>
         <ContractHandoffPlan v-if="detailTab==='shipping' && !showDeliveryProgress && detail.contract.entrySource==='STANDARD'" :contract-id="detail.contract.id" :version-id="detail.version.id" :items="detail.items" :can-edit="canWrite && isMine && !detail.contract.conditionConfirmedAt && ['DRAFT','REJECTED','PENDING_SIGN','EXECUTING'].includes(detail.contract.status)"/>
         <el-alert v-if="detailTab==='shipping' && !showDeliveryProgress" title="此处记录客户要求的交货批次和备注。财务放行后，由物流模块安排实际发运与船期；船期可以提前安排，交货必须质检合格。" type="info" :closable="false" show-icon/>
         <el-alert v-if="detailTab==='shipping' && showDeliveryProgress" title="此处仅查看交付进度。实际发运、船期及运输状态由物流模块维护。" type="info" :closable="false" show-icon/>
+        <el-alert v-if="detailTab==='shipping'&&showDeliveryProgress&&!detail.shipmentProgressAvailable" title="发货统计暂不可用，请刷新重试；暂不展示可能不完整的数量" type="warning" :closable="false"/>
         <el-alert v-if="detailTab==='shipping'&&showDeliveryProgress&&vesselsLoadFailed" title="物流进度暂时无法加载，请刷新合同后重试" type="warning" :closable="false"/>
         <el-empty v-if="detailTab==='shipping'&&showDeliveryProgress&&!vesselsLoadFailed&&!vessels.length&&!formalSchedules.length&&!detail.shipments?.length" description="暂无实际发运或船期进度，等待物流安排"/>
         <section v-if="showDeliveryProgress && formalSchedules.length" v-show="showDetailTab('shipping')" class="detail-section">
@@ -238,7 +239,8 @@
             <el-table-column label="本批状态" width="100" fixed="right"><template #default="{row}">{{shippingStatusLabel(row,t)}}</template></el-table-column>
           </el-table></div>
         </section>
-        <el-empty v-if="detailTab==='receipts'&&!receiptProgress" description="暂无收款进度或当前账号无查看权限"/>
+        <section v-if="detailTab==='receipts'&&!auth.can('export:receipt:read')" class="detail-section"><div class="detail-section-summary"><span class="section-summary-title">收款结清状态</span></div><div class="detail-section-body"><el-tag :type="detail.receiptSettlementStatus==='SETTLED'?'success':'info'">{{detail.receiptSettlementStatus==='SETTLED'?'全部结清':detail.receiptSettlementStatus==='PENDING'?'尚未结清':'状态暂不可用'}}</el-tag><p class="sub">由财务确认最终结清结果，此处仅展示状态。</p></div></section>
+        <el-empty v-if="detailTab==='receipts'&&auth.can('export:receipt:read')&&!receiptProgress" description="暂无收款进度"/>
         <section v-show="showDetailTab('terms')" class="basic-info-panel">
           <div class="basic-info-heading">
             <span class="basic-info-title">合同基本信息</span>
@@ -444,11 +446,11 @@
         <!-- What has physically left the warehouse. Kept beside the contract
              rather than inside it: an approved version is frozen because it
              records what was agreed, and shipping keeps moving afterwards. -->
-        <template v-if="showDeliveryProgress && detail.shipments?.length">
+        <template v-if="showDeliveryProgress && detail.shipmentProgressAvailable && detail.shipments?.length">
           <section v-show="showDetailTab('shipping')" class="detail-section">
             <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.shipping') }}</span>
-              <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 已发货数量按出运记录统计；船期进度单独展示</span>
+              <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 已发货数量核对实际出运与正式船期记录，提前安排船期不计为发货</span>
             </div>
             <div class="detail-section-body">
           <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
@@ -963,6 +965,8 @@ interface Shipment {
   remainingQty: string
 }
 interface Detail {
+ receiptSettlementStatus?:string
+ shipmentProgressAvailable?:boolean
  acceptedOfferJson?:string
   contract: Contract
   version: Version

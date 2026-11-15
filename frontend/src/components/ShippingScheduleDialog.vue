@@ -146,7 +146,7 @@ watch(()=>props.modelValue,async visible=>{
 
 function portLabel(port:PortOption){return locale.value==='zh'?(port.nameZh||port.nameEn):(port.nameEn||port.nameZh)}
 function applyPort(kind:'loading'|'discharge',port:PortOption|undefined){
-  if(!port)return
+  if(!port){if(kind==='loading')Object.assign(form,{portOfLoading:'',loadingPortCode:'',loadingPortTimezone:''});else Object.assign(form,{portOfDischarge:'',dischargePortCode:'',dischargePortTimezone:''});return}
   if(kind==='loading')Object.assign(form,{portOfLoading:portLabel(port),loadingPortCode:port.unlocode,loadingPortTimezone:port.timezone})
   else Object.assign(form,{portOfDischarge:portLabel(port),dischargePortCode:port.unlocode,dischargePortTimezone:port.timezone})
 }

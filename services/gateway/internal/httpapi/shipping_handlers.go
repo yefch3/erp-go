@@ -795,3 +795,38 @@ func (s *Server) invalidateShippingDocument(w http.ResponseWriter, r *http.Reque
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) correctShippingPortMetadata(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.CorrectPortMetadataRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	current, err := s.Shipping.GetSchedule(r.Context(), &shippingv1.GetScheduleRequest{Id: req.Id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	port, err := s.resolveActivePort(r, req.PortId)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	name := current.GetSchedule().GetPortOfLoading()
+	if req.Terminal == "DESTINATION" {
+		name = current.GetSchedule().GetPortOfDischarge()
+	}
+	if !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.NameZh)) && !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.NameEn)) && !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.Unlocode)) {
+		s.writeError(w, http.StatusBadRequest, "SHIPPING_PORT_NAME_MISMATCH", "所选主数据不是原港口，请按当前港口名称选择，不能更换实际港口")
+		return
+	}
+	req.PortName = name
+	req.PortCode = port.Unlocode
+	req.Timezone = port.Timezone
+	out, err := s.Shipping.CorrectPortMetadata(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, out)
+}

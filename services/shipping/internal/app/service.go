@@ -231,7 +231,6 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 			in.CarrierID, in.CarrierForwarder = handoff.ActualCarrierID, handoff.ActualCarrierName
 		}
 		in.FreightCurrency, in.FreightAmount = handoff.FinalCurrency, numericText(handoff.FinalFreightAmount)
-		in.PortOfLoading, in.PortOfDischarge = handoff.PortOfLoading, handoff.PortOfDischarge
 		if in.ETD == "" && handoff.EstimatedDeparture.Valid {
 			in.ETD = handoff.EstimatedDeparture.Time.Format("2006-01-02")
 		}

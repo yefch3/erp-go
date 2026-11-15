@@ -468,6 +468,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}", s.getShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/schedules", s.createShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}", s.updateShippingSchedule)
+		r.With(s.perm("shipping:route:write")).Post("/api/shipping/schedules/{id}/port-metadata", s.correctShippingPortMetadata)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/reminder-rules", s.getShippingArrivalReminderRules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/operational-alerts", s.listScheduleOperationalAlerts)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}/reminder-rules", s.updateShippingArrivalReminderRules)
