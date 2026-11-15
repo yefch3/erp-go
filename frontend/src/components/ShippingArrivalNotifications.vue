@@ -74,7 +74,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { del, get, post, quietErrors } from '../api'
 import { onLive } from '../live'
-import type { ShippingArrivalReminder } from '../shipping'
+import { shippingBusinessLabel, type ShippingArrivalReminder } from '../shipping'
 import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
 
 const router = useRouter()
@@ -172,6 +172,10 @@ function showAutomaticPopups(items: ShippingArrivalReminder[]) {
 }
 
 function reminderTitle(item: ShippingArrivalReminder) {
+  return `${shippingBusinessLabel(item,t)} · ${reminderTimingTitle(item)}`
+}
+
+function reminderTimingTitle(item: ShippingArrivalReminder) {
   const title = item.title?.trim()
   let match = title?.match(/^船期预计\s*(\d+)\s*天后(到港|开船)$/)
   if (match) return t(match[2] === '开船' ? 'shippingReminders.departureInDays' : 'shippingReminders.arrivalInDays', { days: match[1] })

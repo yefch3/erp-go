@@ -594,6 +594,7 @@ basicsSaved: "基本资料已保存",
     required: '部门编码和名称必填', created: '部门已创建', updated: '部门已更新',
   },
   shipping: {
+    businessReference: '外销合同 / 运输批次', transportBatchLabel: '第 {batch} 批', unlinkedContract: '未关联合同', unlinkedBatch: '批次未关联',
     optionalNote: '备注（选填）',
     logisticsContractNo: '物流合同号',
     systemGenerated: '系统生成',

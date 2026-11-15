@@ -115,6 +115,7 @@ message Schedule {
   string customs_declaration_date = 42;
   string freight_currency = 43;
   string freight_amount = 44;
+  int32 transport_batch_no = 45;
 }
 
 message RouteNode {
@@ -168,6 +169,9 @@ message ArrivalReminder {
   string read_at = 11;
   int32 attempt_count = 12;
   string last_error = 13;
+  string contract_no = 14;
+  int32 transport_batch_no = 15;
+  string schedule_no = 16;
 }
 
 message ScheduleInput {
@@ -496,6 +500,7 @@ message OperationalAlert {
   string resolved_by_name = 15;
   string created_at = 16;
   int64 recipient_employee_id = 17;
+  int32 transport_batch_no = 18;
 }
 message ListOperationalAlertsRequest { bool open_only = 1; }
 message ListScheduleOperationalAlertsRequest { int64 schedule_id = 1; }
@@ -523,6 +528,7 @@ message BlReminder {
   string detail_url = 12;
   string created_at = 13;
   bool unread = 14;
+  int32 transport_batch_no = 15;
 }
 
 message ListBlRemindersRequest {

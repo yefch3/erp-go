@@ -601,6 +601,7 @@ basicsSaved: "Datos básicos guardados",
     required: 'El código y el nombre son obligatorios', created: 'Departamento creado', updated: 'Departamento actualizado',
   },
   shipping: {
+    businessReference: 'Contrato de exportación / lote', transportBatchLabel: 'Lote {batch}', unlinkedContract: 'Sin contrato vinculado', unlinkedBatch: 'Lote sin vincular',
     optionalNote: 'Notas (opcional)',
     logisticsContractNo: 'Número del contrato logístico',
     systemGenerated: 'Generado por el sistema',
