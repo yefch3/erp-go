@@ -51,12 +51,49 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	svc := New(pool, Deps{Files: qualityFiles{}})
 	buyer := Operator{ID: 77, Name: "Buyer"}
 	qc := Operator{ID: 88, Name: "QC"}
-	task, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Location: "Factory 9"}, buyer)
+	const purchaseRemark = "工厂 A：检查锌层与包装\n按合同 CT-D5 分开标识；<b>原文</b>"
+	const inspectionRemark = "申请质检：请联系现场负责人"
+	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET remark=$3 WHERE tenant_id=$1 AND id=$2`, tenant, po, purchaseRemark); err != nil {
+		t.Fatal(err)
+	}
+	task, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po, Location: "Factory 9", Remark: inspectionRemark}, buyer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if task.Status != "WAITING" || task.BatchNo != 1 || len(task.Lines) != 1 || task.Lines[0].Spec != "Q235 / 2mm" || task.Lines[0].RequestedQty != "10.0000" {
 		t.Fatalf("task=%#v", task)
+	}
+	if task.PurchaseOrderRemark != purchaseRemark || task.Remark != inspectionRemark {
+		t.Fatalf("purchase and inspection remarks must be separate: %+v", task)
+	}
+	// Existing tasks read the current order remark; no reapplication/backfill.
+	const updatedRemark = "工厂 B：更新包装检查要求\n不可混装"
+	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET remark=$3 WHERE tenant_id=$1 AND id=$2`, tenant, po, updatedRemark); err != nil {
+		t.Fatal(err)
+	}
+	task, err = svc.GetQualityTask(ctx, tenant, task.ID)
+	if err != nil || task.PurchaseOrderRemark != updatedRemark || task.Remark != inspectionRemark {
+		t.Fatalf("existing task failed to show updated PO remark: %+v %v", task, err)
+	}
+	if _, err = svc.GetQualityTask(ctx, tenant+1, task.ID); code(err) != "QUALITY_TASK_NOT_FOUND" {
+		t.Fatalf("other tenant can read remarks: %v", err)
+	}
+	scoped := New(pool, Deps{Scopes: &listAccess{}})
+	if err = scoped.AuthorizeQualityTask(ctx, tenant, task.ID, Operator{ID: 999}); code(err) != "QUALITY_TASK_NOT_FOUND" {
+		t.Fatalf("out-of-scope reader can reach order remark: %v", err)
+	}
+	if err = scoped.AuthorizeQualityTask(ctx, tenant, task.ID, buyer); err != nil {
+		t.Fatalf("authorized buyer lost task access: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET remark='' WHERE tenant_id=$1 AND id=$2`, tenant, po); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := svc.GetQualityTask(ctx, tenant, task.ID)
+	if err != nil || empty.PurchaseOrderRemark != "" || empty.Remark != inspectionRemark {
+		t.Fatalf("empty PO remark must not use the inspection remark as fallback: %+v %v", empty, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET remark=$3 WHERE tenant_id=$1 AND id=$2`, tenant, po, updatedRemark); err != nil {
+		t.Fatal(err)
 	}
 	duplicate, err := svc.ApplyQualityInspection(ctx, tenant, ApplyQualityInput{POID: po}, buyer)
 	if err != nil || duplicate.ID != task.ID {
@@ -96,6 +133,9 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	}
 	if task.Status != "COMPLETED" || len(task.Rounds) != 2 || task.Lines[0].ApprovedReleaseQty != "10.0000" {
 		t.Fatalf("completed=%#v", task)
+	}
+	if task.PurchaseOrderRemark != updatedRemark || task.Remark != inspectionRemark {
+		t.Fatalf("completing inspection changed source remarks: %+v", task)
 	}
 	if _, err = svc.RegisterQualityFile(ctx, tenant, task.ID, RegisterQualityFileInput{Category: "REPORT", Key: key + "-2", FileName: "late.pdf"}, qc); code(err) != "QUALITY_COMPLETED_IMMUTABLE" {
 		t.Fatalf("expected immutable, got %v", err)

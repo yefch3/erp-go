@@ -3,6 +3,7 @@
     <el-dialog v-model="opened" :title="`工厂交货 · ${selected?.poNo||''}`" width="min(1080px,94vw)" top="5vh" class="delivery-dialog" append-to-body>
       <template v-if="selected">
         <el-descriptions :column="2"><el-descriptions-item label="供应商">{{selected.supplierName}}</el-descriptions-item><el-descriptions-item label="交接地点">{{deliveryDestination(selected)}}</el-descriptions-item></el-descriptions>
+        <PurchaseOrderRemark :remark="selected.remark"/>
         <PurchaseQualityPanel v-if="opened" :order-id="selected.id" :allow-handling="false" @release-change="passed=$event"/>
         <el-alert v-if="!passed" title="整单尚未质检合格，目前只能查看，不能登记交货。" type="warning" :closable="false"/>
         <el-table :data="items" size="small">
@@ -34,12 +35,13 @@ import {useAuthStore} from '../stores/auth'
 import {hasPassedDeliveryInspection,type DeliveryQualityTask} from '../lib/deliveryQuality'
 import {deliveryDestination} from '../lib/purchaseDelivery'
 import PurchaseQualityPanel from './PurchaseQualityPanel.vue'
+import PurchaseOrderRemark from './PurchaseOrderRemark.vue'
 import FilePreviewDialog from './FilePreviewDialog.vue'
 const props=defineProps<{modelValue:boolean;orderId:string;readOnly?:boolean}>()
 const emit=defineEmits<{(event:'update:modelValue',value:boolean):void;(event:'saved'):void}>()
 const opened=computed({get:()=>props.modelValue,set:value=>emit('update:modelValue',value)})
 const auth=useAuthStore()
-type Order={id:string;poNo:string;supplierName:string;expectedDate:string;status:string;fulfillmentMode:string;businessType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
+type Order={id:string;poNo:string;supplierName:string;remark?:string;expectedDate:string;status:string;fulfillmentMode:string;businessType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
 type Item={id:string;productName:string;spec:string;qty:string;receivedQty:string;uomCode:string}
 type Proof={id:string;fileName:string}
 type Receipt={id:string;receiptNo:string;actualDeliveryDate:string;receivedAt:string;totalQty:string;operatorName:string;remark:string;proofFiles:Proof[]}

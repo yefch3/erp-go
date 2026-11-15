@@ -17,7 +17,9 @@ func qualityTime(v *time.Time) string {
 	return v.Format(time.RFC3339)
 }
 func qualityTaskProto(q app.QualityTask) *prv1.QualityInspectionTask {
+	// Do not fold this into Remark: that field belongs to the inspection request.
 	out := &prv1.QualityInspectionTask{Id: q.ID, Deletable: q.Deletable, PoId: q.POID, TaskNo: q.TaskNo, PoNo: q.PONo, SupplierName: q.SupplierName, BatchNo: q.BatchNo, Status: q.Status, ExpectedDate: q.ExpectedDate, InspectionLocation: q.Location, ContactName: q.ContactName, ContactPhone: q.ContactPhone, Remark: q.Remark, RequestedByName: q.RequestedByName, RequestedAt: q.RequestedAt.Format(time.RFC3339), InspectorName: q.InspectorName, StartedAt: qualityTime(q.StartedAt), CompletedAt: qualityTime(q.CompletedAt), ProcurementHandlingStatus: q.ProcurementHandlingStatus, ProcurementHandlingAction: q.ProcurementHandlingAction, ProcurementHandlingNote: q.ProcurementHandlingNote, ProcurementHandledByName: q.ProcurementHandledByName, ProcurementHandledAt: qualityTime(q.ProcurementHandledAt)}
+	out.PurchaseOrderRemark = q.PurchaseOrderRemark
 	for _, l := range q.Lines {
 		out.Lines = append(out.Lines, &prv1.QualityInspectionTaskLine{Id: l.ID, PoItemId: l.POItemID, ProductName: l.ProductName, Spec: l.Spec, UomCode: l.UOM, OrderedQty: l.OrderedQty, RequestedQty: l.RequestedQty, QualifiedQty: l.QualifiedQty, UnresolvedQty: l.UnresolvedQty, FinalResult: l.FinalResult, IssueDescription: l.IssueDescription, HandlingSuggestion: l.HandlingSuggestion, ApprovedReleaseQty: l.ApprovedReleaseQty, ReleaseDecidedByName: l.ReleaseDecidedByName, ReleaseDecidedAt: qualityTime(l.ReleaseDecidedAt)})
 	}

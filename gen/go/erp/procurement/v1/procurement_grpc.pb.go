@@ -3103,6 +3103,7 @@ const (
 	PurchaseOrderService_CancelOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
 	PurchaseOrderService_DownloadReceiptProof_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DownloadReceiptProof"
+	PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListShippingPurchaseRemarks"
 	PurchaseOrderService_GetOrderDocuments_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
 	PurchaseOrderService_BeginOrderSend_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
 	PurchaseOrderService_CompleteOrderSend_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
@@ -3233,6 +3234,9 @@ type PurchaseOrderServiceClient interface {
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
 	DownloadReceiptProof(ctx context.Context, in *DownloadReceiptProofRequest, opts ...grpc.CallOption) (*DownloadReceiptProofResponse, error)
+	// Narrow read-only projection. Gateway resolves the contract from an authorized
+	// shipping handoff, never from caller-supplied HTTP contract parameters.
+	ListShippingPurchaseRemarks(ctx context.Context, in *ListShippingPurchaseRemarksRequest, opts ...grpc.CallOption) (*ListShippingPurchaseRemarksResponse, error)
 	GetOrderDocuments(ctx context.Context, in *GetOrderDocumentsRequest, opts ...grpc.CallOption) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(ctx context.Context, in *BeginOrderSendRequest, opts ...grpc.CallOption) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(ctx context.Context, in *CompleteOrderSendRequest, opts ...grpc.CallOption) (*CompleteOrderSendResponse, error)
@@ -3620,6 +3624,16 @@ func (c *purchaseOrderServiceClient) DownloadReceiptProof(ctx context.Context, i
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DownloadReceiptProofResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_DownloadReceiptProof_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListShippingPurchaseRemarks(ctx context.Context, in *ListShippingPurchaseRemarksRequest, opts ...grpc.CallOption) (*ListShippingPurchaseRemarksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShippingPurchaseRemarksResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4483,6 +4497,9 @@ type PurchaseOrderServiceServer interface {
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
 	DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error)
+	// Narrow read-only projection. Gateway resolves the contract from an authorized
+	// shipping handoff, never from caller-supplied HTTP contract parameters.
+	ListShippingPurchaseRemarks(context.Context, *ListShippingPurchaseRemarksRequest) (*ListShippingPurchaseRemarksResponse, error)
 	GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(context.Context, *BeginOrderSendRequest) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(context.Context, *CompleteOrderSendRequest) (*CompleteOrderSendResponse, error)
@@ -4707,6 +4724,9 @@ func (UnimplementedPurchaseOrderServiceServer) ReceiveOrder(context.Context, *Re
 }
 func (UnimplementedPurchaseOrderServiceServer) DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DownloadReceiptProof not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListShippingPurchaseRemarks(context.Context, *ListShippingPurchaseRemarksRequest) (*ListShippingPurchaseRemarksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShippingPurchaseRemarks not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrderDocuments not implemented")
@@ -5400,6 +5420,24 @@ func _PurchaseOrderService_DownloadReceiptProof_Handler(srv interface{}, ctx con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).DownloadReceiptProof(ctx, req.(*DownloadReceiptProofRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListShippingPurchaseRemarks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShippingPurchaseRemarksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListShippingPurchaseRemarks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListShippingPurchaseRemarks(ctx, req.(*ListShippingPurchaseRemarksRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6964,6 +7002,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DownloadReceiptProof",
 			Handler:    _PurchaseOrderService_DownloadReceiptProof_Handler,
+		},
+		{
+			MethodName: "ListShippingPurchaseRemarks",
+			Handler:    _PurchaseOrderService_ListShippingPurchaseRemarks_Handler,
 		},
 		{
 			MethodName: "GetOrderDocuments",

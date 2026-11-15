@@ -121,6 +121,7 @@ export default {
     exportLog: '导出记录',
     todo: '（待开发）',
   },
+  purchaseOrderContext: { remark: '采购单备注', remarkHint: '来自当前采购单，由采购填写，仅供查看。', emptyRemark: '未填写采购单备注', supplier: '工厂 / 供应商', shippingTitle: '本合同采购工厂及备注', shippingHint: '仅展示本合同已下单的采购工厂与备注，不开放采购价格或采购单详情。', loadFailed: '采购工厂及备注加载失败，请重试', noOrders: '暂无本合同已下单的采购记录' },
   quality: {
     pendingFiles: "待上传文件",
     pendingHint: "以下文件尚未保存，点击“上传资料”后才会进入已上传资料。",

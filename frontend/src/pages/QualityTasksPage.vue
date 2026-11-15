@@ -98,8 +98,9 @@
           <div><span>{{ t('quality.location') }}</span><b>{{ task.inspectionLocation || '—' }}</b></div>
           <div><span>{{ t('quality.contactName') }}</span><b>{{ task.contactName || '—' }}<small v-if="task.contactPhone">{{ task.contactPhone }}</small></b></div>
           <div><span>{{ t('quality.requestedBy') }}</span><b>{{ task.requestedByName || '—' }}</b></div>
-          <div v-if="task.remark"><span>{{ t('quality.remark') }}</span><b>{{ task.remark }}</b></div>
+          <div v-if="task.remark" class="inspection-request-remark"><span>{{ t('quality.requirements') }}</span><b>{{ task.remark }}</b></div>
         </section>
+        <PurchaseOrderRemark :remark="task.purchaseOrderRemark" />
         <el-alert v-if="!canWrite" type="info" :closable="false" show-icon>{{ t('quality.readOnlyHint') }}</el-alert>
 
         <section class="panel product-summary">
@@ -199,10 +200,11 @@ import { qualityFileRound } from '../lib/qualityFiles'
 import { qualityStatusKey } from '../lib/qualityStatus'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
+import PurchaseOrderRemark from '../components/PurchaseOrderRemark.vue'
 import { relayFailureReason, saveViaRelay, uploadViaRelay } from '../lib/storageRelay'
 type QLine={id:string;productName:string;spec:string;uomCode:string;requestedQty:string;qualifiedQty:string;unresolvedQty:string;finalResult:string;approvedReleaseQty:string}
 type RoundLine={taskLineId:string;result:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string}
-type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:any[]}
+type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;purchaseOrderRemark?:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:any[]}
 const { t }=useI18n(); const route=useRoute(); const auth=useAuthStore(); const canWrite=auth.can('quality:task:write'); const canUpload=auth.can('quality:file:upload')
 type SourceOrder={id:string;poNo:string;supplierName:string;existingTaskId:string;lines?:{productName:string;spec:string;uomCode:string;qty:string}[]}
 const canCreate=auth.can('quality:task:read') && auth.can('quality:task:write')
@@ -288,6 +290,8 @@ watch(()=>route.query.task,()=>{void openRequestedTask()})
 </script>
 
 <style scoped>
+.inspection-request-remark{flex-basis:100%;min-width:0!important}
+.inspection-request-remark b{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
 .create-quality-form { max-height: 68vh; overflow: auto; padding-right: 8px; }
 .create-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-top: 18px; }
 .create-fields .full-width { grid-column: 1 / -1; }

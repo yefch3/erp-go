@@ -5,6 +5,7 @@
     <el-alert v-if="failed" title="工厂交货情况加载失败，请重试" type="error" :closable="false"/>
     <el-table v-else :data="items" size="small" empty-text="暂无关联的直发采购单">
       <el-table-column prop="poNo" label="采购单" min-width="155"/>
+      <el-table-column prop="supplierName" :label="t('purchaseOrderContext.supplier')" min-width="155"/>
       <el-table-column prop="productName" label="产品" min-width="190" show-overflow-tooltip/>
       <el-table-column label="采购数量" width="115" align="right"><template #default="{row}">{{row.qty}} {{row.uomCode}}</template></el-table-column>
       <el-table-column label="工厂已交" width="115" align="right"><template #default="{row}">{{row.deliveredQty}} {{row.uomCode}}</template></el-table-column>
@@ -16,10 +17,12 @@
 </template>
 <script setup lang="ts">
 import {ref,watch,onUnmounted} from 'vue'
+import {useI18n} from 'vue-i18n'
 import {get,quietErrors} from '../api'
 import PurchaseDeliveryDialog from './PurchaseDeliveryDialog.vue'
 const props=defineProps<{handoffId:string}>()
-type Item={orderId:string;poNo:string;productName:string;qty:string;deliveredQty:string;uomCode:string}
+const {t}=useI18n()
+type Item={orderId:string;poNo:string;supplierName:string;purchaseOrderRemark?:string;productName:string;qty:string;deliveredQty:string;uomCode:string}
 const items=ref<Item[]>([]),loading=ref(false),failed=ref(false),opened=ref(false),selectedId=ref('')
 let generation=0,alive=true
 async function load(){const request=++generation;loading.value=true;failed.value=false;try{const d=await get<{items:Item[]}>(`/shipping/contract-handoffs/${props.handoffId}/purchase-deliveries`,{},quietErrors);if(alive&&request===generation)items.value=d.items??[]}catch{if(alive&&request===generation){items.value=[];failed.value=true}}finally{if(alive&&request===generation)loading.value=false}}

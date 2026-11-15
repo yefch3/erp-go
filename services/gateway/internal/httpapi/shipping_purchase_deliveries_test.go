@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,12 +18,17 @@ import (
 
 type handoffDeliveryOrders struct {
 	prv1.PurchaseOrderServiceClient
-	deny bool
+	deny, multiple bool
 }
+
+const handoffOrderRemark = "工厂 A 按 CT-OWN 包装\n不得混装 <b>原文</b>"
 
 func (s handoffDeliveryOrders) ListOrders(_ context.Context, r *prv1.ListOrdersRequest, _ ...grpc.CallOption) (*prv1.ListOrdersResponse, error) {
 	if r.GetPage().GetPage() == 1 {
 		return &prv1.ListOrdersResponse{Meta: &commonv1.PageMeta{Total: 101}}, nil
+	}
+	if s.multiple {
+		return &prv1.ListOrdersResponse{Meta: &commonv1.PageMeta{Total: 101}, Orders: []*prv1.PurchaseOrder{{Id: 1, Status: "ORDERED", SourceBusinessId: 7}, {Id: 5, Status: "ORDERED", SourceBusinessId: 7}}}, nil
 	}
 	return &prv1.ListOrdersResponse{Meta: &commonv1.PageMeta{Total: 101}, Orders: []*prv1.PurchaseOrder{{Id: 1, Status: "PARTIALLY_RECEIVED", FulfillmentMode: "DIRECT_SHIP", SourceBusinessId: 7}, {Id: 2, Status: "ORDERED", SourceBusinessId: 8}, {Id: 3, Status: "DRAFT", SourceBusinessId: 7}, {Id: 4, Status: "RECEIVED", FulfillmentMode: "WAREHOUSE", SourceBusinessId: 7}}}, nil
 }
@@ -30,10 +36,38 @@ func (s handoffDeliveryOrders) GetOrder(_ context.Context, r *prv1.GetOrderReque
 	if s.deny {
 		return nil, status.Error(codes.PermissionDenied, "out of scope")
 	}
+	if s.multiple && r.Id == 5 {
+		return &prv1.GetOrderResponse{Order: &prv1.PurchaseOrder{Id: 5, PoNo: "PO-TWO", SupplierName: "Factory B", Remark: "Factory B packing instructions"}, Items: []*prv1.PurchaseOrderItem{{ContractNo: "CT-OWN", ProductName: "Steel", Spec: "3mm", UomCode: "MT", Qty: "2"}}}, nil
+	}
 	if r.Id != 1 {
 		panic("unrelated order fetched")
 	}
-	return &prv1.GetOrderResponse{Order: &prv1.PurchaseOrder{Id: 1, PoNo: "PO-ONE", TotalAmount: "PRIVATE-COST"}, Items: []*prv1.PurchaseOrderItem{{ContractNo: "CT-OWN", ProductName: "Steel", Spec: "3mm", UomCode: "MT", Qty: "10", ReceivedQty: "4", UnitPrice: "PRIVATE-PRICE"}, {ContractNo: "CT-OTHER", ProductName: "Steel", Spec: "3mm", UomCode: "MT", Qty: "99"}, {ContractNo: "CT-OWN", ProductName: "Other", Spec: "3mm", UomCode: "MT", Qty: "88"}}}, nil
+	return &prv1.GetOrderResponse{Order: &prv1.PurchaseOrder{Id: 1, PoNo: "PO-ONE", SupplierName: "Factory A", Remark: handoffOrderRemark, TotalAmount: "PRIVATE-COST"}, Items: []*prv1.PurchaseOrderItem{{ContractNo: "CT-OWN", ProductName: "Steel", Spec: "3mm", UomCode: "MT", Qty: "10", ReceivedQty: "4", UnitPrice: "PRIVATE-PRICE"}, {ContractNo: "CT-OTHER", ProductName: "Steel", Spec: "3mm", UomCode: "MT", Qty: "99"}, {ContractNo: "CT-OWN", ProductName: "Other", Spec: "3mm", UomCode: "MT", Qty: "88"}}}, nil
+}
+
+func TestHandoffPurchaseRemarksKeepFactoriesSeparateForSameProduct(t *testing.T) {
+	s := &Server{Orders: handoffDeliveryOrders{multiple: true}, Shipping: handoffDeliveryShipping{}}
+	r := httptest.NewRequest("GET", "/api/shipping/contract-handoffs/1/purchase-deliveries", nil)
+	rc := chi.NewRouteContext()
+	rc.URLParams.Add("id", "1")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rc))
+	w := httptest.NewRecorder()
+	s.getHandoffPurchaseDeliveries(w, r)
+	var payload struct {
+		Data struct {
+			Items []handoffPurchaseDelivery `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || len(payload.Data.Items) != 2 {
+		t.Fatalf("wrong response: %d %s", w.Code, w.Body.String())
+	}
+	a, b := payload.Data.Items[0], payload.Data.Items[1]
+	if a.ProductName != b.ProductName || a.PONo != "PO-ONE" || b.PONo != "PO-TWO" || a.SupplierName != "Factory A" || b.SupplierName != "Factory B" || a.PurchaseOrderRemark != handoffOrderRemark || b.PurchaseOrderRemark != "Factory B packing instructions" {
+		t.Fatalf("same-product order remarks crossed factories: %+v", payload.Data.Items)
+	}
 }
 
 type handoffDeliveryShipping struct {
@@ -67,6 +101,21 @@ func TestHandoffPurchaseDeliveriesScopeAndProjection(t *testing.T) {
 			}
 			if tc.want == 200 && (!strings.Contains(body, `"deliveredQty":"4"`) || strings.Contains(body, "PRIVATE") || strings.Contains(body, `"99"`) || strings.Contains(body, `"88"`)) {
 				t.Fatalf("wrong projection %s", body)
+			}
+			if tc.want == 200 {
+				var payload struct {
+					Data struct {
+						Items []handoffPurchaseDelivery `json:"items"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload.Data.Items) != 1 || payload.Data.Items[0].PurchaseOrderRemark != handoffOrderRemark || payload.Data.Items[0].SupplierName != "Factory A" || payload.Data.Items[0].PONo != "PO-ONE" {
+					t.Fatalf("order remark/factory provenance lost: %+v", payload)
+				}
+			} else if strings.Contains(body, "Factory A") || strings.Contains(body, "CT-OWN") {
+				t.Fatalf("scope denial leaked order remarks: %s", body)
 			}
 		})
 	}

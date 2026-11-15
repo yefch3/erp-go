@@ -40,6 +40,7 @@ type QualityFile struct {
 	UploadedAt                                                              time.Time
 }
 type QualityTask struct {
+	PurchaseOrderRemark                                                                                     string
 	Deletable                                                                                               bool
 	ID, POID                                                                                                int64
 	TaskNo, PONo, SupplierName                                                                              string
@@ -235,7 +236,7 @@ func (s *Service) ListQualityTasks(ctx context.Context, tenantID int64, tab, key
 
 func (s *Service) GetQualityTask(ctx context.Context, tenantID, id int64) (QualityTask, error) {
 	var q QualityTask
-	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at,t.procurement_handling_status,t.procurement_handling_action,t.procurement_handling_note,t.procurement_handled_by_name,t.procurement_handled_at FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt, &q.ProcurementHandlingStatus, &q.ProcurementHandlingAction, &q.ProcurementHandlingNote, &q.ProcurementHandledByName, &q.ProcurementHandledAt)
+	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at,t.procurement_handling_status,t.procurement_handling_action,t.procurement_handling_note,t.procurement_handled_by_name,t.procurement_handled_at,o.remark FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt, &q.ProcurementHandlingStatus, &q.ProcurementHandlingAction, &q.ProcurementHandlingNote, &q.ProcurementHandledByName, &q.ProcurementHandledAt, &q.PurchaseOrderRemark)
 	if err == pgx.ErrNoRows {
 		return q, apierr.NotFound("QUALITY_TASK_NOT_FOUND", "质检任务不存在")
 	}
