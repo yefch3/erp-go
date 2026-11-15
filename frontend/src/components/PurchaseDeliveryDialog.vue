@@ -4,6 +4,7 @@
       <template v-if="selected">
         <el-descriptions :column="2"><el-descriptions-item label="供应商">{{selected.supplierName}}</el-descriptions-item><el-descriptions-item label="交接地点">{{deliveryDestination(selected)}}</el-descriptions-item></el-descriptions>
         <PurchaseOrderRemark :remark="selected.remark"/>
+        <el-descriptions v-if="selected.historical" :column="2"><el-descriptions-item :label="t('historicalShipping.contract')">{{selected.exportContractNo || '—'}}</el-descriptions-item><el-descriptions-item :label="t('historicalShipping.port')">{{selected.destinationPort || '—'}}</el-descriptions-item></el-descriptions>
         <PurchaseQualityPanel v-if="opened" :order-id="selected.id" :allow-handling="false" @release-change="passed=$event"/>
         <el-alert v-if="!passed" title="整单尚未质检合格，目前只能查看，不能登记交货。" type="warning" :closable="false"/>
         <el-table :data="items" size="small">
@@ -29,6 +30,7 @@
 </template>
 <script setup lang="ts">
 import {computed,reactive,ref,watch} from 'vue'
+import {useI18n} from 'vue-i18n'
 import {ElMessage} from 'element-plus'
 import {get,post,download,quietErrors} from '../api'
 import {useAuthStore} from '../stores/auth'
@@ -41,7 +43,8 @@ const props=defineProps<{modelValue:boolean;orderId:string;readOnly?:boolean}>()
 const emit=defineEmits<{(event:'update:modelValue',value:boolean):void;(event:'saved'):void}>()
 const opened=computed({get:()=>props.modelValue,set:value=>emit('update:modelValue',value)})
 const auth=useAuthStore()
-type Order={id:string;poNo:string;supplierName:string;remark?:string;expectedDate:string;status:string;fulfillmentMode:string;businessType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
+const {t}=useI18n()
+type Order={historical?:boolean;exportContractNo?:string;destinationPort?:string;id:string;poNo:string;supplierName:string;remark?:string;expectedDate:string;status:string;fulfillmentMode:string;businessType:string;deliveryPortCode:string;deliveryPortName:string;deliveryAddress:string;closedAt:string;sourceBusinessId:string;contractVerifiedAt:string}
 type Item={id:string;productName:string;spec:string;qty:string;receivedQty:string;uomCode:string}
 type Proof={id:string;fileName:string}
 type Receipt={id:string;receiptNo:string;actualDeliveryDate:string;receivedAt:string;totalQty:string;operatorName:string;remark:string;proofFiles:Proof[]}

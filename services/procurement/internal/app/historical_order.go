@@ -22,6 +22,7 @@ type HistoricalOrderLine struct {
 	ProductName, Spec, UOM, Qty, UnitPrice string
 }
 type HistoricalOrderInput struct {
+	ExportContractNo, DestinationPort                                                              string
 	PayableDueDate                                                                                 string
 	ID, SupplierID                                                                                 int64
 	PONo, OriginalDate, Currency, ExpectedDate, ContactName, ContactPhone, Remark, DeliveryAddress string
@@ -29,6 +30,7 @@ type HistoricalOrderInput struct {
 	Lines                                                                                          []HistoricalOrderLine
 }
 type HistoricalOrderMeta struct {
+	ExportContractNo, DestinationPort                               string
 	Historical, PricesComplete                                      bool
 	OriginalDate, ContactName, ContactPhone, RecordedBy, RecordedAt string
 }
@@ -39,7 +41,7 @@ type HistoricalOrderResult struct {
 
 func (s *Service) HistoricalOrderMeta(ctx context.Context, tenantID, id int64) (HistoricalOrderMeta, error) {
 	var m HistoricalOrderMeta
-	err := s.pool.QueryRow(ctx, `SELECT original_date::text,contact_name,contact_phone,prices_complete,recorded_by_name,recorded_at::text FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2`, tenantID, id).Scan(&m.OriginalDate, &m.ContactName, &m.ContactPhone, &m.PricesComplete, &m.RecordedBy, &m.RecordedAt)
+	err := s.pool.QueryRow(ctx, `SELECT original_date::text,contact_name,contact_phone,prices_complete,recorded_by_name,recorded_at::text,export_contract_no,destination_port FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2`, tenantID, id).Scan(&m.OriginalDate, &m.ContactName, &m.ContactPhone, &m.PricesComplete, &m.RecordedBy, &m.RecordedAt, &m.ExportContractNo, &m.DestinationPort)
 	if err == pgx.ErrNoRows {
 		return m, nil
 	}
@@ -52,8 +54,13 @@ func (s *Service) HistoricalOrderMeta(ctx context.Context, tenantID, id int64) (
 // requirements satisfy the existing execution FK without entering the buy queue.
 func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in HistoricalOrderInput, op Operator) (HistoricalOrderResult, error) {
 	var out HistoricalOrderResult
+	var err error
 	if tenantID <= 0 || op.ID <= 0 {
 		return out, apierr.Permission("PO_OPERATOR_REQUIRED", "请重新登录")
+	}
+	in.ExportContractNo, in.DestinationPort, err = normalizeHistoricalShippingContext(in.ExportContractNo, in.DestinationPort)
+	if err != nil {
+		return out, err
 	}
 	if in.ID != 0 {
 		if err := s.AuthorizeOrder(ctx, tenantID, in.ID, op); err != nil {
@@ -61,7 +68,6 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 		}
 	}
 	var supplier Supplier
-	var err error
 	if in.SupplierID < 0 {
 		return out, apierr.Invalid("PO_SUPPLIER_INVALID", "请选择有效供应商，或留空后补")
 	}
@@ -250,7 +256,7 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 				return e
 			}
 		}
-		_, e := tx.Exec(ctx, `INSERT INTO historical_purchase_orders(tenant_id,po_id,original_date,contact_name,contact_phone,prices_complete,recorded_by_id,recorded_by_name) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,po_id) DO UPDATE SET original_date=excluded.original_date,contact_name=excluded.contact_name,contact_phone=excluded.contact_phone,prices_complete=excluded.prices_complete`, tenantID, in.ID, in.OriginalDate, in.ContactName, in.ContactPhone, complete, op.ID, op.Name)
+		_, e := tx.Exec(ctx, `INSERT INTO historical_purchase_orders(tenant_id,po_id,original_date,contact_name,contact_phone,prices_complete,recorded_by_id,recorded_by_name,export_contract_no,destination_port) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(tenant_id,po_id) DO UPDATE SET original_date=excluded.original_date,contact_name=excluded.contact_name,contact_phone=excluded.contact_phone,prices_complete=excluded.prices_complete,export_contract_no=excluded.export_contract_no,destination_port=excluded.destination_port`, tenantID, in.ID, in.OriginalDate, in.ContactName, in.ContactPhone, complete, op.ID, op.Name, in.ExportContractNo, in.DestinationPort)
 		if e != nil {
 			return e
 		}

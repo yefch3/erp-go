@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="modelValue" :title="orderId ? '补齐历史采购单' : '补录历史采购单'" width="min(1100px, 96vw)" :close-on-click-modal="false" @update:model-value="emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" :title="orderId ? '补齐历史采购单' : '补录历史采购单'" width="min(1100px, 96vw)" top="5vh" class="historical-order-dialog" :close-on-click-modal="false" @update:model-value="emit('update:modelValue', $event)">
     <el-alert :closable="false" type="info" title="补录以前已下达、仍需继续执行的采购单。供应商可留空，建单后可在“补齐资料 / 价格”中补填。确认后进入已下单；不会自动登记收货或付款。" />
     <el-form label-position="top" size="small" class="history-form" v-loading="loading">
       <el-form-item label="原采购单号"><el-input v-model="form.poNo" :disabled="!!savedId" maxlength="50" placeholder="留空自动生成" /></el-form-item>
@@ -9,6 +9,8 @@
       <el-form-item label="预计到货日期"><el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       <el-form-item label="采购员"><el-input :model-value="buyerName" disabled /></el-form-item>
       <el-form-item label="总金额"><el-input :model-value="totalAmount" disabled /></el-form-item>
+      <el-form-item :label="t('historicalShipping.optionalContract')" class="history-trade-field"><el-input v-model="form.exportContractNo" maxlength="50" :placeholder="t('historicalShipping.contractPlaceholder')" /></el-form-item>
+      <el-form-item :label="t('historicalShipping.optionalPort')" class="history-trade-field"><el-input v-model="form.destinationPort" maxlength="200" :placeholder="t('historicalShipping.portPlaceholder')" /></el-form-item>
     </el-form>
     <div v-if="!confirmed" class="history-tools">
       <el-button size="small" :disabled="saving || importing" @click="downloadTemplate">下载 Excel 模板</el-button>
@@ -38,6 +40,7 @@
 </template>
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post, download, saveBlob } from '../api'
 import { historicalLineHeaders, parseHistoricalLines } from '../lib/historicalLineImport'
@@ -46,12 +49,13 @@ import ColumnFillRegion from './ColumnFillRegion.vue'
 import { hasId } from '../lib/protoId'
 const excelInput=ref<HTMLInputElement>(),importing=ref(false),importMessage=ref(''),importErrors=ref<string[]>([])
 const auth=useAuthStore(),buyerName=ref(auth.employeeName)
+const { t } = useI18n()
 const products=ref<{id:string;code:string;name:string;baseUomCode:string}[]>([])
 const props=defineProps<{modelValue:boolean;orderId?:string}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 type Line={id:string;productId:string;productName:string;spec:string;uom:string;qty:string;unitPrice:string}
 const blankLine=():Line=>({id:'0',productId:'0',productName:'',spec:'',uom:'',qty:'',unitPrice:''})
-const empty=()=>({supplierId:'',poNo:'',originalDate:'',currency:'CNY',expectedDate:'',payableDueDate:'',remark:'',lines:[blankLine()]})
+const empty=()=>({supplierId:'',poNo:'',originalDate:'',currency:'CNY',expectedDate:'',payableDueDate:'',remark:'',exportContractNo:'',destinationPort:'',lines:[blankLine()]})
 const form=reactive(empty()), suppliers=ref<{id:string;code:string;name:string}[]>([])
 const files=ref<{id:string;fileName:string}[]>([]),pendingFiles=ref<File[]>([]),savedId=ref(''),confirmed=ref(false),loading=ref(false),saving=ref(false)
 const savedSupplierId=ref(''),savedSupplierName=ref('')
@@ -112,6 +116,8 @@ async function save(confirm:boolean){
 }
 </script>
 <style scoped>
+.history-trade-field{grid-column:span 2}
+:global(.historical-order-dialog .el-dialog__body){max-height:calc(90vh - 130px);overflow:auto}
 .history-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 14px;margin-top:14px}.history-tools{display:flex;gap:16px;align-items:center;margin:12px 0;font-size:12px;color:#64748b}.history-file{font-size:13px} :deep(.el-table){font-size:13px}@media(max-width:750px){.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Compact ledger rows: separators belong to rows, not each input. */
 .history-lines :deep(.el-table__cell) { padding: 3px 0; }

@@ -50,3 +50,17 @@ func (s *Server) saveHistoricalOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) updateHistoricalShippingContext(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateHistoricalShippingContextRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	response, err := s.Orders.UpdateHistoricalShippingContext(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}

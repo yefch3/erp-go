@@ -245,15 +245,17 @@ type FailedEvent struct {
 }
 
 type HistoricalPurchaseOrder struct {
-	TenantID       int64
-	PoID           int64
-	OriginalDate   pgtype.Date
-	ContactName    string
-	ContactPhone   string
-	PricesComplete bool
-	RecordedByID   int64
-	RecordedByName string
-	RecordedAt     pgtype.Timestamptz
+	TenantID         int64
+	PoID             int64
+	OriginalDate     pgtype.Date
+	ContactName      string
+	ContactPhone     string
+	PricesComplete   bool
+	RecordedByID     int64
+	RecordedByName   string
+	RecordedAt       pgtype.Timestamptz
+	ExportContractNo string
+	DestinationPort  string
 }
 
 type InquiryAttachment struct {

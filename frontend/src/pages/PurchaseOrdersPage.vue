@@ -3,6 +3,7 @@
     <WorkflowPageHeader :title="t('orders.title')" :description="t('orders.subtitle')"><template #actions><el-button v-if="canWrite" type="primary" @click="historyId='';historyOpen=true">补录历史采购单</el-button></template></WorkflowPageHeader>
 
     <HistoricalPurchaseOrderDialog v-model="historyOpen" :order-id="historyId" @saved="(s:string)=>{status=s;reload()}" />
+    <HistoricalShippingContextDialog v-model="tradeContextOpen" :order="tradeContextOrder" @saved="reload" />
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
@@ -220,7 +221,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailOpen" :title="detail?.poNo" width="820px">
+    <el-dialog v-model="detailOpen" :title="detail?.poNo" :width="detail?.historical ? 'min(1040px,94vw)' : '820px'" :top="detail?.historical ? '5vh' : '15vh'" :class="{'historical-order-detail':detail?.historical}">
       <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
       <div v-if="detail && approvalTaskFor(detail)" class="next-step">
         <span class="next-step-label">{{ t('orders.approvalDecision') }}</span>
@@ -231,7 +232,7 @@
         <span class="next-step-label">{{ t('orders.nextStep') }}</span>
         <el-button size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
       </div>
-      <el-descriptions :column="3" border size="small" class="desc">
+      <el-descriptions :column="detail?.historical ? 2 : 3" :label-width="detail?.historical ? 110 : undefined" border size="small" class="desc">
         <el-descriptions-item :label="t('orders.supplier')">{{ detail?.supplierName || (detail?.historical ? '待补充供应商' : '—') }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.amount')">
           {{ detail?.currency }} {{ detail?.totalAmount }}
@@ -242,6 +243,7 @@
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.payableDue')">{{ detail?.payableDueDate || '—' }}</el-descriptions-item>
+        <template v-if="detail?.historical"><el-descriptions-item :label="t('historicalShipping.contract')">{{ detail.exportContractNo || '—' }}</el-descriptions-item><el-descriptions-item :label="t('historicalShipping.port')">{{ detail.destinationPort || '—' }}</el-descriptions-item></template>
         <template v-if="detail?.historical"><el-descriptions-item label="来源">历史补录</el-descriptions-item><el-descriptions-item label="原下单日期">{{detail.originalDate}}</el-descriptions-item><el-descriptions-item label="录入人 / 时间">{{detail.recordedBy}} / {{formatTime(detail.recordedAt||'')}}</el-descriptions-item></template><el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.confirmations')">
           <template v-if="detail && confirmTag(detail)">{{ confirmTag(detail)!.label }}</template>
@@ -534,12 +536,14 @@ import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
 import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
+import HistoricalShippingContextDialog from '../components/HistoricalShippingContextDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
 interface Order {
+ destinationPort?: string
  historical?:boolean
  originalDate?:string
  contactName?:string
@@ -669,6 +673,7 @@ const orderColumns = useTableColumnOrder('purchase-order-list', orderColumnDefau
 const route = useRoute()
 const router = useRouter()
 const historyOpen=ref(false), historyId=ref('')
+const tradeContextOpen=ref(false), tradeContextOrder=ref<Order|null>(null)
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
 const canCancel = auth.can('procurement:order:cancel')
@@ -935,6 +940,7 @@ function rowMenuActions(row: Order): { key: string; label: string; divided?: boo
   }
   const actions = allActions(row)
  if(row.historical && row.status==='ORDERED' && canWrite && !row.paymentRequestedAt)actions.push({key:'history',label:'补齐资料 / 价格'})
+ if(row.historical && canWrite)actions.push({key:'tradeContext',label:t('historicalShipping.edit')})
   if (['DRAFT', 'REJECTED'].includes(row.status)) {
     const order = ['detail', 'edit', 'submit', 'cancel']
     return actions.sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key))
@@ -963,6 +969,7 @@ function runDetailNext() {
 }
 
 function runOrderAction(row: Order, key: string) {
+ if(key==='tradeContext'){tradeContextOrder.value=row;tradeContextOpen.value=true;return}
  if(key==='history'){historyId.value=row.id;historyOpen.value=true;return}
   if (key === 'detail') {
     void openDetail(row)
@@ -1580,6 +1587,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+:global(.historical-order-detail .el-dialog__body){max-height:calc(90vh - 90px);overflow:auto}
 .confirmation-section h3 { margin:0; }
 .confirmation-section { border:1px solid var(--el-border-color-light); border-radius:8px; padding:14px; margin-bottom:18px; }
 .confirmation-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; margin:10px 0 16px; }
