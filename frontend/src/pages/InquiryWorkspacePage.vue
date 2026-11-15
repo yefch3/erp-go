@@ -68,16 +68,25 @@
    <section v-if="editor" class="quote-editor"><div class="quote-editor-heading"><div><h3>{{ quoteEditorTitle }}</h3><p>{{t(view==='LOGISTICS'?'inquiryWorkspace.quotes.shippingEditorHint':'inquiryWorkspace.quotes.editorHint')}}</p></div><el-tag effect="plain">{{view==='LOGISTICS'?t('inquiryWorkspace.quotes.salesOutputUsd'):t('inquiryWorkspace.quotes.originalQuote')}}</el-tag></div><el-form label-position="top" class="inquiry-fields"><template v-if="view==='PROCUREMENT'"><el-form-item :label="t('inquiryWorkspace.quotes.factorySupplier')"><el-select v-model="editor.body.company" filterable allow-create default-first-option clearable remote :remote-method="procurementCompanySearch" :loading="procurementCompanyLoading" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" @visible-change="showProcurementCompanyOptions"><el-option v-for="option in procurementCompanyOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.quoteCategory')" required><el-select v-model="editor.body.quoteCategory" :placeholder="t('inquiryWorkspace.quotes.selectQuoteCategory')" @change="quoteCategoryChanged"><el-option v-for="category in quoteCategoryOptions" :key="category.value" :value="category.value" :label="category.label"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.currency')"><el-input v-model="editor.body.currency" maxlength="3" :disabled="!!procurementQuoteCurrency(editor.body.quoteCategory)"/></el-form-item><el-form-item :label="t('inquiryWorkspace.loadingPort')"><el-select v-model="editor.body.loadingPort" filterable allow-create default-first-option clearable remote :remote-method="portSearch" :loading="portLoading" :placeholder="t('inquiryWorkspace.quotes.portSelectOrType')" @visible-change="showPortOptions"><el-option v-for="option in portOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.unifiedDelivery')"><el-date-picker v-model="editor.body.delivery" type="date" value-format="YYYY-MM-DD"/></el-form-item></template><template v-else><el-form-item :label="t('inquiryWorkspace.quotes.forwarderName')"><el-autocomplete v-model="editor.body.company" :fetch-suggestions="companySuggestions" :placeholder="t('inquiryWorkspace.quotes.shippingCompanyPlaceholder')" :trigger-on-focus="true" clearable/></el-form-item><el-form-item v-for="f in logisticsPrimaryFields" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.departure')"><el-date-picker v-model="editor.body.departure" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.arrival')"><el-date-picker v-model="editor.body.arrival" value-format="YYYY-MM-DD"/></el-form-item></template></el-form>
     <el-collapse><el-collapse-item :title="t('inquiryWorkspace.quotes.moreInfo')" name="more"><el-form label-position="top" class="inquiry-fields"><template v-if="view==='LOGISTICS'"><el-form-item :label="t('inquiryWorkspace.quotes.route')"><el-input v-model="editor.body.route" :placeholder="t('inquiryWorkspace.quotes.routeHint')"/></el-form-item></template><el-form-item :label="t('inquiryWorkspace.quotes.validUntil')"><el-date-picker v-model="editor.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.paymentTerms')"><el-input v-model="editor.body.paymentTerms"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.attachments')" class="wide"><input type="file" @change="upload($event,true)"/><el-tag v-for="a in editor.body.attachments" :key="a.key" closable @close="editor!.body.attachments=editor!.body.attachments.filter(x=>x.key!==a.key)">{{a.name}}</el-tag></el-form-item><el-form-item :label="t('inquiryProducts.fields.remark')" class="wide"><el-input v-model="editor.body.remark" type="textarea"/></el-form-item></el-form></el-collapse-item></el-collapse>
      <template v-if="view==='PROCUREMENT'">
-      <div class="toolbar quote-product-toolbar"><el-input v-model="productSearch" :placeholder="t('inquiryWorkspace.quotes.searchProducts')" @input="productPage=1"/><el-select v-model="productFilter" @change="productPage=1"><el-option :label="t('inquiryWorkspace.quotes.allProducts')" value="all"/><el-option :label="t('inquiryWorkspace.quotes.unquotedProducts')" value="unquoted"/><el-option :label="t('inquiryWorkspace.quotes.quotedProducts')" value="quoted"/></el-select><span>{{t('inquiryWorkspace.quotes.quotedProgress',{quoted:editor.body.prices.length,total:item.body.products.length})}}</span></div>
+      <div class="toolbar quote-product-toolbar"><el-input v-model="productSearch" :placeholder="t('inquiryWorkspace.quotes.searchProducts')" @input="productPage=1"/><el-select v-model="productFilter" @change="productPage=1"><el-option :label="t('inquiryWorkspace.quotes.allProducts')" value="all"/><el-option :label="t('inquiryWorkspace.quotes.unquotedProducts')" value="unquoted"/><el-option :label="t('inquiryWorkspace.quotes.quotedProducts')" value="quoted"/></el-select></div>
+      <div class="procurement-selection-toolbar" role="group" :aria-label="t('inquiryWorkspace.bulkSelection.title')">
+       <el-checkbox :model-value="procurementSelectionState.checked" :indeterminate="procurementSelectionState.indeterminate" :disabled="!procurementSelectionState.total||busy" @change="toggleAllProcurementProducts(!!$event)">{{t('inquiryWorkspace.bulkSelection.selectAll')}}</el-checkbox>
+       <el-button :disabled="!procurementSelectionState.count||busy" @click="clearProcurementProducts">{{t('inquiryWorkspace.bulkSelection.clearAll')}}</el-button>
+       <strong role="status">{{t('inquiryWorkspace.bulkSelection.progress',procurementSelectionState)}}</strong>
+       <small>{{t('inquiryWorkspace.bulkSelection.hint')}}</small>
+      </div>
       <div class="quote-product-groups">
        <section v-for="group in pagedQuoteProductGroups" :key="group.key" class="quote-product-group">
+        <div class="quote-product-group__header">
+        <el-checkbox class="quote-product-group__selection" :model-value="procurementGroupSelection(group.key).checked" :indeterminate="procurementGroupSelection(group.key).indeterminate" :disabled="busy" :aria-label="t('inquiryWorkspace.bulkSelection.selectGroup',{name:group.name})" @change="toggleProcurementGroup(group.key,!!$event)"/>
         <button type="button" class="quote-product-group__heading" :aria-expanded="isQuoteProductExpanded(group.key)" @click="toggleQuoteProductGroup(group.key)">
          <el-icon class="product-group__chevron" :class="{'is-expanded':isQuoteProductExpanded(group.key)}"><ArrowDown/></el-icon>
          <strong :title="group.name">{{group.name}}</strong>
          <span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span>
-         <span>{{t('inquiryWorkspace.quotes.quotedProgress',{quoted:quotedProductsInGroup(group.products),total:group.products.length})}}</span>
+         <span>{{t('inquiryWorkspace.bulkSelection.progress',procurementGroupSelection(group.key))}}</span>
          <b>{{groupedQuantity(group.products)}}</b>
         </button>
+        </div>
         <div v-show="isQuoteProductExpanded(group.key)" class="quote-specification-list">
          <div class="quote-specification-grid quote-specification-grid--header" :class="{'has-factory-price':editor.body.quoteCategory==='REPROCESSING_CNY'}">
           <span>{{t('inquiryProducts.select')}}</span><span>{{t('inquiryWorkspace.list.materialStandard')}}</span><span>{{t('inquiryWorkspace.list.sizeSpecification')}}</span><span>{{t('inquiryWorkspace.list.quantityUnit')}}</span><span v-if="editor.body.quoteCategory==='REPROCESSING_CNY'">{{t('inquiryWorkspace.quotes.exFactoryUnitPrice')}}</span><span>{{quotePriceLabel(editor.body.quoteCategory)}}</span><span>{{t('inquiryWorkspace.quotes.deliveryDate')}}</span><span>{{t('inquiryProducts.fields.remark')}}</span>
@@ -178,6 +187,7 @@ import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import {copyInquiryQuote,personalQuotePresentation} from '../lib/personalQuoteStatus'
+import {createQuoteSelection,quoteSelectionState} from '../lib/procurementQuoteSelection'
 import type {InquiryTemplate} from '../lib/inquiryTemplates'
 import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
@@ -258,9 +268,27 @@ const currentUsdChargeTotal=computed(()=>{if(!editor.value)return'—';let total
 const filteredProducts=computed(()=>(item.value?.body.products||[]).filter(p=>(`${p.product} ${p.specification}`.toLowerCase().includes(productSearch.value.toLowerCase()))&&(productFilter.value==='all'||(productFilter.value==='quoted')===!!priceFor(p.id))))
 const filteredQuoteProductGroups=computed(()=>groupInquiryProducts(filteredProducts.value))
 const pagedQuoteProductGroups=computed(()=>filteredQuoteProductGroups.value.slice((productPage.value-1)*productSize.value,productPage.value*productSize.value))
+const allQuoteProductGroups=computed(()=>groupInquiryProducts(item.value?.body.products||[]))
+const procurementSelection=createQuoteSelection()
+const procurementSelectionState=computed(()=>quoteSelectionState((item.value?.body.products||[]).map(p=>p.id),editor.value?.body.prices||[]))
+// Reset synchronously on every editor replacement, including failed navigation
+// followed by opening another quote. Save errors do not replace the editor.
+watch(editor,()=>procurementSelection.clear(),{flush:'sync'})
+watch(()=>filteredQuoteProductGroups.value.length,()=>{productPage.value=Math.min(productPage.value,Math.max(1,Math.ceil(filteredQuoteProductGroups.value.length/productSize.value)))})
+function procurementGroupProducts(key:string){return allQuoteProductGroups.value.find(group=>group.key===key)?.products||[]}
+function procurementGroupSelection(key:string){return quoteSelectionState(procurementGroupProducts(key).map(p=>p.id),editor.value?.body.prices||[])}
+function selectProcurementProducts(ids:string[],selected:boolean){if(editor.value)editor.value.body.prices=procurementSelection.set(editor.value.body.prices,ids,selected)}
+function toggleProcurementGroup(key:string,selected:boolean){selectProcurementProducts(procurementGroupProducts(key).map(p=>p.id),selected);if(selected&&!isQuoteProductExpanded(key))expandedQuoteProductKeys.value.push(key)}
+async function clearProcurementProducts(){
+ if(!editor.value||!procurementSelectionState.value.count)return
+ const currentEditor=editor.value
+ try{await ElMessageBox.confirm(t('inquiryWorkspace.bulkSelection.clearConfirm'),t('inquiryWorkspace.bulkSelection.clearAll'),{type:'warning',confirmButtonText:t('inquiryWorkspace.bulkSelection.clearAll'),cancelButtonText:t('common.cancel')})}catch{return}
+ if(editor.value!==currentEditor)return
+ selectProcurementProducts((item.value?.body.products||[]).map(p=>p.id),false)
+}
+function toggleAllProcurementProducts(selected:boolean){if(!selected){void clearProcurementProducts();return}selectProcurementProducts((item.value?.body.products||[]).map(p=>p.id),true);expandedQuoteProductKeys.value=allQuoteProductGroups.value.map(group=>group.key)}
 function priceFor(id:string){return editor.value?.body.prices.find(p=>p.productId===id)}
 function productFor(id:string){return item.value?.body.products.find(p=>p.id===id)}
-function quotedProductsInGroup(products:Product[]){return products.filter(product=>!!priceFor(product.id)).length}
 function isQuoteProductExpanded(key:string){return expandedQuoteProductKeys.value.includes(key)}
 function toggleQuoteProductGroup(key:string){expandedQuoteProductKeys.value=isQuoteProductExpanded(key)?expandedQuoteProductKeys.value.filter(value=>value!==key):[...expandedQuoteProductKeys.value,key]}
 function quoteTotals(q:Quote){return(q.body.otherChargesTotalUsd||q.body.totalUsd)?t('inquiryWorkspace.quotes.usdChargesTotal',{total:q.body.otherChargesTotalUsd||q.body.totalUsd}):''}
@@ -271,7 +299,7 @@ function quoteCategoryLabel(value:string){const category=procurementQuoteCategor
 function quoteCategoryChanged(value:string){if(!editor.value)return;const currency=procurementQuoteCurrency(value);if(currency)editor.value.body.currency=currency}
 function quotePriceLabel(value:string){return t(value==='REPROCESSING_CNY'?'inquiryWorkspace.quotes.processingFee':value==='DIRECT_CFR_USD'?'inquiryWorkspace.offer.factoryCfrUnitPrice':'inquiryWorkspace.quotes.quotedUnitPrice')}
 function quotePriceHint(value:string){return t(value==='REPROCESSING_CNY'?'inquiryWorkspace.quotes.processingFeeHint':'inquiryWorkspace.quotes.factoryPriceHint')}
-function toggleProduct(id:string,yes:boolean){if(!editor.value)return;if(yes&&!priceFor(id))editor.value.body.prices.push({productId:id,price:'',delivery:'',remark:''});else if(!yes)editor.value.body.prices=editor.value.body.prices.filter(p=>p.productId!==id)}
+function toggleProduct(id:string,yes:boolean){selectProcurementProducts([id],yes)}
 function paste(e:ClipboardEvent,id:string){const text=e.clipboardData?.getData('text')||'';if(editor.value&&/[\t\n]/.test(text)){e.preventDefault();editor.value.body.prices=pastePrices(text,filteredProducts.value,editor.value.body.prices,id)}}
 function displayTime(value:string){if(!value)return '—';const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString(locale.value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}
 function stateLabel(r:Inquiry){return department.value?t(`inquiryWorkspace.personalQuotes.${personalQuotePresentation(r).key}`):({UNSUBMITTED:t('inquiryWorkspace.statuses.unsubmitted'),INQUIRING:t('inquiryWorkspace.statuses.inquiring'),WITHDRAWN:t('inquiryWorkspace.statuses.withdrawn')}[r.state]||r.state)}
@@ -666,6 +694,12 @@ watch(view,()=>void initial())
 .quote-editor { padding:22px; background:#fff; border:1px solid var(--line); border-radius:14px; }
 .quote-product-toolbar { margin-top:18px; }
 .quote-product-toolbar>.el-input { width:min(350px,100%); }
+.procurement-selection-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; padding:12px 0 0; }
+.procurement-selection-toolbar strong { color:#17475e; font-size:14px; }
+.procurement-selection-toolbar small { color:#718390; line-height:1.5; }
+.quote-product-group__header { display:flex; align-items:center; padding-left:16px; }
+.quote-product-group__selection { flex-shrink:0; margin-right:6px; }
+.quote-product-group__header .quote-product-group__heading { flex:1; min-width:0; grid-template-columns:20px minmax(140px,1.5fr) minmax(80px,.55fr) minmax(120px,.75fr) minmax(100px,.7fr); padding-left:8px; gap:10px; }
 .quote-product-groups { margin-top:14px; overflow:hidden; border:1px solid #dbe8ef; border-radius:12px; background:#f6fafc; }
 .quote-product-group { background:#fff; border-bottom:1px solid #dbe8ef; }
 .quote-product-group:last-child { border-bottom:0; }

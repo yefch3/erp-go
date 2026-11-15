@@ -315,6 +315,7 @@ basicsSaved: "Datos básicos guardados",
   },
   inquiryWorkspace: {
     personalQuotes: { waitingForMe: 'Pendiente de mi oferta', myQuoted: 'Ya he cotizado', quoteUpdated: 'Ofertas actualizadas', copy: 'Crear desde esta oferta' },
+    bulkSelection: { title: 'Selección de oferta de compras', selectAll: 'Seleccionar toda la consulta', clearAll: 'Deseleccionar todo', progress: '{count}/{total} artículos seleccionados', selectGroup: 'Seleccionar todo el grupo: {name}', hint: 'La selección de consulta y grupo ignora búsquedas, filtros y páginas. Introduzca un precio independiente para cada especificación.', clearConfirm: 'Los artículos deseleccionados no se guardarán ni enviarán. Sus valores solo se conservan durante esta edición y se recuperan al seleccionarlos de nuevo. Al terminar la edición o recargar se borran. ¿Deseleccionar todo?' },
     quoteDeletion: { title: 'Eliminar oferta de fábrica', confirm: '¿Eliminar toda la oferta de {company}? Dejará de mostrarse en Compras y Ventas. Su origen en las ofertas al cliente quedará marcado como eliminado; avise a Ventas para revisar y volver a elegir.', deleted: 'Oferta de fábrica eliminada' },
     quoteComparisonCalculation: 'Comparación y cálculo de ofertas',
     inquiryTitle: 'Consultas de clientes', inquirySubtitle: 'Organice los requisitos, envíe solicitudes de cotización y siga el avance.', quotationTitle: 'Cotizaciones a clientes', quotationSubtitle: 'Revise las cotizaciones enviadas por Compras y Logística.',

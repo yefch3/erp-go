@@ -315,6 +315,7 @@ basicsSaved: "Basic information saved",
   },
   inquiryWorkspace: {
     personalQuotes: { waitingForMe: 'Awaiting my quote', myQuoted: 'I have quoted', quoteUpdated: 'Quotes updated', copy: 'Create from this quote' },
+    bulkSelection: { title: 'Procurement quote selection', selectAll: 'Select entire inquiry', clearAll: 'Deselect all', progress: '{count}/{total} items selected', selectGroup: 'Select entire group: {name}', hint: 'Inquiry and group selection ignore search, filters and pagination. Enter each specification’s price separately.', clearConfirm: 'Deselected items will not be saved or submitted. Their values remain only during this editing session and can be restored by selecting them again. Ending editing or refreshing clears them. Deselect all?' },
     quoteDeletion: { title: 'Delete factory quote', confirm: 'Delete the entire quote from {company}? It will disappear from procurement and sales. Any recorded customer-offer source will be marked as removed; ask sales to review and reselect it.', deleted: 'Factory quote deleted' },
     quoteComparisonCalculation: 'Quote comparison and calculation',
     inquiryTitle: 'Customer inquiries', inquirySubtitle: 'Organize customer requirements, submit RFQs, and track progress.', quotationTitle: 'Customer quotations', quotationSubtitle: 'Review quotations submitted by Procurement and Shipping.',
