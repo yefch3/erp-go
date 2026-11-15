@@ -612,6 +612,8 @@ message CancelRequirementResponse {
 // references requirements, and a requirement may span several orders.
 service PurchaseOrderService {
   rpc SaveHistoricalOrder(SaveHistoricalOrderRequest) returns (SaveHistoricalOrderResponse);
+  rpc UpdateHistoricalShippingContext(UpdateHistoricalShippingContextRequest) returns (UpdateHistoricalShippingContextResponse);
+  rpc ListShippingHistoricalPurchases(ListShippingHistoricalPurchasesRequest) returns (ListShippingHistoricalPurchasesResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
   // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
   rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
@@ -1145,6 +1147,7 @@ message PurchaseOrder {
   bool prices_complete = 60;
   string recorded_by = 61;
   string recorded_at = 62;
+  string destination_port = 63;
 }
 
 message PurchaseOrderItem {
@@ -3188,6 +3191,8 @@ message SaveHistoricalOrderRequest {
  bool confirm = 11;
  repeated HistoricalOrderLine lines = 12;
  string payable_due_date = 13;
+ string export_contract_no = 14;
+ string destination_port = 15;
 }
 message HistoricalOrderLine {
  int64 product_id = 7;
@@ -3242,3 +3247,20 @@ message ShippingPurchaseRemark {
   string purchase_order_remark = 2;
 }
 message ListShippingPurchaseRemarksResponse { repeated ShippingPurchaseRemark items = 1; }
+
+message UpdateHistoricalShippingContextRequest {
+  int64 id = 1;
+  string export_contract_no = 2;
+  string destination_port = 3;
+}
+message UpdateHistoricalShippingContextResponse {}
+
+message ListShippingHistoricalPurchasesRequest { string contract_no = 1; }
+message ShippingHistoricalPurchase {
+  string po_no = 1;
+  string supplier_name = 2;
+  string export_contract_no = 3;
+  string destination_port = 4;
+  string remark = 5;
+}
+message ListShippingHistoricalPurchasesResponse { repeated ShippingHistoricalPurchase items = 1; }
