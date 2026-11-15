@@ -10,14 +10,15 @@ import (
 )
 
 type handoffPurchaseDelivery struct {
-	OrderID      string `json:"orderId"`
-	PONo         string `json:"poNo"`
-	SupplierName string `json:"supplierName"`
-	ProductName  string `json:"productName"`
-	Spec         string `json:"spec"`
-	Qty          string `json:"qty"`
-	DeliveredQty string `json:"deliveredQty"`
-	UOMCode      string `json:"uomCode"`
+	OrderID             string `json:"orderId"`
+	PONo                string `json:"poNo"`
+	SupplierName        string `json:"supplierName"`
+	PurchaseOrderRemark string `json:"purchaseOrderRemark"`
+	ProductName         string `json:"productName"`
+	Spec                string `json:"spec"`
+	Qty                 string `json:"qty"`
+	DeliveredQty        string `json:"deliveredQty"`
+	UOMCode             string `json:"uomCode"`
 }
 
 // Read-only, whole-PO progress for contract goods carried by this
@@ -78,7 +79,7 @@ func (s *Server) getHandoffPurchaseDeliveries(w http.ResponseWriter, r *http.Req
 				if !matched {
 					continue
 				}
-				out = append(out, handoffPurchaseDelivery{OrderID: strconv.FormatInt(order.GetId(), 10), PONo: order.GetPoNo(), SupplierName: order.GetSupplierName(), ProductName: line.GetProductName(), Spec: line.GetSpec(), Qty: line.GetQty(), DeliveredQty: line.GetReceivedQty(), UOMCode: line.GetUomCode()})
+				out = append(out, handoffPurchaseDelivery{OrderID: strconv.FormatInt(order.GetId(), 10), PONo: order.GetPoNo(), SupplierName: order.GetSupplierName(), PurchaseOrderRemark: order.GetRemark(), ProductName: line.GetProductName(), Spec: line.GetSpec(), Qty: line.GetQty(), DeliveredQty: line.GetReceivedQty(), UOMCode: line.GetUomCode()})
 			}
 		}
 		if int64(page)*100 >= orders.GetMeta().GetTotal() {

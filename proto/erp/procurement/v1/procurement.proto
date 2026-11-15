@@ -649,6 +649,9 @@ service PurchaseOrderService {
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
   rpc DownloadReceiptProof(DownloadReceiptProofRequest) returns (DownloadReceiptProofResponse);
+  // Narrow read-only projection. Gateway resolves the contract from an authorized
+  // shipping handoff, never from caller-supplied HTTP contract parameters.
+  rpc ListShippingPurchaseRemarks(ListShippingPurchaseRemarksRequest) returns (ListShippingPurchaseRemarksResponse);
   rpc GetOrderDocuments(GetOrderDocumentsRequest) returns (GetOrderDocumentsResponse);
   rpc BeginOrderSend(BeginOrderSendRequest) returns (BeginOrderSendResponse);
   rpc CompleteOrderSend(CompleteOrderSendRequest) returns (CompleteOrderSendResponse);
@@ -884,6 +887,8 @@ message QualityInspectionTask {
   string procurement_handled_by_name = 24;
   string procurement_handled_at = 25;
   bool deletable = 26;
+  // Current purchase-order remark, read-only; independent of the inspection request remark.
+  string purchase_order_remark = 27;
 }
 
 message ApplyQualityInspectionLine { int64 po_item_id = 1; string qty = 2; }
@@ -3227,3 +3232,13 @@ message ReceiptProofUpload { string file_name = 1; string content_type = 2; byte
 message ReceiptProofFile { int64 id = 1; string file_name = 2; string content_type = 3; int64 size_bytes = 4; }
 message DownloadReceiptProofRequest { int64 po_id = 1; int64 file_id = 2; }
 message DownloadReceiptProofResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+
+message ListShippingPurchaseRemarksRequest {
+  int64 contract_id = 1;
+  string contract_no = 2;
+}
+message ShippingPurchaseRemark {
+  string supplier_name = 1;
+  string purchase_order_remark = 2;
+}
+message ListShippingPurchaseRemarksResponse { repeated ShippingPurchaseRemark items = 1; }

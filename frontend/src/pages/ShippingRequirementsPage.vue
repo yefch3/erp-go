@@ -78,6 +78,7 @@
           </el-table>
         </section>
         </template>
+        <ShippingPurchaseRemarks v-if="mode==='orders' && detail" :key="detail.id" :handoff-id="detail.id"/>
         <ShippingPurchaseDeliverySummary v-if="mode==='orders' && detail && auth.can('procurement:order:read')" :key="detail.id" :handoff-id="detail.id"/>
         <section v-if="mode === 'inquiry'" class="stage-card is-current">
           <div class="quote-table-heading"><div class="section-title">{{ t('shipping.quoteComparison') }}<span>{{ t('shipping.candidateHint') }}</span></div><el-button v-if="canManageCandidates" type="primary" @click="clearCandidateForm();quoteEditorOpen=true">{{t('shipping.newQuote')}}</el-button></div>
@@ -140,6 +141,7 @@ import ShippingInquiryContext from '../components/ShippingInquiryContext.vue'
 import {cargoQuantityTotals,inquiryStatusKey,quoteNoteText} from '../lib/shippingInquiryView'
 import {fulfillmentNumber as number} from '../lib/fulfillmentOverview'
 import ShippingPurchaseDeliverySummary from '../components/ShippingPurchaseDeliverySummary.vue'
+import ShippingPurchaseRemarks from '../components/ShippingPurchaseRemarks.vue'
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
