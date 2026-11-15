@@ -18,8 +18,9 @@ func TestLogisticsPayableSeparatesOptionalContractAndTransportBatch(t *testing.T
 		t.Fatalf("distinct signed contract and batch: %+v, %v", b, err)
 	}
 	first.BusinessDocumentNo = "FWD-SIGNED-1"
+	first.BusinessDocumentNoGenerated = true
 	again, err := svc.CreateExternalPayable(ctx, tenant, first, op)
-	if err != nil || again.POID != a.POID || again.BusinessDocumentNo != "FWD-SIGNED-1" {
+	if err != nil || again.POID != a.POID || again.BusinessDocumentNo != "FWD-SIGNED-1" || !again.BusinessDocumentNoGenerated {
 		t.Fatalf("contract replacement created another payable: %+v, %v", again, err)
 	}
 	if _, err = svc.RecordPOPayment(ctx, tenant, POPaymentInput{POID: a.POID, Amount: "105", PaidAt: "2026-11-14"}, op); err == nil {

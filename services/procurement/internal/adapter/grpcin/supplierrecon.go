@@ -147,7 +147,7 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
 		ManuallyEntered: v.ManuallyEntered,
 		BusinessType:    v.BusinessType, SourceBusinessId: v.SourceBusinessID,
-		ExportContractNo: v.ExportContractNo, BusinessDocumentNo: v.BusinessDocumentNo, TransportBatchNo: v.TransportBatchNo,
+		ExportContractNo: v.ExportContractNo, BusinessDocumentNo: v.BusinessDocumentNo, BusinessDocumentNoGenerated: v.BusinessDocumentNoGenerated, TransportBatchNo: v.TransportBatchNo,
 		PaymentTerms: v.PaymentTerms, SignedContractName: v.SignedContractName,
 		RequestedByName: v.RequestedByName, RequestedAt: v.RequestedAt,
 	}

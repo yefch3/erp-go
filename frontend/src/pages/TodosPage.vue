@@ -95,6 +95,18 @@
             </el-table>
             <p v-else-if="!executionTasksError" class="item-meta">{{purchaseFinanceTasks.length?'没有符合当前筛选条件的待核验采购合同。':'暂无待核验采购合同。采购上传签署合同后会自动出现在这里；已核验的合同不会重复显示。'}} <router-link to="/supplier-recon?view=contracts" class="doc-link">前往出账</router-link></p>
           </section>
+          <section v-if="showLogisticsFinanceSection" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>物流合同财务核验</h3><p>物流已上传双方签署合同，请进入出账查看附件并核验。</p></div><el-tag v-if="!executionTasksError" :type="visibleLogisticsFinanceTasks.length?'warning':'info'" effect="plain">{{visibleLogisticsFinanceTasks.length}} 项</el-tag></div>
+            <el-table v-if="visibleLogisticsFinanceTasks.length" :data="visibleLogisticsFinanceTasks" class="home-table">
+              <el-table-column label="物流合同 / 外销合同" min-width="230"><template #default="{row}"><div class="item-title">{{row.businessDocumentNo||'物流合同号未填写'}} <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">系统生成</el-tag></div><div class="item-meta">{{row.exportContractNo}}<template v-if="row.transportBatchNo"> · 第 {{row.transportBatchNo}} 批</template></div></template></el-table-column>
+              <el-table-column prop="supplierName" label="货代" min-width="160" show-overflow-tooltip/>
+              <el-table-column label="金额" width="140" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column prop="signedContractName" label="签署合同文件" min-width="210" show-overflow-tooltip/>
+              <el-table-column label="状态" width="120"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="125" fixed="right"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">查看并核验</router-link></template></el-table-column>
+            </el-table>
+            <p v-else-if="!executionTasksError" class="item-meta">暂无符合条件的待核验物流合同；已核验的合同不会重复显示。 <router-link to="/supplier-recon?view=contracts" class="doc-link">前往出账</router-link></p>
+          </section>
           <section v-if="visibleFinanceTasks.length" class="todo-source-section">
             <div class="todo-source-head"><div><h3>合同执行条件确认</h3><p>销售已上传客户签回件并开始执行，等待财务核对付款条件后放行。</p></div><el-tag type="warning" effect="plain">{{visibleFinanceTasks.length}} 项</el-tag></div>
             <el-table :data="visibleFinanceTasks" class="home-table">
@@ -181,7 +193,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!visibleDeliveryTasks.length&&!executionTasksError&&!showPurchaseFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!visibleDeliveryTasks.length&&!executionTasksError&&!showPurchaseFinanceSection&&!showLogisticsFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -285,6 +297,7 @@ interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitl
 interface ExecutionRequirement { id:string; contractId:string; contractNo:string; customerName:string; productName:string; requiredDate:string; status:string }
 interface FinanceExecutionTask {id:string;contractNo:string;customerName:string;currency:string;totalAmount:string}
 interface PurchaseFinanceTask {id:string;poNo:string;supplierName:string;exportContractNo:string;currency:string;totalAmount:string;signedContractName:string}
+interface LogisticsFinanceTask extends PurchaseFinanceTask {businessDocumentNo:string;sourceBusinessId:string;transportBatchNo:number;businessDocumentNoGenerated?:boolean}
 interface ExecutionProcurementTask { key:string; contractNo:string; customerName:string; productNames:string; productCount:number; requiredDate:string }
 interface ExecutionShippingTask { id:string; contractNo:string; customerName:string; batchNo:number; portOfLoading:string; portOfDischarge:string; status:string }
 interface QualityTodoTask { id:string; taskNo:string; poNo:string; supplierName:string; batchNo:number; expectedDate:string; status:string }
@@ -301,6 +314,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const showPurchaseFinanceSection=computed(()=>auth.can('procurement:order:read')&&auth.can('procurement:recon:write')&&(!bizType.value||bizType.value==='PURCHASE_ORDER'))
+const showLogisticsFinanceSection=computed(()=>auth.can('procurement:order:read')&&auth.can('procurement:recon:write')&&(!bizType.value||bizType.value==='SHIPPING_REQUOTE'))
 const today = computed(() => new Intl.DateTimeFormat(
   locale.value === 'zh' ? 'zh-CN' : locale.value === 'es' ? 'es-ES' : 'en-US',
   { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' },
@@ -324,6 +338,8 @@ const executionShippingTasks = ref<ExecutionShippingTask[]>([])
 const executionShippingTasksAvailable = ref(false)
 const financeTasks=ref<FinanceExecutionTask[]>([])
 const purchaseFinanceTasks=ref<PurchaseFinanceTask[]>([])
+const logisticsFinanceTasks=ref<LogisticsFinanceTask[]>([])
+const visibleLogisticsFinanceTasks=computed(()=>logisticsFinanceTasks.value.filter(row=>(!bizType.value||bizType.value==='SHIPPING_REQUOTE')&&(!keyword.value.trim()||[row.poNo,row.businessDocumentNo,row.exportContractNo,row.supplierName,row.signedContractName].some(value=>String(value||'').toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())))))
 const visiblePurchaseFinanceTasks=computed(()=>purchaseFinanceTasks.value.filter(row=>(!bizType.value||bizType.value==='PURCHASE_ORDER')&&(!keyword.value.trim()||[row.poNo,row.supplierName,row.exportContractNo,row.signedContractName].some(value=>String(value||'').toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())))))
 const executionTasksError=ref(false)
 const visibleFinanceTasks=computed(()=>financeTasks.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(value=>value.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
@@ -354,8 +370,8 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => deliveryTasks.value.length + purchaseFinanceTasks.value.length + financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
-const combinedPendingAvailable = computed(() => deliveryTasks.value.length>0 || purchaseFinanceTasks.value.length>0 || financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
+const combinedPendingTotal = computed(() => deliveryTasks.value.length + purchaseFinanceTasks.value.length + logisticsFinanceTasks.value.length + financeTasks.value.length + inquiryPendingCount.value + (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0) + (executionProcurementTasksAvailable.value ? executionProcurementTasks.value.length : 0) + (executionShippingTasksAvailable.value ? executionShippingTasks.value.length : 0) + (qualityTasksAvailable.value ? qualityTasks.value.length : 0)+(qualityProcurementTasksAvailable.value?qualityProcurementTasks.value.length:0))
+const combinedPendingAvailable = computed(() => deliveryTasks.value.length>0 || purchaseFinanceTasks.value.length>0 || logisticsFinanceTasks.value.length>0 || financeTasks.value.length>0 || inquiryPendingCount.value>0 || pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value || executionProcurementTasksAvailable.value || executionShippingTasksAvailable.value || qualityTasksAvailable.value||qualityProcurementTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
@@ -473,11 +489,11 @@ async function loadDeliveryTasks(){
 async function loadQualityProcurementTasks(){if(!auth.can('procurement:order:read')){qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false;return}try{const data=await get<{tasks:QualityProcurementTodo[]}>('/quality/procurement-todos',{},quietErrors);qualityProcurementTasks.value=data.tasks??[];qualityProcurementTasksAvailable.value=true}catch{qualityProcurementTasks.value=[];qualityProcurementTasksAvailable.value=false}}
 
 async function loadExecutionTasks() {
-  purchaseFinanceTasks.value=[];financeTasks.value=[];executionProcurementTasks.value=[];executionShippingTasks.value=[];executionTasksError.value=false
+  purchaseFinanceTasks.value=[];logisticsFinanceTasks.value=[];financeTasks.value=[];executionProcurementTasks.value=[];executionShippingTasks.value=[];executionTasksError.value=false
   executionProcurementTasksAvailable.value=false;executionShippingTasksAvailable.value=false
   try {
-    const data=await get<{finance:FinanceExecutionTask[];purchaseFinance:PurchaseFinanceTask[];procurement:ExecutionRequirement[];shipping:ExecutionShippingTask[]}>('/home/execution-todos',{},quietErrors)
-    purchaseFinanceTasks.value=data.purchaseFinance??[];financeTasks.value=data.finance??[]
+    const data=await get<{finance:FinanceExecutionTask[];purchaseFinance:PurchaseFinanceTask[];logisticsFinance:LogisticsFinanceTask[];procurement:ExecutionRequirement[];shipping:ExecutionShippingTask[]}>('/home/execution-todos',{},quietErrors)
+    purchaseFinanceTasks.value=data.purchaseFinance??[];logisticsFinanceTasks.value=data.logisticsFinance??[];financeTasks.value=data.finance??[]
     executionShippingTasks.value=data.shipping??[]
     const groups=new Map<string,ExecutionRequirement[]>()
     for(const row of data.procurement??[]){const key=row.contractId||row.contractNo;groups.set(key,[...(groups.get(key)??[]),row])}

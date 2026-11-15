@@ -88,6 +88,19 @@ type purchaseFinanceOrdersStub struct {
 	prv1.PurchaseOrderServiceClient
 }
 
+func (purchaseFinanceOrdersStub) ListSupplierRecon(_ context.Context, r *prv1.ListSupplierReconRequest, _ ...grpc.CallOption) (*prv1.ListSupplierReconResponse, error) {
+	if r.GetBusinessType() != "LOGISTICS" {
+		return nil, status.Error(codes.InvalidArgument, "wrong logistics finance filter")
+	}
+	return &prv1.ListSupplierReconResponse{Items: []*prv1.SupplierReconRow{
+		{PoId: 20, BusinessType: "LOGISTICS", SourceBusinessId: 30, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", BusinessDocumentNo: "FWD-20", ExportContractNo: "CT-20", TransportBatchNo: 2},
+		{PoId: 21, BusinessType: "LOGISTICS", SourceBusinessId: 31, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", RequestedAt: "verified"},
+		{PoId: 22, BusinessType: "LOGISTICS", SourceBusinessId: 32, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", ClosedAt: "closed"},
+		{PoId: 23, BusinessType: "LOGISTICS", SourceBusinessId: 33, OrderStatus: "CANCELLED", SignedContractName: "signed.pdf"},
+		{PoId: 24, BusinessType: "LOGISTICS", SourceBusinessId: 34, OrderStatus: "ORDERED"},
+	}, Total: 5}, nil
+}
+
 func (purchaseFinanceOrdersStub) ListOrders(_ context.Context, r *prv1.ListOrdersRequest, _ ...grpc.CallOption) (*prv1.ListOrdersResponse, error) {
 	if r.Status != "PENDING_CONTRACT" {
 		return nil, status.Error(codes.InvalidArgument, "wrong finance queue filter")
@@ -129,6 +142,11 @@ func TestPurchaseFinanceTodosRequireReviewPermissionAndCurrentSignedContract(t *
 					PurchaseFinance []struct {
 						ID string `json:"id"`
 					} `json:"purchaseFinance"`
+					LogisticsFinance []struct {
+						ID     string `json:"id"`
+						Source string `json:"sourceBusinessId"`
+						Batch  int32  `json:"transportBatchNo"`
+					} `json:"logisticsFinance"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -136,6 +154,12 @@ func TestPurchaseFinanceTodosRequireReviewPermissionAndCurrentSignedContract(t *
 			}
 			if len(response.Data.PurchaseFinance) != tc.want {
 				t.Fatalf("wrong tasks: %s", rec.Body.String())
+			}
+			if len(response.Data.LogisticsFinance) != tc.want {
+				t.Fatalf("wrong logistics finance tasks: %s", rec.Body.String())
+			}
+			if tc.want > 0 && (response.Data.LogisticsFinance[0].ID != "20" || response.Data.LogisticsFinance[0].Source != "30" || response.Data.LogisticsFinance[0].Batch != 2) {
+				t.Fatalf("incorrect logistics source or completed task included: %s", rec.Body.String())
 			}
 			if tc.want > 0 && response.Data.PurchaseFinance[0].ID != "7" {
 				t.Fatalf("unverifiable or closed order was included: %s", rec.Body.String())

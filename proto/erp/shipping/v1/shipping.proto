@@ -258,6 +258,7 @@ message ContractShippingHandoff {
   string source_sales_remark = 51;
   string presale_references_json = 52;
   string allocation_status = 53;
+  bool forwarder_contract_no_generated = 54;
 }
 message LinkManualShippingContractRequest { int64 id = 1; int64 contract_id = 2; string contract_no = 3; }
 message LinkManualShippingContractResponse { ContractShippingHandoff order = 1; }

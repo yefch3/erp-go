@@ -36,7 +36,7 @@ func (s *contractUploadReferenceOrders) CreateExternalPayable(_ context.Context,
 
 func TestShippingContractUploadUsesSalesContractAndBatchForFinance(t *testing.T) {
 	for _, batch := range []int32{1, 2} {
-		ship := &contractUploadReferenceShipping{handoff: &shippingv1.ContractShippingHandoff{ContractNo: "CT-TEST", BatchNo: batch, ForwarderContractNo: "LEGACY-FORWARDER", SignedContractKey: "signed-file", SignedContractName: "signed.pdf"}}
+		ship := &contractUploadReferenceShipping{handoff: &shippingv1.ContractShippingHandoff{ContractNo: "CT-TEST", BatchNo: batch, ForwarderContractNo: "LC-202611-000001", ForwarderContractNoGenerated: true, SignedContractKey: "signed-file", SignedContractName: "signed.pdf"}}
 		orders := &contractUploadReferenceOrders{}
 		s := &Server{Shipping: ship, Orders: orders}
 		req := httptest.NewRequest(http.MethodPost, "/api/shipping/contract-handoffs/99/contract", strings.NewReader(`{"file_key":"signed-file","file_name":"signed.pdf"}`))
@@ -48,7 +48,7 @@ func TestShippingContractUploadUsesSalesContractAndBatchForFinance(t *testing.T)
 		if w.Code != http.StatusOK || ship.request.GetContractNo() != "" || orders.request == nil {
 			t.Fatalf("file-only upload failed: status=%d body=%s", w.Code, w.Body.String())
 		}
-		if orders.request.GetBusinessDocumentNo() != "LEGACY-FORWARDER" || orders.request.GetTransportBatchNo() != batch || orders.request.GetSourceBusinessId() != 99 || orders.request.GetExportContractNo() != "CT-TEST" || orders.request.GetSignedContractKey() != "signed-file" {
+		if orders.request.GetBusinessDocumentNo() != "LC-202611-000001" || !orders.request.GetBusinessDocumentNoGenerated() || orders.request.GetTransportBatchNo() != batch || orders.request.GetSourceBusinessId() != 99 || orders.request.GetExportContractNo() != "CT-TEST" || orders.request.GetSignedContractKey() != "signed-file" {
 			t.Fatalf("incorrect finance reference: %+v", orders.request)
 		}
 	}
