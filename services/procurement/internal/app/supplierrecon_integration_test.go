@@ -841,8 +841,8 @@ func TestSignedContractEntersFinanceAndApprovalUnlocksPayment(t *testing.T) {
 	}
 }
 
-// 物流应付的单号是货代合同号，物流和财务手里拿的却常常是外销合同号；采购
-// 单上另有一个业务单据号。出账搜索三样都要认，大小写不敏感，别的照旧。
+// 付款记录编号、物流合同号和外销合同号分别存储；出账搜索都应识别，
+// 大小写不敏感，采购单的业务单据号搜索也保持可用。
 func TestReconKeywordFindsPayableByExportContractAndDocumentNo(t *testing.T) {
 	ctx, svc, tenantID, cleanup := reconTestPool(t)
 	defer cleanup()
@@ -881,9 +881,10 @@ func TestReconKeywordFindsPayableByExportContractAndDocumentNo(t *testing.T) {
 		return out
 	}
 	for _, c := range []struct{ keyword, want string }{
-		{"sc-2026-abc", "LOGISTICS:FWD-0001"},
-		{"2026-ABC", "LOGISTICS:FWD-0001"},
-		{"FWD-0001", "LOGISTICS:FWD-0001"},
+		{"sc-2026-abc", "LOGISTICS:LOG-7701"},
+		{"2026-ABC", "LOGISTICS:LOG-7701"},
+		{"FWD-0001", "LOGISTICS:LOG-7701"},
+		{"log-7701", "LOGISTICS:LOG-7701"},
 		{"biz-doc-77", "PROCUREMENT:PO-D4-DOC"},
 		{"sc-other", "PROCUREMENT:PO-D4-DOC"},
 		{"po-plain", "PROCUREMENT:PO-PLAIN"},

@@ -354,7 +354,7 @@ func (h *OrderHandler) RequestOrderPayment(ctx context.Context, req *prv1.Reques
 
 func (h *OrderHandler) CreateExternalPayable(ctx context.Context, req *prv1.CreateExternalPayableRequest) (*prv1.CreateExternalPayableResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
-	v, err := h.svc.CreateExternalPayable(ctx, grpcx.TenantID(ctx), app.ExternalPayableInput{BusinessType: req.GetBusinessType(), SourceBusinessID: req.GetSourceBusinessId(), PayeeID: req.GetPayeeId(), ExportContractNo: req.GetExportContractNo(), BusinessDocumentNo: req.GetBusinessDocumentNo(), PayeeName: req.GetPayeeName(), Currency: req.GetCurrency(), Amount: req.GetAmount(), DueDate: req.GetDueDate(), PaymentTerms: req.GetPaymentTerms(), SignedContractKey: req.GetSignedContractKey(), SignedContractName: req.GetSignedContractName()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	v, err := h.svc.CreateExternalPayable(ctx, grpcx.TenantID(ctx), app.ExternalPayableInput{TransportBatchNo: req.GetTransportBatchNo(), BusinessType: req.GetBusinessType(), SourceBusinessID: req.GetSourceBusinessId(), PayeeID: req.GetPayeeId(), ExportContractNo: req.GetExportContractNo(), BusinessDocumentNo: req.GetBusinessDocumentNo(), PayeeName: req.GetPayeeName(), Currency: req.GetCurrency(), Amount: req.GetAmount(), DueDate: req.GetDueDate(), PaymentTerms: req.GetPaymentTerms(), SignedContractKey: req.GetSignedContractKey(), SignedContractName: req.GetSignedContractName()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}

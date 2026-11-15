@@ -2604,6 +2604,7 @@ message SupplierReconRow {
   string signed_contract_name = 27;
   string requested_by_name = 28;
   string requested_at = 29;
+  int32 transport_batch_no = 30;
 }
 
 // PurchaseOrderPaymentEntry is one movement of money on one order.
@@ -2943,6 +2944,7 @@ message CreateExternalPayableRequest {
   string business_document_no = 4; int64 payee_id = 5; string payee_name = 6;
   string currency = 7; string amount = 8; string due_date = 9; string payment_terms = 10;
   string signed_contract_key = 11; string signed_contract_name = 12;
+  int32 transport_batch_no = 13;
 }
 message CreateExternalPayableResponse { SupplierReconRow row = 1; }
 message GetExternalPayableRequest { string business_type = 1; int64 source_business_id = 2; }

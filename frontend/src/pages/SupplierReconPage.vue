@@ -161,10 +161,12 @@
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
                  而财务没有 procurement:order:read——给所有人挂链接等于每一行
                  都放了一个点下去必然 403 的入口。 -->
-            <router-link v-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
+            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{t('shipping.logisticsContractNo')}}：{{row.businessDocumentNo||t('shipping.contractNumberUnset')}}</span><div class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
+            <router-link v-else-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
             <div v-if="row.exportContractNo" class="sub">{{ t('supplierRecon.exportContract') }} {{ row.exportContractNo }}</div>
+            <div v-if="row.businessType==='LOGISTICS'&&row.transportBatchNo" class="sub">{{t('shipping.transportBatch')}}：{{t('shipping.todoBatchTitle',{n:row.transportBatchNo})}}</div>
             <div v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt" class="sub finance-review">
               {{ t('supplierRecon.awaitingFinanceApproval') }} · {{ row.signedContractName }}
             </div>
@@ -479,6 +481,7 @@ interface Row {
   sourceBusinessId: string
   exportContractNo: string
   businessDocumentNo: string
+  transportBatchNo?: number
   paymentTerms: string
   signedContractName: string
   requestedByName: string
@@ -722,7 +725,9 @@ function handleRowCommand(row: Row, command: string) {
 
 async function approveFinance(row: Row) {
   await ElMessageBox.confirm(
-    t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
+    row.businessType==='LOGISTICS'
+      ? t('shipping.verifyContractConfirm',{contract:row.businessDocumentNo||t('shipping.contractNumberUnset'),sales:row.exportContractNo||'—',batch:row.transportBatchNo?t('shipping.todoBatchTitle',{n:row.transportBatchNo}):'—',file:row.signedContractName})
+      : t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
     t('supplierRecon.approveFinance'),
     { type: 'warning' },
   )
