@@ -8,6 +8,7 @@ export interface HomeReminder {
   title: string
   content: string
   bizNo: string
+  scheduleNo?: string
   dueAt: string
   createdAt: string
   unread: boolean

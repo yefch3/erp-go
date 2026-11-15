@@ -235,8 +235,8 @@
           </el-table-column>
           <el-table-column :label="t('todos.workItem')" min-width="360">
             <template #default="{ row }">
-              <div class="item-title"><span v-if="row.unread" class="unread-dot" />{{ row.title }}</div>
-              <div class="item-meta">{{ reminderSourceLabel(row.source) }}<template v-if="row.bizNo"> · {{ row.bizNo }}</template></div>
+              <div class="item-title"><span v-if="row.unread" class="unread-dot" /><template v-if="row.scheduleNo">{{ row.bizNo }} · </template>{{ row.title }}</div>
+              <div class="item-meta">{{ reminderSourceLabel(row.source) }}<template v-if="row.scheduleNo"> · {{ t('shipping.scheduleNo') }}：{{ row.scheduleNo }}</template><template v-else-if="row.bizNo"> · {{ row.bizNo }}</template></div>
               <div class="item-summary">{{ row.content }}</div>
             </template>
           </el-table-column>

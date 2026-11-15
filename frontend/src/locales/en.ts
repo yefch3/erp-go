@@ -592,6 +592,7 @@ basicsSaved: "Basic information saved",
     required: 'Code and name are required', created: 'Department created', updated: 'Department updated',
   },
   shipping: {
+    businessReference: 'Export contract / batch', transportBatchLabel: 'Batch {batch}', unlinkedContract: 'No linked contract', unlinkedBatch: 'Batch not linked',
     optionalNote: 'Notes (optional)',
     logisticsContractNo: 'Logistics contract number',
     systemGenerated: 'System generated',

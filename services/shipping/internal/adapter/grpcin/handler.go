@@ -339,6 +339,9 @@ func (h *Handler) ListSchedules(ctx context.Context, req *shippingv1.ListSchedul
 	for i, r := range rows {
 		out[i] = listRowToProto(r)
 	}
+	if err = h.enrichScheduleIdentity(ctx, out, nil, nil, nil); err != nil {
+		return nil, err
+	}
 	return &shippingv1.ListSchedulesResponse{Schedules: out, Meta: &commonv1.PageMeta{Total: total, Page: page, PageSize: size}}, nil
 }
 
@@ -356,7 +359,11 @@ func (h *Handler) GetSchedule(ctx context.Context, req *shippingv1.GetScheduleRe
 		out[i] = &shippingv1.ScheduleChange{Id: c.ID, ChangeType: c.ChangeType, FieldName: c.FieldName, OldValue: c.OldValue, NewValue: c.NewValue, Reason: c.Reason, OperatorId: c.OperatorID, OperatorName: c.OperatorName, CreatedAt: created}
 	}
 	reminders := remindersToProto(details.Reminders)
-	return &shippingv1.GetScheduleResponse{Schedule: scheduleToProto(details.Schedule), Changes: out, RouteNodes: routeNodesToProto(details.Route), DelayEvents: delaysToProto(details.Delays), Reminders: reminders}, nil
+	schedule := scheduleToProto(details.Schedule)
+	if err = h.enrichScheduleIdentity(ctx, []*shippingv1.Schedule{schedule}, reminders, nil, nil); err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetScheduleResponse{Schedule: schedule, Changes: out, RouteNodes: routeNodesToProto(details.Route), DelayEvents: delaysToProto(details.Delays), Reminders: reminders}, nil
 }
 
 // ListBlReminders 是本人的提单提醒收件箱（E2）——按登录人隔离，
@@ -377,6 +384,9 @@ func (h *Handler) ListBlReminders(ctx context.Context, req *shippingv1.ListBlRem
 			CreatedAt: r.CreatedAt, Unread: r.Unread,
 		})
 	}
+	if err = h.enrichScheduleIdentity(ctx, nil, nil, out, nil); err != nil {
+		return nil, err
+	}
 	return &shippingv1.ListBlRemindersResponse{Items: out, UnreadTotal: unread}, nil
 }
 
@@ -395,7 +405,11 @@ func (h *Handler) ListArrivalNotifications(ctx context.Context, req *shippingv1.
 	if err != nil {
 		return nil, err
 	}
-	return &shippingv1.ListArrivalNotificationsResponse{Reminders: remindersToProto(page.Reminders), UnreadCount: page.UnreadCount}, nil
+	reminders := remindersToProto(page.Reminders)
+	if err = h.enrichScheduleIdentity(ctx, nil, reminders, nil, nil); err != nil {
+		return nil, err
+	}
+	return &shippingv1.ListArrivalNotificationsResponse{Reminders: reminders, UnreadCount: page.UnreadCount}, nil
 }
 
 func (h *Handler) MarkArrivalReminderRead(ctx context.Context, req *shippingv1.MarkArrivalReminderReadRequest) (*shippingv1.MarkArrivalReminderReadResponse, error) {
@@ -477,6 +491,9 @@ func (h *Handler) ListOperationalAlerts(ctx context.Context, req *shippingv1.Lis
 	for _, item := range items {
 		out = append(out, operationalAlertToProto(item))
 	}
+	if err = h.enrichScheduleIdentity(ctx, nil, nil, nil, out); err != nil {
+		return nil, err
+	}
 	return &shippingv1.ListOperationalAlertsResponse{Items: out, UnreadCount: unread}, nil
 }
 
@@ -488,6 +505,9 @@ func (h *Handler) ListScheduleOperationalAlerts(ctx context.Context, req *shippi
 	out := make([]*shippingv1.OperationalAlert, 0, len(items))
 	for _, item := range items {
 		out = append(out, operationalAlertToProto(item))
+	}
+	if err = h.enrichScheduleIdentity(ctx, nil, nil, nil, out); err != nil {
+		return nil, err
 	}
 	return &shippingv1.ListScheduleOperationalAlertsResponse{Items: out}, nil
 }
