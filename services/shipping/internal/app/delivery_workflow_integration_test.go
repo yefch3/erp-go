@@ -188,24 +188,7 @@ func manualDeliverySchedule(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 			t.Fatal(err)
 		}
 	}
-	svc.UseApprovals(deliveryWorkflowApprovals{})
-	v, err = svc.SubmitFinalRequote(ctx, tenant, v.ID, FinalRequoteInput{}, op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.ApplyRequoteApproval(ctx, tenant, v.ID, v.ApprovalInstanceID, "APPROVED", "批准", nil); err != nil {
-		t.Fatal(err)
-	}
-	key := fmt.Sprintf("d4-contracts/shipping/%d/%d/signed.pdf", tenant, v.ID)
-	if _, err := svc.SaveShippingContract(ctx, tenant, v.ID, key, "signed.pdf", "FORWARDER-CONTRACT"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.VerifyShippingContract(ctx, tenant, v.ID, op); err != nil {
-		t.Fatal(err)
-	}
-	in := validInput()
-	in.ContractHandoffID = v.ID
-	schedule, err := svc.CreateSchedule(ctx, tenant, in, op, true)
+	schedule, _, err := svc.GetSchedule(ctx, tenant, v.ScheduleID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +368,13 @@ func TestLinkedManualContractControlsDelegationAndNewSchedules(t *testing.T) {
 					CargoItems: []ContractShippingCargoItem{{ProductName: "钢材", Quantity: "10", UomCode: "MT"}},
 				}, op)
 				if err != nil {
+					t.Fatal(err)
+				}
+				// Seed a legacy approval-stage import without reusing its new schedule.
+				if _, err = pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET status='DRAFT',schedule_id=NULL WHERE tenant_id=$1 AND id=$2`, tenant, v.ID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = pool.Exec(ctx, `UPDATE shipping_schedules SET contract_handoff_id=NULL WHERE tenant_id=$1 AND id=$2`, tenant, v.ScheduleID); err != nil {
 					t.Fatal(err)
 				}
 				v, err = svc.LinkManualShippingContract(ctx, tenant, v.ID, 41, "CT-QUALITY", op)

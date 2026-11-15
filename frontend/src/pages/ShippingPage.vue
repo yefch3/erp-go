@@ -157,7 +157,7 @@ async function handleRowAction(command:string,row:ShippingSchedule){
   if(command==='edit'){editing.value=row;dialogOpen.value=true;return}
   if(command==='account'){
     if(!auth.can('procurement:recon:read')){ElMessage.warning(t('shipping.accountPermissionRequired'));return}
-    await router.push({path:'/supplier-recon',query:{keyword:row.contractNo}});return
+    await router.push({path:'/supplier-recon',query:{keyword:row.manualOrderNo||row.contractNo}});return
   }
   if(command!=='delete'||row.status!=='PLANNED')return
   try{await ElMessageBox.confirm(t('shipping.deleteScheduleConfirm',{no:shippingBusinessLabel(row,t)}),t('shipping.deleteSchedule'),{type:'warning',confirmButtonText:t('common.delete'),cancelButtonText:t('common.cancel')})}catch(action){if(action==='cancel'||action==='close')return;throw action}

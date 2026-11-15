@@ -64,6 +64,7 @@ func (h *OrderHandler) RecordPurchaseOrderPayment(ctx context.Context, req *prv1
 
 func (h *OrderHandler) CreateManualPayable(ctx context.Context, req *prv1.CreateManualPayableRequest) (*prv1.CreateManualPayableResponse, error) {
 	row, err := h.svc.CreateManualPayable(ctx, grpcx.TenantID(ctx), app.ManualPayableInput{
+		BusinessType: req.GetBusinessType(), SourceBusinessID: req.GetSourceBusinessId(), SourceSupplierID: req.GetSourceSupplierId(), ExportContractNo: req.GetExportContractNo(), BusinessDocumentNo: req.GetBusinessDocumentNo(), PaymentTerms: req.GetPaymentTerms(),
 		SupplierName: req.GetSupplierName(), OrderNo: req.GetOrderNo(), Currency: req.GetCurrency(),
 		TotalAmount: req.GetTotalAmount(), PaidAmount: req.GetPaidAmount(), PaidAt: req.GetPaidAt(), DueDate: req.GetDueDate(), Note: req.GetNote(),
 	}, reconOperator(ctx))

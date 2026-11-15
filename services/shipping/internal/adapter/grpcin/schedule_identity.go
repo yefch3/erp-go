@@ -29,6 +29,8 @@ func (h *Handler) enrichScheduleIdentity(ctx context.Context, schedules []*shipp
 	for _, v := range schedules {
 		if identity, ok := identities[v.Id]; ok {
 			v.ContractNo = identity.ContractNo
+			v.ManualOrderNo = identity.ManualOrderNo
+			v.ContractHandoffId = identity.HandoffID
 			v.TransportBatchNo = identity.BatchNo
 		}
 	}
