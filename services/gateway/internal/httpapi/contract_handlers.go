@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
 
 func (s *Server) listContracts(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +35,15 @@ func (s *Server) getContract(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
+	}
+	// Contract visibility has already been checked by Export. Enrich only
+	// quantities with actual transport facts, never freight or finance details.
+	resp.ShipmentProgressAvailable = false
+	if s.Shipping != nil {
+		facts, readErr := s.Shipping.GetContractDispatchProgress(r.Context(), &shippingv1.GetContractDispatchProgressRequest{ContractId: resp.GetContract().GetId()})
+		if readErr == nil {
+			resp.ShipmentProgressAvailable = mergeContractDispatchProgress(resp, facts.GetLines())
+		}
 	}
 	s.writeProto(w, resp)
 }

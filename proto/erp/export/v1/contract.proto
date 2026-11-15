@@ -321,6 +321,9 @@ message GetContractResponse {
   // agreed, and what has left the warehouse since is a different fact.
   repeated ShipmentProgress shipments = 5;
   string accepted_offer_json = 6;
+  // Final customer receipt settlement only; no amounts or payment history.
+  string receipt_settlement_status = 7;
+  bool shipment_progress_available = 8;
 }
 
 // Progress for one product on a contract, summed across its lines. Grouped

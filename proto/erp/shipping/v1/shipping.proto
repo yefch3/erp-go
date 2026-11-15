@@ -9,6 +9,10 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1"
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 service ShippingService {
+  // Narrow facts for an already-authorized sales contract, without freight.
+  rpc GetContractDispatchProgress(GetContractDispatchProgressRequest) returns (GetContractDispatchProgressResponse);
+  // Correct only the masterdata identity of an existing terminal port.
+  rpc CorrectPortMetadata(CorrectPortMetadataRequest) returns (CorrectPortMetadataResponse);
   rpc SaveManualShippingOrder(SaveManualShippingOrderRequest) returns (SaveManualShippingOrderResponse);
   rpc LinkManualShippingContract(LinkManualShippingContractRequest) returns (LinkManualShippingContractResponse);
   rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
@@ -634,3 +638,25 @@ message CargoScheduleProgress {
   string ata = 8;
 }
 message GetCargoScheduleProgressResponse { CargoScheduleProgress schedule = 1; }
+
+message GetContractDispatchProgressRequest { int64 contract_id = 1; }
+message ContractDispatchLine {
+  int64 contract_item_id = 1;
+  string product_code = 2;
+  string product_name = 3;
+  string specification = 4;
+  string uom_code = 5;
+  string quantity = 6;
+}
+message GetContractDispatchProgressResponse { repeated ContractDispatchLine lines = 1; }
+message CorrectPortMetadataRequest {
+  int64 id = 1;
+  string terminal = 2;
+  int64 port_id = 3;
+  string port_name = 4;
+  string port_code = 5;
+  string timezone = 6;
+  string reason = 7;
+  int32 route_version = 8;
+}
+message CorrectPortMetadataResponse { Schedule schedule = 1; }
