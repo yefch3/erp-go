@@ -3,8 +3,9 @@
   <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
   <template v-if="offer">
    <template v-if="isCompare">
-    <div class="section-tools"><el-input v-model="search" :placeholder="t('inquiryWorkspace.offer.searchPlaceholder')" clearable/><span>{{t('inquiryWorkspace.offer.toolHint')}}</span></div>
-    <section v-for="group in groups" :key="group.value" class="workspace-card category-panel" :class="'category-'+group.value.toLowerCase()">
+    <div class="section-tools"><el-input v-model="search" :placeholder="t('inquiryWorkspace.offer.searchPlaceholder')" clearable/><div class="category-visibility-tools"><el-checkbox v-model="showEmptyCategories">{{t('inquiryWorkspace.offer.showEmptyCategories')}}</el-checkbox><span>{{t('inquiryWorkspace.offer.toolHint')}}</span></div></div>
+    <el-empty v-if="!visibleGroups.length" :description="t('inquiryWorkspace.offer.noSupplierCategories')" :image-size="70"/>
+    <section v-for="group in visibleGroups" :key="group.value" class="workspace-card category-panel" :class="'category-'+group.value.toLowerCase()">
      <div class="card-heading compact-category-heading"><div><span class="eyebrow">{{t('inquiryWorkspace.offer.supplierQuoteCategory')}}</span><div class="category-title"><h3>{{group.label}}</h3><el-tag size="small" effect="plain">{{group.currency}}</el-tag></div><p>{{t(group.value==='REPROCESSING_CNY'?'inquiryWorkspace.offer.processingCategoryHint':'inquiryWorkspace.offer.categoryHint')}}</p></div><div class="group-count"><span>{{t('inquiryWorkspace.offer.productQuoteCounts',{products:productGroupsFor(group.value).length,quotes:rowsFor(group.value).length})}}</span><el-tag size="small" effect="plain">{{t('inquiryWorkspace.offer.selectedChoiceCounts',{products:selectedProductCount(group.value),quotes:selectedCount(group.value)})}}</el-tag></div></div>
      <div class="category-calculation fixed-category-calculation">
       <div class="fixed-formula"><span>{{t('inquiryWorkspace.offer.fixedFormula')}}</span><strong>{{t(`inquiryWorkspace.offer.${formulaKey(group.value)}`)}}</strong><small>{{t(group.value==='DIRECT_CFR_USD'?'inquiryWorkspace.offer.directCalculationHint':'inquiryWorkspace.offer.categoryAutoCalculationHint')}}</small></div>
@@ -166,6 +167,7 @@ import {offerSourceChanges} from '../lib/offerSourceChanges'
 const props=defineProps<{caseId:string;sourceVersion?:string;mode:'compare'|'offer'}>()
 const emit=defineEmits<{navigate:[tab:string]}>()
 const router=useRouter(),{t,locale}=useI18n(),offer=ref<Offer|null>(null),busy=ref(false),error=ref(''),search=ref(''),preview=ref<Quote|null>(null),savedBody=ref('')
+const showEmptyCategories=ref(false)
 const automaticPending=ref(false),automaticError=ref('')
 const productFreightChoices=ref<Record<string,{id:string;version?:number}>>({})
 const expandedCustomerProducts=ref(new Set<string>()),expandedCustomerCandidates=ref(new Set<string>())
@@ -179,7 +181,8 @@ const documentLanguages=computed(()=>['ZH','EN','ES'].map(value=>({value,label:t
 type Candidate={product:Product;quote:Quote;price:Price;category:string}
 type SpecificationCandidateGroup={key:string;product:Product;rows:Candidate[]}
 type ProductCandidateGroup={key:string;productName:string;category:string;specs:SpecificationCandidateGroup[];rows:Candidate[]}
-function rowsFor(category:string):Candidate[]{return procurementQuotes.value.filter(q=>q.body.quoteCategory===category).flatMap(quote=>(quote.body.prices||[]).flatMap(price=>{const product=offer.value?.source.body.products.find(p=>p.id===price.productId);return product?[{product,quote,price,category}]:[]})).filter(row=>!search.value||`${row.product.product} ${specification(row.product)} ${row.quote.body.company}`.toLowerCase().includes(search.value.toLowerCase()))}
+const visibleGroups=computed(()=>groups.value.filter(group=>showEmptyCategories.value||rowsFor(group.value,false).length>0))
+function rowsFor(category:string,filterSearch=true):Candidate[]{return procurementQuotes.value.filter(q=>q.body.quoteCategory===category).flatMap(quote=>(quote.body.prices||[]).flatMap(price=>{const product=offer.value?.source.body.products.find(p=>p.id===price.productId);return product?[{product,quote,price,category}]:[]})).filter(row=>!filterSearch||!search.value||`${row.product.product} ${specification(row.product)} ${row.quote.body.company}`.toLowerCase().includes(search.value.toLowerCase()))}
 function productGroupsFor(category:string):ProductCandidateGroup[]{const grouped=new Map<string,ProductCandidateGroup>();for(const row of rowsFor(category)){const productKey=row.product.product.trim().toLocaleLowerCase()||row.product.id;let productGroup=grouped.get(productKey);if(!productGroup){productGroup={key:`${category}:${productKey}`,productName:row.product.product||'—',category,specs:[],rows:[]};grouped.set(productKey,productGroup)}productGroup.rows.push(row);let specGroup=productGroup.specs.find(item=>item.product.id===row.product.id);if(!specGroup){specGroup={key:`${productGroup.key}:${row.product.id}`,product:row.product,rows:[]};productGroup.specs.push(specGroup)}specGroup.rows.push(row)}return[...grouped.values()]}
 function isSelected(row:Candidate){return selections.value.some(s=>s.productId===row.product.id&&s.quoteId===row.quote.id&&s.category===row.category)}
 function selectionFor(row:Candidate){return selections.value.find(s=>s.productId===row.product.id&&s.quoteId===row.quote.id&&s.category===row.category)}
@@ -345,7 +348,7 @@ async function generateDocument(){if(!offer.value||busy.value||!canGenerateDocum
 async function persist(stage:boolean){if(!offer.value||busy.value)return;if(stage&&customerRows.value.length){try{await ElMessageBox.confirm(t('inquiryWorkspace.offer.updateSelectionConfirm'),t('inquiryWorkspace.offer.updateSelectionTitle'),{confirmButtonText:t('inquiryWorkspace.offer.updateSelection'),cancelButtonText:t('inquiryWorkspace.offer.returnToReview'),type:'info'})}catch{return}}
  if(!await ensureAutomaticCalculation()||busy.value||!offer.value)return
  busy.value=true;error.value='';try{const body={...offer.value.body,categoryWorkflow:true,pricingSnapshot:'',lines:offer.value.body.lines.map(l=>({...l,calculatedPrice:'',unitPrice:'',amount:''}))};offer.value=prepare(await post<Offer>('/customer-offer',{action:stage?'stage_selections':'save',caseId:props.caseId,revision:offer.value.revision,body},quietErrors));savedBody.value=JSON.stringify(offer.value.body);ElMessage.success(t(stage?'inquiryWorkspace.offer.staged':'inquiryWorkspace.offer.saved'));if(stage)emit('navigate','offer')}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.saveFailed');ElMessage.error(error.value)}finally{busy.value=false}}
-watch(()=>props.caseId,()=>{sequence++;automaticTask.cancel();automaticError.value='';productFreightChoices.value={};offer.value=null;savedBody.value='';busy.value=false;void refreshSources()},{immediate:true})
+watch(()=>props.caseId,()=>{sequence++;showEmptyCategories.value=false;automaticTask.cancel();automaticError.value='';productFreightChoices.value={};offer.value=null;savedBody.value='';busy.value=false;void refreshSources()},{immediate:true})
 watch(()=>props.sourceVersion,()=>{void refreshSources()})
 </script>
 <style scoped>
@@ -417,4 +420,8 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .product-freight-option{height:auto;min-height:34px;max-width:650px;white-space:normal;line-height:1.5;padding-top:7px;padding-bottom:7px;overflow-wrap:anywhere}
 .automatic-calculation-status{align-self:center;color:#176d82;font-size:12px;line-height:1.6;max-width:220px}
 .automatic-calculation-status.pending{color:#a18450}
+.category-visibility-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 18px}
+.category-visibility-tools>span{font-size:12px;color:var(--muted)}
+.category-visibility-tools .el-checkbox{flex-shrink:0;margin-right:0}
+@media(max-width:700px){.compare-mode .section-tools{flex-wrap:wrap;gap:8px}.category-visibility-tools{justify-content:flex-start}.category-visibility-tools>span{display:none}}
 </style>
