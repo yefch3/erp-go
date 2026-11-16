@@ -31,7 +31,7 @@ func (s *Service) ListQualitySourceOrders(ctx context.Context, tenantID, id int6
  COALESCE((SELECT t.id FROM quality_inspection_tasks t WHERE t.tenant_id=o.tenant_id AND t.po_id=o.id ORDER BY t.id LIMIT 1),0),COUNT(*) OVER()
  FROM purchase_orders o WHERE o.tenant_id=$1 AND ($2=0 OR o.id=$2)
  AND o.business_type='PROCUREMENT'
- AND (o.status IN ('ORDERED','PARTIALLY_RECEIVED') OR EXISTS(SELECT 1 FROM quality_inspection_tasks t WHERE t.tenant_id=o.tenant_id AND t.po_id=o.id))
+ AND (o.status IN ('ORDERED','PARTIALLY_RECEIVED','RECEIVED') OR EXISTS(SELECT 1 FROM quality_inspection_tasks t WHERE t.tenant_id=o.tenant_id AND t.po_id=o.id))
  AND ($3 OR o.buyer_id=ANY($4) OR EXISTS(SELECT 1 FROM purchase_order_items oi
  JOIN purchase_requirements pr ON pr.id=oi.requirement_id AND pr.tenant_id=oi.tenant_id
  WHERE oi.po_id=o.id AND oi.tenant_id=o.tenant_id AND pr.owner_id=ANY($4)))

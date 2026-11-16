@@ -35,7 +35,8 @@ type ApprovalSubmission struct {
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
-	contractGuard ContractGuard
+	contractGuard   ContractGuard
+	deliveryQuality DeliveryQualityGuard
 	// 按角色找人（E2 提单提醒的收件人来源）。
 	directory        Directory
 	db               databasePinger
@@ -217,6 +218,9 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		if err != nil {
 			return store.ShippingSchedule{}, err
 		}
+		if handoff.Status == "SCHEDULED" && handoff.ScheduleID != nil {
+			return s.q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: *handoff.ScheduleID})
+		}
 		if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
 			return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
 		}
@@ -227,7 +231,6 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 			in.CarrierID, in.CarrierForwarder = handoff.ActualCarrierID, handoff.ActualCarrierName
 		}
 		in.FreightCurrency, in.FreightAmount = handoff.FinalCurrency, numericText(handoff.FinalFreightAmount)
-		in.PortOfLoading, in.PortOfDischarge = handoff.PortOfLoading, handoff.PortOfDischarge
 		if in.ETD == "" && handoff.EstimatedDeparture.Valid {
 			in.ETD = handoff.EstimatedDeparture.Time.Format("2006-01-02")
 		}
@@ -247,8 +250,10 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
-	if err = s.rejectDuplicate(ctx, s.q, tenantID, 0, p, confirmed); err != nil {
-		return store.ShippingSchedule{}, err
+	if in.ContractHandoffID == 0 {
+		if err = s.rejectDuplicate(ctx, s.q, tenantID, 0, p, confirmed); err != nil {
+			return store.ShippingSchedule{}, err
+		}
 	}
 	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
 	if in.ContractHandoffID != 0 {
@@ -267,21 +272,12 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 			if lockErr != nil {
 				return lockErr
 			}
+			if handoff.Status == "SCHEDULED" && handoff.ScheduleID != nil {
+				out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: *handoff.ScheduleID})
+				return err
+			}
 			if handoff.Status != "PAYMENT_REQUESTED" || handoff.CustomerManaged {
 				return apierr.Conflict("SHIPPING_HANDOFF_NOT_DELEGATED", "物流订单进入已委托后才能建立正式船期")
-			}
-			// D6 当前采用一份合同一次运输。事务级顾问锁把并发点击串行化，
-			// 随后的存在性检查确保同一合同只能有一条未取消的正式船期。
-			if _, lockErr = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, fmt.Sprintf("shipping-contract:%d:%d", tenantID, handoff.ContractID)); lockErr != nil {
-				return lockErr
-			}
-			var existingNo string
-			lockErr = tx.QueryRow(ctx, `SELECT schedule_no FROM shipping_schedules WHERE tenant_id=$1 AND contract_id=$2 AND status<>'CANCELLED' LIMIT 1`, tenantID, handoff.ContractID).Scan(&existingNo)
-			if lockErr == nil {
-				return apierr.Conflict("SHIPPING_CONTRACT_ALREADY_SCHEDULED", "该合同已建立正式船期："+existingNo)
-			}
-			if !errors.Is(lockErr, pgx.ErrNoRows) {
-				return lockErr
 			}
 		}
 		out, err = q.CreateSchedule(ctx, p)
@@ -417,6 +413,16 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
+	if current.ContractHandoffID != nil {
+		handoff, err := s.q.GetContractShippingHandoffForUpdate(ctx, store.GetContractShippingHandoffForUpdateParams{TenantID: tenantID, ID: *current.ContractHandoffID})
+		if err != nil {
+			return store.ShippingSchedule{}, err
+		}
+		in.ContractID, in.ContractNo = handoff.ContractID, handoff.ContractNo
+		in.CustomerID, in.CustomerName = handoff.CustomerID, handoff.CustomerName
+	} else if current.ContractID != nil && in.ContractID == 0 && in.ContractNo == current.ContractNo {
+		in.ContractID = *current.ContractID
+	}
 	// 只有实际更换负责人时才检查候选范围；客户负责人可以保留原负责人并维护其可见船期。
 	if in.ResponsibleEmployeeID != current.ResponsibleEmployeeID {
 		if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
@@ -428,10 +434,6 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		return store.ShippingSchedule{}, err
 	}
 	if err = s.rejectDuplicate(ctx, s.q, tenantID, id, p, confirmed); err != nil {
-		return store.ShippingSchedule{}, err
-	}
-	alertPlans, err := s.scheduleChangeAlertPlans(ctx, tenantID, current, p)
-	if err != nil {
 		return store.ShippingSchedule{}, err
 	}
 	var out store.ShippingSchedule
@@ -446,6 +448,10 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		}
 		if current.Status == "COMPLETED" || current.Status == "CANCELLED" {
 			return apierr.Conflict("SHIPPING_FINAL_STATE", "已完成或已取消的船期不能编辑")
+		}
+		alertPlans, err := s.scheduleChangeAlertPlans(ctx, tenantID, current, p)
+		if err != nil {
+			return err
 		}
 		// Actual departure/arrival belong to progress tracking. A basic edit
 		// must preserve them instead of accepting or clearing those timestamps.
@@ -506,7 +512,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			if destinationID == 0 {
 				return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
 			}
-			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
+			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta, p.DischargePortTimezone), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
 				return err
 			}
 			changeDays := int32(p.Eta.Time.Sub(current.Eta.Time).Hours() / 24)
@@ -616,16 +622,33 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		if err != nil {
 			return err
 		}
-		if s.contractGuard != nil && current.ContractID != nil && (next == "SAILED" || next == "PLANNED") {
+		if s.contractGuard != nil && current.ContractID != nil && next == "PLANNED" {
 			if err := s.contractGuard.Check(ctx, *current.ContractID); err != nil {
 				return err
 			}
 		}
 		if current.Status == next {
+			if next == "COMPLETED" {
+				out = current
+				return nil
+			}
 			return apierr.Conflict("SHIPPING_STATUS_UNCHANGED", "船期已经是该状态")
 		}
 		if !transitions[current.Status][next] {
 			return apierr.Conflict("SHIPPING_STATUS_TRANSITION_INVALID", fmt.Sprintf("不能从 %s 直接变更为 %s", current.Status, next))
+		}
+		firstDispatch := false
+		if next == "SAILED" || next == "IN_TRANSIT" || next == "ARRIVED" {
+			dispatched, err := recordedDispatch(ctx, tx, current)
+			if err != nil {
+				return err
+			}
+			firstDispatch = !dispatched
+		}
+		if firstDispatch {
+			if err := s.checkDeliveryQuality(ctx, tx, current); err != nil {
+				return err
+			}
 		}
 		out, err = q.UpdateScheduleStatus(ctx, store.UpdateScheduleStatusParams{TenantID: tenantID, ID: id, Status: next, UpdatedBy: op.ID, UpdatedByName: op.Name})
 		if err != nil {

@@ -3,17 +3,24 @@ module github.com/sgao19/erp-go/services/mail
 go 1.25.0
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/pressly/goose/v3 v3.24.0
 	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	github.com/sgao19/erp-go/pkg v0.0.0
 	golang.org/x/net v0.57.0
 	google.golang.org/grpc v1.82.1
+)
+
+require (
+	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/sethvargo/go-retry v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 )
 
 require (

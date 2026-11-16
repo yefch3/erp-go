@@ -32,15 +32,16 @@ import (
 
 // SupplierReconRow 是一张采购单在核销这件事上的当前样子。
 type SupplierReconRow struct {
-	POID         int64
-	PONo         string
-	SupplierID   int64
-	SupplierName string
-	Currency     string
-	OrderStatus  string
-	BuyerName    string
-	OrderedDate  string
-	ExpectedDate string
+	BusinessDocumentNoGenerated bool
+	POID                        int64
+	PONo                        string
+	SupplierID                  int64
+	SupplierName                string
+	Currency                    string
+	OrderStatus                 string
+	BuyerName                   string
+	OrderedDate                 string
+	ExpectedDate                string
 	// 应付到期日 = 下单当天 + 供应商账期。**空串表示没配账期**，不是
 	// 「今天到期」——那种情况下 DueUnset 为真，OverdueDays 无意义。
 	DueDate string
@@ -64,14 +65,18 @@ type SupplierReconRow struct {
 	ManuallyEntered                                    bool
 	BusinessType                                       string
 	SourceBusinessID                                   int64
+	TransportBatchNo                                   int32
 	ExportContractNo, BusinessDocumentNo, PaymentTerms string
 	SignedContractName, RequestedByName, RequestedAt   string
 }
 
 type ManualPayableInput struct {
-	SupplierName, OrderNo, Currency string
-	TotalAmount, PaidAmount         string
-	PaidAt, DueDate, Note           string
+	BusinessType                                       string
+	SourceBusinessID, SourceSupplierID                 int64
+	ExportContractNo, BusinessDocumentNo, PaymentTerms string
+	SupplierName, OrderNo, Currency                    string
+	TotalAmount, PaidAmount                            string
+	PaidAt, DueDate, Note                              string
 }
 
 // CreateManualPayable records an opening supplier balance without creating a
@@ -80,6 +85,13 @@ type ManualPayableInput struct {
 func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in ManualPayableInput, op Operator) (SupplierReconRow, error) {
 	if err := s.requireFullScope(ctx, op); err != nil {
 		return SupplierReconRow{}, err
+	}
+	in.BusinessType = strings.ToUpper(strings.TrimSpace(in.BusinessType))
+	if in.BusinessType == "" {
+		in.BusinessType = "MANUAL"
+	}
+	if in.BusinessType != "MANUAL" && in.BusinessType != "LOGISTICS" || in.SourceBusinessID < 0 || in.SourceSupplierID < 0 || (in.BusinessType == "LOGISTICS") != (in.SourceBusinessID > 0) {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_SOURCE_INVALID", "请选择有效的历史物流订单")
 	}
 	in.SupplierName = strings.TrimSpace(in.SupplierName)
 	in.OrderNo = strings.TrimSpace(in.OrderNo)
@@ -115,14 +127,22 @@ func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in Ma
 	}
 	var poID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// One account per historical logistics source, including simultaneous
+		// requests and accounts already marked complete. The existing unique
+		// source index is the final arbiter; never upsert or overwrite payments.
 		err := tx.QueryRow(ctx, `INSERT INTO purchase_orders
-			(tenant_id, po_no, supplier_id, supplier_code, supplier_name, currency,
-			 total_amount, status, buyer_id, buyer_name, remark, ordered_at, payable_due_date)
-			VALUES ($1,$2,0,'',$3,$4,$5::numeric,'ORDERED',$6,$7,$8,now(),nullif($9::text,'')::date) RETURNING id`,
-			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note), strings.TrimSpace(in.DueDate)).Scan(&poID)
+            (tenant_id,po_no,supplier_id,supplier_code,supplier_name,currency,total_amount,status,buyer_id,buyer_name,remark,ordered_at,payable_due_date,
+             business_type,source_business_id,export_contract_no,business_document_no,payment_terms,payment_requested_at,payment_requested_by,payment_requested_by_name)
+            VALUES($1::bigint,$2::text,$10::bigint,'',$3::text,$4::text,$5::numeric,'ORDERED',$6::bigint,$7::text,$8::text,now(),nullif($9::text,'')::date,
+             $11::text,$12::bigint,$13::text,$14::text,$15::text,CASE WHEN $11::text='LOGISTICS' THEN now() END,CASE WHEN $11::text='LOGISTICS' THEN $6::bigint ELSE 0::bigint END,CASE WHEN $11::text='LOGISTICS' THEN $7::text ELSE '' END) RETURNING id`,
+			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note), strings.TrimSpace(in.DueDate),
+			in.SourceSupplierID, in.BusinessType, in.SourceBusinessID, in.ExportContractNo, in.BusinessDocumentNo, in.PaymentTerms).Scan(&poID)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				if in.BusinessType == "LOGISTICS" {
+					return apierr.Conflict("PR_LOGISTICS_ACCOUNT_EXISTS", "该历史物流订单已建立账目，请在出账中查找并登记付款，不要重复建账")
+				}
 				return apierr.Conflict("PR_MANUAL_PAYABLE_NO_TAKEN", "该合同号/采购单号已存在")
 			}
 			return err
@@ -159,18 +179,18 @@ func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
 		return SupplierReconRow{}, err
 	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		var supplierID int64
+		var supplierID, sourceID int64
 		var oldSupplier, oldNo, oldDue string
-		err := tx.QueryRow(ctx, `SELECT supplier_id,supplier_name,po_no,coalesce(payable_due_date::text,'')
+		err := tx.QueryRow(ctx, `SELECT supplier_id,supplier_name,po_no,coalesce(payable_due_date::text,''),source_business_id
 			FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).
-			Scan(&supplierID, &oldSupplier, &oldNo, &oldDue)
+			Scan(&supplierID, &oldSupplier, &oldNo, &oldDue, &sourceID)
 		if err == pgx.ErrNoRows {
 			return apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 		}
 		if err != nil {
 			return err
 		}
-		if supplierID != 0 {
+		if supplierID != 0 || sourceID != 0 {
 			return apierr.Conflict("PR_MANUAL_PAYABLE_ONLY", "系统生成的采购单请在采购订单中修改")
 		}
 		if oldSupplier == supplierName && oldNo == orderNo && oldDue == dueDate {
@@ -278,7 +298,7 @@ const reconSelect = `
 	       coalesce(cl.closed_by_name, '')                  AS closed_by_name,
 	       coalesce(cl.created_at::text, '')                AS closed_at,
 	       po.business_type,po.source_business_id,po.export_contract_no,
-	       po.business_document_no,po.payment_terms,po.signed_contract_name,
+	       po.business_document_no,po.payment_terms,po.signed_contract_name,po.transport_batch_no,po.business_document_no_generated,
 	       po.payment_requested_by_name,coalesce(po.payment_requested_at::text,'')`
 
 // reconFrom：已付是**算出来的**，不是存的状态——冲销是负行，求和天然反映
@@ -374,9 +394,13 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	   -- 或者短收关单了，是履约的生命周期。钱有没有付完是另一件事，一张
 	   -- 货已结案、尾款还没付的单必须留在待核销页上。别把两者「改一致」。
 	   AND (CASE WHEN $2::bool THEN cl.id IS NOT NULL ELSE cl.id IS NULL END)
+	   -- 物流应付的单号是货代合同号，物流和财务手里拿的却常是外销合同号；
+	   -- 采购单另有业务单据号。三样都得能搜到。
 	   AND ($3::text = ''
 	        OR po.po_no ILIKE '%' || $3::text || '%'
-	        OR po.supplier_name ILIKE '%' || $3::text || '%')
+	        OR po.supplier_name ILIKE '%' || $3::text || '%'
+	        OR po.export_contract_no ILIKE '%' || $3::text || '%'
+	        OR po.business_document_no ILIKE '%' || $3::text || '%')
 	   AND ($4::bool = false
 	        OR (po.payable_due_date IS NOT NULL AND po.payable_due_date < current_date))
 	   AND ($5::bool = false OR po.payable_due_date IS NULL)
@@ -399,7 +423,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
-			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.RequestedByName, &r.RequestedAt,
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.BusinessDocumentNoGenerated, &r.RequestedByName, &r.RequestedAt,
 			&total); err != nil {
 			return nil, 0, err
 		}
@@ -420,7 +444,7 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
-			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.RequestedByName, &r.RequestedAt)
+			&r.BusinessType, &r.SourceBusinessID, &r.ExportContractNo, &r.BusinessDocumentNo, &r.PaymentTerms, &r.SignedContractName, &r.TransportBatchNo, &r.BusinessDocumentNoGenerated, &r.RequestedByName, &r.RequestedAt)
 	if err == pgx.ErrNoRows {
 		return SupplierReconRow{}, apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 	}

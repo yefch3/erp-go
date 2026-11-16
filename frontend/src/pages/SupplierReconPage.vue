@@ -9,26 +9,39 @@
       <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
     </el-radio-group>
     <TravelReimbursementPanel v-if="isReimbursement" />
-    <div v-show="!isReimbursement" class="legacy-recon">
+    <el-radio-group v-if="!isReimbursement" :model-value="isContractReview?'contracts':isDone?'done':'open'" class="tabs" @update:model-value="switchTab">
+      <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
+      <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
+      <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
+    </el-radio-group>
+    <PurchaseContractReviewPanel v-if="!isReimbursement&&isContractReview" :order-id="String(route.query.order||'')" :initial-keyword="String(route.query.keyword||'')" @verified="reload"/>
+    <div v-show="!isReimbursement&&!isContractReview" class="legacy-recon">
 
-    <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
-      <el-form label-position="top">
-        <el-form-item :label="t('supplierRecon.manualSupplier')" required>
-          <el-select v-model="manualForm.supplierName" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%">
+    <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(640px, 96vw)" top="4vh" class="finance-manual-dialog" :close-on-click-modal="false" destroy-on-close>
+      <el-form label-position="top" size="small">
+        <el-form-item label="业务类型"><el-radio-group v-model="manualBusinessType" @change="resetManualSource"><el-radio-button value="MANUAL">其他付款</el-radio-button><el-radio-button value="LOGISTICS">历史物流付款</el-radio-button></el-radio-group></el-form-item>
+        <el-form-item v-if="manualBusinessType==='LOGISTICS'" label="关联历史物流订单" required>
+          <el-select v-model="manualSourceId" filterable clearable :loading="historyOptionsLoading" placeholder="搜索或选择历史物流订单" style="width:100%" @change="applyHistoryOrder"><el-option v-for="item in historyOptions" :key="item.id" :value="item.id" :label="`${item.orderNo} · ${item.supplierName||'货代待补齐'}${item.contractNo?' · '+item.contractNo:''}`" /></el-select>
+        </el-form-item>
+        <p v-if="manualBusinessType==='LOGISTICS'" class="manual-source-hint">关联后按物流订单建账，同一订单只建一次；已有账目请直接登记付款。缺失资料可在此补齐。</p>
+        <el-form-item :label="manualBusinessType==='LOGISTICS'?'货代 / 收款方':t('supplierRecon.manualSupplier')" required>
+          <el-select v-model="manualForm.supplierName" :disabled="manualBusinessType==='LOGISTICS' && !!selectedHistory?.supplierName" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%">
             <el-option v-for="name in manualSupplierOptions" :key="name" :label="name" :value="name" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('supplierRecon.manualOrder')" required>
+        <el-form-item v-if="manualBusinessType!=='LOGISTICS'" :label="t('supplierRecon.manualOrder')" required>
           <el-select v-model="manualForm.orderNo" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%" @change="applyManualOrder">
             <el-option v-for="item in manualOrderOptions" :key="item.poNo" :label="`${item.poNo} · ${item.supplierName}`" :value="item.poNo" />
           </el-select>
         </el-form-item>
         <div class="manual-grid">
-          <el-form-item :label="t('supplierRecon.manualTotal')" required><el-input v-model="manualForm.totalAmount"><template #prepend><el-select v-model="manualForm.currency" filterable allow-create default-first-option :placeholder="t('supplierRecon.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
+          <el-form-item :label="manualBusinessType==='LOGISTICS'?'物流总费用':t('supplierRecon.manualTotal')" required><el-input v-model="manualForm.totalAmount" :readonly="manualBusinessType==='LOGISTICS' && !!selectedHistory && !selectedHistory.amountMissing"><template #prepend><el-select v-model="manualForm.currency" :disabled="manualBusinessType==='LOGISTICS'" filterable allow-create default-first-option :placeholder="t('supplierRecon.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
           <el-form-item :label="t('supplierRecon.manualPaid')"><el-input v-model="manualForm.paidAmount" /></el-form-item>
         </div>
+        <div class="manual-grid">
         <el-form-item :label="t('supplierRecon.manualDate')"><el-date-picker v-model="manualForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
         <el-form-item :label="t('supplierRecon.manualDueDate')"><el-date-picker v-model="manualForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" /></el-form-item>
+        </div>
         <el-form-item :label="t('supplierRecon.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
@@ -59,10 +72,6 @@
         <!-- 主页签：供应商对账下面的两个子页。状态放在地址的 query 里，
              前进/后退和分享链接都对；菜单高亮看的是 route.path，不受
              query 影响，仍然稳稳停在「供应商对账」上。 -->
-        <el-radio-group :model-value="isDone ? 'done' : 'open'" class="tabs" @update:model-value="switchTab">
-          <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
-          <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
-        </el-radio-group>
         <!-- 次级筛子，只在待核销那一档下有意义：已完成的单不用再催。 -->
         <el-radio-group v-if="!isDone" v-model="view" @change="reload">
           <el-radio-button value="">{{ t('supplierRecon.viewAll') }}</el-radio-button>
@@ -159,10 +168,12 @@
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
                  而财务没有 procurement:order:read——给所有人挂链接等于每一行
                  都放了一个点下去必然 403 的入口。 -->
-            <router-link v-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
+            <template v-if="row.businessType==='LOGISTICS'"><span class="po-no">{{row.businessDocumentNo?t('shipping.logisticsContractNo'):'物流订单'}}：{{row.businessDocumentNo||row.poNo}}</span> <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">{{t('shipping.systemGenerated')}}</el-tag><div v-if="row.businessDocumentNo && row.businessDocumentNo!==row.poNo" class="sub">{{t('shipping.payableReference')}}：{{row.poNo}}</div></template>
+            <router-link v-else-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
             <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
             <div v-if="row.exportContractNo" class="sub">{{ t('supplierRecon.exportContract') }} {{ row.exportContractNo }}</div>
+            <div v-if="row.businessType==='LOGISTICS'&&row.transportBatchNo" class="sub">{{t('shipping.transportBatch')}}：{{t('shipping.todoBatchTitle',{n:row.transportBatchNo})}}</div>
             <div v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt" class="sub finance-review">
               {{ t('supplierRecon.awaitingFinanceApproval') }} · {{ row.signedContractName }}
             </div>
@@ -234,7 +245,7 @@
               <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
-                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
+                <el-dropdown-item v-if="row.manuallyEntered && !Number(row.sourceBusinessId)" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
                 <el-dropdown-item
                   v-if="['PROCUREMENT','LOGISTICS'].includes(row.businessType) && row.signedContractName && !row.requestedAt"
                   divided
@@ -265,7 +276,7 @@
 
     <el-dialog v-model="detailOpen" :title="t('supplierRecon.detailTitle')" width="min(860px, 96vw)">
       <template v-if="detailRow">
-        <p class="close-target">{{ detailRow.poNo }} · {{ detailRow.supplierName }}</p>
+        <p class="close-target">{{ detailRow.poNo }} · {{ detailRow.supplierName }} <el-button v-if="detailRow.businessType==='LOGISTICS' && Number(detailRow.sourceBusinessId)>0 && auth.can('shipping:schedule:read')" link type="primary" @click="openLinkedLogistics(detailRow)">查看关联物流订单</el-button></p>
         <el-descriptions :column="3" border class="detail-summary">
           <el-descriptions-item :label="t('supplierRecon.manualTotal')">{{ detailRow.currency }} {{ detailRow.orderedAmount }}</el-descriptions-item>
           <el-descriptions-item :label="t('supplierRecon.manualPaid')">{{ detailRow.paidAmount }}</el-descriptions-item>
@@ -412,6 +423,7 @@ import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import TravelReimbursementPanel from '../components/TravelReimbursementPanel.vue'
+import PurchaseContractReviewPanel from '../components/PurchaseContractReviewPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -421,21 +433,34 @@ const auth = useAuthStore()
 // 「看得见按钮、点下去 403」，或者更糟，反过来。
 const canWrite = auth.can('procurement:recon:write')
 const canReadRecon = auth.can('procurement:recon:read')
+const canReviewContracts=auth.can('procurement:recon:write')&&auth.can('procurement:order:read')
+const isContractReview=computed(()=>route.query.view==='contracts')
 const isReimbursement = computed(() => route.query.section === 'travel' || !canReadRecon)
 function switchSection(value: string | number | boolean | undefined) {
   void router.push({ path: route.path, query: value === 'travel' ? { section: 'travel' } : {} })
 }
+interface HistoryPayableOption {id:string;orderNo:string;supplierName:string;currency:string;amount:string;amountMissing:boolean;contractNo:string}
+const manualBusinessType=ref('MANUAL'),manualSourceId=ref(''),historyOptions=ref<HistoryPayableOption[]>([]),historyOptionsLoading=ref(false)
+const selectedHistory=computed(()=>historyOptions.value.find(item=>item.id===manualSourceId.value))
+function resetManualSource(){manualSourceId.value='';Object.assign(manualForm,{supplierName:'',orderNo:'',currency:'CNY',totalAmount:'',paidAmount:'',paidAt:'',dueDate:'',note:''});if(manualBusinessType.value==='LOGISTICS')void loadHistoryOptions()}
+function applyHistoryOrder(){const item=selectedHistory.value;Object.assign(manualForm,{supplierName:item?.supplierName||'',orderNo:item?.orderNo||'',currency:item?.currency||'USD',totalAmount:item&&!item.amountMissing?item.amount:'',paidAmount:'',paidAt:'',dueDate:'',note:''})}
 const manualOpen = ref(false)
 const manualBusy = ref(false)
 const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
 
+async function openLinkedLogistics(row:Row){
+ const result=await get<{handoff:{scheduleId:string}}>(`/shipping/contract-handoffs/${row.sourceBusinessId}`)
+ if(Number(result.handoff.scheduleId)>0)await router.push(`/shipping/${result.handoff.scheduleId}`)
+ else await router.push({path:'/shipping/orders',query:{handoff:row.sourceBusinessId}})
+}
 async function saveManual() {
+  if(manualBusinessType.value==='LOGISTICS'&&!manualSourceId.value){ElMessage.warning('请选择关联的历史物流订单');return}
   if (!manualForm.supplierName.trim() || !manualForm.orderNo.trim() || !manualForm.totalAmount.trim()) {
     ElMessage.warning(t('supplierRecon.manualRequired')); return
   }
   manualBusy.value = true
   try {
-    await post('/supplier-recon/manual', manualForm)
+    await post('/supplier-recon/manual', {...manualForm,businessType:manualBusinessType.value,sourceBusinessId:manualBusinessType.value==='LOGISTICS'?manualSourceId.value:'0'})
     manualOpen.value = false
     Object.assign(manualForm, { supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
     ElMessage.success(t('supplierRecon.manualSaved'))
@@ -474,6 +499,8 @@ interface Row {
   sourceBusinessId: string
   exportContractNo: string
   businessDocumentNo: string
+  transportBatchNo?: number
+  businessDocumentNoGenerated?: boolean
   paymentTerms: string
   signedContractName: string
   requestedByName: string
@@ -531,6 +558,7 @@ function switchTab(v: string | number | boolean | undefined) {
   const q: Record<string, string> = {}
   if (keyword.value) q.keyword = keyword.value
   if (v === 'done') q.view = 'done'
+  if (v === 'contracts') q.view = 'contracts'
   void router.push({ path: route.path, query: q })
 }
 
@@ -570,7 +598,14 @@ async function fetchPage(params: Record<string, string | number>) {
   return get<{ items: Row[]; total: string }>('/supplier-recon', params)
 }
 
+async function loadHistoryOptions(){
+ historyOptionsLoading.value=true
+ try{historyOptions.value=(await get<{items:HistoryPayableOption[]}>('/supplier-recon/historical-logistics')).items||[]}
+ catch{historyOptions.value=[]}
+ finally{historyOptionsLoading.value=false}
+}
 async function openManual() {
+  manualBusinessType.value='MANUAL';resetManualSource();historyOptions.value=[]
   manualOpen.value = true
   try {
     const [open, done] = await Promise.all([
@@ -585,6 +620,7 @@ async function openManual() {
 }
 
 async function load() {
+  if(isContractReview.value)return
   loading.value = true
   try {
     const d = await fetchPage({
@@ -609,6 +645,7 @@ async function load() {
 }
 
 async function loadMetrics() {
+  if(isContractReview.value)return
   const [overdue, unset, sample] = await Promise.all([
     fetchPage({ page: 1, page_size: 1, overdue: '1' }),
     fetchPage({ page: 1, page_size: 1, unset: '1' }),
@@ -714,7 +751,9 @@ function handleRowCommand(row: Row, command: string) {
 
 async function approveFinance(row: Row) {
   await ElMessageBox.confirm(
-    t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
+    row.businessType==='LOGISTICS'
+      ? t('shipping.verifyContractConfirm',{contract:row.businessDocumentNo||t('shipping.contractNumberUnset'),sales:row.exportContractNo||'—',batch:row.transportBatchNo?t('shipping.todoBatchTitle',{n:row.transportBatchNo}):'—',file:row.signedContractName})
+      : t('supplierRecon.approveFinanceConfirm', { no: row.poNo, file: row.signedContractName }),
     t('supplierRecon.approveFinance'),
     { type: 'warning' },
   )
@@ -938,6 +977,7 @@ watch(isDone, () => {
   files.value = {}
   reload()
 })
+watch(isContractReview,active=>{if(!active)reload()})
 
 watch(isReimbursement, (active) => {
   if (!active) { load(); loadMetrics() }
@@ -966,7 +1006,7 @@ onMounted(() => {
   gap: 14px;
   min-width: 0;
 }
-.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+:global(.finance-manual-dialog .el-dialog__body){max-height:calc(88vh - 120px);overflow-y:auto;padding:12px 20px}:global(.finance-manual-dialog .el-dialog__footer){border-top:1px solid #e5edf2;padding-top:12px}:global(.finance-manual-dialog .el-form-item){margin-bottom:14px}.manual-source-hint{font-size:12px;color:#6b7e8b;line-height:1.6;margin:0 0 14px}.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
 .metrics {
   display: grid;

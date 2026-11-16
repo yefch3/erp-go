@@ -16,6 +16,9 @@ func (s *Server) contractWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		body.Action = "get"
+		if r.URL.Query().Get("view") == "handoff" {
+			body.Action = "handoff_get"
+		}
 	} else if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 3*1024*1024)).Decode(&body); err != nil {
 		s.writeError(w, http.StatusBadRequest, "INVALID_BODY", "请求格式无效")
 		return

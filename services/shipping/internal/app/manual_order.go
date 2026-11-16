@@ -16,9 +16,6 @@ func validateManualOrder(v *ContractHandoff) error {
 	v.ContractNo = strings.TrimSpace(v.ContractNo)
 	v.ManualOrderNo = strings.TrimSpace(v.ManualOrderNo)
 	v.FinalCurrency = strings.ToUpper(strings.TrimSpace(v.FinalCurrency))
-	if v.ContractNo == "" {
-		return apierr.Invalid("MANUAL_CONTRACT_NO_REQUIRED", "请填写关联外销合同单号，系统暂无此合同也可以保存")
-	}
 	for _, field := range []struct {
 		text  string
 		limit int
@@ -62,7 +59,7 @@ func validateManualOrder(v *ContractHandoff) error {
 }
 
 // SaveManualShippingOrder creates only logistics data. ContractNo is an unbound
-// reference; no contract event is emitted and no financial state is replayed.
+// reference. It creates a schedule atomically, without replaying approval or finance.
 func (s *Service) SaveManualShippingOrder(ctx context.Context, tenantID int64, v ContractHandoff, op Operator) (ContractHandoff, error) {
 	if tenantID <= 0 || op.ID <= 0 {
 		return ContractHandoff{}, apierr.Invalid("MANUAL_CONTEXT", "缺少当前公司或操作人")
@@ -70,7 +67,25 @@ func (s *Service) SaveManualShippingOrder(ctx context.Context, tenantID int64, v
 	if err := validateManualOrder(&v); err != nil {
 		return ContractHandoff{}, err
 	}
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	// A historical order goes straight to schedule management. Validate the
+	// schedule before persisting either record; no half-created draft survives.
+	p, err := validateInput(ScheduleInput{ContractNo: v.ContractNo, CustomerName: v.CustomerName,
+		PortOfLoading: v.PortOfLoading, PortOfDischarge: v.PortOfDischarge, ETD: v.FinalETD, ETA: v.FinalETA,
+		ResponsibleEmployeeID: op.ID, ResponsibleName: op.Name, Remark: manualOrderNote(v),
+		FreightCurrency: v.FinalCurrency, FreightAmount: v.FinalFreightAmount})
+	if err != nil {
+		return ContractHandoff{}, err
+	}
+	p.CarrierForwarder = v.FinalForwarderName
+	if v.FinalForwarderID > 0 {
+		p.CarrierID = &v.FinalForwarderID
+	}
+	if v.ActualCarrierID > 0 {
+		p.CarrierID = &v.ActualCarrierID
+		p.CarrierForwarder = v.ActualCarrierName
+	}
+	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if v.ID == 0 {
 			if err := tx.QueryRow(ctx, `SELECT nextval('contract_shipping_handoffs_id_seq')`).Scan(&v.ID); err != nil {
 				return err
@@ -117,7 +132,7 @@ func (s *Service) SaveManualShippingOrder(ctx context.Context, tenantID int64, v
 		if v.AmountMissing {
 			amount = "0"
 		}
-		_, err := tx.Exec(ctx, `UPDATE contract_shipping_handoffs SET contract_no=$3,customer_name=$4,port_of_loading=$5,port_of_discharge=$6,final_forwarder_id=$7,final_forwarder_name=$8,actual_carrier_id=$9,actual_carrier_name=$10,final_service_option=$11,currency=$12::text,final_currency=$12::text,final_freight_amount=$13::numeric,final_etd=NULLIF($14,'')::date,final_eta=NULLIF($15,'')::date,payment_terms=$16,remark=$17,forwarder_contract_no=$18,operator_id=$19,operator_name=$20,updated_at=now(),status='DRAFT' WHERE tenant_id=$1 AND id=$2`, tenantID, v.ID, v.ContractNo, v.CustomerName, v.PortOfLoading, v.PortOfDischarge, v.FinalForwarderID, v.FinalForwarderName, v.ActualCarrierID, v.ActualCarrierName, v.FinalServiceOption, v.FinalCurrency, amount, v.FinalETD, v.FinalETA, v.PaymentTerms, v.Remark, v.ForwarderContractNo, op.ID, op.Name)
+		_, err := tx.Exec(ctx, `UPDATE contract_shipping_handoffs SET contract_no=$3,customer_name=$4,port_of_loading=$5,port_of_discharge=$6,final_forwarder_id=$7,final_forwarder_name=$8,actual_carrier_id=$9,actual_carrier_name=$10,final_service_option=$11,currency=$12::text,final_currency=$12::text,final_freight_amount=$13::numeric,final_etd=NULLIF($14,'')::date,final_eta=NULLIF($15,'')::date,payment_terms=$16,remark=$17,forwarder_contract_no_generated=CASE WHEN forwarder_contract_no=$18 THEN forwarder_contract_no_generated ELSE false END,forwarder_contract_no=$18,operator_id=$19,operator_name=$20,updated_at=now(),status='DRAFT' WHERE tenant_id=$1 AND id=$2`, tenantID, v.ID, v.ContractNo, v.CustomerName, v.PortOfLoading, v.PortOfDischarge, v.FinalForwarderID, v.FinalForwarderName, v.ActualCarrierID, v.ActualCarrierName, v.FinalServiceOption, v.FinalCurrency, amount, v.FinalETD, v.FinalETA, v.PaymentTerms, v.Remark, v.ForwarderContractNo, op.ID, op.Name)
 		if err != nil {
 			return err
 		}
@@ -132,6 +147,18 @@ func (s *Service) SaveManualShippingOrder(ctx context.Context, tenantID int64, v
 				return err
 			}
 		}
+		p.ContractHandoffID = v.ID
+		q := s.q.WithTx(tx)
+		schedule, err := q.CreateSchedule(ctx, p)
+		if err != nil {
+			return err
+		}
+		if err = createInitialRoute(ctx, q, schedule, op); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE contract_shipping_handoffs SET status='SCHEDULED',schedule_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, v.ID, schedule.ID); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -141,4 +168,15 @@ func (s *Service) SaveManualShippingOrder(ctx context.Context, tenantID int64, v
 		return ContractHandoff{}, err
 	}
 	return s.GetContractHandoff(ctx, tenantID, v.ID)
+}
+
+func manualOrderNote(v ContractHandoff) string {
+	description, note := strings.TrimSpace(v.FinalServiceOption), strings.TrimSpace(v.Remark)
+	if description != "" && note != "" && description != note {
+		return description + "\n" + note
+	}
+	if note != "" {
+		return note
+	}
+	return description
 }

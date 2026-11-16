@@ -1,5 +1,6 @@
 <template>
   <el-dialog
+    append-to-body
     :model-value="modelValue"
     :title="title || '资料预览'"
     width="min(1040px, 88vw)"
@@ -7,7 +8,8 @@
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div v-if="objectUrl && previewKind === 'image'" class="file-preview file-preview--image">
+    <CustomerDocumentPdf v-if="objectUrl && source && previewKind === 'pdf'" :key="objectUrl" :source="source" />
+    <div v-else-if="objectUrl && previewKind === 'image'" class="file-preview file-preview--image">
       <img :src="objectUrl" :alt="title" />
     </div>
     <iframe
@@ -27,7 +29,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, defineAsyncComponent } from 'vue'
+const CustomerDocumentPdf=defineAsyncComponent(()=>import('./CustomerDocumentPdf.vue'))
 
 const props = defineProps<{
   modelValue: boolean
@@ -54,9 +57,9 @@ onBeforeUnmount(releaseObjectUrl)
 
 const normalizedType = computed(() => (props.contentType || props.source?.type || '').toLowerCase())
 const extension = computed(() => props.title.split('.').pop()?.toLowerCase() || '')
-const previewKind = computed<'image' | 'frame' | 'unsupported'>(() => {
+const previewKind = computed<'image' | 'pdf' | 'frame' | 'unsupported'>(() => {
   if (normalizedType.value.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(extension.value)) return 'image'
-  if (normalizedType.value === 'application/pdf' || extension.value === 'pdf') return 'frame'
+  if (normalizedType.value === 'application/pdf' || extension.value === 'pdf') return 'pdf'
   if (normalizedType.value.startsWith('text/') || ['txt', 'csv', 'json', 'xml', 'md'].includes(extension.value)) return 'frame'
   return 'unsupported'
 })

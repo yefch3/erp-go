@@ -15,7 +15,7 @@
    <template v-else>
    <el-form-item label="客户合同币种" required><el-select v-model="form.currency"><el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c"/></el-select></el-form-item>
    <el-form-item label="原／客户合同号"><el-input v-model="form.externalContractNo"/></el-form-item>
-   <el-form-item label="交货日期"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
+   <el-form-item :label="t('contractRepair.deliveryLabel')"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
    <el-form-item label="贸易条款"><el-select v-model="form.incoterm" filterable allow-create default-first-option><el-option v-for="v in ['FOB','CFR','CIF','EXW','FCA','DAP','DDP']" :key="v" :value="v" :label="v"/></el-select></el-form-item>
    <el-form-item label="付款条件"><el-input v-model="form.paymentMethod" placeholder="按客户合同填写"/></el-form-item>
    <el-form-item label="应收到账日"><el-date-picker v-model="form.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable/></el-form-item>
@@ -25,6 +25,7 @@
   </el-form>
   <template v-if="!history">
   <div class="lines-heading"><strong>客户成交明细</strong><div><el-button link type="primary" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button link type="primary" @click="addLine">添加产品</el-button></div></div>
+  <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]" :editable="!busy">
   <el-table :data="form.items" border max-height="340">
    <el-table-column label="产品名称" min-width="180"><template #default="{row}"><el-input v-model="row.productName"/></template></el-table-column>
    <el-table-column label="规格" min-width="160"><template #default="{row}"><el-input v-model="row.spec"/></template></el-table-column>
@@ -34,6 +35,7 @@
    <el-table-column label="金额" width="120" align="right"><template #default="{row}">{{amount(row)}}</template></el-table-column>
    <el-table-column width="65"><template #default="{$index}"><el-button link type="danger" @click="form.items.splice($index,1)">删除</el-button></template></el-table-column>
   </el-table>
+  </ColumnFillRegion>
   <div class="entry-total">客户合同合计：{{total}} {{form.currency}}</div>
   </template>
   <el-form label-position="top"><el-form-item :label="history?'备注':'合同条款／备注'"><el-input v-model="form.terms" type="textarea" :rows="3"/></el-form-item><el-form-item v-if="history" label="原合同附件（PDF）" required><input ref="fileInput" type="file" accept="application/pdf,.pdf" hidden @change="pickFile"/><el-button @click="fileInput?.click()">{{file||form.signedFileName?'更换附件':'选择合同文件'}}</el-button><span class="file-name">{{file?.name||form.signedFileName||'尚未选择文件'}}</span><small class="file-hint">保存草稿时可以暂缺文件，已上传的文件会随草稿保留。</small></el-form-item></el-form>
@@ -43,6 +45,8 @@
 </template>
 <script setup lang="ts">
 import {computed,reactive,ref,watch} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {contractLineAmount,contractTotal} from '../lib/contractEditing'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {get,post,quietErrors} from '../api'
 import {isDialogDismissed} from '../lib/dialogActions'
@@ -52,6 +56,8 @@ import {newIdempotencySession,withIdempotency} from '../lib/idempotency'
 import ContractLineImportDialog from './ContractLineImportDialog.vue'
 import type {ContractImportLine} from '../lib/contractLineImport'
 import ContractOperationButton from './ContractOperationButton.vue'
+import ColumnFillRegion from './ColumnFillRegion.vue'
+const {t}=useI18n()
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
@@ -63,8 +69,8 @@ function showEntryError(error:unknown){if(isDialogDismissed(error))return;entryE
 function appendImported(lines:ContractImportLine[]){form.items=form.items.filter(l=>[l.productName,l.spec,l.qty,l.uomCode,l.unitPrice].some(v=>v.trim()));form.items.push(...lines);ElMessage.success(`已追加 ${lines.length} 条产品明细，请核对后保存合同`)}
 const idem=newIdempotencySession()
 function addLine(){form.items.push({productId:'0',productName:'',spec:'',qty:'',uomCode:'',unitPrice:''})}
-function amount(l:Line){const n=Number(l.qty)*Number(l.unitPrice);return Number.isFinite(n)?n.toFixed(2):'—'}
-const total=computed(()=>form.items.reduce((s,l)=>s+(Number(amount(l))||0),0).toFixed(2))
+function amount(l:Line){return contractLineAmount(l)}
+const total=computed(()=>contractTotal(form.items))
 async function searchCustomers(keyword:string){try{customers.value=(await get<{customers:any[]}>('/customers',{keyword,page_size:50},quietErrors)).customers||[]}catch(error){showEntryError(error)}}
 function selectCustomer(){const c=customers.value.find(c=>String(c.id)===form.customerId);form.customerName=c?customerOptionLabel(c):''}
 function pickFile(e:Event){file.value=(e.target as HTMLInputElement).files?.[0]||null}

@@ -41,8 +41,13 @@ func (s *Service) UploadOrderDraftFile(ctx context.Context, tenantID, poID int64
 	if len(data) > maxOrderDraftFile {
 		return OrderDraftFile{}, apierr.Invalid("PO_DRAFT_FILE_TOO_LARGE", "单个采购资料不能超过 10 MB")
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return OrderDraftFile{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
-	if err := s.pool.QueryRow(ctx, `SELECT status FROM purchase_orders WHERE tenant_id=$1 AND id=$2`, tenantID, poID).Scan(&status); err == pgx.ErrNoRows {
+	if err := tx.QueryRow(ctx, `SELECT status FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).Scan(&status); err == pgx.ErrNoRows {
 		return OrderDraftFile{}, apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
 	} else if err != nil {
 		return OrderDraftFile{}, err
@@ -58,8 +63,19 @@ func (s *Service) UploadOrderDraftFile(ctx context.Context, tenantID, poID int64
 		contentType = "application/octet-stream"
 	}
 	var id int64
-	if err := s.pool.QueryRow(ctx, `INSERT INTO purchase_order_draft_files(tenant_id,po_id,file_name,content_type,size_bytes,file_data,uploaded_by_id,uploaded_by_name)
+	err = tx.QueryRow(ctx, `SELECT id FROM purchase_order_draft_files
+		WHERE tenant_id=$1 AND po_id=$2 AND file_name=$3 AND content_type=$4 AND file_data=$5
+		ORDER BY id LIMIT 1`, tenantID, poID, name, contentType, data).Scan(&id)
+	if err != nil && err != pgx.ErrNoRows {
+		return OrderDraftFile{}, err
+	}
+	if err == pgx.ErrNoRows {
+		if err := tx.QueryRow(ctx, `INSERT INTO purchase_order_draft_files(tenant_id,po_id,file_name,content_type,size_bytes,file_data,uploaded_by_id,uploaded_by_name)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, tenantID, poID, name, contentType, len(data), data, op.ID, op.Name).Scan(&id); err != nil {
+			return OrderDraftFile{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return OrderDraftFile{}, err
 	}
 	files, err := s.ListOrderDraftFiles(ctx, tenantID, poID)

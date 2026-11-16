@@ -840,3 +840,60 @@ func TestSignedContractEntersFinanceAndApprovalUnlocksPayment(t *testing.T) {
 		t.Fatalf("finance-approved order should accept payment: %v", err)
 	}
 }
+
+// 付款记录编号、物流合同号和外销合同号分别存储；出账搜索都应识别，
+// 大小写不敏感，采购单的业务单据号搜索也保持可用。
+func TestReconKeywordFindsPayableByExportContractAndDocumentNo(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	if _, err := svc.CreateExternalPayable(ctx, tenantID, ExternalPayableInput{
+		BusinessType: "LOGISTICS", SourceBusinessID: 7701, PayeeID: 31, PayeeName: "Ocean Forwarder",
+		ExportContractNo: "SC-2026-ABC", BusinessDocumentNo: "FWD-0001", Currency: "usd", Amount: "800",
+		SignedContractKey: "contracts/fwd.pdf", SignedContractName: "fwd.pdf",
+	}, op); err != nil {
+		t.Fatal(err)
+	}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-D4-DOC", "500", "ORDERED")
+	if _, err := svc.pool.Exec(ctx, `UPDATE purchase_orders
+		SET business_type='PROCUREMENT', source_business_id=7702,
+		    export_contract_no='SC-OTHER-9', business_document_no='BIZ-DOC-77',
+		    signed_contract_key='contracts/po.pdf', signed_contract_name='po.pdf',
+		    signed_contract_uploaded_at=now()
+		WHERE tenant_id=$1 AND id=$2`, tenantID, poID); err != nil {
+		t.Fatal(err)
+	}
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-PLAIN", "300", "ORDERED")
+
+	search := func(keyword string) []string {
+		t.Helper()
+		rows, total, err := svc.ListSupplierRecon(ctx, tenantID, SupplierReconFilter{Keyword: keyword, Page: 1, PageSize: 200}, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int(total) != len(rows) {
+			t.Fatalf("搜 %q：total=%d 和行数 %d 对不上", keyword, total, len(rows))
+		}
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.BusinessType+":"+r.PONo)
+		}
+		return out
+	}
+	for _, c := range []struct{ keyword, want string }{
+		{"sc-2026-abc", "LOGISTICS:LOG-7701"},
+		{"2026-ABC", "LOGISTICS:LOG-7701"},
+		{"FWD-0001", "LOGISTICS:LOG-7701"},
+		{"log-7701", "LOGISTICS:LOG-7701"},
+		{"biz-doc-77", "PROCUREMENT:PO-D4-DOC"},
+		{"sc-other", "PROCUREMENT:PO-D4-DOC"},
+		{"po-plain", "PROCUREMENT:PO-PLAIN"},
+	} {
+		if got := search(c.keyword); len(got) != 1 || got[0] != c.want {
+			t.Fatalf("搜 %q 应只命中 %s，实际 %v", c.keyword, c.want, got)
+		}
+	}
+	if got := search("SC-NOPE"); len(got) != 0 {
+		t.Fatalf("搜不存在的外销合同号不该命中任何行，实际 %v", got)
+	}
+}

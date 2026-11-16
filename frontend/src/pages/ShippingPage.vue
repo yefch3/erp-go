@@ -40,7 +40,7 @@
                 <el-table-column v-for="column in scheduleColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :show-overflow-tooltip="column.showOverflowTooltip">
                   <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="scheduleColumns.canMoveLeft(column.key)" :can-move-right="scheduleColumns.canMoveRight(column.key)" @move-left="scheduleColumns.moveBy(column.key,-1)" @move-right="scheduleColumns.moveBy(column.key,1)" /></template>
                   <template #default="{ row }">
-                    <el-link v-if="column.key==='scheduleNo'" type="primary" @click="detail(row)">{{ row.scheduleNo }}</el-link>
+                    <div v-if="column.key==='scheduleNo'" class="business-reference"><el-link type="primary" @click="detail(row)">{{ shippingBusinessLabel(row,t) }}</el-link><small>{{ t('shipping.scheduleNo') }}：{{ row.scheduleNo }}</small></div>
                     <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
                     <span v-else-if="column.key==='vesselVoyage'">{{ row.vesselName }} / {{ row.voyageNo }}</span>
                     <span v-else-if="column.key==='route'">{{ row.portOfLoading }} → {{ row.portOfDischarge }}</span>
@@ -81,7 +81,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import ShippingScheduleDialog, { type ContractShippingHandoff } from '../components/ShippingScheduleDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
-import { SHIPPING_STATUSES, shippingStatusLabel, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
+import { SHIPPING_STATUSES, shippingBusinessLabel, shippingStatusLabel, statusTag, type ShippingSchedule, type ShippingStatistics } from '../shipping'
 import { useAuthStore } from '../stores/auth'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
@@ -90,7 +90,7 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const scheduleColumnDefaults = computed<TableColumnDefinition[]>(() => [
-  { key: 'scheduleNo', label: t('shipping.scheduleNo'), width: 170 },
+  { key: 'scheduleNo', label: t('shipping.businessReference'), width: 255 },
   { key: 'customer', label: t('shipping.customer'), minWidth: 140, showOverflowTooltip: true },
   { key: 'vesselVoyage', label: t('shipping.vesselVoyage'), minWidth: 155, showOverflowTooltip: true },
   { key: 'route', label: '路线', minWidth: 165, showOverflowTooltip: true },
@@ -157,10 +157,10 @@ async function handleRowAction(command:string,row:ShippingSchedule){
   if(command==='edit'){editing.value=row;dialogOpen.value=true;return}
   if(command==='account'){
     if(!auth.can('procurement:recon:read')){ElMessage.warning(t('shipping.accountPermissionRequired'));return}
-    await router.push({path:'/supplier-recon',query:{keyword:row.contractNo}});return
+    await router.push({path:'/supplier-recon',query:{keyword:row.manualOrderNo||row.contractNo}});return
   }
   if(command!=='delete'||row.status!=='PLANNED')return
-  try{await ElMessageBox.confirm(t('shipping.deleteScheduleConfirm',{no:row.scheduleNo}),t('shipping.deleteSchedule'),{type:'warning',confirmButtonText:t('common.delete'),cancelButtonText:t('common.cancel')})}catch(action){if(action==='cancel'||action==='close')return;throw action}
+  try{await ElMessageBox.confirm(t('shipping.deleteScheduleConfirm',{no:shippingBusinessLabel(row,t)}),t('shipping.deleteSchedule'),{type:'warning',confirmButtonText:t('common.delete'),cancelButtonText:t('common.cancel')})}catch(action){if(action==='cancel'||action==='close')return;throw action}
   await post(`/shipping/schedules/${row.id}/cancel`,{reason:t('shipping.deletedMistakeReason')})
   ElMessage.success(t('shipping.scheduleDeleted'))
   await load()
@@ -177,6 +177,7 @@ onMounted(async()=>{await load();await openDelegatedOrder()})
 </script>
 
 <style scoped>
+.business-reference{display:flex;flex-direction:column;align-items:flex-start;gap:3px}.business-reference small{color:#7a8794;font-size:12px}.business-reference :deep(.el-link){font-weight:600}
 .handoff-card{margin-bottom:16px}
 .shipping-workspace{max-width:1680px;margin:0 auto}.workspace-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px;padding:18px 22px;border:1px solid #dfe9e7;border-radius:12px;background:linear-gradient(115deg,#f2faf8 0%,#f8fafc 55%,#f4f7fb 100%)}.head-copy{display:flex;align-items:center;gap:16px}.head-copy :deep(.el-tag){border:0;background:#167d70}.workspace-head h2{margin:0 0 4px;color:#172b4d;font-size:24px}.workspace-head p,.section-title p{margin:0;color:#6b778c}.section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.section-title h3{margin:0 0 5px;color:#172b4d}.stats{margin-bottom:14px}.stat-card{border-color:#e6ebf1}.stat-label{color:var(--el-text-color-secondary);font-size:13px}.stat-value{margin-top:6px;font-size:26px;font-weight:600}.schedule-card{border-color:#e6ebf1}.filters{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(180px,1fr) minmax(150px,.8fr) minmax(150px,.8fr) auto auto;gap:10px;margin-bottom:14px;align-items:center}.date-filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}.table-scroll{min-width:0;overflow-x:auto}.table-scroll :deep(.el-table){min-width:1180px}.pager{margin-top:14px;justify-content:flex-end;flex-wrap:wrap}.change-tag{margin-right:5px}
 .shipping-workspace{color:#141817}.section-title h3{color:#141817}.stats :deep(.el-col:nth-child(odd) .stat-card){border-top:3px solid #4ac1ff}.stats :deep(.el-col:nth-child(even) .stat-card){border-top:3px solid #1fbf6c}.stat-value{color:#159fdc}.schedule-card :deep(.el-table th.el-table__cell){border-bottom-color:#d9edf5;font-weight:650}.schedule-card :deep(.el-table){--el-table-header-bg-color:#eef9fe;--el-table-header-text-color:#24323a;--el-table-row-hover-bg-color:#f0fbf6}

@@ -20,6 +20,8 @@ service CustomerService {
   rpc MarkCustomerDocumentRemindersRead(MarkCustomerDocumentRemindersReadRequest) returns (MarkCustomerDocumentRemindersReadResponse);
   rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse);
   rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
+  // 一次取一批客户的当前名称和状态，给列表用；只返回调用人看得到的客户。
+  rpc GetCustomerNames(GetCustomerNamesRequest) returns (GetCustomerNamesResponse);
   rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
   rpc UpdateCustomer(UpdateCustomerRequest) returns (UpdateCustomerResponse);
   rpc UpdateCustomerProfile(UpdateCustomerProfileRequest) returns (UpdateCustomerProfileResponse);
@@ -392,6 +394,24 @@ message GetCustomerRequest {
 
 message GetCustomerResponse {
   Customer customer = 1;
+}
+
+// 列表页一次要几十个客户的显示名。逐个 GetCustomer 会把联系人、地址、自定义
+// 字段一起读出来，还要每个都过一遍访问检查；这里只要名称和状态，一次读完。
+// 看不到的、不存在的 id 不出现在结果里，调用方按「找不到」处理。
+message GetCustomerNamesRequest {
+  repeated int64 ids = 1;
+}
+
+message CustomerNameEntry {
+  int64 id = 1;
+  string name = 2;
+  string short_name = 3;
+  string status = 4;
+}
+
+message GetCustomerNamesResponse {
+  repeated CustomerNameEntry customers = 1;
 }
 
 message ListCustomersRequest {

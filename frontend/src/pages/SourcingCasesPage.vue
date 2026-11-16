@@ -169,6 +169,7 @@
         <el-form-item :label="t('sourcing.delivery')"><el-input v-model="quoteForm.delivery" /></el-form-item>
         <el-form-item :label="t('sourcing.paymentTerms')"><el-input v-model="quoteForm.paymentTerms" /></el-form-item>
       </el-form>
+      <ColumnFillRegion :rows="quoteRows" :fields="[{key:'unitPrice',column:2},{key:'moq',column:3},{key:'leadTime',column:4}]">
       <el-table :data="quoteRows" size="small" border>
         <el-table-column prop="product" :label="t('sourcing.product')" min-width="180" />
         <el-table-column prop="qty" :label="t('sourcing.quantity')" width="120" />
@@ -176,6 +177,7 @@
         <el-table-column :label="t('sourcing.moq')" width="130"><template #default="{ row }"><el-input v-model="row.moq" /></template></el-table-column>
         <el-table-column :label="t('sourcing.leadTime')" min-width="160"><template #default="{ row }"><el-input v-model="row.leadTime" /></template></el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <template #footer><el-button @click="quoteOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="saveQuote">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
@@ -218,6 +220,7 @@
         </template></el-table-column>
       </el-table>
       <div class="section-heading"><h4>{{ t('sourcing.charges') }}</h4><el-button @click="addCharge">{{ t('sourcing.addCharge') }}</el-button></div>
+      <ColumnFillRegion :rows="costCharges" :fields="[{key:'basis',column:1},{key:'amount',column:2},{key:'currency',column:3},{key:'source',column:4}]">
       <el-table :data="costCharges" size="small" border>
         <el-table-column :label="t('sourcing.chargeType')" width="190"><template #default="{ row }"><el-select v-model="row.chargeType"><el-option v-for="type in chargeTypes" :key="type" :value="type" :label="t(`sourcing.chargeTypes.${type}`)" /></el-select></template></el-table-column>
         <el-table-column :label="t('sourcing.chargeBasis')" width="170"><template #default="{ row }"><el-select v-model="row.basis"><el-option v-for="basis in chargeBases" :key="basis" :value="basis" :label="t(`sourcing.chargeBases.${basis}`)" /></el-select></template></el-table-column>
@@ -226,6 +229,7 @@
         <el-table-column :label="t('sourcing.chargeSource')" min-width="180"><template #default="{ row }"><el-input v-model="row.source" /></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="90"><template #default="{ $index }"><el-button link type="danger" @click="costCharges.splice($index, 1)">{{ t('common.delete') }}</el-button></template></el-table-column>
       </el-table>
+      </ColumnFillRegion>
       <template #footer><el-button @click="costOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="createCostScenario">{{ t('common.confirm') }}</el-button></template>
     </el-dialog>
 
@@ -257,6 +261,7 @@
 </template>
 
 <script setup lang="ts">
+import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'

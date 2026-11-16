@@ -80,7 +80,8 @@ func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRe
 		lines = append(lines, lineInput(line))
 	}
 	view, err := h.svc.CreateSourcingCase(ctx, grpcx.TenantID(ctx), app.NewSourcingCase{
-		Title: req.GetTitle(), CustomerID: req.GetCustomerId(), CustomerName: req.GetCustomerName(),
+		Remark: req.GetRemark(),
+		Title:  req.GetTitle(), CustomerID: req.GetCustomerId(), CustomerName: req.GetCustomerName(),
 		ContactID: req.GetContactId(), ContactName: req.GetContactName(), ContactEmail: req.GetContactEmail(),
 		SourceMailID: req.GetSourceMailId(), SourceAttachmentID: req.GetSourceAttachmentId(), Lines: lines,
 		SourceFileName: req.GetSourceFileName(), SourceContentType: req.GetSourceContentType(), SourceFileData: req.GetSourceFileData(),

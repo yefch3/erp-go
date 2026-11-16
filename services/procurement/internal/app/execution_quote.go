@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -31,8 +30,6 @@ type SaveExecutionSupplierQuoteInput struct {
 	Currency, UnitPrice, ExpectedDate, PaymentTerms, ValidUntil, Remark string
 	QuoteCategory, Incoterm, CalculatedUnitPrice, CalculationInput      string
 }
-
-var executionQuoteCategories = map[string]bool{"FOB_USD": true, "FOB_CNY": true, "ALL_IN_PORT_CNY": true, "EX_FACTORY_CNY": true, "REPROCESSING_CNY": true, "DIRECT_CFR_USD": true}
 
 func (s *Service) ListExecutionSupplierQuotes(ctx context.Context, tenantID, requirementID int64) ([]ExecutionSupplierQuote, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price::text,
@@ -117,24 +114,15 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 		return ExecutionSupplierQuote{}, err
 	}
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
-	in.QuoteCategory = strings.ToUpper(strings.TrimSpace(in.QuoteCategory))
-	// quote_category is the single trade-term choice for this workflow.  The
-	// older free-text incoterm slot is kept on the wire for compatibility but
-	// is deliberately cleared so two competing classifications cannot drift.
-	in.Incoterm = ""
-	if !executionQuoteCategories[in.QuoteCategory] {
-		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CATEGORY_REQUIRED", "请选择贸易条款")
-	}
-	expectedCurrency := "CNY"
-	if in.QuoteCategory == "FOB_USD" || in.QuoteCategory == "DIRECT_CFR_USD" {
-		expectedCurrency = "USD"
-	}
-	if in.Currency != expectedCurrency {
-		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CATEGORY_CURRENCY", "报价币种与所选贸易条款不一致")
-	}
 	if in.Currency == "" {
-		in.Currency = supplier.Currency
+		in.Currency = strings.ToUpper(strings.TrimSpace(supplier.Currency))
 	}
+	if !validExecutionQuoteCurrency(in.Currency) {
+		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CURRENCY_INVALID", "币种请输入三位字母代码")
+	}
+	// Execution purchases use the factory's original price and currency.
+	// Keep legacy wire fields but do not apply sales trade-term calculations.
+	in.QuoteCategory, in.Incoterm = "", ""
 	price, err := decimal.NewFromString(in.UnitPrice)
 	if err != nil || price.LessThanOrEqual(decimal.Zero) {
 		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_PRICE_INVALID", "工厂报价单价必须大于 0")
@@ -148,17 +136,6 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	}
 	if strings.TrimSpace(in.PaymentTerms) == "" {
 		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_PAYMENT_TERMS_REQUIRED", "请填写付款条件")
-	}
-	var calculated *decimal.Decimal
-	if strings.TrimSpace(in.CalculatedUnitPrice) != "" {
-		value, parseErr := decimal.NewFromString(in.CalculatedUnitPrice)
-		if parseErr != nil || value.LessThanOrEqual(decimal.Zero) {
-			return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CALCULATION_INVALID", "核算单价必须大于 0")
-		}
-		if !json.Valid([]byte(in.CalculationInput)) {
-			return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_CALCULATION_INPUT_INVALID", "核算参数无效")
-		}
-		calculated = &value
 	}
 	var id int64
 	if in.ID == 0 {
@@ -181,11 +158,6 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	}
 	if err != nil {
 		return ExecutionSupplierQuote{}, err
-	}
-	if calculated != nil {
-		if _, err = s.pool.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET calculated_unit_price=$3::numeric,calculation_input=$4::jsonb,calculated_at=now(),calculated_by_id=$5,calculated_by_name=$6,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, calculated.String(), in.CalculationInput, op.ID, op.Name); err != nil {
-			return ExecutionSupplierQuote{}, err
-		}
 	}
 	s.nudge(ctx, tenantID)
 	return s.executionSupplierQuoteByID(ctx, tenantID, id)
@@ -220,4 +192,16 @@ func (s *Service) executionSupplierQuoteByID(ctx context.Context, tenantID, id i
 		return q, apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
 	}
 	return q, err
+}
+
+func validExecutionQuoteCurrency(currency string) bool {
+	if len(currency) != 3 {
+		return false
+	}
+	for _, letter := range currency {
+		if letter < 'A' || letter > 'Z' {
+			return false
+		}
+	}
+	return true
 }

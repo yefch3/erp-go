@@ -12,7 +12,7 @@ func (h *OrderHandler) SaveHistoricalOrder(ctx context.Context, r *prv1.SaveHist
 	for _, l := range r.GetLines() {
 		lines = append(lines, app.HistoricalOrderLine{ID: l.GetId(), ProductID: l.GetProductId(), ProductCode: l.GetProductCode(), UomID: l.GetUomId(), ProductName: l.GetProductName(), Spec: l.GetSpec(), UOM: l.GetUom(), Qty: l.GetQty(), UnitPrice: l.GetUnitPrice()})
 	}
-	v, e := h.svc.SaveHistoricalOrder(ctx, grpcx.TenantID(ctx), app.HistoricalOrderInput{ID: r.GetId(), PayableDueDate: r.GetPayableDueDate(), SupplierID: r.GetSupplierId(), PONo: r.GetPoNo(), OriginalDate: r.GetOriginalDate(), Currency: r.GetCurrency(), ExpectedDate: r.GetExpectedDate(), ContactName: r.GetContactName(), ContactPhone: r.GetContactPhone(), Remark: r.GetRemark(), DeliveryAddress: r.GetDeliveryAddress(), Confirm: r.GetConfirm(), Lines: lines}, currentOp(ctx))
+	v, e := h.svc.SaveHistoricalOrder(ctx, grpcx.TenantID(ctx), app.HistoricalOrderInput{ExportContractNo: r.GetExportContractNo(), DestinationPort: r.GetDestinationPort(), ID: r.GetId(), PayableDueDate: r.GetPayableDueDate(), SupplierID: r.GetSupplierId(), PONo: r.GetPoNo(), OriginalDate: r.GetOriginalDate(), Currency: r.GetCurrency(), ExpectedDate: r.GetExpectedDate(), ContactName: r.GetContactName(), ContactPhone: r.GetContactPhone(), Remark: r.GetRemark(), DeliveryAddress: r.GetDeliveryAddress(), Confirm: r.GetConfirm(), Lines: lines}, currentOp(ctx))
 	if e != nil {
 		return nil, e
 	}
@@ -30,8 +30,31 @@ func (h *OrderHandler) applyHistoricalMeta(ctx context.Context, o *prv1.Purchase
 	o.PricesComplete = m.PricesComplete
 	o.RecordedBy = m.RecordedBy
 	o.RecordedAt = m.RecordedAt
+	if m.Historical {
+		o.ExportContractNo = m.ExportContractNo
+		o.DestinationPort = m.DestinationPort
+	}
 	if m.Historical && !m.PricesComplete {
 		o.TotalAmount = ""
 	}
 	return nil
+}
+
+func (h *OrderHandler) UpdateHistoricalShippingContext(ctx context.Context, r *prv1.UpdateHistoricalShippingContextRequest) (*prv1.UpdateHistoricalShippingContextResponse, error) {
+	if err := h.svc.UpdateHistoricalShippingContext(ctx, grpcx.TenantID(ctx), r.GetId(), r.GetExportContractNo(), r.GetDestinationPort(), currentOp(ctx)); err != nil {
+		return nil, err
+	}
+	return &prv1.UpdateHistoricalShippingContextResponse{}, nil
+}
+
+func (h *OrderHandler) ListShippingHistoricalPurchases(ctx context.Context, r *prv1.ListShippingHistoricalPurchasesRequest) (*prv1.ListShippingHistoricalPurchasesResponse, error) {
+	rows, err := h.svc.ListShippingHistoricalPurchases(ctx, grpcx.TenantID(ctx), r.GetContractNo(), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.ListShippingHistoricalPurchasesResponse{}
+	for _, row := range rows {
+		out.Items = append(out.Items, &prv1.ShippingHistoricalPurchase{PoNo: row.PONo, SupplierName: row.SupplierName, ExportContractNo: row.ExportContractNo, DestinationPort: row.DestinationPort, Remark: row.Remark})
+	}
+	return out, nil
 }

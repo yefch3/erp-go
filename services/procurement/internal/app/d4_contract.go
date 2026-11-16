@@ -69,7 +69,10 @@ func (s *Service) SaveOrderContract(ctx context.Context, tenantID, orderID int64
 }
 
 func (s *Service) VerifyOrderContract(ctx context.Context, tenantID, orderID int64, op Operator) (OrderContractState, error) {
-	cmd, err := s.pool.Exec(ctx, `UPDATE purchase_orders SET contract_verified_at=now(),contract_verified_by=$3,contract_verified_by_name=$4,payment_requested_at=now(),payment_requested_by=$3,payment_requested_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='ORDERED' AND signed_contract_key<>'' AND payment_requested_at IS NULL`, tenantID, orderID, op.ID, op.Name)
+	if err := s.RequireHistoricalSupplier(ctx, tenantID, orderID); err != nil {
+		return OrderContractState{}, err
+	}
+	cmd, err := s.pool.Exec(ctx, `UPDATE purchase_orders SET contract_verified_at=coalesce(contract_verified_at,now()),contract_verified_by=CASE WHEN contract_verified_at IS NULL THEN $3 ELSE contract_verified_by END,contract_verified_by_name=CASE WHEN contract_verified_at IS NULL THEN $4 ELSE contract_verified_by_name END,payment_requested_at=coalesce(payment_requested_at,now()),payment_requested_by=CASE WHEN payment_requested_at IS NULL THEN $3 ELSE payment_requested_by END,payment_requested_by_name=CASE WHEN payment_requested_at IS NULL THEN $4 ELSE payment_requested_by_name END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='ORDERED' AND signed_contract_key<>'' AND (payment_requested_at IS NULL OR contract_verified_at IS NOT NULL)`, tenantID, orderID, op.ID, op.Name)
 	if err != nil {
 		return OrderContractState{}, err
 	}
@@ -81,6 +84,9 @@ func (s *Service) VerifyOrderContract(ctx context.Context, tenantID, orderID int
 }
 
 func (s *Service) RequestOrderPayment(ctx context.Context, tenantID, orderID int64, op Operator) (OrderContractState, error) {
+	if err := s.RequireHistoricalSupplier(ctx, tenantID, orderID); err != nil {
+		return OrderContractState{}, err
+	}
 	if err := s.RequireHistoricalPrices(ctx, tenantID, orderID); err != nil {
 		return OrderContractState{}, err
 	}
@@ -109,7 +115,9 @@ func (s *Service) OrderContractState(ctx context.Context, tenantID, orderID int6
 }
 
 type ExternalPayableInput struct {
+	BusinessDocumentNoGenerated                                                                                                     bool
 	BusinessType                                                                                                                    string
+	TransportBatchNo                                                                                                                int32
 	SourceBusinessID, PayeeID                                                                                                       int64
 	ExportContractNo, BusinessDocumentNo, PayeeName, Currency, Amount, DueDate, PaymentTerms, SignedContractKey, SignedContractName string
 }
@@ -118,15 +126,17 @@ func (s *Service) CreateExternalPayable(ctx context.Context, tenantID int64, in 
 	in.BusinessType = strings.ToUpper(strings.TrimSpace(in.BusinessType))
 	in.PayeeName = strings.TrimSpace(in.PayeeName)
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
-	if in.BusinessType != "LOGISTICS" || in.SourceBusinessID == 0 || in.PayeeName == "" || in.BusinessDocumentNo == "" || in.SignedContractKey == "" {
+	if in.BusinessType != "LOGISTICS" || in.SourceBusinessID == 0 || in.PayeeName == "" || in.SignedContractKey == "" {
 		return SupplierReconRow{}, apierr.Invalid("PR_EXTERNAL_PAYABLE_REQUIRED", "物流付款资料不完整")
 	}
+	// Keep the payment record unique even when contracts or batch labels repeat.
+	documentRef := fmt.Sprintf("LOG-%d", in.SourceBusinessID)
 	amount, err := decimal.NewFromString(strings.TrimSpace(in.Amount))
 	if err != nil || !amount.IsPositive() {
 		return SupplierReconRow{}, apierr.Invalid("PR_EXTERNAL_PAYABLE_AMOUNT", "物流付款金额必须大于 0")
 	}
 	var id int64
-	err = s.pool.QueryRow(ctx, `INSERT INTO purchase_orders (tenant_id,po_no,supplier_id,supplier_name,currency,total_amount,status,buyer_id,buyer_name,remark,ordered_at,payable_due_date,business_type,source_business_id,export_contract_no,business_document_no,payment_terms,signed_contract_key,signed_contract_name,signed_contract_uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,'ORDERED',$7,$8,'D4 物流付款申请',now(),nullif($9,'')::date,'LOGISTICS',$10,$11,$12,$13,$14,$15,now()) ON CONFLICT (tenant_id,business_type,source_business_id) WHERE source_business_id<>0 AND business_type='LOGISTICS' DO UPDATE SET supplier_id=excluded.supplier_id,supplier_name=excluded.supplier_name,currency=excluded.currency,total_amount=excluded.total_amount,payable_due_date=excluded.payable_due_date,export_contract_no=excluded.export_contract_no,business_document_no=excluded.business_document_no,payment_terms=excluded.payment_terms,signed_contract_key=excluded.signed_contract_key,signed_contract_name=excluded.signed_contract_name,signed_contract_uploaded_at=now(),contract_verified_at=null,contract_verified_by=0,contract_verified_by_name='',payment_requested_at=null,payment_requested_by=0,payment_requested_by_name='' WHERE purchase_orders.payment_requested_at IS NULL RETURNING id`, tenantID, in.BusinessDocumentNo, in.PayeeID, in.PayeeName, in.Currency, amount.StringFixed(2), op.ID, op.Name, in.DueDate, in.SourceBusinessID, in.ExportContractNo, in.BusinessDocumentNo, in.PaymentTerms, in.SignedContractKey, in.SignedContractName).Scan(&id)
+	err = s.pool.QueryRow(ctx, `INSERT INTO purchase_orders (tenant_id,po_no,supplier_id,supplier_name,currency,total_amount,status,buyer_id,buyer_name,remark,ordered_at,payable_due_date,business_type,source_business_id,export_contract_no,business_document_no,payment_terms,signed_contract_key,signed_contract_name,signed_contract_uploaded_at,transport_batch_no,business_document_no_generated) VALUES ($1,$2,$3,$4,$5,$6,'ORDERED',$7,$8,'D4 物流付款申请',now(),nullif($9,'')::date,'LOGISTICS',$10,$11,$12,$13,$14,$15,now(),$16,$17) ON CONFLICT (tenant_id,business_type,source_business_id) WHERE source_business_id<>0 AND business_type='LOGISTICS' DO UPDATE SET supplier_id=excluded.supplier_id,supplier_name=excluded.supplier_name,currency=excluded.currency,total_amount=excluded.total_amount,payable_due_date=excluded.payable_due_date,export_contract_no=excluded.export_contract_no,business_document_no=excluded.business_document_no,transport_batch_no=excluded.transport_batch_no,business_document_no_generated=excluded.business_document_no_generated,payment_terms=excluded.payment_terms,signed_contract_key=excluded.signed_contract_key,signed_contract_name=excluded.signed_contract_name,signed_contract_uploaded_at=now(),contract_verified_at=null,contract_verified_by=0,contract_verified_by_name='',payment_requested_at=null,payment_requested_by=0,payment_requested_by_name='' WHERE purchase_orders.payment_requested_at IS NULL RETURNING id`, tenantID, documentRef, in.PayeeID, in.PayeeName, in.Currency, amount.StringFixed(2), op.ID, op.Name, in.DueDate, in.SourceBusinessID, in.ExportContractNo, in.BusinessDocumentNo, in.PaymentTerms, in.SignedContractKey, in.SignedContractName, in.TransportBatchNo, in.BusinessDocumentNoGenerated).Scan(&id)
 	if err != nil {
 		return SupplierReconRow{}, err
 	}

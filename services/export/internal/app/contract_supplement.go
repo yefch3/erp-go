@@ -63,7 +63,11 @@ func (s *Service) AcceptedContractOffer(ctx context.Context, tenant, id int64) (
 	for _, line := range body.Lines {
 		lines = append(lines, line.OfferProduct)
 	}
-	out, err := json.Marshal(map[string]any{"customer": body.Customer, "contact": body.Contact, "transports": body.Transports, "lines": lines})
+	transports := body.Transports
+	if transports == nil {
+		transports = []OfferTransport{}
+	}
+	out, err := json.Marshal(map[string]any{"customer": body.Customer, "contact": body.Contact, "transports": transports, "lines": lines})
 	return string(out), err
 }
 

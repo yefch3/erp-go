@@ -2418,7 +2418,7 @@ FROM shipping_schedules
 WHERE tenant_id = $1::bigint
   AND status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
   AND responsible_employee_id > 0
-  AND coalesce(atd, etd) <= current_date
+  AND atd IS NOT NULL AND atd <= current_date
 `
 
 // 还欠提单正本的船期，各自的负责人。用来保证即使角色没配好，经办人也
@@ -3184,9 +3184,9 @@ INSERT INTO shipping_bl_reminders (
 SELECT
     s.tenant_id, s.id, s.schedule_no, s.vessel_name, s.voyage_no,
     s.contract_no, s.customer_name, r.employee_id,
-    ceil((current_date - coalesce(s.atd, s.etd))::numeric / 3)::int,
-    coalesce(s.atd, s.etd),
-    s.schedule_no || ' 提单正本未签发（开船 ' || (current_date - coalesce(s.atd, s.etd)) || ' 天）',
+    ceil((current_date - s.atd)::numeric / 3)::int,
+    s.atd,
+    s.schedule_no || ' 提单正本未签发（开船 ' || (current_date - s.atd) || ' 天）',
     s.vessel_name || ' / ' || s.voyage_no ||
         CASE WHEN s.contract_no <> '' THEN ' · ' || s.contract_no ELSE '' END ||
         CASE WHEN s.customer_name <> '' THEN ' · ' || s.customer_name ELSE '' END,
@@ -3197,9 +3197,9 @@ WHERE s.tenant_id = $2::bigint
   -- 已到港/完成/取消的不再催提单——那时候要么早签了，要么这单已经不作数。
   AND s.status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
   -- 船得先开：没开船谈不上签提单。
-  AND coalesce(s.atd, s.etd) <= current_date
+  AND s.atd IS NOT NULL AND s.atd <= current_date
   -- 给三天缓冲：开船当天就催是噪音，签提单本来就要几天。
-  AND current_date - coalesce(s.atd, s.etd) >= 3
+  AND current_date - s.atd >= 3
   -- 已经有有效的提单正本就不催了。草稿不算——草稿不是能拿去交单的东西。
   AND NOT EXISTS (
       SELECT 1 FROM shipping_documents d
@@ -3221,8 +3221,8 @@ type SweepBLRemindersParams struct {
 // 的话，worker 那天没跑就永远错过；范围加唯一键则是停几天再起来能补齐
 // 且不重复。轮次 = ceil(开船天数 / 3)，所以每 3 天恰好再响一次。
 //
-// 开船日取 atd（实际开船），没登记就退回 etd（计划开船）——船务还没
-// 回填实际开船日不该成为不提醒的理由。
+// 仅按已登记的实际开船日 atd 计算；未开船由运输提醒催补实际时间，
+// 不能把已过的预计开船日当成已经开船。
 func (q *Queries) SweepBLReminders(ctx context.Context, arg SweepBLRemindersParams) (int64, error) {
 	result, err := q.db.Exec(ctx, sweepBLReminders, arg.RecipientIds, arg.TenantID)
 	if err != nil {

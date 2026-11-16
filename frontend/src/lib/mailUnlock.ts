@@ -21,9 +21,59 @@ export interface MintedToken {
 
 const CURRENT = 'mailUnlock'
 const MAP = 'mailUnlockTokens'
+// 这批令牌是谁验出来的（员工 id）。见 keepTokensFor。
+const OWNER = 'mailUnlockOwner'
 
-/** 登出 ERP 时要一起清掉的键。api.ts 用它，免得两处各记一份而漏掉新的。 */
-export const UNLOCK_STORAGE_KEYS = [CURRENT, MAP] as const
+/**
+ * 令牌**不跟着 ERP 登录态走**。
+ *
+ * 从前 ERP 登录一过期（5 天没用），浏览器就把邮箱令牌一起清掉，重新登录
+ * ERP 之后还得再输一次授权码。可服务端那把令牌还活着（用着就续，见网关
+ * UnlockStore），清掉的只是浏览器这一半——于是「验证一次长期有效」名不
+ * 副实，总经理那边反映的「过一阵就要重输授权码」就是这么来的。
+ *
+ * 现在 ERP 登录过期不碰它们，换人才清：重新登录的是同一个人，原样留着；
+ * 换了一个人，登录成功那一刻清掉。服务端本来就只认「令牌 + 这个人」，
+ * 别人的令牌在新的人手里打不开任何信箱——清掉是为了不让上一个人的令牌
+ * 留在下一个人的浏览器里。
+ */
+function stampOwner() {
+  const who = localStorage.getItem('employeeId') ?? ''
+  if (who) localStorage.setItem(OWNER, who)
+}
+
+/**
+ * ERP 登录成功之后调用：手上的令牌是这个人验的就留着，不是就清掉。
+ *
+ * 不知道是谁的（这次改版前存下的，没有记名）也清：登录这一刻分不清它是
+ * 同一个人的还是上一个人的，宁可让这个人再输一次。正在用着的人不受影响，
+ * 见 claimUnstampedTokens。
+ */
+export function keepTokensFor(employeeId: string) {
+  const who = String(employeeId ?? '')
+  if (who && localStorage.getItem(OWNER) === who) return
+  clearAll()
+  if (who) localStorage.setItem(OWNER, who)
+  else localStorage.removeItem(OWNER)
+}
+
+/**
+ * 服务端确认了此刻登录的是谁之后调用（/me/profile）：没记名的令牌记到
+ * 这个人名下。
+ *
+ * 改版那天正开着 ERP 的人手里的令牌都没记名。不补这一步，他们下次 ERP
+ * 登录过期时会被 keepTokensFor 当成来历不明清掉，再输最后一次授权码。
+ * 会话还活着时令牌就在这个人的浏览器里用着，记到他名下是最好的判断；
+ * 万一记错，服务端照样按「令牌 + 这个人」核，打不开别人的信箱。
+ *
+ * 已经记了名的不动——那是验证时记下的，比这里的推断可靠。
+ */
+export function claimUnstampedTokens(employeeId: string) {
+  const who = String(employeeId ?? '')
+  if (!who || localStorage.getItem(OWNER)) return
+  if (!currentToken() && !Object.keys(readMap()).length) return
+  localStorage.setItem(OWNER, who)
+}
 
 function readMap(): Record<string, string> {
   try {
@@ -55,6 +105,7 @@ export function saveTokens(list: MintedToken[]) {
     if (t?.accountId && t.token) m[String(t.accountId)] = t.token
   }
   writeMap(m)
+  stampOwner()
 }
 
 /**
@@ -92,6 +143,7 @@ export function adoptVerification(d: VerifyResponse): number {
   // 那正是换版本之前的行为。
   if (!(acct && useMailbox(acct)) && d.token) {
     localStorage.setItem(CURRENT, d.token)
+    stampOwner()
   }
   return acct
 }
@@ -202,7 +254,7 @@ export function allTokens(): string[] {
   return out
 }
 
-/** 全清。登出 ERP 和「全部退出」用。 */
+/** 全清。「全部退出」和换人登录（keepTokensFor）用。 */
 export function clearAll() {
   localStorage.removeItem(CURRENT)
   localStorage.removeItem(MAP)

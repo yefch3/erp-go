@@ -41,7 +41,8 @@ func TestArrivalReminderLifecycle(t *testing.T) {
 	in.ContractNo = "CON-D3-001"
 	in.CustomerName = "D3 Customer"
 	in.ETD = today.AddDate(0, 0, -1).Format("2006-01-02")
-	in.ETA = today.AddDate(0, 0, 5).Format("2006-01-02")
+	// Keep the 3-business-day reminder in the future on every weekday.
+	in.ETA = today.AddDate(0, 0, 15).Format("2006-01-02")
 	in.ResponsibleEmployeeID = 303
 	in.ResponsibleName = "D3 Test"
 	created, err := svc.CreateSchedule(ctx, tenantID, in, op, false)
@@ -93,7 +94,7 @@ func TestArrivalReminderLifecycle(t *testing.T) {
 		t.Fatalf("read page=%+v err=%v", page, err)
 	}
 
-	in.ETA = today.AddDate(0, 0, 6).Format("2006-01-02")
+	in.ETA = today.AddDate(0, 0, 16).Format("2006-01-02")
 	if _, err = svc.UpdateSchedule(ctx, tenantID, created.ID, in, "船公司调整 ETA", op, true); err != nil {
 		t.Fatal(err)
 	}

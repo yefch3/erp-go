@@ -39,22 +39,30 @@ func (s *Server) resolveActivePort(r *http.Request, id int64) (*mdv1.Port, error
 }
 
 // resolveShippingMasterdata 以主数据 ID 为准，并把当时名称、代码和时区保存为历史快照。
-func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput, requirePorts bool) error {
+func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput, requirePorts bool, previous ...*shippingv1.Schedule) error {
 	if in == nil {
 		return nil
 	}
 	// 从已委托合同建立船期时，客户和承运方由 shipping 服务在事务内读取
 	// 委托记录并覆盖请求值。历史合同保存的是业务快照，即使对应主数据后来
 	// 停用或迁移，也不能阻断履约；这里仅校验本次重新选择的港口。
-	fromHandoff := in.GetContractHandoffId() > 0
-	if !fromHandoff && in.GetCustomerId() > 0 {
+	var current *shippingv1.Schedule
+	if len(previous) > 0 {
+		current = previous[0]
+	}
+	fromHandoff := current == nil && in.GetContractHandoffId() > 0
+	if current != nil && in.GetCustomerId() == current.GetCustomerId() {
+		in.CustomerName = current.GetCustomerName()
+	} else if !fromHandoff && in.GetCustomerId() > 0 {
 		customer, err := s.resolveActiveCustomer(r.Context(), in.GetCustomerId())
 		if err != nil {
 			return err
 		}
 		in.CustomerName = customerSnapshotName(customer)
 	}
-	if !fromHandoff && in.GetCarrierId() > 0 {
+	if current != nil && in.GetCarrierId() == current.GetCarrierId() {
+		in.CarrierForwarder = current.GetCarrierForwarder()
+	} else if !fromHandoff && in.GetCarrierId() > 0 {
 		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())
 		if err != nil {
 			return err
@@ -68,7 +76,9 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		}
 		in.CarrierForwarder = supplier.GetName()
 	}
-	if requirePorts || in.GetLoadingPortId() > 0 {
+	if current != nil && in.GetLoadingPortId() == current.GetLoadingPortId() {
+		in.PortOfLoading, in.LoadingPortCode, in.LoadingPortTimezone = current.GetPortOfLoading(), current.GetLoadingPortCode(), current.GetLoadingPortTimezone()
+	} else if requirePorts || in.GetLoadingPortId() > 0 {
 		loading, err := s.resolveActivePort(r, in.GetLoadingPortId())
 		if err != nil {
 			return err
@@ -77,7 +87,9 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		in.LoadingPortCode = loading.GetUnlocode()
 		in.LoadingPortTimezone = loading.GetTimezone()
 	}
-	if requirePorts || in.GetDischargePortId() > 0 {
+	if current != nil && in.GetDischargePortId() == current.GetDischargePortId() {
+		in.PortOfDischarge, in.DischargePortCode, in.DischargePortTimezone = current.GetPortOfDischarge(), current.GetDischargePortCode(), current.GetDischargePortTimezone()
+	} else if requirePorts || in.GetDischargePortId() > 0 {
 		discharge, err := s.resolveActivePort(r, in.GetDischargePortId())
 		if err != nil {
 			return err
@@ -209,7 +221,7 @@ func (s *Server) saveContractShippingContract(w http.ResponseWriter, r *http.Req
 		return
 	}
 	h := resp.GetHandoff()
-	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
+	if _, err = s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: req.GetId(), ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), BusinessDocumentNoGenerated: h.GetForwarderContractNoGenerated(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()}); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -245,7 +257,7 @@ func (s *Server) requestContractShippingPayment(w http.ResponseWriter, r *http.R
 		s.writeGRPCError(w, status.Error(codes.FailedPrecondition, "货代合同经财务上级或老板核验后才能申请付款"))
 		return
 	}
-	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
+	payable, err := s.Orders.CreateExternalPayable(r.Context(), &prv1.CreateExternalPayableRequest{BusinessType: "LOGISTICS", SourceBusinessId: id, ExportContractNo: h.GetContractNo(), BusinessDocumentNo: h.GetForwarderContractNo(), BusinessDocumentNoGenerated: h.GetForwarderContractNoGenerated(), TransportBatchNo: h.GetBatchNo(), PayeeId: h.GetFinalForwarderId(), PayeeName: h.GetFinalForwarderName(), Currency: h.GetFinalCurrency(), Amount: h.GetFinalFreightAmount(), DueDate: h.GetFinalEtd(), PaymentTerms: h.GetPaymentTerms(), SignedContractKey: h.GetSignedContractKey(), SignedContractName: h.GetSignedContractName()})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -426,7 +438,12 @@ func (s *Server) updateShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), false); err != nil {
+	current, err := s.Shipping.GetSchedule(r.Context(), &shippingv1.GetScheduleRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), false, current.GetSchedule()); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -777,4 +794,39 @@ func (s *Server) invalidateShippingDocument(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) correctShippingPortMetadata(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.CorrectPortMetadataRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	current, err := s.Shipping.GetSchedule(r.Context(), &shippingv1.GetScheduleRequest{Id: req.Id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	port, err := s.resolveActivePort(r, req.PortId)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	name := current.GetSchedule().GetPortOfLoading()
+	if req.Terminal == "DESTINATION" {
+		name = current.GetSchedule().GetPortOfDischarge()
+	}
+	if !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.NameZh)) && !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.NameEn)) && !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(port.Unlocode)) {
+		s.writeError(w, http.StatusBadRequest, "SHIPPING_PORT_NAME_MISMATCH", "所选主数据不是原港口，请按当前港口名称选择，不能更换实际港口")
+		return
+	}
+	req.PortName = name
+	req.PortCode = port.Unlocode
+	req.Timezone = port.Timezone
+	out, err := s.Shipping.CorrectPortMetadata(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, out)
 }

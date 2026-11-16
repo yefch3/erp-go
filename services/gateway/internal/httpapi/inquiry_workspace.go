@@ -22,8 +22,7 @@ func (s *Server) inquiryWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.writeGRPCError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: json.RawMessage(resp.GetResultJson())})
+	writeRawData(w, resp.GetResultJson())
 }
 
 // Stop legacy workflows before any mail/file/export side effects at the edge.

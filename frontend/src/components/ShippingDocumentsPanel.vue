@@ -84,6 +84,7 @@ const uploadOpen = ref(false)
 const selectedFile = ref<File>()
 const documents = ref<ShippingDocument[]>([])
 const form = reactive({ category: 'OTHER', remark: '', replacesDocumentId: '' })
+let pendingUpload: { file: File; key: string; category: string; remark: string; replacesDocumentId: string } | undefined
 
 const canView = computed(() => auth.can('shipping:document:view'))
 const canDownload = computed(() => auth.can('shipping:document:download'))
@@ -112,11 +113,13 @@ function openUpload(previous?: ShippingDocument) {
   form.remark = ''
   form.replacesDocumentId = previous?.id ?? ''
   selectedFile.value = undefined
+  pendingUpload = undefined
   uploadOpen.value = true
 }
 
 function selectFile(event: Event) {
   selectedFile.value = (event.target as HTMLInputElement).files?.[0]
+  pendingUpload = undefined
 }
 
 async function upload() {
@@ -125,14 +128,18 @@ async function upload() {
   if (file.size <= 0 || file.size > 20 * 1024 * 1024) return ElMessage.warning('文件不能为空，且不能超过 20 MB')
   uploading.value = true
   try {
-    const signed = await post<{ fileKey: string; uploadUrl: string }>(`/shipping/schedules/${props.scheduleId}/documents/presign`, { fileName: file.name })
-    const result = await fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!result.ok) throw new Error(`对象存储上传失败（${result.status}）`)
+    if (!pendingUpload || pendingUpload.file !== file || pendingUpload.category !== form.category || pendingUpload.remark !== form.remark || pendingUpload.replacesDocumentId !== form.replacesDocumentId) {
+      const signed = await post<{ fileKey: string; uploadUrl: string }>(`/shipping/schedules/${props.scheduleId}/documents/presign`, { fileName: file.name })
+      const result = await fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!result.ok) throw new Error(`对象存储上传失败（${result.status}）`)
+      pendingUpload = { file, key: signed.fileKey, category: form.category, remark: form.remark, replacesDocumentId: form.replacesDocumentId }
+    }
     await post(`/shipping/schedules/${props.scheduleId}/documents`, {
-      fileKey: signed.fileKey, fileName: file.name, category: form.category,
+      fileKey: pendingUpload.key, fileName: file.name, category: form.category,
       remark: form.remark,
       ...(form.replacesDocumentId ? { replacesDocumentId: form.replacesDocumentId } : {}),
     })
+    pendingUpload = undefined
     ElMessage.success(form.replacesDocumentId ? '单证新版本已上传，旧版本已保留' : '单证已上传')
     uploadOpen.value = false
     await load()

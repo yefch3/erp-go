@@ -120,8 +120,12 @@ func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContract
 		return nil, err
 	}
 
+	settlement, err := h.svc.ContractReceiptSettlementStatus(ctx, grpcx.TenantID(ctx), view.Contract.ID)
+	if err != nil {
+		return nil, err
+	}
 	return &exv1.GetContractResponse{
-		AcceptedOfferJson: accepted, Contract: contractToProto(view), Version: versionToProto(view.Version),
+		ReceiptSettlementStatus: settlement, ShipmentProgressAvailable: true, AcceptedOfferJson: accepted, Contract: contractToProto(view), Version: versionToProto(view.Version),
 		Items: contractItemsToProto(view.Items), Versions: versionListToProto(view.Versions),
 		Shipments: shipments,
 	}, nil

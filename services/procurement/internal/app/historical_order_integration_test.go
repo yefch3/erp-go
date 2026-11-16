@@ -2,11 +2,100 @@ package app
 
 import (
 	"context"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"os"
 	"testing"
 	"time"
 )
+
+func TestHistoricalOrderSupplierCanBeFilledAfterConfirmation(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenant := time.Now().UnixNano()
+	t.Cleanup(func() {
+		for _, table := range []string{"historical_purchase_orders", "purchase_order_items", "purchase_orders", "purchase_requirements"} {
+			_, _ = pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", tenant)
+		}
+	})
+	svc := New(pool, Deps{Numbering: &sequenceNumbering{}, Suppliers: supplierMapDirectoryStub{
+		9:  {ID: 9, Code: "SUP9", Name: "Supplier", Status: "ACTIVE"},
+		10: {ID: 10, Code: "SUP10", Name: "Other", Status: "ACTIVE"},
+		11: {ID: 11, Status: "INACTIVE"},
+	}, Scopes: &scopeStub{views: map[int64]Visibility{77: {EmployeeIDs: []int64{77}}, 99: {EmployeeIDs: []int64{99}}}}})
+	op := Operator{ID: 77, Name: "Buyer"}
+	in := HistoricalOrderInput{OriginalDate: "2026-11-01", Currency: "USD", Lines: []HistoricalOrderLine{{ProductName: "Steel", UOM: "MT", Qty: "10", UnitPrice: "12"}}}
+	draft, err := svc.SaveHistoricalOrder(ctx, tenant, in, op)
+	if err != nil {
+		t.Fatal("save without supplier", err)
+	}
+	in.ID = draft.ID
+	in.Confirm = true
+	ordered, err := svc.SaveHistoricalOrder(ctx, tenant, in, op)
+	if err != nil || ordered.Status != "ORDERED" {
+		t.Fatal("confirm without supplier", ordered, err)
+	}
+	head, err := svc.GetOrder(ctx, tenant, ordered.ID)
+	if err != nil || head.SupplierID != 0 || head.SupplierName != "" {
+		t.Fatal("missing supplier snapshot", head, err)
+	}
+	items, err := svc.OrderItems(ctx, tenant, ordered.ID)
+	if err != nil || len(items) != 1 {
+		t.Fatal(items, err)
+	}
+	in.Lines[0].ID = items[0].ID
+	if _, err = svc.SaveHistoricalOrder(ctx, tenant+1, in, op); err == nil {
+		t.Fatal("cross tenant fill allowed")
+	}
+	if _, err = svc.SaveHistoricalOrder(ctx, tenant, in, Operator{ID: 99}); err == nil {
+		t.Fatal("out of scope fill allowed")
+	}
+	if _, err = svc.ReceiveOrder(ctx, tenant, ordered.ID, 0, []ReceiptLine{{POItemID: items[0].ID, Qty: "1"}}, "", op); apierr.CodeFromError(err) != "PO_SUPPLIER_MISSING" {
+		t.Fatal("receipt without supplier", err)
+	}
+	if _, err = svc.RequestOrderPayment(ctx, tenant, ordered.ID, op); apierr.CodeFromError(err) != "PO_SUPPLIER_MISSING" {
+		t.Fatal("payment without supplier", err)
+	}
+	if _, err = svc.VerifyOrderContract(ctx, tenant, ordered.ID, op); apierr.CodeFromError(err) != "PO_SUPPLIER_MISSING" {
+		t.Fatal("contract payment shortcut without supplier", err)
+	}
+	for _, id := range []int64{-1, 11, 999} {
+		in.SupplierID = id
+		if _, err = svc.SaveHistoricalOrder(ctx, tenant, in, op); err == nil {
+			t.Fatalf("invalid supplier %d accepted", id)
+		}
+	}
+	in.SupplierID = 9
+	if _, err = svc.SaveHistoricalOrder(ctx, tenant, in, op); err != nil {
+		t.Fatal("fill supplier", err)
+	}
+	head, err = svc.GetOrder(ctx, tenant, ordered.ID)
+	if err != nil || head.SupplierID != 9 || head.SupplierName != "Supplier" || head.SupplierCode != "SUP9" || head.TotalAmount != "120.00" {
+		t.Fatal("supplier not persisted", head, err)
+	}
+	if err = svc.RequireHistoricalSupplier(ctx, tenant, ordered.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{0, 10} {
+		in.SupplierID = id
+		if _, err = svc.SaveHistoricalOrder(ctx, tenant, in, op); apierr.CodeFromError(err) != "PO_HISTORY_LOCKED" {
+			t.Fatalf("confirmed supplier changed to %d: %v", id, err)
+		}
+	}
+	in.SupplierID = 9
+	in.Remark = "supplier filled"
+	if _, err = svc.SaveHistoricalOrder(ctx, tenant, in, op); err != nil {
+		t.Fatal("edit after fill", err)
+	}
+}
 
 func TestHistoricalOrderLifecycle(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")

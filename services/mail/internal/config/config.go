@@ -102,6 +102,9 @@ type Config struct {
 	OpenAIInputPerMTok  string
 	OpenAIOutputPerMTok string
 	OpenAIPriceCurrency string
+	// 同时跑几个转换（见 app.RunExcelWorkers）。每个在转的任务都占着内存里的
+	// 附件和一个发给模型厂的请求，所以是个上限，不是越多越好。
+	ExcelWorkers int
 }
 
 func Load() Config {
@@ -151,6 +154,7 @@ func Load() Config {
 		OpenAIInputPerMTok:  os.Getenv("OPENAI_INPUT_PER_MTOK"),
 		OpenAIOutputPerMTok: os.Getenv("OPENAI_OUTPUT_PER_MTOK"),
 		OpenAIPriceCurrency: env("OPENAI_PRICE_CURRENCY", "USD"),
+		ExcelWorkers:        envInt("MAIL_EXCEL_WORKERS", 4),
 	}
 }
 

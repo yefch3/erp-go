@@ -27,7 +27,7 @@ func TestContractHandoffRejectsOldVersionAndTenant(t *testing.T) {
 	defer func() { _, _ = pool.Exec(ctx, `DELETE FROM contract_shipping_handoffs WHERE tenant_id=$1`, tenant) }()
 	svc := New(pool)
 	svc.UseContractGuard(workflowAllowedContract{})
-	event := ContractEffective{ContractID: 41, ContractNo: "CT-41", VersionID: 11, VersionNo: 1, Shipments: []ContractEffectiveShipment{{BatchNo: 1, Currency: "USD", FreightAmount: "0"}}}
+	event := ContractEffective{ContractID: 41, ContractNo: "CT-41", SourceSalesRemark: "original sales inquiry note", VersionID: 11, VersionNo: 1, Shipments: []ContractEffectiveShipment{{BatchNo: 1, Currency: "USD", FreightAmount: "0"}}}
 	claim := func(context.Context, pgx.Tx) error { return nil }
 	if err := svc.HandoffsFromContract(ctx, tenant, event, claim); err != nil {
 		t.Fatal(err)
@@ -35,6 +35,10 @@ func TestContractHandoffRejectsOldVersionAndTenant(t *testing.T) {
 	var oldID int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM contract_shipping_handoffs WHERE tenant_id=$1`, tenant).Scan(&oldID); err != nil {
 		t.Fatal(err)
+	}
+	var sourceRemark string
+	if err := pool.QueryRow(ctx, `SELECT source_sales_remark FROM contract_shipping_handoffs WHERE tenant_id=$1 AND id=$2`, tenant, oldID).Scan(&sourceRemark); err != nil || sourceRemark != event.SourceSalesRemark {
+		t.Fatalf("shipping handoff source sales remark = %q, err = %v", sourceRemark, err)
 	}
 	event.VersionID = 12
 	event.VersionNo = 2

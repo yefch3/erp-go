@@ -9,6 +9,10 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1"
 // ShippingService owns schedule lifecycle, ordered port routes, progress,
 // repeated delay events and ETA-versioned arrival reminders.
 service ShippingService {
+  // Narrow facts for an already-authorized sales contract, without freight.
+  rpc GetContractDispatchProgress(GetContractDispatchProgressRequest) returns (GetContractDispatchProgressResponse);
+  // Correct only the masterdata identity of an existing terminal port.
+  rpc CorrectPortMetadata(CorrectPortMetadataRequest) returns (CorrectPortMetadataResponse);
   rpc SaveManualShippingOrder(SaveManualShippingOrderRequest) returns (SaveManualShippingOrderResponse);
   rpc LinkManualShippingContract(LinkManualShippingContractRequest) returns (LinkManualShippingContractResponse);
   rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
@@ -56,6 +60,8 @@ service ShippingService {
   rpc PresignContractShippingContractUpload(PresignContractShippingContractUploadRequest) returns (PresignContractShippingContractUploadResponse);
   rpc VerifyContractShippingContract(VerifyContractShippingContractRequest) returns (VerifyContractShippingContractResponse);
   rpc MarkContractShippingPaymentRequested(MarkContractShippingPaymentRequestedRequest) returns (MarkContractShippingPaymentRequestedResponse);
+  // Internal, narrow projection for authorized purchase-order fulfillment views.
+  rpc GetCargoScheduleProgress(GetCargoScheduleProgressRequest) returns (GetCargoScheduleProgressResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -113,6 +119,9 @@ message Schedule {
   string customs_declaration_date = 42;
   string freight_currency = 43;
   string freight_amount = 44;
+  int32 transport_batch_no = 45;
+  string manual_order_no = 46;
+  int64 contract_handoff_id = 47;
 }
 
 message RouteNode {
@@ -166,6 +175,9 @@ message ArrivalReminder {
   string read_at = 11;
   int32 attempt_count = 12;
   string last_error = 13;
+  string contract_no = 14;
+  int32 transport_batch_no = 15;
+  string schedule_no = 16;
 }
 
 message ScheduleInput {
@@ -252,6 +264,11 @@ message ContractShippingHandoff {
   string manual_order_no = 48;
   bool amount_missing = 49;
   int64 linked_contract_id = 50;
+  // Original sales inquiry note, distinct from the execution plan remark.
+  string source_sales_remark = 51;
+  string presale_references_json = 52;
+  string allocation_status = 53;
+  bool forwarder_contract_no_generated = 54;
 }
 message LinkManualShippingContractRequest { int64 id = 1; int64 contract_id = 2; string contract_no = 3; }
 message LinkManualShippingContractResponse { ContractShippingHandoff order = 1; }
@@ -489,6 +506,7 @@ message OperationalAlert {
   string resolved_by_name = 15;
   string created_at = 16;
   int64 recipient_employee_id = 17;
+  int32 transport_batch_no = 18;
 }
 message ListOperationalAlertsRequest { bool open_only = 1; }
 message ListScheduleOperationalAlertsRequest { int64 schedule_id = 1; }
@@ -516,6 +534,7 @@ message BlReminder {
   string detail_url = 12;
   string created_at = 13;
   bool unread = 14;
+  int32 transport_batch_no = 15;
 }
 
 message ListBlRemindersRequest {
@@ -602,3 +621,42 @@ message VerifyContractShippingContractRequest { int64 id = 1; }
 message VerifyContractShippingContractResponse { ContractShippingHandoff handoff = 1; }
 message MarkContractShippingPaymentRequestedRequest { int64 id = 1; }
 message MarkContractShippingPaymentRequestedResponse { ContractShippingHandoff handoff = 1; }
+
+message GetCargoScheduleProgressRequest {
+  int64 schedule_id = 1;
+  int64 contract_id = 2;
+  repeated int64 contract_item_ids = 3;
+}
+message CargoScheduleProgress {
+  int64 id = 1;
+  int64 contract_id = 2;
+  string schedule_no = 3;
+  string status = 4;
+  string etd = 5;
+  string eta = 6;
+  string atd = 7;
+  string ata = 8;
+}
+message GetCargoScheduleProgressResponse { CargoScheduleProgress schedule = 1; }
+
+message GetContractDispatchProgressRequest { int64 contract_id = 1; }
+message ContractDispatchLine {
+  int64 contract_item_id = 1;
+  string product_code = 2;
+  string product_name = 3;
+  string specification = 4;
+  string uom_code = 5;
+  string quantity = 6;
+}
+message GetContractDispatchProgressResponse { repeated ContractDispatchLine lines = 1; }
+message CorrectPortMetadataRequest {
+  int64 id = 1;
+  string terminal = 2;
+  int64 port_id = 3;
+  string port_name = 4;
+  string port_code = 5;
+  string timezone = 6;
+  string reason = 7;
+  int32 route_version = 8;
+}
+message CorrectPortMetadataResponse { Schedule schedule = 1; }

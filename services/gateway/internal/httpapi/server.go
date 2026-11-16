@@ -80,6 +80,10 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
+	// The cache on the iam connection, so a role or employee change can
+	// forget a company's remembered answers at once (see permcache.go). Nil
+	// means nothing to forget.
+	Answers *grpcx.AnswerCache
 	// Limits bounds what one person or one source can cost: presses of 立即收信,
 	// and hits on the two routes strangers are meant to reach. Nil allows
 	// everything — see RateLimiter for why this one fails open.
@@ -110,6 +114,9 @@ type Server struct {
 	// they signed in.
 	TokenTTL time.Duration
 	Log      *slog.Logger
+	// Storage carries files between the browser and the object store when
+	// the browser cannot reach the store itself; see storage_relay.go.
+	Storage *StorageRelay
 }
 
 func (s *Server) Router() http.Handler {
@@ -157,6 +164,13 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.auth)
 		// 挂在认证之后：防重的键按「哪家公司的哪个人」隔离，身份得先有。
 		r.Use(s.idempotent)
+		// 改员工、角色、公司开关的写成功了，就把这家公司缓存的权限答案清掉。
+		r.Use(s.forgetPermissionsOnChange)
+		// 文件中转：浏览器连不上对象存储时（天津办公室实测连接超时），由网关替它
+		// 收发。不挂业务权限：能进来的只有本系统自己那个桶的签名地址，而签名是
+		// 业务服务查过权限之后才发的——它就是权限。见 storage_relay.go。
+		r.Put("/api/storage/relay", s.relayUpload)
+		r.Get("/api/storage/relay", s.relayDownload)
 		r.Get("/api/masterdata/bulk-delete/access", s.masterDeleteAccess)
 		r.Post("/api/masterdata/bulk-delete/preview", s.masterDeletePreview)
 		r.Post("/api/masterdata/bulk-delete/execute", s.masterDeleteExecute)
@@ -411,6 +425,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/manual-orders/{id}/link-contract", s.linkManualShippingContract)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}", s.getContractShippingHandoff)
+		r.With(s.perm("shipping:schedule:read"), s.perm("procurement:order:read")).Get("/api/shipping/contract-handoffs/{id}/purchase-deliveries", s.getHandoffPurchaseDeliveries)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/purchase-remarks", s.getHandoffPurchaseRemarks)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/historical-purchases", s.getHandoffHistoricalPurchases)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs/{id}/requote-options", s.listContractShippingRequoteOptions)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/draft", s.saveContractShippingRequoteDraft)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/contract-handoffs/{id}/select-draft", s.selectContractShippingRequoteDraft)
@@ -451,6 +468,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}", s.getShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Post("/api/shipping/schedules", s.createShippingSchedule)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}", s.updateShippingSchedule)
+		r.With(s.perm("shipping:route:write")).Post("/api/shipping/schedules/{id}/port-metadata", s.correctShippingPortMetadata)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/reminder-rules", s.getShippingArrivalReminderRules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}/operational-alerts", s.listScheduleOperationalAlerts)
 		r.With(s.perm("shipping:schedule:write")).Put("/api/shipping/schedules/{id}/reminder-rules", s.updateShippingArrivalReminderRules)
@@ -661,6 +679,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)
 		// 创建只形成草稿；真正进入公司审批流程由下面独立的 submit 接口控制。
 		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Post("/api/purchase-orders/historical", s.saveHistoricalOrder)
+		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}/historical-shipping-context", s.updateHistoricalShippingContext)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
@@ -672,6 +691,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/documents", s.getOrderDocuments)
 		r.With(s.perm("procurement:order:send")).Post("/api/purchase-orders/{id}/send", s.sendPurchaseOrder)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/execution", s.getOrderExecution)
+		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/follow-ups", s.addOrderFollowUp)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/logistics-progress", s.getOrderLogisticsProgress)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/supplier-confirmations", s.recordSupplierConfirmation)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
 		// D5 出厂前质检是采购交接给独立质检部门的业务任务，不走审批流。
@@ -700,6 +721,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/manual", s.createManualPayable)
+		r.With(s.perm("procurement:recon:write")).Get("/api/supplier-recon/historical-logistics", s.listHistoricalLogisticsPayableOptions)
 		r.With(s.perm("procurement:recon:write")).Patch("/api/supplier-recon/{id}/manual", s.updateManualPayable)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
@@ -783,9 +805,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections", s.recordInspection)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections/{inspectionId}/resolve", s.resolveInspection)
 		r.With(s.perm("procurement:order:close")).Post("/api/purchase-orders/{id}/close", s.closePurchaseOrder)
-		// Receiving is warehouse work, so it rides on the stock permission
-		// rather than the buyer's.
-		r.With(s.perm("procurement:receipt:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		// Factory handover is confirmed by procurement; physical warehouse
+		// receipt retains its own permission. The handler checks the persisted
+		// fulfillment mode before choosing the action permission.
+		r.With(s.perm("procurement:order:read")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/receipt-proofs/{fileId}/download", s.downloadReceiptProof)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.
@@ -800,6 +824,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/api/approvals/actionable-task", s.actionableApprovalTask)
 		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
 		r.Get("/api/home/reminders", s.listHomeReminders)
+		r.Get("/api/home/execution-todos", s.listExecutionTodos)
 		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
 		// 审批服务会逐任务校验 assignee。部门负责人来自组织架构，未必另有
 		// “审批人”角色，因此这里不再用静态角色权限挡住本人收到的任务。
@@ -1243,6 +1268,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		codes.FailedPrecondition: http.StatusConflict,
 		codes.PermissionDenied:   http.StatusForbidden,
 		codes.Unauthenticated:    http.StatusUnauthorized,
+		codes.Unavailable:        http.StatusServiceUnavailable,
 		// "later", not "no". Without this a service saying somebody has run
 		// out of attempts reaches the browser as a 500, and the page shows an
 		// internal error instead of the wait it was told to report.
@@ -1255,6 +1281,11 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	if bizCode == "" {
 		bizCode = "INTERNAL"
 	}
+	message := st.Message()
+	if st.Code() == codes.Unavailable {
+		bizCode = "SERVICE_UNAVAILABLE"
+		message = "服务暂时不可用，请在服务恢复后重试"
+	}
 	// Internal gRPC failures used to vanish after being translated into a
 	// generic HTTP 500, leaving the browser with only Axios' "Request failed"
 	// text and the service logs completely clean. Business refusals are normal
@@ -1264,7 +1295,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	// 记成 ERROR 就等于每次部署都点着 erp-gateway-errors（2026-09-15 实测：
 	// 一次部署，网关和采购同时报警，日志里是 "the client connection is
 	// closing"）。记 WARN：查得到，不告警。
-	if httpCode == http.StatusInternalServerError && s.Log != nil {
+	if httpCode >= http.StatusInternalServerError && s.Log != nil {
 		level := slog.LevelError
 		if st.Code() == codes.Canceled || strings.Contains(st.Message(), "the client connection is closing") {
 			level = slog.LevelWarn
@@ -1272,7 +1303,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		s.Log.Log(context.Background(), level, "upstream gRPC request failed",
 			"grpc_code", st.Code().String(), "business_code", bizCode, "err", st.Message())
 	}
-	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
+	s.writeErrorMeta(w, httpCode, bizCode, message, apierr.MetaFromStatus(err))
 }
 
 // decodeBody parses a JSON request body directly into the gRPC request

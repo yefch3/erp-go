@@ -37,9 +37,9 @@
       >
         <div class="notice-title">
           <span class="dot" :class="toneOf(item.periodNo)" />
-          {{ item.title }}
+          {{ shippingBusinessLabel(item,t) }}
         </div>
-        <div class="notice-body">{{ item.content }}</div>
+        <div class="notice-body">{{ item.title }}</div><div class="notice-body">{{ item.content }}</div>
       </div>
     </el-scrollbar>
   </el-popover>
@@ -52,11 +52,14 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { get, post, quietErrors } from '../api'
 import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
+import { shippingBusinessLabel } from '../shipping'
 
 interface Reminder {
   id: string
   scheduleId: string
   scheduleNo: string
+  contractNo?: string
+  transportBatchNo?: number
   periodNo: number
   title: string
   content: string

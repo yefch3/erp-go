@@ -4,6 +4,7 @@
       <h2>{{ t('outbounds.title') }}</h2>
       <span class="head-note">{{ t('outbounds.subtitle') }}</span>
     </div>
+    <p class="head-note">{{ t('quality.deliveryRequired') }}</p>
 
     <el-card shadow="never">
       <el-radio-group v-model="tab" class="tabs" @change="reload">

@@ -1,0 +1,169 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"testing"
+
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type executionContractsStub struct{ exv1.ContractServiceClient }
+
+type executionReceiptStub struct{ exv1.ReceiptServiceClient }
+
+func (executionReceiptStub) ListReceivableDue(_ context.Context, r *exv1.ListReceivableDueRequest, _ ...grpc.CallOption) (*exv1.ListReceivableDueResponse, error) {
+	if r.GetClosedOnly() {
+		return &exv1.ListReceivableDueResponse{Items: []*exv1.ReceivableDue{{ContractId: 4, ContractNo: "RECONCILED-STILL-NEEDS-RELEASE", ExecutionConditionStatus: "WAITING", OpenAmount: "0"}}, Meta: &commonv1.PageMeta{Total: 1}}, nil
+	}
+	if r.GetPage().GetPage() == 1 {
+		return &exv1.ListReceivableDueResponse{Items: []*exv1.ReceivableDue{{ContractId: 1, ExecutionConditionStatus: "READY"}}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+	}
+	return &exv1.ListReceivableDueResponse{Items: []*exv1.ReceivableDue{{ContractId: 2, ContractNo: "FINANCE-PENDING", ExecutionConditionStatus: "WAITING"}, {ContractId: 3, ExecutionConditionStatus: "NOT_APPLICABLE"}}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+}
+func (executionContractsStub) CheckContractExecution(_ context.Context, r *exv1.CheckContractExecutionRequest, _ ...grpc.CallOption) (*exv1.CheckContractExecutionResponse, error) {
+	if r.Id == 12 {
+		return nil, status.Error(codes.NotFound, "contract missing")
+	}
+	return &exv1.CheckContractExecutionResponse{Allowed: r.Id == 10}, nil
+}
+
+type executionRequirementsStub struct{ prv1.RequirementServiceClient }
+
+func (executionRequirementsStub) ListRequirements(context.Context, *prv1.ListRequirementsRequest, ...grpc.CallOption) (*prv1.ListRequirementsResponse, error) {
+	return &prv1.ListRequirementsResponse{Requirements: []*prv1.Requirement{{Id: 1, ContractId: 10, Status: "WAITING_REQUOTE"}, {Id: 2, ContractId: 11, Status: "WAITING_REQUOTE"}, {Id: 3, ContractId: 10, OwnerId: 99, Status: "WAITING_REQUOTE"}, {Id: 4, ContractId: 12, Status: "WAITING_REQUOTE"}}, Meta: &commonv1.PageMeta{Total: 4}}, nil
+}
+
+type executionShippingStub struct {
+	shippingv1.ShippingServiceClient
+}
+
+func (executionShippingStub) ListContractShippingHandoffs(context.Context, *shippingv1.ListContractShippingHandoffsRequest, ...grpc.CallOption) (*shippingv1.ListContractShippingHandoffsResponse, error) {
+	return &shippingv1.ListContractShippingHandoffsResponse{Handoffs: []*shippingv1.ContractShippingHandoff{{Id: 1, ContractId: 10, Status: "WAITING_REQUOTE"}, {Id: 2, ContractId: 11, Status: "WAITING_REQUOTE"}}}, nil
+}
+func TestExecutionTodosUseActionPermissionsAndLifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		permissions                    map[string]bool
+		finance, procurement, shipping int
+	}{
+		{"read access is not an assignment", map[string]bool{"export:receipt:read": true, "procurement:requirement:read": true, "shipping:schedule:read": true}, 0, 0, 0},
+		{"finance sees signed unreleased contracts across pages", map[string]bool{"export:receipt:write": true, "shipping:schedule:read": true}, 2, 0, 0},
+		{"buyer excludes closed contracts and preserves sales-owned requirements", map[string]bool{"procurement:order:write": true}, 0, 2, 0},
+		{"logistics excludes non executable contracts", map[string]bool{"shipping:schedule:write": true}, 0, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{Access: homeAccessStub{allowed: tc.permissions}, Contracts: executionContractsStub{}, Receipts: executionReceiptStub{}, Requirements: executionRequirementsStub{}, Shipping: executionShippingStub{}}
+			req := httptest.NewRequest("GET", "/api/home/execution-todos", nil)
+			req = req.WithContext(grpcx.WithOperator(req.Context(), grpcx.Operator{TenantID: 1, EmployeeID: 9}))
+			rec := httptest.NewRecorder()
+			s.listExecutionTodos(rec, req)
+			if rec.Code != 200 {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var response struct {
+				Data map[string][]json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			for key, want := range map[string]int{"finance": tc.finance, "procurement": tc.procurement, "shipping": tc.shipping} {
+				if len(response.Data[key]) != want {
+					t.Errorf("%s count=%d want=%d body=%s", key, len(response.Data[key]), want, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
+type purchaseFinanceOrdersStub struct {
+	prv1.PurchaseOrderServiceClient
+}
+
+func (purchaseFinanceOrdersStub) ListSupplierRecon(_ context.Context, r *prv1.ListSupplierReconRequest, _ ...grpc.CallOption) (*prv1.ListSupplierReconResponse, error) {
+	if r.GetBusinessType() != "LOGISTICS" {
+		return nil, status.Error(codes.InvalidArgument, "wrong logistics finance filter")
+	}
+	return &prv1.ListSupplierReconResponse{Items: []*prv1.SupplierReconRow{
+		{PoId: 20, BusinessType: "LOGISTICS", SourceBusinessId: 30, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", BusinessDocumentNo: "FWD-20", ExportContractNo: "CT-20", TransportBatchNo: 2},
+		{PoId: 21, BusinessType: "LOGISTICS", SourceBusinessId: 31, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", RequestedAt: "verified"},
+		{PoId: 22, BusinessType: "LOGISTICS", SourceBusinessId: 32, OrderStatus: "ORDERED", SignedContractName: "signed.pdf", ClosedAt: "closed"},
+		{PoId: 23, BusinessType: "LOGISTICS", SourceBusinessId: 33, OrderStatus: "CANCELLED", SignedContractName: "signed.pdf"},
+		{PoId: 24, BusinessType: "LOGISTICS", SourceBusinessId: 34, OrderStatus: "ORDERED"},
+	}, Total: 5}, nil
+}
+
+func (purchaseFinanceOrdersStub) ListOrders(_ context.Context, r *prv1.ListOrdersRequest, _ ...grpc.CallOption) (*prv1.ListOrdersResponse, error) {
+	if r.Status != "PENDING_CONTRACT" {
+		return nil, status.Error(codes.InvalidArgument, "wrong finance queue filter")
+	}
+	if r.GetPage().GetPage() == 1 {
+		return &prv1.ListOrdersResponse{Orders: []*prv1.PurchaseOrder{
+			{Id: 1, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10},
+			{Id: 2, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", ContractVerifiedAt: "verified"},
+			{Id: 3, Status: "CANCELLED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded"},
+			{Id: 4, Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", ClosedAt: "closed"},
+			{Id: 5, Status: "ORDERED", BusinessType: "PROCUREMENT", SignedContractUploadedAt: "uploaded"},
+			{Id: 6, Status: "ORDERED", BusinessType: "LOGISTICS", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded"},
+		}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+	}
+	return &prv1.ListOrdersResponse{Orders: []*prv1.PurchaseOrder{{Id: 7, PoNo: "PO-PENDING-FINANCE", Status: "ORDERED", BusinessType: "PROCUREMENT", SourceBusinessId: 10, SignedContractUploadedAt: "uploaded", SignedContractName: "signed.pdf"}}, Meta: &commonv1.PageMeta{Total: 201}}, nil
+}
+
+func TestPurchaseFinanceTodosRequireReviewPermissionAndCurrentSignedContract(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		permissions map[string]bool
+		want        int
+	}{
+		{"reader only", map[string]bool{"procurement:order:read": true}, 0},
+		{"finance without order access", map[string]bool{"procurement:recon:write": true}, 0},
+		{"finance reviewer", map[string]bool{"procurement:order:read": true, "procurement:recon:write": true}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{Access: homeAccessStub{allowed: tc.permissions}, Orders: purchaseFinanceOrdersStub{}}
+			req := httptest.NewRequest("GET", "/api/home/execution-todos", nil)
+			req = req.WithContext(grpcx.WithOperator(req.Context(), grpcx.Operator{TenantID: 1, EmployeeID: 9}))
+			rec := httptest.NewRecorder()
+			s.listExecutionTodos(rec, req)
+			if rec.Code != 200 {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var response struct {
+				Data struct {
+					PurchaseFinance []struct {
+						ID string `json:"id"`
+					} `json:"purchaseFinance"`
+					LogisticsFinance []struct {
+						ID     string `json:"id"`
+						Source string `json:"sourceBusinessId"`
+						Batch  int32  `json:"transportBatchNo"`
+					} `json:"logisticsFinance"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Data.PurchaseFinance) != tc.want {
+				t.Fatalf("wrong tasks: %s", rec.Body.String())
+			}
+			if len(response.Data.LogisticsFinance) != tc.want {
+				t.Fatalf("wrong logistics finance tasks: %s", rec.Body.String())
+			}
+			if tc.want > 0 && (response.Data.LogisticsFinance[0].ID != "20" || response.Data.LogisticsFinance[0].Source != "30" || response.Data.LogisticsFinance[0].Batch != 2) {
+				t.Fatalf("incorrect logistics source or completed task included: %s", rec.Body.String())
+			}
+			if tc.want > 0 && response.Data.PurchaseFinance[0].ID != "7" {
+				t.Fatalf("unverifiable or closed order was included: %s", rec.Body.String())
+			}
+		})
+	}
+}

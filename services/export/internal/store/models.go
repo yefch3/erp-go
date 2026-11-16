@@ -44,19 +44,20 @@ type Contract struct {
 }
 
 type ContractAttachment struct {
-	ID                int64
-	TenantID          int64
-	ContractID        int64
-	ContractVersionID *int64
-	Kind              string
-	FileName          string
-	FileKey           string
-	ContentType       string
-	SizeBytes         int64
-	UploadedAt        pgtype.Timestamptz
-	UploadedBy        int64
-	UploaderName      string
-	Source            string
+	ID                     int64
+	TenantID               int64
+	ContractID             int64
+	ContractVersionID      *int64
+	Kind                   string
+	FileName               string
+	FileKey                string
+	ContentType            string
+	SizeBytes              int64
+	UploadedAt             pgtype.Timestamptz
+	UploadedBy             int64
+	UploaderName           string
+	Source                 string
+	SignatureInvalidatedAt pgtype.Timestamptz
 }
 
 type ContractCorrection struct {
@@ -81,6 +82,15 @@ type ContractDueChange struct {
 	ChangedByID   int64
 	ChangedByName string
 	CreatedAt     pgtype.Timestamptz
+}
+
+type ContractHandoffPlan struct {
+	TenantID          int64
+	ContractVersionID int64
+	Revision          int64
+	Batches           []byte
+	UpdatedBy         int64
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type ContractHistoryDraft struct {
@@ -300,6 +310,7 @@ type Quotation struct {
 	SourceCustomerSelectionID      *int64
 	SourceCustomerSelectionNo      string
 	SourceCustomerSelectionVersion int32
+	SourceSalesRemark              string
 }
 
 type QuotationItem struct {

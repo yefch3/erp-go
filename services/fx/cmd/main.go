@@ -42,7 +42,9 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool, log)
 	svc.ConfigureFetcher(cfg.FetchURL, cfg.FetchSymbols)
-	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+	// iam's access answers are remembered for ten seconds; see grpcx.AnswerCache.
+	accessAnswers, _ := grpcx.CacheAccessAnswers(ctx, log)
+	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()), accessAnswers)
 	if err != nil {
 		return err
 	}

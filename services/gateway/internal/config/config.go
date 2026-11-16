@@ -26,6 +26,19 @@ type Config struct {
 	// place cannot leave renewal handing out tokens of a different length
 	// from the ones login hands out.
 	JWTTTL time.Duration
+	// Object storage, for the file relay (/api/storage/relay): the gateway
+	// must recognise its own bucket before it carries bytes to it. These are
+	// the same MINIO_* variables the file-owning services read, so one
+	// deploy/.env serves everyone and the bucket the gateway trusts cannot
+	// drift from the one the services sign for.
+	StorageEndpoint       string
+	StoragePublicEndpoint string
+	StorageBucket         string
+	StorageUseSSL         bool
+	// StorageRegion must be the region the services sign with. On Amazon it
+	// is part of the signed host name, so leaving it out makes the relay
+	// recognise a different region's addresses and refuse the real ones.
+	StorageRegion string
 }
 
 func Load() Config {
@@ -45,6 +58,13 @@ func Load() Config {
 		// Must match iam's JWT_SECRET or every token fails validation.
 		JWTSecret: env("JWT_SECRET", "dev-secret-change-in-production"),
 		JWTTTL:    envDuration("JWT_TTL", 12*time.Hour),
+		// Defaults match the services' own: the local MinIO, reached by the
+		// browser and by a locally run gateway at the same address.
+		StorageEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
+		StoragePublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
+		StorageBucket:         env("MINIO_BUCKET", "erp-files"),
+		StorageUseSSL:         os.Getenv("MINIO_USE_SSL") == "true",
+		StorageRegion:         env("MINIO_REGION", ""),
 	}
 }
 

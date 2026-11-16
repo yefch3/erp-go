@@ -161,6 +161,37 @@ func (s *Service) PresignDocumentUpload(ctx context.Context, tenantID, scheduleI
 	return key, url, expires, err
 }
 
+// registeredDocumentRetry recognizes a committed upload before validating or
+// removing an object that already belongs to an immutable document version.
+func registeredDocumentRetry(ctx context.Context, db store.DBTX, tenantID, scheduleID int64, key, name, category, remark string, replacesID int64) (store.ShippingDocument, bool, error) {
+	var id int64
+	err := db.QueryRow(ctx, `SELECT id FROM shipping_documents WHERE tenant_id=$1 AND schedule_id=$2 AND file_key=$3`, tenantID, scheduleID, key).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.ShippingDocument{}, false, nil
+	}
+	if err != nil {
+		return store.ShippingDocument{}, false, err
+	}
+	q := store.New(db)
+	doc, err := q.GetShippingDocument(ctx, store.GetShippingDocumentParams{TenantID: tenantID, ScheduleID: scheduleID, ID: id})
+	if err != nil {
+		return doc, false, err
+	}
+	versionMatches := doc.Version == 1
+	if replacesID > 0 {
+		previous, err := q.GetShippingDocument(ctx, store.GetShippingDocumentParams{TenantID: tenantID, ScheduleID: scheduleID, ID: replacesID})
+		if err != nil {
+			return doc, false, err
+		}
+		category = previous.Category
+		versionMatches = doc.DocumentGroupKey == previous.DocumentGroupKey && doc.Version > previous.Version
+	}
+	if doc.FileName != name || doc.Category != category || doc.Remark != strings.TrimSpace(remark) || !versionMatches {
+		return doc, false, apierr.Conflict("SHIPPING_DOCUMENT_RETRY_MISMATCH", "该文件已登记，重试时不能更改文件资料或所属版本")
+	}
+	return doc, true, nil
+}
+
 // RegisterDocument verifies the bytes already in object storage, then creates
 // either a new document series or the next immutable version of an old one.
 func (s *Service) RegisterDocument(ctx context.Context, tenantID, scheduleID int64, key, fileName, category, remark string, replacesID int64, op Operator) (store.ShippingDocument, error) {
@@ -181,6 +212,9 @@ func (s *Service) RegisterDocument(ctx context.Context, tenantID, scheduleID int
 	prefix := fmt.Sprintf("shipping-documents/%d/%d/", tenantID, scheduleID)
 	if !strings.HasPrefix(key, prefix) {
 		return store.ShippingDocument{}, apierr.Invalid("SHIPPING_DOCUMENT_KEY_INVALID", "文件标识与当前船期不匹配")
+	}
+	if doc, found, err := registeredDocumentRetry(ctx, s.pool, tenantID, scheduleID, key, name, category, remark, replacesID); err != nil || found {
+		return doc, err
 	}
 	size, contentType, err := s.files.Stat(ctx, key)
 	if err != nil {
@@ -219,6 +253,10 @@ func (s *Service) RegisterDocument(ctx context.Context, tenantID, scheduleID int
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apierr.NotFound("SHIPPING_NOT_FOUND", "船期不存在")
 			}
+			return err
+		}
+		if doc, found, err := registeredDocumentRetry(ctx, tx, tenantID, scheduleID, key, name, category, remark, replacesID); err != nil || found {
+			out = doc
 			return err
 		}
 		groupKey, version := randomHex(12), int32(1)

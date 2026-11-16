@@ -3,16 +3,17 @@ module github.com/sgao19/erp-go/pkg
 go 1.25.0
 
 require (
-	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	codeberg.org/go-pdf/fpdf v0.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/minio/minio-go/v7 v7.0.80
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/segmentio/kafka-go v0.4.47
+	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	github.com/shopspring/decimal v1.4.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478
 	google.golang.org/grpc v1.82.1
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -37,7 +38,6 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/sgao19/erp-go/gen => ../gen

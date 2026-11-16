@@ -7,12 +7,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
-	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 func (s *Server) listSourcingCases(w http.ResponseWriter, r *http.Request) {
@@ -608,18 +606,10 @@ func (s *Server) createCostScenario(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// hasPermission is allowed for handlers that hold the request: the same
+// answer, from the same short-lived cache as the route gates.
 func (s *Server) hasPermission(r *http.Request, code string) (bool, error) {
-	op, ok := grpcx.OperatorFromContext(r.Context())
-	if !ok || op.EmployeeID == 0 {
-		return false, nil
-	}
-	resp, err := s.Access.CheckPermission(r.Context(), &iamv1.CheckPermissionRequest{
-		EmployeeId: op.EmployeeID, PermissionCode: code,
-	})
-	if err != nil {
-		return false, err
-	}
-	return resp.GetAllowed(), nil
+	return s.allowed(r.Context(), code)
 }
 
 func redactSupplierQuotePrices(resp *prv1.ListSupplierQuoteComparisonResponse) {

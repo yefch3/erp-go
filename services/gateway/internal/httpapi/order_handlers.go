@@ -183,10 +183,32 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) receiveOrder(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ReceiveOrderRequest{}
-	if !s.decodeBody(w, r, req) {
+	if !s.decodeBodyLimit(w, r, req, 8<<20) {
 		return
 	}
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	order, err := s.Orders.GetOrder(r.Context(), &prv1.GetOrderRequest{Id: req.Id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	permission := "procurement:order:write"
+	if order.GetOrder().GetFulfillmentMode() == "WAREHOUSE" {
+		permission = "procurement:receipt:write"
+	}
+	allowed, err := s.allowed(r.Context(), permission)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		s.writeError(w, http.StatusForbidden, "AUTH_PERMISSION_DENIED", "工厂交货由采购确认，仓库入库由仓库人员登记")
+		return
+	}
+	if (order.GetOrder().GetFulfillmentMode() == "WAREHOUSE") != (req.GetWarehouseId() > 0) {
+		s.writeError(w, http.StatusBadRequest, "PO_DELIVERY_MODE_MISMATCH", "交接方式与采购单约定不一致")
+		return
+	}
 	resp, err := s.Orders.ReceiveOrder(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -395,4 +417,16 @@ func (s *Server) closePurchaseOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) downloadReceiptProof(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	resp, err := s.Orders.DownloadReceiptProof(r.Context(), &prv1.DownloadReceiptProofRequest{PoId: idFromPath(r), FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", resp.GetContentType())
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	_, _ = w.Write(resp.GetFileData())
 }

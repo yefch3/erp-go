@@ -188,6 +188,8 @@ message CreateCaseRequest {
   // Master-data contact selected for this customer. The gateway validates the
   // relationship and replaces the name/email snapshots with authoritative values.
   int64 contact_id = 15;
+  // Overall requirements extracted alongside the workbook rows.
+  string remark = 16;
 }
 
 message CreateCaseResponse { SourcingCase sourcing_case = 1; }
@@ -544,6 +546,10 @@ message Requirement {
   string source_payment_terms = 44;
   string source_incoterm = 45;
   string source_valid_until = 46;
+  // Sales inquiry note captured when the customer accepted the quotation.
+  string source_sales_remark = 47;
+  string contract_item_remark = 48;
+  string presale_reference_json = 49;
 }
 
 message ListRequirementsRequest {
@@ -606,6 +612,8 @@ message CancelRequirementResponse {
 // references requirements, and a requirement may span several orders.
 service PurchaseOrderService {
   rpc SaveHistoricalOrder(SaveHistoricalOrderRequest) returns (SaveHistoricalOrderResponse);
+  rpc UpdateHistoricalShippingContext(UpdateHistoricalShippingContextRequest) returns (UpdateHistoricalShippingContextResponse);
+  rpc ListShippingHistoricalPurchases(ListShippingHistoricalPurchasesRequest) returns (ListShippingHistoricalPurchasesResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
   // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
   rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
@@ -642,6 +650,10 @@ service PurchaseOrderService {
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
+  rpc DownloadReceiptProof(DownloadReceiptProofRequest) returns (DownloadReceiptProofResponse);
+  // Narrow read-only projection. Gateway resolves the contract from an authorized
+  // shipping handoff, never from caller-supplied HTTP contract parameters.
+  rpc ListShippingPurchaseRemarks(ListShippingPurchaseRemarksRequest) returns (ListShippingPurchaseRemarksResponse);
   rpc GetOrderDocuments(GetOrderDocumentsRequest) returns (GetOrderDocumentsResponse);
   rpc BeginOrderSend(BeginOrderSendRequest) returns (BeginOrderSendResponse);
   rpc CompleteOrderSend(CompleteOrderSendRequest) returns (CompleteOrderSendResponse);
@@ -790,6 +802,10 @@ service PurchaseOrderService {
   rpc SetBankTransactionClaim(SetBankTransactionClaimRequest) returns (SetBankTransactionClaimResponse);
   // Correct identifying information on a finance-only opening record.
   rpc UpdateManualPayable(UpdateManualPayableRequest) returns (UpdateManualPayableResponse);
+  // Read-only delivery gate for inventory and shipping. Missing inspection
+  // evidence fails closed; this never grants access to purchase prices.
+  rpc CheckDeliveryQuality(CheckDeliveryQualityRequest) returns (CheckDeliveryQualityResponse);
+  rpc AddOrderFollowUp(AddOrderFollowUpRequest) returns (AddOrderFollowUpResponse);
 }
 
 
@@ -873,6 +889,8 @@ message QualityInspectionTask {
   string procurement_handled_by_name = 24;
   string procurement_handled_at = 25;
   bool deletable = 26;
+  // Current purchase-order remark, read-only; independent of the inspection request remark.
+  string purchase_order_remark = 27;
 }
 
 message ApplyQualityInspectionLine { int64 po_item_id = 1; string qty = 2; }
@@ -1129,6 +1147,7 @@ message PurchaseOrder {
   bool prices_complete = 60;
   string recorded_by = 61;
   string recorded_at = 62;
+  string destination_port = 63;
 }
 
 message PurchaseOrderItem {
@@ -1150,6 +1169,7 @@ message PurchaseOrderItem {
   string source = 15;
   // 合同负责人：单归执行采购员，但每一行都记得这单生意是谁谈的。
   string contract_owner = 16;
+  string contract_item_remark = 17;
 }
 
 message PurchaseReceipt {
@@ -1160,6 +1180,8 @@ message PurchaseReceipt {
   string remark = 5;
   string total_qty = 6;
   string received_at = 7;
+  string actual_delivery_date = 8;
+  repeated ReceiptProofFile proof_files = 9;
 }
 
 message ListOrdersRequest {
@@ -1274,6 +1296,9 @@ message ReceiveOrderRequest {
   int64 warehouse_id = 2;
   string remark = 3;
   repeated ReceiveOrderLine lines = 4;
+  string actual_delivery_date = 5;
+  repeated ReceiptProofUpload proof_files = 6;
+  string request_key = 7;
 }
 
 message ReceiveOrderResponse {
@@ -1379,6 +1404,7 @@ message GetOrderExecutionResponse {
   repeated ReceiptException exceptions = 3;
   repeated ProductionReminder reminders = 4;
   repeated PurchaseInspection inspections = 5;
+  repeated OrderFollowUp follow_ups = 6;
 }
 
 message PurchaseInspection {
@@ -2586,6 +2612,8 @@ message SupplierReconRow {
   string signed_contract_name = 27;
   string requested_by_name = 28;
   string requested_at = 29;
+  int32 transport_batch_no = 30;
+  bool business_document_no_generated = 31;
 }
 
 // PurchaseOrderPaymentEntry is one movement of money on one order.
@@ -2659,6 +2687,12 @@ message CreateManualPayableRequest {
   string paid_at = 6;
   string note = 7;
   string due_date = 8;
+  string business_type = 9;
+  int64 source_business_id = 10;
+  int64 source_supplier_id = 11;
+  string export_contract_no = 12;
+  string business_document_no = 13;
+  string payment_terms = 14;
 }
 message CreateManualPayableResponse { SupplierReconRow row = 1; }
 message ReversePurchaseOrderPaymentResponse {
@@ -2925,6 +2959,8 @@ message CreateExternalPayableRequest {
   string business_document_no = 4; int64 payee_id = 5; string payee_name = 6;
   string currency = 7; string amount = 8; string due_date = 9; string payment_terms = 10;
   string signed_contract_key = 11; string signed_contract_name = 12;
+  int32 transport_batch_no = 13;
+  bool business_document_no_generated = 14;
 }
 message CreateExternalPayableResponse { SupplierReconRow row = 1; }
 message GetExternalPayableRequest { string business_type = 1; int64 source_business_id = 2; }
@@ -3161,6 +3197,8 @@ message SaveHistoricalOrderRequest {
  bool confirm = 11;
  repeated HistoricalOrderLine lines = 12;
  string payable_due_date = 13;
+ string export_contract_no = 14;
+ string destination_port = 15;
 }
 message HistoricalOrderLine {
  int64 product_id = 7;
@@ -3174,3 +3212,61 @@ message HistoricalOrderLine {
  string unit_price = 6;
 }
 message SaveHistoricalOrderResponse { int64 id = 1; string po_no = 2; string status = 3; }
+
+message DeliveryQualityContractLine {
+  int64 contract_item_id = 1;
+  // Cumulative quantity whose shipment must be covered by passed inspections.
+  string qty = 2;
+}
+message CheckDeliveryQualityRequest {
+  repeated int64 po_ids = 1;
+  int64 contract_id = 2;
+  repeated int64 contract_item_ids = 3;
+  repeated DeliveryQualityContractLine lines = 4;
+}
+message CheckDeliveryQualityResponse {
+  bool allowed = 1;
+  string reason = 2;
+  string code = 3;
+}
+
+message OrderFollowUp {
+  int64 id = 1;
+  string note = 2;
+  string created_by = 3;
+  string created_at = 4;
+}
+message AddOrderFollowUpRequest { int64 id = 1; string note = 2; }
+message AddOrderFollowUpResponse { OrderFollowUp follow_up = 1; }
+
+message ReceiptProofUpload { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+message ReceiptProofFile { int64 id = 1; string file_name = 2; string content_type = 3; int64 size_bytes = 4; }
+message DownloadReceiptProofRequest { int64 po_id = 1; int64 file_id = 2; }
+message DownloadReceiptProofResponse { string file_name = 1; string content_type = 2; bytes file_data = 3; }
+
+message ListShippingPurchaseRemarksRequest {
+  int64 contract_id = 1;
+  string contract_no = 2;
+}
+message ShippingPurchaseRemark {
+  string supplier_name = 1;
+  string purchase_order_remark = 2;
+}
+message ListShippingPurchaseRemarksResponse { repeated ShippingPurchaseRemark items = 1; }
+
+message UpdateHistoricalShippingContextRequest {
+  int64 id = 1;
+  string export_contract_no = 2;
+  string destination_port = 3;
+}
+message UpdateHistoricalShippingContextResponse {}
+
+message ListShippingHistoricalPurchasesRequest { string contract_no = 1; }
+message ShippingHistoricalPurchase {
+  string po_no = 1;
+  string supplier_name = 2;
+  string export_contract_no = 3;
+  string destination_port = 4;
+  string remark = 5;
+}
+message ListShippingHistoricalPurchasesResponse { repeated ShippingHistoricalPurchase items = 1; }

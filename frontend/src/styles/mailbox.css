@@ -14,6 +14,10 @@
      so the two columns line up rather than nearly lining up. */
   --mail-row-h: 40px;
   --mail-row-pad: 0 14px;
+  /* 邮件行左边留多少，工具条上的「全选」勾选框也往里缩同样多——两颗勾选框
+     上下一条线。不贴到 0：正在读的那一行左边有一道 3px 的蓝杠，勾选框贴边
+     就压在杠上。 */
+  --mail-row-inset: 6px;
   --mail-gutter: 16px;
 
   /* Mail stays on white. Blue-grey is reserved for interaction feedback and

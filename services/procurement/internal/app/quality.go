@@ -40,6 +40,7 @@ type QualityFile struct {
 	UploadedAt                                                              time.Time
 }
 type QualityTask struct {
+	PurchaseOrderRemark                                                                                     string
 	Deletable                                                                                               bool
 	ID, POID                                                                                                int64
 	TaskNo, PONo, SupplierName                                                                              string
@@ -139,7 +140,7 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	if businessType != "PROCUREMENT" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_TYPE_INVALID", "仅采购订单可以申请工厂出货前质检")
 	}
-	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" {
+	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" && status != "RECEIVED" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_NOT_ORDERED", "采购单尚未进入已下单状态，不能申请质检")
 	}
 	// A purchase order has one whole-order inspection task. Locking the order
@@ -235,7 +236,7 @@ func (s *Service) ListQualityTasks(ctx context.Context, tenantID int64, tab, key
 
 func (s *Service) GetQualityTask(ctx context.Context, tenantID, id int64) (QualityTask, error) {
 	var q QualityTask
-	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at,t.procurement_handling_status,t.procurement_handling_action,t.procurement_handling_note,t.procurement_handled_by_name,t.procurement_handled_at FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt, &q.ProcurementHandlingStatus, &q.ProcurementHandlingAction, &q.ProcurementHandlingNote, &q.ProcurementHandledByName, &q.ProcurementHandledAt)
+	err := s.pool.QueryRow(ctx, `SELECT t.id,t.po_id,t.task_no,o.po_no,o.supplier_name,t.batch_no,t.status,COALESCE(t.expected_date::text,''),t.inspection_location,t.contact_name,t.contact_phone,t.remark,t.requested_by_name,t.requested_at,t.inspector_name,t.started_at,t.completed_at,t.procurement_handling_status,t.procurement_handling_action,t.procurement_handling_note,t.procurement_handled_by_name,t.procurement_handled_at,o.remark FROM quality_inspection_tasks t JOIN purchase_orders o ON o.id=t.po_id AND o.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenantID, id).Scan(&q.ID, &q.POID, &q.TaskNo, &q.PONo, &q.SupplierName, &q.BatchNo, &q.Status, &q.ExpectedDate, &q.Location, &q.ContactName, &q.ContactPhone, &q.Remark, &q.RequestedByName, &q.RequestedAt, &q.InspectorName, &q.StartedAt, &q.CompletedAt, &q.ProcurementHandlingStatus, &q.ProcurementHandlingAction, &q.ProcurementHandlingNote, &q.ProcurementHandledByName, &q.ProcurementHandledAt, &q.PurchaseOrderRemark)
 	if err == pgx.ErrNoRows {
 		return q, apierr.NotFound("QUALITY_TASK_NOT_FOUND", "质检任务不存在")
 	}
@@ -416,7 +417,10 @@ func (s *Service) SubmitQualityRound(ctx context.Context, tenantID, id int64, in
 			return QualityTask{}, err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,procurement_handling_status=CASE WHEN $7>0 THEN 'PENDING' WHEN procurement_handling_status='PENDING' THEN 'COMPLETED' ELSE procurement_handling_status END,procurement_handling_action=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN 'REINSPECTION_PASS' ELSE procurement_handling_action END,procurement_handling_note=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN '复检全部合格，系统自动完成采购异常待办' ELSE procurement_handling_note END,procurement_handled_at=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN now() ELSE procurement_handled_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location), unresolvedCount)
+	// Automatic retest completion closes the pending follow-up, not a manual
+	// procurement action. Preserve its action/operator and the database enum;
+	// record the automatic closure in the status, note and timestamp only.
+	_, err = tx.Exec(ctx, `UPDATE quality_inspection_tasks SET status=$3::varchar,inspector_id=$4,inspector_name=$5,started_at=COALESCE(started_at,now()),inspection_location=CASE WHEN $6='' THEN inspection_location ELSE $6 END,completed_at=CASE WHEN $3::text='COMPLETED' THEN now() ELSE NULL END,procurement_handling_status=CASE WHEN $7>0 THEN 'PENDING' WHEN procurement_handling_status='PENDING' THEN 'COMPLETED' ELSE procurement_handling_status END,procurement_handling_note=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN '复检全部合格，系统自动完成采购跟进待办' ELSE procurement_handling_note END,procurement_handled_at=CASE WHEN $7=0 AND procurement_handling_status='PENDING' THEN now() ELSE procurement_handled_at END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, next, op.ID, op.Name, strings.TrimSpace(in.Location), unresolvedCount)
 	if err != nil {
 		return QualityTask{}, err
 	}

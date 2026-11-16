@@ -272,6 +272,8 @@ EXTRA_TENANT_ADMIN_PASSWORD=（只写在 .env，别处都不出现）
 | `MINIO_USE_SSL` | 空 | `1` |
 | `MINIO_REGION` | 空 | 桶所在区域，如 `cn-hangzhou`（不能靠自动发现，服务在容器里探不到公网 endpoint） |
 
+**网关也读这几个变量（2026-11-09 起）。** 附件原本只在业务服务和浏览器之间走：服务签地址、浏览器直传。天津办公室实测浏览器连签名地址那台主机是 `ERR_CONNECTION_TIMED_OUT`（桶里从上线起国内员工直传成功 0 次），所以网关多了一条中转路 `/api/storage/relay`——浏览器把文件连同签名地址交给网关，网关代为连存储，读文件同理。网关只替「自己的桶」转，认桶靠的就是上面这组变量（`MINIO_ENDPOINT` / `MINIO_PUBLIC_ENDPOINT` / `MINIO_BUCKET` / `MINIO_USE_SSL` / `MINIO_REGION`，prod 覆盖文件已经接上），换云厂商时跟着一起生效，不用另配。**这组值必须和业务服务的一字不差，区域也算**：签名地址的主机名是签名库按它们推出来的（AWS 上是 `<桶>.s3.dualstack.<区域>.amazonaws.com`），网关用同一个库、同一组值去认；差一个，认的就是另一台主机，上传全部 400「不是本系统的文件存储」——2026-11-09 第一版上线后就是这样挂了两天（那版是手拼的主机名）。**上线后核对**：网关启动日志里有一行 `storage relay ready signed_host=… dial_host=…`，`docker inspect` 对一下网关和 procurement 的 `MINIO_*` 五个值；被拒的地址会记 `storage relay refused an address offered_host=… signed_host=…`。目前走中转的是质检资料和报销凭证（上传和查看）；其余直传功能国内同事用到时照此切换。文件在网关里只过内存；前门 nginx 收请求体时会在 `/var/lib/nginx/body` 落一个临时文件，请求结束即删（默认行为，实测目录为空），服务器上不留存。
+
 三个容易踩的点：
 
 **① 桶必须是私有的。** 所有读取都走限时签名 URL，桶本身公开可读就等于把全部合同和来信附件挂到了公网。
@@ -318,6 +320,21 @@ DSN 没写的时候才填默认值）。但加之前先算总和——超了 100
 多半在同一个服务商上，24 路并发从同一个 IP 打过去，撞限流甚至被封的风险
 是真的。真到追不上的那天，按活跃度分级排期（活跃的两分钟，闲置的半小时）
 比调高并发好：它既缩短了一轮，又**减少**了对服务商的压力，而不是增加。
+
+### Kafka 健康检查：生产上关掉
+
+生产的 `deploy/.env` 里要有 `KAFKA_HEALTHCHECK_DISABLED=true`。
+
+那条健康检查每 10 秒起一个 JVM（`kafka-broker-api-versions`），每次吃
+1.3–2.3 个核、约 2 秒——2026-10-04 压测逐秒采样时抓到：没有任何请求的时候
+整机也每 12 秒冲到 64%，压测时这 2 秒里所有请求一起变慢。而生产上**没有
+任何东西读它的结果**：业务服务不等它、部署只看网关 healthz、Docker 不会
+因为 unhealthy 重启容器。本地 `make up --wait` 要靠它，所以默认是开的。
+
+改了这个变量要重建 Kafka 才生效（大约 30 秒收不到消息，消息在发件箱里排队、
+恢复后补发，不会丢）：
+
+    cd /opt/erp/repo && docker compose -f deploy/docker-compose.infra.yml up -d --no-deps kafka
 
 ---
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sort"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -172,7 +173,11 @@ func (s *Service) ConfirmSailing(ctx context.Context, tenantID, id int64, op Ope
 		if err != nil {
 			return err
 		}
+		sort.Slice(contracts, func(i, j int) bool { return contracts[i].ContractID < contracts[j].ContractID })
 		for _, c := range contracts {
+			if err := s.checkDeliveryQuality(ctx, tx, tenantID, c.ContractID, items); err != nil {
+				return err
+			}
 			if err := s.checkNotOverShipped(ctx, q, tenantID, c, items); err != nil {
 				return err
 			}

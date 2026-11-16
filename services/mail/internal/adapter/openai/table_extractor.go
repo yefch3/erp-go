@@ -5,7 +5,6 @@ package openai
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -30,6 +29,8 @@ type TableExtractor struct {
 	baseURL string
 	model   string
 	client  *http.Client
+	// 重试之间的等待。nil = 真等；测试里换成不等的，免得一个用例跑十几秒。
+	sleep func(context.Context, time.Duration) error
 }
 
 func NewTableExtractor(apiKey, baseURL, model string, timeout time.Duration) *TableExtractor {
@@ -91,7 +92,7 @@ func (c *TableExtractor) Extract(ctx context.Context, in app.TableExtractionInpu
 	} else {
 		content = append(content, map[string]any{
 			"type": "input_file", "filename": in.FileName,
-			"file_data": dataURL(in.ContentType, in.FileData),
+			"file_data": dataURL(fileMediaType(in.FileName, in.ContentType, in.FileData), in.FileData),
 		})
 	}
 
@@ -115,21 +116,11 @@ func (c *TableExtractor) Extract(ctx context.Context, in app.TableExtractionInpu
 	if err != nil {
 		return app.Extraction{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/responses", bytes.NewReader(body))
+	resp, err := c.post(ctx, body)
 	if err != nil {
 		return app.Extraction{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return app.Extraction{}, fmt.Errorf("OpenAI request: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-		return app.Extraction{}, fmt.Errorf("OpenAI returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(data))
-	}
 
 	result, err := decodeResponse(resp.Body, resp.Header.Get("Content-Type"))
 	if err != nil {
@@ -708,23 +699,4 @@ func (r responseEnvelope) outputText() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("OpenAI response %q contained no output text", r.Status)
-}
-
-func apiErrorMessage(data []byte) string {
-	var v struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.Unmarshal(data, &v) == nil && v.Error.Message != "" {
-		return v.Error.Message
-	}
-	text := strings.TrimSpace(string(data))
-	if len(text) > 500 {
-		text = text[:500]
-	}
-	if text == "" {
-		text = "empty error response"
-	}
-	return text
 }

@@ -21,17 +21,18 @@ const (
 )
 
 type homeReminderItem struct {
-	Key       string `json:"key"`
-	Source    string `json:"source"`
-	SourceID  string `json:"sourceId"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	BizNo     string `json:"bizNo"`
-	DueAt     string `json:"dueAt"`
-	CreatedAt string `json:"createdAt"`
-	Unread    bool   `json:"unread"`
-	Timing    string `json:"timing"`
-	DetailURL string `json:"detailUrl"`
+	Key        string `json:"key"`
+	Source     string `json:"source"`
+	SourceID   string `json:"sourceId"`
+	Title      string `json:"title"`
+	Content    string `json:"content"`
+	BizNo      string `json:"bizNo"`
+	ScheduleNo string `json:"scheduleNo,omitempty"`
+	DueAt      string `json:"dueAt"`
+	CreatedAt  string `json:"createdAt"`
+	Unread     bool   `json:"unread"`
+	Timing     string `json:"timing"`
+	DetailURL  string `json:"detailUrl"`
 }
 
 type homeReminderSummary struct {
@@ -105,7 +106,7 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 				items = append(items, homeReminderItem{
 					Key: homeReminderArrival + ":" + strconv.FormatInt(row.GetId(), 10), Source: homeReminderArrival,
 					SourceID: strconv.FormatInt(row.GetId(), 10), Title: row.GetTitle(), Content: row.GetContent(),
-					BizNo: strconv.FormatInt(row.GetScheduleId(), 10), DueAt: datePart(row.GetTargetEta()), CreatedAt: row.GetSentAt(),
+					BizNo: shippingBusinessNo(row.GetContractNo(), row.GetTransportBatchNo()), ScheduleNo: row.GetScheduleNo(), DueAt: datePart(row.GetTargetEta()), CreatedAt: row.GetSentAt(),
 					Unread: row.GetReadAt() == "", Timing: timing, DetailURL: row.GetDetailUrl(),
 				})
 				addHomeReminderTiming(&summary, timing)
@@ -124,7 +125,7 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 				items = append(items, homeReminderItem{
 					Key: homeReminderBL + ":" + strconv.FormatInt(row.GetId(), 10), Source: homeReminderBL,
 					SourceID: strconv.FormatInt(row.GetId(), 10), Title: row.GetTitle(), Content: row.GetContent(),
-					BizNo: row.GetScheduleNo(), DueAt: dueAt, CreatedAt: row.GetCreatedAt(),
+					BizNo: shippingBusinessNo(row.GetContractNo(), row.GetTransportBatchNo()), ScheduleNo: row.GetScheduleNo(), DueAt: dueAt, CreatedAt: row.GetCreatedAt(),
 					Unread: row.GetUnread(), Timing: timing, DetailURL: row.GetDetailUrl(),
 				})
 				addHomeReminderTiming(&summary, timing)
@@ -143,7 +144,7 @@ func (s *Server) listHomeReminders(w http.ResponseWriter, r *http.Request) {
 		summary.Unread += actionResp.GetUnreadCount()
 		for _, row := range actionResp.GetItems() {
 			timing := classifyHomeReminderDate(row.GetDueDate(), today)
-			items = append(items, homeReminderItem{Key: homeReminderShippingAction + ":" + strconv.FormatInt(row.GetId(), 10), Source: homeReminderShippingAction, SourceID: strconv.FormatInt(row.GetId(), 10), Title: row.GetTitle(), Content: row.GetContent(), BizNo: row.GetScheduleNo(), DueAt: row.GetDueDate(), CreatedAt: row.GetCreatedAt(), Unread: row.GetReadAt() == "", Timing: timing})
+			items = append(items, homeReminderItem{Key: homeReminderShippingAction + ":" + strconv.FormatInt(row.GetId(), 10), Source: homeReminderShippingAction, SourceID: strconv.FormatInt(row.GetId(), 10), Title: row.GetTitle(), Content: row.GetContent(), BizNo: shippingBusinessNo(row.GetContractNo(), row.GetTransportBatchNo()), ScheduleNo: row.GetScheduleNo(), DueAt: row.GetDueDate(), CreatedAt: row.GetCreatedAt(), Unread: row.GetReadAt() == "", Timing: timing})
 			addHomeReminderTiming(&summary, timing)
 		}
 	}

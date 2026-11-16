@@ -30,6 +30,19 @@
     <!-- 三个数字，回答财务开门第一句话：现在有多少钱该收而没收到。
          逾期额单独一栏并染红——总额里混着还没到期的，那个数字安慰人，
          逾期额才是要打电话的理由。 -->
+    <section v-if="canWrite" class="panel finance-release-panel">
+      <div class="release-heading"><strong>待财务放行（{{filteredFinanceQueue.length}}）</strong><el-button text @click="loadFinanceQueue()">刷新待办</el-button></div>
+      <p class="sub">客户签回后，请先核对执行条件。确认放行后，系统才向采购和物流交接实单任务。</p>
+      <el-alert v-if="financeQueueError" title="财务放行待办加载失败，请刷新重试" type="warning" :closable="false"/>
+      <el-table v-else-if="filteredFinanceQueue.length" :data="filteredFinanceQueue" size="small">
+        <el-table-column prop="contractNo" label="合同号" min-width="180"/>
+        <el-table-column prop="customerName" label="客户" min-width="190" show-overflow-tooltip/>
+        <el-table-column label="合同金额" width="170" align="right"><template #default="{row}">{{row.currency}} {{money(row.totalAmount)}}</template></el-table-column>
+        <el-table-column label="状态" width="140"><template #default><el-tag type="warning">待财务放行</el-tag></template></el-table-column>
+        <el-table-column label="操作" width="160"><template #default="{row}"><el-button type="primary" size="small" @click="openCondition({contractId:row.id,contractNo:row.contractNo,customerName:row.customerName})">确认执行条件</el-button></template></el-table-column>
+      </el-table>
+      <p v-else class="sub">暂无匹配的待财务放行合同</p>
+    </section>
     <section class="metrics">
       <div class="metric" :class="{ 'is-alarm': overdueCount > 0 }">
         <span class="metric-label">{{ t('receivableDue.overdueCount') }}</span>
@@ -106,13 +119,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.contract')" min-width="180">
+        <el-table-column :label="t('receivableDue.contract')" min-width="160">
           <template #default="{ row }">
             <router-link :to="`/contracts?id=${row.contractId}`" class="doc-link">{{ row.contractNo }}</router-link>
             <div class="sub">{{ row.customerName }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.dueDate')" width="150">
+        <el-table-column :label="t('receivableDue.dueDate')" width="100">
           <template #default="{ row }">
             <template v-if="row.dueUnset">
               <el-tag size="small" type="warning" effect="plain">{{ t('receivableDue.unsetTag') }}</el-tag>
@@ -123,36 +136,33 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.openAmount')" width="160" align="right">
+        <el-table-column :label="t('receivableDue.openAmount')" width="120" align="right">
           <template #default="{ row }">
             <span class="num money" :class="{ overdue: row.overdueDays > 0 && !row.dueUnset }">
-              {{ row.currency }} {{ row.openAmount }}
+              {{ row.currency }} {{ money(row.openAmount) }}
             </span>
-            <div class="sub">{{ t('receivableDue.ofTotal', { total: row.totalAmount }) }}</div>
+            <div class="sub">{{ t('receivableDue.ofTotal', { total: money(row.totalAmount) }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.received')" width="130" align="right">
+        <el-table-column :label="t('receivableDue.received')" width="75" align="right">
           <template #default="{ row }">
-            <span class="num" :class="{ dim: Number(row.receivedAmount) === 0 }">{{ row.receivedAmount }}</span>
+            <span class="num" :class="{ dim: Number(row.receivedAmount) === 0 }">{{ money(row.receivedAmount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.effectiveDate')" width="120">
+        <el-table-column :label="t('receivableDue.effectiveDate')" width="100">
           <template #default="{ row }">{{ row.effectiveDate || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.executionCondition')" min-width="180">
+        <el-table-column :label="t('receivableDue.executionCondition')" min-width="110">
           <template #default="{ row }">
             <span v-if="row.executionConditionStatus === 'NOT_APPLICABLE'">—</span>
             <div v-else-if="row.executionConditionStatus === 'READY'" class="condition-ready">
               <el-tag type="success" effect="light">{{ t('receivableDue.executionReady') }}</el-tag>
               <div class="sub">{{ conditionLabel(row.executionConditionType) }}</div>
             </div>
-            <el-button v-else-if="canWrite && !row.manuallyEntered" type="primary" @click="openCondition(row)">
-              {{ t('receivableDue.confirmExecution') }}
-            </el-button>
-            <el-tag v-else type="warning" effect="plain">{{ t('receivableDue.executionWaiting') }}</el-tag>
+            <div v-else class="condition-ready"><el-tag type="warning" effect="plain">待财务放行</el-tag><el-button v-if="canWrite && !row.manuallyEntered" link type="primary" @click="openCondition(row)">{{ t('receivableDue.confirmExecution') }}</el-button></div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('receivableDue.owner')" min-width="110">
+        <el-table-column :label="t('receivableDue.owner')" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
         <!-- 已结清视图多一列：为什么不催了、谁定的。 -->
@@ -162,7 +172,7 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('common.actions')" width="95" fixed="right">
           <template #default="{ row }">
             <el-button v-if="isDone || !canWrite" type="primary" plain @click="handleRowCommand(row, 'detail')">
               {{ t('receivableDue.viewDetails') }}
@@ -419,13 +429,13 @@ interface Row {
 const EXECUTION_CONDITIONS = ['PREPAYMENT_RECEIVED', 'LETTER_OF_CREDIT_RECEIVED', 'NO_PREPAYMENT_REQUIRED', 'SPECIAL_APPROVAL'] as const
 const conditionOpen = ref(false)
 const conditionBusy = ref(false)
-const conditionRow = ref<Row | null>(null)
+const conditionRow = ref<Pick<Row,'contractId'|'contractNo'|'customerName'> | null>(null)
 const conditionForm = reactive({ conditionType: '', note: '' })
 
 function conditionLabel(type: string) {
   return type ? t(`receivableDue.executionConditions.${type}`) : '—'
 }
-function openCondition(row: Row) {
+function openCondition(row: Pick<Row,'contractId'|'contractNo'|'customerName'>) {
   conditionRow.value = row
   Object.assign(conditionForm, { conditionType: '', note: '' })
   conditionOpen.value = true
@@ -437,7 +447,7 @@ async function submitCondition() {
     await post(`/receivable-due/${conditionRow.value.contractId}/execution-condition`, conditionForm)
     conditionOpen.value = false
     ElMessage.success(t('receivableDue.executionReleased'))
-    await load()
+    await Promise.all([load(),loadFinanceQueue()])
   } finally { conditionBusy.value = false }
 }
 
@@ -498,6 +508,22 @@ const emptyText = computed(() => {
   return view.value === 'overdue' ? t('receivableDue.emptyOverdue') : t('receivableDue.empty')
 })
 const keyword = ref(String(route.query.keyword ?? ''))
+interface FinanceQueueItem {id:string;contractNo:string;customerName:string;currency:string;totalAmount:string}
+const financeQueue=ref<FinanceQueueItem[]>([]),financeQueueError=ref(false)
+const filteredFinanceQueue=computed(()=>financeQueue.value.filter(row=>!keyword.value.trim()||[row.contractNo,row.customerName].some(v=>v.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()))))
+function money(value:string){const n=Number(value);return Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):value}
+async function loadFinanceQueue(){
+ if(!canWrite)return
+ financeQueueError.value=false
+ try{const data=await get<{finance:FinanceQueueItem[]}>('/home/execution-todos');financeQueue.value=data.finance??[]}
+ catch{financeQueue.value=[];financeQueueError.value=true}
+}
+async function openRequestedCondition(){
+ await loadFinanceQueue()
+ const id=String(route.query.condition??'')
+ const row=financeQueue.value.find(row=>row.id===id)
+ if(row)openCondition({contractId:row.id,contractNo:row.contractNo,customerName:row.customerName})
+}
 const loading = ref(false)
 
 // 三个数字算的是「当前这一页之外的全局」，所以各查一次 total——
@@ -712,7 +738,7 @@ async function submitDue() {
     })
     dueOpen.value = false
     ElMessage.success(t('receivableDue.dueSaved'))
-    await Promise.all([load(), loadMetrics()])
+    await Promise.all([load(), loadMetrics(), loadFinanceQueue()])
   } catch {
     // 错误提示由 api 层统一弹
   } finally {
@@ -762,6 +788,7 @@ function reload() {
   page.value = 1
   load()
   loadMetrics()
+  void loadFinanceQueue()
 }
 
 watch(() => route.query.keyword, (value) => {
@@ -780,13 +807,19 @@ watch(isDone, () => {
   reload()
 })
 
+watch(() => route.query.condition, () => {void openRequestedCondition()})
 onMounted(() => {
+  void openRequestedCondition()
   load()
   loadMetrics()
+  void loadFinanceQueue()
 })
 </script>
 
 <style scoped>
+.release-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.page :deep(.el-table :is(th,td).el-table__cell > .cell){text-align:left!important}
+.page :deep(.el-table :is(th,td).el-table__cell.is-right > .cell){text-align:right!important}
 .page {
   display: flex;
   flex-direction: column;

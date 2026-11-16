@@ -288,6 +288,9 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
 		return ContractView{}, err
 	}
+	if err := validBusinessDate(terms.DeliveryDate, "EX_DELIVERY_DATE_INVALID", "交货日期"); err != nil {
+		return ContractView{}, err
+	}
 	if view.Version.Status != "DRAFT" {
 		return ContractView{}, apierr.Conflict("EX_CONTRACT_NOT_DRAFT",
 			"只有草稿版本可以修改，已提交审批的版本请先撤回或重新变更").
@@ -343,6 +346,17 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		if rows == 0 {
 			// Someone submitted it between the read and this write.
 			return apierr.Conflict("EX_CONTRACT_NOT_DRAFT", "只有草稿版本可以修改")
+		}
+		// A countersigned file proves the pre-edit document, not new commercial terms.
+		if view.Contract.EntrySource == "STANDARD" && (len(items) > 0 ||
+			orDefault(terms.BuyerName, view.Version.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
+			orDefault(terms.SellerName, view.Version.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
+			orDefault(terms.Incoterm, view.Version.Incoterm) != view.Version.Incoterm || terms.PortOfLoading != view.Version.PortOfLoading ||
+			terms.PortOfDischarge != view.Version.PortOfDischarge || terms.PaymentMethod != view.Version.PaymentMethod ||
+			terms.DeliveryDate != view.Version.DeliveryDate || terms.Text != view.Version.Terms) {
+			if _, err := tx.Exec(ctx, `UPDATE contract_attachments SET signature_invalidated_at=now() WHERE tenant_id=$1 AND contract_version_id=$2 AND kind='SIGNED' AND signature_invalidated_at IS NULL`, tenantID, view.Version.ID); err != nil {
+				return err
+			}
 		}
 		// 到期日跟着草稿一起改，不留痕：草稿还不是承诺。生效之后再改才
 		// 需要写理由，那条路走客户对账页上的「改到期日」。
@@ -462,6 +476,11 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 		}
 		if locked.Status != view.Contract.Status {
 			return apierr.Conflict("EX_CHANGE_CHANGED", "合同状态已变化，请刷新")
+		}
+		if view.Contract.EntrySource == "STANDARD" {
+			if err := s.checkShippedContractLines(ctx, tenantID, id, lines); err != nil {
+				return err
+			}
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
 			TenantID: tenantID, ContractID: id, VersionNo: nextVersionNo,
@@ -604,14 +623,21 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 	}
 	// Either it is within the scope, or you were asked to approve it. Being
 	// handed a task on a document has to imply the right to read it.
-	if !allowedOwner(visible, view.Contract.SalesEmployeeID) &&
-		!contains(s.involvedIn(ctx, op, BizTypeContract), id) {
+	involved := contains(s.involvedIn(ctx, op, BizTypeContract), id)
+	if !allowedOwner(visible, view.Contract.SalesEmployeeID) && !involved {
 		// Deliberately "not found" rather than "forbidden": telling someone a
 		// contract exists but is none of their business is itself a leak.
 		return ContractView{}, apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
 	}
-	if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
-		return ContractView{}, err
+	// Approval involvement grants read access to this document's recorded
+	// customer snapshot, not to the customer master record or write operations.
+	// mustOwnContract still checks customer access independently on writes.
+	teamQuotation := s.scopes != nil && view.Contract.EntrySource == "STANDARD" && view.Contract.QuotationID > 0 &&
+		op.ID > 0 && view.Contract.SalesEmployeeID != op.ID && allowedOwner(visible, view.Contract.SalesEmployeeID)
+	if !involved && !teamQuotation {
+		if err := s.checkCustomerAccess(ctx, view.Contract.CustomerID); err != nil {
+			return ContractView{}, err
+		}
 	}
 	return view, nil
 }
@@ -706,7 +732,11 @@ func (s *Service) ListContracts(ctx context.Context, tenantID int64, keyword str
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs,
+	var teamReaderID int64
+	if s.scopes != nil {
+		teamReaderID = op.ID
+	}
+	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{CustomerAccessAll: customerAll, CustomerAccessIds: customerIDs, TeamReaderID: teamReaderID,
 
 		SalesEmployeeID: ownerID, TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,

@@ -25,6 +25,7 @@ import (
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
@@ -49,12 +50,12 @@ func main() {
 // 留了余量装 zip 的头尾和 protobuf 的封装。改 MaxZipBytes 就要跟着改这里。
 const maxServiceResponseBytes = 48 << 20
 
-func dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr,
+func dial(addr string, extra ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return grpc.NewClient(addr, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(grpcx.UnaryClientPropagator()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxServiceResponseBytes)),
-	)
+	}, extra...)...)
 }
 
 func run(log *slog.Logger) error {
@@ -67,7 +68,9 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	iamConn, err := dial(cfg.IAMAddr)
+	// iam's access answers are remembered for ten seconds; see grpcx.AnswerCache.
+	accessAnswers, answers := grpcx.CacheAccessAnswers(ctx, log)
+	iamConn, err := dial(cfg.IAMAddr, accessAnswers)
 	if err != nil {
 		return err
 	}
@@ -127,9 +130,14 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("gateway: redis at %s: %w", cfg.RedisAddr, err)
 	}
 
-	// Mailbox unlock tokens. Twelve hours by default: verify once in the
-	// morning, locked again by the next working day.
-	unlockTTL := 12 * time.Hour
+	// Mailbox unlock tokens. A year by default, counted from the last time
+	// the mailbox was used (Check renews a half-spent token), so in practice
+	// one verification lasts until somebody signs out of the mailbox, changes
+	// computer, or the mail host stops accepting the code. The unlock is a
+	// second gate on top of the ERP login, not a daily ritual: 2026-11 the
+	// customer asked for "enter the code once, never again", and the old 12h
+	// then 30-day windows were what kept asking.
+	unlockTTL := 365 * 24 * time.Hour
 	if v := os.Getenv("MAIL_UNLOCK_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			unlockTTL = d
@@ -157,6 +165,24 @@ func run(log *slog.Logger) error {
 	oauthRedirect := os.Getenv("MAIL_OAUTH_REDIRECT_URL")
 	if oauthRedirect == "" {
 		oauthRedirect = "http://localhost:8080/api/oauth/google/callback"
+	}
+
+	// 文件中转认的是「业务服务签出来的地址」，所以拿和它们同一组存储配置去问
+	// 签名库（见 httpapi.NewStorageRelay）。起不来不该连登录一起带倒：记下来，
+	// /api/storage/relay 会答 503。起来了也记一行——上线后拿这行和业务服务的
+	// 存储配置对一眼，比等人点一次上传再看报错快。
+	relay, err := httpapi.NewStorageRelay(blobstore.Config{
+		Endpoint:       cfg.StorageEndpoint,
+		PublicEndpoint: cfg.StoragePublicEndpoint,
+		Bucket:         cfg.StorageBucket,
+		UseSSL:         cfg.StorageUseSSL,
+		Region:         cfg.StorageRegion,
+	})
+	if err != nil {
+		log.Error("storage relay disabled: uploads and downloads that go through the gateway will answer 503", "err", err.Error())
+		relay = nil
+	} else {
+		log.Info("storage relay ready", relay.LogAttrs()...)
 	}
 
 	srv := &httpapi.Server{
@@ -191,6 +217,7 @@ func run(log *slog.Logger) error {
 		Unlock:                  unlock,
 		Idem:                    httpapi.NewIdemStore(cfg.RedisAddr, log),
 		Revocations:             revocations,
+		Answers:                 answers,
 		Limits:                  httpapi.NewRateLimiter(cfg.RedisAddr, log),
 		Throttle:                throttle,
 		GoogleClientID:          os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
@@ -207,6 +234,7 @@ func run(log *slog.Logger) error {
 		JWTSecret:         cfg.JWTSecret,
 		TokenTTL:          cfg.JWTTTL,
 		Log:               log,
+		Storage:           relay,
 	}
 
 	httpSrv := &http.Server{

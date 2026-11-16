@@ -24,8 +24,7 @@ func (s *Server) dailyPriceCall(w http.ResponseWriter, r *http.Request, command 
 		s.writeGRPCError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: json.RawMessage(resp.GetResultJson())})
+	writeRawData(w, resp.GetResultJson())
 }
 
 func (s *Server) dailyPriceBody(w http.ResponseWriter, r *http.Request, action string) {

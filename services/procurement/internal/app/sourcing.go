@@ -55,6 +55,7 @@ func reviewCustomFields(previous []byte, next map[string]string) []byte {
 }
 
 type NewSourcingCase struct {
+	Remark                                                  string
 	Title, CustomerName, ContactName, ContactEmail          string
 	SourceFileName, SourceContentType                       string
 	CustomerID, ContactID, SourceMailID, SourceAttachmentID int64
@@ -138,6 +139,14 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 				return err
 			}
 		}
+		if strings.TrimSpace(in.Remark) != "" {
+			// Products remain absent until the first workspace save and are
+			// assembled from the imported sourcing lines on reads.
+			_, err = tx.Exec(ctx, `UPDATE sourcing_cases SET inquiry_body=jsonb_build_object('remark',$3::text) WHERE tenant_id=$1 AND id=$2`, tenantID, id, strings.TrimSpace(in.Remark))
+			if err != nil {
+				return err
+			}
+		}
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: id,
 			Section: "CASE", Action: "CREATED", EntityID: id, Summary: "创建采购询价项目",
 			BeforeJson: []byte("{}"), AfterJson: []byte(`{"status":"INTAKE_PENDING"}`),
@@ -150,6 +159,7 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		}
 		return SourcingCaseView{}, err
 	}
+	s.nudgeInquiry(ctx, tenantID)
 	return s.GetSourcingCase(ctx, tenantID, id)
 }
 
@@ -362,6 +372,8 @@ WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); exec
 		if err != nil {
 			return SourcingCaseView{}, err
 		}
+		// INTAKE_PENDING → REVIEWING: the inquiry stops being 未提交 in every list.
+		s.nudgeInquiry(ctx, tenantID)
 		return s.GetSourcingCase(ctx, tenantID, caseID)
 	}
 	requiredFields, err := s.sourcingRequiredFields(ctx, tenantID, view.Head.InquiryTemplateID)

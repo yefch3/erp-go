@@ -166,6 +166,18 @@ func (h *Handler) GetCustomer(ctx context.Context, req *mdv1.GetCustomerRequest)
 	return &mdv1.GetCustomerResponse{Customer: out}, nil
 }
 
+func (h *Handler) GetCustomerNames(ctx context.Context, req *mdv1.GetCustomerNamesRequest) (*mdv1.GetCustomerNamesResponse, error) {
+	names, err := h.svc.CustomerNames(ctx, grpcx.TenantID(ctx), req.GetIds())
+	if err != nil {
+		return nil, err
+	}
+	out := &mdv1.GetCustomerNamesResponse{Customers: make([]*mdv1.CustomerNameEntry, 0, len(names))}
+	for _, c := range names {
+		out.Customers = append(out.Customers, &mdv1.CustomerNameEntry{Id: c.ID, Name: c.Name, ShortName: c.ShortName, Status: c.Status})
+	}
+	return out, nil
+}
+
 func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequest) (*mdv1.ListCustomersResponse, error) {
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
 	rows, total, err := h.svc.ListCustomers(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetStatus(), req.GetCountryCode(),

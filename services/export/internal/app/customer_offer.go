@@ -105,17 +105,20 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if err := s.checkCustomerAccess(ctx, offerID(view.Body.CustomerID)); err != nil {
-		return "", err
+	// IAM's employee scope authorizes a supervisor to work on this team's
+	// quotation snapshot, without granting access to the customer master.
+	teamQuotation := s.scopes != nil && ownerVisible && offerID(source.OwnerID) > 0 && offerID(source.OwnerID) != op.EmployeeID
+	if !teamQuotation {
+		if err := s.checkCustomerAccess(ctx, offerID(view.Body.CustomerID)); err != nil {
+			return "", err
+		}
 	}
 	view.CanEdit = canWrite && ownerVisible && view.Status != "CONFIRMED"
-	if (view.Body.CategoryWorkflow || cmd.Body.CategoryWorkflow) && cmd.Action == "confirm" {
-		return "", apierr.Invalid("OFFER_CATEGORY_FORMULA_PENDING", "分类公式尚未配置，请先保存和核对候选方案")
-	}
+
 	switch cmd.Action {
 	case "get":
 	case "pdf":
-		if view.Body.CategoryWorkflow {
+		if view.Body.CategoryWorkflow && view.Status != "CONFIRMED" {
 			if view.Revision == 0 {
 				return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
 			}
@@ -127,8 +130,10 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return string(out), nil
 		}
 		if view.Status != "CONFIRMED" {
-			if err := validateOfferPricing(view.Body, source); err != nil {
-				return "", err
+			if !view.Body.CategoryWorkflow {
+				if err := validateOfferPricing(view.Body, source); err != nil {
+					return "", err
+				}
 			}
 		}
 		if view.Revision == 0 {
@@ -145,7 +150,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", apierr.Invalid("OFFER_SAVE_FIRST", "请先保存客户报价")
 		}
 		var data []byte
-		if view.Body.CategoryWorkflow {
+		if view.Body.CategoryWorkflow && view.Status != "CONFIRMED" {
 			data, err = categoryOfferWorkbook(view)
 		} else {
 			if view.Status != "CONFIRMED" {
@@ -161,12 +166,18 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		out, _ := json.Marshal(map[string]any{"fileName": source.Number + "-客户报价.xlsx", "fileData": data})
 		return string(out), nil
 	case "confirm":
-		if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
-			return "", err
+		if !teamQuotation {
+			if err := s.validateOfferCustomer(ctx, &view.Body); err != nil {
+				return "", err
+			}
+		} else if offerID(view.Body.CustomerID) <= 0 {
+			return "", apierr.Invalid("OFFER_CUSTOMER_REQUIRED", "请先由负责销售选择客户")
 		}
 		if view.Status != "CONFIRMED" {
-			if err := validateOfferPricing(view.Body, source); err != nil {
-				return "", err
+			if !view.Body.CategoryWorkflow {
+				if err := validateOfferPricing(view.Body, source); err != nil {
+					return "", err
+				}
 			}
 			if cmd.Revision != view.Revision || view.Revision == 0 {
 				return "", apierr.Conflict("OFFER_REVISION", "报价已变化，请刷新后检查再确认")
@@ -193,8 +204,12 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		cmd.Body.Customer = source.Body.Customer
 		cmd.Body.ContactID = source.Body.ContactID
 		cmd.Body.Contact = source.Body.Contact
-		if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
-			return "", err
+		if !teamQuotation {
+			if err := s.validateOfferCustomer(ctx, &cmd.Body); err != nil {
+				return "", err
+			}
+		} else if offerID(cmd.Body.CustomerID) <= 0 {
+			return "", apierr.Invalid("OFFER_CUSTOMER_REQUIRED", "请先由负责销售选择客户")
 		}
 		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
 		cmd.Body.CategoryWorkflow = cmd.Body.CategoryWorkflow || view.Body.CategoryWorkflow

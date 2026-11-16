@@ -1,6 +1,9 @@
 export interface ShippingSchedule {
   id: string
   scheduleNo: string
+  manualOrderNo?: string
+  contractHandoffId?: string
+  transportBatchNo?: number
   contractId: string
   contractNo: string
   customerId: string
@@ -43,6 +46,12 @@ export interface ShippingSchedule {
   customsDeclarationDate: string
   freightCurrency: string
   freightAmount: string
+}
+
+export function shippingBusinessLabel(value: {contractNo?: string; transportBatchNo?: number; manualOrderNo?:string}, translate: (key:string, params?: Record<string,unknown>)=>string): string {
+  if(value.manualOrderNo)return `${value.manualOrderNo} · 历史补录`
+  const contract=value.contractNo?.trim() || translate('shipping.unlinkedContract')
+  return `${contract} · ${value.transportBatchNo && value.transportBatchNo>0 ? translate('shipping.transportBatchLabel',{batch:value.transportBatchNo}) : translate('shipping.unlinkedBatch')}`
 }
 
 export function shippingStatusLabel(schedule: Pick<ShippingSchedule, 'status'|'bookingNo'>, translate: (key:string)=>string): string {
@@ -108,6 +117,7 @@ export interface ShippingOperationalAlert {
   scheduleId: string
   scheduleNo: string
   contractNo: string
+  transportBatchNo?: number
   alertType: 'ETA_ADVANCED'|'ETD_DELAYED'|'WAREHOUSE_DELAYED'
   recipientEmployeeId: string
   recipientRole: string
@@ -158,6 +168,9 @@ export interface ShippingDocument {
 export interface ShippingArrivalReminder {
   id: string
   scheduleId: string
+  contractNo?: string
+  transportBatchNo?: number
+  scheduleNo?: string
   etaRevision: number
   targetEta: string
   dueAt: string

@@ -3080,6 +3080,8 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	PurchaseOrderService_SaveHistoricalOrder_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/SaveHistoricalOrder"
+	PurchaseOrderService_UpdateHistoricalShippingContext_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/UpdateHistoricalShippingContext"
+	PurchaseOrderService_ListShippingHistoricalPurchases_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/ListShippingHistoricalPurchases"
 	PurchaseOrderService_ListFailedEvents_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
 	PurchaseOrderService_ReplayFailedEvent_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
 	PurchaseOrderService_ListOrders_FullMethodName                        = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
@@ -3102,6 +3104,8 @@ const (
 	PurchaseOrderService_GetExternalPayable_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetExternalPayable"
 	PurchaseOrderService_CancelOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_DownloadReceiptProof_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/DownloadReceiptProof"
+	PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListShippingPurchaseRemarks"
 	PurchaseOrderService_GetOrderDocuments_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
 	PurchaseOrderService_BeginOrderSend_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
 	PurchaseOrderService_CompleteOrderSend_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
@@ -3181,6 +3185,8 @@ const (
 	PurchaseOrderService_CreateBankAccount_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
 	PurchaseOrderService_SetBankTransactionClaim_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
 	PurchaseOrderService_UpdateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
+	PurchaseOrderService_CheckDeliveryQuality_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CheckDeliveryQuality"
+	PurchaseOrderService_AddOrderFollowUp_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AddOrderFollowUp"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -3194,6 +3200,8 @@ const (
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceClient interface {
 	SaveHistoricalOrder(ctx context.Context, in *SaveHistoricalOrderRequest, opts ...grpc.CallOption) (*SaveHistoricalOrderResponse, error)
+	UpdateHistoricalShippingContext(ctx context.Context, in *UpdateHistoricalShippingContextRequest, opts ...grpc.CallOption) (*UpdateHistoricalShippingContextResponse, error)
+	ListShippingHistoricalPurchases(ctx context.Context, in *ListShippingHistoricalPurchasesRequest, opts ...grpc.CallOption) (*ListShippingHistoricalPurchasesResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
 	ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error)
@@ -3229,6 +3237,10 @@ type PurchaseOrderServiceClient interface {
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
+	DownloadReceiptProof(ctx context.Context, in *DownloadReceiptProofRequest, opts ...grpc.CallOption) (*DownloadReceiptProofResponse, error)
+	// Narrow read-only projection. Gateway resolves the contract from an authorized
+	// shipping handoff, never from caller-supplied HTTP contract parameters.
+	ListShippingPurchaseRemarks(ctx context.Context, in *ListShippingPurchaseRemarksRequest, opts ...grpc.CallOption) (*ListShippingPurchaseRemarksResponse, error)
 	GetOrderDocuments(ctx context.Context, in *GetOrderDocumentsRequest, opts ...grpc.CallOption) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(ctx context.Context, in *BeginOrderSendRequest, opts ...grpc.CallOption) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(ctx context.Context, in *CompleteOrderSendRequest, opts ...grpc.CallOption) (*CompleteOrderSendResponse, error)
@@ -3368,6 +3380,10 @@ type PurchaseOrderServiceClient interface {
 	SetBankTransactionClaim(ctx context.Context, in *SetBankTransactionClaimRequest, opts ...grpc.CallOption) (*SetBankTransactionClaimResponse, error)
 	// Correct identifying information on a finance-only opening record.
 	UpdateManualPayable(ctx context.Context, in *UpdateManualPayableRequest, opts ...grpc.CallOption) (*UpdateManualPayableResponse, error)
+	// Read-only delivery gate for inventory and shipping. Missing inspection
+	// evidence fails closed; this never grants access to purchase prices.
+	CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error)
+	AddOrderFollowUp(ctx context.Context, in *AddOrderFollowUpRequest, opts ...grpc.CallOption) (*AddOrderFollowUpResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -3382,6 +3398,26 @@ func (c *purchaseOrderServiceClient) SaveHistoricalOrder(ctx context.Context, in
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SaveHistoricalOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_SaveHistoricalOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UpdateHistoricalShippingContext(ctx context.Context, in *UpdateHistoricalShippingContextRequest, opts ...grpc.CallOption) (*UpdateHistoricalShippingContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateHistoricalShippingContextResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateHistoricalShippingContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListShippingHistoricalPurchases(ctx context.Context, in *ListShippingHistoricalPurchasesRequest, opts ...grpc.CallOption) (*ListShippingHistoricalPurchasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShippingHistoricalPurchasesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListShippingHistoricalPurchases_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -3602,6 +3638,26 @@ func (c *purchaseOrderServiceClient) ReceiveOrder(ctx context.Context, in *Recei
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReceiveOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_ReceiveOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) DownloadReceiptProof(ctx context.Context, in *DownloadReceiptProofRequest, opts ...grpc.CallOption) (*DownloadReceiptProofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadReceiptProofResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DownloadReceiptProof_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListShippingPurchaseRemarks(ctx context.Context, in *ListShippingPurchaseRemarksRequest, opts ...grpc.CallOption) (*ListShippingPurchaseRemarksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShippingPurchaseRemarksResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4398,6 +4454,26 @@ func (c *purchaseOrderServiceClient) UpdateManualPayable(ctx context.Context, in
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckDeliveryQualityResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CheckDeliveryQuality_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AddOrderFollowUp(ctx context.Context, in *AddOrderFollowUpRequest, opts ...grpc.CallOption) (*AddOrderFollowUpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddOrderFollowUpResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AddOrderFollowUp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -4409,6 +4485,8 @@ func (c *purchaseOrderServiceClient) UpdateManualPayable(ctx context.Context, in
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceServer interface {
 	SaveHistoricalOrder(context.Context, *SaveHistoricalOrderRequest) (*SaveHistoricalOrderResponse, error)
+	UpdateHistoricalShippingContext(context.Context, *UpdateHistoricalShippingContextRequest) (*UpdateHistoricalShippingContextResponse, error)
+	ListShippingHistoricalPurchases(context.Context, *ListShippingHistoricalPurchasesRequest) (*ListShippingHistoricalPurchasesResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
 	ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error)
@@ -4444,6 +4522,10 @@ type PurchaseOrderServiceServer interface {
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
+	DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error)
+	// Narrow read-only projection. Gateway resolves the contract from an authorized
+	// shipping handoff, never from caller-supplied HTTP contract parameters.
+	ListShippingPurchaseRemarks(context.Context, *ListShippingPurchaseRemarksRequest) (*ListShippingPurchaseRemarksResponse, error)
 	GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error)
 	BeginOrderSend(context.Context, *BeginOrderSendRequest) (*BeginOrderSendResponse, error)
 	CompleteOrderSend(context.Context, *CompleteOrderSendRequest) (*CompleteOrderSendResponse, error)
@@ -4583,6 +4665,10 @@ type PurchaseOrderServiceServer interface {
 	SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error)
 	// Correct identifying information on a finance-only opening record.
 	UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error)
+	// Read-only delivery gate for inventory and shipping. Missing inspection
+	// evidence fails closed; this never grants access to purchase prices.
+	CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error)
+	AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -4595,6 +4681,12 @@ type UnimplementedPurchaseOrderServiceServer struct{}
 
 func (UnimplementedPurchaseOrderServiceServer) SaveHistoricalOrder(context.Context, *SaveHistoricalOrderRequest) (*SaveHistoricalOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveHistoricalOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateHistoricalShippingContext(context.Context, *UpdateHistoricalShippingContextRequest) (*UpdateHistoricalShippingContextResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateHistoricalShippingContext not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListShippingHistoricalPurchases(context.Context, *ListShippingHistoricalPurchasesRequest) (*ListShippingHistoricalPurchasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShippingHistoricalPurchases not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFailedEvents not implemented")
@@ -4661,6 +4753,12 @@ func (UnimplementedPurchaseOrderServiceServer) CancelOrder(context.Context, *Can
 }
 func (UnimplementedPurchaseOrderServiceServer) ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DownloadReceiptProof(context.Context, *DownloadReceiptProofRequest) (*DownloadReceiptProofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadReceiptProof not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListShippingPurchaseRemarks(context.Context, *ListShippingPurchaseRemarksRequest) (*ListShippingPurchaseRemarksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShippingPurchaseRemarks not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrderDocuments not implemented")
@@ -4899,6 +4997,12 @@ func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionClaim(context.C
 func (UnimplementedPurchaseOrderServiceServer) UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateManualPayable not implemented")
 }
+func (UnimplementedPurchaseOrderServiceServer) CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckDeliveryQuality not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddOrderFollowUp not implemented")
+}
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
 
@@ -4934,6 +5038,42 @@ func _PurchaseOrderService_SaveHistoricalOrder_Handler(srv interface{}, ctx cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).SaveHistoricalOrder(ctx, req.(*SaveHistoricalOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_UpdateHistoricalShippingContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateHistoricalShippingContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateHistoricalShippingContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateHistoricalShippingContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateHistoricalShippingContext(ctx, req.(*UpdateHistoricalShippingContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListShippingHistoricalPurchases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShippingHistoricalPurchasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListShippingHistoricalPurchases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListShippingHistoricalPurchases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListShippingHistoricalPurchases(ctx, req.(*ListShippingHistoricalPurchasesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5330,6 +5470,42 @@ func _PurchaseOrderService_ReceiveOrder_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).ReceiveOrder(ctx, req.(*ReceiveOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_DownloadReceiptProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadReceiptProofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DownloadReceiptProof(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DownloadReceiptProof_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DownloadReceiptProof(ctx, req.(*DownloadReceiptProofRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListShippingPurchaseRemarks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShippingPurchaseRemarksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListShippingPurchaseRemarks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListShippingPurchaseRemarks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListShippingPurchaseRemarks(ctx, req.(*ListShippingPurchaseRemarksRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6756,6 +6932,42 @@ func _PurchaseOrderService_UpdateManualPayable_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CheckDeliveryQuality_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckDeliveryQualityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CheckDeliveryQuality(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CheckDeliveryQuality_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CheckDeliveryQuality(ctx, req.(*CheckDeliveryQualityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AddOrderFollowUp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddOrderFollowUpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AddOrderFollowUp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AddOrderFollowUp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AddOrderFollowUp(ctx, req.(*AddOrderFollowUpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -6766,6 +6978,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SaveHistoricalOrder",
 			Handler:    _PurchaseOrderService_SaveHistoricalOrder_Handler,
+		},
+		{
+			MethodName: "UpdateHistoricalShippingContext",
+			Handler:    _PurchaseOrderService_UpdateHistoricalShippingContext_Handler,
+		},
+		{
+			MethodName: "ListShippingHistoricalPurchases",
+			Handler:    _PurchaseOrderService_ListShippingHistoricalPurchases_Handler,
 		},
 		{
 			MethodName: "ListFailedEvents",
@@ -6854,6 +7074,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReceiveOrder",
 			Handler:    _PurchaseOrderService_ReceiveOrder_Handler,
+		},
+		{
+			MethodName: "DownloadReceiptProof",
+			Handler:    _PurchaseOrderService_DownloadReceiptProof_Handler,
+		},
+		{
+			MethodName: "ListShippingPurchaseRemarks",
+			Handler:    _PurchaseOrderService_ListShippingPurchaseRemarks_Handler,
 		},
 		{
 			MethodName: "GetOrderDocuments",
@@ -7170,6 +7398,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateManualPayable",
 			Handler:    _PurchaseOrderService_UpdateManualPayable_Handler,
+		},
+		{
+			MethodName: "CheckDeliveryQuality",
+			Handler:    _PurchaseOrderService_CheckDeliveryQuality_Handler,
+		},
+		{
+			MethodName: "AddOrderFollowUp",
+			Handler:    _PurchaseOrderService_AddOrderFollowUp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

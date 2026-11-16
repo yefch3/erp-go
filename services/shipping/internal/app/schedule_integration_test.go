@@ -97,6 +97,7 @@ func TestScheduleLifecycle(t *testing.T) {
 		t.Fatalf("update=%+v err=%v", updated, err)
 	}
 
+	attachPassedDeliveryFixture(t, ctx, svc, pool, tenantID, created.ID)
 	updated, err = svc.UpdateScheduleStatus(ctx, tenantID, created.ID, "SAILED", "已收到开船确认", op)
 	if err != nil || updated.Status != "SAILED" {
 		t.Fatalf("status update=%+v err=%v", updated, err)
@@ -139,6 +140,7 @@ func cleanupShippingTenant(ctx context.Context, pool *pgxpool.Pool, tenantID int
 	_, _ = pool.Exec(ctx, "UPDATE shipping_schedules SET current_route_node_id=NULL WHERE tenant_id=$1", tenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM shipping_route_nodes WHERE tenant_id=$1", tenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedules WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "DELETE FROM contract_shipping_handoffs WHERE tenant_id=$1", tenantID)
 }
 
 func TestRouteAndRepeatedDelays(t *testing.T) {
@@ -204,6 +206,7 @@ func TestRouteAndRepeatedDelays(t *testing.T) {
 	// A wrong arrival can be corrected without deleting audit history. Clearing
 	// the actual time rolls the node and automatically derived schedule status
 	// back to their prior state.
+	attachPassedDeliveryFixture(t, ctx, svc, pool, tenantID, created.ID)
 	out, correctedNodes, _, err := svc.UpdateProgress(ctx, tenantID, created.ID, ProgressInput{
 		RouteNodeID: nodes[1].ID, Action: "UPDATE_TIMES", ActualArrivalAt: "2026-08-24T10:00:00+08:00",
 		Reason: "更正中转港实际到港", RouteVersion: version,

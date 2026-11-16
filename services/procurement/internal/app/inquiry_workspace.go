@@ -144,27 +144,29 @@ type InquiryQuoteView struct {
 	UpdatedBy   string           `json:"updatedBy"`
 	UpdatedAt   string           `json:"updatedAt"`
 	CanEdit     bool             `json:"canEdit"`
+	CanDelete   bool             `json:"canDelete"`
 }
 type InquiryView struct {
-	ID               string             `json:"id"`
-	Number           string             `json:"number"`
-	DisplayInquiryNo string             `json:"displayInquiryNo"`
-	OwnerID          string             `json:"ownerId"`
-	Owner            string             `json:"owner"`
-	State            string             `json:"state"`
-	Revision         int64              `json:"revision"`
-	SubmittedAt      string             `json:"submittedAt"`
-	Body             InquiryBody        `json:"body"`
-	Quotes           []InquiryQuoteView `json:"quotes"`
-	ProcurementCount int                `json:"procurementCount"`
-	LogisticsCount   int                `json:"logisticsCount"`
-	CanEdit          bool               `json:"canEdit"`
-	CanDelete        bool               `json:"canDelete"`
-	ReadOnlyReason   string             `json:"readOnlyReason,omitempty"`
-	CanWithdraw      bool               `json:"canWithdraw"`
-	WithdrawReason   string             `json:"withdrawReason,omitempty"`
-	SourceMailID     string             `json:"sourceMailId"`
-	Legacy           bool               `json:"legacy"`
+	ID                  string             `json:"id"`
+	Number              string             `json:"number"`
+	DisplayInquiryNo    string             `json:"displayInquiryNo"`
+	OwnerID             string             `json:"ownerId"`
+	Owner               string             `json:"owner"`
+	State               string             `json:"state"`
+	Revision            int64              `json:"revision"`
+	SubmittedAt         string             `json:"submittedAt"`
+	Body                InquiryBody        `json:"body"`
+	Quotes              []InquiryQuoteView `json:"quotes"`
+	ProcurementCount    int                `json:"procurementCount"`
+	LogisticsCount      int                `json:"logisticsCount"`
+	PersonalQuoteStatus string             `json:"personalQuoteStatus,omitempty"`
+	CanEdit             bool               `json:"canEdit"`
+	CanDelete           bool               `json:"canDelete"`
+	ReadOnlyReason      string             `json:"readOnlyReason,omitempty"`
+	CanWithdraw         bool               `json:"canWithdraw"`
+	WithdrawReason      string             `json:"withdrawReason,omitempty"`
+	SourceMailID        string             `json:"sourceMailId"`
+	Legacy              bool               `json:"legacy"`
 }
 type InquiryCommand struct {
 	FileData     []byte           `json:"fileData"`
@@ -360,12 +362,19 @@ func applyInquiryTemplateDefaults(body *InquiryBody) {
 }
 
 func (s *Service) prepareInquiryTemplate(ctx context.Context, tenant int64, body *InquiryBody) error {
+	return s.prepareInquiryTemplateCached(ctx, tenant, body, nil)
+}
+
+// prepareInquiryTemplateCached is prepareInquiryTemplate with the template
+// lookups shared across one request: a list page shows many inquiries built
+// on the same one or two templates. A nil cache reads every time.
+func (s *Service) prepareInquiryTemplateCached(ctx context.Context, tenant int64, body *InquiryBody, cache map[int64]InquiryTemplateView) error {
 	var view InquiryTemplateView
 	var err error
 	if body.Template == nil || inquiryID(body.Template.ID) <= 0 {
-		view, err = s.GetDefaultInquiryTemplate(ctx, tenant)
+		view, err = s.inquiryTemplateView(ctx, tenant, 0, cache)
 	} else {
-		view, err = s.GetInquiryTemplate(ctx, tenant, inquiryID(body.Template.ID))
+		view, err = s.inquiryTemplateView(ctx, tenant, inquiryID(body.Template.ID), cache)
 		if err == nil && ((body.Template.TemplateCode != "" && body.Template.TemplateCode != view.Template.TemplateCode) || (body.Template.Version > 0 && body.Template.Version != view.Template.Version)) {
 			return apierr.Conflict("INQUIRY_TEMPLATE_CHANGED", "询盘模板版本不一致，请重新选择模板")
 		}
@@ -440,6 +449,11 @@ func (s *Service) InquiryWorkspace(ctx context.Context, tenant int64, op Operato
 			return InquiryResult{}, apierr.Permission("INQUIRY_QUOTE_READ_ONLY", "销售只能查看报价")
 		}
 		return s.saveInquiryQuote(ctx, tenant, op, in)
+	case "deleteQuote":
+		if in.View != "PROCUREMENT" {
+			return InquiryResult{}, apierr.Permission("INQUIRY_QUOTE_DELETE_PERMISSION", "仅采购可删除工厂报价")
+		}
+		return s.deleteInquiryQuote(ctx, tenant, op, in)
 	default:
 		return InquiryResult{}, apierr.Invalid("INQUIRY_COMMAND", "无效操作")
 	}
@@ -466,24 +480,17 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		if err = s.AuthorizeSourcingCase(ctx, tenant, id, op); err != nil {
 			return nil, err
 		}
-		if s.customers != nil {
+		// The case was authorized against IAM above. Team quotation readers
+		// consume its recorded customer snapshot, not customer master data.
+		teamQuotation := view == "QUOTATIONS" && s.scopes != nil && owner > 0 && owner != op.ID
+		if s.customers != nil && !teamQuotation {
 			if customerID == 0 && strings.TrimSpace(customerName) != "" {
-				if resolver, ok := s.customers.(CustomerNameResolver); ok {
-					resolvedID, resolvedName, resolveErr := resolver.ResolveByName(ctx, customerName)
-					if resolveErr != nil {
-						return nil, resolveErr
-					}
-					if resolvedID > 0 {
-						tag, updateErr := s.pool.Exec(ctx, `UPDATE sourcing_cases SET customer_id=$3,customer_name=$4 WHERE tenant_id=$1 AND id=$2 AND customer_id=0`, tenant, id, resolvedID, resolvedName)
-						if updateErr != nil {
-							return nil, updateErr
-						}
-						if tag.RowsAffected() == 1 {
-							customerID, customerName = resolvedID, resolvedName
-						} else if scanErr := s.pool.QueryRow(ctx, `SELECT customer_id,customer_name FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&customerID, &customerName); scanErr != nil {
-							return nil, scanErr
-						}
-					}
+				linkedID, linkedName, linkErr := s.linkInquiryCustomerByName(ctx, tenant, id, customerName)
+				if linkErr != nil {
+					return nil, linkErr
+				}
+				if linkedID > 0 {
+					customerID, customerName = linkedID, linkedName
 				}
 			}
 			if customerID > 0 {
@@ -518,65 +525,12 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		}
 	}
 	v.Legacy = len(raw) == 0
-	if len(raw) > 0 {
-		if err = json.Unmarshal(raw, &v.Body); err != nil {
-			return nil, err
-		}
-	} else {
-		old, e := s.GetSourcingCase(ctx, tenant, id)
-		if e != nil {
-			return nil, e
-		}
-		if old.Head.SourceFileKey != "" {
-			v.Body.Attachments = []InquiryAttachment{{Key: old.Head.SourceFileKey, Name: old.Head.SourceFileName}}
-		}
-		v.Body.Customer = old.Head.CustomerName
-		v.Body.CustomerID = strconv.FormatInt(old.Head.CustomerID, 10)
-		v.Body.Contact = old.Head.ContactName
-		v.Body.ContactID = strconv.FormatInt(old.Head.ContactID, 10)
-		if len(old.Lines) > 0 {
-			v.Body.DestinationPort = old.Lines[0].Port
-			v.Body.Delivery = old.Lines[0].Delivery
-			v.Body.Incoterm = old.Lines[0].Incoterm
-		}
-		for _, l := range old.Lines {
-			values := map[string]string{}
-			_ = json.Unmarshal(l.CustomFields, &values)
-			for key, value := range map[string]string{"material_standard": l.MaterialStandard, "grade": l.Grade, "thickness": l.Thickness, "width": l.Width, "length_or_form": l.LengthOrForm, "surface_requirement": l.SurfaceRequirement, "coating": l.Coating, "tolerance": l.Tolerance, "coil_weight": l.CoilWeight, "coil_id": l.CoilID, "payment_terms": l.PaymentTerms, "incoterm": l.Incoterm, "port": l.Port} {
-				if value != "" {
-					values[key] = value
-				}
-			}
-			v.Body.Products = append(v.Body.Products, InquiryProduct{ID: strconv.FormatInt(l.ID, 10), Product: l.Product, Specification: strings.Join(compactStrings([]string{l.MaterialStandard, l.Grade, l.Thickness, l.Width, l.LengthOrForm, l.SurfaceRequirement}), " · "), Quantity: l.Quantity, Unit: l.QuantityUnit, Delivery: l.Delivery, Packaging: l.Packaging, Remark: l.Remarks, CustomFields: values})
-		}
-	}
-	if customerID > 0 {
-		v.Body.CustomerID = strconv.FormatInt(customerID, 10)
-		v.Body.Customer = customerName
-	}
-	if contactID > 0 {
-		v.Body.ContactID = strconv.FormatInt(contactID, 10)
-		v.Body.Contact = contactName
-	}
-	if v.Body.Template == nil && templateID > 0 {
-		v.Body.Template = &InquiryTemplateSnapshot{ID: strconv.FormatInt(templateID, 10)}
-	}
-	if err = s.prepareInquiryTemplate(ctx, tenant, &v.Body); err != nil {
+	v.Body, err = s.inquiryBody(ctx, tenant, inquiryRow{id: id, body: raw, templateID: templateID, customerID: customerID, customerName: customerName, contactID: contactID, contactName: contactName}, nil)
+	if err != nil {
 		return nil, err
 	}
-	if v.Body.Products == nil {
-		v.Body.Products = []InquiryProduct{}
-	}
-	if v.Body.Attachments == nil {
-		v.Body.Attachments = []InquiryAttachment{}
-	}
-	for i := range v.Body.Products {
-		if v.Body.Products[i].CustomFields == nil {
-			v.Body.Products[i].CustomFields = map[string]string{}
-		}
-	}
 	v.Quotes = []InquiryQuoteView{}
-	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
+	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND deleted_at IS NULL AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
 	if err != nil {
 		return nil, err
 	}
@@ -603,7 +557,9 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 				continue
 			}
 		}
-		q.CanEdit = q.Kind == view && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && s.inquiryAllowed(ctx, op, view, true) == nil
+		canWrite := q.Kind == view && s.inquiryAllowed(ctx, op, view, true) == nil
+		q.CanEdit = canWrite && q.AuthorID == strconv.FormatInt(op.ID, 10)
+		q.CanDelete = canWrite && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && view == "PROCUREMENT" && v.State == "INQUIRING"
 		v.Quotes = append(v.Quotes, q)
 	}
 	if err = rows.Err(); err != nil {
@@ -617,89 +573,12 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		}
 		v.Quotes = append(v.Quotes, history...)
 	}
+	if view == "PROCUREMENT" || view == "LOGISTICS" {
+		if err = s.pool.QueryRow(ctx, `SELECT `+inquiryPersonalQuoteStatus("c", view, "$3")+` FROM sourcing_cases c WHERE c.tenant_id=$1 AND c.id=$2`, tenant, id, op.ID).Scan(&v.PersonalQuoteStatus); err != nil {
+			return nil, err
+		}
+	}
 	return &v, nil
-}
-
-func (s *Service) listInquiryWorkspace(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
-	visible := Visibility{All: true}
-	var err error
-	if in.View == "SALES" || in.View == "QUOTATIONS" {
-		visible, err = s.visibleSourcingTo(ctx, op)
-		if err != nil {
-			return InquiryResult{}, err
-		}
-	}
-	customerAll := true
-	var customerIDs []int64
-	if (in.View == "SALES" || in.View == "QUOTATIONS") && s.customers != nil {
-		customerIDs, customerAll, err = s.customers.VisibleIDs(ctx, op.ID)
-		if err != nil {
-			return InquiryResult{}, err
-		}
-	}
-	rows, err := s.pool.Query(ctx, `SELECT id FROM sourcing_cases WHERE tenant_id=$1 AND ($6 OR customer_id=0 OR customer_id=ANY($7::bigint[])) AND status<>'CANCELLED' AND deleted_at IS NULL AND ($5 OR (status<>'INTAKE_PENDING' AND handoff_status<>'SALES_WITHDRAWN')) AND ($2 OR owner_id=ANY($3::bigint[])) AND ($4='' OR case_no ILIKE '%'||$4||'%' OR display_inquiry_no ILIKE '%'||$4||'%' OR customer_name ILIKE '%'||$4||'%' OR inquiry_body::text ILIKE '%'||$4||'%') ORDER BY updated_at DESC,id DESC`, tenant, visible.All, visible.EmployeeIDs, strings.TrimSpace(in.Keyword), in.View == "SALES", customerAll, customerIDs)
-	if err != nil {
-		return InquiryResult{}, err
-	}
-	ids := []int64{}
-	for rows.Next() {
-		var id int64
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return InquiryResult{}, err
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return InquiryResult{}, err
-	}
-	out := InquiryResult{Items: []InquiryView{}}
-	if in.Page < 1 {
-		in.Page = 1
-	}
-	if in.Size != 20 && in.Size != 50 && in.Size != 100 {
-		in.Size = 20
-	}
-	for _, id := range ids {
-		v, e := s.readInquiry(ctx, tenant, id, op, in.View)
-		if e != nil {
-			if in.View == "PROCUREMENT" || in.View == "LOGISTICS" {
-				var state string
-				_ = s.pool.QueryRow(ctx, `SELECT status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&state)
-				if state == "INTAKE_PENDING" {
-					continue
-				}
-			}
-			return InquiryResult{}, e
-		}
-		if in.View == "QUOTATIONS" && v.State != "INQUIRING" {
-			continue
-		}
-		state := v.State
-		if in.View == "PROCUREMENT" {
-			state = "WAITING"
-			if v.ProcurementCount > 0 {
-				state = "QUOTED"
-			}
-		}
-		if in.View == "LOGISTICS" {
-			state = "WAITING"
-			if v.LogisticsCount > 0 {
-				state = "QUOTED"
-			}
-		}
-		if in.State != "" && in.State != state {
-			continue
-		}
-		out.Total++
-		if out.Total > (in.Page-1)*in.Size && len(out.Items) < in.Size {
-			v.Quotes = nil
-			out.Items = append(out.Items, *v)
-		}
-	}
-	return out, nil
 }
 
 func validateInquiryBody(b InquiryBody, submit bool) error {
@@ -842,7 +721,7 @@ func (s *Service) saveInquiry(ctx context.Context, tenant int64, op Operator, in
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -904,7 +783,7 @@ func (s *Service) updateInquiryBasic(ctx context.Context, tenant int64, op Opera
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -1007,7 +886,7 @@ func (s *Service) changeInquiry(ctx context.Context, tenant int64, op Operator, 
 		}
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, "SALES")
 	return InquiryResult{Item: v}, err
 }
@@ -1062,7 +941,7 @@ func (s *Service) deleteInquiry(ctx context.Context, tenant int64, op Operator, 
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	return InquiryResult{}, nil
 }
 
@@ -1345,17 +1224,22 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 			return e
 		}
 		if quoteID == 0 {
-			_, e = tx.Exec(ctx, `INSERT INTO inquiry_quotes(tenant_id,case_id,inquiry_revision,kind,body,created_by,created_by_name,submitted_at,submitted_by,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN now() END,CASE WHEN $8 THEN $6::bigint END,$6,$7)`, tenant, id, revision, in.View, data, op.ID, op.Name, in.Submit)
+			// The inquiry lock serializes saves. Use write time, not transaction
+			// start time: a transaction that waited for that lock must appear later.
+			_, e = tx.Exec(ctx, `INSERT INTO inquiry_quotes(tenant_id,case_id,inquiry_revision,kind,body,created_by,created_by_name,submitted_at,submitted_by,updated_by,updated_by_name,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN clock_timestamp() END,CASE WHEN $8 THEN $6::bigint END,$6,$7,clock_timestamp())`, tenant, id, revision, in.View, data, op.ID, op.Name, in.Submit)
 			return e
 		}
 		var author, version int64
 		var kind string
 		var submitted bool
-		if e = tx.QueryRow(ctx, `SELECT created_by,version,kind,submitted_at IS NOT NULL FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND id=$3 AND inquiry_revision=$4 FOR UPDATE`, tenant, id, quoteID, revision).Scan(&author, &version, &kind, &submitted); e != nil {
+		if e = tx.QueryRow(ctx, `SELECT created_by,version,kind,submitted_at IS NOT NULL FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND id=$3 AND inquiry_revision=$4 AND deleted_at IS NULL FOR UPDATE`, tenant, id, quoteID, revision).Scan(&author, &version, &kind, &submitted); e != nil {
+			if e == pgx.ErrNoRows {
+				return apierr.Conflict("INQUIRY_QUOTE_CHANGED", "报价已修改或删除，请刷新")
+			}
 			return e
 		}
-		if kind != in.View || (!submitted && author != op.ID) {
-			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "未提交报价仅填写人可编辑")
+		if kind != in.View || author != op.ID {
+			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "只能修改自己的报价；请基于他人已提交报价新建自己的报价")
 		}
 		if submitted {
 			if err := validateInquiryQuote(&in.Quote, body.Products, in.View, true); err != nil {
@@ -1366,13 +1250,13 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 		if version != in.QuoteVersion {
 			return apierr.Conflict("INQUIRY_QUOTE_CHANGED", "报价已由其他人修改，请刷新")
 		}
-		_, e = tx.Exec(ctx, `UPDATE inquiry_quotes SET body=$4,updated_by=$5,updated_by_name=$6,updated_at=now(),version=version+1,submitted_at=CASE WHEN $7 AND submitted_at IS NULL THEN now() ELSE submitted_at END,submitted_by=CASE WHEN $7 AND submitted_by IS NULL THEN $5::bigint ELSE submitted_by END WHERE tenant_id=$1 AND case_id=$2 AND id=$3`, tenant, id, quoteID, data, op.ID, op.Name, in.Submit)
+		_, e = tx.Exec(ctx, `UPDATE inquiry_quotes SET body=$4,updated_by=$5,updated_by_name=$6,updated_at=clock_timestamp(),version=version+1,submitted_at=CASE WHEN $7 AND submitted_at IS NULL THEN clock_timestamp() ELSE submitted_at END,submitted_by=CASE WHEN $7 AND submitted_by IS NULL THEN $5::bigint ELSE submitted_by END WHERE tenant_id=$1 AND case_id=$2 AND id=$3`, tenant, id, quoteID, data, op.ID, op.Name, in.Submit)
 		return e
 	})
 	if err != nil {
 		return InquiryResult{}, err
 	}
-	s.nudge(ctx, tenant)
+	s.nudge(ctx, tenant, inquiryChanged)
 	v, err := s.readInquiry(ctx, tenant, id, op, in.View)
 	return InquiryResult{Item: v}, err
 }

@@ -22,6 +22,7 @@ type HistoricalOrderLine struct {
 	ProductName, Spec, UOM, Qty, UnitPrice string
 }
 type HistoricalOrderInput struct {
+	ExportContractNo, DestinationPort                                                              string
 	PayableDueDate                                                                                 string
 	ID, SupplierID                                                                                 int64
 	PONo, OriginalDate, Currency, ExpectedDate, ContactName, ContactPhone, Remark, DeliveryAddress string
@@ -29,6 +30,7 @@ type HistoricalOrderInput struct {
 	Lines                                                                                          []HistoricalOrderLine
 }
 type HistoricalOrderMeta struct {
+	ExportContractNo, DestinationPort                               string
 	Historical, PricesComplete                                      bool
 	OriginalDate, ContactName, ContactPhone, RecordedBy, RecordedAt string
 }
@@ -39,7 +41,7 @@ type HistoricalOrderResult struct {
 
 func (s *Service) HistoricalOrderMeta(ctx context.Context, tenantID, id int64) (HistoricalOrderMeta, error) {
 	var m HistoricalOrderMeta
-	err := s.pool.QueryRow(ctx, `SELECT original_date::text,contact_name,contact_phone,prices_complete,recorded_by_name,recorded_at::text FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2`, tenantID, id).Scan(&m.OriginalDate, &m.ContactName, &m.ContactPhone, &m.PricesComplete, &m.RecordedBy, &m.RecordedAt)
+	err := s.pool.QueryRow(ctx, `SELECT original_date::text,contact_name,contact_phone,prices_complete,recorded_by_name,recorded_at::text,export_contract_no,destination_port FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2`, tenantID, id).Scan(&m.OriginalDate, &m.ContactName, &m.ContactPhone, &m.PricesComplete, &m.RecordedBy, &m.RecordedAt, &m.ExportContractNo, &m.DestinationPort)
 	if err == pgx.ErrNoRows {
 		return m, nil
 	}
@@ -52,17 +54,28 @@ func (s *Service) HistoricalOrderMeta(ctx context.Context, tenantID, id int64) (
 // requirements satisfy the existing execution FK without entering the buy queue.
 func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in HistoricalOrderInput, op Operator) (HistoricalOrderResult, error) {
 	var out HistoricalOrderResult
+	var err error
 	if tenantID <= 0 || op.ID <= 0 {
 		return out, apierr.Permission("PO_OPERATOR_REQUIRED", "请重新登录")
+	}
+	in.ExportContractNo, in.DestinationPort, err = normalizeHistoricalShippingContext(in.ExportContractNo, in.DestinationPort)
+	if err != nil {
+		return out, err
 	}
 	if in.ID != 0 {
 		if err := s.AuthorizeOrder(ctx, tenantID, in.ID, op); err != nil {
 			return out, err
 		}
 	}
-	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
-	if err != nil {
-		return out, err
+	var supplier Supplier
+	if in.SupplierID < 0 {
+		return out, apierr.Invalid("PO_SUPPLIER_INVALID", "请选择有效供应商，或留空后补")
+	}
+	if in.SupplierID > 0 {
+		supplier, err = s.supplierForOrder(ctx, in.SupplierID)
+		if err != nil {
+			return out, err
+		}
 	}
 	in.PONo = strings.TrimSpace(in.PONo)
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
@@ -150,8 +163,8 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 			if e := tx.QueryRow(ctx, `SELECT supplier_id,currency,payment_requested_at IS NOT NULL FROM purchase_orders WHERE tenant_id=$1 AND id=$2`, tenantID, in.ID).Scan(&oldSupplier, &oldCurrency, &paid); e != nil {
 				return e
 			}
-			if oldSupplier != in.SupplierID || oldCurrency != in.Currency || paid {
-				return apierr.Conflict("PO_HISTORY_LOCKED", "已确认单不能更换供应商、币种，申请付款后不能修改")
+			if (oldSupplier != 0 && oldSupplier != in.SupplierID) || oldCurrency != in.Currency || paid {
+				return apierr.Conflict("PO_HISTORY_LOCKED", "已确认单只能补填空缺供应商，不能更换已有供应商或币种，申请付款后不能修改")
 			}
 			var count int
 			if e := tx.QueryRow(ctx, `SELECT count(*) FROM purchase_order_items WHERE tenant_id=$1 AND po_id=$2`, tenantID, in.ID).Scan(&count); e != nil {
@@ -243,7 +256,7 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 				return e
 			}
 		}
-		_, e := tx.Exec(ctx, `INSERT INTO historical_purchase_orders(tenant_id,po_id,original_date,contact_name,contact_phone,prices_complete,recorded_by_id,recorded_by_name) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,po_id) DO UPDATE SET original_date=excluded.original_date,contact_name=excluded.contact_name,contact_phone=excluded.contact_phone,prices_complete=excluded.prices_complete`, tenantID, in.ID, in.OriginalDate, in.ContactName, in.ContactPhone, complete, op.ID, op.Name)
+		_, e := tx.Exec(ctx, `INSERT INTO historical_purchase_orders(tenant_id,po_id,original_date,contact_name,contact_phone,prices_complete,recorded_by_id,recorded_by_name,export_contract_no,destination_port) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(tenant_id,po_id) DO UPDATE SET original_date=excluded.original_date,contact_name=excluded.contact_name,contact_phone=excluded.contact_phone,prices_complete=excluded.prices_complete,export_contract_no=excluded.export_contract_no,destination_port=excluded.destination_port`, tenantID, in.ID, in.OriginalDate, in.ContactName, in.ContactPhone, complete, op.ID, op.Name, in.ExportContractNo, in.DestinationPort)
 		if e != nil {
 			return e
 		}
@@ -268,6 +281,20 @@ func (s *Service) RequireHistoricalPrices(ctx context.Context, tenantID, id int6
 	}
 	if m.Historical && !m.PricesComplete {
 		return apierr.Conflict("PO_PRICE_MISSING", "历史采购单价格尚未补齐，不能登记到货或付款")
+	}
+	return nil
+}
+
+// A historical record may be confirmed without a supplier, but fulfilment
+// must wait until the supplier snapshot can be written to receipts/payments.
+func (s *Service) RequireHistoricalSupplier(ctx context.Context, tenantID, id int64) error {
+	var missing bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM purchase_orders o JOIN historical_purchase_orders h ON h.tenant_id=o.tenant_id AND h.po_id=o.id WHERE o.tenant_id=$1 AND o.id=$2 AND o.supplier_id=0)`, tenantID, id).Scan(&missing)
+	if err != nil {
+		return err
+	}
+	if missing {
+		return apierr.Conflict("PO_SUPPLIER_MISSING", "请先在补齐资料中填写供应商，再登记到货或申请付款")
 	}
 	return nil
 }

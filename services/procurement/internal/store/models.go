@@ -245,15 +245,17 @@ type FailedEvent struct {
 }
 
 type HistoricalPurchaseOrder struct {
-	TenantID       int64
-	PoID           int64
-	OriginalDate   pgtype.Date
-	ContactName    string
-	ContactPhone   string
-	PricesComplete bool
-	RecordedByID   int64
-	RecordedByName string
-	RecordedAt     pgtype.Timestamptz
+	TenantID         int64
+	PoID             int64
+	OriginalDate     pgtype.Date
+	ContactName      string
+	ContactPhone     string
+	PricesComplete   bool
+	RecordedByID     int64
+	RecordedByName   string
+	RecordedAt       pgtype.Timestamptz
+	ExportContractNo string
+	DestinationPort  string
 }
 
 type InquiryAttachment struct {
@@ -283,6 +285,7 @@ type InquiryQuote struct {
 	UpdatedByName   string
 	UpdatedAt       pgtype.Timestamptz
 	Version         int64
+	DeletedAt       pgtype.Timestamptz
 }
 
 type InquiryTemplate struct {
@@ -506,68 +509,70 @@ type PurchaseInspection struct {
 }
 
 type PurchaseOrder struct {
-	ID                       int64
-	TenantID                 int64
-	PoNo                     string
-	SupplierID               int64
-	SupplierCode             string
-	SupplierName             string
-	Currency                 string
-	TotalAmount              pgtype.Numeric
-	ExpectedDate             pgtype.Date
-	Status                   string
-	ApprovalInstanceID       *int64
-	RejectReason             string
-	CancelReason             string
-	BuyerID                  int64
-	BuyerName                string
-	Remark                   string
-	OrderedAt                pgtype.Timestamptz
-	CreatedAt                pgtype.Timestamptz
-	UpdatedAt                pgtype.Timestamptz
-	SendStatus               string
-	SentTo                   string
-	SentAt                   pgtype.Timestamptz
-	SentByID                 int64
-	SentByName               string
-	SendError                string
-	SendTemplateVersion      string
-	SendAttachmentNames      []byte
-	ClosedAt                 pgtype.Timestamptz
-	ClosedByID               int64
-	ClosedByName             string
-	SourceQuotationID        int64
-	SourceQuotationNo        string
-	SourceCostScenarioID     int64
-	FactoryID                int64
-	FactoryCode              string
-	FactoryName              string
-	FulfillmentMode          string
-	DeliveryLocationType     string
-	DeliveryPortID           int64
-	DeliveryPortCode         string
-	DeliveryPortName         string
-	WarehouseID              int64
-	WarehouseName            string
-	DeliveryAddress          string
-	SourceChangeReason       string
-	CloseNote                string
-	ShortfallAction          string
-	PayableDueDate           pgtype.Date
-	BusinessType             string
-	SourceBusinessID         int64
-	ExportContractNo         string
-	BusinessDocumentNo       string
-	PaymentTerms             string
-	SignedContractKey        string
-	SignedContractName       string
-	SignedContractUploadedAt pgtype.Timestamptz
-	ContractVerifiedAt       pgtype.Timestamptz
-	ContractVerifiedBy       int64
-	ContractVerifiedByName   string
-	PaymentRequestedAt       pgtype.Timestamptz
-	PaymentRequestedBy       int64
-	PaymentRequestedByName   string
+	ID                          int64
+	TenantID                    int64
+	PoNo                        string
+	SupplierID                  int64
+	SupplierCode                string
+	SupplierName                string
+	Currency                    string
+	TotalAmount                 pgtype.Numeric
+	ExpectedDate                pgtype.Date
+	Status                      string
+	ApprovalInstanceID          *int64
+	RejectReason                string
+	CancelReason                string
+	BuyerID                     int64
+	BuyerName                   string
+	Remark                      string
+	OrderedAt                   pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+	UpdatedAt                   pgtype.Timestamptz
+	SendStatus                  string
+	SentTo                      string
+	SentAt                      pgtype.Timestamptz
+	SentByID                    int64
+	SentByName                  string
+	SendError                   string
+	SendTemplateVersion         string
+	SendAttachmentNames         []byte
+	ClosedAt                    pgtype.Timestamptz
+	ClosedByID                  int64
+	ClosedByName                string
+	SourceQuotationID           int64
+	SourceQuotationNo           string
+	SourceCostScenarioID        int64
+	FactoryID                   int64
+	FactoryCode                 string
+	FactoryName                 string
+	FulfillmentMode             string
+	DeliveryLocationType        string
+	DeliveryPortID              int64
+	DeliveryPortCode            string
+	DeliveryPortName            string
+	WarehouseID                 int64
+	WarehouseName               string
+	DeliveryAddress             string
+	SourceChangeReason          string
+	CloseNote                   string
+	ShortfallAction             string
+	PayableDueDate              pgtype.Date
+	BusinessType                string
+	SourceBusinessID            int64
+	ExportContractNo            string
+	BusinessDocumentNo          string
+	PaymentTerms                string
+	SignedContractKey           string
+	SignedContractName          string
+	SignedContractUploadedAt    pgtype.Timestamptz
+	ContractVerifiedAt          pgtype.Timestamptz
+	ContractVerifiedBy          int64
+	ContractVerifiedByName      string
+	PaymentRequestedAt          pgtype.Timestamptz
+	PaymentRequestedBy          int64
+	PaymentRequestedByName      string
+	TransportBatchNo            int32
+	BusinessDocumentNoGenerated bool
 }
 
 type PurchaseOrderDraftFile struct {
@@ -602,6 +607,16 @@ type PurchaseOrderExecutionFile struct {
 	LinkedAt pgtype.Timestamptz
 }
 
+type PurchaseOrderFollowUp struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	Note          string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type PurchaseOrderImport struct {
 	ID                 int64
 	TenantID           int64
@@ -621,23 +636,24 @@ type PurchaseOrderImport struct {
 }
 
 type PurchaseOrderItem struct {
-	ID               int64
-	TenantID         int64
-	PoID             int64
-	RequirementID    int64
-	ProductID        int64
-	SkuID            *int64
-	ProductCode      string
-	ProductName      string
-	Spec             string
-	UomID            int64
-	UomCode          string
-	Qty              pgtype.Numeric
-	UnitPrice        pgtype.Numeric
-	Amount           pgtype.Numeric
-	ReceivedQty      pgtype.Numeric
-	ExecutionQuoteID *int64
-	PriceMissing     bool
+	ID                 int64
+	TenantID           int64
+	PoID               int64
+	RequirementID      int64
+	ProductID          int64
+	SkuID              *int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	UomID              int64
+	UomCode            string
+	Qty                pgtype.Numeric
+	UnitPrice          pgtype.Numeric
+	Amount             pgtype.Numeric
+	ReceivedQty        pgtype.Numeric
+	ExecutionQuoteID   *int64
+	PriceMissing       bool
+	ContractItemRemark string
 }
 
 type PurchaseOrderPaymentClosure struct {
@@ -732,6 +748,15 @@ type PurchaseReceipt struct {
 	ReceivedAt   pgtype.Timestamptz
 }
 
+type PurchaseReceiptDeliveryDetail struct {
+	ReceiptID          int64
+	TenantID           int64
+	PoID               int64
+	ActualDeliveryDate pgtype.Date
+	RequestKey         string
+	RequestHash        string
+}
+
 type PurchaseReceiptException struct {
 	ID             int64
 	TenantID       int64
@@ -761,53 +786,67 @@ type PurchaseReceiptItem struct {
 	Qty       pgtype.Numeric
 }
 
+type PurchaseReceiptProofFile struct {
+	ID          int64
+	TenantID    int64
+	PoID        int64
+	ReceiptID   int64
+	FileName    string
+	ContentType string
+	FileData    []byte
+	SizeBytes   int64
+}
+
 type PurchaseRequirement struct {
-	ID                  int64
-	TenantID            int64
-	ContractID          int64
-	ContractNo          string
-	ContractVersionID   int64
-	VersionNo           int32
-	ContractItemID      int64
-	CustomerName        string
-	ProductID           int64
-	SkuID               *int64
-	ProductCode         string
-	ProductName         string
-	Spec                string
-	UomID               int64
-	UomCode             string
-	RequiredQty         pgtype.Numeric
-	OrderedQty          pgtype.Numeric
-	RequiredDate        pgtype.Date
-	Source              string
-	Status              string
-	ClosedReason        string
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-	ReceivedQty         pgtype.Numeric
-	OwnerID             int64
-	OwnerName           string
-	QuotationID         int64
-	QuotationNo         string
-	CostScenarioID      int64
-	CostScenarioNo      string
-	SourcingCaseID      int64
-	SourcingLineID      int64
-	SupplierQuoteLineID int64
-	SupplierID          int64
-	SupplierCode        string
-	SupplierName        string
-	FactoryID           int64
-	FactoryCode         string
-	FactoryName         string
-	SourceCurrency      string
-	SourceUnitPrice     pgtype.Numeric
-	Moq                 pgtype.Numeric
-	LeadTime            string
-	SourcePaymentTerms  string
-	SourceIncoterm      string
-	SourceValidUntil    pgtype.Date
+	ID                   int64
+	TenantID             int64
+	ContractID           int64
+	ContractNo           string
+	ContractVersionID    int64
+	VersionNo            int32
+	ContractItemID       int64
+	CustomerName         string
+	ProductID            int64
+	SkuID                *int64
+	ProductCode          string
+	ProductName          string
+	Spec                 string
+	UomID                int64
+	UomCode              string
+	RequiredQty          pgtype.Numeric
+	OrderedQty           pgtype.Numeric
+	RequiredDate         pgtype.Date
+	Source               string
+	Status               string
+	ClosedReason         string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	ReceivedQty          pgtype.Numeric
+	OwnerID              int64
+	OwnerName            string
+	QuotationID          int64
+	QuotationNo          string
+	CostScenarioID       int64
+	CostScenarioNo       string
+	SourcingCaseID       int64
+	SourcingLineID       int64
+	SupplierQuoteLineID  int64
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	SourceCurrency       string
+	SourceUnitPrice      pgtype.Numeric
+	Moq                  pgtype.Numeric
+	LeadTime             string
+	SourcePaymentTerms   string
+	SourceIncoterm       string
+	SourceValidUntil     pgtype.Date
+	SourceSalesRemark    string
+	ContractItemRemark   string
+	PresaleReferenceJson string
 }
 
 type PurchaseSupplierConfirmation struct {

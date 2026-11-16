@@ -283,14 +283,14 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			}
 			var quoteRequirementID, quoteSupplierID, quoteSelectedByID int64
 			var quoteCurrency, quotePrice string
-			var quoteSelected, quoteCalculated bool
-			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,coalesce(calculated_unit_price,unit_price)::text,selected,selected_by_id,calculated_unit_price IS NOT NULL FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice, &quoteSelected, &quoteSelectedByID, &quoteCalculated); err == pgx.ErrNoRows {
+			var quoteSelected bool
+			if err := tx.QueryRow(ctx, `SELECT requirement_id,supplier_id,currency,unit_price::text,selected,selected_by_id FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2`, tenantID, p.executionQuoteID).Scan(&quoteRequirementID, &quoteSupplierID, &quoteCurrency, &quotePrice, &quoteSelected, &quoteSelectedByID); err == pgx.ErrNoRows {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_NOT_FOUND", "所选实单报价不存在，请刷新后重试")
 			} else if err != nil {
 				return head, err
 			}
 			quotedPrice, err := decimal.NewFromString(quotePrice)
-			if err != nil || !quoteSelected || quoteSelectedByID != op.ID || !quoteCalculated || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
+			if err != nil || !quoteSelected || quoteSelectedByID != op.ID || quoteRequirementID != r.ID || quoteSupplierID != in.SupplierID || !strings.EqualFold(quoteCurrency, in.Currency) || !quotedPrice.Equal(p.price) {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_MISMATCH", "采购订单草稿必须使用实单询价中选定的工厂、币种和单价")
 			}
 		}
@@ -356,8 +356,8 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 
 	// A final requote may be generated again after an approver returns it, or
 	// after the browser only managed to create some of the supplier groups.
-	// Continue the existing editable document for this contract and supplier
-	// instead of trying to insert the same business document number again.
+	// Continue only the same buyer's document for this exact requirement set.
+	// Other supplier groups must retain their own documents and lines.
 	// This also makes the UI's multi-supplier loop safe to retry.
 	reusedExecutionDraft := false
 	if allExecutionRequote && executionContractID > 0 {
@@ -365,10 +365,23 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		var existingStatus string
 		err := tx.QueryRow(ctx, `SELECT id,status FROM purchase_orders
 			WHERE tenant_id=$1 AND business_type='PROCUREMENT' AND source_business_id=$2 AND supplier_id=$3
-			  AND status IN ('DRAFT','REJECTED','PENDING_APPROVAL')
-			ORDER BY id DESC LIMIT 1 FOR UPDATE`, tenantID, executionContractID, in.SupplierID).Scan(&existingID, &existingStatus)
+			  AND buyer_id=$4 AND status IN ('DRAFT','REJECTED','PENDING_APPROVAL')
+			  AND (SELECT array_agg(i.requirement_id ORDER BY i.requirement_id)
+			       FROM purchase_order_items i WHERE i.tenant_id=$1 AND i.po_id=purchase_orders.id)
+			      = ARRAY(SELECT unnest($5::bigint[]) ORDER BY 1)
+			ORDER BY id DESC LIMIT 1 FOR UPDATE`, tenantID, executionContractID, in.SupplierID, op.ID, ids).Scan(&existingID, &existingStatus)
 		if err != nil && err != pgx.ErrNoRows {
 			return head, err
+		}
+		var overlaps bool
+		if overlapErr := tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM purchase_order_items i JOIN purchase_orders o ON o.id=i.po_id AND o.tenant_id=i.tenant_id
+			WHERE i.tenant_id=$1 AND i.requirement_id=ANY($2::bigint[]) AND o.id<>$3
+			  AND o.status IN ('DRAFT','REJECTED','PENDING_APPROVAL'))`, tenantID, ids, existingID).Scan(&overlaps); overlapErr != nil {
+			return head, overlapErr
+		}
+		if overlaps {
+			return head, apierr.Conflict("PO_EXECUTION_DRAFT_OVERLAP", "部分规格已存在于其他采购草稿或审批单，请先处理原采购单")
 		}
 		if err == nil {
 			if existingStatus == poPending {
@@ -407,7 +420,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	for attempt := 0; !reusedExecutionDraft && attempt < 2; attempt++ {
 		no := executionContractNo
 		var err error
-		if !allExecutionRequote || no == "" {
+		if !allExecutionRequote || no == "" || attempt > 0 {
 			no, err = s.numbering.Next(ctx, "PURCHASE_ORDER")
 			if err != nil {
 				return head, err
@@ -463,7 +476,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			ProductCode: r.ProductCode, ProductName: r.ProductName, Spec: r.Spec,
 			UomID: r.UomID, UomCode: r.UomCode,
 			Qty: p.qty.String(), UnitPrice: p.price.String(),
-			Amount: p.qty.Mul(p.price).StringFixed(2),
+			Amount: p.qty.Mul(p.price).StringFixed(2), ContractItemRemark: r.ContractItemRemark,
 		})
 		if err != nil {
 			return head, err
@@ -951,7 +964,15 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 // warehouseID 大于 0 表示货物进入公司管理的仓库，会发送库存入账事件；
 // warehouseID 等于 0 表示直接交付港口、客户或指定地点，只更新采购交付进度，
 // 不写入库存。两条路径共用同一套累计数量校验，避免重复或超量收货。
-func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator) (string, error) {
+func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator, details ...ReceiptDetails) (string, error) {
+	var meta ReceiptDetails
+	if len(details) > 0 {
+		meta = details[0]
+	}
+	meta, requestHash, err := prepareReceiptDetails(meta, warehouseID, lines, remark)
+	if err != nil {
+		return "", err
+	}
 	if len(lines) == 0 {
 		return "", apierr.Invalid("PO_RECEIPT_LINES_REQUIRED", "收货明细不能为空")
 	}
@@ -981,7 +1002,7 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 	}
 
 	receiptNo := ""
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
 			TenantID: tenantID, ID: poID,
@@ -992,9 +1013,29 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 		if err != nil {
 			return err
 		}
-		var historyPricesMissing bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historyPricesMissing); err != nil {
+		if meta.RequestKey != "" {
+			var existingNo, existingHash string
+			e := tx.QueryRow(ctx, `SELECT r.receipt_no,d.request_hash FROM purchase_receipt_delivery_details d JOIN purchase_receipts r ON r.id=d.receipt_id AND r.tenant_id=d.tenant_id WHERE d.tenant_id=$1 AND d.po_id=$2 AND d.request_key=$3`, tenantID, poID, meta.RequestKey).Scan(&existingNo, &existingHash)
+			if e == nil {
+				if existingHash != requestHash {
+					return apierr.Conflict("PO_DELIVERY_REQUEST_CHANGED", "同一交接请求不能更改内容")
+				}
+				receiptNo = existingNo
+				return nil
+			}
+			if e != pgx.ErrNoRows {
+				return e
+			}
+		}
+		if (meta.ActualDeliveryDate != "" || meta.RequestKey != "" || len(meta.Proofs) > 0) && ((head.FulfillmentMode == "WAREHOUSE" && directDelivery) || (head.FulfillmentMode != "WAREHOUSE" && !directDelivery)) {
+			return apierr.Invalid("PO_DELIVERY_MODE_MISMATCH", "交接方式与采购单约定不一致")
+		}
+		var historical, historyPricesMissing bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2),EXISTS(SELECT 1 FROM historical_purchase_orders WHERE tenant_id=$1 AND po_id=$2 AND NOT prices_complete)`, tenantID, poID).Scan(&historical, &historyPricesMissing); err != nil {
 			return err
+		}
+		if historical && head.SupplierID == 0 {
+			return apierr.Conflict("PO_SUPPLIER_MISSING", "请先在补齐资料中填写供应商，再登记到货")
 		}
 		if historyPricesMissing {
 			return apierr.Conflict("PO_PRICE_MISSING", "历史采购单价格尚未补齐，不能登记到货")
@@ -1002,6 +1043,24 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 		if head.Status != poOrdered && head.Status != poPartial {
 			return apierr.Conflict("PO_NOT_RECEIVABLE", "只有已下单的采购单可以收货").
 				WithMeta("status", head.Status)
+		}
+		if directDelivery {
+			// Each additional direct-delivery batch is new fulfilment. Goods
+			// received into our custody remain receivable for an existing PO.
+			itemIDs := make([]int64, 0, len(want))
+			for itemID := range want {
+				itemIDs = append(itemIDs, itemID)
+			}
+			if err := s.checkDeliveryContractExecution(ctx, tx, tenantID, poID, itemIDs); err != nil {
+				return err
+			}
+		}
+		quality, err := checkOrderDeliveryQuality(ctx, tx, tenantID, poID)
+		if err != nil {
+			return err
+		}
+		if !quality.Allowed {
+			return apierr.Conflict(quality.Code, quality.Reason)
 		}
 		items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
 			TenantID: tenantID, PoID: poID,
@@ -1070,6 +1129,9 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 			OperatorID: op.ID, OperatorName: op.Name, Remark: remark,
 		})
 		if err != nil {
+			return err
+		}
+		if err := saveReceiptDetails(ctx, tx, tenantID, poID, receipt.ID, meta, requestHash); err != nil {
 			return err
 		}
 		receiptNo = receipt.ReceiptNo
