@@ -34,6 +34,7 @@ func TestUpDownUp(t *testing.T) {
 	}
 	assertNumberRule(t, db, "SUPPLIER_PAYMENT", true)
 	assertNumberRule(t, db, "WAREHOUSE", true)
+	assertPaymentTermsText(t, db)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -52,6 +53,22 @@ func TestUpDownUp(t *testing.T) {
 	assertNumberRule(t, db, "SUPPLIER_PAYMENT", true)
 	assertNumberRule(t, db, "WAREHOUSE", true)
 	assertCustomerOwner(t, db, 909090, legacyCustomerID, 41001)
+	assertPaymentTermsText(t, db)
+}
+
+func assertPaymentTermsText(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, table := range []string{"customers", "suppliers"} {
+		var dataType string
+		err := db.QueryRow(`SELECT data_type FROM information_schema.columns
+			WHERE table_schema='public' AND table_name=$1 AND column_name='payment_term'`, table).Scan(&dataType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dataType != "text" {
+			t.Fatalf("%s.payment_term type=%s, want text", table, dataType)
+		}
+	}
 }
 
 func assertCustomerOwner(t *testing.T, db *sql.DB, tenantID, customerID, employeeID int64) {
