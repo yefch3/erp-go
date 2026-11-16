@@ -53,15 +53,15 @@
       <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="240" align="center"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span :title="candidateLabel(row,candidate)">{{candidateLabel(row,candidate)}}</span><strong>{{candidateCfrText(candidate)}}</strong></span></div><span v-else>—</span></template></el-table-column>
      </el-table>
     </section>
-    <section class="workspace-card logistics-panel">
-     <div class="card-heading"><div><span class="eyebrow">{{t('inquiryWorkspace.offer.transportCosts')}}</span><h3>{{t('inquiryWorkspace.offer.logisticsTitle')}}</h3><p>{{t('inquiryWorkspace.offer.logisticsAutoHint')}}</p></div><el-tag type="success" effect="plain">{{t('inquiryWorkspace.offer.logisticsAvailable',{count:logisticsQuotes.length})}}</el-tag></div>
+    <details :key="props.caseId" class="workspace-card logistics-panel">
+     <summary class="logistics-reference-summary"><strong>{{t('inquiryWorkspace.offer.transportCosts')}}</strong><span class="logistics-reference-actions"><span>{{t('inquiryWorkspace.offer.logisticsAvailable',{count:logisticsQuotes.length})}}</span><span class="logistics-reference-expand">{{t('inquiryWorkspace.offer.expandLogisticsReference')}}</span><span class="logistics-reference-collapse">{{t('inquiryWorkspace.offer.collapseLogisticsReference')}}</span><i class="logistics-reference-chevron" aria-hidden="true"/></span></summary>
      <el-table :data="logisticsQuotes" class="quote-table" :empty-text="t('inquiryWorkspace.offer.noLogisticsQuote')">
       <el-table-column :label="t('inquiryWorkspace.offer.logisticsCompany')" min-width="230"><template #default="{row}"><strong>{{row.body.company||row.body.carrier||t('inquiryWorkspace.offer.logisticsMissing')}}</strong><small>{{routeOf(row)}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.departureArrival')" min-width="160"><template #default="{row}">{{row.body.departure||'—'}}<small>{{row.body.arrival||'—'}}</small></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.validUntil')" width="135"><template #default="{row}">{{row.body.validUntil||'—'}}</template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.details')" width="90"><template #default="{row}"><el-button link type="primary" @click="preview=row">{{t('inquiryWorkspace.offer.view')}}</el-button></template></el-table-column>
      </el-table>
-    </section>
+    </details>
    </template>
    <template v-else>
     <el-alert v-if="sourceChanges.selectionChanged&&customerRows.length" :title="t('inquiryWorkspace.offer.selectionPendingAlert')" type="warning" :closable="false" show-icon/>
@@ -462,4 +462,17 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .quote-workspace.compare-mode .workspace-footer strong{font-size:12px}
 .quote-workspace.compare-mode .workspace-footer small{margin-top:2px;font-size:11px}
 .quote-workspace.compare-mode .workspace-footer .el-button{height:30px;min-height:30px;padding:0 10px;font-size:12px}
+.logistics-reference-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;box-sizing:border-box;padding:7px 12px;cursor:pointer;list-style:none;background:#f2f8f6;color:#315d69;font-size:12px;line-height:20px}
+.logistics-reference-summary::-webkit-details-marker{display:none}
+.logistics-reference-summary:focus-visible{outline:2px solid #2385a2;outline-offset:-2px}
+.logistics-reference-summary>strong{font-size:13px;color:#173f52}
+.logistics-reference-actions{display:flex;align-items:center;gap:12px;white-space:nowrap}
+.logistics-reference-actions>span:first-child{color:#65857a;font-size:11px}
+.logistics-reference-expand,.logistics-reference-collapse{color:#24778e}
+.logistics-reference-collapse{display:none}
+.logistics-panel[open] .logistics-reference-collapse{display:inline}
+.logistics-panel[open] .logistics-reference-expand{display:none}
+.logistics-panel[open] .logistics-reference-summary{border-bottom:1px solid var(--line)}
+.logistics-reference-chevron{width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);margin-right:3px;transition:transform .15s}
+.logistics-panel[open] .logistics-reference-chevron{transform:rotate(225deg)}
 </style>
