@@ -22,7 +22,7 @@ func TestLongPaymentTermsSurviveContractSaves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	tenantID := time.Now().UnixNano()
 	t.Cleanup(func() {
 		for _, table := range []string{"contract_workflows", "contract_items", "contract_versions", "contracts", "quotation_items", "quotations"} {
@@ -84,8 +84,8 @@ func TestLongPaymentTermsSurviveContractSaves(t *testing.T) {
 		t.Fatalf("save quotation payment terms: %v", err)
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO quotation_items
-		(tenant_id,quotation_id,line_no,product_id,product_name,qty,uom_code,unit_price,amount)
-		VALUES ($1,$2,1,0,'Custom plate',10,'KG',2,20)`, tenantID, quotationID)
+		(tenant_id,quotation_id,line_no,product_id,product_code,product_name,qty,uom_id,uom_code,unit_price,amount)
+		VALUES ($1,$2,1,0,'','Custom plate',10,0,'KG',2,20)`, tenantID, quotationID)
 	if err != nil {
 		t.Fatal(err)
 	}
