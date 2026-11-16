@@ -253,7 +253,7 @@
         <el-descriptions :column="2" border size="small" class="desc">
           <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="合同金额">{{detail.version.totalAmount}} {{detail.version.currency}}</el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="签订日期">{{detail.contract.signedAt?.slice(0,10)}}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{(detail.version.customerContact??acceptedOffer?.contact)||'—'}}</el-descriptions-item>
           <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.buyer')">
             {{ detail.version.buyerName }}
@@ -650,6 +650,7 @@
       <ContractPartiesFields :model-value="termsForm" @update:model-value="Object.assign(termsForm,$event)" />
       <el-form label-width="110px">
         <div class="grid">
+          <el-form-item label="客户联系人"><el-input v-model="termsForm.customerContact" placeholder="按本合同填写联系人" /></el-form-item>
           <el-form-item label="原合同号"><el-input v-model="termsForm.externalContractNo"/></el-form-item>
           <el-form-item :label="t('contracts.incoterm')">
             <el-select v-model="termsForm.incoterm" style="width: 100%">
@@ -885,6 +886,7 @@ interface Contract {
   filePending: boolean
 }
 interface Version {
+  customerContact?: string
   id: string
   versionNo: number
   buyerName: string
@@ -1422,6 +1424,7 @@ const termsOpen = ref(false)
 const changeOpen = ref(false)
 
 const termsForm = reactive({
+  customerContact:'',
   buyerName: '', buyerAddress: '', sellerName: '', sellerAddress: '',
   incoterm: 'FOB', portOfLoading: '', portOfDischarge: '', paymentMethod: '',
   externalContractNo:'', deliveryDate: '', receivableDueDate: '', terms: '', items: [] as ChangeLine[],
@@ -1544,6 +1547,7 @@ function selectContractProduct(row:ChangeLine,product:Product){
 function openTerms() {
   const v = detail.value!.version
   Object.assign(termsForm, {
+    customerContact:v.customerContact??acceptedOffer.value?.contact??'',
     externalContractNo:detail.value!.contract.externalContractNo||'',
     buyerName: v.buyerName, buyerAddress: v.buyerAddress,
     sellerName: v.sellerName, sellerAddress: v.sellerAddress,

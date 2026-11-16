@@ -237,7 +237,8 @@ func (s *Service) ImportExistingContract(ctx context.Context, tenantID int64, in
 				return contractNumberError(err)
 			}
 			versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
-				TenantID: tenantID, ContractID: contractID, VersionNo: 1,
+				CustomerContact: contactSnapshot(in.Terms.CustomerContact),
+				TenantID:        tenantID, ContractID: contractID, VersionNo: 1,
 				BuyerName: terms.BuyerName, BuyerAddress: terms.BuyerAddress, SellerName: terms.SellerName, SellerAddress: terms.SellerAddress,
 				Currency: in.Currency, Incoterm: terms.Incoterm, PortOfLoading: terms.PortOfLoading,
 				PortOfDischarge: terms.PortOfDischarge, PaymentMethod: terms.PaymentMethod, DeliveryDate: terms.DeliveryDate,

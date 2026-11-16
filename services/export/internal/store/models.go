@@ -180,6 +180,7 @@ type ContractVersion struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       int64
+	CustomerContact *string
 }
 
 type ContractWorkflow struct {

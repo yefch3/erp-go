@@ -3,7 +3,7 @@
   <el-alert :closable="false" show-icon :title="history?'保存原合同资料和附件，无需重复录入产品明细。合同金额仅作记录，不代表未收款金额。':'只填写客户成交信息。合同经上级确认、签署及财务放行后，进入正常采购和物流实单流程。'"/>
   <div v-if="history&&drafts.length" class="drafts"><span>继续填写历史草稿</span><el-select placeholder="选择已保存草稿" @change="openDraft" style="width:320px"><el-option v-for="d in drafts" :key="d.id" :value="d.id" :label="`${d.body.externalContractNo||'未填原合同号'} · ${d.body.customerName||'未选客户'} · ${d.updatedAt.slice(0,16)}`"/></el-select><el-button v-if="draftId" type="danger" link @click="removeDraft">删除当前草稿</el-button></div>
   <el-alert v-if="entryError" class="entry-error" type="error" show-icon :closable="false" :title="entryError"/>
-  <el-form label-position="top" :class="['entry-form', {'history-form':history}]">
+  <el-form label-position="top" :class="['entry-form',history?'history-form':'basic-form']">
    <el-form-item label="客户" required><el-select v-model="form.customerId" filterable remote :remote-method="searchCustomers" placeholder="选择客户" @change="selectCustomer"><el-option v-for="c in customers" :key="c.id" :value="String(c.id)" :label="customerOptionLabel(c)"/></el-select></el-form-item>
    <template v-if="history">
     <el-form-item label="原合同号" required><el-input v-model="form.externalContractNo" placeholder="按原合同填写" maxlength="100"/></el-form-item>
@@ -13,11 +13,14 @@
     <el-form-item label="合同状态" required><el-select v-model="form.historyStatus"><el-option value="EXECUTING" label="执行中"/><el-option value="COMPLETED" label="已完成"/></el-select></el-form-item>
    </template>
    <template v-else>
+   <el-form-item label="客户联系人"><el-autocomplete v-model="form.customerContact" :fetch-suggestions="suggestContacts" placeholder="可选择联系人，也可直接填写" clearable /></el-form-item>
    <el-form-item label="客户合同币种" required><el-select v-model="form.currency"><el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c"/></el-select></el-form-item>
    <el-form-item label="原／客户合同号"><el-input v-model="form.externalContractNo"/></el-form-item>
    </template>
   </el-form>
+  <small v-if="!history" class="entry-meta">负责人：{{auth.employeeName||'当前登录销售'}} · 合同来源：手工新建合同 · 来源报价：无</small>
   <ContractPartiesFields v-if="!history" :model-value="form" @update:model-value="Object.assign(form,$event)" />
+  <div v-if="!history" class="form-section-title">交易条件</div>
   <el-form v-if="!history" label-position="top" class="entry-form">
    <el-form-item :label="t('contractRepair.deliveryLabel')"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
    <el-form-item label="贸易条款"><el-select v-model="form.incoterm" filterable allow-create default-first-option><el-option v-for="v in ['FOB','CFR','CIF','EXW','FCA','DAP','DDP']" :key="v" :value="v" :label="v"/></el-select></el-form-item>
@@ -62,12 +65,14 @@ import ContractOperationButton from './ContractOperationButton.vue'
 import ColumnFillRegion from './ColumnFillRegion.vue'
 import ContractPartiesFields from './ContractPartiesFields.vue'
 import {emptyContractParties,buyerFromCustomer} from '../lib/contractParties'
+import {useAuthStore} from '../stores/auth'
 const {t}=useI18n()
+const auth=useAuthStore()
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
 type Line={productId:string;productName:string;spec:string;qty:string;uomCode:string;unitPrice:string}
-const initial=()=>({...emptyContractParties(),totalAmount:'',historyStatus:'EXECUTING',customerId:'',customerName:'',currency:'USD',externalContractNo:'',signedDate:'',effectiveDate:'',takeoverDate:'',deliveryDate:'',receivableDueDate:'',incoterm:'FOB',paymentMethod:'',portOfLoading:'',portOfDischarge:'',terms:'',signedFileKey:'',signedFileName:'',items:[] as Line[]})
+const initial=()=>({...emptyContractParties(),customerContact:'',totalAmount:'',historyStatus:'EXECUTING',customerId:'',customerName:'',currency:'USD',externalContractNo:'',signedDate:'',effectiveDate:'',takeoverDate:'',deliveryDate:'',receivableDueDate:'',incoterm:'FOB',paymentMethod:'',portOfLoading:'',portOfDischarge:'',terms:'',signedFileKey:'',signedFileName:'',items:[] as Line[]})
 const form=reactive(initial()),busy=ref(false),customers=ref<any[]>([]),draftId=ref(''),revision=ref(0),file=ref<File|null>(null),fileInput=ref<HTMLInputElement|null>(null),drafts=ref<{id:string;revision:number;body:ReturnType<typeof initial>;updatedAt:string}[]>([])
 const importOpen=ref(false),entryError=ref('')
 function showEntryError(error:unknown){if(isDialogDismissed(error))return;entryError.value=error&&typeof error==='object'&&'message' in error?String(error.message):'操作失败，请稍后重试；已填写的资料仍保留。'}
@@ -78,13 +83,26 @@ function amount(l:Line){return contractLineAmount(l)}
 const total=computed(()=>contractTotal(form.items))
 async function searchCustomers(keyword:string){try{customers.value=(await get<{customers:any[]}>('/customers',{keyword,page_size:50},quietErrors)).customers||[]}catch(error){showEntryError(error)}}
 let selectedCustomerId='',lastBuyer=buyerFromCustomer()
+const contactOptions=ref<{value:string;isPrimary:boolean}[]>([])
+function suggestContacts(query:string,callback:(options:{value:string}[])=>void){callback(contactOptions.value.filter(c=>c.value.toLowerCase().includes(query.trim().toLowerCase())))}
+async function loadContacts(id:string){
+ contactOptions.value=[];form.customerContact=''
+ if(!id)return
+ try{
+  const result=await get<{contacts:{name:string;isPrimary:boolean}[]}>(`/customers/${id}/contacts`,undefined,quietErrors)
+  if(form.customerId!==id)return
+  contactOptions.value=(result.contacts||[]).filter(c=>c.name?.trim()).map(c=>({value:c.name.trim(),isPrimary:c.isPrimary}))
+  const preferred=contactOptions.value.find(c=>c.isPrimary)||(contactOptions.value.length===1?contactOptions.value[0]:undefined)
+  if(!form.customerContact&&preferred)form.customerContact=preferred.value
+ }catch{if(form.customerId===id)ElMessage.info('联系人列表暂时无法读取，可以直接填写客户联系人')}
+}
 async function selectCustomer(){
  const id=form.customerId,c=customers.value.find(c=>String(c.id)===id)
  if(!props.history&&selectedCustomerId&&id!==selectedCustomerId&&(form.buyerName!==lastBuyer.buyerName||form.buyerAddress!==lastBuyer.buyerAddress)&&(form.buyerName.trim()||form.buyerAddress.trim())){
   try{await ElMessageBox.confirm('切换客户将重新带入买方公司名称和地址，替换本合同中已修改的买方信息。是否继续？','切换签约客户',{confirmButtonText:'切换客户',cancelButtonText:'保留当前客户'})}catch{form.customerId=selectedCustomerId;return}
  }
  selectedCustomerId=id;form.customerName=c?customerOptionLabel(c):''
- if(!props.history){lastBuyer=buyerFromCustomer(c);Object.assign(form,lastBuyer)}
+ if(!props.history){lastBuyer=buyerFromCustomer(c);Object.assign(form,lastBuyer);await loadContacts(id)}
 }
 async function loadEntryDefaults(){const defaults=await get<{sellerName:string;sellerAddress:string}>('/contracts/entry-defaults',undefined,quietErrors);if(!visible.value)return;if(!form.sellerName)form.sellerName=defaults.sellerName||'';if(!form.sellerAddress)form.sellerAddress=defaults.sellerAddress||''}
 function pickFile(e:Event){file.value=(e.target as HTMLInputElement).files?.[0]||null}
@@ -94,7 +112,7 @@ function openDraft(id:string){const d=drafts.value.find(d=>d.id===id);if(!d||bus
 async function persistDraft(){await uploadFile();const d=await post<{id:string;revision:number;contractId?:string}>('/contract-history-drafts',{action:'history_save',id:Number(draftId.value||0),revision:revision.value,data:form},quietErrors);draftId.value=d.id;revision.value=d.revision;return d.contractId}
 async function saveHistoryDraft(){if(busy.value)return;busy.value=true;entryError.value='';try{const linked=await persistDraft();if(linked){visible.value=false;emit('saved',linked);ElMessage.info('此草稿已接入，已打开原合同；未覆盖原合同资料');return}await loadDrafts();ElMessage.success('历史合同草稿已保存')}catch(error){showEntryError(error)}finally{busy.value=false}}
 async function removeDraft(){if(busy.value)return;busy.value=true;entryError.value='';try{await ElMessageBox.confirm('删除这份未接入的历史草稿？删除后无法恢复。','删除草稿',{type:'warning'});await post('/contract-history-drafts',{action:'history_delete',id:Number(draftId.value),revision:revision.value},quietErrors);Object.assign(form,initial());draftId.value='';revision.value=0;addLine();await loadDrafts()}catch(error){showEntryError(error)}finally{busy.value=false}}
-function payload(){return{customerId:form.customerId,currency:form.currency,externalContractNo:form.externalContractNo,terms:{buyerName:form.buyerName,buyerAddress:form.buyerAddress,sellerName:form.sellerName,sellerAddress:form.sellerAddress,incoterm:form.incoterm,paymentMethod:form.paymentMethod,portOfLoading:form.portOfLoading,portOfDischarge:form.portOfDischarge,deliveryDate:form.deliveryDate,receivableDueDate:form.receivableDueDate,terms:form.terms},items:form.items}}
+function payload(){return{customerId:form.customerId,currency:form.currency,externalContractNo:form.externalContractNo,terms:{customerContact:form.customerContact,buyerName:form.buyerName,buyerAddress:form.buyerAddress,sellerName:form.sellerName,sellerAddress:form.sellerAddress,incoterm:form.incoterm,paymentMethod:form.paymentMethod,portOfLoading:form.portOfLoading,portOfDischarge:form.portOfDischarge,deliveryDate:form.deliveryDate,receivableDueDate:form.receivableDueDate,terms:form.terms},items:form.items}}
 async function save(){
  if(busy.value)return
  if(!props.history&&(!form.customerId||!form.items.length||form.items.some(l=>!l.productName.trim()||!l.uomCode.trim()||!Number.isFinite(Number(l.qty))||Number(l.qty)<=0||!l.unitPrice.trim()||!Number.isFinite(Number(l.unitPrice))||Number(l.unitPrice)<0))){ElMessage.warning('请选择客户，并填写完整的产品、单位、数量及对客单价');return}
@@ -109,11 +127,14 @@ async function save(){
   idem.reset();visible.value=false;emit('saved',result.contract.id);ElMessage.success(props.history?'历史合同已保存':'合同草稿已建立')
  }catch(error){showEntryError(error)}finally{busy.value=false}
 }
-watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryError.value='';try{Object.assign(form,initial());selectedCustomerId='';lastBuyer=buyerFromCustomer();draftId.value='';revision.value=0;file.value=null;idem.reset();addLine();await searchCustomers('');if(props.history)await loadDrafts();else await loadEntryDefaults()}catch(error){showEntryError(error)}})
+watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryError.value='';try{Object.assign(form,initial());contactOptions.value=[];selectedCustomerId='';lastBuyer=buyerFromCustomer();draftId.value='';revision.value=0;file.value=null;idem.reset();addLine();await searchCustomers('');if(props.history)await loadDrafts();else await loadEntryDefaults()}catch(error){showEntryError(error)}})
 </script>
 <style scoped>
 :global(.contract-entry-dialog.el-dialog){display:flex;flex-direction:column;max-height:92vh}
 :global(.contract-entry-dialog .el-dialog__body){overflow-y:auto;min-height:0;padding-right:8px}
 :global(.contract-entry-dialog .el-dialog__header),:global(.contract-entry-dialog .el-dialog__footer){flex-shrink:0}
+.entry-form.basic-form{grid-template-columns:repeat(4,minmax(0,1fr))}.entry-meta{margin:0 0 14px}.form-section-title{font-weight:600;margin:16px 0 8px}.entry-form :deep(.el-autocomplete){width:100%}
+@media(max-width:760px){.entry-form.basic-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.entry-form.basic-form{grid-template-columns:1fr}}
 .entry-error{margin-top:12px}.entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:18px}.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}.file-name{margin-left:12px;overflow-wrap:anywhere}.file-hint{flex-basis:100%;margin-top:6px}.entry-form :deep(.el-select),.entry-form :deep(.el-date-editor){width:100%}.lines-heading,.drafts{display:flex;align-items:center;gap:12px;margin:16px 0}.lines-heading{justify-content:space-between}.entry-total{text-align:right;font-weight:600;margin:14px 0}small{display:block;font-size:12px;color:#64748b;line-height:1.6}@media(max-width:760px){.entry-form{grid-template-columns:1fr 1fr}.drafts{flex-wrap:wrap}}@media(max-width:480px){.entry-form{grid-template-columns:1fr}}
 </style>
