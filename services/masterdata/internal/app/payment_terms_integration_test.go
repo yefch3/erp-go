@@ -25,7 +25,7 @@ func TestCustomerAndSupplierPreserveLongPaymentTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	tenantID := time.Now().UnixNano()
 	for _, table := range []string{"customers", "suppliers"} {
 		t.Run(table, func(t *testing.T) {
