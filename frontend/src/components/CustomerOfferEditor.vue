@@ -16,7 +16,7 @@
        <label>{{t('inquiryWorkspace.offer.annualInterestRate')}}<el-input v-model="categoryCalculation(group.value).interestRate" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.interestRatePlaceholder')"><template #append>%</template></el-input></label>
        <label>{{t('inquiryWorkspace.offer.interestDays')}}<el-input v-model="categoryCalculation(group.value).interestDays" :disabled="!editable" inputmode="numeric" :placeholder="t('inquiryWorkspace.offer.interestDaysPlaceholder')"><template #append>{{t('inquiryWorkspace.offer.daysUnit')}}</template></el-input></label>
       </div>
-      <el-button type="primary" :disabled="!editable||!selectedCount(group.value)" :loading="busy" @click="calculateCategory(group.value)">{{t('inquiryWorkspace.offer.calculateCfr')}}</el-button>
+      <span class="automatic-calculation-status" role="status" aria-live="polite" :class="{'pending':categoryCalculationIssue(group.value)||automaticError}">{{categoryCalculationStatus(group.value)}}</span>
      </div>
      <el-table :data="productGroupsFor(group.value)" class="quote-table comparison-table product-group-table" row-key="key" table-layout="fixed" :empty-text="t(search?'inquiryWorkspace.offer.noSearchMatch':'inquiryWorkspace.offer.categoryNoQuotes')" :row-class-name="({row}:any)=>groupSelected(row)?'selected-row':''">
       <el-table-column type="expand" width="46">
@@ -34,7 +34,7 @@
             <el-table-column v-if="group.value==='REPROCESSING_CNY'" min-width="140" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}<small>CNY / {{t('inquiryWorkspace.offer.pricingUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{formatCfrUnitPrice(row.price.factoryPrice)||'—'}}</span></template></el-table-column>
             <el-table-column min-width="145" align="right"><template #header><span class="column-heading">{{t(supplierPriceLabel(group.value))}}<small>{{supplierPriceUnitLabel(group.value,group.currency)}}</small></span></template><template #default="{row}"><span class="number-cell">{{priceOf(row.price)}}</span></template></el-table-column>
             <el-table-column v-if="group.value!=='DIRECT_CFR_USD'" min-width="145" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.productFreightUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span v-if="isSelected(row)&&!freightNeedsConfirmation(row)" class="number-cell">{{freightUnitPrice(row)}}</span><span v-else>—</span><small v-if="freightNeedsConfirmation(row)" class="pending">{{t('inquiryWorkspace.offer.freightReselect')}}</small></template></el-table-column>
-            <el-table-column min-width="140" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{formatCfrUnitPrice(selectionFor(row)?.cfrUnitPrice)||'—'}}</span></template></el-table-column>
+            <el-table-column min-width="140" align="right"><template #header><span class="column-heading">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}<small>{{t('inquiryWorkspace.offer.usdPerUnit')}}</small></span></template><template #default="{row}"><span class="number-cell">{{isSelected(row)?candidateCfrText(row,true):'—'}}</span></template></el-table-column>
             <el-table-column :label="t('inquiryWorkspace.offer.deliveryDate')" min-width="120" align="center"><template #default="{row}">{{row.price.delivery||row.quote.body.delivery||'—'}}</template></el-table-column>
             <el-table-column :label="t('inquiryWorkspace.offer.details')" min-width="80" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.view')}}</el-button></template></el-table-column>
            </el-table>
@@ -47,7 +47,7 @@
       <el-table-column :label="t('inquiryWorkspace.offer.specifications')" width="90" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.specificationCountValue',{count:row.specs.length})}}</template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.supplierQuoteCount')" width="100" align="center"><template #default="{row}">{{t('inquiryWorkspace.offer.supplierQuoteCountValue',{count:row.rows.length})}}</template></el-table-column>
       <el-table-column v-if="group.value!=='DIRECT_CFR_USD'" :label="t('inquiryWorkspace.offer.productLogistics')" min-width="240"><template #default="{row}"><el-select :model-value="productFreightId(row)" :disabled="!editable" :placeholder="t(hasProductFreight(row)?'inquiryWorkspace.offer.productFreightMixed':'inquiryWorkspace.offer.logisticsSelectPlaceholder')" :aria-label="t('inquiryWorkspace.offer.productLogisticsAria',{product:row.productName})" clearable style="width:100%" @change="selectProductFreight(row,$event)"><el-option v-for="quote in logisticsQuotes" :key="quote.id" :value="quote.id" :disabled="!productFreightAvailable(row,quote)" :label="productFreightLabel(row,quote)" :title="productFreightLabel(row,quote)" class="product-freight-option"><span>{{productFreightLabel(row,quote)}}</span></el-option></el-select><details v-if="selectedProductFreightPrices(row).length" :key="row.key" class="product-freight-details"><summary><strong>{{selectedProductFreightSummary(row)}}</strong><span>{{t('inquiryWorkspace.offer.specificationCountValue',{count:selectedProductFreightPrices(row).length})}}</span><span class="freight-expand-label">{{t('inquiryWorkspace.offer.showFreightDetails')}}</span><span class="freight-collapse-label">{{t('inquiryWorkspace.offer.hideFreightDetails')}}</span></summary><div class="product-freight-prices"><div v-for="rate in selectedProductFreightPrices(row)" :key="rate.product.id"><span>{{specification(rate.product)||t('inquiryWorkspace.offer.specification')}}</span><strong>USD {{formatCfrUnitPrice(rate.price)}} / {{rate.unit}}</strong></div></div></details></template></el-table-column>
-      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="240" align="center"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span :title="candidateLabel(row,candidate)">{{candidateLabel(row,candidate)}}</span><strong>{{selectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(selectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></span></div><span v-else>—</span></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.selectedCfrUnitPrice')" min-width="240" align="center"><template #default="{row}"><div v-if="selectedRows(row).length" class="selected-cfr-list"><span v-for="candidate in selectedRows(row)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="cfr-chip"><span :title="candidateLabel(row,candidate)">{{candidateLabel(row,candidate)}}</span><strong>{{candidateCfrText(candidate)}}</strong></span></div><span v-else>—</span></template></el-table-column>
      </el-table>
     </section>
     <section class="workspace-card logistics-panel">
@@ -149,7 +149,7 @@
  </section>
 </template>
 <script setup lang="ts">
-import {computed,ref,watch} from 'vue'
+import {computed,ref,watch,onBeforeUnmount} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
@@ -159,11 +159,14 @@ import {productTemplateValue,type Quote,type Product,type Price} from '../lib/in
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
 import {formatCfrUnitPrice,offerSpecification as specification} from '../lib/customerOffer'
 import {freightProductKey,freightCovers,commonProductFreight,applyProductFreight,productFreightPrices,productFreightPriceSummary} from '../lib/productFreight'
+import {latestCalculation} from '../lib/latestCalculation'
+import {automaticOfferInputKey,offerCalculationIssue,readyOfferCalculationBody} from '../lib/automaticOfferCalculation'
 import {procurementQuoteCategories} from '../lib/quoteClassification'
 import {offerSourceChanges} from '../lib/offerSourceChanges'
 const props=defineProps<{caseId:string;sourceVersion?:string;mode:'compare'|'offer'}>()
 const emit=defineEmits<{navigate:[tab:string]}>()
 const router=useRouter(),{t,locale}=useI18n(),offer=ref<Offer|null>(null),busy=ref(false),error=ref(''),search=ref(''),preview=ref<Quote|null>(null),savedBody=ref('')
+const automaticPending=ref(false),automaticError=ref('')
 const productFreightChoices=ref<Record<string,{id:string;version?:number}>>({})
 const expandedCustomerProducts=ref(new Set<string>()),expandedCustomerCandidates=ref(new Set<string>())
 const isCompare=computed(()=>props.mode==='compare'),editable=computed(()=>!!offer.value?.canEdit)
@@ -264,7 +267,7 @@ function cargoDescription(q:Quote){return q.body.cargoIds?.length?q.body.cargoId
 function displayTime(value:string){if(!value)return'—';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString(locale.value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}
 function prepare(next:Offer){next.body.categorySelections??=[];next.body.transports??=[];next.body.customerSelections??=[];next.body.customerLogistics??=[];next.body.categoryCalculations??={};next.body.negotiations??=[];next.body.documentLanguage??='ZH';for(const group of groups.value){const calculation=next.body.categoryCalculations[group.value]??={quoteFx:'',quoteFxConfirmed:false,portCharge:'',inlandFreight:'',loss:'',interestRate:'',interestDays:'',note:''};calculation.quoteFx??='';calculation.portCharge??='';calculation.inlandFreight??='';calculation.loss??='';calculation.interestRate??='';calculation.interestDays??=''}for(const selection of next.body.customerSelections){const negotiation=next.body.negotiations.find(item=>selectionKey(item)===selectionKey(selection));if(!negotiation)next.body.negotiations.push({productId:selection.productId,category:selection.category,quoteId:selection.quoteId,initialPrice:selection.cfrUnitPrice||'',customerCounterPrice:'',proposedPrice:'',status:'DRAFT',note:''});else if(!negotiation.initialPrice)negotiation.initialPrice=selection.cfrUnitPrice||''}return next}
 let sequence=0
-async function refreshSources(){if(busy.value)return;const request=++sequence;busy.value=true;error.value='';try{const next=prepare(await post<Offer>('/customer-offer',{action:'get',caseId:props.caseId},quietErrors));if(request!==sequence)return;if(offer.value&&dirty.value){if(next.revision!==offer.value.revision){error.value=t('inquiryWorkspace.offer.concurrentUpdate');return}offer.value.source=next.source;offer.value.canEdit=next.canEdit}else{offer.value=next;savedBody.value=JSON.stringify(next.body)}}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.loadFailed')}finally{if(request===sequence)busy.value=false}}
+async function refreshSources(){if(busy.value)return;const request=++sequence;busy.value=true;error.value='';try{const next=prepare(await post<Offer>('/customer-offer',{action:'get',caseId:props.caseId},quietErrors));if(request!==sequence)return;if(offer.value&&dirty.value){if(next.revision!==offer.value.revision){error.value=t('inquiryWorkspace.offer.concurrentUpdate');return}offer.value.source=next.source;offer.value.canEdit=next.canEdit}else{savedBody.value=JSON.stringify(next.body);offer.value=next}}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.loadFailed')}finally{if(request===sequence)busy.value=false}}
 function chooseAccepted(row:Candidate,yes:boolean){
  if(!offer.value)return
  if(yes)for(const n of offer.value.body.negotiations||[])if(n.productId===row.product.id&&n.status==='AGREED')n.status='QUOTED'
@@ -281,12 +284,68 @@ async function confirmCustomerContract(){
   await router.push({path:'/contracts',query:{id:offer.value.contractId}})
  }catch(e){error.value=(e as Error).message||t('contractRepair.failed')}finally{busy.value=false}
 }
-async function calculateCategory(category:string){if(!offer.value||busy.value)return;busy.value=true;error.value='';try{const body={...offer.value.body,categoryWorkflow:true};offer.value=prepare(await post<Offer>('/customer-offer',{action:'calculate',lineId:category,caseId:props.caseId,revision:offer.value.revision,body},quietErrors));ElMessage.success(t('inquiryWorkspace.offer.cfrCalculated'))}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.cfrCalculateFailed')}finally{busy.value=false}}
+function calculationIssueText(issue:string){
+ const field=({quoteFx:'exchangeRate',portCharge:'portChargeUnitPrice',inlandFreight:'productInlandFreightUnitPrice',loss:'lossUnitPrice',interestRate:'annualInterestRate',interestDays:'interestDays'} as Record<string,string>)[issue]
+ return field?t('inquiryWorkspace.offer.autoParameterRequired',{field:t('inquiryWorkspace.offer.'+field)}):t('inquiryWorkspace.offer.'+({supplier:'autoSupplierRequired',supplierPrice:'autoSupplierPriceInvalid',factoryPrice:'autoFactoryPriceRequired',freight:'autoFreightRequired'} as Record<string,string>)[issue])
+}
+function categoryCalculationIssue(category:string){return selections.value.filter(s=>s.category===category).map(s=>offerCalculationIssue(s,offer.value!.body,offer.value!.source)).find(Boolean)}
+function categoryCalculationStatus(category:string){
+ if(!selectedCount(category))return t('inquiryWorkspace.offer.autoCalculationIdle')
+ const issue=categoryCalculationIssue(category)
+ if(issue)return calculationIssueText(issue)
+ if(automaticPending.value)return t('inquiryWorkspace.offer.autoCalculating')
+ return automaticError.value||t('inquiryWorkspace.offer.autoCalculated')
+}
+function candidateCfrText(row:Candidate,unitPriceOnly=false){
+ const selection=selectionFor(row);if(!selection||!offer.value)return'—'
+ const issue=offerCalculationIssue(selection,offer.value.body,offer.value.source)
+ if(issue)return calculationIssueText(issue)
+ if(automaticPending.value)return t('inquiryWorkspace.offer.autoCalculating')
+ return selection.cfrUnitPrice?(unitPriceOnly?formatCfrUnitPrice(selection.cfrUnitPrice):`USD ${formatCfrUnitPrice(selection.cfrUnitPrice)} / ${row.product.unit}`):t('inquiryWorkspace.offer.autoCalculationFailed')
+}
+const automaticTask=latestCalculation<Offer,Offer['body']['categorySelections']>({
+ pending:value=>{automaticPending.value=value},
+ async run(input){
+  const body=readyOfferCalculationBody(input.body,input.source)
+  if(!body.categorySelections.length)return []
+  const result=await post<Offer>('/customer-offer',{action:'calculate_all',caseId:input.source.id,revision:input.revision,body},quietErrors)
+  return result.body.categorySelections
+ },
+ apply(results){
+  for(const result of results){const selection=selections.value.find(s=>selectionKey(s)===selectionKey(result));if(selection){selection.supplierFobUnitPrice=result.supplierFobUnitPrice;selection.productFreightUnitPrice=result.productFreightUnitPrice;selection.cfrUnitPrice=result.cfrUnitPrice}}
+  automaticError.value=''
+ },
+ fail(reason){automaticError.value=(reason as Error).message||t('inquiryWorkspace.offer.autoCalculationFailed')},
+})
+function queueAutomaticCalculation(){
+ automaticTask.cancel();automaticError.value=''
+ if(!offer.value||!isCompare.value||!editable.value)return
+ error.value=''
+ for(const selection of selections.value){selection.supplierFobUnitPrice='';selection.productFreightUnitPrice='';selection.cfrUnitPrice=''}
+ automaticTask.schedule(JSON.parse(JSON.stringify(offer.value)) as Offer)
+}
+let automaticActive=true
+async function ensureAutomaticCalculation(){
+ if(!isCompare.value)return true
+ const caseId=props.caseId
+ if(automaticError.value)queueAutomaticCalculation()
+ const ok=await automaticTask.flush()
+ if(!automaticActive||caseId!==props.caseId||!offer.value)return false
+ if(!ok){error.value=automaticError.value||t('inquiryWorkspace.offer.autoCalculationFailed');return false}
+ const issue=selections.value.map(s=>offerCalculationIssue(s,offer.value!.body,offer.value!.source)).find(Boolean)
+ if(issue){error.value=calculationIssueText(issue);return false}
+ if(selections.value.some(s=>!s.cfrUnitPrice)){error.value=t('inquiryWorkspace.offer.autoCalculationFailed');return false}
+ error.value='';return true
+}
+watch(()=>offer.value&&isCompare.value&&editable.value?props.caseId+automaticOfferInputKey(offer.value):'',queueAutomaticCalculation,{flush:'sync'})
+onBeforeUnmount(()=>{automaticActive=false;automaticTask.dispose()})
+
 function base64Workbook(value:string){const binary=atob(value),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}
 async function generateDocument(){if(!offer.value||busy.value||!canGenerateDocument.value)return;busy.value=true;error.value='';try{if(dirty.value){const body={...offer.value.body,categoryWorkflow:true};offer.value=prepare(await post<Offer>('/customer-offer',{action:'save',caseId:props.caseId,revision:offer.value.revision,body},quietErrors));savedBody.value=JSON.stringify(offer.value.body)}const file=await post<{fileName:string;fileData:string}>('/customer-offer',{action:'xlsx',caseId:props.caseId},quietErrors);saveBlob(base64Workbook(file.fileData),file.fileName);ElMessage.success(t('inquiryWorkspace.offer.documentGenerated'))}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.documentGenerateFailed');ElMessage.error(error.value)}finally{busy.value=false}}
 async function persist(stage:boolean){if(!offer.value||busy.value)return;if(stage&&customerRows.value.length){try{await ElMessageBox.confirm(t('inquiryWorkspace.offer.updateSelectionConfirm'),t('inquiryWorkspace.offer.updateSelectionTitle'),{confirmButtonText:t('inquiryWorkspace.offer.updateSelection'),cancelButtonText:t('inquiryWorkspace.offer.returnToReview'),type:'info'})}catch{return}}
+ if(!await ensureAutomaticCalculation()||busy.value||!offer.value)return
  busy.value=true;error.value='';try{const body={...offer.value.body,categoryWorkflow:true,pricingSnapshot:'',lines:offer.value.body.lines.map(l=>({...l,calculatedPrice:'',unitPrice:'',amount:''}))};offer.value=prepare(await post<Offer>('/customer-offer',{action:stage?'stage_selections':'save',caseId:props.caseId,revision:offer.value.revision,body},quietErrors));savedBody.value=JSON.stringify(offer.value.body);ElMessage.success(t(stage?'inquiryWorkspace.offer.staged':'inquiryWorkspace.offer.saved'));if(stage)emit('navigate','offer')}catch(e){error.value=(e as Error).message||t('inquiryWorkspace.offer.saveFailed');ElMessage.error(error.value)}finally{busy.value=false}}
-watch(()=>props.caseId,()=>{sequence++;productFreightChoices.value={};offer.value=null;savedBody.value='';busy.value=false;void refreshSources()},{immediate:true})
+watch(()=>props.caseId,()=>{sequence++;automaticTask.cancel();automaticError.value='';productFreightChoices.value={};offer.value=null;savedBody.value='';busy.value=false;void refreshSources()},{immediate:true})
 watch(()=>props.sourceVersion,()=>{void refreshSources()})
 </script>
 <style scoped>
@@ -356,4 +415,6 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .product-freight-prices span{min-width:0;overflow-wrap:anywhere;color:#607985}
 .product-freight-prices strong{flex-shrink:0;color:#176d82;font-variant-numeric:tabular-nums;white-space:nowrap}
 .product-freight-option{height:auto;min-height:34px;max-width:650px;white-space:normal;line-height:1.5;padding-top:7px;padding-bottom:7px;overflow-wrap:anywhere}
+.automatic-calculation-status{align-self:center;color:#176d82;font-size:12px;line-height:1.6;max-width:220px}
+.automatic-calculation-status.pending{color:#a18450}
 </style>
