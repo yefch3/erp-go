@@ -6,18 +6,20 @@
     <div class="section-tools"><el-input v-model="search" :placeholder="t('inquiryWorkspace.offer.searchPlaceholder')" clearable/><div class="category-visibility-tools"><el-checkbox v-model="showEmptyCategories">{{t('inquiryWorkspace.offer.showEmptyCategories')}}</el-checkbox><span>{{t('inquiryWorkspace.offer.toolHint')}}</span></div></div>
     <el-empty v-if="!visibleGroups.length" :description="t('inquiryWorkspace.offer.noSupplierCategories')" :image-size="70"/>
     <section v-for="group in visibleGroups" :key="group.value" class="workspace-card category-panel" :class="'category-'+group.value.toLowerCase()">
-     <div class="card-heading compact-category-heading"><div><span class="eyebrow">{{t('inquiryWorkspace.offer.supplierQuoteCategory')}}</span><div class="category-title"><h3>{{group.label}}</h3><el-tag size="small" effect="plain">{{group.currency}}</el-tag></div><p>{{t(group.value==='REPROCESSING_CNY'?'inquiryWorkspace.offer.processingCategoryHint':'inquiryWorkspace.offer.categoryHint')}}</p></div><div class="group-count"><span>{{t('inquiryWorkspace.offer.productQuoteCounts',{products:productGroupsFor(group.value).length,quotes:rowsFor(group.value).length})}}</span><el-tag size="small" effect="plain">{{t('inquiryWorkspace.offer.selectedChoiceCounts',{products:selectedProductCount(group.value),quotes:selectedCount(group.value)})}}</el-tag></div></div>
-     <div class="category-calculation fixed-category-calculation">
-      <div class="fixed-formula"><span>{{t('inquiryWorkspace.offer.fixedFormula')}}</span><strong>{{t(`inquiryWorkspace.offer.${formulaKey(group.value)}`)}}</strong><small>{{t(group.value==='DIRECT_CFR_USD'?'inquiryWorkspace.offer.directCalculationHint':'inquiryWorkspace.offer.categoryAutoCalculationHint')}}</small></div>
+     <div class="card-heading compact-category-heading compact-category-header">
+      <div class="compact-category-main">
+      <div class="compact-category-identity"><h3><el-popover trigger="click" placement="bottom-start" :width="560" :popper-style="{maxWidth:'calc(100vw - 32px)'}"><template #reference><el-button link class="category-formula-name" :title="t('inquiryWorkspace.offer.categoryFormulaHint')" :aria-label="`${group.label} · ${t('inquiryWorkspace.offer.viewFormula')}`">{{group.label}}</el-button></template><div class="compact-formula-content"><strong>{{t(`inquiryWorkspace.offer.${formulaKey(group.value)}`)}}</strong><p>{{t(group.value==='DIRECT_CFR_USD'?'inquiryWorkspace.offer.directCalculationHint':'inquiryWorkspace.offer.categoryAutoCalculationHint')}}</p></div></el-popover></h3></div>
       <div class="manual-inputs">
-       <label v-if="group.currency==='CNY'">{{t('inquiryWorkspace.offer.exchangeRate')}}<el-input v-model="categoryCalculation(group.value).quoteFx" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.exchangeRatePlaceholder')"/></label>
-       <label v-if="needsInlandFreight(group.value)">{{t('inquiryWorkspace.offer.productInlandFreightUnitPrice')}}<el-input v-model="categoryCalculation(group.value).inlandFreight" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
-       <label v-if="needsPortCharge(group.value)">{{t('inquiryWorkspace.offer.portChargeUnitPrice')}}<el-input v-model="categoryCalculation(group.value).portCharge" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
-       <label v-if="group.value==='REPROCESSING_CNY'">{{t('inquiryWorkspace.offer.lossUnitPrice')}}<el-input v-model="categoryCalculation(group.value).loss" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
-       <label>{{t('inquiryWorkspace.offer.annualInterestRate')}}<el-input v-model="categoryCalculation(group.value).interestRate" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.interestRatePlaceholder')"><template #append>%</template></el-input></label>
-       <label>{{t('inquiryWorkspace.offer.interestDays')}}<el-input v-model="categoryCalculation(group.value).interestDays" :disabled="!editable" inputmode="numeric" :placeholder="t('inquiryWorkspace.offer.interestDaysPlaceholder')"><template #append>{{t('inquiryWorkspace.offer.daysUnit')}}</template></el-input></label>
+       <label v-if="group.currency==='CNY'">{{t('inquiryWorkspace.offer.exchangeRate')}}<el-input v-model="categoryCalculation(group.value).quoteFx" size="small" :aria-label="t('inquiryWorkspace.offer.exchangeRate')" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'8.5'})" :title="t('inquiryWorkspace.offer.exchangeRatePlaceholder')"/></label>
+       <label v-if="needsInlandFreight(group.value)">{{t('inquiryWorkspace.offer.compactInlandFreight')}}<el-input v-model="categoryCalculation(group.value).inlandFreight" size="small" :aria-label="t('inquiryWorkspace.offer.productInlandFreightUnitPrice')" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'0'})" :title="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
+       <label v-if="needsPortCharge(group.value)">{{t('inquiryWorkspace.offer.compactPortCharge')}}<el-input v-model="categoryCalculation(group.value).portCharge" size="small" :aria-label="t('inquiryWorkspace.offer.portChargeUnitPrice')" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'0'})" :title="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
+       <label v-if="group.value==='REPROCESSING_CNY'">{{t('inquiryWorkspace.offer.compactLoss')}}<el-input v-model="categoryCalculation(group.value).loss" size="small" :aria-label="t('inquiryWorkspace.offer.lossUnitPrice')" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'0'})" :title="t('inquiryWorkspace.offer.cnyPerUnit')"/></label>
+       <label>{{t('inquiryWorkspace.offer.annualInterestRate')}}<el-input v-model="categoryCalculation(group.value).interestRate" class="interest-rate-input" size="small" :aria-label="t('inquiryWorkspace.offer.annualInterestRate')" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'6'})" :title="t('inquiryWorkspace.offer.interestRatePlaceholder')"><template #append>%</template></el-input></label>
+       <label>{{t('inquiryWorkspace.offer.interestDays')}}<el-input v-model="categoryCalculation(group.value).interestDays" class="interest-days-input" size="small" :aria-label="t('inquiryWorkspace.offer.interestDays')" :disabled="!editable" inputmode="numeric" :placeholder="t('inquiryWorkspace.offer.parameterExample',{value:'60'})" :title="t('inquiryWorkspace.offer.interestDaysPlaceholder')"><template #append>{{t('inquiryWorkspace.offer.daysUnit')}}</template></el-input></label>
       </div>
-      <span class="automatic-calculation-status" role="status" aria-live="polite" :class="{'pending':categoryCalculationIssue(group.value)||automaticError}">{{categoryCalculationStatus(group.value)}}</span>
+      </div>
+      <div class="group-count compact-quote-count" :title="`${t('inquiryWorkspace.offer.productQuoteCounts',{products:productGroupsFor(group.value).length,quotes:rowsFor(group.value).length})} · ${t('inquiryWorkspace.offer.selectedChoiceCounts',{products:selectedProductCount(group.value),quotes:selectedCount(group.value)})}`">{{t('inquiryWorkspace.offer.compactQuoteCounts',{products:productGroupsFor(group.value).length,quotes:rowsFor(group.value).length,selected:selectedCount(group.value)})}}</div>
+      <span v-if="categoryCalculationStatus(group.value)" class="automatic-calculation-status" role="status" aria-live="polite" :class="{'pending':categoryCalculationIssue(group.value)||automaticError}">{{categoryCalculationStatus(group.value)}}</span>
      </div>
      <el-table :data="productGroupsFor(group.value)" class="quote-table comparison-table product-group-table" row-key="key" table-layout="fixed" :empty-text="t(search?'inquiryWorkspace.offer.noSearchMatch':'inquiryWorkspace.offer.categoryNoQuotes')" :row-class-name="({row}:any)=>groupSelected(row)?'selected-row':''">
       <el-table-column type="expand" width="46">
@@ -293,11 +295,11 @@ function calculationIssueText(issue:string){
 }
 function categoryCalculationIssue(category:string){return selections.value.filter(s=>s.category===category).map(s=>offerCalculationIssue(s,offer.value!.body,offer.value!.source)).find(Boolean)}
 function categoryCalculationStatus(category:string){
- if(!selectedCount(category))return t('inquiryWorkspace.offer.autoCalculationIdle')
+ if(!selectedCount(category))return''
  const issue=categoryCalculationIssue(category)
  if(issue)return calculationIssueText(issue)
  if(automaticPending.value)return t('inquiryWorkspace.offer.autoCalculating')
- return automaticError.value||t('inquiryWorkspace.offer.autoCalculated')
+ return automaticError.value||''
 }
 function candidateCfrText(row:Candidate,unitPriceOnly=false){
  const selection=selectionFor(row);if(!selection||!offer.value)return'—'
@@ -424,4 +426,24 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .category-visibility-tools>span{font-size:12px;color:var(--muted)}
 .category-visibility-tools .el-checkbox{flex-shrink:0;margin-right:0}
 @media(max-width:700px){.compare-mode .section-tools{flex-wrap:wrap;gap:8px}.category-visibility-tools{justify-content:flex-start}.category-visibility-tools>span{display:none}}
+.compare-mode .compact-category-header{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:8px 6px;padding:10px 14px}
+.compact-category-identity{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.compare-mode .compact-category-header h3{margin:0;font-size:14px;line-height:24px}
+.compare-mode .compact-category-header .manual-inputs{display:contents}
+.compare-mode .compact-category-header .manual-inputs>label{display:flex;flex-shrink:0;align-items:center;gap:4px;margin:0;font-size:11px;white-space:nowrap;color:#536f7d}
+.compare-mode .compact-category-header .manual-inputs .el-input{width:80px;--el-input-height:24px;font-size:12px}
+.compare-mode .compact-category-header .manual-inputs :deep(.el-input__wrapper){min-height:24px;padding:0 6px}
+.compare-mode .compact-category-header .manual-inputs :deep(.el-input-group__append){padding:0 5px;font-size:11px}
+.compare-mode .compact-category-header .category-formula-name{height:24px;font-size:14px;font-weight:700;color:#173f52;text-decoration:underline dotted;text-underline-offset:4px}
+.compare-mode .compact-category-header .group-count{margin-left:auto;gap:6px;font-size:11px;flex-wrap:wrap;white-space:normal}
+.compare-mode .compact-category-header .group-count :deep(.el-tag){font-size:11px}
+.compare-mode .compact-category-header .automatic-calculation-status{max-width:none;font-size:11px}
+.compact-formula-content{font-size:12px;line-height:1.7;color:#365c6e}
+.compact-formula-content>strong{display:block;font-size:13px}
+.compact-formula-content>p{margin:6px 0 0;color:#70838e}
+@media(max-width:700px){.compare-mode .compact-category-header{gap:8px;padding:10px}.compare-mode .compact-category-header .group-count{margin-left:0}}
+.compare-mode .compact-category-header .compact-quote-count{flex-shrink:0;white-space:nowrap;color:#70828d;font-size:10px}
+.compare-mode .compact-category-header .manual-inputs .interest-rate-input{width:80px}
+.compare-mode .compact-category-header .manual-inputs .interest-days-input{width:88px}
+.compact-category-main{display:flex;align-items:center;flex-wrap:wrap;gap:6px 5px;max-width:100%;min-width:0}
 </style>
