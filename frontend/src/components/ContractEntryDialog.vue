@@ -24,6 +24,7 @@
    </template>
   </el-form>
   <template v-if="!history">
+  <ContractPartiesFields :model-value="form" @update:model-value="Object.assign(form,$event)" />
   <div class="lines-heading"><strong>客户成交明细</strong><div><el-button link type="primary" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button link type="primary" @click="addLine">添加产品</el-button></div></div>
   <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]" :editable="!busy">
   <el-table :data="form.items" border max-height="340">
@@ -57,12 +58,14 @@ import ContractLineImportDialog from './ContractLineImportDialog.vue'
 import type {ContractImportLine} from '../lib/contractLineImport'
 import ContractOperationButton from './ContractOperationButton.vue'
 import ColumnFillRegion from './ColumnFillRegion.vue'
+import ContractPartiesFields from './ContractPartiesFields.vue'
+import {emptyContractParties,buyerFromCustomer} from '../lib/contractParties'
 const {t}=useI18n()
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
 type Line={productId:string;productName:string;spec:string;qty:string;uomCode:string;unitPrice:string}
-const initial=()=>({totalAmount:'',historyStatus:'EXECUTING',customerId:'',customerName:'',currency:'USD',externalContractNo:'',signedDate:'',effectiveDate:'',takeoverDate:'',deliveryDate:'',receivableDueDate:'',incoterm:'FOB',paymentMethod:'',portOfLoading:'',portOfDischarge:'',terms:'',signedFileKey:'',signedFileName:'',items:[] as Line[]})
+const initial=()=>({...emptyContractParties(),totalAmount:'',historyStatus:'EXECUTING',customerId:'',customerName:'',currency:'USD',externalContractNo:'',signedDate:'',effectiveDate:'',takeoverDate:'',deliveryDate:'',receivableDueDate:'',incoterm:'FOB',paymentMethod:'',portOfLoading:'',portOfDischarge:'',terms:'',signedFileKey:'',signedFileName:'',items:[] as Line[]})
 const form=reactive(initial()),busy=ref(false),customers=ref<any[]>([]),draftId=ref(''),revision=ref(0),file=ref<File|null>(null),fileInput=ref<HTMLInputElement|null>(null),drafts=ref<{id:string;revision:number;body:ReturnType<typeof initial>;updatedAt:string}[]>([])
 const importOpen=ref(false),entryError=ref('')
 function showEntryError(error:unknown){if(isDialogDismissed(error))return;entryError.value=error&&typeof error==='object'&&'message' in error?String(error.message):'操作失败，请稍后重试；已填写的资料仍保留。'}
@@ -72,7 +75,16 @@ function addLine(){form.items.push({productId:'0',productName:'',spec:'',qty:'',
 function amount(l:Line){return contractLineAmount(l)}
 const total=computed(()=>contractTotal(form.items))
 async function searchCustomers(keyword:string){try{customers.value=(await get<{customers:any[]}>('/customers',{keyword,page_size:50},quietErrors)).customers||[]}catch(error){showEntryError(error)}}
-function selectCustomer(){const c=customers.value.find(c=>String(c.id)===form.customerId);form.customerName=c?customerOptionLabel(c):''}
+let selectedCustomerId='',lastBuyer=buyerFromCustomer()
+async function selectCustomer(){
+ const id=form.customerId,c=customers.value.find(c=>String(c.id)===id)
+ if(!props.history&&selectedCustomerId&&id!==selectedCustomerId&&(form.buyerName!==lastBuyer.buyerName||form.buyerAddress!==lastBuyer.buyerAddress)&&(form.buyerName.trim()||form.buyerAddress.trim())){
+  try{await ElMessageBox.confirm('切换客户将重新带入买方抬头和地址，替换本合同中已修改的买方信息。是否继续？','切换签约客户',{confirmButtonText:'切换客户',cancelButtonText:'保留当前客户'})}catch{form.customerId=selectedCustomerId;return}
+ }
+ selectedCustomerId=id;form.customerName=c?customerOptionLabel(c):''
+ if(!props.history){lastBuyer=buyerFromCustomer(c);Object.assign(form,lastBuyer)}
+}
+async function loadEntryDefaults(){const defaults=await get<{sellerName:string;sellerAddress:string}>('/contracts/entry-defaults',undefined,quietErrors);if(!visible.value)return;if(!form.sellerName)form.sellerName=defaults.sellerName||'';if(!form.sellerAddress)form.sellerAddress=defaults.sellerAddress||''}
 function pickFile(e:Event){file.value=(e.target as HTMLInputElement).files?.[0]||null}
 async function uploadFile(){if(!file.value)return;const f=file.value;const signed=await post<{fileKey:string;uploadUrl:string}>('/contracts/existing/files/presign',{fileName:f.name,contentType:f.type||'application/pdf'},quietErrors);const r=await fetch(signed.uploadUrl,{method:'PUT',headers:{'Content-Type':f.type||'application/pdf'},body:f});if(!r.ok)throw new Error('签署文件上传失败');form.signedFileKey=signed.fileKey;form.signedFileName=f.name;file.value=null}
 async function loadDrafts(){drafts.value=await post('/contract-history-drafts',{action:'history_list'},quietErrors)}
@@ -80,7 +92,7 @@ function openDraft(id:string){const d=drafts.value.find(d=>d.id===id);if(!d||bus
 async function persistDraft(){await uploadFile();const d=await post<{id:string;revision:number;contractId?:string}>('/contract-history-drafts',{action:'history_save',id:Number(draftId.value||0),revision:revision.value,data:form},quietErrors);draftId.value=d.id;revision.value=d.revision;return d.contractId}
 async function saveHistoryDraft(){if(busy.value)return;busy.value=true;entryError.value='';try{const linked=await persistDraft();if(linked){visible.value=false;emit('saved',linked);ElMessage.info('此草稿已接入，已打开原合同；未覆盖原合同资料');return}await loadDrafts();ElMessage.success('历史合同草稿已保存')}catch(error){showEntryError(error)}finally{busy.value=false}}
 async function removeDraft(){if(busy.value)return;busy.value=true;entryError.value='';try{await ElMessageBox.confirm('删除这份未接入的历史草稿？删除后无法恢复。','删除草稿',{type:'warning'});await post('/contract-history-drafts',{action:'history_delete',id:Number(draftId.value),revision:revision.value},quietErrors);Object.assign(form,initial());draftId.value='';revision.value=0;addLine();await loadDrafts()}catch(error){showEntryError(error)}finally{busy.value=false}}
-function payload(){return{customerId:form.customerId,currency:form.currency,externalContractNo:form.externalContractNo,terms:{incoterm:form.incoterm,paymentMethod:form.paymentMethod,portOfLoading:form.portOfLoading,portOfDischarge:form.portOfDischarge,deliveryDate:form.deliveryDate,receivableDueDate:form.receivableDueDate,terms:form.terms},items:form.items}}
+function payload(){return{customerId:form.customerId,currency:form.currency,externalContractNo:form.externalContractNo,terms:{buyerName:form.buyerName,buyerAddress:form.buyerAddress,sellerName:form.sellerName,sellerAddress:form.sellerAddress,incoterm:form.incoterm,paymentMethod:form.paymentMethod,portOfLoading:form.portOfLoading,portOfDischarge:form.portOfDischarge,deliveryDate:form.deliveryDate,receivableDueDate:form.receivableDueDate,terms:form.terms},items:form.items}}
 async function save(){
  if(busy.value)return
  if(!props.history&&(!form.customerId||!form.items.length||form.items.some(l=>!l.productName.trim()||!l.uomCode.trim()||!Number.isFinite(Number(l.qty))||Number(l.qty)<=0||!l.unitPrice.trim()||!Number.isFinite(Number(l.unitPrice))||Number(l.unitPrice)<0))){ElMessage.warning('请选择客户，并填写完整的产品、单位、数量及对客单价');return}
@@ -95,7 +107,7 @@ async function save(){
   idem.reset();visible.value=false;emit('saved',result.contract.id);ElMessage.success(props.history?'历史合同已保存':'合同草稿已建立')
  }catch(error){showEntryError(error)}finally{busy.value=false}
 }
-watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryError.value='';try{Object.assign(form,initial());draftId.value='';revision.value=0;file.value=null;idem.reset();addLine();await searchCustomers('');if(props.history)await loadDrafts()}catch(error){showEntryError(error)}})
+watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryError.value='';try{Object.assign(form,initial());selectedCustomerId='';lastBuyer=buyerFromCustomer();draftId.value='';revision.value=0;file.value=null;idem.reset();addLine();await searchCustomers('');if(props.history)await loadDrafts();else await loadEntryDefaults()}catch(error){showEntryError(error)}})
 </script>
 <style scoped>
 .entry-error{margin-top:12px}.entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:18px}.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}.file-name{margin-left:12px;overflow-wrap:anywhere}.file-hint{flex-basis:100%;margin-top:6px}.entry-form :deep(.el-select),.entry-form :deep(.el-date-editor){width:100%}.lines-heading,.drafts{display:flex;align-items:center;gap:12px;margin:16px 0}.lines-heading{justify-content:space-between}.entry-total{text-align:right;font-weight:600;margin:14px 0}small{display:block;font-size:12px;color:#64748b;line-height:1.6}@media(max-width:760px){.entry-form{grid-template-columns:1fr 1fr}.drafts{flex-wrap:wrap}}@media(max-width:480px){.entry-form{grid-template-columns:1fr}}

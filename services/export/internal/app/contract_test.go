@@ -14,6 +14,7 @@ func view(contractStatus, versionStatus, deliveryDate string, lines int) Contrac
 	return ContractView{
 		Contract: store.GetContractRow{ID: 7, ContractNo: "CT-202607-0001", Status: contractStatus},
 		Version: store.GetContractVersionRow{
+			BuyerName: "Buyer", BuyerAddress: "Buyer address", SellerName: "Seller", SellerAddress: "Seller address",
 			ID: 3, VersionNo: 1, Status: versionStatus,
 			DeliveryDate: deliveryDate, Currency: "EUR", TotalAmount: "6450.00",
 		},

@@ -49,6 +49,9 @@ func (s *Service) ContractWorkflow(ctx context.Context, tenant int64, cmd Workfl
 	if err := s.RequireAnyPermission(ctx, permission); err != nil {
 		return nil, err
 	}
+	if cmd.Action == "entry_defaults" {
+		return map[string]string{"sellerName": strings.TrimSpace(s.seller.Name), "sellerAddress": strings.TrimSpace(s.seller.Address)}, nil
+	}
 	if cmd.Action != "get" && cmd.Action != "handoff_get" && !strings.HasPrefix(cmd.Action, "history_") && strings.TrimSpace(cmd.Reason) == "" {
 		return nil, apierr.Invalid("EX_ACTION_REASON", "请填写操作原因或核对说明")
 	}

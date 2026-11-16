@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -330,9 +331,9 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		}
 		rows, err := q.UpdateContractVersion(ctx, store.UpdateContractVersionParams{
 			TenantID: tenantID, ID: view.Version.ID,
-			BuyerName:     orDefault(terms.BuyerName, view.Version.BuyerName),
+			BuyerName:     strings.TrimSpace(terms.BuyerName),
 			BuyerAddress:  terms.BuyerAddress,
-			SellerName:    orDefault(terms.SellerName, view.Version.SellerName),
+			SellerName:    strings.TrimSpace(terms.SellerName),
 			SellerAddress: terms.SellerAddress,
 			Incoterm:      orDefault(terms.Incoterm, view.Version.Incoterm),
 			PortOfLoading: terms.PortOfLoading, PortOfDischarge: terms.PortOfDischarge,
@@ -349,8 +350,8 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		}
 		// A countersigned file proves the pre-edit document, not new commercial terms.
 		if view.Contract.EntrySource == "STANDARD" && (len(items) > 0 ||
-			orDefault(terms.BuyerName, view.Version.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
-			orDefault(terms.SellerName, view.Version.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
+			strings.TrimSpace(terms.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
+			strings.TrimSpace(terms.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
 			orDefault(terms.Incoterm, view.Version.Incoterm) != view.Version.Incoterm || terms.PortOfLoading != view.Version.PortOfLoading ||
 			terms.PortOfDischarge != view.Version.PortOfDischarge || terms.PaymentMethod != view.Version.PaymentMethod ||
 			terms.DeliveryDate != view.Version.DeliveryDate || terms.Text != view.Version.Terms) {

@@ -17,7 +17,7 @@ type Config struct {
 	// 那本唯一的银行流水账在采购服务手上（F2）。收款对账的每一次读写都要
 	// 经过它，所以这个地址配错，收款对账整页打不开——不是少几行，是打不开。
 	ProcurementAddr string
-	KafkaBrokers   []string
+	KafkaBrokers    []string
 	// Topic approval decisions arrive on, and the group export reads it as.
 	ApprovalTopic string
 	ConsumerGroup string
@@ -69,8 +69,8 @@ func Load() Config {
 		MinioBucket:         env("MINIO_BUCKET", "erp-files"),
 		MinioRegion:         env("MINIO_REGION", "us-east-1"),
 		MinioUseSSL:         env("MINIO_USE_SSL", "") == "true",
-		SellerName:          env("SELLER_NAME", "宁波诺德进出口有限公司"),
-		SellerAddress:       env("SELLER_ADDRESS", "浙江省宁波市鄞州区天童南路 999 号"),
+		SellerName:          strings.TrimSpace(os.Getenv("SELLER_NAME")),
+		SellerAddress:       strings.TrimSpace(os.Getenv("SELLER_ADDRESS")),
 	}
 }
 
