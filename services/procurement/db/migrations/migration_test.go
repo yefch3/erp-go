@@ -64,6 +64,7 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "purchase_execution_inquiry_files", true)
 	assertProcurementTable(t, db, "purchase_order_execution_files", true)
 	assertProcurementTable(t, db, "purchase_order_draft_files", true)
+	assertPaymentTermsText(t, db)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "export_contract_no", true)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "destination_port", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
@@ -96,6 +97,23 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "daily_price_dimensions", true)
 	assertProcurementTable(t, db, "daily_base_prices", true)
 	assertProcurementTable(t, db, "daily_basis_spreads", true)
+	assertPaymentTermsText(t, db)
+}
+
+func assertPaymentTermsText(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, field := range []struct{ table, column string }{
+		{"sourcing_lines", "payment_terms"},
+		{"supplier_quotes", "payment_terms"},
+		{"procurement_plan_items", "payment_terms"},
+		{"sourcing_final_recheck_tasks", "final_payment_terms"},
+		{"sourcing_customer_selection_items", "final_customer_payment_terms"},
+		{"purchase_requirements", "source_payment_terms"},
+		{"purchase_orders", "payment_terms"},
+		{"purchase_execution_supplier_quotes", "payment_terms"},
+	} {
+		assertProcurementColumnType(t, db, field.table, field.column, "text")
+	}
 }
 
 func assertProcurementTable(t *testing.T, db *sql.DB, name string, want bool) {
