@@ -1,5 +1,5 @@
 <template>
- <el-dialog v-model="visible" :title="history?'补录历史合同':'新建合同'" :width="history?'min(720px,96vw)':'min(1100px,96vw)'" top="4vh" :close-on-click-modal="false">
+ <el-dialog v-model="visible" class="contract-entry-dialog" :title="history?'补录历史合同':'新建合同'" :width="history?'min(720px,96vw)':'min(1100px,96vw)'" top="4vh" :close-on-click-modal="false">
   <el-alert :closable="false" show-icon :title="history?'保存原合同资料和附件，无需重复录入产品明细。合同金额仅作记录，不代表未收款金额。':'只填写客户成交信息。合同经上级确认、签署及财务放行后，进入正常采购和物流实单流程。'"/>
   <div v-if="history&&drafts.length" class="drafts"><span>继续填写历史草稿</span><el-select placeholder="选择已保存草稿" @change="openDraft" style="width:320px"><el-option v-for="d in drafts" :key="d.id" :value="d.id" :label="`${d.body.externalContractNo||'未填原合同号'} · ${d.body.customerName||'未选客户'} · ${d.updatedAt.slice(0,16)}`"/></el-select><el-button v-if="draftId" type="danger" link @click="removeDraft">删除当前草稿</el-button></div>
   <el-alert v-if="entryError" class="entry-error" type="error" show-icon :closable="false" :title="entryError"/>
@@ -15,16 +15,18 @@
    <template v-else>
    <el-form-item label="客户合同币种" required><el-select v-model="form.currency"><el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c"/></el-select></el-form-item>
    <el-form-item label="原／客户合同号"><el-input v-model="form.externalContractNo"/></el-form-item>
+   </template>
+  </el-form>
+  <ContractPartiesFields v-if="!history" :model-value="form" @update:model-value="Object.assign(form,$event)" />
+  <el-form v-if="!history" label-position="top" class="entry-form">
    <el-form-item :label="t('contractRepair.deliveryLabel')"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
    <el-form-item label="贸易条款"><el-select v-model="form.incoterm" filterable allow-create default-first-option><el-option v-for="v in ['FOB','CFR','CIF','EXW','FCA','DAP','DDP']" :key="v" :value="v" :label="v"/></el-select></el-form-item>
    <el-form-item label="付款条件"><el-input v-model="form.paymentMethod" placeholder="按客户合同填写"/></el-form-item>
    <el-form-item label="应收到账日"><el-date-picker v-model="form.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable/></el-form-item>
    <el-form-item label="装运港"><el-input v-model="form.portOfLoading"/></el-form-item>
    <el-form-item label="目的港"><el-input v-model="form.portOfDischarge"/></el-form-item>
-   </template>
   </el-form>
   <template v-if="!history">
-  <ContractPartiesFields :model-value="form" @update:model-value="Object.assign(form,$event)" />
   <div class="lines-heading"><strong>客户成交明细</strong><div><el-button link type="primary" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button link type="primary" @click="addLine">添加产品</el-button></div></div>
   <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]" :editable="!busy">
   <el-table :data="form.items" border max-height="340">
@@ -110,5 +112,8 @@ async function save(){
 watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryError.value='';try{Object.assign(form,initial());selectedCustomerId='';lastBuyer=buyerFromCustomer();draftId.value='';revision.value=0;file.value=null;idem.reset();addLine();await searchCustomers('');if(props.history)await loadDrafts();else await loadEntryDefaults()}catch(error){showEntryError(error)}})
 </script>
 <style scoped>
+:global(.contract-entry-dialog.el-dialog){display:flex;flex-direction:column;max-height:92vh}
+:global(.contract-entry-dialog .el-dialog__body){overflow-y:auto;min-height:0;padding-right:8px}
+:global(.contract-entry-dialog .el-dialog__header),:global(.contract-entry-dialog .el-dialog__footer){flex-shrink:0}
 .entry-error{margin-top:12px}.entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:18px}.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}.file-name{margin-left:12px;overflow-wrap:anywhere}.file-hint{flex-basis:100%;margin-top:6px}.entry-form :deep(.el-select),.entry-form :deep(.el-date-editor){width:100%}.lines-heading,.drafts{display:flex;align-items:center;gap:12px;margin:16px 0}.lines-heading{justify-content:space-between}.entry-total{text-align:right;font-weight:600;margin:14px 0}small{display:block;font-size:12px;color:#64748b;line-height:1.6}@media(max-width:760px){.entry-form{grid-template-columns:1fr 1fr}.drafts{flex-wrap:wrap}}@media(max-width:480px){.entry-form{grid-template-columns:1fr}}
 </style>
