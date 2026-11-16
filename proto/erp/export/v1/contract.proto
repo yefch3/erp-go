@@ -219,6 +219,7 @@ message ContractVersion {
   // DRAFT / PENDING_APPROVAL / APPROVED / SUPERSEDED
   string status = 19;
   string created_at = 20;
+  optional string customer_contact = 21;
 }
 
 message Contract {
@@ -279,6 +280,7 @@ message ContractTerms {
   // 合同主表，不落版本表**——版本表审批后冻结，到期日要能事后改。
   string receivable_due_date = 11;
   string terms = 10;
+  string customer_contact = 12;
 }
 
 message ListContractsRequest {

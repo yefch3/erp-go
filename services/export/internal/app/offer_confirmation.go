@@ -106,7 +106,7 @@ func (s *Service) confirmOffer(ctx context.Context, op grpcx.Operator, id int64,
 		if err != nil {
 			return err
 		}
-		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{TenantID: op.TenantID, ContractID: contractID, VersionNo: 1, BuyerName: b.Customer, SellerName: s.seller.Name, SellerAddress: s.seller.Address, Currency: b.Currency, Incoterm: b.Incoterm, PortOfLoading: b.LoadingPort, PortOfDischarge: b.DestinationPort, PaymentMethod: b.Payment, DeliveryDate: b.Delivery, Terms: b.Remark, TotalAmount: b.Total, BaseAmount: baseAmount, FxRate: rate.StringFixed(8), FxRateAt: tsFrom(at), FxSource: "MANUAL_EFFECTIVE", FxBaseCurrency: "USD", CreatedBy: op.EmployeeID})
+		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{TenantID: op.TenantID, ContractID: contractID, VersionNo: 1, CustomerContact: contactSnapshot(b.Contact), BuyerName: b.Customer, SellerName: s.seller.Name, SellerAddress: s.seller.Address, Currency: b.Currency, Incoterm: b.Incoterm, PortOfLoading: b.LoadingPort, PortOfDischarge: b.DestinationPort, PaymentMethod: b.Payment, DeliveryDate: b.Delivery, Terms: b.Remark, TotalAmount: b.Total, BaseAmount: baseAmount, FxRate: rate.StringFixed(8), FxRateAt: tsFrom(at), FxSource: "MANUAL_EFFECTIVE", FxBaseCurrency: "USD", CreatedBy: op.EmployeeID})
 		if err != nil {
 			return err
 		}

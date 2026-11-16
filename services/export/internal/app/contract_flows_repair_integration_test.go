@@ -138,6 +138,7 @@ func TestCategoryOfferContractLifecycle(t *testing.T) {
 	}
 	owner := Operator{ID: 1, Name: "Sales"}
 	sales := grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenant, EmployeeID: 1, Name: "Sales"})
+	completeDraftParties(t, svc, sales, tenant, id)
 	if _, _, err = svc.SubmitContract(sales, tenant, id, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -203,6 +204,7 @@ func TestDirectContractRepairLifecycle(t *testing.T) {
 	if err != nil || len(files) != 1 || files[0].Row.Kind != "STALE_SIGNED" {
 		t.Fatal("old evidence not retained", files, err)
 	}
+	completeDraftParties(t, svc, ctx, tenant, id)
 	if _, _, err = svc.SubmitContract(ctx, tenant, id, op); err != nil {
 		t.Fatal(err)
 	}

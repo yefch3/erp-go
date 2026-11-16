@@ -84,7 +84,7 @@
         </div>
 
         <div class="edit-form-section">
-          <div class="edit-form-title">签约双方</div>
+          <div class="edit-form-title">合同双方信息</div>
           <div class="edit-form-grid">
             <el-form-item :label="t('contracts.buyer')">
               <el-input v-model="existingEditForm.buyerName" />
@@ -142,6 +142,10 @@
     <el-drawer v-model="detailOpen" size="min(1140px,100vw)" class="contract-workspace">
       <template #header><span class="contract-drawer-title">{{ detail?.contract.contractNo ?? '' }}</span></template>
       <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
+        <el-alert v-if="editable && missingContractParties(detail.version).length" type="warning" :closable="false" show-icon style="margin-bottom:14px">
+          <template #title>提交前请补全：{{missingContractParties(detail.version).join('、')}}</template>
+          <el-button link type="primary" @click="openTerms">补全合同双方信息</el-button>
+        </el-alert>
         <div class="detail-head">
           <div class="detail-statuses">
             <el-tag :type="statusType(detail.contract.status)">
@@ -249,7 +253,7 @@
         <el-descriptions :column="2" border size="small" class="desc">
           <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="合同金额">{{detail.version.totalAmount}} {{detail.version.currency}}</el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="签订日期">{{detail.contract.signedAt?.slice(0,10)}}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{(detail.version.customerContact??acceptedOffer?.contact)||'—'}}</el-descriptions-item>
           <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.buyer')">
             {{ detail.version.buyerName }}
@@ -643,21 +647,11 @@
 
     <!-- Edit the working draft: terms and lines -->
     <el-dialog v-model="termsOpen" :title="t('contracts.editDraft')" width="min(860px,94vw)">
+      <ContractPartiesFields :model-value="termsForm" @update:model-value="Object.assign(termsForm,$event)" />
       <el-form label-width="110px">
         <div class="grid">
+          <el-form-item label="客户联系人"><el-input v-model="termsForm.customerContact" placeholder="按本合同填写联系人" /></el-form-item>
           <el-form-item label="原合同号"><el-input v-model="termsForm.externalContractNo"/></el-form-item>
-        <el-form-item :label="t('contracts.buyer')">
-            <el-input v-model="termsForm.buyerName" />
-          </el-form-item>
-          <el-form-item :label="t('contracts.seller')">
-            <el-input v-model="termsForm.sellerName" />
-          </el-form-item>
-          <el-form-item :label="t('contracts.buyerAddress')">
-            <el-input v-model="termsForm.buyerAddress" />
-          </el-form-item>
-          <el-form-item :label="t('contracts.sellerAddress')">
-            <el-input v-model="termsForm.sellerAddress" />
-          </el-form-item>
           <el-form-item :label="t('contracts.incoterm')">
             <el-select v-model="termsForm.incoterm" style="width: 100%">
               <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
@@ -836,13 +830,15 @@ import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import ContractHandoffPlan from '../components/ContractHandoffPlan.vue'
 import { shippingStatusLabel } from '../shipping'
 import ContractEntryDialog from '../components/ContractEntryDialog.vue'
+import ContractPartiesFields from '../components/ContractPartiesFields.vue'
+import {missingContractParties} from '../lib/contractParties'
 import ContractOperationButton from '../components/ContractOperationButton.vue'
 import ContractWorkflowPanel from '../components/ContractWorkflowPanel.vue'
 import {contractItemPayload} from '../lib/contractItem'
 import {parseContractOfferSnapshot} from '../lib/contractOfferSnapshot'
 import {isPendingContractChange,contractVersionPresentation} from '../lib/contractVersionPresentation'
 import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -890,6 +886,7 @@ interface Contract {
   filePending: boolean
 }
 interface Version {
+  customerContact?: string
   id: string
   versionNo: number
   buyerName: string
@@ -1427,6 +1424,7 @@ const termsOpen = ref(false)
 const changeOpen = ref(false)
 
 const termsForm = reactive({
+  customerContact:'',
   buyerName: '', buyerAddress: '', sellerName: '', sellerAddress: '',
   incoterm: 'FOB', portOfLoading: '', portOfDischarge: '', paymentMethod: '',
   externalContractNo:'', deliveryDate: '', receivableDueDate: '', terms: '', items: [] as ChangeLine[],
@@ -1549,6 +1547,7 @@ function selectContractProduct(row:ChangeLine,product:Product){
 function openTerms() {
   const v = detail.value!.version
   Object.assign(termsForm, {
+    customerContact:v.customerContact??acceptedOffer.value?.contact??'',
     externalContractNo:detail.value!.contract.externalContractNo||'',
     buyerName: v.buyerName, buyerAddress: v.buyerAddress,
     sellerName: v.sellerName, sellerAddress: v.sellerAddress,
@@ -1809,12 +1808,27 @@ async function saveChange() {
   }
 }
 
+const submitting=ref(false)
 async function submit(row: { id: string }) {
-  if(detail.value?.contract.id===row.id&&!detail.value.version.deliveryDate){ElMessage.warning(t('contractRepair.deliveryRequired'));openTerms();return}
-  await post(`/contracts/${row.id}/submit`)
-  ElMessage.success(t('contracts.submitted'))
-  if (detailOpen.value) await openDetail(row.id)
-  load()
+  if(submitting.value)return
+  submitting.value=true
+  try{
+    const current=await get<Detail>(`/contracts/${row.id}`)
+    const missing=missingContractParties(current.version)
+    if(missing.length||!current.version.deliveryDate){
+      detail.value=current;detailOpen.value=true
+      ElMessage.warning(missing.length?`提交前请补全：${missing.join('、')}`:t('contractRepair.deliveryRequired'))
+      openTerms();return
+    }
+    const v=current.version
+    const fields=[['买方公司名称',v.buyerName],['买方公司地址',v.buyerAddress],['卖方公司名称',v.sellerName],['卖方公司地址',v.sellerAddress]]
+    try{await ElMessageBox.confirm(h('div',fields.map(([label,value])=>h('p',{style:'margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere'},[h('strong',`${label}：`),value]))),'核对合同双方信息后提交',{confirmButtonText:'确认并提交上级',cancelButtonText:'返回检查',customStyle:{width:'600px',maxWidth:'94vw'}})}catch{return}
+    await post(`/contracts/${row.id}/submit`)
+    ElMessage.success(t('contracts.submitted'))
+    if(detailOpen.value)await openDetail(row.id)
+    await load()
+  }catch{/* API errors are displayed by the interceptor; keep the draft open. */}
+  finally{submitting.value=false}
 }
 
 async function sign(row: { id: string }) {

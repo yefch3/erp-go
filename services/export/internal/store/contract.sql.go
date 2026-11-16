@@ -433,7 +433,7 @@ INSERT INTO contract_versions (
     seller_name, seller_address, currency, incoterm,
     port_of_loading, port_of_discharge, payment_method,
     delivery_date, terms, total_amount, base_amount,
-    fx_rate, fx_rate_at, fx_source, fx_base_currency, change_reason, created_by
+    fx_rate, fx_rate_at, fx_source, fx_base_currency, change_reason, created_by, customer_contact
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -456,7 +456,8 @@ INSERT INTO contract_versions (
     $19::text,
     $20::text,
     $21::text,
-    $22::bigint
+    $22::bigint,
+    $23::text
 )
 RETURNING id
 `
@@ -484,6 +485,7 @@ type CreateContractVersionParams struct {
 	FxBaseCurrency  string
 	ChangeReason    string
 	CreatedBy       int64
+	CustomerContact *string
 }
 
 func (q *Queries) CreateContractVersion(ctx context.Context, arg CreateContractVersionParams) (int64, error) {
@@ -510,6 +512,7 @@ func (q *Queries) CreateContractVersion(ctx context.Context, arg CreateContractV
 		arg.FxBaseCurrency,
 		arg.ChangeReason,
 		arg.CreatedBy,
+		arg.CustomerContact,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -779,7 +782,7 @@ SELECT
     coalesce(delivery_date::text, '')::text AS delivery_date, terms,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
-    change_reason, status, created_at, created_by
+    change_reason, status, created_at, created_by, customer_contact
 FROM contract_versions
 WHERE tenant_id = $1 AND id = $2
 `
@@ -814,6 +817,7 @@ type GetContractVersionRow struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       int64
+	CustomerContact *string
 }
 
 func (q *Queries) GetContractVersion(ctx context.Context, arg GetContractVersionParams) (GetContractVersionRow, error) {
@@ -844,6 +848,7 @@ func (q *Queries) GetContractVersion(ctx context.Context, arg GetContractVersion
 		&i.Status,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.CustomerContact,
 	)
 	return i, err
 }
@@ -1997,22 +2002,24 @@ func (q *Queries) SupersedeOtherVersions(ctx context.Context, arg SupersedeOther
 
 const updateContractVersion = `-- name: UpdateContractVersion :execrows
 UPDATE contract_versions SET
-    buyer_name = $1::text,
-    buyer_address = $2::text,
-    seller_name = $3::text,
-    seller_address = $4::text,
-    incoterm = $5::text,
-    port_of_loading = $6::text,
-    port_of_discharge = $7::text,
-    payment_method = $8::text,
-    delivery_date = nullif($9::text, '')::date,
-    terms = $10::text,
-    total_amount = $11::text::numeric,
-    base_amount = $12::text::numeric
-WHERE tenant_id = $13::bigint AND id = $14::bigint AND status = 'DRAFT'
+    customer_contact = $1::text,
+    buyer_name = $2::text,
+    buyer_address = $3::text,
+    seller_name = $4::text,
+    seller_address = $5::text,
+    incoterm = $6::text,
+    port_of_loading = $7::text,
+    port_of_discharge = $8::text,
+    payment_method = $9::text,
+    delivery_date = nullif($10::text, '')::date,
+    terms = $11::text,
+    total_amount = $12::text::numeric,
+    base_amount = $13::text::numeric
+WHERE tenant_id = $14::bigint AND id = $15::bigint AND status = 'DRAFT'
 `
 
 type UpdateContractVersionParams struct {
+	CustomerContact *string
 	BuyerName       string
 	BuyerAddress    string
 	SellerName      string
@@ -2031,6 +2038,7 @@ type UpdateContractVersionParams struct {
 
 func (q *Queries) UpdateContractVersion(ctx context.Context, arg UpdateContractVersionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateContractVersion,
+		arg.CustomerContact,
 		arg.BuyerName,
 		arg.BuyerAddress,
 		arg.SellerName,

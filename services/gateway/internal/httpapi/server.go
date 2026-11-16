@@ -383,6 +383,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:read")).Get("/api/contract-execution", s.listContractExecution)
 		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}", s.getContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
+		r.With(s.perm("export:contract:write")).Get("/api/contracts/entry-defaults", s.contractWorkflow)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/direct", s.createDirectContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing", s.importExistingContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing/files/presign", s.presignExistingContractFile)

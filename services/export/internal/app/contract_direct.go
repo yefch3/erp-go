@@ -91,10 +91,10 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 	}
 
 	terms := Terms{
-		BuyerName:       orDefault(in.Terms.BuyerName, customer.Name),
-		BuyerAddress:    orDefault(in.Terms.BuyerAddress, customer.Address),
-		SellerName:      orDefault(in.Terms.SellerName, s.seller.Name),
-		SellerAddress:   orDefault(in.Terms.SellerAddress, s.seller.Address),
+		BuyerName:       strings.TrimSpace(in.Terms.BuyerName),
+		BuyerAddress:    strings.TrimSpace(in.Terms.BuyerAddress),
+		SellerName:      strings.TrimSpace(in.Terms.SellerName),
+		SellerAddress:   strings.TrimSpace(in.Terms.SellerAddress),
 		Incoterm:        orDefault(in.Terms.Incoterm, "FOB"),
 		PortOfLoading:   in.Terms.PortOfLoading,
 		PortOfDischarge: in.Terms.PortOfDischarge,
@@ -131,7 +131,8 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 			return err
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
-			TenantID: tenantID, ContractID: contractID, VersionNo: 1,
+			CustomerContact: contactSnapshot(in.Terms.CustomerContact),
+			TenantID:        tenantID, ContractID: contractID, VersionNo: 1,
 			BuyerName: terms.BuyerName, BuyerAddress: terms.BuyerAddress,
 			SellerName: terms.SellerName, SellerAddress: terms.SellerAddress,
 			Currency: in.Currency, Incoterm: terms.Incoterm,

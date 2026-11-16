@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -66,6 +67,16 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 		if locked.Status != view.Contract.Status {
 			return apierr.Conflict("EX_CONTRACT_STATUS_CHANGED", "合同状态已变化，请刷新后重试")
 		}
+		// Draft edits lock the same contract. Recheck the stored parties after
+		// locking so a concurrent edit cannot clear them between validation
+		// and submission to the approval service.
+		version, err := q.GetContractVersion(ctx, store.GetContractVersionParams{TenantID: tenantID, ID: view.Version.ID})
+		if err != nil {
+			return err
+		}
+		if err := validateContractParties(version); err != nil {
+			return err
+		}
 		instanceID, err = s.approvals.Submit(ctx, ApprovalSubmission{
 			BizType: BizTypeContract, BizID: view.Contract.ID, BizNo: view.Contract.ContractNo,
 			Summary: string(summaryBytes), SubmitterID: op.ID, SubmitterName: op.Name,
@@ -112,6 +123,24 @@ func readyToSubmit(view ContractView) error {
 	}
 	if len(view.Items) == 0 {
 		return apierr.Invalid("EX_ITEMS_REQUIRED", "合同没有明细，无法提交审批")
+	}
+	return validateContractParties(view.Version)
+}
+
+func validateContractParties(version store.GetContractVersionRow) error {
+	missing := []string{}
+	for _, field := range []struct{ name, value string }{
+		{"买方公司名称", version.BuyerName},
+		{"买方公司地址", version.BuyerAddress},
+		{"卖方公司名称", version.SellerName},
+		{"卖方公司地址", version.SellerAddress},
+	} {
+		if strings.TrimSpace(field.value) == "" {
+			missing = append(missing, field.name)
+		}
+	}
+	if len(missing) > 0 {
+		return apierr.Invalid("EX_CONTRACT_PARTIES_REQUIRED", "提交上级确认前请补全："+strings.Join(missing, "、"))
 	}
 	return nil
 }

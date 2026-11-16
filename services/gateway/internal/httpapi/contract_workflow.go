@@ -16,6 +16,9 @@ func (s *Server) contractWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		body.Action = "get"
+		if r.URL.Path == "/api/contracts/entry-defaults" {
+			body.Action = "entry_defaults"
+		}
 		if r.URL.Query().Get("view") == "handoff" {
 			body.Action = "handoff_get"
 		}

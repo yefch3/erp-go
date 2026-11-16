@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -17,6 +18,7 @@ import (
 // Terms is the negotiable-but-not-priced part of a contract version. Amounts
 // are deliberately absent: changing a price is a new version, not an edit.
 type Terms struct {
+	CustomerContact           string
 	BuyerName, BuyerAddress   string
 	SellerName, SellerAddress string
 	Incoterm                  string
@@ -118,7 +120,8 @@ func (s *Service) CreateContractFromQuotation(ctx context.Context, tenantID, quo
 			return err
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
-			TenantID: tenantID, ContractID: contractID, VersionNo: 1,
+			CustomerContact: contactSnapshot(filled.CustomerContact),
+			TenantID:        tenantID, ContractID: contractID, VersionNo: 1,
 			BuyerName: filled.BuyerName, BuyerAddress: filled.BuyerAddress,
 			SellerName: filled.SellerName, SellerAddress: filled.SellerAddress,
 			Currency: quote.Currency, Incoterm: filled.Incoterm,
@@ -156,6 +159,7 @@ func (s *Service) CreateContractFromQuotation(ctx context.Context, tenantID, quo
 // common case is one click and the caller only overrides what differs.
 func (s *Service) fillTerms(in Terms, quote store.GetQuotationRow, customer Customer) Terms {
 	return Terms{
+		CustomerContact: orDefault(in.CustomerContact, quote.ContactName),
 		BuyerName:       orDefault(in.BuyerName, customer.Name),
 		BuyerAddress:    orDefault(in.BuyerAddress, customer.Address),
 		SellerName:      orDefault(in.SellerName, s.seller.Name),
@@ -329,10 +333,11 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 			return err
 		}
 		rows, err := q.UpdateContractVersion(ctx, store.UpdateContractVersionParams{
-			TenantID: tenantID, ID: view.Version.ID,
-			BuyerName:     orDefault(terms.BuyerName, view.Version.BuyerName),
+			CustomerContact: contactSnapshot(terms.CustomerContact),
+			TenantID:        tenantID, ID: view.Version.ID,
+			BuyerName:     strings.TrimSpace(terms.BuyerName),
 			BuyerAddress:  terms.BuyerAddress,
-			SellerName:    orDefault(terms.SellerName, view.Version.SellerName),
+			SellerName:    strings.TrimSpace(terms.SellerName),
 			SellerAddress: terms.SellerAddress,
 			Incoterm:      orDefault(terms.Incoterm, view.Version.Incoterm),
 			PortOfLoading: terms.PortOfLoading, PortOfDischarge: terms.PortOfDischarge,
@@ -349,8 +354,9 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		}
 		// A countersigned file proves the pre-edit document, not new commercial terms.
 		if view.Contract.EntrySource == "STANDARD" && (len(items) > 0 ||
-			orDefault(terms.BuyerName, view.Version.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
-			orDefault(terms.SellerName, view.Version.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
+			contactValue(view.Version.CustomerContact) != strings.TrimSpace(terms.CustomerContact) ||
+			strings.TrimSpace(terms.BuyerName) != view.Version.BuyerName || terms.BuyerAddress != view.Version.BuyerAddress ||
+			strings.TrimSpace(terms.SellerName) != view.Version.SellerName || terms.SellerAddress != view.Version.SellerAddress ||
 			orDefault(terms.Incoterm, view.Version.Incoterm) != view.Version.Incoterm || terms.PortOfLoading != view.Version.PortOfLoading ||
 			terms.PortOfDischarge != view.Version.PortOfDischarge || terms.PaymentMethod != view.Version.PaymentMethod ||
 			terms.DeliveryDate != view.Version.DeliveryDate || terms.Text != view.Version.Terms) {
@@ -483,7 +489,8 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 			}
 		}
 		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
-			TenantID: tenantID, ContractID: id, VersionNo: nextVersionNo,
+			CustomerContact: inheritedContact(terms.CustomerContact, base.Version.CustomerContact),
+			TenantID:        tenantID, ContractID: id, VersionNo: nextVersionNo,
 			BuyerName:     orDefault(terms.BuyerName, base.Version.BuyerName),
 			BuyerAddress:  orDefault(terms.BuyerAddress, base.Version.BuyerAddress),
 			SellerName:    orDefault(terms.SellerName, base.Version.SellerName),

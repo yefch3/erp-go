@@ -162,7 +162,7 @@ INSERT INTO contract_versions (
     seller_name, seller_address, currency, incoterm,
     port_of_loading, port_of_discharge, payment_method,
     delivery_date, terms, total_amount, base_amount,
-    fx_rate, fx_rate_at, fx_source, fx_base_currency, change_reason, created_by
+    fx_rate, fx_rate_at, fx_source, fx_base_currency, change_reason, created_by, customer_contact
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -185,12 +185,14 @@ INSERT INTO contract_versions (
     sqlc.arg(fx_source)::text,
     sqlc.arg(fx_base_currency)::text,
     sqlc.arg(change_reason)::text,
-    sqlc.arg(created_by)::bigint
+    sqlc.arg(created_by)::bigint,
+    sqlc.narg(customer_contact)::text
 )
 RETURNING id;
 
 -- name: UpdateContractVersion :execrows
 UPDATE contract_versions SET
+    customer_contact = sqlc.narg(customer_contact)::text,
     buyer_name = sqlc.arg(buyer_name)::text,
     buyer_address = sqlc.arg(buyer_address)::text,
     seller_name = sqlc.arg(seller_name)::text,
@@ -255,7 +257,7 @@ SELECT
     coalesce(delivery_date::text, '')::text AS delivery_date, terms,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
-    change_reason, status, created_at, created_by
+    change_reason, status, created_at, created_by, customer_contact
 FROM contract_versions
 WHERE tenant_id = $1 AND id = $2;
 

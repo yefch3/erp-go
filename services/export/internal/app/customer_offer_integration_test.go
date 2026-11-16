@@ -186,6 +186,7 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 	if _, err := svc.SignContract(actor(1), tenant, contractID, "", "", "", owner); err == nil {
 		t.Fatal("started before approval")
 	}
+	completeDraftParties(t, svc, actor(1), tenant, contractID)
 	if _, _, err := svc.SubmitContract(actor(1), tenant, contractID, owner); err != nil {
 		t.Fatal(err)
 	}

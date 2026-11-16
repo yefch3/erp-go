@@ -233,7 +233,8 @@ func operator(ctx context.Context) app.Operator {
 
 func termsFromProto(t *exv1.ContractTerms) app.Terms {
 	return app.Terms{
-		BuyerName: t.GetBuyerName(), BuyerAddress: t.GetBuyerAddress(),
+		CustomerContact: t.GetCustomerContact(),
+		BuyerName:       t.GetBuyerName(), BuyerAddress: t.GetBuyerAddress(),
 		SellerName: t.GetSellerName(), SellerAddress: t.GetSellerAddress(),
 		Incoterm: t.GetIncoterm(), PortOfLoading: t.GetPortOfLoading(),
 		PortOfDischarge: t.GetPortOfDischarge(), PaymentMethod: t.GetPaymentMethod(),
@@ -263,7 +264,8 @@ func contractToProto(view app.ContractView) *exv1.Contract {
 
 func versionToProto(v store.GetContractVersionRow) *exv1.ContractVersion {
 	return &exv1.ContractVersion{
-		Id: v.ID, ContractId: v.ContractID, VersionNo: v.VersionNo,
+		CustomerContact: v.CustomerContact,
+		Id:              v.ID, ContractId: v.ContractID, VersionNo: v.VersionNo,
 		BuyerName: v.BuyerName, BuyerAddress: v.BuyerAddress,
 		SellerName: v.SellerName, SellerAddress: v.SellerAddress,
 		Currency: v.Currency, Incoterm: v.Incoterm,
