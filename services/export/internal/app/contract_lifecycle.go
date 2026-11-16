@@ -130,10 +130,10 @@ func readyToSubmit(view ContractView) error {
 func validateContractParties(version store.GetContractVersionRow) error {
 	missing := []string{}
 	for _, field := range []struct{ name, value string }{
-		{"买方抬头", version.BuyerName},
-		{"买方合同地址", version.BuyerAddress},
-		{"卖方抬头", version.SellerName},
-		{"卖方合同地址", version.SellerAddress},
+		{"买方公司名称", version.BuyerName},
+		{"买方公司地址", version.BuyerAddress},
+		{"卖方公司名称", version.SellerName},
+		{"卖方公司地址", version.SellerAddress},
 	} {
 		if strings.TrimSpace(field.value) == "" {
 			missing = append(missing, field.name)

@@ -13,6 +13,6 @@ export function buyerFromCustomer(customer?: {name?: string; address?: string}) 
 }
 
 export function missingContractParties(parties: ContractParties): string[] {
-  return (Object.entries({buyerName:'买方抬头', buyerAddress:'买方合同地址', sellerName:'卖方抬头', sellerAddress:'卖方合同地址'}) as [keyof ContractParties,string][])
+  return (Object.entries({buyerName:'买方公司名称', buyerAddress:'买方公司地址', sellerName:'卖方公司名称', sellerAddress:'卖方公司地址'}) as [keyof ContractParties,string][])
     .filter(([key]) => !parties[key]?.trim()).map(([,label]) => label)
 }

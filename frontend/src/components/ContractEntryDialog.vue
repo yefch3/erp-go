@@ -81,7 +81,7 @@ let selectedCustomerId='',lastBuyer=buyerFromCustomer()
 async function selectCustomer(){
  const id=form.customerId,c=customers.value.find(c=>String(c.id)===id)
  if(!props.history&&selectedCustomerId&&id!==selectedCustomerId&&(form.buyerName!==lastBuyer.buyerName||form.buyerAddress!==lastBuyer.buyerAddress)&&(form.buyerName.trim()||form.buyerAddress.trim())){
-  try{await ElMessageBox.confirm('切换客户将重新带入买方抬头和地址，替换本合同中已修改的买方信息。是否继续？','切换签约客户',{confirmButtonText:'切换客户',cancelButtonText:'保留当前客户'})}catch{form.customerId=selectedCustomerId;return}
+  try{await ElMessageBox.confirm('切换客户将重新带入买方公司名称和地址，替换本合同中已修改的买方信息。是否继续？','切换签约客户',{confirmButtonText:'切换客户',cancelButtonText:'保留当前客户'})}catch{form.customerId=selectedCustomerId;return}
  }
  selectedCustomerId=id;form.customerName=c?customerOptionLabel(c):''
  if(!props.history){lastBuyer=buyerFromCustomer(c);Object.assign(form,lastBuyer)}

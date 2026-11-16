@@ -84,7 +84,7 @@
         </div>
 
         <div class="edit-form-section">
-          <div class="edit-form-title">签约双方</div>
+          <div class="edit-form-title">合同双方信息</div>
           <div class="edit-form-grid">
             <el-form-item :label="t('contracts.buyer')">
               <el-input v-model="existingEditForm.buyerName" />
@@ -144,7 +144,7 @@
       <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
         <el-alert v-if="editable && missingContractParties(detail.version).length" type="warning" :closable="false" show-icon style="margin-bottom:14px">
           <template #title>提交前请补全：{{missingContractParties(detail.version).join('、')}}</template>
-          <el-button link type="primary" @click="openTerms">补全签约双方</el-button>
+          <el-button link type="primary" @click="openTerms">补全合同双方信息</el-button>
         </el-alert>
         <div class="detail-head">
           <div class="detail-statuses">
@@ -1817,8 +1817,8 @@ async function submit(row: { id: string }) {
       openTerms();return
     }
     const v=current.version
-    const fields=[['买方抬头',v.buyerName],['买方合同地址',v.buyerAddress],['卖方抬头',v.sellerName],['卖方合同地址',v.sellerAddress]]
-    try{await ElMessageBox.confirm(h('div',fields.map(([label,value])=>h('p',{style:'margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere'},[h('strong',`${label}：`),value]))),'核对签约双方后提交',{confirmButtonText:'确认并提交上级',cancelButtonText:'返回检查',customStyle:{width:'600px',maxWidth:'94vw'}})}catch{return}
+    const fields=[['买方公司名称',v.buyerName],['买方公司地址',v.buyerAddress],['卖方公司名称',v.sellerName],['卖方公司地址',v.sellerAddress]]
+    try{await ElMessageBox.confirm(h('div',fields.map(([label,value])=>h('p',{style:'margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere'},[h('strong',`${label}：`),value]))),'核对合同双方信息后提交',{confirmButtonText:'确认并提交上级',cancelButtonText:'返回检查',customStyle:{width:'600px',maxWidth:'94vw'}})}catch{return}
     await post(`/contracts/${row.id}/submit`)
     ElMessage.success(t('contracts.submitted'))
     if(detailOpen.value)await openDetail(row.id)

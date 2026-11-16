@@ -1,11 +1,11 @@
 <template>
   <section class="contract-parties">
-    <header><strong>签约双方</strong><span>草稿可暂缺，提交上级确认前须填写完整</span></header>
+    <header><strong>合同双方信息</strong><span>草稿可暂缺，提交上级确认前须填写完整</span></header>
     <el-form label-position="top" class="parties-grid">
-      <el-form-item label="买方抬头"><el-input :model-value="modelValue.buyerName" placeholder="按合同填写买方完整名称" @update:model-value="update('buyerName',$event)" /></el-form-item>
-      <el-form-item label="卖方抬头"><el-input :model-value="modelValue.sellerName" placeholder="按合同填写实际签约卖方完整名称" @update:model-value="update('sellerName',$event)" /></el-form-item>
-      <el-form-item label="买方合同地址"><el-input :model-value="modelValue.buyerAddress" type="textarea" :rows="2" placeholder="核对并填写合同中的买方地址" @update:model-value="update('buyerAddress',$event)" /></el-form-item>
-      <el-form-item label="卖方合同地址"><el-input :model-value="modelValue.sellerAddress" type="textarea" :rows="2" placeholder="核对并填写合同中的卖方地址" @update:model-value="update('sellerAddress',$event)" /></el-form-item>
+      <el-form-item label="买方公司名称"><el-input :model-value="modelValue.buyerName" placeholder="请输入合同中的买方公司全称" @update:model-value="update('buyerName',$event)" /></el-form-item>
+      <el-form-item label="卖方公司名称"><el-input :model-value="modelValue.sellerName" placeholder="请输入本合同卖方的公司全称" @update:model-value="update('sellerName',$event)" /></el-form-item>
+      <el-form-item label="买方公司地址"><el-input :model-value="modelValue.buyerAddress" type="textarea" :rows="2" placeholder="请输入合同中的买方公司地址" @update:model-value="update('buyerAddress',$event)" /></el-form-item>
+      <el-form-item label="卖方公司地址"><el-input :model-value="modelValue.sellerAddress" type="textarea" :rows="2" placeholder="请输入合同中的卖方公司地址" @update:model-value="update('sellerAddress',$event)" /></el-form-item>
     </el-form>
   </section>
 </template>
