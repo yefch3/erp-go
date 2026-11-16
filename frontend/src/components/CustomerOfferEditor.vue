@@ -446,4 +446,20 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .compare-mode .compact-category-header .manual-inputs .interest-rate-input{width:80px}
 .compare-mode .compact-category-header .manual-inputs .interest-days-input{width:88px}
 .compact-category-main{display:flex;align-items:center;flex-wrap:wrap;gap:6px 5px;max-width:100%;min-width:0}
+/* Module seams use borders instead of nested cards and whitespace. */
+.quote-workspace.compare-mode{padding:0;background:#fff;border:1px solid #dce6ef;border-top:0;border-radius:0}
+.quote-workspace.compare-mode .section-tools{margin:0;padding:6px 12px;min-height:42px;box-sizing:border-box;gap:8px;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none}
+.quote-workspace.compare-mode .section-tools :deep(.el-input__wrapper){min-height:30px}
+.quote-workspace.compare-mode .section-tools :deep(.el-checkbox__label){font-size:12px}
+.quote-workspace.compare-mode .workspace-card{margin:0;border:0;border-radius:0;box-shadow:none}
+.quote-workspace.compare-mode .workspace-card+.workspace-card{border-top:1px solid #cbdce5}
+.quote-workspace.compare-mode .compact-category-header{border-radius:0}
+.quote-workspace.compare-mode .quote-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none}
+.quote-workspace.compare-mode .logistics-panel{margin-top:0}
+.quote-workspace.compare-mode .logistics-panel .card-heading{padding:10px 12px}
+.quote-workspace.compare-mode .logistics-panel .card-heading h3{font-size:14px}
+.quote-workspace.compare-mode .workspace-footer{position:sticky;bottom:0;margin:0;padding:8px 12px;gap:8px 12px;border:0;border-top:1px solid #cbdce5;border-radius:0;background:#fff;box-shadow:none}
+.quote-workspace.compare-mode .workspace-footer strong{font-size:12px}
+.quote-workspace.compare-mode .workspace-footer small{margin-top:2px;font-size:11px}
+.quote-workspace.compare-mode .workspace-footer .el-button{height:30px;min-height:30px;padding:0 10px;font-size:12px}
 </style>
