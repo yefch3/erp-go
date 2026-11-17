@@ -1,6 +1,8 @@
 import { purchaseFulfillmentEn } from './purchaseFulfillment'
 import { historicalShippingEn } from './historicalShipping'
+import { reimbursementExpenseEn } from './reimbursementExpense'
 export default {
+  reimbursementExpense: reimbursementExpenseEn,
   historicalShipping: historicalShippingEn,
   purchaseFulfillment: purchaseFulfillmentEn,
  contractRepair: {"accepted": "Final choice", "confirm": "Customer accepted - Create contract", "confirmTitle": "Confirm customer acceptance", "confirmHint": "Confirm the final option and selling price for each specification. Acceptance freezes the quotation and creates a contract draft. Approval, signing and finance release are still required.", "failed": "Could not create the contract. Review the information and retry.", "staleSigned": "Previous signed copy (content changed)", "deliveryRequired": "Enter the delivery date before submitting.", "deliveryLabel": "Delivery date (required for approval)", "productPlaceholder": "Enter a product name or search the catalog", "unit": "Unit", "signatureHint": "After editing the draft, previous signed copies are retained for reference. Upload a signed copy matching the revised content."},
@@ -166,7 +168,7 @@ basicsSaved: "Basic information saved",
   },
   supplierRecon: {
     eyebrow: 'OUTGOING PAYMENTS', title: 'Money out',
-    subtitle: 'View and record money paid to suppliers', supplierPaymentsTab: 'Supplier payments', travelTab: 'Travel expenses', travelTitle: 'Travel expenses', travelSubtitle: 'Submit travel receipts and track department confirmation, finance approval and payment.', pendingHint: 'Orders nobody has confirmed as settled', doneHint: 'Somebody confirmed the money side is done', unpaidHint: 'To-reconcile orders with no payment recorded (first 200 sampled)',
+    subtitle: 'View and record money paid to suppliers', supplierPaymentsTab: 'Supplier payments', travelTab: 'Reimbursements', travelTitle: 'Reimbursements', travelSubtitle: 'Submit expense receipts and track department confirmation, finance approval and payment.', pendingHint: 'Orders nobody has confirmed as settled', doneHint: 'Somebody confirmed the money side is done', unpaidHint: 'To-reconcile orders with no payment recorded (first 200 sampled)',
     businessType:'Business type',businessTypes:{ALL:'All business',PROCUREMENT:'Procurement',LOGISTICS:'Logistics',MANUAL:'Manual'},exportContract:'Export contract',
     addManual: 'Add payment', manualSupplier: 'Supplier', manualOrder: 'Contract / PO number', manualTotal: 'Contract / PO total', manualPickOrEnter: 'Select existing or type', manualCurrencyHint: 'Select or type', manualPaid: 'Already paid', manualDate: 'Payment date', manualDueDate: 'Payment due date', manualRequired: 'Enter supplier, number and total', manualSaved: 'Payment added',
     moreActions: 'More actions', viewDetails: 'View details', detailTitle: 'Payment details', detailHistory: 'Payment history', detailStatus: 'Current status', editManual: 'Edit details', editManualHint: 'Only basic details of manually added records can be edited. Reverse and re-enter an incorrect amount.', editManualSaved: 'Payment details updated',
@@ -1669,7 +1671,7 @@ basicsSaved: "Basic information saved",
     removeBandConfirm: 'Amounts in this band will fall back to the next lower flow. Remove it?',
     bandRemoved: 'Band removed',
     createdBy: 'Changed by',
-    biz: { PURCHASE_ORDER: 'Purchase order', PURCHASE_ORDER_CHANGE: 'PO supplier variance', SHIPPING_REQUOTE: 'Logistics plan', CONTRACT: 'Export contracts', TRAVEL_REIMBURSEMENT: 'Travel reimbursement' },
+    biz: { PURCHASE_ORDER: 'Purchase order', PURCHASE_ORDER_CHANGE: 'PO supplier variance', SHIPPING_REQUOTE: 'Logistics plan', CONTRACT: 'Export contracts', TRAVEL_REIMBURSEMENT: 'Reimbursement' },
     activeVersion: 'active v{v}',
     none: 'not configured',
     running: '({n} instances running)',
@@ -1774,6 +1776,7 @@ basicsSaved: "Basic information saved",
     // Each business service composes its own summary; only common keys are
     // translated here and anything else falls through unchanged.
     summaryKeys: {
+      claim_no: 'Claim number', claimant: 'Claimant', purpose: 'Purpose', expense_type: 'Expense type', expense_date: 'Expense date',
       contract: 'Contract number',
       forwarder: 'Contracted forwarder',
       carrier: 'Actual carrier',
@@ -1817,7 +1820,7 @@ basicsSaved: "Basic information saved",
       CONTRACT: 'Export contract',
       PURCHASE_ORDER: 'Purchase order',
       PURCHASE_ORDER_CHANGE: 'PO supplier variance', SHIPPING_REQUOTE: 'Logistics plan',
-      TRAVEL_REIMBURSEMENT: 'Travel reimbursement',
+      TRAVEL_REIMBURSEMENT: 'Reimbursement',
       PAYMENT: 'Payment',
       LC_AMENDMENT: 'LC amendment',
       STOCK_ADJUST: 'Stock adjustment',

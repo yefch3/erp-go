@@ -1,6 +1,8 @@
 import { purchaseFulfillmentEs } from './purchaseFulfillment'
 import { historicalShippingEs } from './historicalShipping'
+import { reimbursementExpenseEs } from './reimbursementExpense'
 export default {
+  reimbursementExpense: reimbursementExpenseEs,
   historicalShipping: historicalShippingEs,
   purchaseFulfillment: purchaseFulfillmentEs,
  contractRepair: {"accepted": "Selección final", "confirm": "Cliente confirmó - Crear contrato", "confirmTitle": "Confirmar aceptación del cliente", "confirmHint": "Confirme la opción final y el precio de venta de cada especificación. Se guardará la cotización definitiva y se creará un borrador de contrato. Aún requiere aprobación, firma y autorización financiera.", "failed": "No se pudo crear el contrato. Revise los datos e inténtelo de nuevo.", "staleSigned": "Firma anterior (contenido modificado)", "deliveryRequired": "Indique la fecha de entrega antes de enviar.", "deliveryLabel": "Fecha de entrega (obligatoria para aprobación)", "productPlaceholder": "Escriba un producto o busque en el catálogo", "unit": "Unidad", "signatureHint": "Al editar el borrador, las firmas anteriores se conservan como referencia. Adjunte una copia firmada que corresponda al contenido revisado."},
@@ -166,7 +168,7 @@ basicsSaved: "Datos básicos guardados",
   },
   supplierRecon: {
     eyebrow: 'SALIDAS DE DINERO', title: 'Salidas',
-    subtitle: 'Ver y registrar pagos a proveedores', supplierPaymentsTab: 'Pagos a proveedores', travelTab: 'Gastos de viaje', travelTitle: 'Gastos de viaje', travelSubtitle: 'Envía comprobantes de viaje y sigue la confirmación del departamento, la aprobación financiera y el pago.', pendingHint: 'Órdenes que nadie ha confirmado como saldadas', doneHint: 'Alguien confirmó que la parte del dinero está cerrada', unpaidHint: 'Órdenes por conciliar sin ningún pago registrado (muestra de 200)',
+    subtitle: 'Ver y registrar pagos a proveedores', supplierPaymentsTab: 'Pagos a proveedores', travelTab: 'Reembolsos', travelTitle: 'Reembolsos', travelSubtitle: 'Envía comprobantes de gastos y sigue la confirmación del departamento, la aprobación financiera y el pago.', pendingHint: 'Órdenes que nadie ha confirmado como saldadas', doneHint: 'Alguien confirmó que la parte del dinero está cerrada', unpaidHint: 'Órdenes por conciliar sin ningún pago registrado (muestra de 200)',
     businessType:'Tipo de negocio',businessTypes:{ALL:'Todos',PROCUREMENT:'Compras',LOGISTICS:'Logística',MANUAL:'Manual'},exportContract:'Contrato de exportación',
     addManual: 'Agregar pago', manualSupplier: 'Proveedor', manualOrder: 'N.º de contrato / orden', manualTotal: 'Total del contrato / orden', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualPaid: 'Ya pagado', manualDate: 'Fecha de pago', manualDueDate: 'Fecha de vencimiento', manualRequired: 'Ingrese proveedor, número y total', manualSaved: 'Pago agregado',
     moreActions: 'Más acciones', viewDetails: 'Ver detalles', detailTitle: 'Detalle de pagos', detailHistory: 'Historial de pagos', detailStatus: 'Estado actual', editManual: 'Editar datos', editManualHint: 'Solo se editan los datos básicos de registros manuales. Revierta y vuelva a registrar un importe incorrecto.', editManualSaved: 'Datos del pago actualizados',
@@ -1678,7 +1680,7 @@ basicsSaved: "Datos básicos guardados",
     removeBandConfirm: 'Los importes de este tramo pasarán al flujo inferior siguiente. ¿Eliminar?',
     bandRemoved: 'Tramo eliminado',
     createdBy: 'Modificado por',
-    biz: { PURCHASE_ORDER: 'Orden de compra', PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', SHIPPING_REQUOTE: 'Plan logístico', CONTRACT: 'Contratos de exportación', TRAVEL_REIMBURSEMENT: 'Reembolso de viaje' },
+    biz: { PURCHASE_ORDER: 'Orden de compra', PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', SHIPPING_REQUOTE: 'Plan logístico', CONTRACT: 'Contratos de exportación', TRAVEL_REIMBURSEMENT: 'Reembolso' },
     activeVersion: 'vigente v{v}',
     none: 'sin configurar',
     running: '({n} instancias en curso)',
@@ -1783,6 +1785,7 @@ basicsSaved: "Datos básicos guardados",
     // Cada servicio compone su propio resumen; aquí solo se traducen las
     // claves habituales y el resto se muestra tal cual.
     summaryKeys: {
+      claim_no: 'N.º de reembolso', claimant: 'Solicitante', purpose: 'Motivo', expense_type: 'Tipo de gasto', expense_date: 'Fecha del gasto',
       contract: 'Número de contrato',
       forwarder: 'Transitario contratado',
       carrier: 'Transportista efectivo',
@@ -1826,7 +1829,7 @@ basicsSaved: "Datos básicos guardados",
       CONTRACT: 'Contrato de exportación',
       PURCHASE_ORDER: 'Orden de compra',
       PURCHASE_ORDER_CHANGE: 'Diferencia confirmada por proveedor', SHIPPING_REQUOTE: 'Plan logístico',
-      TRAVEL_REIMBURSEMENT: 'Reembolso de viaje',
+      TRAVEL_REIMBURSEMENT: 'Reembolso',
       PAYMENT: 'Pago',
       LC_AMENDMENT: 'Enmienda de LC',
       STOCK_ADJUST: 'Ajuste de inventario',
