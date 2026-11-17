@@ -22,6 +22,7 @@ type TravelReimbursement struct {
 	Origin, Destination, Purpose, Amount, Currency, PaymentAccount, Note string
 	Status, RejectionReason, PaidAt, PaidByName, PaymentReference        string
 	CreatedAt, UpdatedAt                                                 string
+	ExpenseType, ExpenseDate                                             string
 	Files                                                                []TravelReimbursementFile
 	History                                                              []TravelReimbursementHistory
 }
@@ -33,7 +34,7 @@ type TravelReimbursementHistory struct {
 	ID                                                         int64
 	Action, FromStatus, ToStatus, Detail, ActorName, CreatedAt string
 }
-type TravelReimbursementInput struct{ TripStart, TripEnd, Origin, Destination, Purpose, Amount, Currency, PaymentAccount, Note string }
+type TravelReimbursementInput struct{ TripStart, TripEnd, Origin, Destination, Purpose, Amount, Currency, PaymentAccount, Note, ExpenseType, ExpenseDate string }
 
 func validateTravelInput(in *TravelReimbursementInput) error {
 	in.Origin = strings.TrimSpace(in.Origin)
@@ -42,14 +43,34 @@ func validateTravelInput(in *TravelReimbursementInput) error {
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
 	in.PaymentAccount = strings.TrimSpace(in.PaymentAccount)
 	in.Note = strings.TrimSpace(in.Note)
-	start, e1 := time.Parse("2006-01-02", in.TripStart)
-	end, e2 := time.Parse("2006-01-02", in.TripEnd)
-	amount, e3 := decimal.NewFromString(strings.TrimSpace(in.Amount))
-	if e1 != nil || e2 != nil || end.Before(start) {
-		return apierr.Invalid("PR_TRAVEL_DATE_INVALID", "请填写正确的出差起止日期")
+	in.ExpenseType = strings.TrimSpace(in.ExpenseType)
+	if in.ExpenseType == "" {
+		in.ExpenseType = "TRAVEL" // Existing clients and historical claims remain travel.
 	}
-	if in.Origin == "" || in.Destination == "" || in.Purpose == "" || in.PaymentAccount == "" || len(in.Currency) != 3 {
-		return apierr.Invalid("PR_TRAVEL_REQUIRED", "请完整填写地点、事由、币种和收款账户")
+	in.ExpenseDate = strings.TrimSpace(in.ExpenseDate)
+	switch in.ExpenseType {
+	case "TRAVEL":
+		start, e1 := time.Parse("2006-01-02", in.TripStart)
+		end, e2 := time.Parse("2006-01-02", in.TripEnd)
+		if e1 != nil || e2 != nil || end.Before(start) {
+			return apierr.Invalid("PR_TRAVEL_DATE_INVALID", "请填写正确的出差起止日期")
+		}
+		if in.Origin == "" || in.Destination == "" {
+			return apierr.Invalid("PR_TRAVEL_REQUIRED", "请填写出发地和目的地")
+		}
+		in.ExpenseDate = ""
+	case "OFFICE_SUPPLIES", "OTHER":
+		if _, err := time.Parse("2006-01-02", in.ExpenseDate); err != nil {
+			return apierr.Invalid("PR_EXPENSE_DATE_INVALID", "请填写正确的费用日期")
+		}
+		// Do not save hidden stale travel fields when switching expense type.
+		in.TripStart, in.TripEnd, in.Origin, in.Destination = "", "", "", ""
+	default:
+		return apierr.Invalid("PR_EXPENSE_TYPE_INVALID", "请选择有效的报销类型")
+	}
+	amount, e3 := decimal.NewFromString(strings.TrimSpace(in.Amount))
+	if in.Purpose == "" || in.PaymentAccount == "" || len(in.Currency) != 3 {
+		return apierr.Invalid("PR_TRAVEL_REQUIRED", "请完整填写事由、币种和收款账户")
 	}
 	if e3 != nil || !amount.IsPositive() || amount.Exponent() < -2 || amount.GreaterThan(maxMoney) {
 		return apierr.Invalid("PR_TRAVEL_AMOUNT_INVALID", "报销金额必须是大于 0 且最多两位小数的数字")
@@ -70,9 +91,9 @@ func (s *Service) CreateTravelReimbursement(ctx context.Context, tenantID int64,
 	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `INSERT INTO travel_reimbursements
-      (tenant_id,claim_no,claimant_id,claimant_name,department_name,trip_start,trip_end,origin,destination,purpose,amount,currency,payment_account,note)
-      VALUES($1,'PENDING',$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10::numeric,$11,$12,$13) RETURNING id`,
-		tenantID, op.ID, op.Name, dept, in.TripStart, in.TripEnd, in.Origin, in.Destination, in.Purpose, in.Amount, in.Currency, in.PaymentAccount, in.Note).Scan(&id)
+      (tenant_id,claim_no,claimant_id,claimant_name,department_name,trip_start,trip_end,origin,destination,purpose,amount,currency,payment_account,note,expense_type,expense_date)
+      VALUES($1,'PENDING',$2,$3,$4,NULLIF($5,'')::date,NULLIF($6,'')::date,$7,$8,$9,$10::numeric,$11,$12,$13,$14,NULLIF($15,'')::date) RETURNING id`,
+		tenantID, op.ID, op.Name, dept, in.TripStart, in.TripEnd, in.Origin, in.Destination, in.Purpose, in.Amount, in.Currency, in.PaymentAccount, in.Note, in.ExpenseType, in.ExpenseDate).Scan(&id)
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
@@ -104,7 +125,7 @@ func (s *Service) UpdateTravelReimbursement(ctx context.Context, tenantID, id in
 	if current.Status == "PENDING_PAYMENT" {
 		detail = "关键资料已修改，原审批失效，需重新提交"
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE travel_reimbursements SET trip_start=$3::date,trip_end=$4::date,origin=$5,destination=$6,purpose=$7,amount=$8::numeric,currency=$9,payment_account=$10,note=$11,status=$12,approval_instance_id=NULL,rejection_reason='',updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, in.TripStart, in.TripEnd, in.Origin, in.Destination, in.Purpose, in.Amount, in.Currency, in.PaymentAccount, in.Note, next)
+	_, err = s.pool.Exec(ctx, `UPDATE travel_reimbursements SET trip_start=NULLIF($3,'')::date,trip_end=NULLIF($4,'')::date,origin=$5,destination=$6,purpose=$7,amount=$8::numeric,currency=$9,payment_account=$10,note=$11,status=$12,approval_instance_id=NULL,rejection_reason='',expense_type=$13,expense_date=NULLIF($14,'')::date,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, in.TripStart, in.TripEnd, in.Origin, in.Destination, in.Purpose, in.Amount, in.Currency, in.PaymentAccount, in.Note, next, in.ExpenseType, in.ExpenseDate)
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
@@ -123,6 +144,10 @@ func (s *Service) SubmitTravelReimbursement(ctx context.Context, tenantID, id in
 	if current.Status != "DRAFT" && current.Status != "REJECTED" {
 		return TravelReimbursement{}, apierr.Conflict("PR_TRAVEL_NOT_SUBMITTABLE", "当前状态不能提交")
 	}
+	input := TravelReimbursementInput{TripStart: current.TripStart, TripEnd: current.TripEnd, Origin: current.Origin, Destination: current.Destination, Purpose: current.Purpose, Amount: current.Amount, Currency: current.Currency, PaymentAccount: current.PaymentAccount, ExpenseType: current.ExpenseType, ExpenseDate: current.ExpenseDate}
+	if err := validateTravelInput(&input); err != nil {
+		return TravelReimbursement{}, err
+	}
 	var docs int
 	if err = s.pool.QueryRow(ctx, `SELECT count(*) FROM travel_reimbursement_files WHERE tenant_id=$1 AND reimbursement_id=$2 AND removed_at IS NULL`, tenantID, id).Scan(&docs); err != nil {
 		return TravelReimbursement{}, err
@@ -133,7 +158,7 @@ func (s *Service) SubmitTravelReimbursement(ctx context.Context, tenantID, id in
 	if s.approvals == nil {
 		return TravelReimbursement{}, apierr.Internal("PR_APPROVAL_UNAVAILABLE", "审批服务暂不可用")
 	}
-	summary := fmt.Sprintf(`{"claim_no":%q,"claimant":%q,"amount":%q,"currency":%q,"purpose":%q}`, current.ClaimNo, current.ClaimantName, current.Amount, current.Currency, current.Purpose)
+	summary := fmt.Sprintf(`{"claim_no":%q,"claimant":%q,"amount":%q,"currency":%q,"purpose":%q,"expense_type":%q,"expense_date":%q}`, current.ClaimNo, current.ClaimantName, current.Amount, current.Currency, current.Purpose, current.ExpenseType, current.ExpenseDate)
 	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{BizType: BizTypeTravelReimbursement, BizID: id, BizNo: current.ClaimNo, Summary: summary, SubmitterID: op.ID, SubmitterName: op.Name, Amount: current.Amount})
 	if err != nil {
 		return TravelReimbursement{}, err
@@ -180,7 +205,7 @@ func (s *Service) GetTravelReimbursement(ctx context.Context, tenantID, id, oper
 	var v TravelReimbursement
 	var approvalID, paidBy *int64
 	var paidAt *time.Time
-	err := s.pool.QueryRow(ctx, `SELECT id,claim_no,claimant_id,claimant_name,department_name,trip_start::text,trip_end::text,origin,destination,purpose,amount::text,currency,payment_account,note,status,approval_instance_id,rejection_reason,paid_at,paid_by,paid_by_name,payment_reference,created_at::text,updated_at::text FROM travel_reimbursements WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&v.ID, &v.ClaimNo, &v.ClaimantID, &v.ClaimantName, &v.DepartmentName, &v.TripStart, &v.TripEnd, &v.Origin, &v.Destination, &v.Purpose, &v.Amount, &v.Currency, &v.PaymentAccount, &v.Note, &v.Status, &approvalID, &v.RejectionReason, &paidAt, &paidBy, &v.PaidByName, &v.PaymentReference, &v.CreatedAt, &v.UpdatedAt)
+	err := s.pool.QueryRow(ctx, `SELECT id,claim_no,claimant_id,claimant_name,department_name,COALESCE(trip_start::text,''),COALESCE(trip_end::text,''),origin,destination,purpose,amount::text,currency,payment_account,note,status,approval_instance_id,rejection_reason,paid_at,paid_by,paid_by_name,payment_reference,created_at::text,updated_at::text,expense_type,COALESCE(expense_date::text,'') FROM travel_reimbursements WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&v.ID, &v.ClaimNo, &v.ClaimantID, &v.ClaimantName, &v.DepartmentName, &v.TripStart, &v.TripEnd, &v.Origin, &v.Destination, &v.Purpose, &v.Amount, &v.Currency, &v.PaymentAccount, &v.Note, &v.Status, &approvalID, &v.RejectionReason, &paidAt, &paidBy, &v.PaidByName, &v.PaymentReference, &v.CreatedAt, &v.UpdatedAt, &v.ExpenseType, &v.ExpenseDate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, apierr.NotFound("PR_TRAVEL_NOT_FOUND", "报销申请不存在")
 	}

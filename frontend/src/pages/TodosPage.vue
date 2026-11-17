@@ -670,6 +670,7 @@ function compactSummaryNumber(value: SummaryValue): string {
 
 function summaryValueText(key: string, value: SummaryValue): string {
   if (value === null) return ''
+  if (key === 'expense_type' && ['TRAVEL', 'OFFICE_SUPPLIES', 'OTHER'].includes(String(value))) return t(`reimbursementExpense.${value}`)
   if (key === 'lines' && Array.isArray(value)) {
     return value.map((line) => {
       if (!line || Array.isArray(line) || typeof line !== 'object') return String(line ?? '')

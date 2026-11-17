@@ -3054,6 +3054,8 @@ message TravelReimbursement {
   string updated_at = 23;
   repeated TravelReimbursementFile files = 24;
   repeated TravelReimbursementHistory history = 25;
+  string expense_type = 26;
+  string expense_date = 27;
 }
 
 message TravelReimbursementFile {
@@ -3086,6 +3088,8 @@ message CreateTravelReimbursementRequest {
   string currency = 7;
   string payment_account = 8;
   string note = 9;
+  string expense_type = 10;
+  string expense_date = 11;
 }
 message UpdateTravelReimbursementRequest {
   int64 id = 1;
@@ -3098,6 +3102,8 @@ message UpdateTravelReimbursementRequest {
   string currency = 8;
   string payment_account = 9;
   string note = 10;
+  string expense_type = 11;
+  string expense_date = 12;
 }
 message ListTravelReimbursementsRequest { bool include_all = 1; string status = 2; }
 message ListTravelReimbursementsResponse { repeated TravelReimbursement items = 1; }
