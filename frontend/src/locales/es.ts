@@ -129,6 +129,7 @@ export default {
   },
   purchaseOrderContext: { remark: 'Observaciones del pedido de compra', remarkHint: 'Observaciones actuales del pedido, introducidas por Compras. Solo lectura.', emptyRemark: 'Sin observaciones del pedido de compra', supplier: 'Fábrica / proveedor', shippingTitle: 'Fábricas y observaciones de este contrato', shippingHint: 'Solo fábricas y observaciones de compras confirmadas de este contrato. No se comparten precios ni detalles del pedido.', loadFailed: 'No se pudieron cargar las fábricas y observaciones. Reinténtelo.', noOrders: 'No hay compras confirmadas de este contrato' },
   quality: {
+    viewProgress: 'Ver progreso de inspección', afterOrder: 'Puede solicitar la inspección una vez realizado el pedido.', inactiveOrder: 'El pedido está cerrado o cancelado. Puede consultar las inspecciones existentes.', purchaseOnly: 'La inspección previa al envío está disponible solo para pedidos de compra.',
     pendingFiles: "Archivos pendientes",
     pendingHint: "Estos archivos todavía no están guardados. Pulse Subir archivos para guardarlos.",
     uploadedFiles: "Archivos subidos",

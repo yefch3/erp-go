@@ -1,6 +1,6 @@
 <template>
   <section class="purchase-quality" v-loading="loading">
-    <div class="panel-head"><h3>{{t('purchaseFulfillment.qualityResults')}}</h3><div><el-button v-if="showRefresh" :loading="loading" link @click="load">刷新</el-button><el-button v-if="tasks.length" type="primary" plain @click="detailOpen=true">{{t('purchaseFulfillment.viewReport')}}</el-button><el-button v-else-if="canRequest" type="primary" plain @click="emit('request')">申请质检</el-button></div></div>
+    <div class="panel-head"><h3>{{t('purchaseFulfillment.qualityResults')}}</h3><div><el-button v-if="showRefresh" :loading="loading" link @click="load">刷新</el-button><el-button v-if="tasks.length" type="primary" plain @click="detailOpen=true">{{t('quality.viewProgress')}}</el-button><el-button v-else-if="canRequest&&!loading&&!failed" type="primary" plain @click="emit('request')">申请质检</el-button></div></div>
     <el-alert v-if="failed" type="error" :closable="false" title="质检结果加载失败，请刷新重试"/>
     <template v-else>
       <div class="quality-state"><el-tag :type="passed?'success':'warning'">{{status}}</el-tag><el-tooltip content="报告上传不等于合格，交货以整单最终质检结论为准。"><span class="quality-explanation" tabindex="0" aria-label="交货须整单质检合格">ⓘ 交货条件</span></el-tooltip></div>
@@ -11,7 +11,7 @@
         <el-table-column label="尚未合格" width="125" align="right"><template #default="{row}">{{trim(Math.max(0,Number(row.requestedQty)-Number(row.qualifiedQty)))}} {{row.uomCode}}</template></el-table-column>
         <el-table-column label="待检 / 复检" width="135" align="right"><template #default="{row}">{{trim(row.unresolvedQty)}} {{row.uomCode}}</template></el-table-column>
       </el-table>
-      <p v-if="!tasks.length" class="muted">尚未申请整单质检。</p>
+      <p v-if="!tasks.length" class="muted">{{requestHint||'尚未申请整单质检。'}}</p>
     </template>
     <el-dialog v-model="detailOpen" title="质检结果与报告" width="min(1060px,94vw)" top="5vh" class="purchase-quality-dialog" append-to-body>
       <el-alert title="采购可查看报告和记录供应商处理情况；检验结论和复检结果由质检部门确认。" type="info" :closable="false"/>
@@ -57,7 +57,7 @@ import {hasPassedDeliveryInspection,type DeliveryQualityTask} from '../lib/deliv
 import {fetchViaRelay} from '../lib/storageRelay'
 import {useAuthStore} from '../stores/auth'
 import FilePreviewDialog from './FilePreviewDialog.vue'
-const props=withDefaults(defineProps<{orderId:string;allowHandling?:boolean;canRequest?:boolean;autoRefresh?:boolean;showRefresh?:boolean}>(),{allowHandling:true,canRequest:false,autoRefresh:true,showRefresh:true})
+const props=withDefaults(defineProps<{orderId:string;allowHandling?:boolean;canRequest?:boolean;requestHint?:string;autoRefresh?:boolean;showRefresh?:boolean}>(),{allowHandling:true,canRequest:false,autoRefresh:true,showRefresh:true})
 const emit=defineEmits<{(event:'request'):void;(event:'release-change',allowed:boolean):void;(event:'state-change',state:{passed:boolean;status:string;failed:boolean;loading:boolean}):void}>(),{t}=useI18n(),auth=useAuthStore()
 type Line=DeliveryQualityTask['lines'][number]&{id:string;productName:string;uomCode:string;unresolvedQty:string;issueDescription:string}
 type Round={id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:{taskLineId:string;result:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string;handlingSuggestion:string}[]}

@@ -7,7 +7,7 @@
    <div class="overview-footer"><p role="status">{{nextAction}}</p><div class="progress-toolbar"><span v-if="updated">更新于 {{updated}} · 15秒自动刷新</span><el-button size="small" :loading="loading" @click="refreshAll">刷新进度</el-button></div></div>
   </section>
   <slot name="supplier" />
-  <PurchaseQualityPanel ref="qualityPanel" :order-id="orderId" :can-request="canRequest" :auto-refresh="false" :show-refresh="false" @state-change="quality=$event" @request="emit('request')"/>
+  <PurchaseQualityPanel ref="qualityPanel" :order-id="orderId" :can-request="canRequest" :request-hint="requestHint" :auto-refresh="false" :show-refresh="false" @state-change="quality=$event" @request="emit('request')"/>
   <section class="progress-section delivery-section">
    <div class="progress-heading"><h3>{{isWarehouse?'实际入库':'实际交货'}}</h3><div class="delivery-actions"><el-tag v-if="!deliveryError" :type="deliveryState==='fullyDelivered'?'success':'info'">{{deliveryStateLabel}}</el-tag><el-button v-if="canManageDelivery&&deliveryState!=='fullyDelivered'" type="primary" :disabled="!quality.passed||quality.failed||quality.loading" @click="deliveryOpen=true">登记交货</el-button></div></div>
    <el-alert v-if="deliveryError" title="交货进度加载失败，请刷新重试" type="error" :closable="false"/>
@@ -44,7 +44,7 @@ import PurchaseQualityPanel from './PurchaseQualityPanel.vue'
 import FilePreviewDialog from './FilePreviewDialog.vue'
 import {deliveryStatusKey} from '../lib/purchaseDelivery'
 import {fulfillmentTotals,fulfillmentNumber as number} from '../lib/fulfillmentOverview'
-const props=defineProps<{orderId:string;canRequest?:boolean}>()
+const props=defineProps<{orderId:string;canRequest?:boolean;requestHint?:string}>()
 const emit=defineEmits<{(event:'request'):void;(event:'delivery-saved'):void}>()
 const {t}=useI18n(),auth=useAuthStore()
 type Goods={productName:string;spec:string;qty:string;receivedQty:string;uomCode:string}

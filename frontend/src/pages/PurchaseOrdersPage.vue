@@ -72,6 +72,7 @@
               <el-dropdown
                 v-if="rowMenuActions(row).length"
                 trigger="click"
+                @visible-change="loadQualityMenu(row,$event)"
                 @command="(key: string) => runOrderAction(row, key)"
               >
                 <el-button class="more-actions-trigger" size="small" type="primary" plain @click.stop>
@@ -297,7 +298,7 @@
         </el-table-column>
       </el-table>
 
-      <PurchaseQualityPanel v-if="detailOpen && detail" :order-id="detail.id" :can-request="canRequestQuality" @request="openQualityApplication(detail!)" />
+      <PurchaseQualityPanel v-if="detailOpen && detail" :order-id="detail.id" :key="detail.id+':'+qualityRevision" :can-request="canRequestQuality(detail)" :request-hint="qualityRequestHint(detail)" @request="openQualityApplication(detail!)" />
 
       <template v-if="detailReceipts.length">
         <div class="side-title">{{ t('orders.receipts') }}</div>
@@ -334,7 +335,7 @@
     <el-dialog v-model="executionOpen" class="fulfillment-dialog" top="6vh" :title="t('purchaseFulfillment.title', { no: executing?.poNo })" width="min(1100px, 94vw)">
       <el-tabs v-model="executionTab">
         <el-tab-pane :label="t('purchaseFulfillment.overview')" name="overview">
-          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :can-request="canRequestQuality" @request="openQualityApplication(executing!)" @delivery-saved="refreshAfterDelivery">
+          <PurchaseFulfillmentProgress v-if="executionOpen && executing" :order-id="executing.id" :key="executing.id+':'+qualityRevision" :can-request="canRequestQuality(executing)" :request-hint="qualityRequestHint(executing)" @request="openQualityApplication(executing!)" @delivery-saved="refreshAfterDelivery">
           <template #supplier>
           <section class="confirmation-section">
             <div class="execution-section-head">
@@ -686,7 +687,22 @@ const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
-const canRequestQuality = auth.can('quality:task:request')
+function qualityRequestHint(order:Order){
+ if(order.businessType!=='PROCUREMENT')return t('quality.purchaseOnly')
+ if(order.closedAt||order.status==='CANCELLED')return t('quality.inactiveOrder')
+ if(!['ORDERED','PARTIALLY_RECEIVED','RECEIVED'].includes(order.status))return t('quality.afterOrder')
+ return ''
+}
+function canRequestQuality(order:Order){return auth.can('procurement:order:read')&&!qualityRequestHint(order)}
+const qualityMenuTasks=reactive<Record<string,boolean>>({})
+async function loadQualityMenu(order:Order,visible:boolean){
+ if(!visible||order.businessType!=='PROCUREMENT')return
+ delete qualityMenuTasks[order.id]
+ try{
+  const result=await get<{tasks:QualityDetail[]}>(`/purchase-orders/${order.id}/quality-inspections`,{},quietErrors)
+  qualityMenuTasks[order.id]=Boolean(result.tasks?.length)
+ }catch{/* Details can still be opened to retry. */}
+}
 
 const rows = ref<Order[]>([])
 const total = ref(0)
@@ -757,6 +773,7 @@ const contractOrder = ref<Order | null>(null)
 const contractFile = ref<File | null>(null)
 const contractFiles = ref<any[]>([])
 const contractForm = reactive({ contractNo: '', paymentTerms: '' })
+const qualityRevision=ref(0)
 const qualityOpen = ref(false)
 const qualityOrder = ref<Order | null>(null)
 const qualityItems = ref<OrderItem[]>([])
@@ -909,13 +926,13 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
   add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
+  if(qualityMenuTasks[row.id]===true)add('quality',t('quality.viewProgress'),true)
+  else if(qualityMenuTasks[row.id]===false)add('quality',t('quality.apply'),canRequestQuality(row))
 	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
 		add('contract','上传/更换签署合同',canWrite&&!row.paymentRequestedAt)
-		add('quality', t('quality.apply'), canRequestQuality && !row.contractVerifiedAt)
 		if (!row.contractVerifiedAt) return out
 	}
   add('execution', t('purchaseFulfillment.view'), canViewFulfillment(row))
-  add('quality', t('quality.apply'), canRequestQuality && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
@@ -1004,9 +1021,10 @@ function runOrderAction(row: Order, key: string) {
 }
 
 async function openQualityApplication(row: Order) {
-	const [d,q]=await Promise.all([get<{items:OrderItem[]}>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`)])
+	const [d,q]=await Promise.all([get<{order:Order;items:OrderItem[]}>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`)])
 	if((q.tasks||[]).length){ElMessage.info('该采购单已有整单质检任务，已打开原质检资料');await openDetail(row);return}
-	qualityOrder.value=row;qualityItems.value=d.items||[]
+	if(!canRequestQuality(d.order)){ElMessage.info(qualityRequestHint(d.order));return}
+	qualityOrder.value=d.order;qualityItems.value=d.items||[]
 	qualityForm.expectedDate='';qualityForm.location=row.factoryName||row.supplierName;qualityForm.contactName='';qualityForm.contactPhone='';qualityForm.remark=''
 	qualityOpen.value=true
 }
@@ -1015,7 +1033,7 @@ async function submitQualityApplication(){
 	if(!qualityItems.value.length){ElMessage.warning('采购单没有可质检的产品');return}
 	const lines=qualityItems.value.map(i=>({po_item_id:Number(i.id),qty:i.qty}))
 	saving.value=true
-	try{await post(`/purchase-orders/${qualityOrder.value.id}/quality-inspections`,{expected_date:qualityForm.expectedDate,inspection_location:qualityForm.location,contact_name:qualityForm.contactName,contact_phone:qualityForm.contactPhone,remark:qualityForm.remark,lines});ElMessage.success(t('quality.applied'));qualityOpen.value=false}
+	try{await post(`/purchase-orders/${qualityOrder.value.id}/quality-inspections`,{expected_date:qualityForm.expectedDate,inspection_location:qualityForm.location,contact_name:qualityForm.contactName,contact_phone:qualityForm.contactPhone,remark:qualityForm.remark,lines});ElMessage.success(t('quality.applied'));qualityMenuTasks[qualityOrder.value.id]=true;qualityRevision.value++;qualityOpen.value=false}
 	finally{saving.value=false}
 }
 
