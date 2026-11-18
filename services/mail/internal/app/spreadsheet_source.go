@@ -1,23 +1,19 @@
 package app
 
 import (
-	"archive/zip"
-	"bytes"
-	"encoding/xml"
+	"encoding/json"
 	"fmt"
-	"io"
-	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/sgao19/erp-go/pkg/xlsx"
 )
 
-// SpreadsheetSourceRefs finds requested detail rows before a spreadsheet is
-// handed to the model. It deliberately recognizes only the explicit INQ Q'ty
-// layout: unknown workbooks retain the existing model-only path rather than
-// guessing at a table and rejecting a legitimate attachment.
+// SpreadsheetSourceRow is a locally identified inquiry line and its source cells.
 type SpreadsheetSourceRow struct {
 	SourceRef        string            `json:"source_ref"`
 	Cells            map[string]string `json:"cells"`
@@ -28,6 +24,7 @@ type SpreadsheetSourceDocument struct {
 	Rows          []SpreadsheetSourceRow
 	ContextBlocks []SpreadsheetContextBlock
 	Sheets        []SpreadsheetSheetInfo
+	ModelText     string
 }
 
 type SpreadsheetSheetInfo struct {
@@ -83,46 +80,126 @@ func SpreadsheetSourceRows(data []byte) ([]SpreadsheetSourceRow, error) {
 // context blocks. A large sheet that cannot be classified fails explicitly
 // instead of being silently ignored.
 func ParseSpreadsheetSource(data []byte) (SpreadsheetSourceDocument, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return SpreadsheetSourceDocument{}, fmt.Errorf("open xlsx: %w", err)
-	}
-	files := make(map[string]*zip.File, len(zr.File))
-	for _, file := range zr.File {
-		files[file.Name] = file
-	}
-	shared, err := xlsxSharedStrings(files["xl/sharedStrings.xml"])
-	if err != nil {
-		return SpreadsheetSourceDocument{}, err
-	}
-	sheets, err := xlsxSheets(files)
+	sheets, err := xlsx.ReadWorkbook(data)
 	if err != nil {
 		return SpreadsheetSourceDocument{}, err
 	}
 	var document SpreadsheetSourceDocument
+	var contextSheets []xlsx.Worksheet
 	for _, sheet := range sheets {
-		file := files[sheet.path]
-		if file == nil {
-			return SpreadsheetSourceDocument{}, fmt.Errorf("xlsx sheet %q is missing", sheet.name)
+		for _, row := range sortedSpreadsheetRows(sheet.Rows) {
+			if columns := spreadsheetConflictingQuantityColumns(sheet.Rows[row]); len(columns) > 1 {
+				return SpreadsheetSourceDocument{}, &spreadsheetQuantityConflict{sheet.Name, row, columns}
+			}
 		}
-		rows, err := xlsxRows(file, shared)
-		if err != nil {
-			return SpreadsheetSourceDocument{}, fmt.Errorf("read xlsx sheet %q: %w", sheet.name, err)
-		}
-		detailRows := spreadsheetDetailRows(sheet.name, rows)
+		detailRows := spreadsheetDetailRows(sheet.Name, sheet.Rows)
 		if len(detailRows) > 0 {
 			document.Rows = append(document.Rows, detailRows...)
-			document.Sheets = append(document.Sheets, SpreadsheetSheetInfo{Name: sheet.name, Role: "detail", DetailRows: len(detailRows)})
+			document.Sheets = append(document.Sheets, SpreadsheetSheetInfo{Name: sheet.Name, Role: "detail", DetailRows: len(detailRows)})
 			continue
 		}
-		blocks, err := spreadsheetContextBlocks(sheet.name, rows)
+		contextSheets = append(contextSheets, sheet)
+	}
+	if len(document.Rows) == 0 {
+		// Give the model original row addresses and raw cells for small unknown
+		// layouts. For a larger workbook, keep the existing file input path.
+		document.ModelText = unclassifiedSpreadsheetText(sheets)
+		return document, nil
+	}
+	for _, sheet := range contextSheets {
+		blocks, err := spreadsheetContextBlocks(sheet.Name, sheet.Rows)
 		if err != nil {
 			return SpreadsheetSourceDocument{}, err
 		}
 		document.ContextBlocks = append(document.ContextBlocks, blocks...)
-		document.Sheets = append(document.Sheets, SpreadsheetSheetInfo{Name: sheet.name, Role: "context", ContextBlocks: len(blocks)})
+		document.Sheets = append(document.Sheets, SpreadsheetSheetInfo{Name: sheet.Name, Role: "context", ContextBlocks: len(blocks)})
 	}
 	return document, nil
+}
+
+func unclassifiedSpreadsheetText(sheets []xlsx.Worksheet) string {
+	const maxTextBytes = 48_000
+	var blocks []SpreadsheetContextBlock
+	remaining := maxTextBytes
+	for _, sheet := range sheets {
+		if len(sheet.Rows) > 200 {
+			return ""
+		}
+		lines := spreadsheetContextLines(sheet.Name, sheet.Rows)
+		remaining -= spreadsheetContextSize(lines)
+		if remaining < 0 {
+			return ""
+		}
+		blocks = append(blocks, newContextBlock(sheet.Name, "unclassified", lines, nil, false))
+	}
+	encoded, err := json.Marshal(blocks)
+	if err != nil || len(encoded) > maxTextBytes {
+		return ""
+	}
+	return string(encoded)
+}
+
+type spreadsheetQuantityConflict struct {
+	sheet   string
+	row     int
+	columns []string
+}
+
+type spreadsheetContextLimit struct{ sheet string }
+
+func (e *spreadsheetContextLimit) Error() string {
+	return fmt.Sprintf("工作表 %s 的内容较多且未识别出明细表头或批次分组，请明确表头或拆分工作表后重试", e.sheet)
+}
+
+var spreadsheetProductHeaders = []string{
+	"product", "productdescription", "description", "producto", "item", "steel", "产品", "产品名称", "品名",
+}
+
+var spreadsheetQuantityHeaders = []string{
+	"quantitymt", "qtymt", "数量mt", "requestedquantity", "requestedqty", "orderquantity",
+	"quantity", "qty", "cantidad", "数量",
+}
+
+var spreadsheetUnitHeaders = []string{"quantityunit", "unit", "uom", "unidad", "单位"}
+
+func (e *spreadsheetQuantityConflict) Error() string {
+	return fmt.Sprintf("工作表 %s 第 %d 行有多个可能的需求数量列（%s），请确认并将需求数量列标为 INQ Q’ty 后重试", e.sheet, e.row, strings.Join(e.columns, "、"))
+}
+
+// The explicitly marked inquiry quantity wins over generic order quantities.
+// Otherwise, equal candidates are ambiguous and must not be selected by map order.
+func spreadsheetConflictingQuantityColumns(headers map[int]string) []string {
+	var explicit, required, generic []int
+	hasProduct := false
+	for col, header := range headers {
+		name := normalizeHeader(header)
+		switch {
+		case name == "inqqty":
+			explicit = append(explicit, col)
+		case name == "tonsmtrequeriment" || name == "tonsmtrequirement":
+			required = append(required, col)
+		case name == "mt" || name == "tons" || name == "ton" || slices.Contains(spreadsheetQuantityHeaders, name):
+			generic = append(generic, col)
+		case name == "sku" || name == "skucaasa" || name == "itemcode" || name == "productcode" || slices.Contains(spreadsheetProductHeaders, name):
+			hasProduct = true
+		}
+	}
+	columns := explicit
+	if len(columns) == 0 && hasProduct {
+		columns = required
+		if len(columns) == 0 {
+			columns = generic
+		}
+	}
+	if len(columns) < 2 {
+		return nil
+	}
+	sort.Ints(columns)
+	labels := make([]string, 0, len(columns))
+	for _, col := range columns {
+		labels = append(labels, xlsxColumnName(col))
+	}
+	return labels
 }
 
 func spreadsheetDetailRows(sheetName string, rows map[int]map[int]string) []SpreadsheetSourceRow {
@@ -149,10 +226,14 @@ func spreadsheetDetailRows(sheetName string, rows map[int]map[int]string) []Spre
 				continue
 			}
 			hasIdentity := false
-			for col := 1; col < layout.qtyCol; col++ {
-				if strings.TrimSpace(values[col]) != "" {
-					hasIdentity = true
-					break
+			if layout.itemCol > 0 {
+				hasIdentity = strings.TrimSpace(values[layout.itemCol]) != ""
+			} else {
+				for col := 1; col < layout.qtyCol; col++ {
+					if strings.TrimSpace(values[col]) != "" {
+						hasIdentity = true
+						break
+					}
 				}
 			}
 			if !hasIdentity {
@@ -214,6 +295,7 @@ func spreadsheetSheetSharedValues(rows map[int]map[int]string) map[string]string
 type spreadsheetTableLayout struct {
 	headers          map[int]string
 	qtyCol           int
+	itemCol          int
 	quantityUnitHint string
 	sharedValues     map[string]string
 }
@@ -237,13 +319,28 @@ func spreadsheetDetailLayout(rows map[int]map[int]string, headerRow int) (spread
 	for col, value := range headers {
 		cols[normalizeHeader(value)] = col
 	}
+	// Identify the requested-tonnage column by its explicit header and the
+	// surrounding product dimensions. "Sheets per MT" is a conversion factor.
+	itemCol := firstSpreadsheetColumn(cols, "item", "product", "description")
+	actualThicknessCol := firstSpreadsheetColumn(cols, "invocingthicknessmmreal", "invoicingthicknessmmreal", "actualthicknessmm")
+	requestedTonsCol := firstSpreadsheetColumn(cols, "tonsmtrequeriment", "tonsmtrequirement")
+	if itemCol > 0 && actualThicknessCol > 0 && requestedTonsCol > 0 && cols["widthmm"] > 0 && cols["lengthmm"] > 0 {
+		canonical := make(map[int]string, len(headers))
+		for col, header := range headers {
+			canonical[col] = header
+		}
+		canonical[itemCol] = "Product"
+		canonical[actualThicknessCol] = "Thickness [mm]"
+		canonical[requestedTonsCol] = "Quantity"
+		return spreadsheetTableLayout{headers: canonical, qtyCol: requestedTonsCol, itemCol: itemCol, quantityUnitHint: "MT"}, true
+	}
 	skuCol := firstSpreadsheetColumn(cols, "skucaasa", "sku", "itemcode", "productcode")
 	thicknessCol := firstSpreadsheetColumn(cols, "tmm", "thicknessmm")
 	widthCol := firstSpreadsheetColumn(cols, "wmm", "widthmm")
 	lengthCol := firstSpreadsheetColumn(cols, "lmm", "lengthmm")
 	qtyCol := firstSpreadsheetColumn(cols, "mt", "ton", "tons")
 	if skuCol == 0 || thicknessCol == 0 || widthCol == 0 || lengthCol == 0 || qtyCol == 0 {
-		return spreadsheetTableLayout{}, false
+		return spreadsheetGenericDetailLayout(headers, cols)
 	}
 
 	canonical := make(map[int]string, len(headers))
@@ -281,6 +378,32 @@ func spreadsheetDetailLayout(rows map[int]map[int]string, headerRow int) (spread
 	}, true
 }
 
+func spreadsheetGenericDetailLayout(headers map[int]string, cols map[string]int) (spreadsheetTableLayout, bool) {
+	item := firstSpreadsheetColumn(cols, spreadsheetProductHeaders...)
+	quantity := firstSpreadsheetColumn(cols, spreadsheetQuantityHeaders...)
+	unit := firstSpreadsheetColumn(cols, spreadsheetUnitHeaders...)
+	hasDimensions := cols["widthmm"] > 0 && cols["lengthmm"] > 0
+	hint := ""
+	if quantity > 0 {
+		switch normalizeHeader(headers[quantity]) {
+		case "quantitymt", "qtymt", "数量mt":
+			hint = "MT"
+		}
+	}
+	if item == 0 || quantity == 0 || (unit == 0 && hint == "" && !hasDimensions) {
+		return spreadsheetTableLayout{}, false
+	}
+	canonical := make(map[int]string, len(headers))
+	for col, name := range headers {
+		canonical[col] = name
+	}
+	canonical[item], canonical[quantity] = "Product", "Quantity"
+	if unit > 0 {
+		canonical[unit] = "Quantity Unit"
+	}
+	return spreadsheetTableLayout{headers: canonical, qtyCol: quantity, itemCol: item, quantityUnitHint: hint}, true
+}
+
 func firstSpreadsheetColumn(columns map[string]int, names ...string) int {
 	for _, name := range names {
 		if column := columns[name]; column > 0 {
@@ -293,7 +416,7 @@ func firstSpreadsheetColumn(columns map[string]int, names ...string) int {
 func spreadsheetTotalRow(values map[int]string, qtyCol int) bool {
 	for col := 1; col < qtyCol; col++ {
 		value := normalizeHeader(values[col])
-		if value == "total" || value == "subtotal" {
+		if value == "total" || value == "subtotal" || value == "totaltons" || value == "subtotaltons" {
 			return true
 		}
 	}
@@ -355,7 +478,7 @@ func spreadsheetContextBlocks(sheetName string, rows map[int]map[int]string) ([]
 	}
 
 	if len(lines) > 80 || spreadsheetContextSize(lines) > 12_000 {
-		return nil, fmt.Errorf("xlsx context sheet %q is too large and has no LOT sections or LOT table", sheetName)
+		return nil, &spreadsheetContextLimit{sheet: sheetName}
 	}
 	return []SpreadsheetContextBlock{newContextBlock(sheetName, "sheet_global", lines, nil, true)}, nil
 }
@@ -485,232 +608,6 @@ func spreadsheetQuantityUnitHint(headers map[int]string) string {
 		}
 	}
 	return ""
-}
-
-type xlsxSheet struct{ name, path string }
-
-func xlsxSheets(files map[string]*zip.File) ([]xlsxSheet, error) {
-	workbook := files["xl/workbook.xml"]
-	rels := files["xl/_rels/workbook.xml.rels"]
-	if workbook == nil || rels == nil {
-		return nil, fmt.Errorf("xlsx workbook relationships are missing")
-	}
-	read := func(file *zip.File) ([]byte, error) {
-		r, err := file.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer r.Close()
-		return io.ReadAll(r)
-	}
-	workbookData, err := read(workbook)
-	if err != nil {
-		return nil, err
-	}
-	relsData, err := read(rels)
-	if err != nil {
-		return nil, err
-	}
-	var book struct {
-		Sheets []struct {
-			Name string `xml:"name,attr"`
-			ID   string `xml:"id,attr"`
-		} `xml:"sheets>sheet"`
-	}
-	if err := xml.Unmarshal(workbookData, &book); err != nil {
-		return nil, err
-	}
-	var relationships struct {
-		Items []struct {
-			ID     string `xml:"Id,attr"`
-			Target string `xml:"Target,attr"`
-		} `xml:"Relationship"`
-	}
-	if err := xml.Unmarshal(relsData, &relationships); err != nil {
-		return nil, err
-	}
-	targets := make(map[string]string, len(relationships.Items))
-	for _, rel := range relationships.Items {
-		// OPC relationship targets may be relative to xl/workbook.xml or
-		// package-absolute (for example /xl/worksheets/sheet1.xml). Both are
-		// valid; joining an absolute package target under xl makes a false
-		// xl/xl/... path and reports a present sheet as missing.
-		if strings.HasPrefix(rel.Target, "/") {
-			targets[rel.ID] = strings.TrimPrefix(path.Clean(rel.Target), "/")
-		} else {
-			targets[rel.ID] = path.Clean(path.Join("xl", rel.Target))
-		}
-	}
-	result := make([]xlsxSheet, 0, len(book.Sheets))
-	for _, sheet := range book.Sheets {
-		target := targets[sheet.ID]
-		if target == "" {
-			return nil, fmt.Errorf("xlsx sheet %q has no relationship", sheet.Name)
-		}
-		result = append(result, xlsxSheet{name: sheet.Name, path: target})
-	}
-	return result, nil
-}
-
-func xlsxSharedStrings(file *zip.File) ([]string, error) {
-	if file == nil {
-		return nil, nil
-	}
-	r, err := file.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	decoder := xml.NewDecoder(r)
-	var result []string
-	inside, text := false, strings.Builder{}
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		switch value := token.(type) {
-		case xml.StartElement:
-			if value.Name.Local == "si" {
-				inside = true
-				text.Reset()
-			}
-		case xml.CharData:
-			if inside {
-				text.Write([]byte(value))
-			}
-		case xml.EndElement:
-			if value.Name.Local == "si" {
-				result = append(result, text.String())
-				inside = false
-			}
-		}
-	}
-	return result, nil
-}
-
-func xlsxRows(file *zip.File, shared []string) (map[int]map[int]string, error) {
-	r, err := file.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	decoder := xml.NewDecoder(r)
-	result := map[int]map[int]string{}
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		start, ok := token.(xml.StartElement)
-		if !ok || start.Name.Local != "row" {
-			continue
-		}
-		rowNo := xlsxAttr(start, "r")
-		n, _ := strconv.Atoi(rowNo)
-		if n == 0 {
-			continue
-		}
-		cells, err := xlsxRowCells(decoder, shared)
-		if err != nil {
-			return nil, err
-		}
-		result[n] = cells
-	}
-	return result, nil
-}
-
-func xlsxRowCells(decoder *xml.Decoder, shared []string) (map[int]string, error) {
-	cells := map[int]string{}
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		end, ok := token.(xml.EndElement)
-		if ok && end.Name.Local == "row" {
-			return cells, nil
-		}
-		start, ok := token.(xml.StartElement)
-		if !ok || start.Name.Local != "c" {
-			continue
-		}
-		ref, kind := xlsxAttr(start, "r"), xlsxAttr(start, "t")
-		col := xlsxColumn(ref)
-		value, err := xlsxCellValue(decoder)
-		if err != nil {
-			return nil, err
-		}
-		if kind == "s" {
-			i, err := strconv.Atoi(value)
-			if err != nil || i < 0 || i >= len(shared) {
-				return nil, fmt.Errorf("invalid shared string index %q", value)
-			}
-			value = shared[i]
-		}
-		if col > 0 {
-			cells[col] = value
-		}
-	}
-}
-
-func xlsxCellValue(decoder *xml.Decoder) (string, error) {
-	var value strings.Builder
-	insideValue, insideInline := false, false
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			return "", err
-		}
-		switch item := token.(type) {
-		case xml.StartElement:
-			switch item.Name.Local {
-			case "v":
-				insideValue = true
-			case "t":
-				insideInline = true
-			}
-		case xml.CharData:
-			if insideValue || insideInline {
-				value.Write([]byte(item))
-			}
-		case xml.EndElement:
-			switch item.Name.Local {
-			case "v":
-				insideValue = false
-			case "t":
-				insideInline = false
-			case "c":
-				return value.String(), nil
-			}
-		}
-	}
-}
-
-func xlsxAttr(start xml.StartElement, name string) string {
-	for _, attr := range start.Attr {
-		if attr.Name.Local == name {
-			return attr.Value
-		}
-	}
-	return ""
-}
-
-func xlsxColumn(ref string) int {
-	value := 0
-	for _, r := range ref {
-		if r < 'A' || r > 'Z' {
-			break
-		}
-		value = value*26 + int(r-'A'+1)
-	}
-	return value
 }
 
 func normalizeHeader(value string) string {
