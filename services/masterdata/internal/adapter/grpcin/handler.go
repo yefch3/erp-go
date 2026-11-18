@@ -299,13 +299,22 @@ func (h *Handler) DeactivateCustomerAddress(ctx context.Context, req *mdv1.Deact
 
 // ---------------------------------------------------------------- suppliers
 
+// supplierCountryCode 是供应商交出去的国家码：空串表示没填。
+//
+// 列是定长两位的，没填的存成两个空格。原样交出去的话，页面上每一处
+// 「有国家码就显示国家名，否则显示 —」的判断都会把它当成一个名字是空白的
+// 国家。客户那边一直是去掉空格再给，这里和它保持一致。
+func supplierCountryCode(stored string) string {
+	return strings.TrimSpace(stored)
+}
+
 func supplierToProto(s store.Supplier) *mdv1.Supplier {
 	return &mdv1.Supplier{
 		Id: s.ID, Code: s.Code, Name: s.Name, Country: s.Country, Address: s.Address,
 		Currency: s.Currency, ContactName: s.ContactName, ContactPhone: s.ContactPhone,
 		ContactEmail: s.ContactEmail, Remark: s.Remark, Status: s.Status,
 		NameZh: s.NameZh, NameEn: s.NameEn, ShortName: s.ShortName,
-		CountryCode: s.CountryCode, TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
+		CountryCode: supplierCountryCode(s.CountryCode), TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
 		PaymentTerm:   s.PaymentTerm,
 		BusinessTypes: s.BusinessTypes,
 		CreditGrade:   s.CreditGrade, CreditGradedAt: ts(s.CreditGradedAt),
@@ -352,7 +361,7 @@ func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequ
 			Currency: r.Currency, ContactName: r.ContactName, ContactPhone: r.ContactPhone,
 			ContactEmail: r.ContactEmail, Remark: r.Remark, Status: r.Status,
 			NameZh: r.NameZh, NameEn: r.NameEn, ShortName: r.ShortName,
-			CountryCode: r.CountryCode, TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
+			CountryCode: supplierCountryCode(r.CountryCode), TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
 			PaymentTerm:   r.PaymentTerm,
 			BusinessTypes: r.BusinessTypes,
 			CreditGrade:   r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),

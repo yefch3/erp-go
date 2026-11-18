@@ -913,6 +913,8 @@ message ListSuppliersRequest {
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
   string status = 3;
+  // Empty lists every country; __UNCLASSIFIED__ selects suppliers without a
+  // country code. Same convention as ListCustomersRequest.
   string country_code = 4;
   string business_type = 5;
   int64 owner_id = 6;
@@ -967,6 +969,8 @@ message ActivateSupplierRequest {
 
 message ActivateSupplierResponse {}
 
+// country_code is empty for the group nobody has assigned a country to; the
+// list request selects that group with __UNCLASSIFIED__.
 message CountryCount { string country_code = 1; int64 count = 2; }
 message ListSupplierCountriesRequest { bool include_inactive = 1; }
 message ListSupplierCountriesResponse { repeated CountryCount countries = 1; }

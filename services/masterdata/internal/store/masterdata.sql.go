@@ -2991,7 +2991,13 @@ SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.co
 FROM suppliers s
 WHERE s.tenant_id = $1
   AND ($2::text = 'ALL' OR ($2::text = '' AND s.status = 'ACTIVE') OR s.status = $2::text)
-  AND ($3::text = '' OR s.country_code = $3::text)
+  -- 国家：空串不筛；__UNCLASSIFIED__ 只看没填国家的（和 ListCustomers 同一个约定）。
+  -- country_code 是定长两位的列，没填的存成两个空格，所以这里用 btrim 判空。
+  AND (
+        $3::text = ''
+     OR ($3::text = '__UNCLASSIFIED__' AND btrim(s.country_code) = '')
+     OR s.country_code = $3::text
+  )
   AND ($4::text = '' OR $4::text = ANY(s.business_types))
   AND ($5::bigint = 0 OR EXISTS (
         SELECT 1 FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id
