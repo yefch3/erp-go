@@ -72,42 +72,32 @@
      <ul><li v-for="change in sourceChanges.sources" :key="change.id">{{sourceChangeDescription(change)}}</li></ul>
     </el-alert>
     <el-alert v-if="offer.status==='CONFIRMED'" :title="t('inquiryWorkspace.offer.confirmedSnapshotHint')" type="info" :closable="false" show-icon/>
-    <section class="workspace-card customer-information"><div class="card-heading"><div><h3>{{t('inquiryWorkspace.offer.quoteInfo')}}</h3><p>{{t('inquiryWorkspace.offer.quoteInfoHint')}}</p></div><span v-if="offer.body.selectionSavedAt" class="saved-at">{{t('inquiryWorkspace.offer.savedAt',{time:displayTime(offer.body.selectionSavedAt)})}}</span></div>
+    <details class="workspace-card customer-information quote-terms"><summary>{{t('inquiryWorkspace.offer.quoteInfo')}} <span v-if="offer.body.selectionSavedAt" class="saved-at">{{t('inquiryWorkspace.offer.savedAt',{time:displayTime(offer.body.selectionSavedAt)})}}</span></summary>
      <el-form class="customer-fields" label-position="top" :disabled="!editable"><el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')"><el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')"><el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')"><el-input v-model="offer.body.payment"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')"><el-input v-model="offer.body.remark" type="textarea" :rows="2"/></el-form-item></el-form>
-    </section>
+    </details>
     <section v-if="offer.status==='CONFIRMED'" class="workspace-card"><div class="card-heading"><h3>{{t('inquiryWorkspace.offer.confirmedDetails')}}</h3></div><el-table :data="offer.body.lines" class="quote-table"><el-table-column prop="product" :label="t('inquiryWorkspace.offer.product')"/><el-table-column :label="t('inquiryWorkspace.offer.quantity')"><template #default="{row}">{{formatCfrUnitPrice(row.quantity)||'—'}}</template></el-table-column><el-table-column prop="unit" :label="t('inquiryWorkspace.offer.unit')"/><el-table-column :label="t('inquiryWorkspace.offer.customerUnitPrice')"><template #default="{row}">{{offer.body.currency}} {{formatCfrUnitPrice(row.unitPrice)||'—'}}</template></el-table-column><el-table-column :label="t('inquiryWorkspace.offer.amount')"><template #default="{row}">{{formatCfrUnitPrice(row.amount)||'—'}}</template></el-table-column></el-table></section>
     <el-empty v-if="!customerRows.length&&offer.status!=='CONFIRMED'" :description="t('inquiryWorkspace.offer.noCustomerPlan')"><el-button type="primary" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.goCompare')}}</el-button></el-empty>
-    <section v-for="group in customerGroups" :key="group.value" class="workspace-card category-panel customer-category-panel" :class="'category-'+group.value.toLowerCase()"><div class="card-heading compact-customer-heading"><div><span class="eyebrow">{{t('inquiryWorkspace.offer.selectedSupplierQuotes')}}</span><div class="customer-category-title"><el-tag class="trade-term-tag" effect="plain">{{categoryTradeTerm(group.label,group.currency)}}</el-tag><el-tag class="trade-currency-tag" size="small" effect="plain">{{group.currency}}</el-tag><span class="customer-candidate-count">{{t('inquiryWorkspace.offer.candidateSuppliers',{count:customerSupplierCount(group.rows)})}}</span></div><p>{{t('inquiryWorkspace.offer.customerPriceHint')}}</p></div></div>
-     <div class="customer-quote-comparison">
-      <div class="customer-quote-grid customer-quote-grid--header"><span>{{t('inquiryWorkspace.offer.product')}}</span><span>{{t('inquiryWorkspace.offer.qtyUnit')}}</span><span>{{t('inquiryWorkspace.offer.supplierQuotes')}}</span></div>
-      <article v-for="productGroup in customerProductGroups(group.value,group.rows)" :key="productGroup.key" class="customer-quote-product">
-       <div class="customer-quote-grid customer-quote-grid--row">
-        <div class="customer-product-identity"><button type="button" class="customer-product-toggle" :aria-expanded="customerProductExpanded(productGroup.key)" @click="toggleCustomerProduct(productGroup.key)"><el-icon :class="{'is-expanded':customerProductExpanded(productGroup.key)}"><ArrowDown/></el-icon></button><div><strong>{{productGroup.productName}}</strong><small :title="productGroupSpecificationSummary(productGroup)">{{productGroupSpecificationSummary(productGroup)}}</small></div></div>
-        <strong class="customer-product-quantity">{{productGroupQuantity(productGroup)}}</strong>
-        <div class="supplier-quote-list">
-         <div v-for="candidate in visibleCustomerCandidates(productGroup)" :key="`${candidate.product.id}:${candidate.quote.id}`" class="supplier-quote-row"><span class="supplier-quote-name" :title="candidate.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')">{{candidate.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')}}</span><strong class="supplier-quote-price">{{customerSelectionFor(candidate)?.cfrUnitPrice?`USD ${formatCfrUnitPrice(customerSelectionFor(candidate)?.cfrUnitPrice)} / ${candidate.product.unit}`:t('inquiryWorkspace.offer.cfrPending')}}</strong></div>
-         <button v-if="productGroup.rows.length>2" type="button" class="supplier-quote-expand" @click="toggleCustomerCandidates(productGroup.key)">{{t(customerCandidatesExpanded(productGroup.key)?'inquiryWorkspace.offer.collapseCandidateQuotes':'inquiryWorkspace.offer.showAllCandidateQuotes',{count:productGroup.rows.length})}} <span>{{customerCandidatesExpanded(productGroup.key)?'▲':'▼'}}</span></button>
-        </div>
-       </div>
-       <div v-show="customerProductExpanded(productGroup.key)" class="customer-specification-groups">
-         <section v-for="(specGroup,specIndex) in productGroup.specs" :key="specGroup.key" class="customer-specification-card">
-          <div class="customer-specification-heading">
-           <div class="customer-specification-info">
-            <div class="customer-specification-label"><strong>{{t('inquiryWorkspace.offer.specificationNumber',{number:specIndex+1})}}</strong></div>
-            <div class="customer-specification-fields" :title="specificationSentence(specGroup.product)"><template v-if="specFields(specGroup.product).length"><span v-for="field in specFields(specGroup.product)" :key="field.key"><b>{{field.label}}</b><em>{{field.value}}</em></span></template><span v-else>—</span></div>
-           </div>
-           <div class="customer-specification-meta"><span>{{t('inquiryWorkspace.offer.candidates',{count:specGroup.rows.length})}}</span></div>
-          </div>
-          <el-table :data="specGroup.rows" class="customer-supplier-table" table-layout="fixed">
-           <el-table-column :label="t('inquiryWorkspace.offer.selectedSupplier')" min-width="240" show-overflow-tooltip><template #default="{row}"><strong>{{row.quote.body.company||'—'}}</strong></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.calculatedCustomerPrice')" min-width="200" align="center"><template #default="{row}"><strong class="money customer-price">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} <span>/ {{row.product.unit}}</span></strong></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.customerQuotePrice')" min-width="300" align="center"><template #default="{row}"><el-input v-model="negotiationFor(row).proposedPrice" class="customer-price-input" :disabled="!editable" inputmode="decimal" :placeholder="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></template></el-table-column>
-           <el-table-column :label="t('contractRepair.accepted')" width="125" align="center"><template #default="{row}"><el-checkbox :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)"/></template></el-table-column>
-           <el-table-column :label="t('inquiryWorkspace.offer.source')" min-width="140" align="center"><template #default="{row}"><el-button link type="primary" @click="preview=row.quote">{{t('inquiryWorkspace.offer.viewSource')}}</el-button></template></el-table-column>
-          </el-table>
-         </section>
-       </div>
-      </article>
+    <section v-for="group in customerGroups" :key="group.value" class="workspace-card category-panel negotiation-panel">
+     <header><strong>{{group.label}}</strong><span>{{t('inquiryWorkspace.offer.candidateSuppliers',{count:customerSupplierCount(group.rows)})}}</span></header>
+     <div class="negotiation-scroll">
+      <table class="negotiation-grid">
+       <thead><tr>
+        <th>{{t('inquiryWorkspace.offer.productDescription')}}</th>
+        <th>{{t('inquiryWorkspace.offer.qtyUnit')}}</th>
+        <th>{{t('inquiryWorkspace.offer.selectedSupplier')}}</th>
+        <th>{{t('inquiryWorkspace.offer.calculatedCustomerPrice')}}</th>
+        <th>{{t('inquiryWorkspace.offer.customerQuotePrice')}}</th>
+        <th>{{t('contractRepair.accepted')}}</th>
+       </tr></thead>
+       <tbody><tr v-for="row in group.rows" :key="selectionKey({productId:row.product.id,category:row.category,quoteId:row.quote.id})">
+        <td :data-label="t('inquiryWorkspace.offer.productDescription')"><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
+        <td :data-label="t('inquiryWorkspace.offer.qtyUnit')">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</td>
+        <td :data-label="t('inquiryWorkspace.offer.selectedSupplier')"><strong>{{row.quote.body.company||'—'}}</strong></td>
+        <td :data-label="t('inquiryWorkspace.offer.calculatedCustomerPrice')">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} / {{row.product.unit}}</td>
+        <td :data-label="t('inquiryWorkspace.offer.customerQuotePrice')"><el-input v-model="negotiationFor(row).proposedPrice" size="small" :disabled="!editable" inputmode="decimal" :aria-label="t('inquiryWorkspace.offer.customerQuotePrice')+' · '+row.product.product" :title="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" placeholder="—" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></td>
+        <td :data-label="t('contractRepair.accepted')"><el-checkbox :aria-label="t('contractRepair.accepted')+' · '+row.product.product" :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)"/></td>
+       </tr></tbody>
+      </table>
      </div>
     </section>
     <section class="document-panel"><div><h3>{{t('inquiryWorkspace.offer.customerQuotationDocument')}}</h3><p>{{t('inquiryWorkspace.offer.documentHint')}}</p></div><div class="document-actions"><label>{{t('inquiryWorkspace.offer.documentLanguage')}}<el-select v-model="offer.body.documentLanguage" :disabled="!editable"><el-option v-for="option in documentLanguages" :key="option.value" :value="option.value" :label="option.label"/></el-select></label><el-tooltip :content="documentTooltip"><span><el-button :disabled="!canGenerateDocument" :loading="busy" type="primary" @click="generateDocument">{{t('inquiryWorkspace.offer.generateDocument')}}</el-button></span></el-tooltip></div></section>
@@ -159,7 +149,6 @@ import {computed,ref,watch,onBeforeUnmount} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
-import {ArrowDown} from '@element-plus/icons-vue'
 import {post,quietErrors,saveBlob} from '../api'
 import {productTemplateValue,type Quote,type Product,type Price} from '../lib/inquiryWorkspace'
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
@@ -177,7 +166,6 @@ const router=useRouter(),{t,locale}=useI18n(),offer=ref<Offer|null>(null),busy=r
 const showEmptyCategories=ref(false)
 const automaticPending=ref(false),automaticError=ref('')
 const productFreightChoices=ref<Record<string,{id:string;version?:number}>>({})
-const expandedCustomerProducts=ref(new Set<string>()),expandedCustomerCandidates=ref(new Set<string>())
 const isCompare=computed(()=>props.mode==='compare'),editable=computed(()=>!!offer.value?.canEdit)
 const dirty=computed(()=>!!offer.value&&JSON.stringify(offer.value.body)!==savedBody.value)
 const selections=computed(()=>offer.value?.body.categorySelections||[])
@@ -237,16 +225,7 @@ function selectedProductCount(category:string){return new Set(rowsFor(category).
 function snapshotRow(s:OfferSelectionSnapshot):Candidate{return{product:s.product,quote:s.quote,category:s.category,price:s.quote.body.prices?.find(p=>p.productId===s.productId)||{productId:s.productId,price:'',delivery:'',remark:''}}}
 const customerRows=computed(()=>offer.value?.body.customerSelections?.map(snapshotRow)||[])
 const customerGroups=computed(()=>groups.value.map(g=>({...g,rows:customerRows.value.filter(r=>r.category===g.value)})).filter(g=>g.rows.length))
-function customerProductGroups(category:string,rows:Candidate[]):ProductCandidateGroup[]{const grouped=new Map<string,ProductCandidateGroup>();for(const row of rows){const productKey=row.product.product.trim().toLocaleLowerCase()||row.product.id;let productGroup=grouped.get(productKey);if(!productGroup){productGroup={key:`customer:${category}:${productKey}`,productName:row.product.product||'—',category,specs:[],rows:[]};grouped.set(productKey,productGroup)}productGroup.rows.push(row);let specGroup=productGroup.specs.find(item=>item.product.id===row.product.id);if(!specGroup){specGroup={key:`${productGroup.key}:${row.product.id}`,product:row.product,rows:[]};productGroup.specs.push(specGroup)}specGroup.rows.push(row)}return[...grouped.values()]}
-function productGroupQuantity(group:ProductCandidateGroup){const totals=new Map<string,number>(),other:string[]=[];for(const spec of group.specs){const unit=spec.product.unit.trim(),raw=spec.product.quantity.trim(),value=Number(raw);if(unit&&Number.isFinite(value))totals.set(unit,(totals.get(unit)||0)+value);else if(raw||unit)other.push(`${formatQuantity(raw)} ${unit}`.trim())}return[...[...totals].map(([unit,value])=>`${value.toFixed(2)} ${unit}`),...other].join(' / ')||'—'}
-function categoryTradeTerm(label:string,currency:string){const value=label.trim();return value.endsWith(currency)?value.slice(0,-currency.length).trim():value}
 function customerSupplierCount(rows:Candidate[]){return new Set(rows.map(row=>row.quote.id)).size}
-function productGroupSpecificationSummary(group:ProductCandidateGroup){const values=[...new Set(group.specs.map(spec=>specificationSentence(spec.product)).filter(value=>value&&value!=='—'))];if(!values.length)return'—';return values.length===1?values[0]:`${values[0]} · +${values.length-1}`}
-function customerProductExpanded(key:string){return expandedCustomerProducts.value.has(key)}
-function toggleCustomerProduct(key:string){const next=new Set(expandedCustomerProducts.value);next.has(key)?next.delete(key):next.add(key);expandedCustomerProducts.value=next}
-function customerCandidatesExpanded(key:string){return expandedCustomerCandidates.value.has(key)}
-function toggleCustomerCandidates(key:string){const next=new Set(expandedCustomerCandidates.value);next.has(key)?next.delete(key):next.add(key);expandedCustomerCandidates.value=next}
-function visibleCustomerCandidates(group:ProductCandidateGroup){return customerCandidatesExpanded(group.key)?group.rows:group.rows.slice(0,2)}
 const hasCustomer=computed(()=>Number(offer.value?.body.customerId||0)>0)
 const canGenerateDocument=computed(()=>hasCustomer.value&&customerRows.value.length>0&&customerRows.value.every(row=>{const value=effectiveCustomerPrice(row);return value!==''&&Number.isFinite(Number(value))&&Number(value)>=0}))
 const documentTooltip=computed(()=>{if(!hasCustomer.value)return t('inquiryWorkspace.messages.customerRequired');return canGenerateDocument.value?t('inquiryWorkspace.offer.documentReady'):t(customerRows.value.length?'inquiryWorkspace.offer.documentPricesRequired':'inquiryWorkspace.offer.documentSelectionRequired')})
@@ -532,4 +511,16 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .freight-choice-line>strong{flex:1;min-width:0;overflow-wrap:anywhere}
 .freight-choice-line>span{white-space:nowrap;color:#176d82;font-variant-numeric:tabular-nums}
 .freight-choice-option>small{display:block;color:#70828d;font-size:11px;margin-top:3px}
+.quote-terms summary{cursor:pointer;padding:8px 14px;font-weight:600}.quote-terms .saved-at{margin-left:12px;font-weight:400}
+.negotiation-panel header{display:flex;align-items:center;gap:14px;padding:7px 12px;background:#eef6f8}.negotiation-panel header span{font-size:12px;color:#536f7d}
+.negotiation-scroll{overflow-x:auto}.negotiation-grid{width:100%;min-width:760px;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.negotiation-grid th,.negotiation-grid td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.negotiation-grid th{background:#f4f8fa;color:#365c6e}.negotiation-grid th:nth-child(1){width:34%}.negotiation-grid th:nth-child(2){width:9%}.negotiation-grid th:nth-child(3){width:16%}.negotiation-grid th:nth-child(4){width:15%}.negotiation-grid th:nth-child(5){width:17%}.negotiation-grid th:last-child,.negotiation-grid td:last-child{text-align:center}
+.negotiation-grid :deep(.el-input-group__prepend){padding:0 6px}
+@media(max-width:800px){
+ .negotiation-grid{min-width:0;display:block}.negotiation-grid thead{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}.negotiation-grid tbody{display:block}
+ .negotiation-grid tr{display:grid;grid-template-columns:1fr 1fr;align-items:start;padding:6px 8px;border-bottom:1px solid var(--line)}
+ .negotiation-grid td{display:block;border:0;padding:3px 5px}.negotiation-grid td:first-child{grid-column:1/-1}.negotiation-grid td:nth-child(3){grid-column:2;grid-row:2/4}
+ .negotiation-grid td:last-child{text-align:left}.negotiation-grid td:not(:first-child)::before{content:attr(data-label);display:block;color:#536f7d;font-size:11px}
+}
 </style>
