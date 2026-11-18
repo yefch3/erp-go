@@ -135,6 +135,13 @@ service AccessService {
   // engine calls it when a flow node names a role rather than a person, to
   // turn that node into concrete tasks.
   rpc ListRoleMembers(ListRoleMembersRequest) returns (ListRoleMembersResponse);
+  // ListPermissionHolders returns the active employees who hold a permission,
+  // by exactly the rule CheckPermission applies to one person, and who can
+  // sign in (an account exists and is not disabled). Business services call
+  // it to offer "pick a colleague who can do this" — the buyer of a purchase
+  // order, for one — so that nobody is listed for whom the choice would only
+  // fail, or who could never come and pick the work up.
+  rpc ListPermissionHolders(ListPermissionHoldersRequest) returns (ListPermissionHoldersResponse);
   // VisibleEmployees answers "whose documents may this person see" for one
   // module, from the data scope attached to their roles. Business services
   // ask it instead of inventing their own idea of who owns what.
@@ -773,6 +780,21 @@ message ChangePasswordResponse {
 
 message ListRoleMembersRequest {
   int64 role_id = 1;
+}
+
+message ListPermissionHoldersRequest {
+  string permission_code = 1;
+}
+
+message PermissionHolder {
+  int64 employee_id = 1;
+  string name = 2;
+  // For telling two people of the same name apart in a picker.
+  string department_name = 3;
+}
+
+message ListPermissionHoldersResponse {
+  repeated PermissionHolder holders = 1;
 }
 
 message ListManagersRequest {

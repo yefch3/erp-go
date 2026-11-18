@@ -4,6 +4,7 @@
 
     <HistoricalPurchaseOrderDialog v-model="historyOpen" :order-id="historyId" @saved="(s:string)=>{status=s;reload()}" />
     <HistoricalShippingContextDialog v-model="tradeContextOpen" :order="tradeContextOrder" @saved="reload" />
+    <OrderBuyerDialog v-model="buyerOpen" :order="buyerOrder" @saved="reload" />
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
@@ -537,6 +538,7 @@ import { getActionableApproval } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
 import HistoricalShippingContextDialog from '../components/HistoricalShippingContextDialog.vue'
+import OrderBuyerDialog from '../components/OrderBuyerDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
@@ -561,6 +563,7 @@ interface Order {
   expectedDate: string
   payableDueDate: string
   status: string
+  buyerId?: string
   buyerName: string
   remark: string
   rejectReason: string
@@ -674,6 +677,7 @@ const route = useRoute()
 const router = useRouter()
 const historyOpen=ref(false), historyId=ref('')
 const tradeContextOpen=ref(false), tradeContextOrder=ref<Order|null>(null)
+const buyerOpen=ref(false), buyerOrder=ref<Order|null>(null)
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
 const canCancel = auth.can('procurement:order:cancel')
@@ -929,7 +933,7 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
 }
 
 function rowMenuActions(row: Order): { key: string; label: string; divided?: boolean }[] {
- if(row.historical && row.status==='DRAFT')return [{key:'detail',label:t('common.detail')},...(canWrite?[{key:'history',label:'继续补录'}]:[])]
+ if(row.historical && row.status==='DRAFT')return [{key:'detail',label:t('common.detail')},...(canWrite?[{key:'history',label:'继续补录'},{key:'buyer',label:t('orderBuyer.action')}]:[])]
 
   if (canActOnOrderApproval(row)) {
     return [
@@ -941,6 +945,8 @@ function rowMenuActions(row: Order): { key: string; label: string; divided?: boo
   const actions = allActions(row)
  if(row.historical && row.status==='ORDERED' && canWrite && !row.paymentRequestedAt)actions.push({key:'history',label:'补齐资料 / 价格'})
  if(row.historical && canWrite)actions.push({key:'tradeContext',label:t('historicalShipping.edit')})
+ // 历史补录的单可以换采购员（#643）：一个人统一录入，再分给真正负责的采购。已取消的不需要。
+ if(row.historical && canWrite && row.status!=='CANCELLED')actions.push({key:'buyer',label:t('orderBuyer.action')})
   if (['DRAFT', 'REJECTED'].includes(row.status)) {
     const order = ['detail', 'edit', 'submit', 'cancel']
     return actions.sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key))
@@ -970,6 +976,7 @@ function runDetailNext() {
 
 function runOrderAction(row: Order, key: string) {
  if(key==='tradeContext'){tradeContextOrder.value=row;tradeContextOpen.value=true;return}
+ if(key==='buyer'){buyerOrder.value=row;buyerOpen.value=true;return}
  if(key==='history'){historyId.value=row.id;historyOpen.value=true;return}
   if (key === 'detail') {
     void openDetail(row)

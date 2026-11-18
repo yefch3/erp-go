@@ -1,0 +1,40 @@
+// 历史补录采购单的「采购员」：补录时可选、录完可换（#643）。
+export const orderBuyerZh = {
+  action: '更换采购员', title: '更换采购员',
+  hint: '只更换采购员，不修改产品、价格、收货、付款或单据状态。换给同事后，这张单会出现在对方的采购订单里；如果你看不到对方名下的单，它会从你的列表里消失。',
+  current: '现在的采购员', newBuyer: '换给', placeholder: '选择同事',
+  reason: '原因（选填）', reasonPlaceholder: '例如：按实际负责人分配',
+  required: '请选择要换给哪位同事',
+  saved: '已换给 {name}', unchanged: '采购员没有变化',
+  loadFailed: '可选的采购员没有取到，请稍后再试', empty: '没有可选的同事：需要对方在职、有登录账号，并且有维护采购订单的权限。',
+  failed: '请稍后再试',
+  assignedAfterSave: '采购单已保存，并已分给 {name}',
+  draftAssignedAfterSave: '草稿已保存，并已分给 {name}，之后由对方继续补录',
+  assignFailed: '采购单已保存，但采购员没有换成功：{reason}。可以在列表的「更多操作 → 更换采购员」里再试。',
+}
+export const orderBuyerEn = {
+  action: 'Change buyer', title: 'Change buyer',
+  hint: 'Only the buyer changes. Products, prices, receipts, payments and order status stay as they are. The order then appears in the new buyer\'s purchase orders; if you cannot see that colleague\'s orders, it will leave your list.',
+  current: 'Current buyer', newBuyer: 'Hand over to', placeholder: 'Select a colleague',
+  reason: 'Reason (optional)', reasonPlaceholder: 'e.g. assigned to the person actually responsible',
+  required: 'Select the colleague to hand this order to',
+  saved: 'Handed over to {name}', unchanged: 'The buyer is unchanged',
+  loadFailed: 'Could not load the colleagues available as buyer. Please retry.', empty: 'No colleague is available: the buyer must be active, have a sign-in account and be allowed to maintain purchase orders.',
+  failed: 'Please retry',
+  assignedAfterSave: 'Purchase order saved and assigned to {name}',
+  draftAssignedAfterSave: 'Draft saved and assigned to {name}, who continues the backfill from here',
+  assignFailed: 'The purchase order was saved, but the buyer was not changed: {reason}. Retry from the list under More actions → Change buyer.',
+}
+export const orderBuyerEs = {
+  action: 'Cambiar comprador', title: 'Cambiar comprador',
+  hint: 'Solo cambia el comprador. No cambian los productos, precios, recepciones, pagos ni el estado del pedido. El pedido aparecerá entre los pedidos del nuevo comprador; si usted no puede ver los pedidos de ese compañero, dejará de aparecer en su lista.',
+  current: 'Comprador actual', newBuyer: 'Asignar a', placeholder: 'Seleccione un compañero',
+  reason: 'Motivo (opcional)', reasonPlaceholder: 'p. ej. asignado al responsable real',
+  required: 'Seleccione a qué compañero asignar el pedido',
+  saved: 'Asignado a {name}', unchanged: 'El comprador no ha cambiado',
+  loadFailed: 'No se pudieron cargar los compañeros disponibles como comprador. Reinténtelo.', empty: 'No hay compañeros disponibles: el comprador debe estar activo, tener cuenta de acceso y permiso para mantener pedidos de compra.',
+  failed: 'Reinténtelo',
+  assignedAfterSave: 'Pedido guardado y asignado a {name}',
+  draftAssignedAfterSave: 'Borrador guardado y asignado a {name}, que continuará el registro',
+  assignFailed: 'El pedido se guardó, pero no se cambió el comprador: {reason}. Reinténtelo desde la lista en Más acciones → Cambiar comprador.',
+}

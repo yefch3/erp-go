@@ -134,11 +134,20 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		status := "DRAFT"
 		oldStatus := "DRAFT"
+		// 每行那条支撑需求的负责人 = 这张单的采购员。新建时就是录入人；接着补录时
+		// 以单子上现在写着的那位为准，不是这次保存的人——采购员可以换
+		// （order_buyer.go），而草稿每存一次，明细连同这些需求就整个重建一次。
+		// 写成保存的人，他就能从需求那一头（质检来源）看到一张不归他的单。
+		requirementOwner := op.ID
 		if in.ID != 0 {
 			var historical bool
-			e := tx.QueryRow(ctx, `SELECT o.status,EXISTS(SELECT 1 FROM historical_purchase_orders h WHERE h.tenant_id=o.tenant_id AND h.po_id=o.id) FROM purchase_orders o WHERE o.tenant_id=$1 AND o.id=$2 FOR UPDATE`, tenantID, in.ID).Scan(&oldStatus, &historical)
+			var buyerID int64
+			e := tx.QueryRow(ctx, `SELECT o.status,o.buyer_id,EXISTS(SELECT 1 FROM historical_purchase_orders h WHERE h.tenant_id=o.tenant_id AND h.po_id=o.id) FROM purchase_orders o WHERE o.tenant_id=$1 AND o.id=$2 FOR UPDATE`, tenantID, in.ID).Scan(&oldStatus, &buyerID, &historical)
 			if e != nil {
 				return e
+			}
+			if buyerID > 0 {
+				requirementOwner = buyerID
 			}
 			if !historical || (oldStatus != "DRAFT" && oldStatus != "ORDERED") {
 				return apierr.Conflict("PO_HISTORY_LOCKED", "仅草稿或尚未收货的历史补录单可补齐资料")
@@ -242,7 +251,7 @@ func (s *Service) SaveHistoricalOrder(ctx context.Context, tenantID int64, in Hi
 				continue
 			}
 			var reqID int64
-			e := tx.QueryRow(ctx, `INSERT INTO purchase_requirements(tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_name,spec,uom_code,required_qty,ordered_qty,source,status,owner_id,closed_reason,product_code,uom_id) VALUES($1,0,'',0,-nextval('purchase_requirements_id_seq'),$7,$2,$3,$4,$5,$5,'MANUAL','SUPERSEDED',$6,'历史采购单执行明细，不进入待采购需求',$8,$9) RETURNING id`, tenantID, l.ProductName, l.Spec, l.UOM, l.Qty, op.ID, l.ProductID, l.ProductCode, l.UomID).Scan(&reqID)
+			e := tx.QueryRow(ctx, `INSERT INTO purchase_requirements(tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_name,spec,uom_code,required_qty,ordered_qty,source,status,owner_id,closed_reason,product_code,uom_id) VALUES($1,0,'',0,-nextval('purchase_requirements_id_seq'),$7,$2,$3,$4,$5,$5,'MANUAL','SUPERSEDED',$6,'历史采购单执行明细，不进入待采购需求',$8,$9) RETURNING id`, tenantID, l.ProductName, l.Spec, l.UOM, l.Qty, requirementOwner, l.ProductID, l.ProductCode, l.UomID).Scan(&reqID)
 			if e != nil {
 				return e
 			}

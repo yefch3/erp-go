@@ -327,6 +327,18 @@ func (h *Handler) ListRoleMembers(ctx context.Context, req *iamv1.ListRoleMember
 	return &iamv1.ListRoleMembersResponse{Members: members}, nil
 }
 
+func (h *Handler) ListPermissionHolders(ctx context.Context, req *iamv1.ListPermissionHoldersRequest) (*iamv1.ListPermissionHoldersResponse, error) {
+	rows, err := h.svc.ListPermissionHolders(ctx, grpcx.TenantID(ctx), req.GetPermissionCode())
+	if err != nil {
+		return nil, err
+	}
+	holders := make([]*iamv1.PermissionHolder, 0, len(rows))
+	for _, r := range rows {
+		holders = append(holders, &iamv1.PermissionHolder{EmployeeId: r.EmployeeID, Name: r.Name, DepartmentName: r.DepartmentName})
+	}
+	return &iamv1.ListPermissionHoldersResponse{Holders: holders}, nil
+}
+
 func (h *Handler) OpenAccount(ctx context.Context, req *iamv1.OpenAccountRequest) (*iamv1.OpenAccountResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	username, err := h.svc.OpenAccount(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID,

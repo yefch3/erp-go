@@ -613,6 +613,12 @@ message CancelRequirementResponse {
 service PurchaseOrderService {
   rpc SaveHistoricalOrder(SaveHistoricalOrderRequest) returns (SaveHistoricalOrderResponse);
   rpc UpdateHistoricalShippingContext(UpdateHistoricalShippingContextRequest) returns (UpdateHistoricalShippingContextResponse);
+  // 历史补录单的采购员可以指定、可以换。补录常常是一个人统一录、再分给真正
+  // 负责的采购：单子记在录入人名下的话，只看得到自己单子的采购同事根本找不到
+  // 它（2026-11 #643）。候选只列持有「维护采购订单」权限的在职同事；换人只换
+  // 采购员，不动单据的任何其他内容，每一次都留痕。只对历史补录的单开放。
+  rpc ListOrderBuyerCandidates(ListOrderBuyerCandidatesRequest) returns (ListOrderBuyerCandidatesResponse);
+  rpc ChangeOrderBuyer(ChangeOrderBuyerRequest) returns (ChangeOrderBuyerResponse);
   rpc ListShippingHistoricalPurchases(ListShippingHistoricalPurchasesRequest) returns (ListShippingHistoricalPurchasesResponse);
   // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
   // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
@@ -1148,6 +1154,9 @@ message PurchaseOrder {
   string recorded_by = 61;
   string recorded_at = 62;
   string destination_port = 63;
+  // 采购员是谁（buyer_name 只是给人看的名字）。页面要靠它在「更换采购员」里
+  // 预选现在这位、并在没换人时不发请求。
+  int64 buyer_id = 64;
 }
 
 message PurchaseOrderItem {
@@ -3260,6 +3269,27 @@ message UpdateHistoricalShippingContextRequest {
   string destination_port = 3;
 }
 message UpdateHistoricalShippingContextResponse {}
+
+message ListOrderBuyerCandidatesRequest {}
+message OrderBuyerCandidate {
+  int64 employee_id = 1;
+  string name = 2;
+  string department_name = 3;
+}
+message ListOrderBuyerCandidatesResponse { repeated OrderBuyerCandidate candidates = 1; }
+
+message ChangeOrderBuyerRequest {
+  int64 id = 1;
+  int64 buyer_id = 2;
+  // 选填。留痕用，给日后查「这张单为什么换了人」的人看。
+  string reason = 3;
+}
+message ChangeOrderBuyerResponse {
+  int64 buyer_id = 1;
+  string buyer_name = 2;
+  // false = 本来就是这位，什么都没改（也不留痕）。
+  bool changed = 3;
+}
 
 message ListShippingHistoricalPurchasesRequest { string contract_no = 1; }
 message ShippingHistoricalPurchase {

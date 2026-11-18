@@ -3081,6 +3081,8 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 const (
 	PurchaseOrderService_SaveHistoricalOrder_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/SaveHistoricalOrder"
 	PurchaseOrderService_UpdateHistoricalShippingContext_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/UpdateHistoricalShippingContext"
+	PurchaseOrderService_ListOrderBuyerCandidates_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ListOrderBuyerCandidates"
+	PurchaseOrderService_ChangeOrderBuyer_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ChangeOrderBuyer"
 	PurchaseOrderService_ListShippingHistoricalPurchases_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/ListShippingHistoricalPurchases"
 	PurchaseOrderService_ListFailedEvents_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
 	PurchaseOrderService_ReplayFailedEvent_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
@@ -3201,6 +3203,12 @@ const (
 type PurchaseOrderServiceClient interface {
 	SaveHistoricalOrder(ctx context.Context, in *SaveHistoricalOrderRequest, opts ...grpc.CallOption) (*SaveHistoricalOrderResponse, error)
 	UpdateHistoricalShippingContext(ctx context.Context, in *UpdateHistoricalShippingContextRequest, opts ...grpc.CallOption) (*UpdateHistoricalShippingContextResponse, error)
+	// 历史补录单的采购员可以指定、可以换。补录常常是一个人统一录、再分给真正
+	// 负责的采购：单子记在录入人名下的话，只看得到自己单子的采购同事根本找不到
+	// 它（2026-11 #643）。候选只列持有「维护采购订单」权限的在职同事；换人只换
+	// 采购员，不动单据的任何其他内容，每一次都留痕。只对历史补录的单开放。
+	ListOrderBuyerCandidates(ctx context.Context, in *ListOrderBuyerCandidatesRequest, opts ...grpc.CallOption) (*ListOrderBuyerCandidatesResponse, error)
+	ChangeOrderBuyer(ctx context.Context, in *ChangeOrderBuyerRequest, opts ...grpc.CallOption) (*ChangeOrderBuyerResponse, error)
 	ListShippingHistoricalPurchases(ctx context.Context, in *ListShippingHistoricalPurchasesRequest, opts ...grpc.CallOption) (*ListShippingHistoricalPurchasesResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
@@ -3408,6 +3416,26 @@ func (c *purchaseOrderServiceClient) UpdateHistoricalShippingContext(ctx context
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateHistoricalShippingContextResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateHistoricalShippingContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListOrderBuyerCandidates(ctx context.Context, in *ListOrderBuyerCandidatesRequest, opts ...grpc.CallOption) (*ListOrderBuyerCandidatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOrderBuyerCandidatesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListOrderBuyerCandidates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ChangeOrderBuyer(ctx context.Context, in *ChangeOrderBuyerRequest, opts ...grpc.CallOption) (*ChangeOrderBuyerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangeOrderBuyerResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ChangeOrderBuyer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4486,6 +4514,12 @@ func (c *purchaseOrderServiceClient) AddOrderFollowUp(ctx context.Context, in *A
 type PurchaseOrderServiceServer interface {
 	SaveHistoricalOrder(context.Context, *SaveHistoricalOrderRequest) (*SaveHistoricalOrderResponse, error)
 	UpdateHistoricalShippingContext(context.Context, *UpdateHistoricalShippingContextRequest) (*UpdateHistoricalShippingContextResponse, error)
+	// 历史补录单的采购员可以指定、可以换。补录常常是一个人统一录、再分给真正
+	// 负责的采购：单子记在录入人名下的话，只看得到自己单子的采购同事根本找不到
+	// 它（2026-11 #643）。候选只列持有「维护采购订单」权限的在职同事；换人只换
+	// 采购员，不动单据的任何其他内容，每一次都留痕。只对历史补录的单开放。
+	ListOrderBuyerCandidates(context.Context, *ListOrderBuyerCandidatesRequest) (*ListOrderBuyerCandidatesResponse, error)
+	ChangeOrderBuyer(context.Context, *ChangeOrderBuyerRequest) (*ChangeOrderBuyerResponse, error)
 	ListShippingHistoricalPurchases(context.Context, *ListShippingHistoricalPurchasesRequest) (*ListShippingHistoricalPurchasesResponse, error)
 	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
 	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
@@ -4684,6 +4718,12 @@ func (UnimplementedPurchaseOrderServiceServer) SaveHistoricalOrder(context.Conte
 }
 func (UnimplementedPurchaseOrderServiceServer) UpdateHistoricalShippingContext(context.Context, *UpdateHistoricalShippingContextRequest) (*UpdateHistoricalShippingContextResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateHistoricalShippingContext not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListOrderBuyerCandidates(context.Context, *ListOrderBuyerCandidatesRequest) (*ListOrderBuyerCandidatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOrderBuyerCandidates not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ChangeOrderBuyer(context.Context, *ChangeOrderBuyerRequest) (*ChangeOrderBuyerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ChangeOrderBuyer not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ListShippingHistoricalPurchases(context.Context, *ListShippingHistoricalPurchasesRequest) (*ListShippingHistoricalPurchasesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListShippingHistoricalPurchases not implemented")
@@ -5056,6 +5096,42 @@ func _PurchaseOrderService_UpdateHistoricalShippingContext_Handler(srv interface
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).UpdateHistoricalShippingContext(ctx, req.(*UpdateHistoricalShippingContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListOrderBuyerCandidates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrderBuyerCandidatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListOrderBuyerCandidates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListOrderBuyerCandidates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListOrderBuyerCandidates(ctx, req.(*ListOrderBuyerCandidatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ChangeOrderBuyer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeOrderBuyerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ChangeOrderBuyer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ChangeOrderBuyer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ChangeOrderBuyer(ctx, req.(*ChangeOrderBuyerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6982,6 +7058,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateHistoricalShippingContext",
 			Handler:    _PurchaseOrderService_UpdateHistoricalShippingContext_Handler,
+		},
+		{
+			MethodName: "ListOrderBuyerCandidates",
+			Handler:    _PurchaseOrderService_ListOrderBuyerCandidates_Handler,
+		},
+		{
+			MethodName: "ChangeOrderBuyer",
+			Handler:    _PurchaseOrderService_ChangeOrderBuyer_Handler,
 		},
 		{
 			MethodName: "ListShippingHistoricalPurchases",
