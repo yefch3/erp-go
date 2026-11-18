@@ -47,11 +47,6 @@ export function comparisonProductDescription(product:Product,fields:{key:string;
  return parts.join('\n')||'—'
 }
 
-export function comparisonHeadingName(name:string){
- const trimmed=name.trim()
- return [...trimmed].length<=40&&!/[\r\n]/.test(trimmed)?trimmed:''
-}
-
 export function hasMultipleSpecificationSuppliers(selections:CategorySelection[]):boolean{
  const seen=new Set<string>()
  return selections.some(s=>{const key=JSON.stringify([s.productId,s.category]);if(seen.has(key))return true;seen.add(key);return false})

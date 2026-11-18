@@ -2,7 +2,7 @@ import {describe,expect,it} from 'vitest'
 import {blankProduct,type Product} from './inquiryWorkspace'
 import type {CategorySelection} from './customerOffer'
 import type {TemplateField} from './inquiryTemplates'
-import {comparisonHeadingName,comparisonProductDescription,comparisonSpecificationRows,replaceSpecificationSelection,comparisonProductFields,hasMultipleSpecificationSuppliers,type ProductCandidateGroup} from './comparisonSpecifications'
+import {comparisonProductDescription,comparisonSpecificationRows,replaceSpecificationSelection,comparisonProductFields,hasMultipleSpecificationSuppliers,type ProductCandidateGroup} from './comparisonSpecifications'
 
 const product=(id:string,name='Steel'):Product=>({...blankProduct(),id,product:name,specification:id,quantity:'10',unit:'MT'})
 const group=(name:string,ids:string[]):ProductCandidateGroup=>({key:name,productName:name,category:'FOB_USD',specs:ids.map(id=>({key:id,product:product(id,name),rows:[]})),rows:[]})
@@ -56,7 +56,6 @@ describe('mixed-name description display',()=>{
   const p={...product('p1',mixed),specification:''}
   expect(comparisonProductDescription(p,[])).toBe(mixed)
   expect(p.product).toBe(mixed)
-  expect(comparisonHeadingName(mixed)).toBe('')
  })
  it('appends separate specifications and populated supplemental fields below the raw name',()=>{
   expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'提供材质报告'},{key:'packaging',label:'包装',value:'防潮'}])).toBe(mixed+'\n规格: 提供材质报告\n包装: 防潮')
@@ -66,6 +65,5 @@ describe('mixed-name description display',()=>{
  })
  it('does not guess or remove a specification that is only a substring of the raw name',()=>{
   expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'0.28×1220 MM.'}])).toContain('\n规格: 0.28×1220 MM.')
-  expect(comparisonHeadingName('热轧钢卷')).toBe('热轧钢卷')
  })
 })
