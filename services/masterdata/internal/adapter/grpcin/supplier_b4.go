@@ -82,7 +82,8 @@ func (h *Handler) ListSupplierCountries(ctx context.Context, req *mdv1.ListSuppl
 	}
 	out := make([]*mdv1.CountryCount, len(rows))
 	for i, v := range rows {
-		out[i] = &mdv1.CountryCount{CountryCode: v.CountryCode, Count: v.SupplierCount}
+		// 没填国家的那一组交出去是空串，页面据此显示「未分类」。
+		out[i] = &mdv1.CountryCount{CountryCode: supplierCountryCode(v.CountryCode), Count: v.SupplierCount}
 	}
 	return &mdv1.ListSupplierCountriesResponse{Countries: out}, nil
 }

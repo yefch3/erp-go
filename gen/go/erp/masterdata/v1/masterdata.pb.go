@@ -7122,13 +7122,15 @@ func (x *GetSupplierResponse) GetSupplier() *Supplier {
 }
 
 type ListSuppliersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Page          *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
-	Keyword       string                 `protobuf:"bytes,2,opt,name=keyword,proto3" json:"keyword,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	CountryCode   string                 `protobuf:"bytes,4,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"`
-	BusinessType  string                 `protobuf:"bytes,5,opt,name=business_type,json=businessType,proto3" json:"business_type,omitempty"`
-	OwnerId       int64                  `protobuf:"varint,6,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Page    *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	Keyword string                 `protobuf:"bytes,2,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	Status  string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	// Empty lists every country; __UNCLASSIFIED__ selects suppliers without a
+	// country code. Same convention as ListCustomersRequest.
+	CountryCode   string `protobuf:"bytes,4,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"`
+	BusinessType  string `protobuf:"bytes,5,opt,name=business_type,json=businessType,proto3" json:"business_type,omitempty"`
+	OwnerId       int64  `protobuf:"varint,6,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7665,6 +7667,8 @@ func (*ActivateSupplierResponse) Descriptor() ([]byte, []int) {
 	return file_erp_masterdata_v1_masterdata_proto_rawDescGZIP(), []int{101}
 }
 
+// country_code is empty for the group nobody has assigned a country to; the
+// list request selects that group with __UNCLASSIFIED__.
 type CountryCount struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CountryCode   string                 `protobuf:"bytes,1,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"`

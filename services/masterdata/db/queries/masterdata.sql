@@ -434,7 +434,13 @@ SELECT s.*,
 FROM suppliers s
 WHERE s.tenant_id = sqlc.arg(tenant_id)
   AND (sqlc.arg(status)::text = 'ALL' OR (sqlc.arg(status)::text = '' AND s.status = 'ACTIVE') OR s.status = sqlc.arg(status)::text)
-  AND (sqlc.arg(country_code)::text = '' OR s.country_code = sqlc.arg(country_code)::text)
+  -- 国家：空串不筛；__UNCLASSIFIED__ 只看没填国家的（和 ListCustomers 同一个约定）。
+  -- country_code 是定长两位的列，没填的存成两个空格，所以这里用 btrim 判空。
+  AND (
+        sqlc.arg(country_code)::text = ''
+     OR (sqlc.arg(country_code)::text = '__UNCLASSIFIED__' AND btrim(s.country_code) = '')
+     OR s.country_code = sqlc.arg(country_code)::text
+  )
   AND (sqlc.arg(business_type)::text = '' OR sqlc.arg(business_type)::text = ANY(s.business_types))
   AND (sqlc.arg(owner_id)::bigint = 0 OR EXISTS (
         SELECT 1 FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id

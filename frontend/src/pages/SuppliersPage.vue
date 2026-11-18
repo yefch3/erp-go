@@ -1,10 +1,10 @@
 <template>
   <div class="supplier-page">
     <div class="country-strip">
-      <div><span>{{ t('suppliers.countryGroups') }}</span><strong>{{ countryCode ? countryName(countryCode, locale) : t('suppliers.allCountries') }} · {{ countryCode ? Number(countries.find(g => g.countryCode === countryCode)?.count || 0) : countryTotal }}</strong></div>
+      <div><span>{{ t('suppliers.countryGroups') }}</span><strong>{{ countrySummary }}</strong></div>
       <el-select v-model="countryCode" filterable :aria-label="t('suppliers.countryGroups')" @change="resetLoad">
         <el-option :label="`${t('suppliers.allCountries')}（${countryTotal}）`" value="" />
-        <el-option v-for="g in countries" :key="g.countryCode||'none'" :label="`${g.countryCode ? countryName(g.countryCode, locale) : t('suppliers.unclassified')}（${Number(g.count)}）`" :value="g.countryCode" />
+        <el-option v-for="g in countryChoiceList" :key="g.value" :label="`${countryLabel(g.code)}（${g.count}）`" :value="g.value" />
       </el-select>
     </div>
     <div class="workspace">
@@ -80,6 +80,7 @@ import { countryName, countryOptions } from '../lib/countries'
 import { businessRoleLabel } from '../lib/masterDataDisplay'
 import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
 import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
+import { countryChoices, describeCountrySelection, totalInChoices, withSelectedChoice } from '../lib/supplierCountryFilter'
 import { useAuthStore } from '../stores/auth'
 
 interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string;shortName:string;countryCode:string;businessTypes:string[];ownerNames:string;status:string }
@@ -94,7 +95,12 @@ const supplierTable=ref<any>(),selectedSuppliers=ref<Supplier[]>([]),bulkOwnerOp
 const allPageSelected=computed(()=>rows.value.length>0&&selectedSuppliers.value.length===rows.value.length)
 const empty={code:'',name:'',nameZh:'',nameEn:'',shortName:'',country:'',countryCode:'',currency:'USD',businessTypes:['GENERAL'],taxId:'',paymentTerm:'',registeredAddress:'',address:'',remark:''}
 const form=reactive({...empty})
-const countryTotal=computed(()=>countries.value.reduce((n,g)=>n+Number(g.count),0))
+// 「国家/地区」下拉：没填国家的那一组叫「未分类」，选中后发给服务端的是专用取值而不是空串
+// （空串是「全部国家」）。怎么整理选项、顶上那行算哪一种，规矩都在 lib/supplierCountryFilter。
+const countryChoiceList=computed(()=>withSelectedChoice(countryChoices(countries.value),countryCode.value))
+const countryTotal=computed(()=>totalInChoices(countryChoiceList.value))
+function countryLabel(code:string){return code?countryName(code,locale.value):t('suppliers.unclassified')}
+const countrySummary=computed(()=>{const s=describeCountrySelection(countryChoiceList.value,countryCode.value);return `${s.kind==='all'?t('suppliers.allCountries'):countryLabel(s.code)} · ${s.count}`})
 function displayName(r:Supplier){return locale.value==='zh'?r.nameZh||r.nameEn||r.name:r.nameEn||r.nameZh||r.name}
 function secondaryName(r:Supplier){const v=locale.value==='zh'?r.nameEn:r.nameZh;return v&&v!==displayName(r)?v:''}
 function optionLabel(code:string){return businessRoleLabel(code,t,businessOptions.value.find(o=>o.code===code)?.label)}
