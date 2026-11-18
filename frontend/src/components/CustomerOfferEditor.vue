@@ -162,7 +162,7 @@ import {computed,ref,watch,onBeforeUnmount} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
-import {paymentTermOptions} from '../lib/paymentTermOptions'
+import {suggestPaymentTerms} from '../lib/paymentTermOptions'
 import {post,quietErrors,saveBlob} from '../api'
 import {productTemplateValue,type Quote,type Product,type Price} from '../lib/inquiryWorkspace'
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
@@ -211,10 +211,6 @@ function selectProductFreight(group:ProductCandidateGroup,id?:string){
  productFreightChoices.value[freightProductKey(products[0])]={id:quote?.id||'',version:quote?.version}
 }
 function logisticsProductDescription(id:string){const product=offer.value?.source.body.products.find(p=>p.id===id);return product?comparisonSpecificationSentence(product):productName(id)}
-function suggestPaymentTerms(query: string, done: (items: {value: string}[]) => void) {
- const search = query.trim().toLocaleLowerCase()
- done(paymentTermOptions.filter(term => term.toLocaleLowerCase().includes(search)).map(value => ({value})))
-}
 function comparisonSpecificationSentence(product:Product){
  const keys:Record<string,string>={specification:'specification',delivery:'deliveryDate',weight:'productWeight',volume:'productVolume',packaging:'productPackaging',package_quantity:'productPackageQuantity',remarks:'remark'}
  const fields=comparisonProductFields(product,offer.value?.source.body.template?.fields||[],key=>keys[key]?t('inquiryWorkspace.offer.'+keys[key]):key)
