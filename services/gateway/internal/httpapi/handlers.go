@@ -196,6 +196,7 @@ func (s *Server) listSuppliers(w http.ResponseWriter, r *http.Request) {
 		Page:         pageFromQuery(r),
 		Keyword:      r.URL.Query().Get("keyword"),
 		Status:       r.URL.Query().Get("status"),
+		CountryCode:  r.URL.Query().Get("country_code"),
 		BusinessType: r.URL.Query().Get("business_type"),
 	})
 	if err != nil {
