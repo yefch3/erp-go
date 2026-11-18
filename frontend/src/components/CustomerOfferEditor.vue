@@ -73,7 +73,20 @@
     </el-alert>
     <el-alert v-if="offer.status==='CONFIRMED'" :title="t('inquiryWorkspace.offer.confirmedSnapshotHint')" type="info" :closable="false" show-icon/>
     <details class="workspace-card customer-information quote-terms"><summary>{{t('inquiryWorkspace.offer.quoteInfo')}} <span v-if="offer.body.selectionSavedAt" class="saved-at">{{t('inquiryWorkspace.offer.savedAt',{time:displayTime(offer.body.selectionSavedAt)})}}</span></summary>
-     <el-form class="customer-fields" label-position="top" :disabled="!editable"><el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')"><el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')"><el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')"><el-input v-model="offer.body.payment"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')"><el-input v-model="offer.body.remark" type="textarea" :rows="2"/></el-form-item></el-form>
+     <el-form class="customer-fields" label-position="top" size="small" :disabled="!editable">
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')">
+       <el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')">
+       <el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')">
+       <el-autocomplete v-model="offer.body.payment" :fetch-suggestions="suggestPaymentTerms" :debounce="0" clearable :placeholder="t('suppliers.paymentTermPlaceholder')"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')">
+       <el-input v-model="offer.body.remark" type="textarea" :autosize="{minRows:1,maxRows:5}"/>
+      </el-form-item>
+     </el-form>
     </details>
     <section v-if="offer.status==='CONFIRMED'" class="workspace-card"><div class="card-heading"><h3>{{t('inquiryWorkspace.offer.confirmedDetails')}}</h3></div><el-table :data="offer.body.lines" class="quote-table"><el-table-column prop="product" :label="t('inquiryWorkspace.offer.product')"/><el-table-column :label="t('inquiryWorkspace.offer.quantity')"><template #default="{row}">{{formatCfrUnitPrice(row.quantity)||'—'}}</template></el-table-column><el-table-column prop="unit" :label="t('inquiryWorkspace.offer.unit')"/><el-table-column :label="t('inquiryWorkspace.offer.customerUnitPrice')"><template #default="{row}">{{offer.body.currency}} {{formatCfrUnitPrice(row.unitPrice)||'—'}}</template></el-table-column><el-table-column :label="t('inquiryWorkspace.offer.amount')"><template #default="{row}">{{formatCfrUnitPrice(row.amount)||'—'}}</template></el-table-column></el-table></section>
     <el-empty v-if="!customerRows.length&&offer.status!=='CONFIRMED'" :description="t('inquiryWorkspace.offer.noCustomerPlan')"><el-button type="primary" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.goCompare')}}</el-button></el-empty>
@@ -149,6 +162,7 @@ import {computed,ref,watch,onBeforeUnmount} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
+import {paymentTermOptions} from '../lib/paymentTermOptions'
 import {post,quietErrors,saveBlob} from '../api'
 import {productTemplateValue,type Quote,type Product,type Price} from '../lib/inquiryWorkspace'
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
@@ -197,6 +211,10 @@ function selectProductFreight(group:ProductCandidateGroup,id?:string){
  productFreightChoices.value[freightProductKey(products[0])]={id:quote?.id||'',version:quote?.version}
 }
 function logisticsProductDescription(id:string){const product=offer.value?.source.body.products.find(p=>p.id===id);return product?comparisonSpecificationSentence(product):productName(id)}
+function suggestPaymentTerms(query: string, done: (items: {value: string}[]) => void) {
+ const search = query.trim().toLocaleLowerCase()
+ done(paymentTermOptions.filter(term => term.toLocaleLowerCase().includes(search)).map(value => ({value})))
+}
 function comparisonSpecificationSentence(product:Product){
  const keys:Record<string,string>={specification:'specification',delivery:'deliveryDate',weight:'productWeight',volume:'productVolume',packaging:'productPackaging',package_quantity:'productPackageQuantity',remarks:'remark'}
  const fields=comparisonProductFields(product,offer.value?.source.body.template?.fields||[],key=>keys[key]?t('inquiryWorkspace.offer.'+keys[key]):key)
@@ -531,7 +549,19 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
  .negotiation-grid td:last-child{text-align:left}.negotiation-grid td:not(:nth-child(2))::before{content:attr(data-label);display:block;color:#536f7d;font-size:11px}
 }
 .customer-mode .document-panel{margin:0;padding:8px 12px;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none}
-.customer-mode .customer-fields{padding:8px 12px;gap:8px 12px}
+.customer-mode .quote-terms{container-type:inline-size}
+.customer-mode .document-panel h3{margin:0 0 3px;color:#284e60;font-size:14px;font-weight:600;line-height:1.45}
+.customer-mode .document-panel p{color:#566d7a;font-size:12px;line-height:1.5}
+.customer-mode .document-actions{gap:8px}
+.customer-mode .document-actions label{min-width:128px;gap:3px;font-size:12px;line-height:1.4}
+.customer-mode .document-actions :deep(.el-select__wrapper){min-height:30px;font-size:13px}
+.customer-mode .document-actions :deep(.el-button){height:30px;padding:0 12px;font-size:13px;font-weight:500}
+.customer-mode .customer-fields{grid-template-columns:9rem 9rem minmax(0,1fr);align-items:start;padding:4px 12px 10px;gap:8px 12px}
+.customer-mode .customer-fields :deep(.el-form-item__label){margin-bottom:3px;font-size:12px}
+.customer-mode .customer-fields :deep(.el-autocomplete){width:100%}
+.customer-mode .customer-fields > :last-child{grid-column:1/-1}
+@container(max-width:600px){.customer-mode .customer-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-mode .customer-fields > :nth-child(3){grid-column:1/-1}}
+@container(max-width:400px){.customer-mode .customer-fields{grid-template-columns:minmax(0,1fr)}}
 .customer-mode .customer-fields :deep(.el-form-item){margin-bottom:0;min-width:0}
 .customer-mode .customer-fields :deep(.el-date-editor){width:100%;max-width:100%}
 .customer-mode .workspace-footer{flex-wrap:wrap}
