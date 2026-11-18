@@ -1564,6 +1564,8 @@ type TravelReimbursement struct {
 	PaymentReference   string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	ExpenseType        string
+	ExpenseDate        pgtype.Date
 }
 
 type TravelReimbursementFile struct {

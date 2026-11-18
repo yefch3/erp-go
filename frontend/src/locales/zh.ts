@@ -1,7 +1,9 @@
 import { purchaseFulfillmentZh } from './purchaseFulfillment'
 import { historicalShippingZh } from './historicalShipping'
 import { orderBuyerZh } from './orderBuyer'
+import { reimbursementExpenseZh } from './reimbursementExpense'
 export default {
+  reimbursementExpense: reimbursementExpenseZh,
   historicalShipping: historicalShippingZh,
   orderBuyer: orderBuyerZh,
   purchaseFulfillment: purchaseFulfillmentZh,
@@ -168,7 +170,7 @@ basicsSaved: "基本资料已保存",
   },
   supplierRecon: {
     eyebrow: 'OUTGOING PAYMENTS', title: '出账',
-    subtitle: '查看和登记付给供应商的钱', supplierPaymentsTab: '供应商付款', travelTab: '出差报销', travelTitle: '出差报销', travelSubtitle: '提交出差凭证，跟踪部门确认、财务审批和付款。', pendingHint: '还没有人确认完成的采购单', doneHint: '有人确认过「这张单的账完了」', unpaidHint: '待核销里一笔钱都还没记的（取样前 200 张）',
+    subtitle: '查看和登记付给供应商的钱', supplierPaymentsTab: '供应商付款', travelTab: '报销', travelTitle: '报销', travelSubtitle: '提交各类费用凭证，跟踪部门确认、财务审批和付款。', pendingHint: '还没有人确认完成的采购单', doneHint: '有人确认过「这张单的账完了」', unpaidHint: '待核销里一笔钱都还没记的（取样前 200 张）',
     businessType:'业务类型',businessTypes:{ALL:'全部业务',PROCUREMENT:'采购付款',LOGISTICS:'物流付款',MANUAL:'手工记录'},exportContract:'外销合同',
     addManual: '添加付款', manualSupplier: '供应商', manualOrder: '合同号 / 采购单号', manualTotal: '合同 / 采购单金额', manualPickOrEnter: '选择已有数据或直接输入', manualCurrencyHint: '选择或输入', manualPaid: '已付金额', manualDate: '付款日期', manualDueDate: '应付到期日', manualRequired: '请填写供应商、单号和金额', manualSaved: '付款已添加',
     moreActions: '更多操作', viewDetails: '查看详情', detailTitle: '付款详情', detailHistory: '付款记录', detailStatus: '当前状态', editManual: '编辑资料', editManualHint: '只能编辑手工添加的基本资料；金额错误请冲销后重新登记。', editManualSaved: '付款资料已更新',
@@ -1668,7 +1670,7 @@ basicsSaved: "基本资料已保存",
     removeBandConfirm: '删除后该金额段将回落到下一档更低的流程，确认删除？',
     bandRemoved: '区间已删除',
     createdBy: '修改人',
-    biz: { PURCHASE_ORDER: '采购单', PURCHASE_ORDER_CHANGE: '采购单供应商差异确认', SHIPPING_REQUOTE: '物流方案确认', CONTRACT: '外销合同', TRAVEL_REIMBURSEMENT: '出差报销' },
+    biz: { PURCHASE_ORDER: '采购单', PURCHASE_ORDER_CHANGE: '采购单供应商差异确认', SHIPPING_REQUOTE: '物流方案确认', CONTRACT: '外销合同', TRAVEL_REIMBURSEMENT: '报销' },
     activeVersion: '生效中 v{v}',
     none: '未配置',
     running: '（{n} 个实例进行中）',
@@ -1772,6 +1774,7 @@ basicsSaved: "基本资料已保存",
     summary: '摘要',
     // 摘要由各业务服务自行组织，这里只翻译常见字段，其余原样显示
     summaryKeys: {
+      claim_no: '报销单号', claimant: '报销人', purpose: '事由', expense_type: '报销类型', expense_date: '费用日期',
       contract: '合同编号',
       forwarder: '签约货代',
       carrier: '实际承运方',
@@ -1815,7 +1818,7 @@ basicsSaved: "基本资料已保存",
       CONTRACT: '外销合同',
       PURCHASE_ORDER: '采购单',
       PURCHASE_ORDER_CHANGE: '采购单供应商差异确认', SHIPPING_REQUOTE: '物流方案确认',
-      TRAVEL_REIMBURSEMENT: '出差报销',
+      TRAVEL_REIMBURSEMENT: '报销',
       PAYMENT: '付款',
       LC_AMENDMENT: '信用证改单',
       STOCK_ADJUST: '库存调整',

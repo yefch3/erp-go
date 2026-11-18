@@ -24,8 +24,39 @@ func TestUpDownUp(t *testing.T) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.Up(db, "."); err != nil {
+	// This DSN must target the disposable migration database. Start clean so
+	// the legacy row below really exists before migration 89, even on re-runs.
+	if err := goose.DownTo(db, ".", 0); err != nil {
+		t.Fatalf("reset disposable migration database: %v", err)
+	}
+	if err := goose.UpTo(db, ".", 88); err != nil {
 		t.Fatalf("up: %v", err)
+	}
+	var legacyID int64
+	if err := db.QueryRow(`INSERT INTO travel_reimbursements(tenant_id,claim_no,claimant_id,claimant_name,trip_start,trip_end,origin,destination,purpose,amount,currency,payment_account,status)
+ VALUES(642,'MIGRATION-642-LEGACY',642,'Synthetic','2026-11-16','2026-11-17','Shanghai','Beijing','Legacy trip',100,'CNY','Synthetic','PAID') RETURNING id`).Scan(&legacyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.Up(db, "."); err != nil {
+		t.Fatalf("expense migration: %v", err)
+	}
+	var preserved bool
+	if err := db.QueryRow(`SELECT expense_type='TRAVEL' AND expense_date IS NULL AND trip_start='2026-11-16'::date AND trip_end='2026-11-17'::date AND status='PAID' AND amount=100 AND origin='Shanghai' AND destination='Beijing' FROM travel_reimbursements WHERE id=$1`, legacyID).Scan(&preserved); err != nil || !preserved {
+		t.Fatalf("legacy travel changed: %v %v", preserved, err)
+	}
+	var expenseID int64
+	if err := db.QueryRow(`INSERT INTO travel_reimbursements(tenant_id,claim_no,claimant_id,claimant_name,origin,destination,purpose,amount,currency,payment_account,expense_type,expense_date)
+ VALUES(642,'MIGRATION-642-OFFICE',642,'Synthetic','','','Supplies',23.45,'CNY','Synthetic','OFFICE_SUPPLIES','2026-11-17') RETURNING id`).Scan(&expenseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.DownTo(db, ".", 88); err != nil {
+		t.Fatalf("expense down: %v", err)
+	}
+	if err := goose.Up(db, "."); err != nil {
+		t.Fatalf("expense re-up: %v", err)
+	}
+	if err := db.QueryRow(`SELECT expense_type='OFFICE_SUPPLIES' AND expense_date='2026-11-17'::date AND trip_start IS NULL AND trip_end IS NULL AND amount=23.45 FROM travel_reimbursements WHERE id=$1`, expenseID).Scan(&preserved); err != nil || !preserved {
+		t.Fatalf("expense lost on rollback/re-up: %v %v", preserved, err)
 	}
 	assertProcurementTable(t, db, "sourcing_case_changes", true)
 	assertProcurementColumn(t, db, "factory_rfqs", "factory_id", true)
@@ -50,6 +81,8 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "quality_inspection_rounds", true)
 	assertProcurementTable(t, db, "quality_inspection_files", true)
 	assertProcurementTable(t, db, "travel_reimbursements", true)
+	assertProcurementColumn(t, db, "travel_reimbursements", "expense_type", true)
+	assertProcurementColumn(t, db, "travel_reimbursements", "expense_date", true)
 	assertProcurementTable(t, db, "travel_reimbursement_files", true)
 	assertProcurementTable(t, db, "travel_reimbursement_history", true)
 	assertProcurementTable(t, db, "daily_price_dimensions", true)
@@ -67,11 +100,13 @@ func TestUpDownUp(t *testing.T) {
 	assertPaymentTermsText(t, db)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "export_contract_no", true)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "destination_port", true)
+	assertProcurementTable(t, db, "purchase_order_buyer_changes", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	assertProcurementTable(t, db, "sourcing_cases", false)
 	assertProcurementTable(t, db, "daily_base_prices", false)
+	assertProcurementTable(t, db, "purchase_order_buyer_changes", false)
 	if err := goose.Up(db, "."); err != nil {
 		t.Fatalf("second up: %v", err)
 	}

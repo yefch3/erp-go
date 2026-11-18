@@ -35,6 +35,6 @@ Excel 明细导入：提供固定表头模板，支持 .xlsx/.xls；仅向当前
 
 接口：`GET /api/purchase-orders/buyer-candidates`、`PUT /api/purchase-orders/{id}/buyer`（`{buyerId, reason}`），都要求 `procurement:order:read` 和 `procurement:order:write`。
 
-部署：采购迁移 00089（只新增一张表，不改已有数据）；IAM、采购、网关、前端一起更新。采购服务取名单要调 IAM 的新接口，IAM 还没更新的那一小段时间里名单取不到，页面会退回只读框或提示「没有取到」，不影响保存。
+部署：采购迁移 00090（只新增一张表，不改已有数据）；IAM、采购、网关、前端一起更新。采购服务取名单要调 IAM 的新接口，IAM 还没更新的那一小段时间里名单取不到，页面会退回只读框或提示「没有取到」，不影响保存。
 
 验证：采购集成测试 `TestHistoricalOrderBuyerCanBeChosenAndChanged`（谁能换、换给谁、换完谁看得见、只动采购员、留痕、只对历史单开放），IAM 集成测试 `TestPermissionHoldersMatchCheckPermissionPersonByPerson`（名单和把关逐人一致），网关 `order_buyer_test.go`（路由、地址上的单号说了算、字段不丢），前端 `orderBuyer.test.ts`。

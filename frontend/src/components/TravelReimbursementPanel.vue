@@ -1,20 +1,21 @@
 <template>
   <section class="claim-panel">
     <div class="toolbar">
-      <el-button type="primary" @click="openCreate">新建报销</el-button>
+      <el-button type="primary" @click="openCreate">{{t('reimbursementExpense.create')}}</el-button>
     </div>
     <el-table v-loading="loading" :data="rows" row-key="id">
-      <el-table-column type="expand"><template #default="{row}"><div class="details">
-        <div class="detail-grid"><span>出差：{{row.tripStart}} 至 {{row.tripEnd}}</span><span>路线：{{row.origin}} → {{row.destination}}</span><span>事由：{{row.purpose}}</span><span>收款账户：{{row.paymentAccount}}</span></div>
+      <el-table-column type="expand" width="40"><template #default="{row}"><div class="details">
+        <div class="detail-grid"><span>{{t('reimbursementExpense.type')}}：{{expenseLabel(row.expenseType)}}</span><template v-if="claimExpenseType(row.expenseType)==='TRAVEL'"><span>出差：{{row.tripStart}} 至 {{row.tripEnd}}</span><span>路线：{{row.origin}} → {{row.destination}}</span></template><span v-else>{{t('reimbursementExpense.date')}}：{{row.expenseDate}}</span><span>{{t('reimbursementExpense.purpose')}}：{{row.purpose}}</span><span>收款账户：{{row.paymentAccount}}</span><span v-if="row.note">备注：{{row.note}}</span></div>
         <el-alert v-if="row.rejectionReason" type="error" :closable="false" :title="`退回原因：${row.rejectionReason}`" />
         <h4>报销凭证</h4><div class="files"><a v-for="f in row.files" :key="f.id" href="#" @click.prevent="openFile(f)">{{fileType[f.category]||f.category}} · {{f.fileName}}</a><span v-if="!row.files?.length">暂无凭证</span></div>
       </div></template></el-table-column>
-      <el-table-column prop="claimNo" label="报销单号" min-width="180" />
-      <el-table-column prop="claimantName" label="报销人" width="110" /><el-table-column prop="departmentName" label="部门" width="130" />
-      <el-table-column label="出差事由" min-width="200"><template #default="{row}">{{row.purpose}}<div class="sub">{{row.destination}}</div></template></el-table-column>
-      <el-table-column label="金额" width="150" align="right"><template #default="{row}"><strong>{{row.currency}} {{row.amount}}</strong></template></el-table-column>
-      <el-table-column label="状态" width="150"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{statusLabel[row.status]||row.status}}</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="230" fixed="right"><template #default="{row}">
+      <el-table-column prop="claimNo" label="报销单号" width="150" />
+      <el-table-column prop="claimantName" label="报销人" width="80" /><el-table-column prop="departmentName" label="部门" width="90" />
+      <el-table-column :label="t('reimbursementExpense.type')" width="80"><template #default="{row}">{{expenseLabel(row.expenseType)}}</template></el-table-column>
+      <el-table-column :label="t('reimbursementExpense.purpose')" min-width="130"><template #default="{row}">{{row.purpose}}<div class="sub">{{claimExpenseType(row.expenseType)==='TRAVEL'?row.destination:row.expenseDate}}</div></template></el-table-column>
+      <el-table-column label="金额" width="110" align="right"><template #default="{row}"><strong>{{row.currency}} {{row.amount}}</strong></template></el-table-column>
+      <el-table-column label="状态" width="140"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{statusLabel[row.status]||row.status}}</el-tag></template></el-table-column>
+      <el-table-column label="操作" width="120" fixed="right"><template #default="{row}">
         <el-button v-if="['DRAFT','REJECTED','PENDING_PAYMENT'].includes(row.status) && row.claimantId===myID" link @click="openEdit(row)">编辑</el-button>
         <el-button v-if="['DRAFT','REJECTED'].includes(row.status) && row.claimantId===myID" link type="primary" @click="submit(row)">提交审批</el-button>
         <el-button v-if="taskFor(row)" link type="success" @click="act(row,'APPROVE')">同意</el-button>
@@ -22,16 +23,20 @@
         <el-button v-if="canManage && row.status==='PENDING_PAYMENT'" link type="success" @click="openPay(row)">登记付款</el-button>
         <el-button v-if="canManage && row.status==='PAID'" link type="danger" @click="reverse(row)">冲销付款</el-button>
       </template></el-table-column>
-      <template #empty>暂无出差报销</template>
+      <template #empty>{{t('reimbursementExpense.empty')}}</template>
     </el-table>
   </section>
 
-  <el-dialog v-model="formOpen" :title="editing?'编辑出差报销':'新建出差报销'" width="min(720px,95vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
-    <el-form label-position="top"><div class="grid">
+  <el-dialog v-model="formOpen" :title="t(editing?'reimbursementExpense.edit':'reimbursementExpense.create')" class="expense-dialog" top="5vh" width="min(720px,95vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-form label-position="top" :disabled="saving">
+      <el-form-item :label="t('reimbursementExpense.type')" required><el-select v-model="form.expenseType" style="width:100%"><el-option v-for="kind in expenseTypes" :key="kind" :value="kind" :label="expenseLabel(kind)" /></el-select></el-form-item>
+      <p class="sub">{{t('reimbursementExpense.hint')}}</p>
+      <div v-if="form.expenseType==='TRAVEL'" class="grid">
       <el-form-item label="出差开始" required><el-date-picker v-model="form.tripStart" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       <el-form-item label="出差结束" required><el-date-picker v-model="form.tripEnd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       <el-form-item label="出发地" required><el-input v-model="form.origin" /></el-form-item><el-form-item label="目的地" required><el-input v-model="form.destination" /></el-form-item>
-    </div><el-form-item label="出差事由" required><el-input v-model="form.purpose" /></el-form-item><div class="grid">
+    </div><el-form-item v-else :label="t('reimbursementExpense.date')" required><el-date-picker v-model="form.expenseDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+    <el-form-item :label="t('reimbursementExpense.purpose')" required><el-input v-model="form.purpose" /></el-form-item><div class="grid">
       <el-form-item label="报销金额" required><el-input v-model="form.amount"><template #prepend><el-select v-model="form.currency" style="width:90px"><el-option v-for="c in currencies" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
       <el-form-item label="收款账户" required><el-input v-model="form.paymentAccount" placeholder="银行卡或公司付款账户说明" /></el-form-item>
     </div><el-form-item label="备注"><el-input v-model="form.note" type="textarea" :rows="2" /></el-form-item>
@@ -49,6 +54,8 @@
 </template>
 <script setup lang="ts">
 import {computed,onMounted,reactive,ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {claimExpenseType,expenseTypes,expensePayload,missingExpenseFields} from '../lib/reimbursementExpense'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {get,patch,post,quietErrors} from '../api'
 import {useAuthStore} from '../stores/auth'
@@ -57,9 +64,11 @@ import {relayFailureReason,relayTimedOut,saveViaRelay,uploadViaRelay} from '../l
 import {dropRegistered,uploadPending,type PendingUpload} from '../lib/pendingUploads'
 import PendingUploadList from './PendingUploadList.vue'
 type Claim=Record<string,any>
+const {t}=useI18n()
+const expenseLabel=(value:unknown)=>{const kind=claimExpenseType(value);return expenseTypes.includes(kind as typeof expenseTypes[number])?t(`reimbursementExpense.${kind}`):kind}
 const auth=useAuthStore(),rows=ref<Claim[]>([]),approvalTasks=ref<Record<string,string>>({}),approvalOverrides=ref<Record<string,boolean>>({}),loading=ref(false),saving=ref(false),formOpen=ref(false),payOpen=ref(false),editing=ref<Claim|null>(null),paying=ref<Claim|null>(null),picked=ref<PendingUpload[]>([])
 const myID=computed(()=>String(auth.employeeId||localStorage.getItem('employeeId')||'')),canManage=auth.can('procurement:reimbursement:manage'),currencies=['CNY','USD','EUR','GBP','JPY','HKD','CAD','AUD']
-const form=reactive({tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''}),pay=reactive({paidAt:new Date().toISOString().slice(0,10),paymentAccount:'',paymentReference:''})
+const form=reactive({expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''}),pay=reactive({paidAt:new Date().toISOString().slice(0,10),paymentAccount:'',paymentReference:''})
 const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务负责人审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
 const fileType:Record<string,string>={INVOICE:'发票',RECEIPT:'收据',ITINERARY:'行程单',PAYMENT_PROOF:'付款凭证',OTHER:'其他'}
 const statusType=(s:string):'success'|'danger'|'warning'|'info'|undefined=>s==='PAID'?'success':s==='REJECTED'?'danger':s==='PENDING_PAYMENT'?'warning':s==='DRAFT'?'info':undefined
@@ -69,8 +78,8 @@ const overrideFor=(row:Claim)=>Boolean(approvalOverrides.value[String(row.id)])
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 async function reloadUntilStatusChanges(id:string,previousStatus:string){for(let attempt=0;attempt<8;attempt++){await load();if(rows.value.find(item=>String(item.id)===String(id))?.status!==previousStatus)return;await delay(300)}}
 async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(!overrideFor(row)&&action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
-function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
-function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{tripStart:row.tripStart,tripEnd:row.tripEnd,origin:row.origin,destination:row.destination,purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
+function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
+function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{expenseType:claimExpenseType(row.expenseType),expenseDate:row.expenseDate||'',tripStart:row.tripStart||'',tripEnd:row.tripEnd||'',origin:row.origin||'',destination:row.destination||'',purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
 // 一趟差常有好几张发票（#591）：待传的文件是一张清单（PendingUploadList），一份一行、各选各的类型，
 // 每次「添加文件」是往后加。原来是一个选择框配一个类型，再选一次就把上一次的换掉。
 //
@@ -90,7 +99,7 @@ function uploadFailureReason(err:unknown){if(relayTimedOut(err))return '等了�
 // 已经交过的文件名：清单里再出现同名的，提醒一句（不拦——两家酒店的发票都叫「发票.pdf」是正常的）。
 const uploadedNames=computed<string[]>(()=>(editing.value?.files||[]).map((f:Claim)=>String(f.fileName)))
 async function openFile(f:Claim){try{await saveViaRelay(f.url,f.fileName)}catch(err){ElMessage.error(`凭证打开失败：${relayFailureReason(err)||'请稍后再试'}`)}}
-async function save(submitAfterSave=false){if(!form.tripStart||!form.tripEnd||!form.origin.trim()||!form.destination.trim()||!form.purpose.trim()||!form.amount.trim()||!form.paymentAccount.trim()){ElMessage.warning('请填写所有必填项');return}saving.value=true;try{const result=editing.value?await patch<{reimbursement:Claim}>(`/travel-reimbursements/${editing.value.id}`,form):await post<{reimbursement:Claim}>('/travel-reimbursements',form);
+async function save(submitAfterSave=false){if(missingExpenseFields(form)){ElMessage.warning('请填写所有必填项');return}saving.value=true;try{const payload=expensePayload(form);const result=editing.value?await patch<{reimbursement:Claim}>(`/travel-reimbursements/${editing.value.id}`,payload):await post<{reimbursement:Claim}>('/travel-reimbursements',payload);
 // 单子已经落库：从这里起再点保存就是改这一张，不是再建一张。
 editing.value=result.reimbursement;
 // 有没传上去的就不关对话框、也不提交：单子留着（草稿），清单里剩下的就是没传上去的，标红的那一行
@@ -108,5 +117,6 @@ async function reverse(row:Claim){const {value}=await ElMessageBox.prompt('请�
 onMounted(load)
 </script>
 <style scoped>
+:global(.expense-dialog .el-dialog__body){max-height:calc(90vh - 140px);overflow-y:auto}
 .claim-panel{border:1px solid #dceaf0;border-radius:12px;background:#fff;padding:16px}.toolbar{display:flex;justify-content:flex-end;gap:12px;margin-bottom:14px}.details{padding:4px 24px 18px}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:14px}.files{display:flex;gap:10px;flex-wrap:wrap}.files a{color:#159fdc}.details h4{margin:18px 0 8px}.sub{font-size:12px;color:#80909f}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.claim-files{display:grid;gap:8px;width:100%}.uploaded-files{display:flex;flex-wrap:wrap;gap:2px 12px;color:#52646f;font-size:13px;line-height:1.7}.uploaded-files a{color:#159fdc}.module-tabs{margin-bottom:14px}@media(max-width:700px){.grid,.detail-grid{grid-template-columns:1fr}.toolbar{align-items:flex-start;flex-direction:column}}
 </style>
