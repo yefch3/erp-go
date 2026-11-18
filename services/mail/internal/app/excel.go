@@ -415,9 +415,18 @@ func (s *Service) ConvertInboundToExcel(
 		if strings.EqualFold(filepath.Ext(chosen.FileName), ".xlsx") {
 			document, err := ParseSpreadsheetSource(data)
 			if err != nil {
-				return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_SOURCE_PARSE", "无法读取 Excel 明细行，请检查附件是否完整").Wrap(err)
+				var conflict *spreadsheetQuantityConflict
+				if errors.As(err, &conflict) {
+					return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_QUANTITY_AMBIGUOUS", conflict.Error()).Wrap(err)
+				}
+				var contextLimit *spreadsheetContextLimit
+				if errors.As(err, &contextLimit) {
+					return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_LAYOUT_UNRESOLVED", contextLimit.Error()).Wrap(err)
+				}
+				return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_SOURCE_PARSE", "无法读取 Excel 工作簿，请确认文件可正常打开且大小在允许范围内").Wrap(err)
 			}
 			in.SourceRows, in.SourceContext, in.SourceSheets = document.Rows, document.ContextBlocks, document.Sheets
+			in.Text = document.ModelText
 		}
 	}
 
@@ -517,10 +526,9 @@ func (s *Service) extractSpreadsheetRows(ctx context.Context, in TableExtraction
 // explicit source columns.
 func applySpreadsheetAnchors(source SpreadsheetSourceRow, item map[string]string) {
 	cell := func(names ...string) string {
-		for header, value := range source.Cells {
-			normalized := normalizeHeader(header)
-			for _, name := range names {
-				if normalized == name {
+		for _, name := range names {
+			for header, value := range source.Cells {
+				if normalizeHeader(header) == name {
 					return strings.TrimSpace(value)
 				}
 			}
@@ -550,6 +558,9 @@ func applySpreadsheetAnchors(source SpreadsheetSourceRow, item map[string]string
 	}
 	if value := cell("packingconditions"); value != "" {
 		item["packaging"] = value
+	}
+	if unit := cell(spreadsheetUnitHeaders...); unit != "" {
+		item["quantity_unit"] = unit
 	}
 	if source.QuantityUnitHint != "" {
 		item["quantity_unit"] = source.QuantityUnitHint

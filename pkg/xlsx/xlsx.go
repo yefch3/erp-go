@@ -1,7 +1,6 @@
 // Package xlsx implements the deliberately small spreadsheet surface used by
-// fixed ERP interchange templates. It is not a general Excel engine: it
-// writes one sheet and reads the first sheet, which keeps supplier-controlled
-// workbooks bounded and auditable without a heavyweight parser.
+// ERP interchange and mail attachments. It writes one sheet and reads cached
+// cell values from bounded workbooks without evaluating formulas.
 package xlsx
 
 import (
@@ -228,16 +227,9 @@ func Parse(data []byte) ([][]string, error) {
 			for len(values) <= column {
 				values = append(values, "")
 			}
-			value := cell.Value
-			switch cell.Type {
-			case "inlineStr":
-				value = cell.Inline.join()
-			case "s":
-				index, convErr := strconv.Atoi(strings.TrimSpace(cell.Value))
-				if convErr != nil || index < 0 || index >= len(shared) {
-					return nil, errors.New("xlsx shared string index is invalid")
-				}
-				value = shared[index]
+			value, err := decodeCell(cell, shared)
+			if err != nil {
+				return nil, err
 			}
 			values[column] = strings.TrimSpace(value)
 		}
@@ -251,7 +243,8 @@ type worksheet struct {
 }
 
 type sheetRow struct {
-	Cells []sheetCell `xml:"c"`
+	Number int         `xml:"r,attr"`
+	Cells  []sheetCell `xml:"c"`
 }
 
 type sheetCell struct {
@@ -301,7 +294,11 @@ func parseSharedStrings(data []byte) ([]string, error) {
 }
 
 func readPart(file *zip.File) ([]byte, error) {
-	if file.UncompressedSize64 > maxPartBytes {
+	return readBoundedPart(file, maxPartBytes)
+}
+
+func readBoundedPart(file *zip.File, limit int64) ([]byte, error) {
+	if file.UncompressedSize64 > uint64(limit) {
 		return nil, errors.New("xlsx part is too large")
 	}
 	r, err := file.Open()
@@ -309,11 +306,30 @@ func readPart(file *zip.File) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	data, err := io.ReadAll(io.LimitReader(r, maxPartBytes+1))
-	if err != nil || len(data) > maxPartBytes {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil || int64(len(data)) > limit {
 		return nil, errors.New("xlsx part could not be read")
 	}
 	return data, nil
+}
+
+func decodeCell(cell sheetCell, shared []string) (string, error) {
+	switch cell.Type {
+	case "inlineStr":
+		return cell.Inline.join(), nil
+	case "s":
+		ref := strings.TrimSpace(cell.Value)
+		if ref == "" {
+			return "", nil
+		}
+		index, err := strconv.Atoi(ref)
+		if err != nil || index < 0 || index >= len(shared) {
+			return "", fmt.Errorf("invalid shared string index %q", ref)
+		}
+		return shared[index], nil
+	default:
+		return cell.Value, nil
+	}
 }
 
 func columnIndex(ref string) (int, bool) {
