@@ -130,7 +130,8 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var poNo, supplier, status, businessType string
-	err = tx.QueryRow(ctx, `SELECT po_no,supplier_name,status,business_type FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, in.POID).Scan(&poNo, &supplier, &status, &businessType)
+	var closed bool
+	err = tx.QueryRow(ctx, `SELECT po_no,supplier_name,status,business_type,closed_at IS NOT NULL FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, in.POID).Scan(&poNo, &supplier, &status, &businessType, &closed)
 	if err == pgx.ErrNoRows {
 		return QualityTask{}, apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
 	}
@@ -139,9 +140,6 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	}
 	if businessType != "PROCUREMENT" {
 		return QualityTask{}, apierr.Conflict("QUALITY_PO_TYPE_INVALID", "仅采购订单可以申请工厂出货前质检")
-	}
-	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" && status != "RECEIVED" {
-		return QualityTask{}, apierr.Conflict("QUALITY_PO_NOT_ORDERED", "采购单尚未进入已下单状态，不能申请质检")
 	}
 	// A purchase order has one whole-order inspection task. Locking the order
 	// above serializes concurrent requests; repeated clicks are idempotent and
@@ -154,6 +152,12 @@ func (s *Service) ApplyQualityInspection(ctx context.Context, tenantID int64, in
 	}
 	if err != pgx.ErrNoRows {
 		return QualityTask{}, err
+	}
+	if closed || status == "CANCELLED" {
+		return QualityTask{}, apierr.Conflict("QUALITY_PO_INACTIVE", "已结案或已作废的采购单不能新建质检任务")
+	}
+	if status != "ORDERED" && status != "PARTIALLY_RECEIVED" && status != "RECEIVED" {
+		return QualityTask{}, apierr.Conflict("QUALITY_PO_NOT_ORDERED", "采购单尚未进入已下单状态，不能申请质检")
 	}
 	const batch int32 = 1
 	taskNo := fmt.Sprintf("QI-%s-%02d", poNo, batch)
