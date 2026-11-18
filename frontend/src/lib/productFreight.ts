@@ -53,3 +53,8 @@ export function applyProductFreight(products:Product[],selections:CategorySelect
  }
  return true
 }
+
+// The selector column declares USD once; retain every unit/range in the label.
+export function productFreightPriceLabel(products:Product[],quote?:Quote){
+ return quote?productFreightPriceSummary(products,quote).replaceAll('USD ',''):''
+}
