@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest'
 import {blankProduct,type Quote} from './inquiryWorkspace'
 import type {CategorySelection} from './customerOffer'
-import {applyProductFreight,commonProductFreight,freightCovers,freightProductKey,productFreightPrices,productFreightPriceSummary} from './productFreight'
+import {applyProductFreight,commonProductFreight,freightCovers,freightProductKey,productFreightPriceLabel,productFreightPrices,productFreightPriceSummary} from './productFreight'
 
 const products=[{...blankProduct(),id:'p1',product:'钢卷',specification:'3mm'},{...blankProduct(),id:'p2',product:'钢卷',specification:'4mm'}]
 const quote=(id='freight',version=2):Quote=>({id,version,kind:'LOGISTICS',submittedAt:'2026-11-16',body:{validUntil:'2999-01-01',freightRates:[{productId:'p1',usdPrice:'38'},{productId:'p2',usdPrice:'40'}]}} as Quote)
@@ -58,4 +58,13 @@ describe('product-wide logistics selection',()=>{
   q.historical=true;expect(freightCovers(q,'p1')).toBe(false)
   expect(freightProductKey({...products[0],product:' 钢卷 '})).toBe(freightProductKey(products[1]))
  })
+})
+
+it('keeps price ranges, zero and separate units when USD is declared by the selector column',()=>{
+ const q=quote();q.body.freightRates.forEach(r=>{r.unit='MT'})
+ expect(productFreightPriceLabel(products,q)).toBe('38.00–40.00 / MT')
+ q.body.freightRates[0].usdPrice='0';q.body.freightRates[1].unit='CBM'
+ expect(productFreightPriceLabel(products,q)).toBe('0.00 / MT · 40.00 / CBM')
+ expect(productFreightPriceLabel(products,undefined)).toBe('')
+ expect(q.body.freightRates[0].usdPrice).toBe('0')
 })

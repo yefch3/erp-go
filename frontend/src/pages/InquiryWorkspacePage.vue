@@ -790,6 +790,6 @@ watch(view,()=>void initial())
 .continuous-quotes .detail-tabs{margin:0}
 .continuous-quotes .detail-tabs :deep(.el-tabs__header){margin:0;padding:0 12px;border-radius:0;box-shadow:none}
 .continuous-quotes .detail-tabs :deep(.el-tabs__item){height:40px;font-size:13px}
-.continuous-quotes .detail-tabs :deep(.el-tabs__content){padding:0;margin:0}
+.continuous-quotes .detail-tabs :deep(.el-tabs__content){padding:0;margin:0;overflow:visible}
 @media(max-width:700px){.continuous-quotes .detail-hero{align-items:flex-start;padding:10px;gap:8px}.continuous-quotes .detail-actions{margin-left:auto}}
 </style>
