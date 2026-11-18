@@ -23,26 +23,6 @@
      </div>
 
      <el-empty v-if="!productGroupsFor(group.value).length" :description="t(search?'inquiryWorkspace.offer.noSearchMatch':'inquiryWorkspace.offer.categoryNoQuotes')" :image-size="40"/>
-     <template v-if="productGroupsFor(group.value).every(productGroup=>comparisonHeadingName(productGroup.productName))">
-     <table v-for="productGroup in productGroupsFor(group.value)" :key="productGroup.key" class="comparison-product-table" :aria-label="`${group.label} · ${productGroup.productName}`">
-      <colgroup><col class="specification-column"/><col class="quantity-column"/><col class="supplier-column"/><col class="cfr-column"/></colgroup>
-      <thead>
-       <tr><th colspan="4" class="product-bar-cell"><div class="comparison-product-bar">
-        <div class="comparison-product-title"><strong v-if="comparisonHeadingName(productGroup.productName)" :title="productGroup.productName">{{productGroup.productName}}</strong><span>{{t('inquiryWorkspace.offer.specificationCountValue',{count:productGroup.specs.length})}}</span><span class="product-category-context">{{group.label}}</span></div>
-        <template v-if="group.value!=='DIRECT_CFR_USD'"><span class="logistics-currency-label">{{t('inquiryWorkspace.offer.productLogisticsUsd')}}</span><el-select :model-value="productFreightId(productGroup)" :disabled="!editable" :placeholder="t(hasProductFreight(productGroup)?'inquiryWorkspace.offer.productFreightMixed':'inquiryWorkspace.offer.logisticsSelectPlaceholder')" :aria-label="t('inquiryWorkspace.offer.productLogisticsAria',{product:productGroup.productName})" clearable class="product-header-logistics" size="small" @change="selectProductFreight(productGroup,$event)"><template #label="{value}"><span class="logistics-selection-label" :title="freightChoice(productGroup,value).name+' · '+freightChoice(productGroup,value).price"><span>{{freightChoice(productGroup,value).name}}</span><strong>{{freightChoice(productGroup,value).price}}</strong></span></template><el-option v-for="quote in logisticsQuotes" :key="quote.id" :value="quote.id" :disabled="!productFreightAvailable(productGroup,quote)" :label="productFreightChoiceLabel(productGroup,quote)" :title="productFreightLabel(productGroup,quote)" class="product-freight-option freight-choice-option"><div class="freight-choice-line"><strong>{{productFreightName(quote)}}</strong><span>{{productFreightPriceLabel(groupProducts(productGroup),quote)}}</span><el-button link type="primary" size="small" @click.stop="preview=quote">{{t('inquiryWorkspace.offer.viewFreightDetails')}}</el-button></div><small>{{quote.body.route||t('inquiryWorkspace.offer.routeMissing')}}<template v-if="quote.body.departure||quote.body.arrival"> · {{quote.body.departure||'—'}} → {{quote.body.arrival||'—'}}</template></small></el-option></el-select>
-
-        </template>
-       </div></th></tr>
-       <tr class="comparison-column-headings"><th scope="col">{{t('inquiryWorkspace.offer.productDescription')}}</th><th scope="col" class="quantity-cell">{{t('inquiryWorkspace.offer.quantity')}}</th><th scope="col">{{t('inquiryWorkspace.offer.supplierQuote')}}</th><th scope="col" class="cfr-cell">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}</th></tr>
-      </thead>
-      <tbody><tr v-for="row in comparisonSpecificationRows([productGroup])" :key="row.key" :class="{'selected-row':selectedRows(row).length}">
-       <td><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
-       <td class="quantity-cell"><span class="number-cell">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</span></td>
-       <td><el-select :model-value="specificationQuoteId(row)" filterable clearable :reserve-keyword="false" :disabled="!editable" :placeholder="t('inquiryWorkspace.offer.selectSupplierQuotes')" :aria-label="t('inquiryWorkspace.offer.specificationSupplierAria',{product:row.product.product,specification:specification(row.product)})" style="width:100%" @change="selectSpecificationQuote(row,$event)"><el-option v-for="candidate in supplierOptionsFor(row)" :key="candidate.quote.id" :value="candidate.quote.id" :label="supplierChoiceLabel(candidate)" class="supplier-choice-option"><div class="supplier-choice-line"><strong>{{candidate.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')}}</strong><span>{{priceOf(candidate.price)}} / {{candidate.product.unit}}</span><el-button link type="primary" size="small" @click.stop="preview=candidate.quote">{{t('inquiryWorkspace.offer.view')}}</el-button></div><small>{{t('inquiryWorkspace.offer.deliveryDate')}}: {{candidate.price.delivery||candidate.quote.body.delivery||'—'}}<template v-if="candidate.category==='REPROCESSING_CNY'"> · {{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}: {{formatCfrUnitPrice(candidate.price.factoryPrice)||'—'}}</template></small></el-option></el-select><small v-if="specificationQuoteIds(row).length>1" class="pending supplier-reselect">{{t('inquiryWorkspace.offer.reselectSingleSupplier')}}</small></td>
-       <td class="cfr-cell"><strong v-if="specificationQuoteIds(row).length===1&&selectedRows(row).length" class="single-cfr">{{candidateCfrText(selectedRows(row)[0])}}</strong><span v-else-if="specificationQuoteIds(row).length>1" class="pending">{{t('inquiryWorkspace.offer.reselectSingleSupplier')}}</span><span v-else>—</span></td>
-      </tr></tbody>
-     </table>
-     </template>
      <table v-else class="comparison-product-table description-comparison-table" :aria-label="`${group.label} · ${t('inquiryWorkspace.offer.productDescription')}`">
       <colgroup><col :style="{width:group.value==='DIRECT_CFR_USD'?'45%':'33%'}"/><col :style="{width:group.value==='DIRECT_CFR_USD'?'10%':'9%'}"/><col :style="{width:group.value==='DIRECT_CFR_USD'?'28%':'21%'}"/><col v-if="group.value!=='DIRECT_CFR_USD'" style="width:23%"/><col :style="{width:group.value==='DIRECT_CFR_USD'?'17%':'14%'}"/></colgroup>
       <thead><tr class="comparison-column-headings"><th scope="col">{{t('inquiryWorkspace.offer.productDescription')}}</th><th scope="col" class="quantity-cell">{{t('inquiryWorkspace.offer.quantity')}}</th><th scope="col">{{t('inquiryWorkspace.offer.supplierQuote')}}</th><th v-if="group.value!=='DIRECT_CFR_USD'" scope="col">{{t('inquiryWorkspace.offer.productLogisticsUsd')}}</th><th scope="col" class="cfr-cell">{{t('inquiryWorkspace.offer.cfrUnitPrice')}}</th></tr></thead>
@@ -171,7 +151,7 @@ import {freightProductKey,freightCovers,commonProductFreight,applyProductFreight
 import {latestCalculation} from '../lib/latestCalculation'
 import {automaticOfferInputKey,offerCalculationIssue,readyOfferCalculationBody} from '../lib/automaticOfferCalculation'
 import ComparisonSpecification from './ComparisonSpecification.vue'
-import {comparisonHeadingName,comparisonProductDescription,comparisonSpecificationRows,replaceSpecificationSelection,hasMultipleSpecificationSuppliers,comparisonProductFields,type Candidate,type ProductCandidateGroup,type ComparisonSpecificationRow} from '../lib/comparisonSpecifications'
+import {comparisonProductDescription,comparisonSpecificationRows,replaceSpecificationSelection,hasMultipleSpecificationSuppliers,comparisonProductFields,type Candidate,type ProductCandidateGroup,type ComparisonSpecificationRow} from '../lib/comparisonSpecifications'
 import {procurementQuoteCategories} from '../lib/quoteClassification'
 import {offerSourceChanges} from '../lib/offerSourceChanges'
 const props=defineProps<{caseId:string;sourceVersion?:string;mode:'compare'|'offer'}>()
@@ -491,21 +471,9 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 /* Each product owns its sticky heading and all visible specification rows. */
 .quote-workspace.compare-mode .category-panel{overflow:visible}
 .comparison-product-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px;color:#315767}
-.comparison-product-table .specification-column{width:42%}
-.comparison-product-table .quantity-column{width:11%}
-.comparison-product-table .supplier-column{width:30%}
-.comparison-product-table .cfr-column{width:17%}
 /* Shell content has 20px scroll padding (16px on narrow screens). */
 .comparison-product-table thead{position:sticky;top:-20px;z-index:5;background:#f2f8fa;box-shadow:0 1px 0 #cadde5}
 .comparison-product-table th,.comparison-product-table td{padding:9px 12px;border-bottom:1px solid #dce6ef;text-align:left;vertical-align:middle}
-.comparison-product-table .product-bar-cell{padding:8px 12px;background:#eaf3f6;border-top:1px solid #cbdde5}
-.comparison-product-bar{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;min-width:0;font-weight:400}
-.comparison-product-title{display:flex;align-items:center;gap:9px;flex:1;min-width:140px}
-.comparison-product-title>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#173f52}
-.comparison-product-title>span{flex-shrink:0;font-size:11px;color:#70828d;white-space:nowrap}
-.product-header-logistics{flex:0 1 285px;width:285px;min-width:180px}
-.product-header-freight{display:flex;align-items:center;gap:10px;white-space:nowrap}
-.product-header-freight>strong{font-size:11px;font-variant-numeric:tabular-nums;color:#176d82}
 .comparison-column-headings th{height:30px;padding:4px 12px;font-size:11px;color:#607985;font-weight:600;background:#f6f9fa}
 .comparison-product-table tbody tr{background:#fff}
 .comparison-product-table tbody tr.selected-row{background:#f3fafb}
@@ -515,14 +483,12 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .comparison-product-table .single-cfr{font-size:12px}
 .comparison-product-table td :deep(.el-select__wrapper){min-height:30px;font-size:12px}
 @media(max-width:1000px){.comparison-product-table thead{top:-16px}}
-@media(max-width:700px){.comparison-product-table th,.comparison-product-table td{padding-left:7px;padding-right:7px}.comparison-product-table .specification-column{width:36%}.comparison-product-table .quantity-column{width:14%}.comparison-product-table .supplier-column{width:30%}.comparison-product-table .cfr-column{width:20%}.comparison-product-table .number-cell,.comparison-product-table .single-cfr{white-space:normal;font-size:11px}.comparison-product-title{flex-basis:100%}.product-header-logistics{flex:1}.product-header-freight{flex-wrap:wrap}}
+@media(max-width:700px){.comparison-product-table th,.comparison-product-table td{padding-left:7px;padding-right:7px}.comparison-product-table .number-cell,.comparison-product-table .single-cfr{white-space:normal;font-size:11px}}
 
 .description-logistics{display:grid;gap:5px;min-width:0}
 .description-logistics-select{width:100%;min-width:0}
-.description-logistics .product-header-freight{flex-wrap:wrap;gap:3px 8px}
 .description-comparison-table .single-cfr{white-space:normal}
 
-.logistics-currency-label{font-size:11px;color:#607985;white-space:nowrap}
 .logistics-selection-label{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;width:100%}
 .logistics-selection-label>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logistics-selection-label>strong{flex-shrink:0;font-size:11px;color:#176d82;font-variant-numeric:tabular-nums}
