@@ -113,6 +113,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// 同一个 IAM 客户端答两个问题：某个人有没有这项权限、谁有这项权限。
+	permissions := grpcout.NewPermissionChecker(iamConn)
 	svc := app.New(pool, app.Deps{
 		InquiryDocuments: grpcout.NewInquiryDocuments(exportConn),
 		Customers:        grpcout.NewCustomerAccess(mdConn, iamConn),
@@ -121,7 +123,8 @@ func run(log *slog.Logger) error {
 		Approvals:        grpcout.NewApprovals(apConn),
 		Suppliers:        grpcout.NewSuppliers(mdConn),
 		Products:         grpcout.NewProducts(pdConn),
-		Permissions:      grpcout.NewPermissionChecker(iamConn),
+		Permissions:      permissions,
+		Holders:          permissions,
 		Warehouses:       grpcout.NewWarehouses(invConn),
 		Rates:            grpcout.NewRates(fxConn),
 		Scopes:           grpcout.NewScopes(iamConn),

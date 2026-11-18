@@ -100,11 +100,13 @@ func TestUpDownUp(t *testing.T) {
 	assertPaymentTermsText(t, db)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "export_contract_no", true)
 	assertProcurementColumn(t, db, "historical_purchase_orders", "destination_port", true)
+	assertProcurementTable(t, db, "purchase_order_buyer_changes", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	assertProcurementTable(t, db, "sourcing_cases", false)
 	assertProcurementTable(t, db, "daily_base_prices", false)
+	assertProcurementTable(t, db, "purchase_order_buyer_changes", false)
 	if err := goose.Up(db, "."); err != nil {
 		t.Fatalf("second up: %v", err)
 	}

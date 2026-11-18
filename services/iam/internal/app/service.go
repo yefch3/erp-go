@@ -972,6 +972,20 @@ func (s *Service) ListRoleMembers(ctx context.Context, tenantID, roleID int64) (
 	return s.q.ListRoleMembers(ctx, store.ListRoleMembersParams{TenantID: tenantID, RoleID: roleID})
 }
 
+// ListPermissionHolders names the active employees who hold a permission, by
+// exactly the rule CheckPermission applies to one person, and who can sign in
+// (they have an account and it is not disabled). Business services use it to
+// offer "pick a colleague who can do this" — the buyer of a purchase order,
+// say — without listing anybody the choice would only fail for, or anybody
+// who could never come and pick the work up.
+func (s *Service) ListPermissionHolders(ctx context.Context, tenantID int64, code string) ([]store.ListPermissionHoldersRow, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, apierr.Invalid("IAM_PERMISSION_CODE_REQUIRED", "缺少权限编码")
+	}
+	return s.q.ListPermissionHolders(ctx, store.ListPermissionHoldersParams{TenantID: tenantID, Code: code})
+}
+
 // uniqueMessages 说每一条唯一约束被撞上时该说什么。
 //
 // **一张表上不止一条唯一约束**，而从前这里只看「是不是 23505」，然后一律

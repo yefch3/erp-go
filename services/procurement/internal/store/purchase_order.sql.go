@@ -613,7 +613,7 @@ func (q *Queries) GetPurchaseOrderForUpdate(ctx context.Context, arg GetPurchase
 const listPurchaseOrders = `-- name: ListPurchaseOrders :many
 SELECT
     o.id, o.po_no, o.supplier_id, o.supplier_name, o.currency,
-    o.total_amount::text AS total_amount, o.status, o.buyer_name, o.remark,
+    o.total_amount::text AS total_amount, o.status, o.buyer_id, o.buyer_name, o.remark,
     o.reject_reason, o.cancel_reason,
     coalesce(o.expected_date::text, '')::text AS expected_date,
     coalesce(o.payable_due_date::text, '')::text AS payable_due_date,
@@ -695,6 +695,7 @@ type ListPurchaseOrdersRow struct {
 	Currency             string
 	TotalAmount          string
 	Status               string
+	BuyerID              int64
 	BuyerName            string
 	Remark               string
 	RejectReason         string
@@ -758,6 +759,7 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.Currency,
 			&i.TotalAmount,
 			&i.Status,
+			&i.BuyerID,
 			&i.BuyerName,
 			&i.Remark,
 			&i.RejectReason,

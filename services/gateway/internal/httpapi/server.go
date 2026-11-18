@@ -681,6 +681,9 @@ func (s *Server) Router() http.Handler {
 		// 创建只形成草稿；真正进入公司审批流程由下面独立的 submit 接口控制。
 		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Post("/api/purchase-orders/historical", s.saveHistoricalOrder)
 		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}/historical-shipping-context", s.updateHistoricalShippingContext)
+		// 历史补录单的采购员可以指定、可以换（#643）：一个人统一录入，再分给真正负责的采购。
+		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Get("/api/purchase-orders/buyer-candidates", s.listOrderBuyerCandidates)
+		r.With(s.perm("procurement:order:read"), s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}/buyer", s.changeOrderBuyer)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)

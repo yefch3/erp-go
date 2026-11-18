@@ -1768,6 +1768,75 @@ func (q *Queries) ListPermissionCodesOfRoles(ctx context.Context, arg ListPermis
 	return items, nil
 }
 
+const listPermissionHolders = `-- name: ListPermissionHolders :many
+SELECT e.id AS employee_id, e.name, coalesce(d.name, '')::text AS department_name
+FROM employees e
+LEFT JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
+WHERE e.tenant_id = $1::bigint
+  AND e.status = 'ACTIVE'
+  AND EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.tenant_id = e.tenant_id AND u.employee_id = e.id AND u.status = 'ACTIVE'
+  )
+  AND (
+    $2::text IN ('mail:email:read', 'mail:email:write')
+    OR EXISTS (
+      SELECT 1
+      FROM employee_roles er
+      JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+      JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
+      JOIN permissions p ON p.id = rp.permission_id
+      WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
+        AND p.code = $2::text AND r.status = 'ACTIVE'
+    )
+  )
+ORDER BY e.name, e.id
+`
+
+type ListPermissionHoldersParams struct {
+	TenantID int64
+	Code     string
+}
+
+type ListPermissionHoldersRow struct {
+	EmployeeID     int64
+	Name           string
+	DepartmentName string
+}
+
+// 持有某项权限的在职员工，给业务服务做「挑一位做得了这件事的同事」用——比如
+// 给一张采购单指定采购员：列出来的每一位都得是真的接得住的，一个选了必报错
+// 的选项比没有选项更糟。
+//
+// **认谁的规则必须和 EmployeeHasPermission 一字不差**：在职、角色启用、邮箱那
+// 两项人人都有。那边放行的人这边不列、或者这边列了那边不放行，页面上就是
+// 「下拉里有他，选了却说他没权限」。permission_holders_integration_test.go 逐人
+// 对过这两条查询，改其中一条的时候它会红。
+//
+// 只比那边多一条：**得登得上来**——有账号，账号没被停用（和登录时的判断是同
+// 一条：users.status）。把关用不着问这个，能走到把关那一步的人已经登录了；
+// 名单是替别人挑人，挑到一个登不上来的，交过去的东西就没人接得住，而交的人
+// 自己多半也看不到它了。
+func (q *Queries) ListPermissionHolders(ctx context.Context, arg ListPermissionHoldersParams) ([]ListPermissionHoldersRow, error) {
+	rows, err := q.db.Query(ctx, listPermissionHolders, arg.TenantID, arg.Code)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPermissionHoldersRow
+	for rows.Next() {
+		var i ListPermissionHoldersRow
+		if err := rows.Scan(&i.EmployeeID, &i.Name, &i.DepartmentName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissions = `-- name: ListPermissions :many
 SELECT id, code, name, module, menu_path FROM permissions ORDER BY module, code
 `

@@ -1723,6 +1723,7 @@ const (
 	AccessService_CheckPermission_FullMethodName         = "/erp.iam.v1.AccessService/CheckPermission"
 	AccessService_ListEmployeePermissions_FullMethodName = "/erp.iam.v1.AccessService/ListEmployeePermissions"
 	AccessService_ListRoleMembers_FullMethodName         = "/erp.iam.v1.AccessService/ListRoleMembers"
+	AccessService_ListPermissionHolders_FullMethodName   = "/erp.iam.v1.AccessService/ListPermissionHolders"
 	AccessService_VisibleEmployees_FullMethodName        = "/erp.iam.v1.AccessService/VisibleEmployees"
 	AccessService_ListDataScopes_FullMethodName          = "/erp.iam.v1.AccessService/ListDataScopes"
 	AccessService_SetDataScope_FullMethodName            = "/erp.iam.v1.AccessService/SetDataScope"
@@ -1752,6 +1753,13 @@ type AccessServiceClient interface {
 	// engine calls it when a flow node names a role rather than a person, to
 	// turn that node into concrete tasks.
 	ListRoleMembers(ctx context.Context, in *ListRoleMembersRequest, opts ...grpc.CallOption) (*ListRoleMembersResponse, error)
+	// ListPermissionHolders returns the active employees who hold a permission,
+	// by exactly the rule CheckPermission applies to one person, and who can
+	// sign in (an account exists and is not disabled). Business services call
+	// it to offer "pick a colleague who can do this" — the buyer of a purchase
+	// order, for one — so that nobody is listed for whom the choice would only
+	// fail, or who could never come and pick the work up.
+	ListPermissionHolders(ctx context.Context, in *ListPermissionHoldersRequest, opts ...grpc.CallOption) (*ListPermissionHoldersResponse, error)
 	// VisibleEmployees answers "whose documents may this person see" for one
 	// module, from the data scope attached to their roles. Business services
 	// ask it instead of inventing their own idea of who owns what.
@@ -1870,6 +1878,16 @@ func (c *accessServiceClient) ListRoleMembers(ctx context.Context, in *ListRoleM
 	return out, nil
 }
 
+func (c *accessServiceClient) ListPermissionHolders(ctx context.Context, in *ListPermissionHoldersRequest, opts ...grpc.CallOption) (*ListPermissionHoldersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPermissionHoldersResponse)
+	err := c.cc.Invoke(ctx, AccessService_ListPermissionHolders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *accessServiceClient) VisibleEmployees(ctx context.Context, in *VisibleEmployeesRequest, opts ...grpc.CallOption) (*VisibleEmployeesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VisibleEmployeesResponse)
@@ -1924,6 +1942,13 @@ type AccessServiceServer interface {
 	// engine calls it when a flow node names a role rather than a person, to
 	// turn that node into concrete tasks.
 	ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error)
+	// ListPermissionHolders returns the active employees who hold a permission,
+	// by exactly the rule CheckPermission applies to one person, and who can
+	// sign in (an account exists and is not disabled). Business services call
+	// it to offer "pick a colleague who can do this" — the buyer of a purchase
+	// order, for one — so that nobody is listed for whom the choice would only
+	// fail, or who could never come and pick the work up.
+	ListPermissionHolders(context.Context, *ListPermissionHoldersRequest) (*ListPermissionHoldersResponse, error)
 	// VisibleEmployees answers "whose documents may this person see" for one
 	// module, from the data scope attached to their roles. Business services
 	// ask it instead of inventing their own idea of who owns what.
@@ -1971,6 +1996,9 @@ func (UnimplementedAccessServiceServer) ListEmployeePermissions(context.Context,
 }
 func (UnimplementedAccessServiceServer) ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRoleMembers not implemented")
+}
+func (UnimplementedAccessServiceServer) ListPermissionHolders(context.Context, *ListPermissionHoldersRequest) (*ListPermissionHoldersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPermissionHolders not implemented")
 }
 func (UnimplementedAccessServiceServer) VisibleEmployees(context.Context, *VisibleEmployeesRequest) (*VisibleEmployeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VisibleEmployees not implemented")
@@ -2182,6 +2210,24 @@ func _AccessService_ListRoleMembers_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccessService_ListPermissionHolders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPermissionHoldersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).ListPermissionHolders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_ListPermissionHolders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).ListPermissionHolders(ctx, req.(*ListPermissionHoldersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AccessService_VisibleEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VisibleEmployeesRequest)
 	if err := dec(in); err != nil {
@@ -2282,6 +2328,10 @@ var AccessService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRoleMembers",
 			Handler:    _AccessService_ListRoleMembers_Handler,
+		},
+		{
+			MethodName: "ListPermissionHolders",
+			Handler:    _AccessService_ListPermissionHolders_Handler,
 		},
 		{
 			MethodName: "VisibleEmployees",

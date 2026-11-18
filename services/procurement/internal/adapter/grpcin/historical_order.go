@@ -47,6 +47,26 @@ func (h *OrderHandler) UpdateHistoricalShippingContext(ctx context.Context, r *p
 	return &prv1.UpdateHistoricalShippingContextResponse{}, nil
 }
 
+func (h *OrderHandler) ListOrderBuyerCandidates(ctx context.Context, _ *prv1.ListOrderBuyerCandidatesRequest) (*prv1.ListOrderBuyerCandidatesResponse, error) {
+	people, err := h.svc.ListOrderBuyerCandidates(ctx, grpcx.TenantID(ctx), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.ListOrderBuyerCandidatesResponse{Candidates: make([]*prv1.OrderBuyerCandidate, 0, len(people))}
+	for _, p := range people {
+		out.Candidates = append(out.Candidates, &prv1.OrderBuyerCandidate{EmployeeId: p.ID, Name: p.Name, DepartmentName: p.DepartmentName})
+	}
+	return out, nil
+}
+
+func (h *OrderHandler) ChangeOrderBuyer(ctx context.Context, r *prv1.ChangeOrderBuyerRequest) (*prv1.ChangeOrderBuyerResponse, error) {
+	v, err := h.svc.ChangeOrderBuyer(ctx, grpcx.TenantID(ctx), r.GetId(), r.GetBuyerId(), r.GetReason(), currentOp(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ChangeOrderBuyerResponse{BuyerId: v.BuyerID, BuyerName: v.BuyerName, Changed: v.Changed}, nil
+}
+
 func (h *OrderHandler) ListShippingHistoricalPurchases(ctx context.Context, r *prv1.ListShippingHistoricalPurchasesRequest) (*prv1.ListShippingHistoricalPurchasesResponse, error) {
 	rows, err := h.svc.ListShippingHistoricalPurchases(ctx, grpcx.TenantID(ctx), r.GetContractNo(), currentOp(ctx))
 	if err != nil {

@@ -575,6 +575,20 @@ type PurchaseOrder struct {
 	BusinessDocumentNoGenerated bool
 }
 
+type PurchaseOrderBuyerChange struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	OldBuyerID    int64
+	OldBuyerName  string
+	NewBuyerID    int64
+	NewBuyerName  string
+	Reason        string
+	ChangedByID   int64
+	ChangedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type PurchaseOrderDraftFile struct {
 	ID             int64
 	TenantID       int64

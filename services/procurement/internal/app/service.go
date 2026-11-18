@@ -149,6 +149,10 @@ type Deps struct {
 	Rates            Rates
 	Scopes           Scopes
 	People           People
+	// Who holds a permission, for "pick a colleague who can do this" lists
+	// (the buyer of a historical order — order_buyer.go). Optional in tests;
+	// nil answers those endpoints with a clean error.
+	Holders PermissionHolders
 	// Optional in tests; main always wires it. Nil degrades attachment
 	// endpoints to a clean error instead of a panic.
 	Files Files
@@ -177,6 +181,7 @@ type Service struct {
 	live             *livefeed.Publisher
 	log              *slog.Logger
 	people           People
+	holders          PermissionHolders
 
 	// Three-way-match tolerance, zero unless the operator widens it.
 	// See UseMatchTolerance for what the two numbers mean.
@@ -196,6 +201,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		numbering: d.Numbering, approvals: d.Approvals,
 		suppliers: d.Suppliers, products: d.Products, permissions: d.Permissions, warehouses: d.Warehouses, rates: d.Rates,
 		scopes: d.Scopes, people: d.People, files: d.Files, live: d.Live, log: orDefaultLog(d.Log),
+		holders: d.Holders,
 	}
 }
 

@@ -51,6 +51,31 @@ func (s *Server) saveHistoricalOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 历史补录单的采购员：候选名单和换人（#643）。规则都在采购服务里——谁看得见
+// 这张单、谁接得住——网关只把着「维护采购订单」这项权限，不另做一套判断。
+func (s *Server) listOrderBuyerCandidates(w http.ResponseWriter, r *http.Request) {
+	response, err := s.Orders.ListOrderBuyerCandidates(r.Context(), &prv1.ListOrderBuyerCandidatesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}
+
+func (s *Server) changeOrderBuyer(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ChangeOrderBuyerRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	response, err := s.Orders.ChangeOrderBuyer(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}
+
 func (s *Server) updateHistoricalShippingContext(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.UpdateHistoricalShippingContextRequest{}
 	if !s.decodeBody(w, r, req) {

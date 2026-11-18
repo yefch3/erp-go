@@ -373,7 +373,7 @@ VALUES (
 -- name: ListPurchaseOrders :many
 SELECT
     o.id, o.po_no, o.supplier_id, o.supplier_name, o.currency,
-    o.total_amount::text AS total_amount, o.status, o.buyer_name, o.remark,
+    o.total_amount::text AS total_amount, o.status, o.buyer_id, o.buyer_name, o.remark,
     o.reject_reason, o.cancel_reason,
     coalesce(o.expected_date::text, '')::text AS expected_date,
     coalesce(o.payable_due_date::text, '')::text AS payable_due_date,
