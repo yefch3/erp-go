@@ -7,9 +7,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
+
+// cleanUpOrderBuyerTenant removes everything these tests wrote for their
+// throwaway tenant, then closes the pool.
+//
+// 顺序是要紧的：t.Cleanup 后登记的先跑，所以先登记「关连接池」、再登记「删数据」。
+// 写成 `defer pool.Close()` 的话，池子在测试函数返回时就关了，而清理在那之后才
+// 跑——每一条 DELETE 都打在一个已经关掉的池子上，错误又被丢掉，数据一行都删不
+// 掉，还看不出来。删不掉就让测试红：悄悄留下垃圾，下一个人查库时会当成真数据。
+func cleanUpOrderBuyerTenant(t *testing.T, pool *pgxpool.Pool, tenant int64) {
+	t.Helper()
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		ctx := context.Background()
+		// 先子后父：留痕、提醒、节点、历史标记、明细都指着采购单，明细又指着需求。
+		for _, table := range []string{
+			"purchase_order_buyer_changes", "purchase_production_reminders", "purchase_production_milestones",
+			"historical_purchase_orders", "purchase_order_items", "purchase_orders", "purchase_requirements",
+		} {
+			if _, err := pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", tenant); err != nil {
+				t.Errorf("clean up %s for tenant %d: %v", table, tenant, err)
+			}
+		}
+	})
+}
 
 // holdersStub plays IAM's "who holds this permission" answer.
 type holdersStub struct {
@@ -43,16 +69,8 @@ func TestHistoricalOrderBuyerCanBeChosenAndChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
 	tenant := time.Now().UnixNano()
-	t.Cleanup(func() {
-		for _, table := range []string{
-			"purchase_order_buyer_changes", "purchase_production_reminders", "purchase_production_milestones",
-			"historical_purchase_orders", "purchase_order_items", "purchase_orders", "purchase_requirements",
-		} {
-			_, _ = pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", tenant)
-		}
-	})
+	cleanUpOrderBuyerTenant(t, pool, tenant)
 
 	const recorderID, buyerID, managerID, outsiderID, formerID = 77, 88, 50, 99, 66
 	holders := &holdersStub{people: []EmployeeIdentity{
@@ -291,15 +309,8 @@ func TestHistoricalDraftResaveKeepsRequirementsWithTheBuyer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
 	tenant := time.Now().UnixNano()
-	t.Cleanup(func() {
-		for _, table := range []string{
-			"purchase_order_buyer_changes", "historical_purchase_orders", "purchase_order_items", "purchase_orders", "purchase_requirements",
-		} {
-			_, _ = pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", tenant)
-		}
-	})
+	cleanUpOrderBuyerTenant(t, pool, tenant)
 
 	const recorderID, buyerID, managerID = 77, 88, 50
 	svc := New(pool, Deps{
