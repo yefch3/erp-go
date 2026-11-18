@@ -73,7 +73,20 @@
     </el-alert>
     <el-alert v-if="offer.status==='CONFIRMED'" :title="t('inquiryWorkspace.offer.confirmedSnapshotHint')" type="info" :closable="false" show-icon/>
     <details class="workspace-card customer-information quote-terms"><summary>{{t('inquiryWorkspace.offer.quoteInfo')}} <span v-if="offer.body.selectionSavedAt" class="saved-at">{{t('inquiryWorkspace.offer.savedAt',{time:displayTime(offer.body.selectionSavedAt)})}}</span></summary>
-     <el-form class="customer-fields" label-position="top" :disabled="!editable"><el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')"><el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')"><el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')"><el-input v-model="offer.body.payment"/></el-form-item><el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')"><el-input v-model="offer.body.remark" type="textarea" :rows="2"/></el-form-item></el-form>
+     <el-form class="customer-fields" label-position="top" size="small" :disabled="!editable">
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteValidity')">
+       <el-date-picker v-model="offer.body.validUntil" value-format="YYYY-MM-DD"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteDelivery')">
+       <el-date-picker v-model="offer.body.delivery" value-format="YYYY-MM-DD"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.paymentTerms')">
+       <el-autocomplete v-model="offer.body.payment" :fetch-suggestions="suggestPaymentTerms" :debounce="0" clearable :placeholder="t('suppliers.paymentTermPlaceholder')"/>
+      </el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.offer.quoteRemark')">
+       <el-input v-model="offer.body.remark" type="textarea" :autosize="{minRows:1,maxRows:5}"/>
+      </el-form-item>
+     </el-form>
     </details>
     <section v-if="offer.status==='CONFIRMED'" class="workspace-card"><div class="card-heading"><h3>{{t('inquiryWorkspace.offer.confirmedDetails')}}</h3></div><el-table :data="offer.body.lines" class="quote-table"><el-table-column prop="product" :label="t('inquiryWorkspace.offer.product')"/><el-table-column :label="t('inquiryWorkspace.offer.quantity')"><template #default="{row}">{{formatCfrUnitPrice(row.quantity)||'—'}}</template></el-table-column><el-table-column prop="unit" :label="t('inquiryWorkspace.offer.unit')"/><el-table-column :label="t('inquiryWorkspace.offer.customerUnitPrice')"><template #default="{row}">{{offer.body.currency}} {{formatCfrUnitPrice(row.unitPrice)||'—'}}</template></el-table-column><el-table-column :label="t('inquiryWorkspace.offer.amount')"><template #default="{row}">{{formatCfrUnitPrice(row.amount)||'—'}}</template></el-table-column></el-table></section>
     <el-empty v-if="!customerRows.length&&offer.status!=='CONFIRMED'" :description="t('inquiryWorkspace.offer.noCustomerPlan')"><el-button type="primary" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.goCompare')}}</el-button></el-empty>
@@ -82,27 +95,27 @@
      <div class="negotiation-scroll">
       <table class="negotiation-grid">
        <thead><tr>
+        <th>{{t('inquiryWorkspace.offer.customerSelectedPlan')}}</th>
         <th>{{t('inquiryWorkspace.offer.productDescription')}}</th>
         <th>{{t('inquiryWorkspace.offer.qtyUnit')}}</th>
         <th>{{t('inquiryWorkspace.offer.selectedSupplier')}}</th>
         <th>{{t('inquiryWorkspace.offer.calculatedCustomerPrice')}}</th>
         <th>{{t('inquiryWorkspace.offer.customerQuotePrice')}}</th>
-        <th>{{t('contractRepair.accepted')}}</th>
        </tr></thead>
        <tbody><tr v-for="row in group.rows" :key="selectionKey({productId:row.product.id,category:row.category,quoteId:row.quote.id})">
+        <td :data-label="t('inquiryWorkspace.offer.customerSelectedPlan')"><el-checkbox :aria-label="t('inquiryWorkspace.offer.customerSelectedPlan')+' · '+row.product.product" :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)">{{t(negotiationFor(row).status==='AGREED'?'inquiryWorkspace.offer.planSelected':'inquiryWorkspace.offer.planPending')}}</el-checkbox></td>
         <td :data-label="t('inquiryWorkspace.offer.productDescription')"><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
         <td :data-label="t('inquiryWorkspace.offer.qtyUnit')">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</td>
         <td :data-label="t('inquiryWorkspace.offer.selectedSupplier')"><strong>{{row.quote.body.company||'—'}}</strong></td>
         <td :data-label="t('inquiryWorkspace.offer.calculatedCustomerPrice')">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} / {{row.product.unit}}</td>
         <td :data-label="t('inquiryWorkspace.offer.customerQuotePrice')"><el-input v-model="negotiationFor(row).proposedPrice" size="small" :disabled="!editable" inputmode="decimal" :aria-label="t('inquiryWorkspace.offer.customerQuotePrice')+' · '+row.product.product" :title="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" placeholder="—" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></td>
-        <td :data-label="t('contractRepair.accepted')"><el-checkbox :aria-label="t('contractRepair.accepted')+' · '+row.product.product" :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)"/></td>
        </tr></tbody>
       </table>
      </div>
     </section>
     <section class="document-panel"><div><h3>{{t('inquiryWorkspace.offer.customerQuotationDocument')}}</h3><p>{{t('inquiryWorkspace.offer.documentHint')}}</p></div><div class="document-actions"><label>{{t('inquiryWorkspace.offer.documentLanguage')}}<el-select v-model="offer.body.documentLanguage" :disabled="!editable"><el-option v-for="option in documentLanguages" :key="option.value" :value="option.value" :label="option.label"/></el-select></label><el-tooltip :content="documentTooltip"><span><el-button :disabled="!canGenerateDocument" :loading="busy" type="primary" @click="generateDocument">{{t('inquiryWorkspace.offer.generateDocument')}}</el-button></span></el-tooltip></div></section>
    </template>
-   <footer class="workspace-footer"><div><strong>{{t(isCompare?'inquiryWorkspace.offer.compareSummary':'inquiryWorkspace.offer.customerSummary',isCompare?{products:selections.length,logistics:selectedFreightQuoteIds.length}:{count:customerRows.length})}}</strong><small>{{t(dirty?'inquiryWorkspace.offer.unsaved':isCompare?'inquiryWorkspace.offer.compareFooterHint':'inquiryWorkspace.offer.offerFooterHint')}}</small></div><div class="footer-actions"><el-button @click="refreshSources" :disabled="busy">{{t('inquiryWorkspace.offer.refreshSources')}}</el-button><el-button v-if="!isCompare" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.backToCompare')}}</el-button><el-button v-if="editable" @click="persist(false)">{{t(isCompare?'inquiryWorkspace.offer.saveSelection':'inquiryWorkspace.offer.saveQuoteInfo')}}</el-button><el-button v-if="isCompare&&editable" type="primary" :disabled="!selections.length" @click="persist(true)">{{t(customerRows.length?'inquiryWorkspace.offer.updateCustomerSelection':'inquiryWorkspace.offer.addToCustomerQuote')}}</el-button><el-button v-if="!isCompare&&editable" type="success" :disabled="busy||(offer.body.categoryWorkflow?!customerRows.length:!offer.body.lines.length)" @click="confirmCustomerContract">{{t('contractRepair.confirm')}}</el-button><el-button v-if="offer.contractId&&offer.contractId!=='0'" type="primary" @click="router.push({path:'/contracts',query:{id:offer.contractId}})">{{t('inquiryWorkspace.offer.openContract')}}</el-button></div></footer>
+   <footer class="workspace-footer"><div><strong>{{t(isCompare?'inquiryWorkspace.offer.compareSummary':'inquiryWorkspace.offer.customerSummary',isCompare?{products:selections.length,logistics:selectedFreightQuoteIds.length}:customerSelectionCounts)}}</strong><small>{{t(dirty?'inquiryWorkspace.offer.unsaved':isCompare?'inquiryWorkspace.offer.compareFooterHint':'inquiryWorkspace.offer.offerFooterHint')}}</small></div><div class="footer-actions"><el-button @click="refreshSources" :disabled="busy">{{t('inquiryWorkspace.offer.refreshSources')}}</el-button><el-button v-if="!isCompare" @click="emit('navigate','quotes')">{{t('inquiryWorkspace.offer.backToCompare')}}</el-button><el-button v-if="editable" @click="persist(false)">{{t(isCompare?'inquiryWorkspace.offer.saveSelection':'inquiryWorkspace.offer.saveQuoteInfo')}}</el-button><el-button v-if="isCompare&&editable" type="primary" :disabled="!selections.length" @click="persist(true)">{{t(customerRows.length?'inquiryWorkspace.offer.updateCustomerSelection':'inquiryWorkspace.offer.addToCustomerQuote')}}</el-button><el-button v-if="!isCompare&&editable" type="success" :disabled="busy||(offer.body.categoryWorkflow?!customerRows.length:!offer.body.lines.length)" @click="confirmCustomerContract">{{t('contractRepair.confirm')}}</el-button><el-button v-if="offer.contractId&&offer.contractId!=='0'" type="primary" @click="router.push({path:'/contracts',query:{id:offer.contractId}})">{{t('inquiryWorkspace.offer.openContract')}}</el-button></div></footer>
   </template>
   <el-dialog :model-value="!!preview" :title="t(preview?.kind==='LOGISTICS'?'inquiryWorkspace.offer.logisticsOriginalQuote':'inquiryWorkspace.offer.supplierOriginalQuote')" width="min(1000px,95vw)" @close="preview=null">
    <template v-if="preview">
@@ -149,6 +162,7 @@ import {computed,ref,watch,onBeforeUnmount} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {ElMessage,ElMessageBox} from 'element-plus'
+import {paymentTermOptions} from '../lib/paymentTermOptions'
 import {post,quietErrors,saveBlob} from '../api'
 import {productTemplateValue,type Quote,type Product,type Price} from '../lib/inquiryWorkspace'
 import type {Offer,CategorySelection,OfferSelectionSnapshot,CategoryCalculation,OfferNegotiation} from '../lib/customerOffer'
@@ -197,6 +211,10 @@ function selectProductFreight(group:ProductCandidateGroup,id?:string){
  productFreightChoices.value[freightProductKey(products[0])]={id:quote?.id||'',version:quote?.version}
 }
 function logisticsProductDescription(id:string){const product=offer.value?.source.body.products.find(p=>p.id===id);return product?comparisonSpecificationSentence(product):productName(id)}
+function suggestPaymentTerms(query: string, done: (items: {value: string}[]) => void) {
+ const search = query.trim().toLocaleLowerCase()
+ done(paymentTermOptions.filter(term => term.toLocaleLowerCase().includes(search)).map(value => ({value})))
+}
 function comparisonSpecificationSentence(product:Product){
  const keys:Record<string,string>={specification:'specification',delivery:'deliveryDate',weight:'productWeight',volume:'productVolume',packaging:'productPackaging',package_quantity:'productPackageQuantity',remarks:'remark'}
  const fields=comparisonProductFields(product,offer.value?.source.body.template?.fields||[],key=>keys[key]?t('inquiryWorkspace.offer.'+keys[key]):key)
@@ -224,6 +242,12 @@ function selectedCount(category:string){return selections.value.filter(s=>s.cate
 function selectedProductCount(category:string){return new Set(rowsFor(category).filter(isSelected).map(row=>freightProductKey(row.product))).size}
 function snapshotRow(s:OfferSelectionSnapshot):Candidate{return{product:s.product,quote:s.quote,category:s.category,price:s.quote.body.prices?.find(p=>p.productId===s.productId)||{productId:s.productId,price:'',delivery:'',remark:''}}}
 const customerRows=computed(()=>offer.value?.body.customerSelections?.map(snapshotRow)||[])
+const customerSelectionCounts=computed(()=>{
+ const rows=customerRows.value
+ const agreed=new Set(offer.value?.body.negotiations?.filter(n=>n.status==='AGREED').map(selectionKey))
+ const selected=rows.filter(r=>agreed.has(selectionKey({productId:r.product.id,category:r.category,quoteId:r.quote.id})))
+ return {count:new Set(selected.map(r=>r.product.id)).size,total:new Set(rows.map(r=>r.product.id)).size}
+})
 const customerGroups=computed(()=>groups.value.map(g=>({...g,rows:customerRows.value.filter(r=>r.category===g.value)})).filter(g=>g.rows.length))
 function customerSupplierCount(rows:Candidate[]){return new Set(rows.map(row=>row.quote.id)).size}
 const hasCustomer=computed(()=>Number(offer.value?.body.customerId||0)>0)
@@ -430,21 +454,21 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .compare-mode .compact-category-header .manual-inputs .interest-days-input{width:88px}
 .compact-category-main{display:flex;align-items:center;flex-wrap:wrap;gap:6px 5px;max-width:100%;min-width:0}
 /* Module seams use borders instead of nested cards and whitespace. */
-.quote-workspace.compare-mode{padding:0;background:#fff;border:1px solid #dce6ef;border-top:0;border-radius:0}
+.quote-workspace:is(.compare-mode,.customer-mode){padding:0;background:#fff;border:1px solid #dce6ef;border-top:0;border-radius:0}
 .quote-workspace.compare-mode .section-tools{margin:0;padding:6px 12px;min-height:42px;box-sizing:border-box;gap:8px;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none}
 .quote-workspace.compare-mode .section-tools :deep(.el-input__wrapper){min-height:30px}
 .quote-workspace.compare-mode .section-tools :deep(.el-checkbox__label){font-size:12px}
-.quote-workspace.compare-mode .workspace-card{margin:0;border:0;border-radius:0;box-shadow:none}
-.quote-workspace.compare-mode .workspace-card+.workspace-card{border-top:1px solid #cbdce5}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-card{margin:0;border:0;border-radius:0;box-shadow:none}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-card+.workspace-card{border-top:1px solid #cbdce5}
 .quote-workspace.compare-mode .compact-category-header{border-radius:0}
 .quote-workspace.compare-mode .quote-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none}
 .quote-workspace.compare-mode .logistics-panel{margin-top:0}
 .quote-workspace.compare-mode .logistics-panel .card-heading{padding:10px 12px}
 .quote-workspace.compare-mode .logistics-panel .card-heading h3{font-size:14px}
-.quote-workspace.compare-mode .workspace-footer{position:sticky;bottom:0;margin:0;padding:8px 12px;gap:8px 12px;border:0;border-top:1px solid #cbdce5;border-radius:0;background:#fff;box-shadow:none}
-.quote-workspace.compare-mode .workspace-footer strong{font-size:12px}
-.quote-workspace.compare-mode .workspace-footer small{margin-top:2px;font-size:11px}
-.quote-workspace.compare-mode .workspace-footer .el-button{height:30px;min-height:30px;padding:0 10px;font-size:12px}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-footer{position:sticky;bottom:0;margin:0;padding:8px 12px;gap:8px 12px;border:0;border-top:1px solid #cbdce5;border-radius:0;background:#fff;box-shadow:none}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-footer strong{font-size:12px}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-footer small{margin-top:2px;font-size:11px}
+.quote-workspace:is(.compare-mode,.customer-mode) .workspace-footer .el-button{height:30px;min-height:30px;padding:0 10px;font-size:12px}
 .logistics-reference-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;box-sizing:border-box;padding:7px 12px;cursor:pointer;list-style:none;background:#f2f8f6;color:#315d69;font-size:12px;line-height:20px}
 .logistics-reference-summary::-webkit-details-marker{display:none}
 .logistics-reference-summary:focus-visible{outline:2px solid #2385a2;outline-offset:-2px}
@@ -513,14 +537,32 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .freight-choice-option>small{display:block;color:#70828d;font-size:11px;margin-top:3px}
 .quote-terms summary{cursor:pointer;padding:8px 14px;font-weight:600}.quote-terms .saved-at{margin-left:12px;font-weight:400}
 .negotiation-panel header{display:flex;align-items:center;gap:14px;padding:7px 12px;background:#eef6f8}.negotiation-panel header span{font-size:12px;color:#536f7d}
-.negotiation-scroll{overflow-x:auto}.negotiation-grid{width:100%;min-width:760px;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.negotiation-scroll{overflow-x:auto;container-type:inline-size}.negotiation-grid{width:100%;min-width:760px;table-layout:fixed;border-collapse:collapse;font-size:13px}
 .negotiation-grid th,.negotiation-grid td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
-.negotiation-grid th{background:#f4f8fa;color:#365c6e}.negotiation-grid th:nth-child(1){width:34%}.negotiation-grid th:nth-child(2){width:9%}.negotiation-grid th:nth-child(3){width:16%}.negotiation-grid th:nth-child(4){width:15%}.negotiation-grid th:nth-child(5){width:17%}.negotiation-grid th:last-child,.negotiation-grid td:last-child{text-align:center}
+.negotiation-grid th{background:#f4f8fa;color:#365c6e}.negotiation-grid th:first-child{width:9em}.negotiation-grid th:nth-child(3){width:9%}.negotiation-grid th:nth-child(4){width:15%}.negotiation-grid th:nth-child(5){width:14%}.negotiation-grid th:last-child{width:17%}
+.negotiation-grid :deep(.el-checkbox__label){padding-left:5px;font-size:12px}
 .negotiation-grid :deep(.el-input-group__prepend){padding:0 6px}
-@media(max-width:800px){
+@container(max-width:759px){
  .negotiation-grid{min-width:0;display:block}.negotiation-grid thead{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}.negotiation-grid tbody{display:block}
  .negotiation-grid tr{display:grid;grid-template-columns:1fr 1fr;align-items:start;padding:6px 8px;border-bottom:1px solid var(--line)}
- .negotiation-grid td{display:block;border:0;padding:3px 5px}.negotiation-grid td:first-child{grid-column:1/-1}.negotiation-grid td:nth-child(3){grid-column:2;grid-row:2/4}
- .negotiation-grid td:last-child{text-align:left}.negotiation-grid td:not(:first-child)::before{content:attr(data-label);display:block;color:#536f7d;font-size:11px}
+ .negotiation-grid td{display:block;border:0;padding:3px 5px}.negotiation-grid td:first-child,.negotiation-grid td:nth-child(2){grid-column:1/-1}
+ .negotiation-grid td:last-child{text-align:left}.negotiation-grid td:not(:nth-child(2))::before{content:attr(data-label);display:block;color:#536f7d;font-size:11px}
 }
+.customer-mode .document-panel{margin:0;padding:8px 12px;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none}
+.customer-mode .quote-terms{container-type:inline-size}
+.customer-mode .document-panel h3{margin:0 0 3px;color:#284e60;font-size:14px;font-weight:600;line-height:1.45}
+.customer-mode .document-panel p{color:#566d7a;font-size:12px;line-height:1.5}
+.customer-mode .document-actions{gap:8px}
+.customer-mode .document-actions label{min-width:128px;gap:3px;font-size:12px;line-height:1.4}
+.customer-mode .document-actions :deep(.el-select__wrapper){min-height:30px;font-size:13px}
+.customer-mode .document-actions :deep(.el-button){height:30px;padding:0 12px;font-size:13px;font-weight:500}
+.customer-mode .customer-fields{grid-template-columns:9rem 9rem minmax(0,1fr);align-items:start;padding:4px 12px 10px;gap:8px 12px}
+.customer-mode .customer-fields :deep(.el-form-item__label){margin-bottom:3px;font-size:12px}
+.customer-mode .customer-fields :deep(.el-autocomplete){width:100%}
+.customer-mode .customer-fields > :last-child{grid-column:1/-1}
+@container(max-width:600px){.customer-mode .customer-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-mode .customer-fields > :nth-child(3){grid-column:1/-1}}
+@container(max-width:400px){.customer-mode .customer-fields{grid-template-columns:minmax(0,1fr)}}
+.customer-mode .customer-fields :deep(.el-form-item){margin-bottom:0;min-width:0}
+.customer-mode .customer-fields :deep(.el-date-editor){width:100%;max-width:100%}
+.customer-mode .workspace-footer{flex-wrap:wrap}
 </style>

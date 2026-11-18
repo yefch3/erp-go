@@ -331,6 +331,7 @@
 </template>
 
 <script setup lang="ts">
+import {paymentTermOptions} from "../lib/paymentTermOptions"
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -542,7 +543,7 @@ const selected = ref<Requirement[]>([])
 const activeBatch = ref<PurchaseBatch | null>(null)
 const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
-const paymentTermOptions = ['T/T', '30%预付款，70%发货前付清', '信用证 L/C', '货到付款', '月结 30 天', '月结 60 天']
+
 const executionQuotes = reactive<Record<string, ExecutionQuote[]>>({})
 const selectedQuote = reactive<Record<string, number>>({})
 const batchQuoteOpen = ref(false)
