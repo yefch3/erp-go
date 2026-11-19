@@ -107,18 +107,33 @@
             <div class="section-heading">
               <div>
                 <h3>{{ t('roles.dataScope') }}</h3>
-                <p>{{ t('roles.scopeHint') }}</p>
+                <p>{{ roleScopeHelp.intro }}</p>
               </div>
             </div>
             <div v-if="visibleScopeModules.length" class="scope-grid">
-              <label v-for="scopeModule in visibleScopeModules" :key="scopeModule.key" class="scope-card">
+              <div v-for="scopeModule in visibleScopeModules" :key="scopeModule.key" class="scope-card">
                 <span>{{ t(scopeModule.label) }}</span>
-                <el-select v-model="scopeValues[scopeModule.key]" :disabled="!canEditSelected">
-                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
-              </el-select>
-              </label>
+                <el-select
+                  v-model="scopeValues[scopeModule.key]"
+                  :aria-label="t(scopeModule.label)"
+                  :disabled="!canEditSelected"
+                >
+                  <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+                </el-select>
+                <p class="scope-description">{{ roleScopeHelp.modules[scopeModule.key] }}</p>
+              </div>
             </div>
-            <el-empty v-else :description="t('roles.noScopeNeeded')" :image-size="54" />
+            <p v-else class="scope-note">{{ roleScopeHelp.empty }}</p>
+            <details v-if="visibleScopeModules.length" class="scope-options">
+              <summary>{{ roleScopeHelp.optionsTitle }}</summary>
+              <dl>
+                <template v-for="k in explainedScopeTypes" :key="k">
+                  <dt>{{ t(k === 'CUSTOM' ? 'employees.scopeCustom' : `roles.scopes.${k}`) }}</dt>
+                  <dd>{{ roleScopeHelp.options[k] }}</dd>
+                </template>
+              </dl>
+            </details>
+            <p v-if="hasMasterDataOwners" class="scope-note">{{ roleScopeHelp.ownerBased }}</p>
           </section>
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
         </div>
@@ -126,7 +141,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="permissionDialogOpen" :title="activePermissionModuleLabel" width="620px">
+    <el-dialog v-model="permissionDialogOpen" :title="activePermissionModuleLabel" width="min(700px, calc(100vw - 32px))">
       <div class="permission-dialog-head">
         <div>
           <span>{{ t('roles.modulePermissionHint') }}</span>
@@ -138,9 +153,14 @@
         </div>
       </div>
       <el-checkbox-group v-model="checked" :disabled="!canEditSelected" class="dialog-permission-list">
-        <el-checkbox v-for="p in activeModulePermissions" :key="p.code" :value="p.code" :title="p.code">
-          <span class="permission-label">{{ displayPermissionName(p) }}</span>
-        </el-checkbox>
+        <div v-for="p in activeModulePermissions" :key="p.code" class="permission-row">
+          <el-checkbox :value="p.code" :title="p.code" :aria-describedby="`permission-help-${p.id}`">
+            <span class="permission-label">{{ displayPermissionName(p) }}</span>
+          </el-checkbox>
+          <p :id="`permission-help-${p.id}`" class="permission-description">
+            {{ permissionHelp(p.code, locale) }}
+          </p>
+        </div>
       </el-checkbox-group>
       <template #footer>
         <el-button type="primary" @click="permissionDialogOpen = false">{{ t('roles.done') }}</el-button>
@@ -175,6 +195,7 @@ import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 import { permissionDisplayName, roleDisplayDescription, roleDisplayName } from '../lib/roleDisplay'
+import { permissionHelp, scopeHelp } from '../lib/rolePermissionHelp'
 
 interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[]; status: string }
 interface Permission { id: string; code: string; name: string; module: string }
@@ -188,6 +209,10 @@ const permissions = ref<Permission[]>([])
 const selected = ref<Role | null>(null)
 const canEditSelected = computed(() => canWrite && selected.value?.code !== 'SUPER_ADMIN')
 const checked = ref<string[]>([])
+const roleScopeHelp = computed(() => scopeHelp(locale.value))
+const hasMasterDataOwners = computed(() => checked.value.some((code) =>
+  code.startsWith('masterdata:customer:') || code.startsWith('masterdata:supplier:'),
+))
 const loading = ref(false)
 const saving = ref(false)
 const createOpen = ref(false)
@@ -302,6 +327,11 @@ const visibleScopeModules = computed(() => DATA_SCOPE_MODULES.filter((module) =>
   )
   return configured || relevant
 }))
+const explainedScopeTypes = computed(() =>
+  visibleScopeModules.value.some(({ key }) => scopeValues[key] === 'CUSTOM')
+    ? [...SCOPE_TYPES, 'CUSTOM']
+    : SCOPE_TYPES,
+)
 
 function enabledPermissionCount(items: Permission[]): number {
   const enabled = new Set(checked.value)
@@ -564,6 +594,17 @@ onMounted(async () => {
   border-radius: 9px;
   font-size: 13px;
 }
+.scope-description, .scope-note, .scope-options {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.scope-description { grid-column: 1 / -1; margin: 0; }
+.scope-note, .scope-options { margin: 10px 0 0; }
+.scope-options summary { cursor: pointer; color: var(--el-color-primary); }
+.scope-options dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 8px 0 0; }
+.scope-options dt { font-weight: 500; color: var(--el-text-color-regular); }
+.scope-options dd { margin: 0; }
 .permission-dialog-head {
   display: flex;
   align-items: center;
@@ -578,14 +619,20 @@ onMounted(async () => {
   color: var(--el-color-info);
 }
 .dialog-permission-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 14px;
   max-height: 52vh;
   overflow-y: auto;
   padding-right: 6px;
 }
+.permission-row { padding: 7px 4px 9px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.permission-row:last-child { border-bottom: 0; }
+.permission-row :deep(.el-checkbox) { height: auto; min-height: 25px; margin-right: 0; }
 .permission-label { white-space: normal; line-height: 1.4; }
+.permission-description {
+  margin: 2px 0 0 22px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .hint {
   margin-left: 10px;
   font-size: 12px;
@@ -617,7 +664,7 @@ onMounted(async () => {
   .hint { display: block; margin: 3px 0 0; }
   .access-overview { grid-template-columns: 1fr 1fr; }
   .access-overview p { grid-column: 1 / -1; }
-  .capability-grid, .scope-grid, .dialog-permission-list { grid-template-columns: 1fr; }
+  .capability-grid, .scope-grid { grid-template-columns: 1fr; }
   .scope-card { grid-template-columns: 1fr; }
 }
 </style>
