@@ -246,6 +246,7 @@ async function toggleStatus() {
 const grouped = computed(() => {
   const buckets: Record<string, Permission[]> = {}
   for (const p of permissions.value) {
+    if (p.code === 'report:business:read' && selected.value?.code !== 'BOSS') continue
     (buckets[p.module] ??= []).push(p)
   }
   const preferred = ['sales', 'export', 'procurement']
@@ -408,6 +409,7 @@ async function saveGrants() {
 }
 
 function moduleLabel(module: string): string {
+  if (module === 'report') return t('businessReports.title')
   const key = `roles.modules.${module}`
   const label = t(key)
   return label === key ? module : label
@@ -422,6 +424,7 @@ function displayRoleDescription(role: Role): string {
 }
 
 function displayPermissionName(permission: Permission): string {
+  if (permission.code === 'report:business:read') return t('businessReports.title')
   return permissionDisplayName(permission.code, permission.name, String(locale.value))
 }
 

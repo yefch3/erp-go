@@ -11,6 +11,8 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurem
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 service SourcingService {
+  rpc GetReportInquiries(GetReportInquiriesRequest) returns (GetReportInquiriesResponse);
+  rpc GetReportContractCosts(GetReportContractCostsRequest) returns (GetReportContractCostsResponse);
   // D1 uses a validated JSON document for the full-width inquiry/quote editor.
   // The server decodes a closed command schema and independently checks IAM.
   rpc InquiryWorkspace(InquiryWorkspaceRequest) returns (InquiryWorkspaceResponse);
@@ -3306,3 +3308,34 @@ message ShippingHistoricalPurchase {
   string remark = 5;
 }
 message ListShippingHistoricalPurchasesResponse { repeated ShippingHistoricalPurchase items = 1; }
+
+message GetReportInquiriesRequest {
+  string start_date = 1;
+  string cutoff_date = 2;
+}
+message ReportInquiryCount {
+  int64 employee_id = 1;
+  string employee = 2;
+  int64 count = 3;
+}
+message GetReportInquiriesResponse {
+  repeated ReportInquiryCount employees = 1;
+}
+
+message GetReportContractCostsRequest {
+  int64 contract_id = 1;
+  string internal_contract_no = 2;
+  string cutoff_date = 3;
+  map<int64, string> item_quantities = 4;
+  repeated int32 freight_batches = 5;
+}
+message ReportCostDocument {
+  string number = 1;
+  string currency = 2;
+  string amount = 3;
+  string kind = 4;
+}
+message GetReportContractCostsResponse {
+  repeated ReportCostDocument costs = 1;
+  bool covered = 2;
+}

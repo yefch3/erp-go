@@ -27,6 +27,10 @@
           <span class="module-short" aria-hidden="true"><el-icon><List /></el-icon></span><span class="module-label">{{ t('menu.todos') }}</span>
         </el-menu-item>
         <!-- 邮箱是每位在职 ERP 用户的个人工作入口，访问范围仍由服务端固定为本人。 -->
+        <el-menu-item v-if="auth.can('report:business:read')" index="/business-reports" :style="moduleStyle('reports')" draggable="true" @dragstart="startModuleDrag('reports', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('reports')" @dragend="finishNavigationDrag">
+          <span class="module-short" aria-hidden="true"><el-icon><DataBoard /></el-icon></span><span class="module-label">{{ t('businessReports.title') }}</span>
+        </el-menu-item>
+
         <el-menu-item index="/emails" :style="moduleStyle('emails')" draggable="true" @dragstart="startModuleDrag('emails', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('emails')" @dragend="finishNavigationDrag">
           <span class="module-short" aria-hidden="true"><el-icon><Message /></el-icon></span><span class="module-label">{{ t('menu.emails') }}</span>
         </el-menu-item>
@@ -484,7 +488,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 
 const route = useRoute()
-const moduleDefaults = ['todos','emails','sales','procurement','quality','warehouse','logistics','finance','basic','system']
+const moduleDefaults = ['todos','emails','sales','procurement','quality','warehouse','logistics','finance','reports','basic','system']
 const childDefaults: Record<string,string[]> = {
   sales: ['/sales/inquiries','/sales/quotations','/sales/settings/inquiry-templates','/contracts'],
   procurement: ['/procurement/sourcing','/requirements','/purchase-orders'],
@@ -704,6 +708,7 @@ const visibleModules = computed(() => sortByOrder([
   { key: 'warehouse', visible: hasWarehouse.value },
   { key: 'logistics', visible: hasLogistics.value },
   { key: 'finance', visible: hasFinance.value },
+  { key: 'reports', visible: auth.can('report:business:read') },
   { key: 'basic', visible: hasBasicData.value },
   { key: 'system', visible: hasSystem.value },
 ].filter((item) => item.visible), navigationPreferences.value.modules).map((item) => item.key))

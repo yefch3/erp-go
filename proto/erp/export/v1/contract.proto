@@ -4,6 +4,7 @@ package erp.export.v1;
 
 import "erp/common/v1/failedevent.proto";
 import "erp/common/v1/pagination.proto";
+import "erp/export/v1/business_report.proto";
 // FxSnapshot and ItemInput are shared with quotations: a contract inherits
 // the offer's rate and is priced from the same line shape.
 import "erp/export/v1/quotation.proto";
@@ -12,6 +13,7 @@ import "erp/export/v1/quotation.proto";
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 service ContractService {
+  rpc GetBusinessReport(GetBusinessReportRequest) returns (GetBusinessReportResponse);
   rpc ListShippingContractReferences(ListShippingContractReferencesRequest) returns (ListShippingContractReferencesResponse);
   rpc CheckContractExecution(CheckContractExecutionRequest) returns (CheckContractExecutionResponse);
   rpc ContractWorkflow(ContractWorkflowRequest) returns (ContractWorkflowResponse);

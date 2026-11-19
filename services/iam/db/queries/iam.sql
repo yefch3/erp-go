@@ -453,6 +453,7 @@ FROM (
     WHERE er.tenant_id = sqlc.arg(tenant_id)::bigint
       AND er.employee_id = sqlc.arg(employee_id)::bigint
       AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+      AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
     UNION ALL
     SELECT p.code
     FROM employees e
@@ -490,6 +491,7 @@ SELECT EXISTS (
           JOIN permissions p ON p.id = rp.permission_id
           WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
             AND p.code = sqlc.arg(code)::text AND r.status = 'ACTIVE'
+            AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
         )
       )
 ) AS allowed;
@@ -545,6 +547,7 @@ WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
       JOIN permissions p ON p.id = rp.permission_id
       WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
         AND p.code = sqlc.arg(code)::text AND r.status = 'ACTIVE'
+        AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
     )
   )
 ORDER BY e.name, e.id;

@@ -498,6 +498,7 @@ SELECT EXISTS (
           JOIN permissions p ON p.id = rp.permission_id
           WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
             AND p.code = $3::text AND r.status = 'ACTIVE'
+            AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
         )
       )
 ) AS allowed
@@ -1320,6 +1321,7 @@ FROM (
     WHERE er.tenant_id = $1::bigint
       AND er.employee_id = $2::bigint
       AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+      AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
     UNION ALL
     SELECT p.code
     FROM employees e
@@ -1788,6 +1790,7 @@ WHERE e.tenant_id = $1::bigint
       JOIN permissions p ON p.id = rp.permission_id
       WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
         AND p.code = $2::text AND r.status = 'ACTIVE'
+        AND (p.code <> 'report:business:read' OR r.code = 'BOSS')
     )
   )
 ORDER BY e.name, e.id

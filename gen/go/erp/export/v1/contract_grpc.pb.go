@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ContractService_GetBusinessReport_FullMethodName              = "/erp.export.v1.ContractService/GetBusinessReport"
 	ContractService_ListShippingContractReferences_FullMethodName = "/erp.export.v1.ContractService/ListShippingContractReferences"
 	ContractService_CheckContractExecution_FullMethodName         = "/erp.export.v1.ContractService/CheckContractExecution"
 	ContractService_ContractWorkflow_FullMethodName               = "/erp.export.v1.ContractService/ContractWorkflow"
@@ -53,6 +54,7 @@ const (
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceClient interface {
+	GetBusinessReport(ctx context.Context, in *GetBusinessReportRequest, opts ...grpc.CallOption) (*GetBusinessReportResponse, error)
 	ListShippingContractReferences(ctx context.Context, in *ListShippingContractReferencesRequest, opts ...grpc.CallOption) (*ListShippingContractReferencesResponse, error)
 	CheckContractExecution(ctx context.Context, in *CheckContractExecutionRequest, opts ...grpc.CallOption) (*CheckContractExecutionResponse, error)
 	ContractWorkflow(ctx context.Context, in *ContractWorkflowRequest, opts ...grpc.CallOption) (*ContractWorkflowResponse, error)
@@ -108,6 +110,16 @@ type contractServiceClient struct {
 
 func NewContractServiceClient(cc grpc.ClientConnInterface) ContractServiceClient {
 	return &contractServiceClient{cc}
+}
+
+func (c *contractServiceClient) GetBusinessReport(ctx context.Context, in *GetBusinessReportRequest, opts ...grpc.CallOption) (*GetBusinessReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBusinessReportResponse)
+	err := c.cc.Invoke(ctx, ContractService_GetBusinessReport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *contractServiceClient) ListShippingContractReferences(ctx context.Context, in *ListShippingContractReferencesRequest, opts ...grpc.CallOption) (*ListShippingContractReferencesResponse, error) {
@@ -358,6 +370,7 @@ func (c *contractServiceClient) ListOwnershipTransfers(ctx context.Context, in *
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceServer interface {
+	GetBusinessReport(context.Context, *GetBusinessReportRequest) (*GetBusinessReportResponse, error)
 	ListShippingContractReferences(context.Context, *ListShippingContractReferencesRequest) (*ListShippingContractReferencesResponse, error)
 	CheckContractExecution(context.Context, *CheckContractExecutionRequest) (*CheckContractExecutionResponse, error)
 	ContractWorkflow(context.Context, *ContractWorkflowRequest) (*ContractWorkflowResponse, error)
@@ -415,6 +428,9 @@ type ContractServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedContractServiceServer struct{}
 
+func (UnimplementedContractServiceServer) GetBusinessReport(context.Context, *GetBusinessReportRequest) (*GetBusinessReportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBusinessReport not implemented")
+}
 func (UnimplementedContractServiceServer) ListShippingContractReferences(context.Context, *ListShippingContractReferencesRequest) (*ListShippingContractReferencesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListShippingContractReferences not implemented")
 }
@@ -506,6 +522,24 @@ func RegisterContractServiceServer(s grpc.ServiceRegistrar, srv ContractServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ContractService_ServiceDesc, srv)
+}
+
+func _ContractService_GetBusinessReport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBusinessReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).GetBusinessReport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_GetBusinessReport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).GetBusinessReport(ctx, req.(*GetBusinessReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ContractService_ListShippingContractReferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -947,6 +981,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.export.v1.ContractService",
 	HandlerType: (*ContractServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetBusinessReport",
+			Handler:    _ContractService_GetBusinessReport_Handler,
+		},
 		{
 			MethodName: "ListShippingContractReferences",
 			Handler:    _ContractService_ListShippingContractReferences_Handler,

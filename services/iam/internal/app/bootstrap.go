@@ -203,6 +203,9 @@ func (s *Service) seedTenantCore(ctx context.Context, q *store.Queries, companyN
 		return 0, 0, 0, err
 	}
 	for _, p := range perms {
+		if p.Code == businessReportPermission {
+			continue
+		}
 		if err := q.AddRolePermission(ctx, store.AddRolePermissionParams{
 			TenantID: tenantID, RoleID: role.ID, PermissionID: p.ID,
 		}); err != nil {

@@ -887,6 +887,9 @@ func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int
 		permissionIDs[permission.Code] = permission.ID
 	}
 	for _, code := range codes {
+		if code == businessReportPermission && role.Code != "BOSS" {
+			return apierr.Invalid("IAM_REPORT_BOSS_ONLY", "经营报表权限仅可授予老板角色")
+		}
 		if known[code] {
 			continue
 		}

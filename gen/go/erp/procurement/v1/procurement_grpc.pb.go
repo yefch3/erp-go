@@ -19,6 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	SourcingService_GetReportInquiries_FullMethodName                = "/erp.procurement.v1.SourcingService/GetReportInquiries"
+	SourcingService_GetReportContractCosts_FullMethodName            = "/erp.procurement.v1.SourcingService/GetReportContractCosts"
 	SourcingService_InquiryWorkspace_FullMethodName                  = "/erp.procurement.v1.SourcingService/InquiryWorkspace"
 	SourcingService_CreateCase_FullMethodName                        = "/erp.procurement.v1.SourcingService/CreateCase"
 	SourcingService_ListCases_FullMethodName                         = "/erp.procurement.v1.SourcingService/ListCases"
@@ -89,6 +91,8 @@ const (
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 type SourcingServiceClient interface {
+	GetReportInquiries(ctx context.Context, in *GetReportInquiriesRequest, opts ...grpc.CallOption) (*GetReportInquiriesResponse, error)
+	GetReportContractCosts(ctx context.Context, in *GetReportContractCostsRequest, opts ...grpc.CallOption) (*GetReportContractCostsResponse, error)
 	// D1 uses a validated JSON document for the full-width inquiry/quote editor.
 	// The server decodes a closed command schema and independently checks IAM.
 	InquiryWorkspace(ctx context.Context, in *InquiryWorkspaceRequest, opts ...grpc.CallOption) (*InquiryWorkspaceResponse, error)
@@ -161,6 +165,26 @@ type sourcingServiceClient struct {
 
 func NewSourcingServiceClient(cc grpc.ClientConnInterface) SourcingServiceClient {
 	return &sourcingServiceClient{cc}
+}
+
+func (c *sourcingServiceClient) GetReportInquiries(ctx context.Context, in *GetReportInquiriesRequest, opts ...grpc.CallOption) (*GetReportInquiriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetReportInquiriesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetReportInquiries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetReportContractCosts(ctx context.Context, in *GetReportContractCostsRequest, opts ...grpc.CallOption) (*GetReportContractCostsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetReportContractCostsResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetReportContractCosts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *sourcingServiceClient) InquiryWorkspace(ctx context.Context, in *InquiryWorkspaceRequest, opts ...grpc.CallOption) (*InquiryWorkspaceResponse, error) {
@@ -771,6 +795,8 @@ func (c *sourcingServiceClient) ListOverdueFactoryRfqs(ctx context.Context, in *
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 type SourcingServiceServer interface {
+	GetReportInquiries(context.Context, *GetReportInquiriesRequest) (*GetReportInquiriesResponse, error)
+	GetReportContractCosts(context.Context, *GetReportContractCostsRequest) (*GetReportContractCostsResponse, error)
 	// D1 uses a validated JSON document for the full-width inquiry/quote editor.
 	// The server decodes a closed command schema and independently checks IAM.
 	InquiryWorkspace(context.Context, *InquiryWorkspaceRequest) (*InquiryWorkspaceResponse, error)
@@ -845,6 +871,12 @@ type SourcingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSourcingServiceServer struct{}
 
+func (UnimplementedSourcingServiceServer) GetReportInquiries(context.Context, *GetReportInquiriesRequest) (*GetReportInquiriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReportInquiries not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetReportContractCosts(context.Context, *GetReportContractCostsRequest) (*GetReportContractCostsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReportContractCosts not implemented")
+}
 func (UnimplementedSourcingServiceServer) InquiryWorkspace(context.Context, *InquiryWorkspaceRequest) (*InquiryWorkspaceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InquiryWorkspace not implemented")
 }
@@ -1044,6 +1076,42 @@ func RegisterSourcingServiceServer(s grpc.ServiceRegistrar, srv SourcingServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&SourcingService_ServiceDesc, srv)
+}
+
+func _SourcingService_GetReportInquiries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReportInquiriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetReportInquiries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetReportInquiries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetReportInquiries(ctx, req.(*GetReportInquiriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetReportContractCosts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReportContractCostsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetReportContractCosts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetReportContractCosts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetReportContractCosts(ctx, req.(*GetReportContractCostsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _SourcingService_InquiryWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2133,6 +2201,14 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.procurement.v1.SourcingService",
 	HandlerType: (*SourcingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetReportInquiries",
+			Handler:    _SourcingService_GetReportInquiries_Handler,
+		},
+		{
+			MethodName: "GetReportContractCosts",
+			Handler:    _SourcingService_GetReportContractCosts_Handler,
+		},
 		{
 			MethodName: "InquiryWorkspace",
 			Handler:    _SourcingService_InquiryWorkspace_Handler,

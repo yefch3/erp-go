@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package erp.export.v1;
+
+message GetBusinessReportRequest {
+  int32 year = 1;
+  int32 quarter = 2;
+  string view = 3;
+  int32 page = 4;
+  int64 contract_id = 5;
+}
+
+message BusinessReportAmount {
+  string currency = 1;
+  string amount = 2;
+}
+
+message BusinessReportMonth {
+  string month = 1;
+  repeated BusinessReportAmount signed = 2;
+  repeated BusinessReportAmount received = 3;
+}
+
+message BusinessReportContract {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  string customer = 3;
+  string owner = 4;
+  string due_date = 5;
+  string currency = 6;
+  string contract_amount = 7;
+  string received = 8;
+  string balance = 9;
+  int32 overdue_days = 10;
+  bool closed = 11;
+  string status = 12;
+  repeated BusinessReportCost costs = 13;
+  string estimated_margin = 14;
+  bool cost_unavailable = 15;
+}
+
+message BusinessReportSales {
+  int64 employee_id = 1;
+  string employee = 2;
+  int64 quote_count = 3;
+  int64 signed_count = 4;
+  repeated BusinessReportAmount signed = 5;
+  repeated BusinessReportAmount overdue = 6;
+  int64 inquiry_count = 7;
+}
+
+message GetBusinessReportResponse {
+  string start_date = 1;
+  string cutoff_date = 2;
+  int64 signed_count = 3;
+  repeated BusinessReportAmount signed = 4;
+  repeated BusinessReportAmount received = 5;
+  repeated BusinessReportAmount overdue = 6;
+  repeated BusinessReportMonth months = 7;
+  repeated BusinessReportContract contracts = 8;
+  int64 total = 9;
+  int64 missing_due_date_count = 10;
+  int64 undated_receipt_count = 11;
+  repeated BusinessReportSales sales = 12;
+  string internal_contract_no = 13;
+  map<int64, string> contract_item_quantities = 14;
+  repeated int32 freight_batches = 15;
+}
+
+message BusinessReportCost {
+  string number = 1;
+  string currency = 2;
+  string amount = 3;
+  string kind = 4;
+}

@@ -59,6 +59,7 @@ export const router = createRouter({
         { path: 'sales/settings/inquiry-templates', component: () => import('./pages/InquiryTemplatesPage.vue') },
         // 旧书签保留一个兼容版本，并把查询条件一并带到新入口。
         { path: 'quotations', redirect: '/sales/quotations' },
+        { path: 'business-reports', component: () => import('./pages/BusinessReportsPage.vue'), meta: { permission: 'report:business:read' } },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         // 员工邮箱监管（老板端）。挂在 Shell 里面：它是一页管理功能，顶栏和
