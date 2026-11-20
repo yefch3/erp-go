@@ -1,7 +1,8 @@
 <template>
-  <div class="product-toolbar">
+  <div class="product-toolbar" :class="{'product-toolbar--compact':compact}">
     <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
     <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
+    <div v-if="$slots.actions" class="product-toolbar__actions"><slot name="actions"/></div>
   </div>
   <div v-if="editable" class="product-fill-toolbar">
     <span>{{ t('inquiryProducts.fillHint') }}</span>
@@ -11,7 +12,7 @@
     </template>
     <button v-if="undoBatch" type="button" class="undo-fill" @click="undoLastFill">{{ t('inquiryProducts.undoFill') }}</button>
   </div>
-  <div ref="gridElement" class="product-grid" @keydown="onGridKeydown">
+  <div ref="gridElement" class="product-grid" :class="{'product-grid--compact':compact}" @keydown="onGridKeydown">
     <table :style="{width:`max(100%, ${tableWidth}px)`}">
       <colgroup>
         <col v-if="cargoIds" style="width:56px" />
@@ -35,8 +36,13 @@
                 <el-input v-else :ref="setEditInput" class="inline-editor" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':multilineField(field)?'textarea':'text'" :autosize="multilineField(field)?field.fieldKey==='remarks'?{minRows:1}:{minRows:1,maxRows:8}:undefined" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))" @blur="stopEditing" @keydown.esc="stopEditing"/>
               </template>
               <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="selectCell($event,row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
+              <div v-else-if="mergedDescriptionField===field.fieldKey" class="product-description">
+                <ClampedText class="product-description__name" :text="value(row,'product')||'—'" :lines="value(row,'specification').trim()?1:2"/>
+                <ClampedText v-if="value(row,'specification').trim()" class="product-description__specification" :text="value(row,'specification')" :lines="1"/>
+              </div>
+              <ClampedText v-else-if="compact&&field.fieldKey==='remarks'" :text="value(row,field.fieldKey)||'—'" :lines="2"/>
               <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
-              <button v-if="field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
+              <button v-if="(!compact||editable)&&field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
             </div>
           </td>
           <td v-if="editable"><el-button link type="danger" @click="$emit('remove',products.indexOf(row))">{{t('common.remove')}}</el-button></td>
@@ -51,11 +57,12 @@
 import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import {ElMessage} from 'element-plus'
 import {useI18n} from 'vue-i18n'
+import ClampedText from './ClampedText.vue'
 import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
 import {inquiryProductFields,planInquiryColumns} from '../lib/inquiryProductLayout'
 import {fillProductColumn,firstSelectedValue,rowsBetween} from '../lib/inquiryColumnFill'
-const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[]}>()
+const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[];compact?:boolean}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
 const search=ref(''),page=ref(1),size=ref(100)
@@ -92,7 +99,14 @@ const fallbackFields:TemplateField[]=[
  {fieldKey:'remarks',displayName:'备注',sortOrder:10,isRequired:false,defaultValue:'',dataType:'TEXT',isCustom:false,isCore:false},
 ]
 const allFields=computed(()=>inquiryProductFields(props.products,props.fields?.length?props.fields:fallbackFields,!!props.editable))
-const columnPlan=computed(()=>planInquiryColumns(allFields.value,props.products,Object.fromEntries(allFields.value.map(field=>[field.fieldKey,fieldLabel(field)])),gridWidth.value,(props.cargoIds?56:0)+(props.editable?68:0)))
+const mergedDescriptionField=computed(()=>{
+ if(!props.compact||props.editable)return ''
+ return allFields.value.some(field=>field.fieldKey==='product')?'product':'specification'
+})
+const displayFields=computed(()=>mergedDescriptionField.value==='product'
+ ?allFields.value.filter(field=>field.fieldKey!=='specification')
+ :allFields.value)
+const columnPlan=computed(()=>planInquiryColumns(displayFields.value,props.products,Object.fromEntries(displayFields.value.map(field=>[field.fieldKey,fieldLabel(field)])),gridWidth.value,(props.cargoIds?56:0)+(props.editable?68:0)))
 const tableFields=computed(()=>columnPlan.value.columns)
 const columnWidths=computed(()=>columnPlan.value.widths)
 const tableWidth=computed(()=>columnPlan.value.totalWidth)
@@ -230,7 +244,7 @@ function canExpandText(product:Product,key:string){
  const visualLength=Array.from(text).reduce((length,char)=>length+(/[^\x00-\x7f]/.test(char)?2:1),0)
  return visualLength>280||text.split('\n').length>8
 }
-function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
+function fieldLabel(field:TemplateField){if(field.fieldKey===mergedDescriptionField.value)return t('inquiryWorkspace.list.productDetails');if(props.compact&&field.fieldKey==='quantity_unit')return t('inquiryProducts.fields.unit');const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
 </script>
 <style scoped>
 .product-grid{width:100%;overflow-x:auto;border:1px solid var(--el-border-color-lighter);border-radius:5px}
@@ -263,4 +277,17 @@ function fieldLabel(field:TemplateField){const key=`inquiryProducts.fields.${fie
 .table-footer{display:flex;justify-content:flex-end;margin-top:14px}
 .el-pagination{margin:0;max-width:100%;overflow-x:auto}
 @media(max-width:760px){.product-toolbar{align-items:flex-start}.product-toolbar .el-input{width:100%}.product-fill-toolbar{min-height:54px;align-content:flex-start}.table-footer{justify-content:flex-start}}
+
+.product-toolbar--compact { gap:8px 12px; margin:0; padding:7px 10px; }
+.product-toolbar--compact .el-input { width:min(205px,100%); }
+.product-toolbar--compact .product-summary { gap:8px; font-size:12px; }
+.product-toolbar__actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-left:auto; }
+.product-grid--compact table { font-size:12px; line-height:18px; }
+.product-grid--compact th,.product-grid--compact td { padding:5px 8px; }
+.product-grid--compact { border-width:1px 0 0; border-radius:0; }
+.product-description__name { color:#203c51; font-weight:600; }
+.product-description__specification { margin-top:2px; color:#546d7d; }
+.product-grid--compact .cell-value { min-height:18px; line-height:18px; }
+.product-grid--compact :deep(.clamped-text__toggle) { margin-top:2px; }
+.product-grid--compact+.table-footer { margin:0; padding:7px 10px; }
 </style>

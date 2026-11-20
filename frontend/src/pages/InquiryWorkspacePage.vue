@@ -43,32 +43,74 @@
    <el-pagination class="list-pagination" v-model:current-page="page" v-model:page-size="size" :page-sizes="[20,50,100]" :total="total" layout="total, sizes, prev, pager, next" @change="loadList"/>
   </el-card>
   <template v-else>
-   <section class="detail-hero">
-     <div><span class="detail-kicker">{{t(item.number?'inquiryWorkspace.detail.inquiryNo':'inquiryWorkspace.detail.creating')}}</span><h3>{{item.number?displayInquiryNumber(item):t('inquiryWorkspace.detail.newInquiry')}}</h3><div v-if="item.body.title" class="detail-title">{{item.body.title}}</div><div class="detail-meta"><el-tag :type="item.state==='INQUIRING'?'success':item.state==='WITHDRAWN'?'info':'warning'">{{stateLabel(item)}}</el-tag><span>{{t('inquiryWorkspace.detail.owner',{name:item.owner})}}</span><span>{{t('inquiryWorkspace.detail.products',{count:item.body.products.length})}}</span><span v-if="view!=='SALES'">{{t('inquiryWorkspace.detail.quotes',{count:item.quotes?.length||0})}}</span></div></div>
+   <section class="detail-hero" :class="{'procurement-detail-hero':compactProcurementDetail}">
+     <div v-if="compactProcurementDetail" class="procurement-detail-heading">
+      <div class="procurement-detail-heading__identity">
+       <h3>{{displayInquiryNumber(item)}}</h3>
+       <el-tag :type="personalQuotePresentation(item).type" effect="light" size="small">{{stateLabel(item)}}</el-tag>
+       <span v-if="item.body.title" class="procurement-detail-heading__title" :title="item.body.title">{{item.body.title}}</span>
+      </div>
+      <div class="procurement-detail-heading__meta">
+       <span><b>{{t('inquiryWorkspace.customer')}}</b> {{item.body.customer||'—'}}</span>
+       <span><b>{{t('inquiryWorkspace.owner')}}</b> {{item.owner||'—'}}</span>
+       <span><b>{{t('inquiryWorkspace.delivery')}}</b> {{item.body.delivery||'—'}}</span>
+      </div>
+     </div>
+     <div v-else><span class="detail-kicker">{{t(item.number?'inquiryWorkspace.detail.inquiryNo':'inquiryWorkspace.detail.creating')}}</span><h3>{{item.number?displayInquiryNumber(item):t('inquiryWorkspace.detail.newInquiry')}}</h3><div v-if="item.body.title" class="detail-title">{{item.body.title}}</div><div class="detail-meta"><el-tag :type="item.state==='INQUIRING'?'success':item.state==='WITHDRAWN'?'info':'warning'">{{stateLabel(item)}}</el-tag><span>{{t('inquiryWorkspace.detail.owner',{name:item.owner})}}</span><span>{{t('inquiryWorkspace.detail.products',{count:item.body.products.length})}}</span><span v-if="view!=='SALES'">{{t('inquiryWorkspace.detail.quotes',{count:item.quotes?.length||0})}}</span></div></div>
      <div class="detail-actions"><el-button v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'&&auth.can('sales:inquiry:submit')" type="primary" @click="submit">{{item.state==='WITHDRAWN'?t('inquiryWorkspace.detail.resubmit'):t('inquiryWorkspace.detail.submit')}}</el-button><el-button v-if="department&&canWrite&&!editor" type="primary" @click="editQuote()">{{t(view==='PROCUREMENT'?'inquiryWorkspace.detail.addFactoryQuote':'inquiryWorkspace.detail.addLogisticsQuote')}}</el-button><el-dropdown trigger="click" placement="bottom-end" popper-class="inquiry-action-menu" @visible-change="moreOpen=$event" @command="handleMore"><el-button class="more-actions" :class="{'is-open':moreOpen}">{{t('inquiryWorkspace.detail.more')}}<span class="more-arrow" aria-hidden="true">▼</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="back"><el-icon><Back/></el-icon><span>{{t('inquiryWorkspace.detail.back')}}</span></el-dropdown-item><el-dropdown-item command="reload"><el-icon><Refresh/></el-icon><span>{{t('inquiryWorkspace.detail.reload')}}</span></el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state!=='INQUIRING'" class="menu-action-save" command="save"><el-icon><DocumentChecked/></el-icon><span>{{t('inquiryWorkspace.detail.saveDraft')}}</span></el-dropdown-item><el-dropdown-item v-if="view==='SALES'&&item.canEdit&&item.state==='INQUIRING'" class="menu-action-withdraw" divided :disabled="!item.canWithdraw" command="withdraw"><el-icon><RefreshLeft/></el-icon><span>{{t('inquiryWorkspace.detail.withdraw')}}</span></el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
     </section>
     <el-alert v-if="view==='SALES'&&(item.readOnlyReason||item.withdrawReason)" :title="item.readOnlyReason||item.withdrawReason" type="info" :closable="false" show-icon/>
-    <el-tabs v-model="detailTab" class="detail-tabs">
+    <el-tabs v-model="detailTab" class="detail-tabs" :class="{'procurement-detail-tabs':compactProcurementDetail}">
      <el-tab-pane v-if="view!=='PROCUREMENT'" :label="t('inquiryWorkspace.detail.overview')" name="overview">
      <div class="overview-grid">
      <section class="business-card customer-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.customerDelivery')}}</h3><p>{{t('inquiryWorkspace.detail.customerDeliveryHint')}}</p></div><el-button v-if="basicInfoEditable" type="primary" plain :loading="busy" @click="saveBasicInfo">{{t('inquiryWorkspace.detail.saveBasicInfo')}}</el-button></div><el-form label-position="top" :disabled="!basicInfoEditable" class="inquiry-fields"><el-form-item :label="t('inquiryWorkspace.customer')"><el-autocomplete v-if="basicInfoEditable" v-model="item.body.customer" :fetch-suggestions="customerSuggestions" :placeholder="t('inquiryWorkspace.detail.customerSearch')" clearable @select="selectCustomer" @input="customerTyped"><template #default="{item:option}"><div class="option-title">{{customerDisplayName(option)}}</div><span class="option-meta">{{customerOptionLabel(option)}}</span></template></el-autocomplete><el-input v-else v-model="item.body.customer" placeholder="—"/></el-form-item><el-form-item :label="t('inquiryWorkspace.detail.contact')"><el-autocomplete v-if="basicInfoEditable" v-model="item.body.contact" :fetch-suggestions="contactSuggestions" :placeholder="t('inquiryWorkspace.detail.contactSearch')" clearable @select="selectContact" @input="contactTyped"><template #default="{item:option}"><div class="option-title">{{option.name}}</div><span class="option-meta">{{contactOptionLabel(option)}}</span></template></el-autocomplete><el-input v-else v-model="item.body.contact" placeholder="—"/></el-form-item><el-form-item :label="t('inquiryWorkspace.delivery')"><el-date-picker v-model="item.body.delivery" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" :placeholder="t('inquiryWorkspace.delivery')" style="width:100%"/></el-form-item><el-form-item :label="t('inquiryWorkspace.loadingPort')"><el-input v-model="item.body.loadingPort" placeholder="—"/></el-form-item><el-form-item :label="t('inquiryWorkspace.destinationPort')"><el-input v-model="item.body.destinationPort" placeholder="—"/></el-form-item><el-form-item :label="t('inquiryWorkspace.detail.remark')" class="wide"><el-input v-model="item.body.remark" type="textarea" :rows="2" placeholder="—"/></el-form-item></el-form></section>
      </div></el-tab-pane>
-     <el-tab-pane :label="t('inquiryWorkspace.detail.productRequirements',{count:item.body.products.length})" name="products"><section class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
+     <el-tab-pane :label="t('inquiryWorkspace.detail.productRequirements',{count:item.body.products.length})" name="products">
+      <section v-if="compactProcurementDetail" class="business-card procurement-requirements">
+       <div v-if="item.body.remark?.trim()" class="sales-remark">
+        <strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong>
+        <ClampedText :text="item.body.remark.trim()" :lines="2"/>
+       </div>
+       <InquiryProducts :products="item.body.products" :fields="templateFields" compact>
+        <template #actions>
+         <el-tag v-if="item.body.template" effect="plain" size="small">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag>
+         <el-button :icon="Download" :disabled="!item.body.products.length" size="small" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button>
+        </template>
+       </InquiryProducts>
+      </section>
+      <section v-else class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
      <el-tab-pane v-if="view!=='SALES'" :label="view==='QUOTATIONS'?t('inquiryWorkspace.quoteComparisonCalculation'):t('inquiryWorkspace.detail.submittedQuotes',{count:item.quotes?.length||0})" name="quotes">
      <div v-if="department&&item.body.remark?.trim()" class="sales-remark sales-remark--quotes"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><ClampedText class="sales-remark__text" :text="item.body.remark.trim()" :lines="3"/></div>
-     <section v-if="!editor&&view!=='QUOTATIONS'" class="business-card quotes-section">
-      <div class="section-title">
+     <section v-if="!editor&&view!=='QUOTATIONS'" class="business-card quotes-section" :class="{'procurement-quotes':view==='PROCUREMENT'}">
+      <div v-if="view!=='PROCUREMENT'" class="section-title">
        <div><h3>{{ quoteSectionTitle }}</h3><p>{{t('inquiryWorkspace.quotes.listHint')}}</p></div>
        <el-tag effect="plain">{{t('inquiryWorkspace.quotes.count',{count:item.quotes?.length||0})}}</el-tag>
       </div>
       <el-table :data="item.quotes||[]" :max-height="500" stripe :empty-text="t('inquiryWorkspace.quotes.empty')">
-       <el-table-column prop="body.company" :label="t('inquiryWorkspace.quotes.quotingParty')" min-width="180" show-overflow-tooltip/>
-       <el-table-column :label="t('inquiryWorkspace.quotes.type')" min-width="145"><template #default="{row:q}"><el-tag size="small" :type="q.kind==='PROCUREMENT'?'warning':'success'">{{q.kind==='PROCUREMENT'?quoteCategoryLabel(q.body.quoteCategory):t('inquiryWorkspace.quotes.forwarder')}}</el-tag></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.quotes.content')" min-width="250"><template #default="{row:q}"><strong class="compact-quote">{{quoteSummary(q)}}</strong><small>{{quoteSubline(q)}}</small></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.quotes.author')" min-width="180"><template #default="{row:q}">{{q.author||'—'}}<small>{{q.updatedBy&&q.updatedBy!==q.author?t('inquiryWorkspace.quotes.updatedBy',{name:q.updatedBy}):''}}</small></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.submittedAt')" min-width="155"><template #default="{row:q}">{{displayTime(q.submittedAt)}}</template></el-table-column>
-       <el-table-column :label="t('common.status')" width="100"><template #default="{row:q}"><el-tag size="small" effect="plain" :type="q.historical?'info':q.submittedAt?'success':'warning'">{{quoteStatus(q)}}</el-tag></template></el-table-column>
-       <el-table-column :label="t('common.actions')" width="280" fixed="right"><template #default="{row:q}"><el-button v-if="q.canEdit" link type="primary" @click="editQuote(q)">{{t('inquiryWorkspace.quotes.edit')}}</el-button><el-button v-else-if="canWrite&&department&&!q.historical&&q.submittedAt&&q.authorId!==String(auth.employeeId)" link type="primary" @click="editQuote(copyInquiryQuote(q))">{{t('inquiryWorkspace.personalQuotes.copy')}}</el-button><el-button link type="primary" @click="preview=q">{{t('inquiryWorkspace.quotes.viewFull')}}</el-button><el-button v-if="q.canDelete" link type="danger" :disabled="busy" @click="deleteQuote(q)">{{t('common.delete')}}</el-button></template></el-table-column>
+       <el-table-column prop="body.company" :label="t('inquiryWorkspace.quotes.quotingParty')" :min-width="view==='PROCUREMENT'?142:180" show-overflow-tooltip/>
+       <el-table-column :label="t('inquiryWorkspace.quotes.type')" :min-width="view==='PROCUREMENT'?130:145"><template #default="{row:q}"><el-tag size="small" :type="q.kind==='PROCUREMENT'?'warning':'success'">{{q.kind==='PROCUREMENT'?quoteCategoryLabel(q.body.quoteCategory):t('inquiryWorkspace.quotes.forwarder')}}</el-tag></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.content')" :min-width="view==='PROCUREMENT'?145:250"><template #default="{row:q}"><strong class="compact-quote">{{quoteSummary(q)}}</strong><small>{{quoteSubline(q)}}</small></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.author')" :min-width="view==='PROCUREMENT'?118:180"><template #default="{row:q}">{{q.author||'—'}}<small>{{q.updatedBy&&q.updatedBy!==q.author?t('inquiryWorkspace.quotes.updatedBy',{name:q.updatedBy}):''}}</small></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.submittedAt')" :min-width="view==='PROCUREMENT'?132:155"><template #default="{row:q}">{{displayTime(q.submittedAt)}}</template></el-table-column>
+       <el-table-column :label="t('common.status')" :width="view==='PROCUREMENT'?82:100"><template #default="{row:q}"><el-tag size="small" effect="plain" :type="q.historical?'info':q.submittedAt?'success':'warning'">{{quoteStatus(q)}}</el-tag></template></el-table-column>
+       <el-table-column :label="t('common.actions')" :width="view==='PROCUREMENT'?124:280" fixed="right">
+        <template #default="{row:q}">
+         <div v-if="view==='PROCUREMENT'" class="procurement-quote-actions">
+          <el-dropdown trigger="click" placement="bottom-end">
+           <el-button link type="primary">{{t('inquiryWorkspace.list.moreActions')}}<span class="procurement-quote-actions__arrow" aria-hidden="true">▼</span></el-button>
+           <template #dropdown>
+            <el-dropdown-menu>
+             <el-dropdown-item @click="preview=q">{{t('inquiryWorkspace.list.view')}}</el-dropdown-item>
+             <el-dropdown-item v-if="q.canEdit" @click="editQuote(q)">{{t('inquiryWorkspace.quotes.edit')}}</el-dropdown-item>
+             <el-dropdown-item v-else-if="canCopyQuote(q)" @click="editQuote(copyInquiryQuote(q))">{{t('inquiryWorkspace.personalQuotes.copy')}}</el-dropdown-item>
+             <el-dropdown-item v-if="q.canDelete" :disabled="busy" class="danger-menu-item" @click="deleteQuote(q)">{{t('common.delete')}}</el-dropdown-item>
+            </el-dropdown-menu>
+           </template>
+          </el-dropdown>
+         </div>
+         <template v-else><el-button v-if="q.canEdit" link type="primary" @click="editQuote(q)">{{t('inquiryWorkspace.quotes.edit')}}</el-button><el-button v-else-if="canCopyQuote(q)" link type="primary" @click="editQuote(copyInquiryQuote(q))">{{t('inquiryWorkspace.personalQuotes.copy')}}</el-button><el-button link type="primary" @click="preview=q">{{t('inquiryWorkspace.quotes.viewFull')}}</el-button><el-button v-if="q.canDelete" link type="danger" :disabled="busy" @click="deleteQuote(q)">{{t('common.delete')}}</el-button></template>
+        </template>
+       </el-table-column>
       </el-table>
      </section>
    <section v-if="editor" class="quote-editor"><div class="quote-editor-heading"><div><h3>{{ quoteEditorTitle }}</h3><p>{{t(view==='LOGISTICS'?'inquiryWorkspace.quotes.shippingEditorHint':'inquiryWorkspace.quotes.editorHint')}}</p></div><el-tag effect="plain">{{view==='LOGISTICS'?t('inquiryWorkspace.quotes.salesOutputUsd'):t('inquiryWorkspace.quotes.originalQuote')}}</el-tag></div><el-form label-position="top" class="inquiry-fields"><template v-if="view==='PROCUREMENT'"><el-form-item :label="t('inquiryWorkspace.quotes.factorySupplier')"><el-select v-model="editor.body.company" filterable allow-create default-first-option clearable remote :remote-method="procurementCompanySearch" :loading="procurementCompanyLoading" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" @visible-change="showProcurementCompanyOptions"><el-option v-for="option in procurementCompanyOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.quoteCategory')" required><el-select v-model="editor.body.quoteCategory" :placeholder="t('inquiryWorkspace.quotes.selectQuoteCategory')" @change="quoteCategoryChanged"><el-option v-for="category in quoteCategoryOptions" :key="category.value" :value="category.value" :label="category.label"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.currency')"><el-input v-model="editor.body.currency" maxlength="3" :disabled="!!procurementQuoteCurrency(editor.body.quoteCategory)"/></el-form-item><el-form-item :label="t('inquiryWorkspace.loadingPort')"><el-select v-model="editor.body.loadingPort" filterable allow-create default-first-option clearable remote :remote-method="portSearch" :loading="portLoading" :placeholder="t('inquiryWorkspace.quotes.portSelectOrType')" @visible-change="showPortOptions"><el-option v-for="option in portOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.unifiedDelivery')"><el-date-picker v-model="editor.body.delivery" type="date" value-format="YYYY-MM-DD"/></el-form-item></template><template v-else><el-form-item :label="t('inquiryWorkspace.quotes.forwarderName')"><el-autocomplete v-model="editor.body.company" :fetch-suggestions="companySuggestions" :placeholder="t('inquiryWorkspace.quotes.shippingCompanyPlaceholder')" :trigger-on-focus="true" clearable/></el-form-item><el-form-item v-for="f in logisticsPrimaryFields" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.departure')"><el-date-picker v-model="editor.body.departure" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.arrival')"><el-date-picker v-model="editor.body.arrival" value-format="YYYY-MM-DD"/></el-form-item></template></el-form>
@@ -234,6 +276,7 @@ const listColumnDefaults=computed<TableColumnDefinition[]>(()=>{
 })
 const listColumnOrder=useTableColumnOrder(computed(()=>({SALES:'inquiry-list',QUOTATIONS:'customer-quotation-list',PROCUREMENT:'procurement-sourcing-list',LOGISTICS:'logistics-sourcing-list'} as const)[view.value]),listColumnDefaults)
 const item=ref<Inquiry|null>(null),items=ref<Inquiry[]>([]),total=ref(0),keyword=ref(''),state=ref(''),page=ref(1),size=ref(100),busy=ref(false),editor=ref<Quote|null>(null),preview=ref<Quote|null>(null),detailTab=ref('overview')
+const compactProcurementDetail=computed(()=>view.value==='PROCUREMENT'&&!editor.value)
 // 自动刷新的重试状态，见 lib/refreshBackoff。
 //
 // 从前这里是一个 refreshSuspended 布尔：失败一次就永久置真，再没有任何东西
@@ -311,6 +354,7 @@ function productFor(id:string){return item.value?.body.products.find(p=>p.id===i
 function isQuoteProductExpanded(key:string){return expandedQuoteProductKeys.value.includes(key)}
 function toggleQuoteProductGroup(key:string){expandedQuoteProductKeys.value=isQuoteProductExpanded(key)?expandedQuoteProductKeys.value.filter(value=>value!==key):[...expandedQuoteProductKeys.value,key]}
 function quoteTotals(q:Quote){return(q.body.otherChargesTotalUsd||q.body.totalUsd)?t('inquiryWorkspace.quotes.usdChargesTotal',{total:q.body.otherChargesTotalUsd||q.body.totalUsd}):''}
+function canCopyQuote(q:Quote){return canWrite.value&&department.value&&!q.historical&&q.submittedAt&&q.authorId!==String(auth.employeeId)}
 function quoteSummary(q:Quote){const quoted=q.kind==='PROCUREMENT'?q.body.prices?.length||0:q.body.freightRates?.filter(rate=>String(rate.price??'').trim()!=='').length||0;return q.kind==='PROCUREMENT'||quoted>0?t('inquiryWorkspace.quotes.productCoverage',{quoted,total:item.value?.body.products.length||0,currency:q.body.currency||'—'}):quoteTotals(q)||t('inquiryWorkspace.quotes.waiting')}
 function quoteSubline(q:Quote){return q.kind==='PROCUREMENT'?t('inquiryWorkspace.quotes.deliverySummary',{delivery:q.body.delivery||t('inquiryWorkspace.quotes.byProduct')}):t('inquiryWorkspace.quotes.shippingSummary',{carrier:q.body.company||q.body.carrier||t('inquiryWorkspace.quotes.carrierMissing'),route:q.body.route||t('inquiryWorkspace.quotes.routeMissing')})}
 function quoteStatus(q:Quote){return t(q.historical?'inquiryWorkspace.quotes.historical':q.submittedAt?'inquiryWorkspace.quotes.submitted':'inquiryWorkspace.quotes.saved')}
@@ -821,4 +865,50 @@ watch(view,()=>void initial())
 .sales-detail-layout .inquiry-fields{padding:10px 12px}
 .sales-detail-layout .inquiry-fields :deep(.el-form-item){margin-bottom:8px}
 .sales-detail-layout .overview-grid{gap:0}
+
+.detail-hero.procurement-detail-hero {
+ gap:12px;
+ margin-bottom:8px;
+ padding:10px 14px;
+ border-radius:8px;
+ box-shadow:none;
+}
+.procurement-detail-heading { flex:1; min-width:0; }
+.procurement-detail-heading__identity,.procurement-detail-heading__meta { display:flex; align-items:center; gap:6px 10px; }
+.procurement-detail-heading__identity h3 { flex:none; font-size:18px; line-height:24px; }
+.procurement-detail-heading__title { overflow:hidden; color:#eefbff; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.procurement-detail-heading__meta { flex-wrap:wrap; margin-top:4px; color:#eefbff; font-size:12px; }
+.procurement-detail-heading__meta b { font-weight:500; color:#c8e7ef; }
+.procurement-detail-hero .detail-actions { flex:none; gap:8px; }
+.procurement-detail-hero .detail-actions :deep(.el-button) { height:30px; padding:0 9px; font-size:12px; }
+.procurement-detail-hero .detail-actions :deep(.more-actions) { min-width:auto; border-color:#cbdce4; box-shadow:none; }
+.procurement-detail-tabs :deep(.el-tabs__header) { margin:0; padding:0 10px; border-radius:8px 8px 0 0; box-shadow:none; }
+.procurement-detail-tabs :deep(.el-tabs__item) { height:38px; font-size:13px; }
+.procurement-detail-tabs :deep(.el-tabs__content) {
+ background:#fff;
+ border:1px solid var(--line);
+ border-top:0;
+ border-radius:0 0 8px 8px;
+}
+.procurement-detail-tabs .procurement-requirements,.procurement-detail-tabs .procurement-quotes {
+ margin:0;
+ padding:0;
+ border:0;
+ border-radius:0;
+ box-shadow:none;
+}
+.procurement-detail-tabs .sales-remark { margin:0; padding:7px 10px; border:0; border-bottom:1px solid var(--line); border-radius:0; font-size:12px; }
+.procurement-detail-tabs .sales-remark :deep(.clamped-text__body) { margin-top:3px; line-height:18px; }
+.procurement-quotes :deep(.el-table) { margin-bottom:0; border:0; border-radius:0; }
+.procurement-quotes :deep(.el-table th.el-table__cell) { height:34px; }
+.procurement-quotes :deep(.el-table th.el-table__cell),.procurement-quotes :deep(.el-table td.el-table__cell) { padding:5px 0; font-size:12px; }
+.procurement-quotes :deep(.el-table .cell) { padding:0 8px; line-height:18px; }
+.procurement-quotes :deep(.el-table td:first-child .cell) { font-weight:600; }
+.procurement-quote-actions { display:flex; align-items:center; justify-content:center; }
+.procurement-quote-actions :deep(.el-button) { margin:0; padding:4px 0; font-size:12px; }
+.procurement-quote-actions__arrow { margin-left:4px; font-size:9px; line-height:1; }
+@media(max-width:760px){
+ .detail-hero.procurement-detail-hero { align-items:stretch; gap:7px; }
+ .procurement-detail-hero .detail-actions { justify-content:flex-start; }
+}
 </style>
