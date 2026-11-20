@@ -114,6 +114,7 @@ type InquiryQuoteBody struct {
 	Incoterm        string               `json:"incoterm"`
 	Remark          string               `json:"remark"`
 	Prices          []InquiryPrice       `json:"prices"`
+	DraftPrices     []InquiryPrice       `json:"draftPrices,omitempty"`
 	Carrier         string               `json:"carrier"`
 	Route           string               `json:"route"`
 	Vessel          string               `json:"vessel"`
@@ -544,6 +545,9 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		}
 		if err = json.Unmarshal(data, &q.Body); err != nil {
 			return nil, err
+		}
+		if q.SubmittedAt != "" || q.AuthorID != strconv.FormatInt(op.ID, 10) {
+			q.Body.DraftPrices = nil
 		}
 		if q.SubmittedAt != "" {
 			if q.Kind == "PROCUREMENT" {
@@ -1024,6 +1028,9 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 		return apierr.Invalid("INQUIRY_DATES", "预计到港不能早于开船")
 	}
 	if kind == "PROCUREMENT" {
+		if submit {
+			b.DraftPrices = nil
+		}
 		b.QuoteCategory = strings.ToUpper(strings.TrimSpace(b.QuoteCategory))
 		categoryCurrencies := map[string]string{
 			"FOB_USD":          "USD",
@@ -1074,7 +1081,14 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 				return apierr.Invalid("INQUIRY_DATE", "交货日期无效")
 			}
 		}
+		for _, row := range b.DraftPrices {
+			if !allowed[row.ProductID] || seen[row.ProductID] {
+				return apierr.Invalid("INQUIRY_LINE", "产品不属于询盘或重复")
+			}
+			seen[row.ProductID] = true
+		}
 	} else {
+		b.DraftPrices = nil
 		b.Currency = "USD"
 		normalizedRates := map[string]string{}
 		parsedRates := map[string]decimal.Decimal{}

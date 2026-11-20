@@ -254,6 +254,43 @@ func seedInquiries(t *testing.T, s *Service, tenant int64, extra int) []string {
 	return ids
 }
 
+func TestProcurementQuoteDraftKeepsUncheckedPricesPrivate(t *testing.T) {
+	customers := newListCustomers()
+	s, _, tenant := listTestService(t, &customers)
+	ctx := context.Background()
+	call := func(op int64, in InquiryCommand) *InquiryView {
+		t.Helper()
+		r, err := s.InquiryWorkspace(ctx, tenant, Operator{ID: op}, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Item
+	}
+	inquiry := call(101, InquiryCommand{Action: "save", View: "SALES", Body: InquiryBody{
+		CustomerID: "10", Customer: "Canonical",
+		Products: []InquiryProduct{{Product: "Plate", Quantity: "3", Unit: "MT"}, {Product: "Bolt", Quantity: "8", Unit: "PCS"}},
+	}})
+	inquiry = call(101, InquiryCommand{Action: "submit", View: "SALES", ID: inquiry.ID, Revision: inquiry.Revision})
+	checked := InquiryPrice{ProductID: inquiry.Body.Products[0].ID, Price: "12"}
+	unchecked := InquiryPrice{ProductID: inquiry.Body.Products[1].ID, Price: "unfinished", Delivery: "2027-01-02"}
+	input := InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: inquiry.ID, Revision: inquiry.Revision, Quote: InquiryQuoteBody{
+		Company: "Factory", QuoteCategory: "FOB_USD", Prices: []InquiryPrice{checked}, DraftPrices: []InquiryPrice{unchecked},
+	}}
+	draft := call(201, input).Quotes[0]
+	if len(draft.Body.Prices) != 1 || draft.Body.Prices[0] != checked || len(draft.Body.DraftPrices) != 1 || draft.Body.DraftPrices[0] != unchecked {
+		t.Fatalf("draft lost its selection or unchecked values: %+v", draft.Body)
+	}
+	peer, err := s.readInquiry(ctx, tenant, inquiryID(inquiry.ID), Operator{ID: 202}, "PROCUREMENT")
+	if err != nil || len(peer.Quotes) != 1 || len(peer.Quotes[0].Body.DraftPrices) != 0 {
+		t.Fatalf("unchecked values visible to another employee: %v", err)
+	}
+	input.QuoteID, input.QuoteVersion, input.Submit = draft.ID, draft.Version, true
+	published := call(201, input).Quotes[0]
+	if published.SubmittedAt == "" || len(published.Body.Prices) != 1 || published.Body.Prices[0] != checked || len(published.Body.DraftPrices) != 0 {
+		t.Fatalf("submission did not contain only the selected price: %+v", published)
+	}
+}
+
 func TestInquiryListMatchesReadingEveryInquiry(t *testing.T) {
 	plain := newListCustomers()
 	batch := &listCustomersBatch{listCustomers: newListCustomers()}

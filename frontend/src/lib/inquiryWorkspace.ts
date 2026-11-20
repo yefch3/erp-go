@@ -13,7 +13,7 @@ export interface InquiryBody { title?:string;customerId?:string;customer:string;
 export interface Price {productId:string;price:string;factoryPrice?:string;fobPrice?:string;slitting?:string;delivery:string;remark:string}
 export interface FreightRate {productId:string;price:string;currency:string;unit:string;remark:string;usdPrice?:string}
 export interface Charge {name:string;amount:string;currency:string;unit:string;quantity:string;subtotal:string;remark:string;allocationType?:'DIRECT'|'PER_TON'|'FIXED';productId?:string;usdSubtotal?:string}
-export interface QuoteBody {company:string;currency:string;quoteCategory:string;delivery:string;validUntil:string;paymentTerms:string;incoterm:string;remark:string;prices:Price[];carrier:string;route:string;vessel:string;voyage:string;departure:string;arrival:string;transitDays:string;loadingPort:string;destinationPort:string;cargoIds:string[];freightRates:FreightRate[];charges:Charge[];exchangeRates:Record<string,string>;totals:Record<string,string>;totalUsd:string;otherChargesTotalUsd:string;attachments:Attachment[]}
+export interface QuoteBody {company:string;currency:string;quoteCategory:string;delivery:string;validUntil:string;paymentTerms:string;incoterm:string;remark:string;prices:Price[];draftPrices?:Price[];carrier:string;route:string;vessel:string;voyage:string;departure:string;arrival:string;transitDays:string;loadingPort:string;destinationPort:string;cargoIds:string[];freightRates:FreightRate[];charges:Charge[];exchangeRates:Record<string,string>;totals:Record<string,string>;totalUsd:string;otherChargesTotalUsd:string;attachments:Attachment[]}
 export interface Quote {historical?:boolean;id:string;kind:string;version:number;body:QuoteBody;authorId:string;author:string;submittedAt:string;updatedBy:string;updatedAt:string;canEdit:boolean;canDelete?:boolean}
 export interface Inquiry {id:string;number:string;displayInquiryNo:string;customerDisplayName?:string;ownerId:string;owner:string;state:string;revision:number;submittedAt:string;body:InquiryBody;quotes:Quote[];procurementCount:number;logisticsCount:number;personalQuoteStatus?:'WAITING'|'MY_QUOTED'|'UPDATED';canEdit:boolean;canDelete:boolean;readOnlyReason?:string;canWithdraw?:boolean;withdrawReason?:string;sourceMailId:string;legacy:boolean}
 export interface Result {items:Inquiry[];total:number;item?:Inquiry;attachment?:Attachment;url?:string}
@@ -72,11 +72,18 @@ export function applyTemplateDefaults(product:Product,fields:TemplateField[]):vo
 
 // Source quantities are grouped by their stated unit; mixed units are never
 // silently combined. Missing/unstructured values remain visible in the rows.
-export function productTotal(products:Product[],field:'quantity'|'weight'|'volume'|'packageQuantity',unitField?:'unit'):string {
- const groups:Record<string,{n:bigint;scale:number}>={};let missing=0
+export function productTotal(products:Product[],field:'quantity'|'weight'|'volume'|'packageQuantity',unitField?:'unit',options?:{locale:string;separator:string}):string {
+ const groups=new Map<string,{n:bigint;scale:number}>();let missing=0
  for(const p of products){const m=/^(\d+)(?:\.(\d+))?\s*(.*)$/.exec((p[field]||'').trim());if(!m){missing++;continue}
- const unit=unitField?p[unitField]:m[3],scale=(m[2]||'').length,n=BigInt(m[1]+(m[2]||'')),old=groups[unit]||{n:0n,scale:0},common=Math.max(old.scale,scale)
- groups[unit]={n:old.n*10n**BigInt(common-old.scale)+n*10n**BigInt(common-scale),scale:common}}
- const text=Object.entries(groups).map(([unit,{n,scale}])=>{const digits=String(n).padStart(scale+1,'0');return `${scale?`${digits.slice(0,-scale)}.${digits.slice(-scale)}`:digits}${unit?' '+unit:''}`}).join('；')
+ const unit=(unitField?p[unitField]||'':m[3]).trim(),scale=(m[2]||'').length,n=BigInt(m[1]+(m[2]||'')),old=groups.get(unit)||{n:0n,scale:0},common=Math.max(old.scale,scale)
+ groups.set(unit,{n:old.n*10n**BigInt(common-old.scale)+n*10n**BigInt(common-scale),scale:common})}
+ const formatter=options&&new Intl.NumberFormat(options.locale)
+ const decimal=formatter?.formatToParts(1.1).find(part=>part.type==='decimal')?.value||'.'
+ const text=Array.from(groups,([unit,{n,scale}])=>{
+  const digits=String(n).padStart(scale+1,'0')
+  const whole=scale?digits.slice(0,-scale):digits
+  const formatted=formatter?formatter.format(BigInt(whole)):whole
+  return `${formatted}${scale?decimal+digits.slice(-scale):''}${unit?' '+unit:''}`
+ }).join(options?.separator??'；')
  return text?text+(missing?'（部分未填写）':''):'—'
 }
