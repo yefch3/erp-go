@@ -55,13 +55,17 @@ function locate(target:EventTarget|null){
   const tr=td?.closest('tr.el-table__row')
   if(!td||!tr||!region.value.contains(td))return null
   const index=bodyRows().indexOf(tr)
-  const field=props.fields.find(item=>item.column===td.cellIndex)
+  const targetField=target.closest<HTMLElement>('[data-column-fill-field]')?.dataset.columnFillField
+  const field=props.fields.find(item=>item.column===td.cellIndex&&(!targetField||item.key===targetField))
   return index>=0&&index<props.rows.length&&field&&(!props.canFillRow||props.canFillRow(props.rows[index]))?{index,key:field.key}:null
 }
 function syncHighlight(){
   for(const [index,tr] of bodyRows().entries()){
     for(const td of Array.from(tr.children) as HTMLTableCellElement[]){
-      td.classList.toggle('column-fill-selected',props.editable&&selected.value.includes(index)&&props.fields.some(item=>item.column===td.cellIndex&&item.key===fieldKey.value))
+      const active=props.editable&&selected.value.includes(index)&&props.fields.some(item=>item.column===td.cellIndex&&item.key===fieldKey.value)
+      const fields=td.querySelectorAll<HTMLElement>('[data-column-fill-field]')
+      td.classList.toggle('column-fill-selected',active&&!fields.length)
+      for(const field of fields)field.classList.toggle('column-fill-selected',active&&field.dataset.columnFillField===fieldKey.value)
     }
   }
 }
@@ -127,7 +131,7 @@ function onKeydown(event:KeyboardEvent){
 watch(()=>props.rows,()=>{setSelection([],'');activeIndex.value=-1;undoBatch.value=null})
 watch(()=>props.rows.length,()=>{setSelection([],'');activeIndex.value=-1;undoBatch.value=null})
 watch(()=>props.editable,enabled=>{if(!enabled)setSelection([],'')})
-onBeforeUnmount(()=>{for(const tr of bodyRows())for(const td of Array.from(tr.children))td.classList.remove('column-fill-selected')})
+onBeforeUnmount(()=>region.value?.querySelectorAll('.column-fill-selected').forEach(el=>el.classList.remove('column-fill-selected')))
 </script>
 
 <style scoped>
@@ -136,4 +140,5 @@ onBeforeUnmount(()=>{for(const tr of bodyRows())for(const td of Array.from(tr.ch
 .column-fill-actions strong{color:#176994}
 .column-fill-actions button{padding:2px 8px;border:1px solid #b9def1;border-radius:4px;background:#edf8fe;color:#176994;font:inherit;cursor:pointer}
 .column-fill-region :deep(td.column-fill-selected){background:#dff1fc!important;box-shadow:inset 0 0 0 2px #43a9df}
+.column-fill-region :deep([data-column-fill-field].column-fill-selected .el-input__wrapper){background:#dff1fc;box-shadow:inset 0 0 0 2px #43a9df}
 </style>
