@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
@@ -286,6 +287,10 @@ func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator
 			return nil, err
 		}
 	}
+	var customerNames map[int64]CustomerCurrentName
+	if view == "PROCUREMENT" {
+		customerNames = s.procurementListCustomerNames(ctx, byID)
+	}
 	templates := map[int64]InquiryTemplateView{}
 	for _, id := range page {
 		l, ok := byID[id]
@@ -293,6 +298,7 @@ func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator
 			continue // gone from this view between the two reads
 		}
 		v := l.view
+		v.CustomerDisplayName = strings.TrimSpace(customerNames[l.row.customerID].Name)
 		v.CanEdit, v.CanDelete = canEdit, canDelete
 		if view == "SALES" && !canEdit {
 			v.ReadOnlyReason = "当前账号没有询盘编辑权限"
@@ -310,6 +316,31 @@ func (s *Service) readInquiryPage(ctx context.Context, tenant int64, op Operator
 		items = append(items, v)
 	}
 	return items, nil
+}
+
+func (s *Service) procurementListCustomerNames(ctx context.Context, rows map[int64]*inquiryPageRow) map[int64]CustomerCurrentName {
+	batch, ok := s.customers.(CustomerNameBatch)
+	if !ok {
+		return nil
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		if row.row.customerID > 0 {
+			ids = append(ids, row.row.customerID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	// Masterdata applies its own visibility. If it cannot return a name, the
+	// procurement list can still use the customer snapshot on the inquiry.
+	lookup, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	names, err := batch.CurrentNames(lookup, ids)
+	if err != nil {
+		return nil
+	}
+	return names
 }
 
 // loadInquiryPage reads the page rows as they are now. Between the list
