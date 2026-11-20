@@ -1,8 +1,18 @@
 <template>
- <el-dialog v-model="visible" class="contract-entry-dialog" :title="history?'补录历史合同':'新建合同'" :width="history?'min(720px,96vw)':'min(1100px,96vw)'" top="4vh" :close-on-click-modal="false">
-  <el-alert :closable="false" show-icon :title="history?'保存原合同资料和附件，无需重复录入产品明细。合同金额仅作记录，不代表未收款金额。':'只填写客户成交信息。合同经上级确认、签署及财务放行后，进入正常采购和物流实单流程。'"/>
+ <el-dialog v-model="visible" class="contract-entry-dialog" :class="{'contract-entry-dialog--new':!history}" :title="history?'补录历史合同':'新建合同'" :width="history?'min(720px,96vw)':'min(1100px,96vw)'" top="4vh" :close-on-click-modal="false">
+  <el-alert v-if="history" :closable="false" show-icon title="保存原合同资料和附件，无需重复录入产品明细。合同金额仅作记录，不代表未收款金额。"/>
   <div v-if="history&&drafts.length" class="drafts"><span>继续填写历史草稿</span><el-select placeholder="选择已保存草稿" @change="openDraft" style="width:320px"><el-option v-for="d in drafts" :key="d.id" :value="d.id" :label="`${d.body.externalContractNo||'未填原合同号'} · ${d.body.customerName||'未选客户'} · ${d.updatedAt.slice(0,16)}`"/></el-select><el-button v-if="draftId" type="danger" link @click="removeDraft">删除当前草稿</el-button></div>
   <el-alert v-if="entryError" class="entry-error" type="error" show-icon :closable="false" :title="entryError"/>
+  <nav v-if="!history" aria-label="新建合同表单分区" class="entry-nav">
+    <el-button text @click="tradeSection?.scrollIntoView({block:'start'})">客户与交易条件</el-button>
+    <el-button text @click="partiesSection?.scrollIntoView({block:'start'})">合同双方</el-button>
+    <el-button text @click="productsSection?.scrollIntoView({block:'start'})">产品明细</el-button>
+  </nav>
+  <section ref="tradeSection" :class="{'entry-section':!history}">
+  <div v-if="!history" class="entry-section-heading">
+    <h3>客户与交易条件</h3>
+    <small class="entry-meta">负责人：{{auth.employeeName||'当前登录销售'}} · 合同来源：手工新建合同 · 来源报价：无</small>
+  </div>
   <el-form label-position="top" :class="['entry-form',history?'history-form':'basic-form']">
    <el-form-item label="客户" required><el-select v-model="form.customerId" filterable remote :remote-method="searchCustomers" placeholder="选择客户" @change="selectCustomer"><el-option v-for="c in customers" :key="c.id" :value="String(c.id)" :label="customerOptionLabel(c)"/></el-select></el-form-item>
    <template v-if="history">
@@ -18,10 +28,7 @@
    <el-form-item label="原／客户合同号"><el-input v-model="form.externalContractNo"/></el-form-item>
    </template>
   </el-form>
-  <small v-if="!history" class="entry-meta">负责人：{{auth.employeeName||'当前登录销售'}} · 合同来源：手工新建合同 · 来源报价：无</small>
-  <ContractPartiesFields v-if="!history" :model-value="form" @update:model-value="Object.assign(form,$event)" />
-  <div v-if="!history" class="form-section-title">交易条件</div>
-  <el-form v-if="!history" label-position="top" class="entry-form">
+  <el-form v-if="!history" label-position="top" class="entry-form trade-form">
    <el-form-item :label="t('contractRepair.deliveryLabel')"><el-date-picker v-model="form.deliveryDate" type="date" value-format="YYYY-MM-DD"/></el-form-item>
    <el-form-item label="贸易条款"><el-select v-model="form.incoterm" filterable allow-create default-first-option><el-option v-for="v in ['FOB','CFR','CIF','EXW','FCA','DAP','DDP']" :key="v" :value="v" :label="v"/></el-select></el-form-item>
    <el-form-item label="付款条件"><el-input v-model="form.paymentMethod" placeholder="按客户合同填写"/></el-form-item>
@@ -29,22 +36,32 @@
    <el-form-item label="装运港"><el-input v-model="form.portOfLoading"/></el-form-item>
    <el-form-item label="目的港"><el-input v-model="form.portOfDischarge"/></el-form-item>
   </el-form>
-  <template v-if="!history">
-  <div class="lines-heading"><strong>客户成交明细</strong><div><el-button link type="primary" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button link type="primary" @click="addLine">添加产品</el-button></div></div>
-  <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]" :editable="!busy">
-  <el-table :data="form.items" border max-height="340">
-   <el-table-column label="产品名称" min-width="180"><template #default="{row}"><el-input v-model="row.productName"/></template></el-table-column>
-   <el-table-column label="规格" min-width="160"><template #default="{row}"><el-input v-model="row.spec"/></template></el-table-column>
-   <el-table-column :label="history?'完整合同数量':'数量'" width="130"><template #default="{row}"><el-input v-model="row.qty" inputmode="decimal"/></template></el-table-column>
-   <el-table-column label="单位" width="85"><template #default="{row}"><el-input v-model="row.uomCode"/></template></el-table-column>
-   <el-table-column label="对客单价" width="130"><template #default="{row}"><el-input v-model="row.unitPrice" inputmode="decimal"/></template></el-table-column>
-   <el-table-column label="金额" width="120" align="right"><template #default="{row}">{{amount(row)}}</template></el-table-column>
-   <el-table-column width="65"><template #default="{$index}"><el-button link type="danger" @click="form.items.splice($index,1)">删除</el-button></template></el-table-column>
+  </section>
+  <section v-if="!history" ref="partiesSection" class="entry-section entry-parties-section">
+    <ContractPartiesFields :model-value="form" @update:model-value="Object.assign(form,$event)" />
+  </section>
+  <section v-if="!history" ref="productsSection" class="entry-section">
+  <div class="entry-section-heading"><h3>产品明细</h3><div class="line-actions"><el-button size="small" :disabled="busy" @click="importOpen=true">Excel 导入</el-button><el-button size="small" type="primary" plain @click="addLine">添加产品</el-button></div></div>
+  <ColumnFillRegion :rows="form.items" :fields="[{key:'productName',column:0},{key:'spec',column:0},{key:'qty',column:1},{key:'uomCode',column:2},{key:'unitPrice',column:3}]" :editable="!busy">
+  <el-table :data="form.items" border max-height="340" size="small" class="entry-lines-table">
+   <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="290">
+    <template #default="{row}">
+     <div class="entry-product-description">
+      <div data-column-fill-field="productName"><el-input v-model="row.productName" size="small" placeholder="产品名称" aria-label="产品名称"/></div>
+      <div data-column-fill-field="spec"><el-input v-model="row.spec" size="small" placeholder="规格" aria-label="规格"/></div>
+     </div>
+    </template>
+   </el-table-column>
+   <el-table-column label="数量" width="92" align="right"><template #default="{row}"><el-input v-model="row.qty" size="small" inputmode="decimal" aria-label="数量" class="numeric-input"/></template></el-table-column>
+   <el-table-column label="单位" width="76"><template #default="{row}"><el-input v-model="row.uomCode" size="small" aria-label="单位"/></template></el-table-column>
+   <el-table-column label="对客单价" width="105" align="right"><template #default="{row}"><el-input v-model="row.unitPrice" size="small" inputmode="decimal" aria-label="对客单价" class="numeric-input"/></template></el-table-column>
+   <el-table-column label="金额" width="106" align="right"><template #default="{row}">{{amount(row)}}</template></el-table-column>
+   <el-table-column label="操作" width="60" align="center"><template #default="{$index}"><el-button size="small" link type="danger" @click="form.items.splice($index,1)">删除</el-button></template></el-table-column>
   </el-table>
   </ColumnFillRegion>
   <div class="entry-total">客户合同合计：{{total}} {{form.currency}}</div>
-  </template>
-  <el-form label-position="top"><el-form-item :label="history?'备注':'合同条款／备注'"><el-input v-model="form.terms" type="textarea" :rows="3"/></el-form-item><el-form-item v-if="history" label="原合同附件（PDF）" required><input ref="fileInput" type="file" accept="application/pdf,.pdf" hidden @change="pickFile"/><el-button @click="fileInput?.click()">{{file||form.signedFileName?'更换附件':'选择合同文件'}}</el-button><span class="file-name">{{file?.name||form.signedFileName||'尚未选择文件'}}</span><small class="file-hint">保存草稿时可以暂缺文件，已上传的文件会随草稿保留。</small></el-form-item></el-form>
+  </section>
+  <el-form label-position="top" :class="{'entry-section entry-notes':!history}"><el-form-item :label="history?'备注':'合同条款／备注'"><el-input v-model="form.terms" type="textarea" :rows="history?3:2"/></el-form-item><el-form-item v-if="history" label="原合同附件（PDF）" required><input ref="fileInput" type="file" accept="application/pdf,.pdf" hidden @change="pickFile"/><el-button @click="fileInput?.click()">{{file||form.signedFileName?'更换附件':'选择合同文件'}}</el-button><span class="file-name">{{file?.name||form.signedFileName||'尚未选择文件'}}</span><small class="file-hint">保存草稿时可以暂缺文件，已上传的文件会随草稿保留。</small></el-form-item></el-form>
   <ContractLineImportDialog v-if="!history" v-model="importOpen" @import="appendImported"/>
   <template #footer><el-button :disabled="busy" @click="visible=false">关闭</el-button><ContractOperationButton v-if="history" label="保存草稿" description="资料未填完时先保存，不建立正式合同或下游单据，下次可继续填写。" :loading="busy" @click="saveHistoryDraft"/><ContractOperationButton :label="history?'保存历史合同':'保存合同草稿'" :description="history?'保存合同资料与原文件，供查询和关联。不补走历史审批，不自动产生采购、物流或应收款。':'保存后由负责销售提交上级确认。签署并经财务放行前，不会建立采购或物流任务。'" type="primary" :loading="busy" @click="save"/></template>
  </el-dialog>
@@ -71,6 +88,9 @@ const auth=useAuthStore()
 const props=defineProps<{modelValue:boolean;history:boolean}>()
 const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 const visible=computed({get:()=>props.modelValue,set:v=>emit('update:modelValue',v)})
+const tradeSection=ref<HTMLElement|null>(null)
+const partiesSection=ref<HTMLElement|null>(null)
+const productsSection=ref<HTMLElement|null>(null)
 type Line={productId:string;productName:string;spec:string;qty:string;uomCode:string;unitPrice:string}
 const initial=()=>({...emptyContractParties(),customerContact:'',totalAmount:'',historyStatus:'EXECUTING',customerId:'',customerName:'',currency:'USD',externalContractNo:'',signedDate:'',effectiveDate:'',takeoverDate:'',deliveryDate:'',receivableDueDate:'',incoterm:'FOB',paymentMethod:'',portOfLoading:'',portOfDischarge:'',terms:'',signedFileKey:'',signedFileName:'',items:[] as Line[]})
 const form=reactive(initial()),busy=ref(false),customers=ref<any[]>([]),draftId=ref(''),revision=ref(0),file=ref<File|null>(null),fileInput=ref<HTMLInputElement|null>(null),drafts=ref<{id:string;revision:number;body:ReturnType<typeof initial>;updatedAt:string}[]>([])
@@ -133,8 +153,49 @@ watch(()=>props.modelValue,async v=>{importOpen.value=false;if(!v)return;entryEr
 :global(.contract-entry-dialog.el-dialog){display:flex;flex-direction:column;max-height:92vh}
 :global(.contract-entry-dialog .el-dialog__body){overflow-y:auto;min-height:0;padding-right:8px}
 :global(.contract-entry-dialog .el-dialog__header),:global(.contract-entry-dialog .el-dialog__footer){flex-shrink:0}
-.entry-form.basic-form{grid-template-columns:repeat(4,minmax(0,1fr))}.entry-meta{margin:0 0 14px}.form-section-title{font-weight:600;margin:16px 0 8px}.entry-form :deep(.el-autocomplete){width:100%}
+.entry-form.basic-form{grid-template-columns:repeat(4,minmax(0,1fr))}.entry-form :deep(.el-autocomplete){width:100%}
 @media(max-width:760px){.entry-form.basic-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.entry-form.basic-form{grid-template-columns:1fr}}
-.entry-error{margin-top:12px}.entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:18px}.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}.file-name{margin-left:12px;overflow-wrap:anywhere}.file-hint{flex-basis:100%;margin-top:6px}.entry-form :deep(.el-select),.entry-form :deep(.el-date-editor){width:100%}.lines-heading,.drafts{display:flex;align-items:center;gap:12px;margin:16px 0}.lines-heading{justify-content:space-between}.entry-total{text-align:right;font-weight:600;margin:14px 0}small{display:block;font-size:12px;color:#64748b;line-height:1.6}@media(max-width:760px){.entry-form{grid-template-columns:1fr 1fr}.drafts{flex-wrap:wrap}}@media(max-width:480px){.entry-form{grid-template-columns:1fr}}
+.entry-error{margin-top:12px}.entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:18px}.history-form{grid-template-columns:repeat(2,minmax(0,1fr))}.file-name{margin-left:12px;overflow-wrap:anywhere}.file-hint{flex-basis:100%;margin-top:6px}.entry-form :deep(.el-select),.entry-form :deep(.el-date-editor){width:100%}.drafts{display:flex;align-items:center;gap:12px;margin:16px 0}small{display:block;font-size:12px;color:#64748b;line-height:1.6}@media(max-width:760px){.entry-form{grid-template-columns:1fr 1fr}.drafts{flex-wrap:wrap}}@media(max-width:480px){.entry-form{grid-template-columns:1fr}}
+
+:global(.contract-entry-dialog--new > .el-dialog__header){padding-bottom:8px}
+:global(.contract-entry-dialog--new > .el-dialog__header .el-dialog__title){font-size:18px;font-weight:600;color:#183f54}
+:global(.contract-entry-dialog--new > .el-dialog__body){padding:0 12px 8px 0}
+:global(.contract-entry-dialog--new > .el-dialog__footer){padding-top:10px;border-top:1px solid #e5edf2}
+.entry-nav{
+  position:sticky;
+  z-index:3;
+  top:0;
+  display:flex;
+  gap:4px;
+  padding:2px 0 6px;
+  overflow-x:auto;
+  border-bottom:1px solid #e2eaf0;
+  background:var(--el-bg-color);
+}
+.entry-nav :deep(.el-button){margin:0;padding:0 8px;height:28px;font-size:12px;color:#386274}
+.entry-section{margin:0;padding:10px 0;border-bottom:1px solid #e7eef3;scroll-margin-top:40px}
+.entry-section-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;margin-bottom:6px}
+.entry-section-heading h3{margin:0;color:#183f54;font-size:13px;font-weight:600}
+.entry-meta{font-size:11px}
+.entry-section .entry-form{gap:0 12px;margin:0}
+.entry-section :deep(.el-form-item){min-width:0;margin-bottom:8px}
+.entry-section :deep(.el-form-item__label){margin-bottom:3px;line-height:17px;font-size:12px}
+.entry-section :deep(.el-input__wrapper),.entry-section :deep(.el-select__wrapper){min-height:28px;font-size:12px}
+.entry-section :deep(.el-textarea__inner){font-size:12px;line-height:17px}
+.entry-parties-section :deep(.contract-parties){margin:0;padding:8px 10px 1px}
+.entry-parties-section :deep(header){gap:3px 10px;margin-bottom:6px;font-size:13px}
+.entry-parties-section :deep(header span){font-size:11px}
+.entry-parties-section :deep(.parties-grid){column-gap:12px}
+.line-actions{display:flex;flex-wrap:wrap;gap:6px}
+.line-actions :deep(.el-button){margin:0}
+.entry-lines-table{font-variant-numeric:tabular-nums}
+.entry-lines-table :deep(.el-table__cell){padding:3px 0;font-size:12px}
+.entry-lines-table :deep(.cell){padding-inline:7px;line-height:18px}
+.entry-lines-table :deep(.el-input__wrapper){min-height:24px}
+.entry-product-description{display:grid;gap:2px}
+.numeric-input :deep(.el-input__inner){text-align:right}
+.entry-total{margin-top:6px;text-align:right;font-size:13px;font-weight:600;color:#183f54}
+.entry-notes{border-bottom:0}
+.entry-notes :deep(.el-form-item){margin-bottom:0}
 </style>

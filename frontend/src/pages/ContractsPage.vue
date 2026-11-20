@@ -1505,6 +1505,8 @@ async function load() {
     contracts.value = data.contracts ?? []
     filterOwners.value = data.owners ?? []
     total.value = Number(data.meta.total)
+  } catch {
+    // The API interceptor already reports the error. Keep the last loaded rows.
   } finally {
     loading.value = false
   }
@@ -1906,22 +1908,27 @@ function formatListTime(value: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-onMounted(async () => {
-  await loadContractOwners()
-  if (auth.can('masterdata:customer:read')) await searchCustomers('')
-  load()
+onMounted(() => {
+  const requests = [load(), loadContractOwners()]
+  if (auth.can('masterdata:customer:read')) requests.push(searchCustomers(''))
   // Approval reads the contract's product snapshot; catalog access is optional.
   if (auth.can('product:product:read')) {
-    products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
+    requests.push(get<{ products: Product[] }>('/products', { page_size: 200 }).then((data) => {
+      products.value = data.products ?? []
+    }))
   }
-  paymentOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })).options ?? []
+  requests.push(get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' }).then((data) => {
+    paymentOptions.value = data.options ?? []
+  }))
   // Names for the approval timeline. Skipped when the user cannot read the
   // directory: the timeline then shows ids, which is worse than names but
   // better than hiding who a contract is waiting on.
   if (auth.can('iam:employee:read')) {
-    const staff = await get<{ employees: { id: string; name: string }[] }>('/employees', { page_size: 200 })
-    employees.value = Object.fromEntries((staff.employees ?? []).map((e) => [e.id, e.name]))
+    requests.push(get<{ employees: { id: string; name: string }[] }>('/employees', { page_size: 200 }).then((staff) => {
+      employees.value = Object.fromEntries((staff.employees ?? []).map((e) => [e.id, e.name]))
+    }))
   }
+  void Promise.allSettled(requests)
 })
 
 // An approver acted on something this person submitted. Only doc.changed is
