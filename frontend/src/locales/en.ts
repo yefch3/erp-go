@@ -1489,6 +1489,8 @@ basicsSaved: "Basic information saved",
     historyHint: 'Every handover is recorded, so a commission dispute has something to read',
   },
   contracts: {
+    contractTotal: 'Contract total',
+    fxDetails: 'Exchange rate details',
     changeAmountVersion: "Change v{version} amount",
     changeState: "Change · {status}",
     sameContractChange: "Version change under the same contract {contract}; no new contract number",

@@ -1489,6 +1489,8 @@ basicsSaved: "基本资料已保存",
     historyHint: '归属变更会留痕，业绩争议时可查',
   },
   contracts: {
+    contractTotal: '合同合计',
+    fxDetails: '汇率详情',
     changeAmountVersion: "变更版 v{version} 金额",
     changeState: "变更 · {status}",
     sameContractChange: "同一合同 {contract} 的版本变更，不生成新合同号",
