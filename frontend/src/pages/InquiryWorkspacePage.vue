@@ -1,5 +1,5 @@
 <template>
- <main class="inquiry-workspace inquiry-workspace--operations" :class="{'quotation-detail':!!item&&view==='QUOTATIONS','list-compact':!item,'logistics-compact':view==='LOGISTICS'&&!item}" v-loading="busy">
+ <main class="inquiry-workspace inquiry-workspace--operations" :class="{'sales-detail-layout':!!item&&(view==='SALES'||view==='QUOTATIONS'),'list-compact':!item,'logistics-compact':view==='LOGISTICS'&&!item}" v-loading="busy">
   <WorkflowPageHeader v-if="!item" :title="title" :description="subtitle">
    <template v-if="view==='SALES'" #actions><div class="heading-actions"><el-button @click="router.push('/sales/settings/inquiry-templates')">{{t('inquiryWorkspace.templates')}}</el-button><el-button class="mail-import-action" @click="router.push('/emails')">{{t('inquiryWorkspace.fromMailbox')}}</el-button></div></template>
   </WorkflowPageHeader>
@@ -790,25 +790,25 @@ watch(view,()=>void initial())
 .sales-remark{margin:14px 0;padding:12px 16px;border:1px solid #cfe3ea;border-radius:10px;background:#f4fafc;color:#17485d}.sales-remark p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#334e5c}
 /* 报价页签顶上那块：点「添加报价」「编辑」都会切到这里，备注得跟着在眼前。 */
 .sales-remark--quotes{margin:0 0 16px}.sales-remark__text{margin-top:6px;color:#334e5c}
-/* Shared shell for all four quotation detail tabs. */
-.quotation-detail .detail-hero{margin-bottom:8px;padding:12px 16px;border-radius:8px;box-shadow:none;gap:12px}
-.quotation-detail .detail-hero>div:first-child{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;min-width:0}
-.quotation-detail .detail-kicker{align-self:center;margin:0;font-size:11px}
-.quotation-detail .detail-hero h3{font-size:18px;line-height:24px}
-.quotation-detail .detail-title{grid-column:1/-1;margin:0;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
-.quotation-detail .detail-meta{grid-column:1/-1;flex-wrap:wrap;margin:0;gap:5px 10px;font-size:11px}
-.quotation-detail .detail-meta :deep(.el-tag){height:20px;padding:0 6px;font-size:11px;line-height:18px}
-.quotation-detail .detail-actions :deep(.el-button){min-height:30px;height:30px;font-size:12px}
-.quotation-detail .detail-tabs{margin:0}
-.quotation-detail .detail-tabs :deep(.el-tabs__header){margin:0;padding:0 12px;border-radius:0;box-shadow:none}
-.quotation-detail .detail-tabs :deep(.el-tabs__item){height:40px;font-size:13px}
-.quotation-detail .detail-tabs :deep(.el-tabs__content){padding:0;margin:0;overflow:visible}
-@media(max-width:700px){.quotation-detail .detail-hero{align-items:flex-start;padding:10px;gap:8px}.quotation-detail .detail-actions{margin-left:auto}}
-.quotation-detail .business-card{margin:0;padding:0;border:1px solid var(--line);border-top:0;border-radius:0;box-shadow:none}
-.quotation-detail .section-title{margin:0;padding:8px 12px;gap:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.quotation-detail .section-title h3{font-size:14px}
-.quotation-detail .section-title p{margin-top:2px;font-size:12px}
-.quotation-detail .inquiry-fields{padding:10px 12px}
-.quotation-detail .inquiry-fields :deep(.el-form-item){margin-bottom:8px}
-.quotation-detail .overview-grid{gap:0}
+/* Customer inquiry and quotation details share the same compact layout. */
+.sales-detail-layout .detail-hero{margin-bottom:8px;padding:12px 16px;border-radius:8px;box-shadow:none;gap:12px}
+.sales-detail-layout .detail-hero>div:first-child{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;min-width:0}
+.sales-detail-layout .detail-kicker{align-self:center;margin:0;font-size:11px}
+.sales-detail-layout .detail-hero h3{font-size:18px;line-height:24px}
+.sales-detail-layout .detail-title{grid-column:1/-1;margin:0;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.sales-detail-layout .detail-meta{grid-column:1/-1;flex-wrap:wrap;margin:0;gap:5px 10px;font-size:11px}
+.sales-detail-layout .detail-meta :deep(.el-tag){height:20px;padding:0 6px;font-size:11px;line-height:18px}
+.sales-detail-layout .detail-actions :deep(.el-button){min-height:30px;height:30px;font-size:12px}
+.sales-detail-layout .detail-tabs{margin:0}
+.sales-detail-layout .detail-tabs :deep(.el-tabs__header){margin:0;padding:0 12px;border-radius:0;box-shadow:none}
+.sales-detail-layout .detail-tabs :deep(.el-tabs__item){height:40px;font-size:13px}
+.sales-detail-layout .detail-tabs :deep(.el-tabs__content){padding:0;margin:0;overflow:visible}
+@media(max-width:700px){.sales-detail-layout .detail-hero{align-items:flex-start;padding:10px;gap:8px}.sales-detail-layout .detail-actions{margin-left:auto}}
+.sales-detail-layout .business-card{margin:0;padding:0;border:1px solid var(--line);border-top:0;border-radius:0;box-shadow:none}
+.sales-detail-layout .section-title{margin:0;padding:8px 12px;gap:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.sales-detail-layout .section-title h3{font-size:14px}
+.sales-detail-layout .section-title p{margin-top:2px;font-size:12px}
+.sales-detail-layout .inquiry-fields{padding:10px 12px}
+.sales-detail-layout .inquiry-fields :deep(.el-form-item){margin-bottom:8px}
+.sales-detail-layout .overview-grid{gap:0}
 </style>
