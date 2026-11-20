@@ -115,7 +115,7 @@ func (s *Service) UpdateTravelReimbursement(ctx context.Context, tenantID, id in
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	current, err := readTravelReimbursement(ctx, tx, tenantID, id, op.ID, false, true)
 	if err != nil {
 		return TravelReimbursement{}, err
@@ -167,7 +167,7 @@ func (s *Service) SubmitTravelReimbursement(ctx context.Context, tenantID, id in
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	current, err := readTravelReimbursement(ctx, tx, tenantID, id, op.ID, false, true)
 	if err != nil {
 		return TravelReimbursement{}, err
@@ -317,7 +317,7 @@ func (s *Service) AttachTravelFile(ctx context.Context, tenantID, id int64, key,
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	v, err := readTravelReimbursement(ctx, tx, tenantID, id, op.ID, false, true)
 	if err != nil {
 		return v, err
