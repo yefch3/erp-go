@@ -150,6 +150,7 @@ type InquiryView struct {
 	ID                  string             `json:"id"`
 	Number              string             `json:"number"`
 	DisplayInquiryNo    string             `json:"displayInquiryNo"`
+	CustomerDisplayName string             `json:"customerDisplayName,omitempty"`
 	OwnerID             string             `json:"ownerId"`
 	Owner               string             `json:"owner"`
 	State               string             `json:"state"`

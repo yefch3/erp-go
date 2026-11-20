@@ -289,6 +289,11 @@ func TestInquiryListMatchesReadingEveryInquiry(t *testing.T) {
 									if (wantErr == nil) != (gotErr == nil) {
 										t.Fatalf("op %d %+v: errors differ: legacy %v, new %v", op, in, wantErr, gotErr)
 									}
+									if _, usesBatch := tc.customers.(CustomerNameBatch); usesBatch && view == "PROCUREMENT" {
+										for i := range want.Items {
+											want.Items[i].CustomerDisplayName = tc.names[inquiryID(want.Items[i].Body.CustomerID)]
+										}
+									}
 									a, _ := json.Marshal(want)
 									b, _ := json.Marshal(got)
 									if string(a) != string(b) {

@@ -17,10 +17,15 @@
      <template #default="{row}">
       <span v-if="column.key==='number'" class="inquiry-number">{{displayInquiryNumber(row)}}</span>
       <span v-else-if="column.key==='customerShort'">{{customerShortName(row)}}</span>
+      <span v-else-if="column.key==='procurementCustomer'">{{row.customerDisplayName||row.body.customer?.trim()||'—'}}</span>
       <span v-else-if="column.key==='customer'" class="logistics-customer" :title="row.body.customer">{{row.body.customer||'—'}}</span>
       <span v-else-if="column.key==='owner'">{{row.owner||'—'}}</span>
-      <span v-else-if="column.key==='productDetails'&&view==='QUOTATIONS'">{{quotationProductCounts(row)}}</span>
-      <button v-else-if="column.key==='productDetails'" type="button" class="product-summary" :class="{'product-summary--stacked':view!=='SALES'}" :aria-expanded="isInquiryExpanded(row.id)" @click.stop="toggleInquiryProducts(row)"><span class="product-summary__main"><span class="product-summary__text" :title="inquiryProductSummary(row)">{{inquiryProductSummary(row)}}</span><span v-if="inquiryProductGroups(row).length>1" class="product-summary__count">+{{inquiryProductGroups(row).length-1}}</span><el-icon class="product-summary__chevron" :class="{'is-expanded':isInquiryExpanded(row.id)}"><ArrowDown/></el-icon></span><small v-if="view==='PROCUREMENT'" class="product-summary__mobile-meta">{{row.body.delivery||'未填写交货时间'}}</small></button>
+      <span v-else-if="column.key==='productDetails'&&view==='QUOTATIONS'">{{inquiryProductCounts(row)}}</span>
+      <button v-else-if="column.key==='productDetails'&&view==='PROCUREMENT'" type="button" class="product-summary" :aria-expanded="isInquiryExpanded(row.id)" @click.stop="toggleInquiryProducts(row)">
+       <span class="product-summary__text">{{inquiryProductCounts(row)}}</span>
+       <el-icon class="product-summary__chevron" :class="{'is-expanded':isInquiryExpanded(row.id)}"><ArrowDown/></el-icon>
+      </button>
+      <button v-else-if="column.key==='productDetails'" type="button" class="product-summary" :aria-expanded="isInquiryExpanded(row.id)" @click.stop="toggleInquiryProducts(row)"><span class="product-summary__main"><span class="product-summary__text" :title="inquiryProductSummary(row)">{{inquiryProductSummary(row)}}</span><span v-if="inquiryProductGroups(row).length>1" class="product-summary__count">+{{inquiryProductGroups(row).length-1}}</span><el-icon class="product-summary__chevron" :class="{'is-expanded':isInquiryExpanded(row.id)}"><ArrowDown/></el-icon></span></button>
       <span v-else-if="column.key==='productCount'">{{row.body.products?.length||0}}</span>
       <span v-else-if="column.key==='totalQuantity'" class="logistics-quantities"><span v-for="(quantity,index) in compactQuantityLines(row.body.products)" :key="index">{{quantity}}</span></span>
       <span v-else-if="column.key==='weightVolume'">{{productTotal(row.body.products,'weight')}} / {{productTotal(row.body.products,'volume')}}</span>
@@ -217,7 +222,14 @@ const listColumnDefaults=computed<TableColumnDefinition[]>(()=>{
   {...common.submittedAt,minWidth:140,align:'center'},
   {...common.status,align:'center'},
  ]
- if(view.value==='PROCUREMENT')return[common.number,{key:'productDetails',label:t('inquiryWorkspace.list.productDetails'),minWidth:300},{key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:135,className:'hierarchy-secondary-column'},common.submittedAt,common.status]
+ if(view.value==='PROCUREMENT')return[
+  {...common.number,minWidth:132},
+  {key:'procurementCustomer',label:t('inquiryWorkspace.customer'),minWidth:150,showOverflowTooltip:true},
+  {key:'productDetails',label:t('inquiryWorkspace.list.productDetails'),minWidth:190},
+  {key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:105},
+  {...common.submittedAt,minWidth:137,className:undefined},
+  {...common.status,minWidth:locale.value==='zh'?100:180},
+ ]
  return[{...common.number,minWidth:125},{key:'customer',label:t('inquiryWorkspace.customer'),minWidth:145},{key:'owner',label:t('inquiryWorkspace.owner'),minWidth:84},{key:'totalQuantity',label:t('inquiryWorkspace.totalQuantity'),minWidth:105},{key:'delivery',label:t('inquiryWorkspace.delivery'),minWidth:94},{key:'loadingPort',label:t('inquiryWorkspace.loadingPort'),minWidth:85},{key:'destinationPort',label:t('inquiryWorkspace.destinationPort'),minWidth:100},{...common.submittedAt,minWidth:122},common.status]
 })
 const listColumnOrder=useTableColumnOrder(computed(()=>({SALES:'inquiry-list',QUOTATIONS:'customer-quotation-list',PROCUREMENT:'procurement-sourcing-list',LOGISTICS:'logistics-sourcing-list'} as const)[view.value]),listColumnDefaults)
@@ -323,7 +335,7 @@ const expandedProductKeys=ref<string[]>([])
 function isInquiryExpanded(id:string){return expandedInquiryIds.value.includes(id)}
 function toggleInquiryProducts(row:Inquiry){expandedInquiryIds.value=isInquiryExpanded(row.id)?expandedInquiryIds.value.filter(id=>id!==row.id):[...expandedInquiryIds.value,row.id]}
 function inquiryProductGroups(row:Inquiry){return groupInquiryProducts(row.body.products||[])}
-function quotationProductCounts(row:Inquiry){
+function inquiryProductCounts(row:Inquiry){
  const groups=inquiryProductGroups(row)
  const specs=groups.reduce((total,group)=>total+group.specifications.length,0)
  return t('inquiryWorkspace.list.productCounts',{specs,products:groups.length})
@@ -578,9 +590,7 @@ watch(view,()=>void initial())
 .product-summary__count { flex:0 0 auto; margin-left:9px; padding:2px 7px; color:#1479a6; background:#e7f6fc; border-radius:999px; font-size:12px; font-weight:650; }
 .product-summary__chevron { flex:0 0 auto; margin-left:9px; color:#618294; transition:transform .2s ease; }
 .product-summary__chevron.is-expanded { transform:rotate(180deg); }
-.product-summary--stacked { align-items:stretch; flex-direction:column; }
 .product-summary__main { display:flex; align-items:center; min-width:0; }
-.product-summary__mobile-meta { display:none; margin-top:3px; color:#718390; font-size:11px; line-height:1.35; }
 .inquiry-workspace--operations :deep(.inquiry-list-table--sales .el-table__expanded-cell),
 .inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__expanded-cell) { padding:0!important; }
 .hierarchy-context { display:flex; gap:24px; flex-wrap:wrap; padding:10px 22px 0; color:#6b7f8d; background:#f7fbfd; font-size:12px; }
@@ -614,7 +624,7 @@ watch(view,()=>void initial())
 .inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain:hover) { color:#141817; border-color:#4ac1ff; background:#4ac1ff; }
 .inquiry-workspace--operations .list-pagination { justify-content:flex-end; margin:0; }
 @media(max-width:1100px){.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.specification-list__header,.specification-row{grid-template-columns:minmax(150px,.8fr) minmax(240px,1.35fr) minmax(120px,.55fr);padding-left:28px;padding-right:28px}}
-@media(max-width:900px){.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-secondary-column),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-time-column){display:none}.product-summary__mobile-meta{display:block}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy th.el-table__cell),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy td.el-table__cell){padding-top:9px;padding-bottom:9px}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__body),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__header){width:100%!important}.hierarchy-context{gap:8px 18px;padding-left:16px;padding-right:16px}.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.product-group__quantity{grid-column:2/-1;margin-top:-4px;text-align:left}.specification-list__header,.specification-row{grid-template-columns:minmax(110px,.8fr) minmax(170px,1.2fr) auto;column-gap:10px;padding-left:16px;padding-right:16px}.specification-row__auxiliary{gap:4px 12px}}
+@media(max-width:900px){.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-secondary-column),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-time-column){display:none}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy th.el-table__cell),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy td.el-table__cell){padding-top:9px;padding-bottom:9px}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__body),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__header){width:100%!important}.hierarchy-context{gap:8px 18px;padding-left:16px;padding-right:16px}.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.product-group__quantity{grid-column:2/-1;margin-top:-4px;text-align:left}.specification-list__header,.specification-row{grid-template-columns:minmax(110px,.8fr) minmax(170px,1.2fr) auto;column-gap:10px;padding-left:16px;padding-right:16px}.specification-row__auxiliary{gap:4px 12px}}
 .inquiry-workspace :deep(.el-table) { border: 1px solid var(--line); border-radius: 12px; --el-table-header-bg-color: #f4f8fa; --el-table-header-text-color: #486174; --el-table-row-hover-bg-color: #f0f8fa; }
 .inquiry-workspace :deep(.el-table th.el-table__cell) { height: 48px; font-weight: 600; }
 .inquiry-workspace :deep(.el-table td.el-table__cell) { padding: 13px 0; color: #334155; }
