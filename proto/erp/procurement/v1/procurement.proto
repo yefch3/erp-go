@@ -758,6 +758,7 @@ service PurchaseOrderService {
   // and payment history.
   rpc CreateTravelReimbursement(CreateTravelReimbursementRequest) returns (CreateTravelReimbursementResponse);
   rpc UpdateTravelReimbursement(UpdateTravelReimbursementRequest) returns (UpdateTravelReimbursementResponse);
+  rpc DeleteTravelReimbursement(DeleteTravelReimbursementRequest) returns (DeleteTravelReimbursementResponse);
   rpc ListTravelReimbursements(ListTravelReimbursementsRequest) returns (ListTravelReimbursementsResponse);
   rpc SubmitTravelReimbursement(SubmitTravelReimbursementRequest) returns (SubmitTravelReimbursementResponse);
   rpc PresignTravelReimbursementFile(PresignTravelReimbursementFileRequest) returns (PresignTravelReimbursementFileResponse);
@@ -3306,3 +3307,6 @@ message ShippingHistoricalPurchase {
   string remark = 5;
 }
 message ListShippingHistoricalPurchasesResponse { repeated ShippingHistoricalPurchase items = 1; }
+
+message DeleteTravelReimbursementRequest { int64 id = 1; }
+message DeleteTravelReimbursementResponse {}

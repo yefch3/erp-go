@@ -43,6 +43,14 @@ func (s *Server) updateTravelReimbursement(w http.ResponseWriter, r *http.Reques
 	}
 	s.writeProto(w, resp)
 }
+func (s *Server) deleteTravelReimbursement(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.DeleteTravelReimbursement(r.Context(), &prv1.DeleteTravelReimbursementRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
 func (s *Server) submitTravelReimbursement(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.SubmitTravelReimbursement(r.Context(), &prv1.SubmitTravelReimbursementRequest{Id: idFromPath(r)})
 	if err != nil {

@@ -15,9 +15,10 @@
       <el-table-column :label="t('reimbursementExpense.purpose')" min-width="130"><template #default="{row}">{{row.purpose}}<div class="sub">{{claimExpenseType(row.expenseType)==='TRAVEL'?row.destination:row.expenseDate}}</div></template></el-table-column>
       <el-table-column label="金额" width="110" align="right"><template #default="{row}"><strong>{{row.currency}} {{row.amount}}</strong></template></el-table-column>
       <el-table-column label="状态" width="140"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{statusLabel[row.status]||row.status}}</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="120" fixed="right"><template #default="{row}">
-        <el-button v-if="['DRAFT','REJECTED','PENDING_PAYMENT'].includes(row.status) && row.claimantId===myID" link @click="openEdit(row)">编辑</el-button>
-        <el-button v-if="['DRAFT','REJECTED'].includes(row.status) && row.claimantId===myID" link type="primary" @click="submit(row)">提交审批</el-button>
+      <el-table-column label="操作" width="168" fixed="right"><template #default="{row}">
+        <el-button v-if="['DRAFT','REJECTED','PENDING_PAYMENT'].includes(row.status) && row.claimantId===myID" :disabled="deletingId===row.id" link @click="openEdit(row)">编辑</el-button>
+        <el-button v-if="canDelete(row)" :disabled="deletingId===row.id" link type="primary" @click="submit(row)">提交审批</el-button>
+        <el-button v-if="canDelete(row)" :loading="deletingId===row.id" link type="danger" @click="deleteClaim(row)">{{t('common.delete')}}</el-button>
         <el-button v-if="taskFor(row)" link type="success" @click="act(row,'APPROVE')">同意</el-button>
         <el-button v-if="taskFor(row)" link type="danger" @click="act(row,'RETURN')">退回</el-button>
         <el-button v-if="canManage && row.status==='PENDING_PAYMENT'" link type="success" @click="openPay(row)">登记付款</el-button>
@@ -57,7 +58,7 @@ import {computed,onMounted,reactive,ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {claimExpenseType,expenseTypes,expensePayload,missingExpenseFields} from '../lib/reimbursementExpense'
 import {ElMessage,ElMessageBox} from 'element-plus'
-import {get,patch,post,quietErrors} from '../api'
+import {del,get,patch,post,quietErrors} from '../api'
 import {useAuthStore} from '../stores/auth'
 import {getActionableApproval} from '../lib/approvalAction'
 import {relayFailureReason,relayTimedOut,saveViaRelay,uploadViaRelay} from '../lib/storageRelay'
@@ -71,6 +72,32 @@ const myID=computed(()=>String(auth.employeeId||localStorage.getItem('employeeId
 const form=reactive({expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''}),pay=reactive({paidAt:new Date().toISOString().slice(0,10),paymentAccount:'',paymentReference:''})
 const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务负责人审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
 const fileType:Record<string,string>={INVOICE:'发票',RECEIPT:'收据',ITINERARY:'行程单',PAYMENT_PROOF:'付款凭证',OTHER:'其他'}
+const deletingId = ref<string | null>(null)
+const canDelete = (row: Claim) => row.claimantId === myID.value && ['DRAFT', 'REJECTED'].includes(row.status)
+
+async function deleteClaim(row: Claim) {
+  if (deletingId.value !== null) return
+  deletingId.value = row.id
+  try {
+    const confirmed = await ElMessageBox.confirm(
+      t('reimbursementExpense.deleteConfirm', { claimNo: row.claimNo }),
+      t('reimbursementExpense.deleteTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.delete'),
+        confirmButtonClass: 'el-button--danger',
+        cancelButtonText: t('common.cancel'),
+      },
+    ).then(() => true, () => false)
+    if (!confirmed) return
+
+    await del(`/travel-reimbursements/${row.id}`)
+    ElMessage.success(t('reimbursementExpense.deleted'))
+    await load()
+  } finally {
+    deletingId.value = null
+  }
+}
 const statusType=(s:string):'success'|'danger'|'warning'|'info'|undefined=>s==='PAID'?'success':s==='REJECTED'?'danger':s==='PENDING_PAYMENT'?'warning':s==='DRAFT'?'info':undefined
 async function load(){loading.value=true;try{const claims=await get<{items:Claim[]}>('/travel-reimbursements');rows.value=claims.items||[];approvalTasks.value={};approvalOverrides.value={};const pending=rows.value.filter(row=>['PENDING_DEPARTMENT_CONFIRMATION','PENDING_FINANCE_APPROVAL'].includes(row.status));const resolved=await Promise.all(pending.map(async row=>[String(row.id),await getActionableApproval('TRAVEL_REIMBURSEMENT',row.id)] as const));for(const [id,action] of resolved){if(action){approvalTasks.value[id]=action.taskId;approvalOverrides.value[id]=action.override}}}finally{loading.value=false}}
 const taskFor=(row:Claim)=>approvalTasks.value[String(row.id)]||''

@@ -744,6 +744,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/api/travel-reimbursements", s.listTravelReimbursements)
 		r.Post("/api/travel-reimbursements", s.createTravelReimbursement)
 		r.Patch("/api/travel-reimbursements/{id}", s.updateTravelReimbursement)
+		r.Delete("/api/travel-reimbursements/{id}", s.deleteTravelReimbursement)
 		r.Post("/api/travel-reimbursements/{id}/submit", s.submitTravelReimbursement)
 		r.Post("/api/travel-reimbursements/{id}/files/presign", s.presignTravelReimbursementFile)
 		r.Post("/api/travel-reimbursements/{id}/files", s.attachTravelReimbursementFile)

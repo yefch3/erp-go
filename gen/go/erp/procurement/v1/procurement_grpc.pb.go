@@ -3164,6 +3164,7 @@ const (
 	PurchaseOrderService_RemoveReconFile_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/RemoveReconFile"
 	PurchaseOrderService_CreateTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/CreateTravelReimbursement"
 	PurchaseOrderService_UpdateTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/UpdateTravelReimbursement"
+	PurchaseOrderService_DeleteTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/DeleteTravelReimbursement"
 	PurchaseOrderService_ListTravelReimbursements_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ListTravelReimbursements"
 	PurchaseOrderService_SubmitTravelReimbursement_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/SubmitTravelReimbursement"
 	PurchaseOrderService_PresignTravelReimbursementFile_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/PresignTravelReimbursementFile"
@@ -3341,6 +3342,7 @@ type PurchaseOrderServiceClient interface {
 	// and payment history.
 	CreateTravelReimbursement(ctx context.Context, in *CreateTravelReimbursementRequest, opts ...grpc.CallOption) (*CreateTravelReimbursementResponse, error)
 	UpdateTravelReimbursement(ctx context.Context, in *UpdateTravelReimbursementRequest, opts ...grpc.CallOption) (*UpdateTravelReimbursementResponse, error)
+	DeleteTravelReimbursement(ctx context.Context, in *DeleteTravelReimbursementRequest, opts ...grpc.CallOption) (*DeleteTravelReimbursementResponse, error)
 	ListTravelReimbursements(ctx context.Context, in *ListTravelReimbursementsRequest, opts ...grpc.CallOption) (*ListTravelReimbursementsResponse, error)
 	SubmitTravelReimbursement(ctx context.Context, in *SubmitTravelReimbursementRequest, opts ...grpc.CallOption) (*SubmitTravelReimbursementResponse, error)
 	PresignTravelReimbursementFile(ctx context.Context, in *PresignTravelReimbursementFileRequest, opts ...grpc.CallOption) (*PresignTravelReimbursementFileResponse, error)
@@ -4252,6 +4254,16 @@ func (c *purchaseOrderServiceClient) UpdateTravelReimbursement(ctx context.Conte
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) DeleteTravelReimbursement(ctx context.Context, in *DeleteTravelReimbursementRequest, opts ...grpc.CallOption) (*DeleteTravelReimbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteTravelReimbursementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_DeleteTravelReimbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) ListTravelReimbursements(ctx context.Context, in *ListTravelReimbursementsRequest, opts ...grpc.CallOption) (*ListTravelReimbursementsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListTravelReimbursementsResponse)
@@ -4652,6 +4664,7 @@ type PurchaseOrderServiceServer interface {
 	// and payment history.
 	CreateTravelReimbursement(context.Context, *CreateTravelReimbursementRequest) (*CreateTravelReimbursementResponse, error)
 	UpdateTravelReimbursement(context.Context, *UpdateTravelReimbursementRequest) (*UpdateTravelReimbursementResponse, error)
+	DeleteTravelReimbursement(context.Context, *DeleteTravelReimbursementRequest) (*DeleteTravelReimbursementResponse, error)
 	ListTravelReimbursements(context.Context, *ListTravelReimbursementsRequest) (*ListTravelReimbursementsResponse, error)
 	SubmitTravelReimbursement(context.Context, *SubmitTravelReimbursementRequest) (*SubmitTravelReimbursementResponse, error)
 	PresignTravelReimbursementFile(context.Context, *PresignTravelReimbursementFileRequest) (*PresignTravelReimbursementFileResponse, error)
@@ -4967,6 +4980,9 @@ func (UnimplementedPurchaseOrderServiceServer) CreateTravelReimbursement(context
 }
 func (UnimplementedPurchaseOrderServiceServer) UpdateTravelReimbursement(context.Context, *UpdateTravelReimbursementRequest) (*UpdateTravelReimbursementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateTravelReimbursement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) DeleteTravelReimbursement(context.Context, *DeleteTravelReimbursementRequest) (*DeleteTravelReimbursementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteTravelReimbursement not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ListTravelReimbursements(context.Context, *ListTravelReimbursementsRequest) (*ListTravelReimbursementsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTravelReimbursements not implemented")
@@ -6594,6 +6610,24 @@ func _PurchaseOrderService_UpdateTravelReimbursement_Handler(srv interface{}, ct
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_DeleteTravelReimbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteTravelReimbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).DeleteTravelReimbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_DeleteTravelReimbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).DeleteTravelReimbursement(ctx, req.(*DeleteTravelReimbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_ListTravelReimbursements_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListTravelReimbursementsRequest)
 	if err := dec(in); err != nil {
@@ -7390,6 +7424,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateTravelReimbursement",
 			Handler:    _PurchaseOrderService_UpdateTravelReimbursement_Handler,
+		},
+		{
+			MethodName: "DeleteTravelReimbursement",
+			Handler:    _PurchaseOrderService_DeleteTravelReimbursement_Handler,
 		},
 		{
 			MethodName: "ListTravelReimbursements",
