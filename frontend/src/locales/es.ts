@@ -1498,6 +1498,8 @@ basicsSaved: "Datos básicos guardados",
     historyHint: 'Cada traspaso queda registrado, para poder resolver disputas de comisiones',
   },
   contracts: {
+    contractTotal: 'Total del contrato',
+    fxDetails: 'Detalles del tipo de cambio',
     changeAmountVersion: "Importe de la modificación v{version}",
     changeState: "Modificación · {status}",
     sameContractChange: "Modificación de versión del mismo contrato {contract}; no se crea otro número",

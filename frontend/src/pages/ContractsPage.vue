@@ -140,14 +140,10 @@
 
     <!-- Detail: terms, lines, version history -->
     <el-drawer v-model="detailOpen" size="min(1140px,100vw)" class="contract-workspace">
-      <template #header><span class="contract-drawer-title">{{ detail?.contract.contractNo ?? '' }}</span></template>
-      <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
-        <el-alert v-if="editable && missingContractParties(detail.version).length" type="warning" :closable="false" show-icon style="margin-bottom:14px">
-          <template #title>提交前请补全：{{missingContractParties(detail.version).join('、')}}</template>
-          <el-button link type="primary" @click="openTerms">补全合同双方信息</el-button>
-        </el-alert>
-        <div class="detail-head">
-          <div class="detail-statuses">
+      <template #header="{ titleId }">
+        <div class="contract-drawer-heading">
+          <span :id="titleId" class="contract-drawer-title">{{ detail?.contract.contractNo ?? '' }}</span>
+          <div v-if="detail" class="detail-statuses">
             <el-tag :type="statusType(detail.contract.status)">
               {{versionPresentation?.phase==='finance'?t('contracts.changeFinanceState'):versionPresentation?t('contracts.changeState',{status:contractStatusLabel(detail.contract.status)}):contractStatusLabel(detail.contract.status)}}
             </el-tag>
@@ -155,6 +151,19 @@
               v{{ detail.version.versionNo }} · {{ t(`contracts.versionStatuses.${detail.version.status}`) }}
             </span>
             <span v-if="isInForce && detail.contract.entrySource!=='HISTORICAL_RECORD'" class="in-force">{{ t('contracts.inForce') }}</span>
+          </div>
+        </div>
+      </template>
+      <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
+        <el-alert v-if="editable && missingContractParties(detail.version).length" type="warning" :closable="false" show-icon style="margin-bottom:14px">
+          <template #title>提交前请补全：{{missingContractParties(detail.version).join('、')}}</template>
+          <el-button link type="primary" @click="openTerms">补全合同双方信息</el-button>
+        </el-alert>
+        <div class="detail-head">
+          <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="contract-overview">
+            <div class="overview-customer"><span>签约客户</span><strong>{{detail.version.buyerName}}</strong></div>
+            <div><span>合同金额 · {{detail.version.currency}}</span><strong>{{formatDetailDecimal(detail.version.totalAmount)}}</strong></div>
+            <div><span>交货日期</span><strong>{{detail.version.deliveryDate||'待填写'}}</strong></div>
           </div>
           <div v-if="['EXISTING_CONTRACT','HISTORICAL_RECORD'].includes(detail.contract.entrySource||'')" class="detail-actions">
             <template v-if="myConfirmationTask"><ContractOperationButton label="同意" description="同意当前待确认事项；终止申请通过后停止剩余履约，普通合同通过后进入签署。" type="success" @click="confirmContract('APPROVE')"/><ContractOperationButton label="退回修改" description="将当前申请退回负责销售，并填写需要调整的内容。" type="warning" @click="confirmContract('RETURN')"/></template>
@@ -183,7 +192,7 @@
             <el-button v-if="myConfirmationTask" type="primary" @click="confirmContract('APPROVE')">同意</el-button>
             <template v-else-if="canWrite && isMine">
               <el-button v-if="editable" type="primary" @click="submit(detail.contract)">提交上级确认</el-button>
-              <el-button v-else-if="detail.contract.status==='PENDING_SIGN'" type="primary" @click="hasSignedCopy?sign(detail.contract):(detailTab='files')">{{hasSignedCopy?'开始执行':'上传签回件'}}</el-button>
+              <el-button v-else-if="detail.contract.status==='PENDING_SIGN'" type="primary" @click="hasSignedCopy?sign(detail.contract):openSignedCopySection()">{{hasSignedCopy?'开始执行':'上传签回件'}}</el-button>
             </template>
           </template>
           <template #management>
@@ -199,18 +208,12 @@
         <section v-if="versionPresentation" class="contract-change-summary" aria-label="合同变更版本">
           <strong>{{t('contracts.sameContractChange',{contract:detail.contract.contractNo})}}</strong>
           <div v-if="versionPresentation.phase==='pending'" class="contract-change-versions">
-            <span>{{t('contracts.originalSignedVersion',{version:versionPresentation.signed.versionNo})}} · {{versionPresentation.signed.totalAmount}} {{versionPresentation.signed.currency}}</span>
-            <span>{{t('contracts.pendingChangeVersion',{version:versionPresentation.latest.versionNo})}} · {{t(`contracts.versionStatuses.${versionPresentation.latest.status}`)}} · {{versionPresentation.latest.totalAmount}} {{versionPresentation.latest.currency}}</span>
+            <span>{{t('contracts.originalSignedVersion',{version:versionPresentation.signed.versionNo})}} · {{formatDetailDecimal(versionPresentation.signed.totalAmount)}} {{versionPresentation.signed.currency}}</span>
+            <span>{{t('contracts.pendingChangeVersion',{version:versionPresentation.latest.versionNo})}} · {{t(`contracts.versionStatuses.${versionPresentation.latest.status}`)}} · {{formatDetailDecimal(versionPresentation.latest.totalAmount)}} {{versionPresentation.latest.currency}}</span>
           </div>
           <p>{{t(versionPresentation.phase==='pending'?'contracts.changeProcessHint':'contracts.changeFinanceHint')}}</p>
           <small>{{t('contracts.viewingVersion',{version:detail.version.versionNo})}}</small>
         </section>
-        <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="contract-overview">
-          <div class="overview-customer"><span>签约客户</span><strong>{{detail.version.buyerName}}</strong></div>
-          <div><span>合同金额 · {{detail.version.currency}}</span><strong>{{detail.version.totalAmount}}</strong></div>
-          <div><span>产品明细</span><strong>{{detail.items.length}} <small>项</small></strong></div>
-          <div><span>交货日期</span><strong>{{detail.version.deliveryDate||'待填写'}}</strong></div>
-        </div>
         <el-alert v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" title="历史合同资料：商品、交付及付款约定以原合同附件为准；记录金额不计入系统应收款。" type="info" :closable="false" show-icon/>
 
         <ContractWorkflowPanel v-if="detail.contract.entrySource==='EXISTING_CONTRACT'" :contract="detail.contract" :version-status="detail.version.status" :compact="true" :show-records="detailTab==='records'" :can-edit="canWrite && isMine" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()"/>
@@ -218,7 +221,6 @@
         <el-tabs v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" v-model="detailTab" class="contract-tabs">
           <el-tab-pane :label="`产品明细 (${detail.items.length})`" name="items"/>
           <el-tab-pane label="合同资料" name="terms"/>
-          <el-tab-pane :label="`合同文件 (${files.length})`" name="files"/>
           <el-tab-pane label="交付安排" name="shipping"/>
           <el-tab-pane :label="auth.can('export:receipt:read')?'收款进度':'结清状态'" name="receipts"/>
           <el-tab-pane label="审批与记录" name="records"/>
@@ -235,7 +237,7 @@
           <div class="detail-section-body"><el-table :data="formalSchedules" size="small">
             <el-table-column label="批次" width="75"><template #default="{row}">第 {{row.batchNo}} 批</template></el-table-column>
             <el-table-column label="船期 / 船名航次" min-width="210"><template #default="{row}">{{row.scheduleNo}}<div class="sub">{{row.vesselName||'—'}} / {{row.voyageNo||'—'}}</div></template></el-table-column>
-            <el-table-column label="本批货物" min-width="250"><template #default="{row}">{{row.cargoItems.map((item:FormalShippingCargo)=>`${item.productName} ${item.specification} ${trimQty(item.quantity)} ${item.uomCode}`).join('；')||'—'}}</template></el-table-column>
+            <el-table-column label="本批货物" min-width="250"><template #default="{row}">{{row.cargoItems.map((item:FormalShippingCargo)=>`${item.productName} ${item.specification} ${formatDetailDecimal(item.quantity)} ${item.uomCode}`).join('；')||'—'}}</template></el-table-column>
             <el-table-column label="货代 / 航线" min-width="180"><template #default="{row}">{{row.carrierForwarder||'—'}}<div class="sub">{{row.portOfLoading}} → {{row.portOfDischarge}}</div></template></el-table-column>
             <el-table-column label="订舱号 / 提单号" min-width="170"><template #default="{row}">{{row.bookingNo||'—'}}<div class="sub">{{row.billOfLadingNo||'—'}}</div></template></el-table-column>
             <el-table-column label="预计离港 / 到港" width="185"><template #default="{row}">{{row.etd||'—'}} → {{row.eta||'—'}}</template></el-table-column>
@@ -251,7 +253,7 @@
             <span class="basic-info-hint">{{detail.contract.entrySource==='HISTORICAL_RECORD'?'原合同基本资料':'签约、交付与执行资料'}}</span>
           </div>
         <el-descriptions :column="2" border size="small" class="desc">
-          <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="合同金额">{{detail.version.totalAmount}} {{detail.version.currency}}</el-descriptions-item>
+              <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="合同金额">{{formatDetailDecimal(detail.version.totalAmount)}} {{detail.version.currency}}</el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.entrySource==='HISTORICAL_RECORD'" label="签订日期">{{detail.contract.signedAt?.slice(0,10)}}</el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" label="客户联系人">{{(detail.version.customerContact??acceptedOffer?.contact)||'—'}}</el-descriptions-item>
           <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
@@ -299,83 +301,18 @@
         </el-descriptions>
         </section>
 
-        <section data-contract-items v-show="showDetailTab('items')" v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="detail-section">
+        <section ref="contractFilesSection" v-show="showDetailTab('terms')" class="detail-section contract-files-section" tabindex="-1" aria-labelledby="contract-files-heading">
           <div class="detail-section-summary">
-            <span class="section-summary-title">{{ t('contracts.items') }}</span>
-            <span class="section-summary-meta">{{ detail.items.length }} 项 · {{ detail.version.totalAmount }} {{ detail.version.currency }}</span>
-          </div>
-        <div class="detail-section-body">
-        <div class="items-toolbar"><el-input v-model="itemSearch" clearable placeholder="搜索产品、规格、编码或备注" aria-label="搜索合同产品"/><span>{{filteredContractItems.length}} / {{detail.items.length}} 项 · {{detail.version.currency}}</span></div>
-        <el-table :data="pagedContractItems" height="clamp(220px, calc(100vh - 440px), 600px)" size="small" border stripe class="contract-items-table" row-key="lineNo">
-          <el-table-column prop="lineNo" label="#" width="48" fixed/>
-          <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="400">
-            <template #default="{ row }">
-              <div class="contract-product-description">
-                <strong :title="row.productName">{{ row.productName || '—' }}</strong>
-                <span :title="row.spec">{{ row.spec || '—' }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column v-if="detail.items.some(i=>i.productCode)" prop="productCode" label="产品编码" min-width="110" show-overflow-tooltip/>
-          <el-table-column v-if="detail.items.some(i=>i.hsCode)" prop="hsCode" :label="t('contracts.hsCode')" width="105"/>
-          <el-table-column :label="t('contracts.qty')" width="100" align="right"><template #default="{row}">{{trimZeros(row.qty)}}</template></el-table-column>
-          <el-table-column prop="uomCode" label="单位" width="65"/>
-          <el-table-column prop="unitPrice" :label="t('contracts.unitPrice')" width="115" align="right"/>
-          <el-table-column prop="amount" :label="t('contracts.lineAmount')" width="125" align="right"/>
-          <el-table-column v-if="detail.items.some(i=>i.remark)" prop="remark" label="备注" min-width="200" show-overflow-tooltip/>
-        </el-table>
-        <el-pagination v-model:current-page="itemPage" v-model:page-size="itemPageSize" :page-sizes="[25,50,100,200]" :total="filteredContractItems.length" layout="total, sizes, prev, pager, next" class="items-pagination"/>
-        <div class="totals">
-          <span class="total-label">{{ t('contracts.total') }}</span>
-          <strong class="total-value">{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
-          <span class="sub">≈ {{ detail.version.baseAmount }} {{ detail.version.fx.baseCurrency }}</span>
-        </div>
-        <el-alert
-          v-if="detail.contract.entrySource === 'EXISTING_CONTRACT' && detail.contract.filePending"
-          :title="t('contracts.filePendingWarning')" type="warning" :closable="false" show-icon class="alert"
-        />
-        <div class="snapshot">
-          {{ t('contracts.fxSnapshot') }}:
-          1 {{ detail.version.fx.baseCurrency }} = {{ detail.version.fx.rate }} {{ detail.version.currency }}
-          · {{ detail.version.fx.source }} · {{ formatTime(detail.version.fx.rateAt) }}
-          <!-- A directly written contract took today's rate; only one that
-               grew out of a quotation inherited it. Saying "inherited from
-               the quotation" on a contract that never had one is the kind of
-               small lie that makes people stop trusting the rest. -->
-          <span class="hint">
-            创建合同后保留当时的有效汇率
-          </span>
-        </div>
-        </div>
-        </section>
-
-        <section v-show="showDetailTab('terms')" v-if="acceptedOffer?.transports.length" class="detail-section">
-          <div class="detail-section-summary">
-            <span class="section-summary-title">售前运输参考方案</span>
-            <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 报价成交记录，实际发运由物流安排</span>
-          </div>
-          <div class="detail-section-body">
-          <el-table :data="acceptedOffer.transports" max-height="300" stripe>
-            <el-table-column prop="title" label="方案" min-width="120"/>
-            <el-table-column label="对客费用" min-width="150"><template #default="{row}">{{row.currency}} {{row.price||'—'}}</template></el-table-column>
-            <el-table-column label="客户选择" width="110"><template #default="{row}"><el-tag :type="row.accepted?'success':'info'" effect="light">{{row.accepted?'已接受':'未选候选'}}</el-tag></template></el-table-column>
-            <el-table-column label="对应产品数量" min-width="220"><template #default="{row}"><span class="cargo-summary">{{allocatedProducts(row.quantities)||'—'}}</span></template></el-table-column>
-          </el-table>
-          </div>
-        </section>
-
-        <section v-show="showDetailTab('files')" class="detail-section">
-          <div class="detail-section-summary">
-            <span class="section-summary-title">{{ t('contracts.files') }}</span>
-            <span class="section-summary-meta">{{ files.length }} 个文件 · 保存合同拟稿、签署件及补充资料</span>
+            <span id="contract-files-heading" class="section-summary-title">{{ t('contracts.files') }} ({{ files.length }})</span>
+            <span class="section-summary-meta">合同拟稿、签署件及补充资料</span>
           </div>
           <div class="detail-section-body">
         <div v-if="canWrite && isMine && detail.contract.status!=='COMPLETED'" class="upload-bar">
-          <el-select v-model="uploadKind" style="width: 150px">
+          <el-select v-model="uploadKind" size="small" style="width: 150px">
             <el-option v-for="k in FILE_KINDS" :key="k" :value="k" :label="t(`contracts.fileKinds.${k}`)" />
           </el-select>
           <input ref="fileInput" type="file" hidden @change="upload" />
-          <el-button :loading="uploading" @click="fileInput?.click()">{{ t('contracts.upload') }}</el-button>
+          <el-button size="small" :loading="uploading" @click="fileInput?.click()">{{ t('contracts.upload') }}</el-button>
           <span class="hint">{{t('contractRepair.signatureHint')}}</span>
         </div>
         <el-table :data="files" size="small" max-height="320" stripe>
@@ -425,6 +362,73 @@
           </div>
         </section>
 
+        <section data-contract-items v-show="showDetailTab('items')" v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="detail-section">
+          <div class="detail-section-summary">
+            <span class="section-summary-title">{{ t('contracts.items') }}</span>
+            <span class="section-summary-meta">{{ detail.items.length }} 项 · {{ formatDetailDecimal(detail.version.totalAmount) }} {{ detail.version.currency }}</span>
+          </div>
+        <div class="detail-section-body">
+        <div class="items-toolbar"><el-input v-model="itemSearch" size="small" clearable placeholder="搜索产品、规格、编码或备注" aria-label="搜索合同产品"/><span>{{filteredContractItems.length}} / {{detail.items.length}} 项 · {{detail.version.currency}}</span></div>
+        <el-table :data="pagedContractItems" max-height="clamp(220px, calc(100vh - 330px), 600px)" size="small" border stripe class="contract-items-table" row-key="lineNo">
+          <el-table-column prop="lineNo" label="#" width="48" fixed/>
+          <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="400">
+            <template #default="{ row }">
+              <div class="contract-product-description">
+                <strong :title="row.productName">{{ row.productName || '—' }}</strong>
+                <span :title="row.spec">{{ row.spec || '—' }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="detail.items.some(i=>i.productCode)" prop="productCode" label="产品编码" min-width="110" show-overflow-tooltip/>
+          <el-table-column v-if="detail.items.some(i=>i.hsCode)" prop="hsCode" :label="t('contracts.hsCode')" width="105"/>
+          <el-table-column :label="t('contracts.qty')" width="100" align="right"><template #default="{row}">{{formatDetailDecimal(row.qty)}}</template></el-table-column>
+          <el-table-column prop="uomCode" label="单位" width="65"/>
+          <el-table-column :label="t('contracts.unitPrice')" width="115" align="right"><template #default="{row}">{{formatDetailDecimal(row.unitPrice)}}</template></el-table-column>
+          <el-table-column :label="t('contracts.lineAmount')" width="125" align="right"><template #default="{row}">{{formatDetailDecimal(row.amount)}}</template></el-table-column>
+          <el-table-column v-if="detail.items.some(i=>i.remark)" prop="remark" label="备注" min-width="200" show-overflow-tooltip/>
+        </el-table>
+        <div class="contract-items-footer">
+          <el-pagination v-model:current-page="itemPage" v-model:page-size="itemPageSize" :page-sizes="[25,50,100,200]" :total="filteredContractItems.length" :layout="filteredContractItems.length > itemPageSize ? 'total, sizes, prev, pager, next' : 'total, sizes'" size="small" class="items-pagination"/>
+          <div class="totals">
+            <span class="total-label">{{ t('contracts.contractTotal') }}</span>
+            <strong class="total-value">{{ formatDetailDecimal(detail.version.totalAmount) }} {{ detail.version.currency }}</strong>
+            <span v-if="detail.version.fx.baseCurrency && detail.version.fx.baseCurrency !== detail.version.currency" class="sub">≈ {{ formatDetailDecimal(detail.version.baseAmount) }} {{ detail.version.fx.baseCurrency }}</span>
+          </div>
+        </div>
+        <el-alert
+          v-if="detail.contract.entrySource === 'EXISTING_CONTRACT' && detail.contract.filePending"
+          :title="t('contracts.filePendingWarning')" type="warning" :closable="false" show-icon class="alert"
+        />
+        <details :key="detail.version.id" class="snapshot">
+          <summary>
+            {{ t('contracts.fxDetails') }}
+            <span class="hint">1 {{ detail.version.fx.baseCurrency }} = {{ formatDetailDecimal(detail.version.fx.rate) }} {{ detail.version.currency }}</span>
+          </summary>
+          <div class="snapshot-exact">
+            {{ t('contracts.fxSnapshot') }}
+            · 1 {{ detail.version.fx.baseCurrency }} = {{ detail.version.fx.rate }} {{ detail.version.currency }}
+            · {{ detail.version.fx.source }} · {{ formatTime(detail.version.fx.rateAt) }}
+            <span class="hint">创建合同后保留当时的有效汇率</span>
+          </div>
+        </details>
+        </div>
+        </section>
+
+        <section v-show="showDetailTab('terms')" v-if="acceptedOffer?.transports.length" class="detail-section">
+          <div class="detail-section-summary">
+            <span class="section-summary-title">售前运输参考方案</span>
+            <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 报价成交记录，实际发运由物流安排</span>
+          </div>
+          <div class="detail-section-body">
+          <el-table :data="acceptedOffer.transports" max-height="300" stripe>
+            <el-table-column prop="title" label="方案" min-width="120"/>
+            <el-table-column label="对客费用" min-width="150"><template #default="{row}">{{row.currency}} {{formatDetailDecimal(row.price)}}</template></el-table-column>
+            <el-table-column label="客户选择" width="110"><template #default="{row}"><el-tag :type="row.accepted?'success':'info'" effect="light">{{row.accepted?'已接受':'未选候选'}}</el-tag></template></el-table-column>
+            <el-table-column label="对应产品数量" min-width="220"><template #default="{row}"><span class="cargo-summary">{{allocatedProducts(row.quantities)||'—'}}</span></template></el-table-column>
+          </el-table>
+          </div>
+        </section>
+
         <template v-if="transfers.length">
           <section v-show="showDetailTab('records')" class="detail-section">
             <div class="detail-section-summary">
@@ -471,22 +475,22 @@
               <template #default="{ row }">{{ row.productName }}</template>
             </el-table-column>
             <el-table-column :label="t('contracts.sold')" width="120" align="right">
-              <template #default="{ row }"><span class="num">{{ trimQty(row.qty) }}</span></template>
+              <template #default="{ row }"><span class="num">{{ formatDetailDecimal(row.qty) }}</span></template>
             </el-table-column>
             <el-table-column :label="t('contracts.shipped')" width="120" align="right">
               <template #default="{ row }">
                 <span class="num" :class="{ dim: Number(row.shippedQty) === 0 }">
-                  {{ trimQty(row.shippedQty) }}
+                  {{ formatDetailDecimal(row.shippedQty) }}
                 </span>
               </template>
             </el-table-column>
             <el-table-column :label="t('contracts.toShip')" width="140" align="right">
               <template #default="{ row }">
                 <span class="num" :class="remainClass(row.remainingQty)">
-                  {{ trimQty(row.remainingQty) }}
+                  {{ formatDetailDecimal(row.remainingQty) }}
                 </span>
                 <div v-if="Number(row.remainingQty) < 0" class="sub over">
-                  {{ t('contracts.overShippedBy', { n: trimQty(String(-Number(row.remainingQty))) }) }}
+                  {{ t('contracts.overShippedBy', { n: formatDetailDecimal(String(row.remainingQty).replace(/^-/, '')) }) }}
                 </div>
               </template>
             </el-table-column>
@@ -523,7 +527,7 @@
               <template #default="{ row }">{{ row.etd || '—' }} → {{ row.eta || '—' }}</template>
             </el-table-column>
             <el-table-column :label="t('contracts.shipped')" width="110" align="right">
-              <template #default="{ row }"><span class="num">{{ trimQty(row.qty) }}</span></template>
+              <template #default="{ row }"><span class="num">{{ formatDetailDecimal(row.qty) }}</span></template>
             </el-table-column>
             <el-table-column :label="t('common.status')" width="100">
               <template #default="{ row }">
@@ -544,16 +548,16 @@
           <section v-show="showDetailTab('receipts')" class="detail-section">
             <div class="detail-section-summary">
               <span class="section-summary-title">{{ t('contracts.receipts') }}</span>
-              <span class="section-summary-meta">已收 {{ receiptProgress.receivedAmount }} / 合同 {{ receiptProgress.totalAmount }} {{ receiptProgress.currency }}</span>
+              <span class="section-summary-meta">已收 {{ formatDetailDecimal(receiptProgress.receivedAmount) }} / 合同 {{ formatDetailDecimal(receiptProgress.totalAmount) }} {{ receiptProgress.currency }}</span>
             </div>
             <div class="detail-section-body">
           <div class="recv">
-            <span>{{ t('contracts.contracted') }} <b class="num">{{ receiptProgress.totalAmount }}</b></span>
-            <span>{{ t('contracts.received') }} <b class="num">{{ receiptProgress.receivedAmount }}</b></span>
+            <span>{{ t('contracts.contracted') }} <b class="num">{{ formatDetailDecimal(receiptProgress.totalAmount) }}</b></span>
+            <span>{{ t('contracts.received') }} <b class="num">{{ formatDetailDecimal(receiptProgress.receivedAmount) }}</b></span>
             <span>
               {{ t('contracts.stillOwed') }}
               <b class="num" :class="Number(receiptProgress.openAmount) > 0 ? 'over' : ''">
-                {{ receiptProgress.openAmount }}
+                {{ formatDetailDecimal(receiptProgress.openAmount) }}
               </b>
             </span>
             <span class="sub">{{ receiptProgress.currency }}</span>
@@ -570,9 +574,9 @@
             </el-table-column>
             <el-table-column :label="t('contracts.paidAmount')" width="120" align="right">
               <template #default="{ row }">
-                <span class="num" :class="Number(row.amount) < 0 ? 'over' : ''">{{ row.amount }}</span>
+                <span class="num" :class="Number(row.amount) < 0 ? 'over' : ''">{{ formatDetailDecimal(row.amount) }}</span>
                 <div v-if="Number(row.feeAmount) !== 0" class="sub">
-                  {{ t('contracts.plusFee', { n: row.feeAmount }) }}
+                  {{ t('contracts.plusFee', { n: formatDetailDecimal(row.feeAmount) }) }}
                 </div>
               </template>
             </el-table-column>
@@ -637,7 +641,7 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('contracts.amount')" width="140" align="right">
-            <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
+              <template #default="{ row }">{{ formatDetailDecimal(row.totalAmount) }} {{ row.currency }}</template>
           </el-table-column>
           <el-table-column :label="t('contracts.deliveryDate')" width="110">
             <template #default="{ row }">{{ row.deliveryDate || '—' }}</template>
@@ -844,7 +848,7 @@ import {contractItemPayload} from '../lib/contractItem'
 import {parseContractOfferSnapshot} from '../lib/contractOfferSnapshot'
 import {isPendingContractChange,contractVersionPresentation} from '../lib/contractVersionPresentation'
 import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
-import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -1078,13 +1082,6 @@ function remainClass(v: string): string {
   return ''
 }
 
-// Quantities arrive as exact decimals; "1500.0000 PCS" reads worse than
-// "1500 PCS" and means the same thing.
-function trimQty(v: string): string {
-  if (!v) return '0'
-  if (!v.includes('.')) return v
-  return v.replace(/0+$/, '').replace(/\.$/, '')
-}
 const total = ref(0)
 const page = ref(1)
 const pageSize = 100
@@ -1467,9 +1464,18 @@ const files = ref<ContractFile[]>([])
 const hasSignedCopy = computed(() =>
   files.value.some((f) => f.kind === 'SIGNED' && f.versionNo === detail.value?.version.versionNo),
 )
+const contractFilesSection = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadKind = ref('SIGNED')
 const uploading = ref(false)
+
+async function openSignedCopySection() {
+  uploadKind.value = 'SIGNED'
+  detailTab.value = 'terms'
+  await nextTick()
+  contractFilesSection.value?.focus({ preventScroll: true })
+  contractFilesSection.value?.scrollIntoView({ block: 'start' })
+}
 
 // Only the newest version can be worked on, and only while it is a draft.
 // An older version opened from the history is always read-only.
@@ -1881,6 +1887,17 @@ function formatListAmount(value: string): string {
   return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${(match[3] || '').padEnd(2, '0')}`
 }
 
+function formatDetailDecimal(value: string | number | null | undefined): string {
+  const raw = String(value ?? '').trim()
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw)
+  if (!parts) return raw || '—'
+
+  const [, sign, integer, fraction = ''] = parts
+  const cents = BigInt(integer + fraction.padEnd(2, '0').slice(0, 2)) + (Number(fraction[2] ?? '0') >= 5 ? 1n : 0n)
+  const digits = cents.toString().padStart(3, '0')
+  return formatListAmount(`${sign}${digits.slice(0, -2)}.${digits.slice(-2)}`)
+}
+
 function formatListTime(value: string): string {
   if (!value) return '—'
   const date = new Date(value)
@@ -1931,7 +1948,7 @@ onUnmounted(stopListening)
 <style scoped>
 .contract-drawer-title{
   color:#183f54;
-  font-size:20px;
+  font-size:18px;
   font-weight:600;
   letter-spacing:.1px;
 }
@@ -1942,17 +1959,17 @@ onUnmounted(stopListening)
   --detail-border:#dce7ed;
   --detail-soft:#f6fafc;
   color:var(--detail-text);
-  font-size:14px;
-  line-height:1.55;
+  font-size:13px;
+  line-height:1.45;
 }
 .contract-detail :deep(.el-descriptions__body){
   overflow:hidden;
   border-radius:9px;
 }
 .basic-info-panel{margin-bottom:12px;padding:16px;border:1px solid var(--detail-border);border-radius:10px;background:#fff}
-.basic-info-heading{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
-.basic-info-title{color:var(--detail-title);font-size:16px;font-weight:600}
-.basic-info-hint{color:var(--detail-muted);font-size:12px;font-weight:400}
+.basic-info-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-bottom:6px}
+.basic-info-title{color:var(--detail-title);font-size:13px;font-weight:600}
+.basic-info-hint{color:var(--detail-muted);font-size:11px;font-weight:400}
 .contract-detail :deep(.el-descriptions__table){
   border-color:var(--detail-border);
 }
@@ -1974,39 +1991,53 @@ onUnmounted(stopListening)
 .contract-detail :deep(.el-table th.el-table__cell){
   background:#f6f9fb;
   color:#506775;
-  font-size:13px;
-  font-weight:600;
 }
 .contract-detail :deep(.el-table td.el-table__cell){
   color:#334e5e;
-  font-size:14px;
+}
+.contract-detail :deep(.el-table th.el-table__cell),
+.contract-detail :deep(.el-table td.el-table__cell){
+  padding:3px 0!important;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.contract-detail :deep(.el-table .cell){
+  padding-inline:8px;
+  line-height:16px;
+}
+.contract-detail :deep(.el-table__empty-block){
+  min-height:44px;
+}
+.contract-detail :deep(.el-table__empty-text){
+  line-height:22px;
+  font-size:12px;
 }
 .contract-product-description{
   display:grid;
   grid-template-columns:minmax(0,1fr);
-  gap:2px;
-  line-height:1.4;
+  gap:1px;
+  line-height:16px;
 }
 .contract-product-description>*{
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
-.contract-product-description strong{font-weight:600}
+.contract-product-description strong{font-weight:500}
 .contract-product-description span{color:#526777}
 .contract-detail :deep(.el-divider__text){
   color:var(--detail-title);
   font-size:16px;
   font-weight:600;
 }
-.product-name{color:#203f51;font-size:14px;font-weight:500}
+.product-name{color:#203f51;font-size:12px;font-weight:500}
 .product-spec{
-  margin-top:4px;
+  margin-top:2px;
   max-width:520px;
   color:var(--detail-muted);
-  font-size:13px;
+  font-size:12px;
   font-weight:400;
-  line-height:1.6;
+  line-height:1.4;
   display:-webkit-box;
   -webkit-line-clamp:3;
   -webkit-box-orient:vertical;
@@ -2025,22 +2056,22 @@ onUnmounted(stopListening)
 .approval-body{padding-top:6px;padding-bottom:8px}
 .approval-history{max-height:440px;overflow:auto}
 .approval-panel .approval-round{margin:0;padding:0 0 4px}
-.approval-panel .approval-round+.approval-round{margin-top:10px;padding-top:10px;border-top:1px solid #e3eaf0}
-.round-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 0 8px;border-bottom:1px solid #e8eef2}
-.round-title,.round-submission{display:flex;align-items:center;gap:10px}
-.round-title strong{color:#24485b;font-size:14px;font-weight:600}
-.round-submission{color:#718391;font-size:12px}
+.approval-panel .approval-round+.approval-round{margin-top:6px;padding-top:6px;border-top:1px solid #e3eaf0}
+.round-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0 5px;border-bottom:1px solid #e8eef2}
+.round-title,.round-submission{display:flex;align-items:center;gap:6px}
+.round-title strong{color:#24485b;font-size:12px;font-weight:600}
+.round-submission{color:#718391;font-size:11px}
 .round-submission time{font-variant-numeric:tabular-nums}
-.approval-entry{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:10px 0 4px}
-.approval-marker{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#eaf4f7;color:#17728a;font-size:13px;font-weight:600}
+.approval-entry{display:grid;grid-template-columns:18px minmax(0,1fr);gap:7px;padding:5px 0 3px}
+.approval-marker{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#eaf4f7;color:#17728a;font-size:12px;font-weight:600}
 .status-approved .approval-marker{background:#edf8e9;color:#4e982f}
 .status-returned .approval-marker,.status-rejected .approval-marker{background:#fff0ed;color:#d75a48}
-.approval-entry-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#34556a;font-size:13px}
-.approval-entry-head strong{font-size:14px;font-weight:600}
-.approval-entry-head time{margin-left:auto;color:#718391;font-size:12px;font-variant-numeric:tabular-nums}
-.approval-person{margin-top:3px;color:#718391;font-size:12px}
-.approval-comment{display:grid;grid-template-columns:60px minmax(0,1fr);gap:8px;margin:7px 0 0;padding:8px 10px;background:#fff7f3;color:#7e4331;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
-.approval-comment span{color:#a56a58;font-size:12px}
+.approval-entry-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#34556a;font-size:12px}
+.approval-entry-head strong{font-weight:600}
+.approval-entry-head time{margin-left:auto;color:#718391;font-size:11px;font-variant-numeric:tabular-nums}
+.approval-person{margin-top:2px;color:#718391;font-size:11px}
+.approval-comment{display:grid;grid-template-columns:52px minmax(0,1fr);gap:6px;margin:4px 0 0;padding:5px 7px;background:#fff7f3;color:#7e4331;border-radius:6px;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.approval-comment span{color:#a56a58}
 .cargo-summary{display:block;max-height:76px;overflow:auto;line-height:1.6}
 .detail-head{padding:16px 18px;border:1px solid var(--detail-border);border-radius:10px;background:#f3f8fa}
 .detail-statuses{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -2062,10 +2093,11 @@ onUnmounted(stopListening)
 @media(max-width:720px){.edit-form-grid{grid-template-columns:1fr}.contract-drawer-title{font-size:18px}.contract-detail :deep(.el-descriptions__label.el-descriptions__cell){width:104px}.contract-detail :deep(.el-descriptions__content.el-descriptions__cell){font-size:14px}}
 .recv {
   display: flex;
-  gap: 22px;
+  flex-wrap:wrap;
+  gap: 4px 16px;
   align-items: baseline;
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-size: 12px;
 }
 .not-mine {
   font-size: 12px;
@@ -2210,6 +2242,57 @@ onUnmounted(stopListening)
 </style>
 
 <style scoped>
-:global(.contract-workspace .el-drawer__header){margin-bottom:0;padding:16px 20px}:global(.contract-workspace .el-drawer__body){padding:0 20px 20px}.contract-detail [data-contract-items]>.detail-section-summary{display:none}.contract-overview{display:grid;grid-template-columns:2fr 1.2fr .7fr 1fr;gap:20px;padding:12px 0 16px;border-bottom:1px solid #e2e8f0}.contract-overview span{display:block;font-size:12px;color:#64748b;margin-bottom:4px}.contract-overview strong{font-size:18px;color:#173e54;font-weight:600}.contract-overview small{font-size:12px;font-weight:400}.overview-customer{min-width:0}.overview-customer strong{display:block;overflow-wrap:anywhere}.contract-tabs{margin-top:8px}.contract-tabs :deep(.el-tabs__header){margin-bottom:0}.contract-detail .detail-head{padding:10px 12px;margin-bottom:0}.contract-detail .detail-section{margin:0;border:0;border-radius:0}.contract-detail .detail-section-summary{min-height:38px;padding:0;background:white;cursor:default}.contract-detail .detail-section-summary::before{display:none}.contract-detail .section-summary-title{font-size:14px}.contract-detail .section-summary-meta{font-size:12px}.contract-detail .detail-section-body{padding:8px 0;border:0}.items-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.items-toolbar .el-input{max-width:330px}.items-toolbar>span{font-size:12px;color:#64748b;white-space:nowrap}.items-pagination{margin-top:10px}.contract-items-table :deep(.el-table__cell){padding:6px 0!important;font-variant-numeric:tabular-nums}.contract-detail .totals{margin:10px 0;padding:0}.contract-detail .total-value{font-size:18px}.contract-detail .snapshot{font-size:11px;padding:6px 10px}.contract-detail .basic-info-panel{padding:12px 0;border:0}.contract-detail :deep(.el-descriptions__cell){padding:8px 10px!important;font-size:13px!important}
-@media(max-width:720px){.contract-overview{grid-template-columns:1fr 1fr;gap:12px}.contract-overview strong{font-size:15px}.items-toolbar{flex-wrap:wrap}.items-pagination{overflow:auto}}
+:global(.contract-workspace .el-drawer__header){margin-bottom:0;padding:10px 20px}
+:global(.contract-workspace .el-drawer__body){padding:0 20px 20px}
+.contract-drawer-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
+.contract-drawer-heading .detail-statuses{gap:6px}
+.contract-drawer-heading .version-chip,.contract-drawer-heading .in-force{font-size:12px}
+.contract-detail .detail-head{gap:8px 16px;padding:0 0 8px;margin-bottom:0;border:0;border-bottom:1px solid var(--detail-border);border-radius:0;background:none}
+.contract-detail .detail-head .detail-actions{margin-left:auto}
+.contract-detail .detail-head :deep(.el-button){min-height:30px;padding:5px 10px;font-size:13px}
+.contract-overview{display:grid;flex:1 1 440px;grid-template-columns:minmax(0,1.7fr) minmax(105px,1fr) minmax(92px,1fr);gap:12px;min-width:0}
+.contract-overview span{display:block;font-size:11px;color:#64748b;margin-bottom:2px}
+.contract-overview strong{display:block;font-size:15px;color:#173e54;font-weight:600}
+.overview-customer{min-width:0}
+.overview-customer strong{overflow-wrap:anywhere}
+.contract-tabs{margin-top:4px}
+.contract-tabs :deep(.el-tabs__header){margin-bottom:0}
+.contract-tabs :deep(.el-tabs__item){height:34px;padding-inline:14px;font-size:13px}
+.contract-detail .detail-section{margin:0;border:0;border-radius:0}
+.contract-detail .detail-section-summary{min-height:30px;padding:0;border-bottom:1px solid #eef2f5;background:white;cursor:default}
+.contract-detail .detail-section-summary::before{display:none}
+.contract-detail .section-summary-title{font-size:13px}
+.contract-detail .section-summary-meta{font-size:11px}
+.contract-detail .detail-section-body{padding:6px 0;border:0}
+.contract-detail [data-contract-items]>.detail-section-summary{display:none}
+.items-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.items-toolbar .el-input{max-width:330px}
+.items-toolbar>span{font-size:12px;color:#64748b;white-space:nowrap}
+.contract-detail :deep(.el-table th.el-table__cell){height:30px;font-weight:600}
+.contract-items-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 14px;margin-top:8px}
+.items-pagination{max-width:100%;overflow-x:auto}
+.contract-items-footer .totals{margin:0 0 0 auto;padding:0;flex-wrap:wrap}
+.contract-items-footer .total-value{font-size:16px}
+.contract-detail .snapshot{margin-top:6px;padding:4px 0;background:transparent}
+.snapshot summary{width:fit-content;cursor:pointer;color:#3d6074}
+.snapshot summary .hint,.snapshot-exact .hint{margin-left:8px}
+.snapshot-exact{margin-top:4px;padding:6px 10px;border-radius:6px;background:var(--el-fill-color-light);overflow-wrap:anywhere}
+.contract-detail .basic-info-panel{margin-bottom:6px;padding:6px 0;border:0}
+.contract-detail :deep(.el-descriptions__cell){padding:5px 8px!important;font-size:12px!important}
+.contract-detail .upload-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.contract-files-section{scroll-margin-top:8px}
+.contract-detail :deep(.el-alert){padding:5px 8px}
+.contract-detail :deep(.el-alert__title){font-size:12px;line-height:1.45}
+.contract-detail :deep(.el-alert + .el-alert){margin-top:4px}
+.contract-detail :deep(.handoff-plan){margin:6px 0 10px}
+.contract-detail :deep(.handoff-plan .plan-heading){gap:6px 10px;flex-wrap:wrap}
+.contract-detail :deep(.handoff-plan .plan-heading p){margin:2px 0 6px}
+.contract-detail :deep(.handoff-plan .batch-names){gap:6px 8px;margin:6px 0}
+.contract-detail :deep(.handoff-plan .el-input__wrapper){min-height:26px}
+@media(max-width:720px){
+  .contract-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
+  .overview-customer{grid-column:1/-1}
+  .items-toolbar{flex-wrap:wrap}
+  .contract-detail .section-summary-meta{margin-left:0;text-align:left}
+}
 </style>
