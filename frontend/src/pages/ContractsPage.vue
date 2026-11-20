@@ -308,8 +308,14 @@
         <div class="items-toolbar"><el-input v-model="itemSearch" clearable placeholder="搜索产品、规格、编码或备注" aria-label="搜索合同产品"/><span>{{filteredContractItems.length}} / {{detail.items.length}} 项 · {{detail.version.currency}}</span></div>
         <el-table :data="pagedContractItems" height="clamp(220px, calc(100vh - 440px), 600px)" size="small" border stripe class="contract-items-table" row-key="lineNo">
           <el-table-column prop="lineNo" label="#" width="48" fixed/>
-          <el-table-column prop="productName" :label="t('contracts.product')" min-width="190" fixed show-overflow-tooltip/>
-          <el-table-column prop="spec" label="规格" min-width="245" show-overflow-tooltip/>
+          <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="400">
+            <template #default="{ row }">
+              <div class="contract-product-description">
+                <strong :title="row.productName">{{ row.productName || '—' }}</strong>
+                <span :title="row.spec">{{ row.spec || '—' }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column v-if="detail.items.some(i=>i.productCode)" prop="productCode" label="产品编码" min-width="110" show-overflow-tooltip/>
           <el-table-column v-if="detail.items.some(i=>i.hsCode)" prop="hsCode" :label="t('contracts.hsCode')" width="105"/>
           <el-table-column :label="t('contracts.qty')" width="100" align="right"><template #default="{row}">{{trimZeros(row.qty)}}</template></el-table-column>
@@ -1975,6 +1981,19 @@ onUnmounted(stopListening)
   color:#334e5e;
   font-size:14px;
 }
+.contract-product-description{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:2px;
+  line-height:1.4;
+}
+.contract-product-description>*{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.contract-product-description strong{font-weight:600}
+.contract-product-description span{color:#526777}
 .contract-detail :deep(.el-divider__text){
   color:var(--detail-title);
   font-size:16px;
