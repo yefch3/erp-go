@@ -31,6 +31,14 @@ it('keeps source quantities with different units separate and flags incomplete w
  expect(productTotal(products,'quantity','unit')).toBe('0.3 MT；3 PC')
  expect(productTotal(products,'weight')).toBe('6 kg（部分未填写）')
 })
+it('formats mixed quote totals without rounding decimal quantities or merging units',()=>{
+ const products=[
+  {...blankProduct(),quantity:'337.9999',unit:'MT'},
+  {...blankProduct(),quantity:'0.1002',unit:'MT'},
+  {...blankProduct(),quantity:'2400',unit:'PCS'},
+ ]
+ expect(productTotal(products,'quantity','unit',{locale:'en-US',separator:' + '})).toBe('338.1001 MT + 2,400 PCS')
+})
 
 describe('template-driven inquiry products',()=>{
  it('maps core and custom columns without losing hidden values',()=>{
