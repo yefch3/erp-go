@@ -77,12 +77,18 @@ func TestTravelReimbursementApprovalPaymentLifecycle(t *testing.T) {
 	if _, err = svc.ApplyTravelApproval(ctx, tenant, claim.ID, 7001, "APPROVED", "同意", 91); err != nil {
 		t.Fatal(err)
 	}
+	if err = svc.DeleteTravelReimbursement(ctx, tenant, claim.ID, owner); apierr.CodeFromError(err) != "PR_TRAVEL_DELETE_LOCKED" {
+		t.Fatalf("deleting approved claim err=%v", err)
+	}
 	claim, err = svc.MarkTravelPaid(ctx, tenant, claim.ID, "2026-09-13", "公司账户", "BANK-1", Operator{ID: 92, Name: "财务"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if claim.Status != "PAID" || claim.PaymentReference != "BANK-1" {
 		t.Fatalf("paid=%+v", claim)
+	}
+	if err = svc.DeleteTravelReimbursement(ctx, tenant, claim.ID, owner); apierr.CodeFromError(err) != "PR_TRAVEL_DELETE_LOCKED" {
+		t.Fatalf("deleting paid claim err=%v", err)
 	}
 	if _, err = svc.AttachTravelFile(ctx, tenant, claim.ID, key, "changed.pdf", "INVOICE", owner); apierr.CodeFromError(err) != "PR_TRAVEL_DOCUMENT_LOCKED" {
 		t.Fatalf("paid document mutation err=%v", err)

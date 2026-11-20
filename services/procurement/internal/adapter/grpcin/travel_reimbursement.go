@@ -33,6 +33,9 @@ func (h *OrderHandler) UpdateTravelReimbursement(ctx context.Context, r *prv1.Up
 	v, e := h.svc.UpdateTravelReimbursement(ctx, grpcx.TenantID(ctx), r.GetId(), travelInput(r.GetTripStart(), r.GetTripEnd(), r.GetOrigin(), r.GetDestination(), r.GetPurpose(), r.GetAmount(), r.GetCurrency(), r.GetPaymentAccount(), r.GetNote(), r.GetExpenseType(), r.GetExpenseDate()), travelOp(ctx))
 	return &prv1.UpdateTravelReimbursementResponse{Reimbursement: travelProto(v)}, e
 }
+func (h *OrderHandler) DeleteTravelReimbursement(ctx context.Context, r *prv1.DeleteTravelReimbursementRequest) (*prv1.DeleteTravelReimbursementResponse, error) {
+	return &prv1.DeleteTravelReimbursementResponse{}, h.svc.DeleteTravelReimbursement(ctx, grpcx.TenantID(ctx), r.GetId(), travelOp(ctx))
+}
 func (h *OrderHandler) ListTravelReimbursements(ctx context.Context, r *prv1.ListTravelReimbursementsRequest) (*prv1.ListTravelReimbursementsResponse, error) {
 	op := travelOp(ctx)
 	rows, e := h.svc.ListTravelReimbursements(ctx, grpcx.TenantID(ctx), op.ID, r.GetIncludeAll(), r.GetStatus())
