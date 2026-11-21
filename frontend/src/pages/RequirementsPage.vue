@@ -144,6 +144,14 @@
                   <strong>{{ t('inquiryWorkspace.detail.salesRemark') }}<span v-if="note.contractNo && note.contractNo !== activeBatch.label"> · {{ note.contractNo }}</span></strong>
                   <p>{{ note.text }}</p>
                 </section>
+                <div v-if="tab === 'quotes' && canAssign" class="quote-selection-toolbar">
+                  <span aria-live="polite">已勾选 <strong>{{ pendingSelections.length }}</strong> 项</span>
+                  <el-button
+                    size="small" type="primary"
+                    :disabled="!pendingSelections.length || dispatchingSelections"
+                    @click="selectionReviewOpen = true"
+                  >确认选定</el-button>
+                </div>
                 <el-table
                   v-if="tab === 'quotes'"
                   class="execution-quote-grid"
@@ -151,14 +159,19 @@
                   :data="factoryQuoteRows"
                   :row-class-name="factoryQuoteRowClass"
                   :span-method="factoryQuoteCellSpan"
-                  :max-height="480"
                   row-key="key"
                   size="small"
                   border
                 >
                   <el-table-column v-if="canAssign" label="选厂" width="62" fixed align="center">
                     <template #default="{row}">
-                      <el-checkbox v-if="row.quote" :model-value="isDispatched(row.quote.id)" :disabled="hasOpenAssignment(row.line.id)" :aria-label="`选择 ${row.quote.supplierName} · ${row.quote.createdByName || '采购员'}`" @change="openAssignment(row.line, row.quote)" />
+                      <el-checkbox
+                        v-if="row.quote"
+                        :model-value="isDispatched(row.quote.id) || quoteSelections[row.line.id]?.quote.id === row.quote.id"
+                        :disabled="dispatchingSelections || isDispatched(row.quote.id) || hasOpenAssignment(row.line.id)"
+                        :aria-label="`选择 ${row.quote.supplierName} · ${row.line.productName} ${row.line.spec} · ${row.quote.createdByName || '采购员'}`"
+                        @change="toggleQuoteSelection(row.line, row.quote, $event === true)"
+                      />
                     </template>
                   </el-table-column>
                   <el-table-column prop="line.productName" :label="t('inquiryWorkspace.list.productDetails')" min-width="250">
@@ -208,7 +221,7 @@
                   <template #empty>暂无可选定的工厂报价</template>
                 </el-table>
                 <section v-else class="assignment-workspace">
-                  <el-table :data="assignments" row-key="id" size="small" border class="execution-quote-grid" empty-text="暂无议价任务">
+                  <el-table v-if="assignments.length" :data="assignments" row-key="id" size="small" border class="execution-quote-grid">
                     <el-table-column label="产品明细" min-width="210">
                       <template #default="{row}"><strong>{{ row.productName }}</strong><div class="sub">{{ row.specification }}</div></template>
                     </el-table-column>
@@ -225,15 +238,32 @@
                       </template>
                     </el-table-column>
                   </el-table>
+                  <div v-else class="assignment-empty">
+                    <span>选定工厂报价后，议价任务会显示在这里。</span>
+                    <el-button v-if="canAssign" link type="primary" @click="replaceInquiryStep('quotes')">返回工厂报价与选定</el-button>
+                  </div>
                   <section v-if="draftOrderGroups.length" class="draft-preview">
-                    <div><strong>原已选定报价</strong><span>继续处理此批次原有的制单记录。</span></div>
-                    <label v-if="canOrder" class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择随单资料</label>
+                    <header class="draft-preview-heading"><h3>历史已选报价</h3></header>
+                    <el-table :data="legacyDraftRows" row-key="id" size="small" border stripe class="execution-quote-grid">
+                      <el-table-column prop="supplierName" label="工厂" min-width="140" />
+                      <el-table-column label="产品规格" min-width="235">
+                        <template #default="{row}">
+                          <ComparisonSpecification :product-name="row.line.productName" :text="requirementProductDescription(row.line)" hide-name />
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="待采购量" width="112" align="right">
+                        <template #default="{row}">{{ formatQtyTwo(row.line.availableQty) }} {{ row.line.uomCode }}</template>
+                      </el-table-column>
+                    </el-table>
                     <div v-if="pendingDraftFiles.length" class="execution-file-list">
                       <div v-for="(file,index) in pendingDraftFiles" :key="`${file.name}:${index}`">
                         <span>{{ file.name }}</span><span><el-button link @click="previewPendingFile(file)">预览</el-button><el-button link type="danger" @click="pendingDraftFiles.splice(index,1)">移除</el-button></span>
                       </div>
                     </div>
-                    <el-button v-if="canOrder" type="primary" :loading="saving" @click="createDraftOrders">生成采购草稿</el-button>
+                    <footer v-if="canOrder" class="draft-preview-actions">
+                      <label class="file-pick"><input type="file" multiple @change="selectDraftFiles" />选择随单资料</label>
+                      <el-button type="primary" :loading="saving" @click="createDraftOrders">生成采购草稿</el-button>
+                    </footer>
                   </section>
                 </section>
               </template>
@@ -244,21 +274,35 @@
     </template>
     <el-card v-else shadow="never" v-loading="loading"><el-empty description="未找到这条实单询价"><el-button @click="backToBatchList">返回列表</el-button></el-empty></el-card>
 
-    <el-dialog :model-value="!!assignmentTarget" title="选定工厂并派议价任务" width="min(530px, 94vw)" @close="assignmentTarget=null">
-      <template v-if="assignmentTarget">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="工厂">{{ assignmentTarget.quote.supplierName }}</el-descriptions-item>
-          <el-descriptions-item label="负责采购员">{{ assignmentTarget.quote.createdByName || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="规格">{{ assignmentTarget.line.productName }} · {{ assignmentTarget.line.spec }}</el-descriptions-item>
-          <el-descriptions-item label="待采购量">{{ formatQtyTwo(assignmentTarget.line.availableQty) }} {{ assignmentTarget.line.uomCode }}</el-descriptions-item>
-        </el-descriptions>
-        <el-form label-position="top" class="assignment-form" @submit.prevent>
-          <el-form-item label="议价备注"><el-input v-model="assignmentInstructions" type="textarea" :rows="3" placeholder="可填写目标价、交期或特殊数量要求" /></el-form-item>
-        </el-form>
-      </template>
+    <el-dialog
+      v-model="selectionReviewOpen" title="确认选厂并派发议价任务" width="min(980px, 94vw)"
+      :close-on-click-modal="false" :close-on-press-escape="!dispatchingSelections" :show-close="!dispatchingSelections"
+    >
+      <p class="selection-review-hint">确认后，由各报价的原录入人负责议价和生成草稿。</p>
+      <el-table :data="pendingSelections" row-key="line.id" size="small" border max-height="440" class="execution-quote-grid">
+        <el-table-column label="产品规格" min-width="190">
+          <template #default="{row}">
+            <ComparisonSpecification :product-name="row.line.productName" :text="requirementProductDescription(row.line)" hide-name />
+            <small v-if="row.error" class="selection-error" role="alert">{{ row.error }}</small>
+          </template>
+        </el-table-column>
+        <el-table-column prop="quote.supplierName" label="工厂" min-width="105" />
+        <el-table-column prop="quote.createdByName" label="负责采购员" min-width="105" />
+        <el-table-column label="单独要求（选填）" min-width="220">
+          <template #default="{row}">
+            <el-input
+              v-model="row.instructions" size="small"
+              :disabled="dispatchingSelections" :aria-label="`单独要求 ${row.line.productName} ${row.line.spec}`"
+              placeholder="如目标价或交期要求"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
       <template #footer>
-        <el-button :disabled="assignmentBusy" @click="assignmentTarget=null">取消</el-button>
-        <el-button type="primary" :loading="assignmentBusy" @click="dispatchAssignment">确认选定</el-button>
+        <el-button :disabled="dispatchingSelections" @click="selectionReviewOpen = false">返回勾选</el-button>
+        <el-button type="primary" :loading="dispatchingSelections" :disabled="!pendingSelections.length" @click="dispatchSelections">
+          确认派发 {{ pendingSelections.length }} 项
+        </el-button>
       </template>
     </el-dialog>
 
@@ -339,7 +383,17 @@
         <el-form-item label="预计交货日期"><el-date-picker v-model="quoteForm.expectedDate" value-format="YYYY-MM-DD" clearable /></el-form-item>
         <el-form-item label="付款条件" required><el-autocomplete v-model="quoteForm.paymentTerms" :fetch-suggestions="suggestPaymentTerms" :debounce="0" clearable placeholder="输入自定义条款或选择常用付款条件" style="width:100%"/></el-form-item>
         <el-form-item label="报价有效期"><el-date-picker v-model="quoteForm.validUntil" value-format="YYYY-MM-DD" clearable /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="quoteForm.remark" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="补充说明">
+          <div class="quote-supplement">
+            <el-button link type="primary" :aria-expanded="quoteSupplementOpen" @click="quoteSupplementOpen = !quoteSupplementOpen">
+              {{ quoteSupplementOpen ? '收起说明' : quoteForm.remark.trim() ? '查看或编辑已填说明' : '添加说明（选填）' }}
+            </el-button>
+            <el-input
+              v-if="quoteSupplementOpen" v-model="quoteForm.remark" type="textarea" :rows="2"
+              aria-label="工厂报价补充说明" placeholder="包装、发货或其他工厂条件"
+            />
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="quoteOpen=false">取消</el-button><el-button type="primary" :loading="savingQuote" @click="saveQuote">保存报价</el-button></template>
     </el-dialog>
@@ -494,7 +548,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { del, download, get, post, postDownload, saveBlob } from '../api'
+import { del, download, get, post, postDownload, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
@@ -718,6 +772,7 @@ const savingBatchQuote = ref(false)
 const batchQuoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
 const batchQuotePrices = reactive<Record<string, string>>({})
 const quoteOpen = ref(false)
+const quoteSupplementOpen = ref(false)
 const presalePreview = ref<Requirement | null>(null)
 const quotePreview = ref<{line:Requirement;quote:ExecutionQuote|null}|null>(null)
 const quoteLine = ref<Requirement | null>(null)
@@ -765,8 +820,16 @@ interface ExecutionAssignment {
   remark: string; poId: string; orderStatus: string; files?: AssignmentFile[]
 }
 const assignments = ref<ExecutionAssignment[]>([])
-const assignmentTarget = ref<{line: Requirement; quote: ExecutionQuote} | null>(null)
-const assignmentInstructions = ref('')
+interface QuoteSelection {
+  line: Requirement
+  quote: ExecutionQuote
+  instructions: string
+  error: string
+}
+const quoteSelections = ref<Record<string, QuoteSelection>>({})
+const pendingSelections = computed(() => Object.values(quoteSelections.value))
+const selectionReviewOpen = ref(false)
+const dispatchingSelections = ref(false)
 const assignmentBusy = ref(false)
 const negotiation = ref<ExecutionAssignment | null>(null)
 const negotiationForm = reactive({price:'', date:'', terms:'', remark:''})
@@ -789,6 +852,9 @@ const draftOrderGroups = computed(() => {
   }
   return [...grouped.values()]
 })
+const legacyDraftRows = computed(() => draftOrderGroups.value.flatMap(group =>
+  group.lines.map(({line, quote}) => ({id: quote.id, supplierName: group.supplierName, line})),
+))
 
 const detailOpen = ref(false)
 const detail = ref<Requirement | null>(null)
@@ -970,11 +1036,12 @@ async function handleFactoryQuoteAction(command: string, { line, quote }: Factor
   }
 }
 function openQuoteEditor(line: Requirement, quote: ExecutionQuote) {
+  quoteSupplementOpen.value = false
   quoteLine.value = line
   quoteEditing.value = quote
   Object.assign(quoteForm, {
     supplierId:Number(quote.supplierId),currency:quote.currency,unitPrice:quote.unitPrice,expectedDate:quote.expectedDate,
-    paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark,
+    paymentTerms:quote.paymentTerms,validUntil:quote.validUntil,remark:quote.remark ?? '',
   })
   quoteOpen.value = true
 }
@@ -1022,21 +1089,59 @@ async function loadAssignments(batch: PurchaseBatch) {
   assignments.value = pages.flatMap(page => page.assignments ?? [])
   if (negotiation.value) negotiation.value = assignments.value.find(task => task.id === negotiation.value?.id) ?? null
 }
-function openAssignment(line: Requirement, quote: ExecutionQuote) {
-  if (!canAssign || hasOpenAssignment(line.id)) return
-  assignmentTarget.value = {line, quote}
-  assignmentInstructions.value = ''
+function toggleQuoteSelection(line: Requirement, quote: ExecutionQuote, checked: boolean) {
+  if (!canAssign || dispatchingSelections.value || isDispatched(quote.id) || hasOpenAssignment(line.id)) return
+  if (checked) {
+    quoteSelections.value[line.id] = {line, quote, instructions: '', error: ''}
+  } else if (quoteSelections.value[line.id]?.quote.id === quote.id) {
+    delete quoteSelections.value[line.id]
+  }
 }
-async function dispatchAssignment() {
-  const target = assignmentTarget.value
-  if (!target || !activeBatch.value) return
-  assignmentBusy.value = true
+async function dispatchSelections() {
+  const batch = activeBatch.value
+  const selections = pendingSelections.value
+  if (!canAssign || !batch || !selections.length || dispatchingSelections.value) return
+  dispatchingSelections.value = true
+  const sent = new Set<string>()
   try {
-    await post('/execution-assignments', {action:'assign', requirement_id:target.line.id, quote_id:target.quote.id, instructions:assignmentInstructions.value})
-    assignmentTarget.value = null
-    await loadAssignments(activeBatch.value)
-    ElMessage.success('已选定工厂，议价任务已发给报价人')
-  } finally { assignmentBusy.value = false }
+    for (const selection of selections) {
+      selection.error = ''
+      try {
+        await post('/execution-assignments', {
+          action: 'assign',
+          requirement_id: selection.line.id,
+          quote_id: selection.quote.id,
+          instructions: selection.instructions.trim(),
+        }, quietErrors)
+        sent.add(selection.line.id)
+      } catch (error) {
+        selection.error = typeof error === 'object' && error && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : '派发未确认，请重试'
+      }
+    }
+    if (activeBatch.value !== batch) return
+    try {
+      await loadAssignments(batch)
+      // A response can be lost after the task was created. Confirm against the refreshed list.
+      for (const selection of selections) {
+        if (isDispatched(selection.quote.id)) sent.add(selection.line.id)
+      }
+    } catch {
+      ElMessage.warning('议价任务未能刷新，可重新打开详情查看派发结果')
+    }
+    if (activeBatch.value !== batch) return
+    for (const lineId of sent) delete quoteSelections.value[lineId]
+    if (sent.size === selections.length) {
+      selectionReviewOpen.value = false
+      ElMessage.success(`已派发 ${sent.size} 项议价任务`)
+      await replaceInquiryStep('negotiation')
+    } else {
+      ElMessage.warning(`已派发 ${sent.size} 项，另有 ${selections.length - sent.size} 项未确认，请查看行内提示`)
+    }
+  } finally {
+    dispatchingSelections.value = false
+  }
 }
 async function cancelAssignment(task: ExecutionAssignment) {
   try { await ElMessageBox.confirm('取消后可为这个规格重新选厂。', '取消议价任务', {type:'warning'}) } catch { return }
@@ -1343,7 +1448,8 @@ watch(detailBatchKey, () => {
   presalePreview.value = null
   assignments.value = []
   negotiation.value = null
-  assignmentTarget.value = null
+  quoteSelections.value = {}
+  selectionReviewOpen.value = false
   void load()
 })
 watch(() => route.query.step, () => {
@@ -1521,18 +1627,19 @@ onMounted(load)
   display: grid;
   gap: 8px;
   padding: 13px 16px;
-  border: 1px solid #cfe4ee;
+  border: 1px solid #143f5a;
   border-radius: 10px;
-  background: linear-gradient(110deg, #edf8ff, #f5fcf8);
+  background: linear-gradient(120deg, #143f5a, #176b87);
+  color: #fff;
 }
 .inquiry-detail-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.inquiry-detail-title h2 { margin: 0; color: #113c55; font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
+.inquiry-detail-title h2 { margin: 0; font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
 .inquiry-detail-title .el-button { margin-left: auto; }
-.inquiry-detail-source { margin: 0; color: #607787; font-size: 12px; overflow-wrap: anywhere; }
+.inquiry-detail-source { margin: 0; color: #d2e8f1; font-size: 12px; overflow-wrap: anywhere; }
 .inquiry-detail-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 24px; margin: 0; }
 .inquiry-detail-summary div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 7px; min-width: 0; }
-.inquiry-detail-summary dt { color: #607787; font-size: 12px; }
-.inquiry-detail-summary dd { margin: 0; color: #173a4d; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.inquiry-detail-summary dt { color: #d2e8f1; font-size: 12px; }
+.inquiry-detail-summary dd { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .inquiry-detail-card { overflow: visible; }
 .inquiry-detail-card :deep(.el-card__body) { padding: 0 12px 12px; }
 .inquiry-detail-tabs { position: relative; }
@@ -1585,13 +1692,11 @@ onMounted(load)
 .execution-file-list small { flex:none; color:#7a8e99; font-size:11px; }
 .execution-file-actions { display:flex; align-items:center; white-space:nowrap; }
 .draft-file-empty { display:block;margin-top:5px;color:#8a9aa4;font-size:11px; }
-.draft-preview { padding: 9px 11px; margin-top: 10px; border: 1px solid #bfe1d4; border-radius: 8px; background: #f7fcfa; font-size:12px; }
-.draft-preview > div:first-child { display: flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:6px; }
-.draft-preview > div:first-child strong { color:#174d45; font-size:14px; font-weight:600; }
-.draft-preview > div:first-child span { color:#687f7b; font-size:11px; }
-.draft-preview-row { display:grid; grid-template-columns:minmax(140px,.7fr) minmax(220px,1.3fr); gap:12px; padding:5px 9px; border-top:1px solid #dfeee8; color:#506b66; font-size:12px; }
-.draft-preview-row strong { color:#204f48; font-weight:600; }
-.draft-preview > .el-button { display:block; margin:8px 0 0 auto; }
+.draft-preview { margin-top: 10px; border: 1px solid #dce5ed; border-radius: 8px; overflow: hidden; }
+.draft-preview-heading { padding: 9px 12px; background: #f4f7fb; border-bottom: 1px solid #dce5ed; }
+.draft-preview-heading h3 { margin: 0; color: #294b60; font-size: 14px; }
+.draft-preview-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; }
+.draft-preview .execution-file-list { padding: 0 12px; }
 .supplier-factories {
   margin-left: 10px;
 }
@@ -1627,7 +1732,7 @@ onMounted(load)
 @media(max-width:900px){.requirements-page :deep(.batch-hierarchy-table .batch-secondary-column){display:none}.batch-product-summary__mobile-meta,.batch-mobile-source{display:block}.requirements-page :deep(.batch-hierarchy-table .el-table__body),.requirements-page :deep(.batch-hierarchy-table .el-table__header){width:100%!important}}
 @media(min-width:801px){.batch-mobile-stage{display:none}}
 @media(max-width:800px){.requirements-page :deep(.batch-hierarchy-table .batch-status-column){display:none}.batch-mobile-stage{display:inline-flex;margin-top:5px}}
-@media(max-width:800px){.pricing-category__head{align-items:flex-start;flex-direction:column;gap:8px}.pricing-category__head>div{align-items:flex-start;flex-direction:column;gap:4px}.category-calculation{grid-template-columns:1fr;padding:12px}.category-inputs{grid-template-columns:1fr}.execution-files>header{align-items:flex-start;flex-direction:column}.draft-preview>div:first-child{flex-direction:column}.draft-preview-row{grid-template-columns:1fr}.calculation-result{justify-content:flex-start}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
+@media(max-width:800px){.pricing-category__head{align-items:flex-start;flex-direction:column;gap:8px}.pricing-category__head>div{align-items:flex-start;flex-direction:column;gap:4px}.category-calculation{grid-template-columns:1fr;padding:12px}.category-inputs{grid-template-columns:1fr}.execution-files>header{align-items:flex-start;flex-direction:column}.calculation-result{justify-content:flex-start}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
 .qty {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -1682,6 +1787,13 @@ onMounted(load)
  .execution-selected-tag { margin-left: 4px; }
 .assignment-author { display:block;color:#607787; }
 .assignment-workspace { padding-top:4px; }
+.assignment-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 12px; color: #526a7b; font-size: 13px; }
+.assignment-empty :deep(.el-button) { padding: 0; min-height: 0; }
+.quote-selection-toolbar { display: flex; align-items: center; gap: 12px; padding: 7px 10px; background: #f4f8fb; color: #345367; font-size: 13px; }
+.selection-review-hint { margin: 0 0 10px; color: #526a7b; }
+.quote-supplement { display: grid; gap: 6px; width: 100%; }
+.quote-supplement .el-button { justify-self: start; }
+.selection-error { display: block; margin-top: 4px; color: var(--el-color-danger-dark-2); }
 .assignment-form { margin-top:14px; }
 .assignment-fields { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px; }
 .assignment-fields :deep(.el-date-editor),.assignment-fields :deep(.el-autocomplete) { width:100%; }
