@@ -156,7 +156,7 @@
         </colgroup>
         <thead>
          <tr>
-          <th scope="col">{{t('inquiryWorkspace.bulkSelection.include')}}</th>
+          <th scope="col" :title="t('inquiryWorkspace.bulkSelection.include')">{{t('inquiryWorkspace.bulkSelection.includeShort')}}</th>
           <th scope="col">{{t('inquiryWorkspace.list.productDetails')}}</th>
           <th scope="col">{{t('inquiryWorkspace.list.quantityUnit')}}</th>
           <th v-if="editor.body.quoteCategory==='REPROCESSING_CNY'" scope="col">{{t('inquiryWorkspace.quotes.exFactoryUnitPrice')}}</th>
@@ -986,7 +986,7 @@ watch(view,()=>void initial())
 .factory-quote-table-scroll { overflow-x:auto; border-block:1px solid var(--line); }
 .factory-quote-table { width:100%; min-width:620px; border-collapse:collapse; table-layout:fixed; font-size:12px; }
 .factory-quote-table.has-factory-price { min-width:720px; }
-.factory-quote-table__check { width:92px; }
+.factory-quote-table__check { width:48px; }
 .factory-quote-table__quantity { width:98px; }
 .factory-quote-table__price { width:108px; }
 .factory-quote-table__date { width:140px; }
@@ -998,11 +998,13 @@ watch(view,()=>void initial())
  vertical-align:middle;
 }
 .factory-quote-table th { height:32px; color:#496171; background:#f4f8fa; }
-.factory-quote-table :is(td,th):first-child { text-align:center; }
+.factory-quote-table :is(td,th):first-child { padding-inline:3px; text-align:center; }
+.factory-quote-table td:first-child :deep(.el-checkbox) { margin:0; }
 .factory-quote-table tbody tr:last-child td { border-bottom:0; }
 .factory-quote-table tbody tr:nth-child(even) { background:#fbfdfe; }
 .factory-quote-table tbody tr:hover { background:#f2f9fc; }
 .factory-quote-table :deep(.el-input),.factory-quote-table :deep(.el-date-editor) { width:100%; }
+.factory-quote-table :deep(.el-date-editor.el-input) { height:auto; }
 .factory-quote-table :deep(.el-input__wrapper) { min-height:28px; }
 .factory-quote-table .factory-quote-table__amount { white-space:nowrap; }
 .factory-quote-table .empty-products { text-align:center; }
