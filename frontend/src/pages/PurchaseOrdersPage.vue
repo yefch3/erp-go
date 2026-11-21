@@ -182,7 +182,7 @@
       <el-table :data="pending" size="small" max-height="320">
         <el-table-column :label="t('orders.product')" min-width="180">
           <template #default="{ row }">
-            <div>{{ row.productName }}</div>
+            <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/>
             <div class="sub">
               <template v-if="row.source === 'MANUAL'">
                 <el-tag size="small" type="info" effect="plain">{{ t('orders.manual') }}</el-tag>
@@ -272,10 +272,9 @@
       <FilePreviewDialog v-model="draftFilePreviewOpen" :source="draftFilePreviewSource" :title="draftFilePreviewTitle" :content-type="draftFilePreviewType" />
 
       <el-table :data="detailItems" size="small">
-        <el-table-column prop="contractItemRemark" label="合同明细备注" min-width="200" show-overflow-tooltip/>
         <el-table-column :label="t('orders.product')" min-width="180">
           <template #default="{ row }">
-            <div>{{ row.productName }}</div>
+            <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/>
             <div class="sub">
               <template v-if="row.source === 'MANUAL'">{{ t('orders.manual') }}</template>
               <template v-else>{{ row.contractNo }} · {{ row.customerName }}<template v-if="row.contractOwner"> · {{ t('orders.contractOwner') }} {{ row.contractOwner }}</template></template>
@@ -355,7 +354,7 @@
               <el-form-item :label="t('purchaseFulfillment.supplierDate')"><el-date-picker v-model="confirmationForm.expectedDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('purchaseFulfillment.datePending')" /></el-form-item>
             </el-form>
             <el-table :data="executionItems" size="small">
-              <el-table-column prop="productName" :label="t('orders.product')" min-width="240" show-overflow-tooltip />
+              <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="240"><template #default="{row}"><ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/></template></el-table-column>
               <el-table-column :label="t('purchaseFulfillment.quantity')" width="115" align="right"><template #default="{row}">{{ trim(row.qty) }} {{ row.uomCode }}</template></el-table-column>
               <el-table-column :label="t('orders.confirmedQty')" width="145" align="right"><template #default="{row}"><el-input v-if="editingConfirmation" v-model="confirmationQty[row.id]" size="small" /><span v-else>{{ confirmedLine(row) ? trim(confirmedLine(row)!.confirmedQty) : '—' }} {{ confirmedLine(row) ? row.uomCode : '' }}</span></template></el-table-column>
               <el-table-column :label="`采购单价 (${executing?.currency || '—'})`" width="155" align="right"><template #default="{row}">{{ confirmationMoney(row.unitPrice) }}</template></el-table-column>
@@ -511,7 +510,7 @@
           <el-form-item :label="t('quality.contactPhone')"><el-input v-model="qualityForm.contactPhone" /></el-form-item>
         </div>
         <el-table :data="qualityItems" border>
-          <el-table-column prop="productName" :label="t('quality.product')" min-width="240"><template #default="{row}"><b>{{row.productName}}</b><div class="sub">{{row.spec||'—'}}</div></template></el-table-column>
+          <el-table-column prop="productName" :label="t('quality.product')" min-width="240"><template #default="{row}"><ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/></template></el-table-column>
           <el-table-column :label="t('quality.orderedQty')" width="160"><template #default="{row}">{{trim(row.qty)}} {{row.uomCode}}</template></el-table-column>
           <el-table-column label="本次送检" width="190"><template #default="{row}"><el-tag type="success" effect="plain">整单 {{trim(row.qty)}} {{row.uomCode}}</el-tag></template></el-table-column>
         </el-table>
@@ -523,6 +522,9 @@
 </template>
 
 <script setup lang="ts">
+import ComparisonSpecification from '../components/ComparisonSpecification.vue'
+import {formatProductDescription} from '../lib/productDescription'
+
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -602,6 +604,12 @@ interface Order {
   contractVerifiedByName: string
   paymentRequestedAt: string
   paymentRequestedByName: string
+}
+function orderProductDescription(row:{productName:string;spec?:string;contractItemRemark?:string}){
+ return formatProductDescription(row.productName,[
+  {key:'specification',label:t('inquiryProducts.fields.specification'),value:row.spec},
+  {key:'contractItemRemark',label:'合同明细备注',value:row.contractItemRemark},
+ ])
 }
 interface OrderItem {
   id: string

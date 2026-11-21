@@ -76,8 +76,7 @@
               </button>
               <div v-show="isBatchProductExpanded(activeBatch.key, group.key)" class="detail-spec-list">
                 <article v-for="line in group.lines" :key="line.id" class="requote-product">
-                  <header class="requote-product-head"><div><strong>{{ line.spec || line.productCode || '未填写规格' }}</strong><span>{{ line.productCode || '未填写产品编码' }}</span></div><div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></div></header>
-                  <p v-if="line.contractItemRemark" class="source-sales-remark"><strong>合同明细备注：</strong>{{line.contractItemRemark}}</p>
+                  <header class="requote-product-head"><div class="requote-product-description"><ComparisonSpecification :product-name="line.productName" :text="requirementProductDescription(line)" hide-name/></div><div class="requote-product-status"><span>{{ quotesFor(line.id).length ? `已录入 ${quotesFor(line.id).length} 家报价` : '待录入报价' }}</span><b>{{ formatQtyTwo(line.availableQty) }} {{ line.uomCode }}</b></div></header>
                   <PresaleReference :json="line.presaleReferenceJson"/>
                   <div v-if="!line.presaleReferenceJson" class="presale-reference"><span>售前参考</span><strong>{{ line.supplierName || '无售前供应商' }}</strong><span>{{ displaySourcePrice(line) }}</span><span>{{ line.sourcePaymentTerms || '未填写付款条件' }}</span></div>
                   <div class="quote-options factory-quote-cards">
@@ -101,8 +100,7 @@
             <el-alert type="info" :closable="false" show-icon class="alert" title="选定工厂报价后，直接按报价币种和单价生成采购订单草稿。" />
               <el-table class="execution-quote-grid" :data="selectionQuoteRows" border max-height="480" row-key="key">
                 <el-table-column label="选定" width="75" fixed align="center"><template #default="{row}"><el-checkbox v-if="row.quote" :model-value="Number(selectedQuote[row.line.id])===Number(row.quote.id)" :disabled="!canOrder || !!selectingQuoteId" :aria-label="`选定 ${row.line.productName} ${row.line.spec} ${row.quote.supplierName}`" @change="toggleQuoteSelection(row.line,row.quote)" /></template></el-table-column>
-                <el-table-column label="产品" width="120" fixed><template #default="{row}">{{ row.line.productName || row.line.productCode || '—' }}</template></el-table-column>
-                <el-table-column label="规格" min-width="200"><template #default="{row}">{{ row.line.spec || '—' }}</template></el-table-column>
+                <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="300" fixed><template #default="{row}"><ComparisonSpecification :product-name="row.line.productName" :text="requirementProductDescription(row.line)" hide-name/></template></el-table-column>
                 <el-table-column label="数量" width="105" align="right"><template #default="{row}">{{ formatQtyTwo(row.line.availableQty) }} {{ row.line.uomCode }}</template></el-table-column>
                 <el-table-column label="报价工厂" min-width="120"><template #default="{row}">{{ row.quote?.supplierName }}</template></el-table-column>
                 <el-table-column label="报价单价" width="125" align="right"><template #default="{row}">{{ row.quote ? row.quote.currency + ' ' + formatMoney(row.quote.unitPrice) : '—' }}</template></el-table-column>
@@ -128,9 +126,7 @@
     <el-dialog :model-value="!!quotePreview" title="工厂报价详情" width="min(760px,94vw)" @close="quotePreview=null">
       <template v-if="quotePreview">
         <el-descriptions :column="2" border class="quote-preview-details">
-          <el-descriptions-item label="产品">{{ quotePreview.line.productName || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="产品编码">{{ quotePreview.line.productCode || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="规格" :span="2">{{ quotePreview.line.spec || '—' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('inquiryWorkspace.list.productDetails')" :span="2"><ComparisonSpecification :product-name="quotePreview.line.productName" :text="requirementProductDescription(quotePreview.line)" hide-name/></el-descriptions-item>
           <el-descriptions-item label="数量">{{ formatQtyTwo(quotePreview.line.availableQty) }} {{ quotePreview.line.uomCode }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ !quotePreview.quote ? '待报价' : quotePreview.quote.selected ? '已选定' : '已报价' }}</el-descriptions-item>
           <el-descriptions-item label="报价工厂">{{ quotePreview.quote?.supplierName || '待录入报价' }}</el-descriptions-item>
@@ -164,7 +160,7 @@
           <div class="batch-section-title"><strong>产品报价</strong><span>不供应的产品可以留空</span></div>
           <div class="batch-price-list">
             <div v-for="line in activeBatch?.lines ?? []" :key="line.id" class="batch-price-line">
-              <div><strong>{{ line.productName }}</strong><span>{{ line.spec || line.productCode || '未填写规格' }} · {{ trimQty(line.availableQty) }} {{ line.uomCode }}</span></div>
+              <div><ComparisonSpecification :product-name="line.productName" :text="requirementProductDescription(line)" hide-name/><span>{{ trimQty(line.availableQty) }} {{ line.uomCode }}</span></div>
               <el-input v-model="batchQuotePrices[line.id]" placeholder="不报价可留空"><template #append>/ {{ line.uomCode }}</template></el-input>
             </div>
           </div>
@@ -193,6 +189,7 @@
 
     <el-drawer v-model="detailOpen" :title="detail?.productName" size="620px">
       <el-descriptions :column="2" border size="small" class="desc">
+        <el-descriptions-item v-if="detail" :label="t('inquiryWorkspace.list.productDetails')" :span="2"><ComparisonSpecification :product-name="detail.productName" :text="requirementProductDescription(detail)" hide-name/></el-descriptions-item>
         <el-descriptions-item :label="t('requirements.source')">
           <el-tag size="small" :type="detail?.source === 'MANUAL' ? 'info' : 'primary'" effect="plain">
             {{ detail?.source === 'MANUAL' ? t('requirements.manual') : t('requirements.fromContract') }}
@@ -331,6 +328,9 @@
 </template>
 
 <script setup lang="ts">
+import ComparisonSpecification from '../components/ComparisonSpecification.vue'
+import {formatProductDescription} from '../lib/productDescription'
+
 import {suggestPaymentTerms} from "../lib/paymentTermOptions"
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -347,6 +347,13 @@ import FilePreviewDialog from '../components/FilePreviewDialog.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
 
+function requirementProductDescription(line:Requirement){
+ return formatProductDescription(line.productName,[
+  {key:'productCode',label:'产品编码',value:line.productCode},
+  {key:'specification',label:t('inquiryProducts.fields.specification'),value:line.spec},
+  {key:'contractItemRemark',label:'合同明细备注',value:line.contractItemRemark},
+ ])
+}
 interface Requirement {
   id: string
   contractId: string
@@ -1322,6 +1329,7 @@ onMounted(load)
 .batch-price-line strong { color:#173a4d }
 .batch-price-line span { margin-top:3px;color:#66727d;font-size:12px }
 .requote-product { margin-top:9px;padding:10px 12px;border:1px solid #dfeaf0;border-radius:9px;background:#fff }
+.requote-product-description { min-width:0; flex:1; }
 .requote-product-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:10px }
 .requote-product-head strong { display:block;color:#29495b;font-size:15px;font-weight:600 }
 .requote-product-head span { display:block;margin-top:3px;color:#66727d;font-size:12px }

@@ -25,7 +25,7 @@ async function copy(){try{await navigator.clipboard.writeText(props.text);ElMess
 <style scoped>
 .comparison-specification{display:grid;gap:4px;min-width:0;text-align:left;line-height:1.5}
 .comparison-specification>strong{font-size:13px;color:#173f52;overflow-wrap:anywhere}
-.specification-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-size:12px;line-height:1.5;color:#496575;white-space:pre-wrap;overflow-wrap:anywhere}
+.specification-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-size:12px;line-height:1.5;color:#496575;white-space:normal;overflow-wrap:anywhere}
 .specification-more{justify-self:start;height:auto;font-size:11px;padding:0}
-.specification-full{max-height:55vh;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75;margin-top:12px;padding:12px;background:#f5f8fa;border:1px solid #e0e8ed;border-radius:4px;user-select:text}
+.specification-full{max-height:55vh;overflow-y:auto;white-space:normal;overflow-wrap:anywhere;line-height:1.75;margin-top:12px;padding:12px;background:#f5f8fa;border:1px solid #e0e8ed;border-radius:4px;user-select:text}
 </style>

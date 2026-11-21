@@ -9,7 +9,7 @@
     <el-table-column v-if="view!=='LOGISTICS'&&view!=='QUOTATIONS'" type="expand" width="1" class-name="hidden-native-expander">
      <template #default="{row}">
       <div v-if="view!=='SALES'" class="hierarchy-context"><span><b>{{t('inquiryWorkspace.customer')}}</b>{{row.body.customer||'—'}}</span><span><b>{{t('inquiryWorkspace.owner')}}</b>{{row.owner||'—'}}</span></div>
-      <div class="product-hierarchy"><section v-for="group in inquiryProductGroups(row)" :key="group.key" class="product-group"><button type="button" class="product-group__heading" :aria-expanded="isProductGroupExpanded(row.id,group.key)" @click="toggleProductGroup(row.id,group.key)"><el-icon class="product-group__chevron" :class="{'is-expanded':isProductGroupExpanded(row.id,group.key)}"><ArrowDown/></el-icon><strong>{{group.name}}</strong><span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span><span class="product-group__quantity">{{t('inquiryWorkspace.list.totalQuantity')}} {{groupedQuantity(group.products)}}</span></button><div v-show="isProductGroupExpanded(row.id,group.key)" class="specification-list"><div class="specification-list__header"><span>{{t('inquiryWorkspace.list.materialStandard')}}</span><span>{{t('inquiryWorkspace.list.sizeSpecification')}}</span><span>{{t('inquiryWorkspace.list.quantityUnit')}}</span></div><article v-for="specification in group.specifications" :key="specification.key" class="specification-row"><div class="specification-row__material" :title="materialSummary(specification.representative)">{{materialSummary(specification.representative)||'—'}}</div><div class="specification-row__size" :title="namedSpecification(specification.representative)">{{namedSpecification(specification.representative)}}</div><strong class="specification-row__quantity">{{groupedQuantity(specification.products)}}</strong><div v-if="specificationAuxiliaryFields(specification.representative,row.body.template?.fields||[]).length" class="specification-row__auxiliary"><span v-for="field in specificationAuxiliaryFields(specification.representative,row.body.template?.fields||[])" :key="field.key"><b>{{listFieldLabel(field)}}</b>{{field.value}}</span></div></article></div></section><div v-if="!row.body.products?.length" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</div></div>
+      <div class="product-hierarchy"><section v-for="group in inquiryProductGroups(row)" :key="group.key" class="product-group"><button type="button" class="product-group__heading" :aria-expanded="isProductGroupExpanded(row.id,group.key)" @click="toggleProductGroup(row.id,group.key)"><el-icon class="product-group__chevron" :class="{'is-expanded':isProductGroupExpanded(row.id,group.key)}"><ArrowDown/></el-icon><strong>{{group.name}}</strong><span>{{t('inquiryWorkspace.list.specificationCount',{count:group.specifications.length})}}</span><span class="product-group__quantity">{{t('inquiryWorkspace.list.totalQuantity')}} {{groupedQuantity(group.products)}}</span></button><div v-show="isProductGroupExpanded(row.id,group.key)" class="specification-list"><div class="specification-list__header"><span>{{t('inquiryWorkspace.list.productDetails')}}</span><span>{{t('inquiryWorkspace.list.quantityUnit')}}</span></div><article v-for="specification in group.specifications" :key="specification.key" class="specification-row"><ComparisonSpecification :product-name="group.name" :text="inquiryProductDescription(specification.representative,row.body.template?.fields)" hide-name/><strong class="specification-row__quantity">{{groupedQuantity(specification.products)}}</strong></article></div></section><div v-if="!row.body.products?.length" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</div></div>
      </template>
     </el-table-column>
     <el-table-column v-for="column in listColumnOrder.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="view==='LOGISTICS'?'center':column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
@@ -78,7 +78,7 @@
         </template>
        </InquiryProducts>
       </section>
-      <section v-else class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
+      <section v-else class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" :inline-description="view!=='LOGISTICS'" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
      <el-tab-pane v-if="view!=='SALES'" :label="view==='QUOTATIONS'?t('inquiryWorkspace.quoteComparisonCalculation'):t('inquiryWorkspace.detail.submittedQuotes',{count:item.quotes?.length||0})" name="quotes">
      <div v-if="department&&item.body.remark?.trim()" class="sales-remark sales-remark--quotes"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><ClampedText class="sales-remark__text" :text="item.body.remark.trim()" :lines="procurementQuoteEditing?2:3"/></div>
      <section v-if="!editor&&view!=='QUOTATIONS'" class="business-card quotes-section" :class="{'procurement-quotes':view==='PROCUREMENT'}">
@@ -168,20 +168,7 @@
          <tr v-for="product in pagedQuoteProducts" :key="product.id" class="quote-specification-row">
           <td><el-checkbox :model-value="selectedProcurementIds.has(product.id)" :aria-label="`${t('inquiryWorkspace.bulkSelection.include')}: ${product.product}`" @change="toggleProduct(product.id,!!$event)"/></td>
           <td>
-           <el-popover trigger="click" placement="bottom-start" :width="360">
-            <template #reference>
-             <button type="button" class="factory-quote-description" :title="productSummary(product)">
-              <strong>{{product.product||'—'}}</strong>
-              <span v-if="quoteSpecification(product)">{{quoteSpecification(product)}}</span>
-             </button>
-            </template>
-            <div class="factory-quote-description__full">
-             <strong>{{product.product||'—'}}</strong>
-             <div v-if="materialSummary(product)">{{materialSummary(product)}}</div>
-             <div v-if="quoteSpecification(product)">{{quoteSpecification(product)}}</div>
-             <div v-for="field in specificationAuxiliaryFields(product,item.body.template?.fields)" :key="field.key">{{listFieldLabel(field)}} {{field.value}}</div>
-            </div>
-           </el-popover>
+           <ComparisonSpecification :product-name="product.product" :text="inquiryProductDescription(product,templateFields)" hide-name/>
           </td>
           <td class="factory-quote-table__amount"><strong>{{groupedQuantity([product])}}</strong></td>
           <td v-if="editor.body.quoteCategory==='REPROCESSING_CNY'">
@@ -256,7 +243,7 @@
     </el-form>
     <template #footer><el-button @click="uploadOpen=false">{{t('common.cancel')}}</el-button><el-button @click="startManualInquiry">{{t('inquiryWorkspace.manualEntry')}}</el-button><el-button type="primary" :loading="busy" @click="importInquiry">{{t('procurementIntakes.uploadAndReview')}}</el-button></template>
    </el-dialog>
-   <el-dialog :model-value="!!preview" :title="t('inquiryWorkspace.quotes.fullQuote')" width="92%" @close="preview=null"><template v-if="preview&&item"><div class="toolbar"><el-button v-for="a in preview.body.attachments" :key="a.key" link @click="download(a.key)">{{a.name}}</el-button></div><el-descriptions :column="3" border><el-descriptions-item v-if="preview.kind==='PROCUREMENT'" :label="t('inquiryWorkspace.quotes.quoteCategory')">{{quoteCategoryLabel(preview.body.quoteCategory)}}</el-descriptions-item><el-descriptions-item v-for="f in quoteDisplayFields" :key="f.key" :label="f.label">{{preview.body[f.key]||'—'}}</el-descriptions-item></el-descriptions><el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" :max-height="480"><el-table-column :label="t('inquiryProducts.fields.product')"><template #default="{row}">{{productFor(row.productId)?.product}}</template></el-table-column><el-table-column :label="t('inquiryProducts.fields.specification')"><template #default="{row}">{{productFor(row.productId)?.specification}}</template></el-table-column><el-table-column v-if="preview.body.quoteCategory==='REPROCESSING_CNY'" prop="factoryPrice" :label="t('inquiryWorkspace.quotes.exFactoryUnitPrice')"/><el-table-column prop="price" :label="quotePriceLabel(preview.body.quoteCategory)"/><el-table-column :label="t('inquiryWorkspace.quotes.deliveryDate')"><template #default="{row}">{{row.delivery||preview.body.delivery||'—'}}</template></el-table-column><el-table-column prop="remark" :label="t('inquiryProducts.fields.remark')"/></el-table><template v-else><p>{{t('inquiryWorkspace.quotes.applicableCargo')}}：{{preview.body.cargoIds?.length?preview.body.cargoIds.map(id=>productFor(id)?.product).join('、'):t('inquiryWorkspace.quotes.wholeShipment')}}</p><h4>{{t('inquiryWorkspace.quotes.productOceanFreight')}}</h4>
+   <el-dialog :model-value="!!preview" :title="t('inquiryWorkspace.quotes.fullQuote')" width="92%" @close="preview=null"><template v-if="preview&&item"><div class="toolbar"><el-button v-for="a in preview.body.attachments" :key="a.key" link @click="download(a.key)">{{a.name}}</el-button></div><el-descriptions :column="3" border><el-descriptions-item v-if="preview.kind==='PROCUREMENT'" :label="t('inquiryWorkspace.quotes.quoteCategory')">{{quoteCategoryLabel(preview.body.quoteCategory)}}</el-descriptions-item><el-descriptions-item v-for="f in quoteDisplayFields" :key="f.key" :label="f.label">{{preview.body[f.key]||'—'}}</el-descriptions-item></el-descriptions><el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" :max-height="480"><el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="310"><template #default="{row}"><ComparisonSpecification :product-name="productFor(row.productId)?.product||''" :text="inquiryProductDescription(productFor(row.productId),templateFields)" hide-name/></template></el-table-column><el-table-column v-if="preview.body.quoteCategory==='REPROCESSING_CNY'" prop="factoryPrice" :label="t('inquiryWorkspace.quotes.exFactoryUnitPrice')"/><el-table-column prop="price" :label="quotePriceLabel(preview.body.quoteCategory)"/><el-table-column :label="t('inquiryWorkspace.quotes.deliveryDate')"><template #default="{row}">{{row.delivery||preview.body.delivery||'—'}}</template></el-table-column><el-table-column prop="remark" :label="t('inquiryProducts.fields.remark')"/></el-table><template v-else><p>{{t('inquiryWorkspace.quotes.applicableCargo')}}：{{preview.body.cargoIds?.length?preview.body.cargoIds.map(id=>productFor(id)?.product).join('、'):t('inquiryWorkspace.quotes.wholeShipment')}}</p><h4>{{t('inquiryWorkspace.quotes.productOceanFreight')}}</h4>
 <el-table :data="preview.body.freightRates" :max-height="360">
  <el-table-column :label="t('inquiryProducts.fields.product')" min-width="170"><template #default="{row}">{{productFor(row.productId)?.product||'—'}}</template></el-table-column>
  <el-table-column :label="t('inquiryProducts.fields.specification')" min-width="180"><template #default="{row}">{{productFor(row.productId)?.specification||'—'}}</template></el-table-column>
@@ -280,6 +267,8 @@ import {ArrowDown,Back,DocumentChecked,Download,Refresh,RefreshLeft} from '@elem
 import {get,post,quietErrors,saveBlob} from '../api'
 import {isAxiosError} from 'axios'
 import InquiryProducts from '../components/InquiryProducts.vue'
+import ComparisonSpecification from '../components/ComparisonSpecification.vue'
+import {comparisonProductDescription,comparisonProductFields} from '../lib/comparisonSpecifications'
 import CustomerOfferEditor from '../components/CustomerOfferEditor.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
@@ -287,12 +276,12 @@ import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import {copyInquiryQuote,personalQuotePresentation} from '../lib/personalQuoteStatus'
 import {emptyProcurementPrice,procurementPricesForSave,quoteSelectionState} from '../lib/procurementQuoteSelection'
-import type {InquiryTemplate} from '../lib/inquiryTemplates'
+import type {InquiryTemplate,TemplateField as ProductTemplateField} from '../lib/inquiryTemplates'
 import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
 import {buildInquiryProductsXlsx,exportableInquiryFields,safeInquiryExportName} from '../lib/inquiryProductExport'
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type FreightRate,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type QuoteBody,type Product} from '../lib/inquiryWorkspace'
-import {dimensionFields,groupedQuantity,groupInquiryProducts,materialSummary,productSummary,specificationAuxiliaryFields,specificationDisplay,type InquiryListField} from '../lib/inquiryList'
+import {groupedQuantity,groupInquiryProducts,productSummary} from '../lib/inquiryList'
 import {procurementQuoteCategories,procurementQuoteCategory,procurementQuoteCurrency} from '../lib/quoteClassification'
 import {fillFreightTable,freightFillPatch,freightSelection,missingFreightPrices,pricedFreightRates,selectAllFreightRates,undoFreightFill,unselectAllFreightRates,type FreightFillInput,type FreightFillUndo} from '../lib/freightRateFill'
 import {afterFailure,afterSuccess,idleGate,mayAttempt,shouldWarn,type RefreshGate} from '../lib/refreshBackoff'
@@ -482,12 +471,13 @@ function displayInquiryNumber(row:Inquiry){
  const match=/^SC-(\d{2})(\d{2})(\d{2})-(\d+)$/.exec(row.number||'')
  return match?`INQ-${match[1]}${match[2]}${match[3]}-${match[4].slice(-3).padStart(3,'0')}`:row.number
 }
-function listFieldLabel(field:InquiryListField){const key=`inquiryProducts.fields.${field.label}`;return te(key)?t(key):field.label}
-function namedSpecification(product:Product){const dimensions=dimensionFields(product);if(!dimensions.length)return product.specification.trim()||'—';return dimensions.map(field=>`${listFieldLabel(field).replace(/\s*[（(]mm[）)]/gi,'')} ${field.value}`).join(' × ')}
-function quoteSpecification(product:Product){
- const display=specificationDisplay(product)
- if(display.source==='dimensions')return namedSpecification(product)
- return display.source==='specification'?display.value:''
+function inquiryProductDescription(product:Product|undefined,fields:ProductTemplateField[]=[]){
+ if(!product)return '—'
+ const values=comparisonProductFields(product,fields,key=>{
+  const localeKey=`inquiryProducts.fields.${key}`
+  return te(localeKey)?t(localeKey):key
+ })
+ return comparisonProductDescription(product,values)
 }
 async function handleListAction(action:string,row:Inquiry){
  if(action==='view'){await open(row);return}
@@ -743,15 +733,11 @@ watch(view,()=>void initial())
 .product-group__chevron { color:#648395; transition:transform .2s ease; }
 .product-group__chevron.is-expanded { transform:rotate(180deg); }
 .specification-list { border-top:1px solid #e2edf2; }
-.specification-list__header,.specification-row { display:grid; grid-template-columns:minmax(190px,.8fr) minmax(300px,1.35fr) minmax(135px,.55fr); column-gap:22px; align-items:center; padding:0 38px; }
+.specification-list__header,.specification-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(135px,auto); column-gap:22px; align-items:center; padding:0 38px; }
 .specification-list__header { min-height:34px; color:#7a8b98; background:#f8fbfc; font-size:12px; font-weight:650; }
 .specification-row { min-height:58px; padding-top:9px; padding-bottom:9px; border-top:1px solid #edf2f5; }
 .specification-list__header+.specification-row { border-top:0; }
-.specification-row__material,.specification-row__size { overflow:hidden; color:#334b5c; text-overflow:ellipsis; white-space:nowrap; }
 .specification-row__quantity { color:#173f56; text-align:right; white-space:nowrap; }
-.specification-row__auxiliary { display:flex; grid-column:1/-1; gap:5px 16px; flex-wrap:wrap; margin-top:7px; color:#718390; font-size:12px; }
-.specification-row__auxiliary span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.specification-row__auxiliary b { margin-right:5px; color:#536d7d; font-weight:600; }
 .empty-products { grid-column:1/-1; padding:18px; color:#8797a3; text-align:center; }
 .list-more-actions { min-width:108px; color:#176b87; border-color:#b7d8e5; background:#fff; }
 :global(.danger-menu-item) { color:#d34e4e!important; }
@@ -759,8 +745,8 @@ watch(view,()=>void initial())
 .inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain) { color:#159fdc; border-color:#9bdcff; background:#f4fbff; }
 .inquiry-workspace--operations :deep(.inquiry-list-table .el-button--primary.is-plain:hover) { color:#141817; border-color:#4ac1ff; background:#4ac1ff; }
 .inquiry-workspace--operations .list-pagination { justify-content:flex-end; margin:0; }
-@media(max-width:1100px){.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.specification-list__header,.specification-row{grid-template-columns:minmax(150px,.8fr) minmax(240px,1.35fr) minmax(120px,.55fr);padding-left:28px;padding-right:28px}}
-@media(max-width:900px){.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-secondary-column),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-time-column){display:none}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy th.el-table__cell),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy td.el-table__cell){padding-top:9px;padding-bottom:9px}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__body),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__header){width:100%!important}.hierarchy-context{gap:8px 18px;padding-left:16px;padding-right:16px}.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.product-group__quantity{grid-column:2/-1;margin-top:-4px;text-align:left}.specification-list__header,.specification-row{grid-template-columns:minmax(110px,.8fr) minmax(170px,1.2fr) auto;column-gap:10px;padding-left:16px;padding-right:16px}.specification-row__auxiliary{gap:4px 12px}}
+@media(max-width:1100px){.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.specification-list__header,.specification-row{grid-template-columns:minmax(0,1fr) minmax(120px,auto);padding-left:28px;padding-right:28px}}
+@media(max-width:900px){.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-secondary-column),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .hierarchy-time-column){display:none}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy th.el-table__cell),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy td.el-table__cell){padding-top:9px;padding-bottom:9px}.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__body),.inquiry-workspace--operations :deep(.inquiry-list-table--hierarchy .el-table__header){width:100%!important}.hierarchy-context{gap:8px 18px;padding-left:16px;padding-right:16px}.product-hierarchy{padding:8px}.product-group__heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.product-group__quantity{grid-column:2/-1;margin-top:-4px;text-align:left}.specification-list__header,.specification-row{grid-template-columns:minmax(0,1fr) auto;column-gap:10px;padding-left:16px;padding-right:16px}}
 .inquiry-workspace :deep(.el-table) { border: 1px solid var(--line); border-radius: 12px; --el-table-header-bg-color: #f4f8fa; --el-table-header-text-color: #486174; --el-table-row-hover-bg-color: #f0f8fa; }
 .inquiry-workspace :deep(.el-table th.el-table__cell) { height: 48px; font-weight: 600; }
 .inquiry-workspace :deep(.el-table td.el-table__cell) { padding: 13px 0; color: #334155; }
@@ -1019,29 +1005,6 @@ watch(view,()=>void initial())
 .factory-quote-table :deep(.el-input),.factory-quote-table :deep(.el-date-editor) { width:100%; }
 .factory-quote-table :deep(.el-input__wrapper) { min-height:28px; }
 .factory-quote-table .factory-quote-table__amount { white-space:nowrap; }
-.factory-quote-description {
- display:block;
- width:100%;
- min-width:0;
- padding:0;
- border:0;
- color:#173f56;
- background:none;
- font:inherit;
- cursor:pointer;
- text-align:left;
-}
-.factory-quote-description>* {
- display:-webkit-box;
- overflow:hidden;
- overflow-wrap:anywhere;
- line-height:18px;
- -webkit-box-orient:vertical;
-}
-.factory-quote-description strong { -webkit-line-clamp:3; }
-.factory-quote-description:has(span) strong { -webkit-line-clamp:2; }
-.factory-quote-description span { color:#536d7d; -webkit-line-clamp:1; }
-.factory-quote-description__full { display:grid; gap:4px; overflow-wrap:anywhere; white-space:pre-wrap; }
 .factory-quote-table .empty-products { text-align:center; }
 .factory-quote-editor>p,.factory-quote-editor>.el-pagination { margin:6px 12px; font-size:12px; }
 .factory-quote-editor .factory-quote-footer {

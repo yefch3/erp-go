@@ -373,10 +373,7 @@
           <el-table-column prop="lineNo" label="#" width="48" fixed/>
           <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="400">
             <template #default="{ row }">
-              <div class="contract-product-description">
-                <strong :title="row.productName">{{ row.productName || '—' }}</strong>
-                <span :title="row.spec">{{ row.spec || '—' }}</span>
-              </div>
+              <ComparisonSpecification :product-name="row.productName" :text="formatProductDescription(row.productName,[{key:'specification',label:t('inquiryProducts.fields.specification'),value:row.spec},{key:'remarks',label:t('inquiryProducts.fields.remarks'),value:row.remark}])" hide-name/>
             </template>
           </el-table-column>
           <el-table-column v-if="detail.items.some(i=>i.productCode)" prop="productCode" label="产品编码" min-width="110" show-overflow-tooltip/>
@@ -385,7 +382,6 @@
           <el-table-column prop="uomCode" label="单位" width="65"/>
           <el-table-column :label="t('contracts.unitPrice')" width="115" align="right"><template #default="{row}">{{formatDetailDecimal(row.unitPrice)}}</template></el-table-column>
           <el-table-column :label="t('contracts.lineAmount')" width="125" align="right"><template #default="{row}">{{formatDetailDecimal(row.amount)}}</template></el-table-column>
-          <el-table-column v-if="detail.items.some(i=>i.remark)" prop="remark" label="备注" min-width="200" show-overflow-tooltip/>
         </el-table>
         <div class="contract-items-footer">
           <el-pagination v-model:current-page="itemPage" v-model:page-size="itemPageSize" :page-sizes="[25,50,100,200]" :total="filteredContractItems.length" :layout="filteredContractItems.length > itemPageSize ? 'total, sizes, prev, pager, next' : 'total, sizes'" size="small" class="items-pagination"/>
@@ -836,6 +832,8 @@
 </template>
 
 <script setup lang="ts">
+import ComparisonSpecification from '../components/ComparisonSpecification.vue'
+import {formatProductDescription} from '../lib/productDescription'
 import ColumnFillRegion from '../components/ColumnFillRegion.vue'
 import ContractHandoffPlan from '../components/ContractHandoffPlan.vue'
 import { shippingStatusLabel } from '../shipping'
@@ -2019,19 +2017,6 @@ onUnmounted(stopListening)
   line-height:22px;
   font-size:12px;
 }
-.contract-product-description{
-  display:grid;
-  grid-template-columns:minmax(0,1fr);
-  gap:1px;
-  line-height:16px;
-}
-.contract-product-description>*{
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.contract-product-description strong{font-weight:500}
-.contract-product-description span{color:#526777}
 .contract-detail :deep(.el-divider__text){
   color:var(--detail-title);
   font-size:16px;

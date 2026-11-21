@@ -57,13 +57,18 @@ describe('mixed-name description display',()=>{
   expect(comparisonProductDescription(p,[])).toBe(mixed)
   expect(p.product).toBe(mixed)
  })
- it('appends separate specifications and populated supplemental fields below the raw name',()=>{
-  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'提供材质报告'},{key:'packaging',label:'包装',value:'防潮'}])).toBe(mixed+'\n规格: 提供材质报告\n包装: 防潮')
+ it('joins named fields with commas while retaining field order',()=>{
+  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'提供材质报告'},{key:'packaging',label:'包装',value:'防潮'}])).toBe(mixed+'，规格：提供材质报告，包装：防潮')
  })
  it('removes only exactly repeated specification content and repeated instances of the same field',()=>{
-  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:mixed},{key:'weight',label:'重量',value:'20'},{key:'weight',label:'重量',value:'20'},{key:'volume',label:'体积',value:'20'}])).toBe(mixed+'\n重量: 20\n体积: 20')
+  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:mixed},{key:'weight',label:'重量',value:'20'},{key:'weight',label:'重量',value:'20'},{key:'volume',label:'体积',value:'20'}])).toBe(mixed+'，重量：20，体积：20')
  })
  it('does not guess or remove a specification that is only a substring of the raw name',()=>{
-  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'0.28×1220 MM.'}])).toContain('\n规格: 0.28×1220 MM.')
+  expect(comparisonProductDescription(product('p1',mixed),[{key:'specification',label:'规格',value:'0.28×1220 MM.'}])).toContain('，规格：0.28×1220 MM.')
+ })
+ it('formats legacy multiline descriptions without updating the stored text',()=>{
+  const p=product('p1','HOT ROLL COIL\n材质/标准: NCH-203')
+  expect(comparisonProductDescription(p,[{key:'length',label:'长度',value:' '},{key:'remark',label:'备注',value:'覆膜\r\n防潮'}])).toBe('HOT ROLL COIL，材质/标准: NCH-203，备注：覆膜，防潮')
+  expect(p.product).toBe('HOT ROLL COIL\n材质/标准: NCH-203')
  })
 })
