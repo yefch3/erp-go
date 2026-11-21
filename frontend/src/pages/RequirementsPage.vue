@@ -13,6 +13,10 @@
           @keyup.enter="reload"
           @clear="reload"
         />
+        <el-select v-model="quoteStatusFilter" :aria-label="t('requirements.quoteStatus.label')" style="width: 150px" @change="reload">
+          <el-option :label="t('requirements.quoteStatus.all')" value="ALL"/>
+          <el-option v-for="status in quoteStatuses" :key="status" :label="t(`requirements.quoteStatus.${status}`)" :value="status"/>
+        </el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
         <el-button v-if="requirementColumns.customized.value" link @click="requirementColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
@@ -21,17 +25,25 @@
         <el-table-column v-for="column in requirementColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
           <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="requirementColumns.canMoveLeft(column.key)" :can-move-right="requirementColumns.canMoveRight(column.key)" @move-left="requirementColumns.moveBy(column.key,-1)" @move-right="requirementColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
-            <template v-if="column.key==='batch'"><div class="batch-no">{{ row.label }}</div><div class="sub">{{ row.customerName || '—' }}</div></template>
-            <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked"><span class="batch-product-summary__main"><span class="batch-product-summary__text">{{ batchProductSummary(row) }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span><small>{{ row.productGroups.length }} 种产品 · {{ row.lines.length }} 种规格</small></div>
-            <template v-else-if="column.key==='progress'"><span>进入详情查看进度</span><div class="sub">录入、比较并选定工厂报价</div><el-tag class="batch-mobile-stage" type="warning" effect="plain" size="small">待实单询价</el-tag></template>
+            <template v-if="column.key==='batch'">
+              <div class="batch-no">{{ row.label }}</div>
+              <div v-if="row.additionalContractNos" class="sub">{{ t('requirements.fromContract') }} {{ row.additionalContractNos }}</div>
+            </template>
+            <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
+            <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked">
+              <span class="batch-product-summary__main"><span class="batch-product-summary__text" :title="row.productGroups[0]?.name">{{ row.productGroups[0]?.name || '—' }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span>
+              <small>{{ t('requirements.batchDemand', { products: row.productGroups.length, specs: row.lines.length, quantity: row.availableQuantity }) }}</small>
+            </div>
+            <template v-else-if="column.key==='progress'">
+              <el-tag v-if="row.quoteStatus" :type="quoteStatusTone(row.quoteStatus)" effect="light" size="small">{{ t(`requirements.quoteStatus.${row.quoteStatus}`) }}</el-tag>
+              <span v-else>—</span>
+            </template>
             <span v-else-if="column.key==='requiredDate'">{{ row.requiredDate || '—' }}</span>
-            <span v-else-if="column.key==='contract'">{{ row.sourceLabels || '—' }}</span>
-            <el-tag v-else-if="column.key==='status'" type="warning" effect="plain">待实单询价</el-tag>
           </template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" min-width="125" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" plain @click="openBatchReview(row)">进入详情</el-button>
+            <el-button type="primary" link @click="openBatchReview(row)">{{ t('common.detail') }}</el-button>
           </template>
         </el-table-column>
         <template #empty>{{ t('requirements.empty') }}</template>
@@ -40,7 +52,7 @@
       <el-pagination
         class="pager"
         layout="total, prev, pager, next"
-        :total="purchaseBatches.length"
+        :total="batchTotal"
         :page-size="pageSize"
         :current-page="page"
         @current-change="(p: number) => { page = p; load() }"
@@ -410,11 +422,21 @@ interface PurchaseBatch {
   supplierNames: string
   supplierCount: number
   requiredDate: string
+  quoteStatus?: ExecutionQuoteStatus
+  additionalContractNos: string
+  availableQuantity: string
   sourceLabels: string
   statusLabels: string
   waitingRequote: boolean
   productGroups: PurchaseProductGroup[]
   lines: Requirement[]
+}
+
+const quoteStatuses = ['MY_QUOTED', 'COLLEAGUE_QUOTED', 'WAITING'] as const
+type ExecutionQuoteStatus = typeof quoteStatuses[number]
+const quoteStatusTones = { MY_QUOTED: 'success', COLLEAGUE_QUOTED: 'info', WAITING: 'warning' } as const
+function quoteStatusTone(status: ExecutionQuoteStatus) {
+  return quoteStatusTones[status]
 }
 
 interface PurchaseProductGroup {
@@ -437,11 +459,10 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const requirementColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'batch',label:t('requirements.purchaseBatch'),minWidth:170},
+ {key:'customer',label:t('requirements.customer'),minWidth:145,showOverflowTooltip:true},
  {key:'products',label:t('requirements.batchProducts'),minWidth:240},
- {key:'progress',label:'实单报价进度',minWidth:160},
- {key:'requiredDate',label:t('requirements.requiredDate'),width:130,className:'batch-secondary-column'},
- {key:'contract',label:t('requirements.fromContract'),minWidth:180,className:'batch-secondary-column',showOverflowTooltip:true},
- {key:'status',label:t('common.status'),minWidth:110,className:'batch-status-column'},
+ {key:'progress',label:t('requirements.quoteStatus.label'),minWidth:136},
+ {key:'requiredDate',label:t('requirements.earliestArrival'),width:138},
 ])
 const requirementColumns=useTableColumnOrder('purchase-requirement-list',requirementColumnDefaults)
 const router = useRouter()
@@ -455,6 +476,9 @@ const activeInquiryTab = ref<'quotes'|'selection'>('quotes')
 const inquiryTabsRef = ref<{ $el?: HTMLElement } | null>(null)
 
 const rows = ref<Requirement[]>([])
+const batchTotal = ref(0)
+const executionQuoteStatuses = ref<Partial<Record<string, ExecutionQuoteStatus>>>({})
+const quoteStatusFilter = ref<ExecutionQuoteStatus | 'ALL'>('ALL')
 // 同一客户报价是一批采购业务；批次内仍保留产品行，便于按供应商拆分审批。
 const displayRows = computed(() => [...rows.value].sort((a, b) => {
   const batch = purchaseBatchKey(a).localeCompare(purchaseBatchKey(b))
@@ -471,20 +495,24 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
   return [...grouped.entries()].map(([key, lines]) => {
     const supplierNames = [...new Set(lines.map((line) => line.supplierName).filter(Boolean))]
     const productGroups = groupBatchProducts(lines)
+    const label = lines[0]?.contractNo || lines[0]?.quotationNo || t('requirements.manualBatch')
     return {
       key,
-      label: lines[0]?.contractNo || lines[0]?.quotationNo || t('requirements.manualBatch'),
-      customerName: lines[0]?.customerName ?? '',
+      label,
+      customerName: lines[0]?.customerName?.trim() ?? '',
       supplierNames: supplierNames.join('、'),
       supplierCount: supplierNames.length,
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
+      quoteStatus: executionQuoteStatuses.value[key],
+      additionalContractNos: [...new Set(lines.map(line => line.contractNo).filter(no => no && no !== label))].join('、'),
+      availableQuantity: requirementQuantitySummary(lines, ' + '),
       sourceLabels: [...new Set(lines.map((line) => line.source === 'MANUAL' ? t('requirements.manual') : line.contractNo).filter(Boolean))].join('、'),
       statusLabels: [...new Set(lines.map((line) => t(`requirements.statuses.${line.status}`)))].join('、'),
       waitingRequote: lines.some((line) => line.status === 'WAITING_REQUOTE'),
       productGroups,
       lines,
     }
-  })
+  }).sort((a,b) => (a.requiredDate || '9999-12-31').localeCompare(b.requiredDate || '9999-12-31') || a.key.localeCompare(b.key))
 })
 const expandedBatchProductKeys = ref<string[]>([])
 function groupBatchProducts(lines: Requirement[]): PurchaseProductGroup[] {
@@ -506,12 +534,6 @@ function sourceSalesRemarks(batch: PurchaseBatch): {contractNo:string;text:strin
   }
   return [...notes].map(([contractNo,text]) => ({contractNo,text}))
 }
-function batchProductSummary(batch: PurchaseBatch): string {
-  const first = batch.productGroups[0]
-  if (!first) return '—'
-  const specificationCount = new Set(first.lines.map((line) => `${line.productCode}\u0000${line.spec}\u0000${line.uomCode}`)).size
-  return `${first.name} · ${specificationCount} 种规格`
-}
 function batchProductStateKey(batchKey: string, productKey: string): string { return `${batchKey}:${productKey}` }
 function isBatchProductExpanded(batchKey: string, productKey: string): boolean { return expandedBatchProductKeys.value.includes(batchProductStateKey(batchKey, productKey)) }
 function toggleBatchProduct(batchKey: string, productKey: string) {
@@ -522,7 +544,7 @@ function formatQtyTwo(value: string): string {
   const quantity = Number(value)
   return Number.isFinite(quantity) ? quantity.toFixed(2) : value || '—'
 }
-function requirementQuantitySummary(lines: Requirement[]): string {
+function requirementQuantitySummary(lines: Requirement[], separator?: string): string {
   const totals = new Map<string, number>()
   const unstructured: string[] = []
   for (const line of lines) {
@@ -531,7 +553,7 @@ function requirementQuantitySummary(lines: Requirement[]): string {
     if (Number.isFinite(quantity)) totals.set(unit, (totals.get(unit) || 0) + quantity)
     else if (line.availableQty) unstructured.push(`${line.availableQty}${unit ? ` ${unit}` : ''}`)
   }
-  return [...totals].map(([unit, total]) => `${total.toFixed(2)}${unit ? ` ${unit}` : ''}`).concat(unstructured).join('；') || '—'
+  return [...totals].map(([unit, total]) => `${separator ? trimQty(total.toFixed(2)) : total.toFixed(2)}${unit ? ` ${unit}` : ''}`).concat(unstructured).join(separator ?? '；') || '—'
 }
 const page = ref(1)
 const pageSize = 100
@@ -608,28 +630,37 @@ const templateGroups = ref<TemplateGroup[]>([])
 
 const common = (k: string) => t(`common.${k}`)
 
+let requirementsRequest = 0
 async function load() {
+  const request = ++requirementsRequest
+  const batchKey = detailBatchKey.value
   loading.value = true
   try {
-    // 只买了一部分的也留在这页（A5）。
-    //
-    // 工厂这批只供得了 80 吨，剩下的 20 吨仍然是要买的活儿。从前这页只列
-    // 「一点没买」的，一旦下了第一张单整批就从眼前消失了——等于告诉采购员
-    // 这事办完了。剩下的得靠人记着，正是这类事情最容易掉的地方。
-    const pending = await Promise.all([
-      get<{ requirements: Requirement[] }>('/requirements', { page: page.value, page_size: pageSize, status: 'WAITING_REQUOTE', keyword: keyword.value }),
-    ])
-    const seen = new Set<string>()
-    rows.value = pending.flatMap((result) => result.requirements ?? [])
-      .filter((line) => Number(line.availableQty ?? 0) > 0)
-      .filter((line) => {
-        if (seen.has(line.id)) return false
-        seen.add(line.id)
-        return true
-      })
+    const data = await get<{
+      requirements: Requirement[]
+      executionQuoteStatuses?: Partial<Record<string, ExecutionQuoteStatus>>
+      meta?: { total: string | number }
+    }>('/requirements', batchKey
+      ? {view:'execution_batches', batch_key:batchKey}
+      : {view:'execution_batches', page:page.value, page_size:pageSize, keyword:keyword.value,
+          quote_status:quoteStatusFilter.value === 'ALL' ? undefined : quoteStatusFilter.value})
+    if (request !== requirementsRequest) return
+    if (!batchKey) {
+      batchTotal.value = Number(data.meta?.total ?? 0)
+      const lastPage = Math.max(1, Math.ceil(batchTotal.value / pageSize))
+      if (page.value > lastPage) {
+        page.value = lastPage
+        await load()
+        return
+      }
+    }
+    rows.value = (data.requirements ?? []).filter(line => Number(line.availableQty ?? 0) > 0)
+    executionQuoteStatuses.value = data.executionQuoteStatuses ?? {}
     await hydrateActiveBatchFromRoute()
+  } catch {
+    // The API shows the request error. Preserve the last successfully loaded view.
   } finally {
-    loading.value = false
+    if (request === requirementsRequest) loading.value = false
   }
 }
 
@@ -643,7 +674,6 @@ async function openBatchReview(batch: PurchaseBatch) {
   activeInquiryTab.value = 'quotes'
   expandedBatchProductKeys.value = batch.productGroups[0] ? [batchProductStateKey(batch.key, batch.productGroups[0].key)] : []
   await router.push({ path: `/requirements/${encodeURIComponent(batch.key)}` })
-  await loadBatchQuotes(batch)
 }
 
 function routeInquiryStep(): 'quotes'|'selection' {
@@ -1057,7 +1087,7 @@ const stopListening = onLive((event) => {
 })
 onUnmounted(stopListening)
 
-watch(() => route.params.batchKey, () => { hydrateActiveBatchFromRoute() })
+watch(() => route.params.batchKey, () => { void load() })
 watch(() => route.query.step, () => { activeInquiryTab.value = routeInquiryStep() })
 onMounted(load)
 </script>

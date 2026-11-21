@@ -383,28 +383,30 @@ WHERE tenant_id = $1::bigint
   AND ($2::bool OR owner_id = ANY($3::bigint[]))
   AND ($4::text = '' OR status = $4::text)
   AND ($5::bigint = 0 OR contract_id = $5::bigint)
-  AND ($6::text = ''
-       OR contract_no ILIKE '%' || $6::text || '%'
-       OR product_name ILIKE '%' || $6::text || '%'
-       OR product_code ILIKE '%' || $6::text || '%')
+  AND ($6::bigint[] IS NULL OR id = ANY($6::bigint[]))
+  AND ($7::text = ''
+       OR contract_no ILIKE '%' || $7::text || '%'
+       OR product_name ILIKE '%' || $7::text || '%'
+       OR product_code ILIKE '%' || $7::text || '%')
 ORDER BY
     -- Outstanding work first, then by when it is needed. A requirement with
     -- no date sorts last rather than first, which is what NULLS LAST buys.
     CASE WHEN status = 'WAITING_REQUOTE' THEN 0 WHEN status = 'PENDING' THEN 1 WHEN status = 'PARTIALLY_ORDERED' THEN 2 ELSE 3 END,
     required_date NULLS LAST,
     id DESC
-LIMIT $8::int OFFSET $7::int
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListRequirementsParams struct {
-	TenantID   int64
-	ScopeAll   bool
-	OwnerIds   []int64
-	Status     string
-	ContractID int64
-	Keyword    string
-	RowOffset  int32
-	RowLimit   int32
+	TenantID       int64
+	ScopeAll       bool
+	OwnerIds       []int64
+	Status         string
+	ContractID     int64
+	RequirementIds []int64
+	Keyword        string
+	RowOffset      int32
+	RowLimit       int32
 }
 
 type ListRequirementsRow struct {
@@ -467,6 +469,7 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 		arg.OwnerIds,
 		arg.Status,
 		arg.ContractID,
+		arg.RequirementIds,
 		arg.Keyword,
 		arg.RowOffset,
 		arg.RowLimit,
