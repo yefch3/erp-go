@@ -165,6 +165,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(scope_all)::bool OR owner_id = ANY(sqlc.arg(owner_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
   AND (sqlc.arg(contract_id)::bigint = 0 OR contract_id = sqlc.arg(contract_id)::bigint)
+  AND (sqlc.narg(requirement_ids)::bigint[] IS NULL OR id = ANY(sqlc.narg(requirement_ids)::bigint[]))
   AND (sqlc.arg(keyword)::text = ''
        OR contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR product_name ILIKE '%' || sqlc.arg(keyword)::text || '%'

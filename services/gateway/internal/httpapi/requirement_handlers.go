@@ -32,11 +32,15 @@ func (s *Server) exportPurchaseTemplate(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) listRequirements(w http.ResponseWriter, r *http.Request) {
 	contractID, _ := strconv.ParseInt(r.URL.Query().Get("contract_id"), 10, 64)
+	query := r.URL.Query()
 	resp, err := s.Requirements.ListRequirements(r.Context(), &prv1.ListRequirementsRequest{
-		Page:       pageFromQuery(r),
-		Status:     r.URL.Query().Get("status"),
-		ContractId: contractID,
-		Keyword:    r.URL.Query().Get("keyword"),
+		Page:                 pageFromQuery(r),
+		Status:               query.Get("status"),
+		ContractId:           contractID,
+		Keyword:              query.Get("keyword"),
+		ExecutionBatchView:   query.Get("view") == "execution_batches",
+		ExecutionQuoteStatus: query.Get("quote_status"),
+		ExecutionBatchKey:    query.Get("batch_key"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

@@ -32,10 +32,21 @@ func (h *Handler) authorizeRequirement(ctx context.Context, requirementID int64)
 
 func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequirementsRequest) (*prv1.ListRequirementsResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
-	rows, total, err := h.svc.ListRequirements(ctx, grpcx.TenantID(ctx), app.RequirementFilter{
-		Status: req.GetStatus(), ContractID: req.GetContractId(), Keyword: req.GetKeyword(),
-	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
-		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	operator := app.Operator{ID: op.EmployeeID, Name: op.Name}
+	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
+	tenantID := grpcx.TenantID(ctx)
+	var rows []store.ListRequirementsRow
+	var total int64
+	var statuses map[string]string
+	var err error
+	if req.GetExecutionBatchView() {
+		rows, total, statuses, err = h.svc.ListExecutionBatchRequirements(ctx, tenantID, operator,
+			req.GetKeyword(), req.GetExecutionBatchKey(), req.GetExecutionQuoteStatus(), page, size)
+	} else {
+		rows, total, err = h.svc.ListRequirements(ctx, tenantID, app.RequirementFilter{
+			Status: req.GetStatus(), ContractID: req.GetContractId(), Keyword: req.GetKeyword(),
+		}, page, size, operator)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +77,7 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 		})
 	}
 	return &prv1.ListRequirementsResponse{
-		Requirements: out, Meta: &commonv1.PageMeta{Total: total},
+		Requirements: out, Meta: &commonv1.PageMeta{Total: total}, ExecutionQuoteStatuses: statuses,
 	}, nil
 }
 
