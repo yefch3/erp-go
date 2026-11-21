@@ -532,6 +532,22 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		return nil, err
 	}
 	v.Quotes = []InquiryQuoteView{}
+	procurementManager := false
+	allFactoryQuotes := false
+	if view == "PROCUREMENT" {
+		allFactoryQuotes, err = s.CanViewAllFactoryQuotes(ctx, op)
+		if err != nil {
+			return nil, err
+		}
+		if allFactoryQuotes {
+			procurementManager, err = s.CanManageExecutionQuotes(ctx, op)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	ownProcurementQuotes := view == "PROCUREMENT" && !allFactoryQuotes
+	operatorID := strconv.FormatInt(op.ID, 10)
 	rows, err := s.pool.Query(ctx, `SELECT id::text,kind,version,body,created_by::text,created_by_name,coalesce(submitted_at::text,''),updated_by_name,updated_at::text FROM inquiry_quotes WHERE tenant_id=$1 AND case_id=$2 AND inquiry_revision=$3 AND deleted_at IS NULL AND (submitted_at IS NOT NULL OR (kind=$5 AND $4>0)) ORDER BY id`, tenant, id, v.Revision, op.ID, view)
 	if err != nil {
 		return nil, err
@@ -543,18 +559,21 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		if err = rows.Scan(&q.ID, &q.Kind, &q.Version, &data, &q.AuthorID, &q.Author, &q.SubmittedAt, &q.UpdatedBy, &q.UpdatedAt); err != nil {
 			return nil, err
 		}
-		if err = json.Unmarshal(data, &q.Body); err != nil {
-			return nil, err
-		}
-		if q.SubmittedAt != "" || q.AuthorID != strconv.FormatInt(op.ID, 10) {
-			q.Body.DraftPrices = nil
-		}
 		if q.SubmittedAt != "" {
 			if q.Kind == "PROCUREMENT" {
 				v.ProcurementCount++
 			} else {
 				v.LogisticsCount++
 			}
+		}
+		if ownProcurementQuotes && (q.Kind != "PROCUREMENT" || q.AuthorID != operatorID) {
+			continue
+		}
+		if err = json.Unmarshal(data, &q.Body); err != nil {
+			return nil, err
+		}
+		if q.SubmittedAt != "" || (q.AuthorID != operatorID && !procurementManager) {
+			q.Body.DraftPrices = nil
 		}
 		// A department sees its own quotes; sales sees submitted quotes from both.
 		if view == "PROCUREMENT" || view == "LOGISTICS" {
@@ -563,8 +582,8 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 			}
 		}
 		canWrite := q.Kind == view && s.inquiryAllowed(ctx, op, view, true) == nil
-		q.CanEdit = canWrite && q.AuthorID == strconv.FormatInt(op.ID, 10)
-		q.CanDelete = canWrite && (q.SubmittedAt != "" || q.AuthorID == strconv.FormatInt(op.ID, 10)) && view == "PROCUREMENT" && v.State == "INQUIRING"
+		q.CanEdit = canWrite && (q.AuthorID == operatorID || procurementManager)
+		q.CanDelete = canWrite && (q.AuthorID == operatorID || procurementManager) && view == "PROCUREMENT" && v.State == "INQUIRING"
 		v.Quotes = append(v.Quotes, q)
 	}
 	if err = rows.Err(); err != nil {
@@ -576,7 +595,11 @@ func (s *Service) readInquiry(ctx context.Context, tenant, id int64, op Operator
 		if e != nil {
 			return nil, e
 		}
-		v.Quotes = append(v.Quotes, history...)
+		for _, q := range history {
+			if !ownProcurementQuotes || q.AuthorID == operatorID {
+				v.Quotes = append(v.Quotes, q)
+			}
+		}
 	}
 	if view == "PROCUREMENT" || view == "LOGISTICS" {
 		if err = s.pool.QueryRow(ctx, `SELECT `+inquiryPersonalQuoteStatus("c", view, "$3")+` FROM sourcing_cases c WHERE c.tenant_id=$1 AND c.id=$2`, tenant, id, op.ID).Scan(&v.PersonalQuoteStatus); err != nil {
@@ -1204,6 +1227,14 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operator, in InquiryCommand) (InquiryResult, error) {
 	id := inquiryID(in.ID)
 	quoteID := inquiryID(in.QuoteID)
+	manager := false
+	if in.View == "PROCUREMENT" && quoteID > 0 {
+		var err error
+		manager, err = s.canManageAllFactoryQuotes(ctx, op)
+		if err != nil {
+			return InquiryResult{}, err
+		}
+	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var revision int64
 		var status, handoff string
@@ -1253,8 +1284,8 @@ func (s *Service) saveInquiryQuote(ctx context.Context, tenant int64, op Operato
 			}
 			return e
 		}
-		if kind != in.View || author != op.ID {
-			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "只能修改自己的报价；请基于他人已提交报价新建自己的报价")
+		if kind != in.View || (author != op.ID && !manager) {
+			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "没有修改此工厂报价的权限")
 		}
 		if submitted {
 			if err := validateInquiryQuote(&in.Quote, body.Products, in.View, true); err != nil {

@@ -15,7 +15,11 @@ func (s *Service) deleteInquiryQuote(ctx context.Context, tenant int64, op Opera
 	if id <= 0 || quoteID <= 0 {
 		return InquiryResult{}, apierr.Invalid("INQUIRY_ID", "请选择要删除的报价")
 	}
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	manager, err := s.canManageAllFactoryQuotes(ctx, op)
+	if err != nil {
+		return InquiryResult{}, err
+	}
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var revision int64
 		var status, handoff string
 		if err := tx.QueryRow(ctx, `SELECT inquiry_revision,status,handoff_status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`, tenant, id).Scan(&revision, &status, &handoff); err != nil {
@@ -37,10 +41,9 @@ func (s *Service) deleteInquiryQuote(ctx context.Context, tenant int64, op Opera
 			}
 			return err
 		}
-		// Match the existing edit policy: private drafts belong to their author,
-		// while submitted quotes can be maintained by the department's writers.
-		if kind != in.View || (!submitted && author != op.ID) {
-			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "未提交报价仅填写人可删除，且只能删除本部门报价")
+		// Match the edit policy: acting for another author requires both quote scope and approval permission.
+		if kind != in.View || (author != op.ID && !manager) {
+			return apierr.Permission("INQUIRY_QUOTE_AUTHOR", "没有删除此工厂报价的权限")
 		}
 		if version != in.QuoteVersion {
 			return apierr.Conflict("INQUIRY_QUOTE_CHANGED", "报价已由其他人修改，请刷新后再删除")

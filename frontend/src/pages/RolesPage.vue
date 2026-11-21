@@ -118,7 +118,12 @@
                   :aria-label="t(scopeModule.label)"
                   :disabled="!canEditSelected"
                 >
-                  <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+                  <el-option
+                    v-for="k in scopeModule.key === 'procurement_factory_quote' ? FACTORY_QUOTE_SCOPE_TYPES : SCOPE_TYPES"
+                    :key="k"
+                    :value="k"
+                    :label="t(k === 'SELF' && scopeModule.key === 'procurement_factory_quote' ? 'roles.scopeFactoryQuoteSelf' : `roles.scopes.${k}`)"
+                  />
                 </el-select>
                 <p class="scope-description">{{ roleScopeHelp.modules[scopeModule.key] }}</p>
               </div>
@@ -221,6 +226,7 @@ const activePermissionModule = ref('')
 // Absence of a row means SELF, so the picker shows SELF for an unconfigured
 // role rather than a blank that hides which way it will actually behave.
 const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
+const FACTORY_QUOTE_SCOPE_TYPES = ['SELF', 'ALL']
 // This is the complete list of modules for which a business service asks IAM
 // to filter rows. Keeping the controls in one table makes omissions visible:
 // quality and mail used to fall back silently to SELF because this page had no
@@ -230,6 +236,7 @@ const DATA_SCOPE_MODULES = [
   { key: 'procurement_sourcing', label: 'roles.scopeSourcing' },
   { key: 'procurement_order', label: 'roles.scopeOrder' },
   { key: 'procurement_requirement', label: 'roles.scopeRequirement' },
+  { key: 'procurement_factory_quote', label: 'roles.scopeFactoryQuote' },
   { key: 'daily_base_price', label: 'roles.scopeDailyPrice' },
   { key: 'shipping', label: 'roles.scopeShipping' },
   { key: 'quality', label: 'roles.scopeQuality' },
@@ -315,6 +322,7 @@ const scopePermissionPrefixes: Record<string, string[]> = {
     'procurement:invoice:', 'procurement:reimbursement:',
   ],
   procurement_requirement: ['procurement:requirement:'],
+  procurement_factory_quote: ['procurement:sourcing:', 'procurement:requirement:'],
   daily_base_price: ['procurement:daily-price:'],
   shipping: ['shipping:'],
   quality: ['quality:'],

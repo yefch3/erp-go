@@ -257,15 +257,21 @@
         <div class="side-title">双方签署的采购合同</div>
         <p><a v-if="detail.signedContractUrl" :href="detail.signedContractUrl" target="_blank" rel="noopener noreferrer">{{detail.signedContractName}} · 查看合同附件</a><span v-else>{{detail.signedContractName}}（附件链接暂不可用，请刷新）</span></p>
         <p class="sub">付款条件：{{detail.paymentTerms||'—'}}</p>
+        <p v-if="detail.remark && detail.remark !== detail.paymentTerms" class="sub">{{ t('orders.remark') }}：{{ detail.remark }}</p>
         <p class="sub">{{detail.contractVerifiedAt?'已完成财务核验':'等待财务在“出账 → 待合同核验”中核验签署合同。'}}</p>
         <p v-if="detail.contractVerifiedAt" class="sub">核验人：{{detail.contractVerifiedByName||'—'}}；核验时间：{{formatTime(detail.contractVerifiedAt)}}</p>
       </section>
 
-      <section v-if="detailDraftFiles.length" class="order-draft-files">
+      <el-alert v-if="detail?.status === 'REJECTED' && detail.rejectReason" :title="detail.rejectReason" type="error" :closable="false" show-icon />
+      <section v-if="detailDraftFiles.length || canEditDraftFiles" class="order-draft-files">
         <div class="side-title">采购资料</div>
+        <label v-if="canEditDraftFiles" class="draft-upload">
+          <input type="file" multiple :disabled="uploadingDraftFiles" @change="uploadDraftFiles" />
+          {{ uploadingDraftFiles ? '上传中…' : '补充采购资料' }}
+        </label>
         <div v-for="file in detailDraftFiles" :key="file.id" class="order-draft-file">
           <span><strong>{{ file.fileName }}</strong><small>{{ formatDraftFileSize(file.sizeBytes) }} · {{ file.uploadedByName }} · {{ formatTime(file.uploadedAt) }}</small></span>
-          <span><el-button link type="primary" :loading="previewingDraftFileId===file.id" @click="previewDraftFile(file)">预览</el-button><el-button link type="primary" @click="downloadDraftFile(file)">下载</el-button><el-button v-if="canWrite && detail?.status==='DRAFT'" link type="danger" @click="deleteDraftFile(file)">删除</el-button></span>
+          <span><el-button link type="primary" :loading="previewingDraftFileId===file.id" @click="previewDraftFile(file)">预览</el-button><el-button link type="primary" @click="downloadDraftFile(file)">下载</el-button><el-button v-if="canEditDraftFiles" link type="danger" @click="deleteDraftFile(file)">删除</el-button></span>
         </div>
       </section>
 
@@ -1324,7 +1330,7 @@ function selectOrderWarehouse(id: number) {
   form.warehouseName = warehouses.value.find((item) => Number(item.id) === Number(id))?.name ?? ''
 }
 
-async function openDetail(row: Order) {
+async function openDetail(row: Pick<Order, 'id'>) {
   const [d,q,f] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`),get<{files:OrderDraftFile[]}>(`/purchase-orders/${row.id}/draft-files`)])
   detail.value = d.order
   detailItems.value = d.items ?? []
@@ -1335,6 +1341,33 @@ async function openDetail(row: Order) {
 }
 function formatDraftFileSize(value:string){const size=Number(value);return size>=1048576?`${(size/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(size/1024))} KB`}
 async function downloadDraftFile(file:OrderDraftFile){if(!detail.value)return;const result=await download(`/purchase-orders/${detail.value.id}/draft-files/${file.id}/download`);saveBlob(result.blob,result.fileName||file.fileName)}
+const uploadingDraftFiles = ref(false)
+const canEditDraftFiles = computed(() => canWrite && ['DRAFT','REJECTED'].includes(detail.value?.status ?? ''))
+async function uploadDraftFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = [...(input.files ?? [])]
+  input.value = ''
+  const orderId = detail.value?.id
+  if (!orderId || !canEditDraftFiles.value || uploadingDraftFiles.value) return
+  uploadingDraftFiles.value = true
+  try {
+    for (const file of files) {
+      if (file.size > 10*1024*1024) { ElMessage.warning(`${file.name} 超过 10 MB`); continue }
+      const dataUrl = await new Promise<string>((resolve,reject)=>{
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const {file:uploaded} = await post<{file: OrderDraftFile}>(`/purchase-orders/${orderId}/draft-files`, {
+        file_name:file.name,content_type:file.type,file_data:dataUrl.split(',')[1],
+      })
+      if (detail.value?.id === orderId && !detailDraftFiles.value.some(file=>file.id===uploaded.id)) {
+        detailDraftFiles.value = [uploaded, ...detailDraftFiles.value]
+      }
+    }
+  } finally { uploadingDraftFiles.value = false }
+}
 async function previewDraftFile(file:OrderDraftFile){
   if(!detail.value)return
   previewingDraftFileId.value=file.id
@@ -1588,12 +1621,15 @@ onMounted(async () => {
   const importedOrder = String(route.query.order ?? '')
   if (importedOrder) {
     try {
-      const [detailResponse,qualityResponse] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${importedOrder}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${importedOrder}/quality-inspections`)])
-      detail.value = detailResponse.order
-      detailItems.value = detailResponse.items ?? []
-      detailReceipts.value = detailResponse.receipts ?? []
-      qualityDetails.value=qualityResponse.tasks??[]
-      if(route.query.fulfillment==='1'){keyword.value=detailResponse.order.poNo;status.value=detailResponse.order.status==='RECEIVED'?'RECEIVED_OPEN':detailResponse.order.status;await load();await openExecution(detailResponse.order)}else detailOpen.value = true
+      if (route.query.fulfillment === '1') {
+        const { order } = await get<{ order: Order }>(`/purchase-orders/${importedOrder}`)
+        keyword.value = order.poNo
+        status.value = order.status === 'RECEIVED' ? 'RECEIVED_OPEN' : order.status
+        await load()
+        await openExecution(order)
+      } else {
+        await openDetail({ id: importedOrder })
+      }
       router.replace({ path: '/purchase-orders' })
     } catch {
       // The normal API error toast already explains an invalid or stale id.
@@ -1772,6 +1808,9 @@ onMounted(async () => {
 }
 .order-draft-files { margin:14px 0 10px; padding:10px 12px; border:1px solid #dce7ed; border-radius:8px; background:#fafcfd; }
 .order-draft-files .side-title { margin:0 0 5px; font-size:14px; font-weight:600; color:#29495b; }
+.draft-upload { display:inline-flex;padding:4px 8px;color:#167fa4;cursor:pointer; }
+.draft-upload input { position:absolute;opacity:0;width:1px;height:1px; }
+.draft-upload:focus-within { outline:2px solid #168cab; }
 .order-draft-file { display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 2px;border-top:1px solid #edf2f5; }
 .order-draft-file>span:first-child { display:flex;flex-direction:column;gap:2px;min-width:0; }
 .order-draft-file strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344f5d;font-weight:500; }

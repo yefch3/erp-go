@@ -8,7 +8,21 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 )
 
-type quoteDeleteAccess struct{ d1Access }
+type quoteDeleteAccess struct {
+	d1Access
+	allQuotes bool
+}
+
+func (a quoteDeleteAccess) VisibleEmployees(ctx context.Context, id int64, module string) (Visibility, error) {
+	if a.allQuotes && id == 202 && module == factoryQuoteScopeModule {
+		return Visibility{All: true}, nil
+	}
+	return a.d1Access.VisibleEmployees(ctx, id, module)
+}
+
+func (quoteDeleteAccess) Allowed(_ context.Context, id int64, permission string) (bool, error) {
+	return id == 202 && permission == "procurement:sourcing:approve", nil
+}
 
 func (a quoteDeleteAccess) HasPermission(ctx context.Context, id int64, permission string) (bool, error) {
 	if id == 203 {
@@ -73,10 +87,28 @@ func TestInquiryQuoteDeletion(t *testing.T) {
 	if got := call(101, InquiryCommand{Action: "get", View: "SALES", ID: inquiry.ID}); len(got.Quotes) != 1 || got.Quotes[0].CanDelete {
 		t.Fatal("sales visibility/deletion rights incorrect")
 	}
-	// Existing policy allows other procurement writers to maintain submitted quotes.
 	v = call(202, InquiryCommand{Action: "get", View: "PROCUREMENT", ID: inquiry.ID})
-	if !v.Quotes[0].CanDelete {
-		t.Fatal("department writer cannot delete submitted quote")
+	if len(v.Quotes) != 0 {
+		t.Fatal("a peer can see another buyer's submitted quote")
+	}
+	if _, err := s.InquiryWorkspace(ctx, tenant, Operator{ID: 202}, deletion); apierr.CodeFromError(err) != "INQUIRY_QUOTE_AUTHOR" {
+		t.Fatalf("peer delete: %v", err)
+	}
+	s.permissions = quoteDeleteAccess{}
+	v = call(202, InquiryCommand{Action: "get", View: "PROCUREMENT", ID: inquiry.ID})
+	if len(v.Quotes) != 0 {
+		t.Fatal("approval permission alone bypasses scope")
+	}
+	s.scopes = quoteDeleteAccess{allQuotes: true}
+	s.permissions = nil
+	v = call(202, InquiryCommand{Action: "get", View: "PROCUREMENT", ID: inquiry.ID})
+	if len(v.Quotes) != 1 || v.Quotes[0].CanEdit || v.Quotes[0].CanDelete {
+		t.Fatal("ALL scope should allow reading only until action permission is granted")
+	}
+	s.permissions = quoteDeleteAccess{}
+	v = call(202, InquiryCommand{Action: "get", View: "PROCUREMENT", ID: inquiry.ID})
+	if len(v.Quotes) != 1 || !v.Quotes[0].CanEdit || !v.Quotes[0].CanDelete {
+		t.Fatal("manager cannot maintain the submitted quote")
 	}
 	v = call(202, deletion)
 	if len(v.Quotes) != 0 || v.ProcurementCount != 0 {

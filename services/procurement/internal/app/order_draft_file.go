@@ -56,7 +56,7 @@ func (s *Service) UploadOrderDraftFile(ctx context.Context, tenantID, poID int64
 	if metaErr != nil {
 		return OrderDraftFile{}, metaErr
 	}
-	if status != poDraft && !(meta.Historical && status == poOrdered) {
+	if status != poDraft && status != "REJECTED" && !(meta.Historical && status == poOrdered) {
 		return OrderDraftFile{}, apierr.Conflict("PO_DRAFT_FILE_LOCKED", "采购单提交审批后不能修改草稿资料")
 	}
 	if contentType == "" {
@@ -102,7 +102,7 @@ func (s *Service) DownloadOrderDraftFile(ctx context.Context, tenantID, poID, fi
 
 func (s *Service) DeleteOrderDraftFile(ctx context.Context, tenantID, poID, fileID int64) error {
 	cmd, err := s.pool.Exec(ctx, `DELETE FROM purchase_order_draft_files f USING purchase_orders o
-		WHERE f.tenant_id=$1 AND f.po_id=$2 AND f.id=$3 AND o.tenant_id=f.tenant_id AND o.id=f.po_id AND o.status='DRAFT'`, tenantID, poID, fileID)
+		WHERE f.tenant_id=$1 AND f.po_id=$2 AND f.id=$3 AND o.tenant_id=f.tenant_id AND o.id=f.po_id AND o.status IN ('DRAFT','REJECTED')`, tenantID, poID, fileID)
 	if err != nil {
 		return err
 	}

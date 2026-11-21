@@ -122,9 +122,10 @@ type parsedOrderLine struct {
 }
 
 type preparedOrder struct {
-	in   CreateOrderInput
-	want map[int64]parsedOrderLine
-	ids  []int64
+	in           CreateOrderInput
+	want         map[int64]parsedOrderLine
+	ids          []int64
+	assignmentID int64
 }
 
 // prepareOrder 统一校验采购单和解析明细。
@@ -277,7 +278,14 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		} else if executionContractNo != r.ContractNo {
 			return head, apierr.Invalid("PO_EXECUTION_CONTRACT_MIXED", "实单重新询价一次只能处理一份外销合同")
 		}
-		if r.Status == "WAITING_REQUOTE" {
+		if r.Status == "WAITING_REQUOTE" && prepared.assignmentID == 0 {
+			var assigned bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM purchase_execution_assignments WHERE tenant_id=$1 AND requirement_id=$2 AND NOT cancelled)`, tenantID, r.ID).Scan(&assigned); err != nil {
+				return head, err
+			}
+			if assigned {
+				return head, apierr.Conflict("PO_ASSIGNMENT_REQUIRED", "该规格已进入议价分配流程，请从对应议价任务生成草稿")
+			}
 			if p.executionQuoteID == 0 {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_REQUIRED", "请先在实单询价中选择工厂报价")
 			}
@@ -360,7 +368,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	// Other supplier groups must retain their own documents and lines.
 	// This also makes the UI's multi-supplier loop safe to retry.
 	reusedExecutionDraft := false
-	if allExecutionRequote && executionContractID > 0 {
+	if allExecutionRequote && executionContractID > 0 && prepared.assignmentID == 0 {
 		var existingID int64
 		var existingStatus string
 		err := tx.QueryRow(ctx, `SELECT id,status FROM purchase_orders
@@ -544,6 +552,17 @@ func (s *Service) UpdateOrder(
 			return apierr.Conflict("PO_NOT_EDITABLE", "只有草稿或已驳回的采购单可以编辑").
 				WithMeta("status", head.Status)
 		}
+		var assignedRequirement, assignedQuote, assignedSupplier int64
+		var assignedQuantity string
+		assignmentErr := tx.QueryRow(ctx, `SELECT a.requirement_id,a.quote_id,a.quantity::text,q.supplier_id
+			FROM purchase_execution_assignments a JOIN purchase_execution_supplier_quotes q ON q.id=a.quote_id AND q.tenant_id=a.tenant_id
+			WHERE a.tenant_id=$1 AND a.po_id=$2`, tenantID, id).Scan(&assignedRequirement, &assignedQuote, &assignedQuantity, &assignedSupplier)
+		if assignmentErr != nil && assignmentErr != pgx.ErrNoRows {
+			return assignmentErr
+		}
+		if assignmentErr == nil && (len(ids) != 1 || ids[0] != assignedRequirement || in.SupplierID != assignedSupplier || want[assignedRequirement].qty.GreaterThan(decimal.RequireFromString(assignedQuantity))) {
+			return apierr.Conflict("PO_ASSIGNMENT_CONDITIONS", "草稿须使用指定工厂和规格，数量不得超过议价任务的数量")
+		}
 
 		reqs, reqErr := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
 			TenantID: tenantID, Ids: ids,
@@ -564,6 +583,12 @@ func (s *Service) UpdateOrder(
 			open, parseErr := decimal.NewFromString(requirement.OpenQty)
 			if parseErr != nil {
 				return parseErr
+			}
+			if assignmentErr == nil {
+				open, parseErr = unreservedExecutionQuantity(ctx, tx, tenantID, requirement.ID, id)
+				if parseErr != nil {
+					return parseErr
+				}
 			}
 			if line.qty.GreaterThan(open) {
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
@@ -596,7 +621,7 @@ func (s *Service) UpdateOrder(
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			PayableDueDate: in.PayableDueDate,
 			Currency:       in.Currency, TotalAmount: total.StringFixed(2),
-			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
+			ExpectedDate: in.ExpectedDate, BuyerID: head.BuyerID, BuyerName: head.BuyerName,
 			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
 			DeliveryLocationType: in.DeliveryLocationType,
 			DeliveryPortID:       in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode,
@@ -614,14 +639,26 @@ func (s *Service) UpdateOrder(
 		}
 		for _, requirement := range reqs {
 			line := want[requirement.ID]
-			if _, reqErr = q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
+			itemID, itemErr := q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
 				TenantID: tenantID, PoID: id, RequirementID: requirement.ID,
 				ProductID: requirement.ProductID, SkuID: requirement.SkuID,
 				ProductCode: requirement.ProductCode, ProductName: requirement.ProductName,
 				Spec: requirement.Spec, UomID: requirement.UomID, UomCode: requirement.UomCode,
 				Qty: line.qty.String(), UnitPrice: line.price.String(),
 				Amount: line.qty.Mul(line.price).StringFixed(2),
-			}); reqErr != nil {
+			})
+			if itemErr != nil {
+				return itemErr
+			}
+			if assignedQuote > 0 {
+				if _, itemErr = tx.Exec(ctx, `UPDATE purchase_order_items SET execution_quote_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, itemID, assignedQuote); itemErr != nil {
+					return itemErr
+				}
+			}
+		}
+		if assignedQuote > 0 {
+			_, reqErr = tx.Exec(ctx, `UPDATE purchase_execution_assignments SET changed_by=$3,updated_at=now() WHERE tenant_id=$1 AND po_id=$2`, tenantID, id, op.ID)
+			if reqErr != nil {
 				return reqErr
 			}
 		}

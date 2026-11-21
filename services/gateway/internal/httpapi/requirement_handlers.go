@@ -12,7 +12,21 @@ import (
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"google.golang.org/grpc"
 )
+
+func (s *Server) manageExecutionAssignment(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ManageExecutionAssignmentRequest{}
+	if !s.decodeBodyLimit(w, r, req, 15<<20) {
+		return
+	}
+	response, err := s.Requirements.ManageExecutionAssignment(r.Context(), req, grpc.MaxCallRecvMsgSize(16<<20))
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}
 
 func (s *Server) exportPurchaseTemplate(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ExportPurchaseTemplateRequest{}

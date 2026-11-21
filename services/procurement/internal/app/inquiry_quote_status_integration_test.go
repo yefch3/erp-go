@@ -90,8 +90,14 @@ func TestInquiryPersonalQuoteStatus(t *testing.T) {
 			if qa.Body.Company != "Factory A" && qa.Body.Company != "Forwarder A" {
 				t.Fatal("B overwrote A's record")
 			}
-			if find(b, qa.ID).CanEdit {
-				t.Fatal("coworker's submitted quote is editable")
+			if kind == "PROCUREMENT" {
+				for _, peer := range call(b, InquiryCommand{Action: "get", View: kind, ID: v.ID}).Quotes {
+					if peer.ID == qa.ID {
+						t.Fatal("coworker's factory quote is visible")
+					}
+				}
+			} else if find(b, qa.ID).CanEdit {
+				t.Fatal("coworker's submitted shipping quote is editable")
 			}
 			for _, submit := range []bool{false, true} {
 				_, err := s.InquiryWorkspace(ctx, tenant, Operator{ID: b}, InquiryCommand{Action: "quote", View: kind, ID: v.ID, Revision: v.Revision, QuoteID: qa.ID, QuoteVersion: qa.Version, Quote: otherBody, Submit: submit})

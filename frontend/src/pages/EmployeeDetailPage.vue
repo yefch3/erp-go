@@ -197,7 +197,7 @@
                     </el-table-column>
                     <el-table-column :label="t('employees.effectiveScope')" min-width="150">
                       <template #default="{ row }">
-                        <el-tag :type="row.all ? 'success' : 'info'" effect="plain">{{ scopeLabel(row.scopeType) }}</el-tag>
+                        <el-tag :type="row.all ? 'success' : 'info'" effect="plain">{{ scopeLabel(row.scopeType, row.module) }}</el-tag>
                       </template>
                     </el-table-column>
                     <el-table-column :label="t('employees.scopeSource')" min-width="170">
@@ -524,7 +524,8 @@ function findingType(severity: string): 'success' | 'warning' | 'info' | 'error'
   return 'info'
 }
 
-function scopeLabel(scope: string): string {
+function scopeLabel(scope: string, module: string): string {
+  if (scope === 'SELF' && module === 'procurement_factory_quote') return t('roles.scopeFactoryQuoteSelf')
   const labels: Record<string, string> = {
     SELF: t('roles.scopes.SELF'), DEPT: t('roles.scopes.DEPT'),
     DEPT_AND_SUB: t('roles.scopes.DEPT_AND_SUB'), ALL: t('roles.scopes.ALL'),
@@ -537,6 +538,7 @@ function scopeModuleLabel(module: string): string {
   const labels: Record<string, string> = {
     export: t('roles.scopeExport'), procurement_sourcing: t('roles.scopeSourcing'),
     procurement_order: t('roles.scopeOrder'), procurement_requirement: t('roles.scopeRequirement'),
+    procurement_factory_quote: t('roles.scopeFactoryQuote'),
     shipping: t('roles.scopeShipping'), quality: t('roles.scopeQuality'), mail: t('roles.scopeMail'),
   }
   return labels[module] ?? module
