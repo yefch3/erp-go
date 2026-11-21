@@ -36,10 +36,7 @@
                 <el-input v-else :ref="setEditInput" class="inline-editor" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':multilineField(field)?'textarea':'text'" :autosize="multilineField(field)?field.fieldKey==='remarks'?{minRows:1}:{minRows:1,maxRows:8}:undefined" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))" @blur="stopEditing" @keydown.esc="stopEditing"/>
               </template>
               <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="selectCell($event,row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
-              <div v-else-if="mergedDescriptionField===field.fieldKey" class="product-description">
-                <ClampedText class="product-description__name" :text="value(row,'product')||'—'" :lines="value(row,'specification').trim()?1:2"/>
-                <ClampedText v-if="value(row,'specification').trim()" class="product-description__specification" :text="value(row,'specification')" :lines="1"/>
-              </div>
+              <ComparisonSpecification v-else-if="mergedDescriptionField===field.fieldKey" class="product-description" :product-name="value(row,'product')" :text="productDescription(row)" hide-name/>
               <ClampedText v-else-if="compact&&field.fieldKey==='remarks'" :text="value(row,field.fieldKey)||'—'" :lines="2"/>
               <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
               <button v-if="(!compact||editable)&&field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
@@ -58,11 +55,13 @@ import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import {ElMessage} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import ClampedText from './ClampedText.vue'
+import ComparisonSpecification from './ComparisonSpecification.vue'
+import {formatProductDescription} from '../lib/productDescription'
 import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
 import {inquiryProductFields,planInquiryColumns} from '../lib/inquiryProductLayout'
 import {fillProductColumn,firstSelectedValue,rowsBetween} from '../lib/inquiryColumnFill'
-const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[];compact?:boolean}>()
+const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[];compact?:boolean;inlineDescription?:boolean}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
 const search=ref(''),page=ref(1),size=ref(100)
@@ -100,12 +99,20 @@ const fallbackFields:TemplateField[]=[
 ]
 const allFields=computed(()=>inquiryProductFields(props.products,props.fields?.length?props.fields:fallbackFields,!!props.editable))
 const mergedDescriptionField=computed(()=>{
- if(!props.compact||props.editable)return ''
- return allFields.value.some(field=>field.fieldKey==='product')?'product':'specification'
+ if((!props.compact&&!props.inlineDescription)||props.editable)return ''
+ return allFields.value.some(field=>field.fieldKey==='product')
+  ?'product'
+  :allFields.value.find(field=>!separateDescriptionFields.has(field.fieldKey))?.fieldKey||''
 })
-const displayFields=computed(()=>mergedDescriptionField.value==='product'
- ?allFields.value.filter(field=>field.fieldKey!=='specification')
+const separateDescriptionFields=new Set(['quantity','quantity_unit','unit'])
+const displayFields=computed(()=>mergedDescriptionField.value
+ ?allFields.value.filter(field=>field.fieldKey===mergedDescriptionField.value||separateDescriptionFields.has(field.fieldKey))
  :allFields.value)
+function productDescription(row:Product){
+ return formatProductDescription(value(row,'product'),allFields.value
+  .filter(field=>field.fieldKey!=='product'&&!separateDescriptionFields.has(field.fieldKey))
+  .map(field=>({key:field.fieldKey,label:field.displayName,value:value(row,field.fieldKey)})))
+}
 const columnPlan=computed(()=>planInquiryColumns(displayFields.value,props.products,Object.fromEntries(displayFields.value.map(field=>[field.fieldKey,fieldLabel(field)])),gridWidth.value,(props.cargoIds?56:0)+(props.editable?68:0)))
 const tableFields=computed(()=>columnPlan.value.columns)
 const columnWidths=computed(()=>columnPlan.value.widths)
@@ -285,8 +292,6 @@ function fieldLabel(field:TemplateField){if(field.fieldKey===mergedDescriptionFi
 .product-grid--compact table { font-size:12px; line-height:18px; }
 .product-grid--compact th,.product-grid--compact td { padding:5px 8px; }
 .product-grid--compact { border-width:1px 0 0; border-radius:0; }
-.product-description__name { color:#203c51; font-weight:600; }
-.product-description__specification { margin-top:2px; color:#546d7d; }
 .product-grid--compact .cell-value { min-height:18px; line-height:18px; }
 .product-grid--compact :deep(.clamped-text__toggle) { margin-top:2px; }
 .product-grid--compact+.table-footer { margin:0; padding:7px 10px; }

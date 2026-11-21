@@ -2,6 +2,7 @@ import type {Product,Quote,Price} from './inquiryWorkspace'
 import type {CategorySelection} from './customerOffer'
 import {productTemplateValue} from './inquiryWorkspace'
 import type {TemplateField} from './inquiryTemplates'
+import {formatProductDescription} from './productDescription'
 
 export type Candidate={product:Product;quote:Quote;price:Price;category:string}
 export type SpecificationCandidateGroup={key:string;product:Product;rows:Candidate[]}
@@ -38,13 +39,7 @@ export function comparisonProductFields(product:Product,template:TemplateField[]
 // Presentation only: retain the raw name, then append distinct source fields.
 // Equal values in different fields (such as weight and volume) are not duplicates.
 export function comparisonProductDescription(product:Product,fields:{key:string;label:string;value:string}[]){
- const name=product.product.trim(),parts=name?[product.product]:[],seen=new Set<string>()
- for(const field of fields){
-  const value=field.value.trim(),key=JSON.stringify([field.key,value])
-  if(!value||seen.has(key)||(field.key==='specification'&&value===name))continue
-  seen.add(key);parts.push(`${field.label}: ${field.value}`)
- }
- return parts.join('\n')||'—'
+ return formatProductDescription(product.product,fields)
 }
 
 export function hasMultipleSpecificationSuppliers(selections:CategorySelection[]):boolean{
