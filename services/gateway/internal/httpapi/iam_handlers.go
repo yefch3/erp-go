@@ -336,28 +336,30 @@ type employeeAccessDiagnostic struct {
 }
 
 var diagnosticScopeModules = []string{
-	"export", "procurement_requirement", "procurement_sourcing",
+	"export", "procurement_requirement", "procurement_sourcing", "procurement_factory_quote",
 	"procurement_order", "shipping", "quality", "mail",
 }
 
 var diagnosticScopePermissionPrefixes = map[string][]string{
-	"export":                  {"export:", "sales:"},
-	"procurement_requirement": {"procurement:requirement:"},
-	"procurement_sourcing":    {"procurement:sourcing:"},
-	"procurement_order":       {"procurement:order:"},
-	"shipping":                {"shipping:"},
-	"quality":                 {"quality:"},
-	"mail":                    {"mail:"},
+	"export":                    {"export:", "sales:"},
+	"procurement_requirement":   {"procurement:requirement:"},
+	"procurement_sourcing":      {"procurement:sourcing:"},
+	"procurement_factory_quote": {"procurement:sourcing:", "procurement:requirement:"},
+	"procurement_order":         {"procurement:order:"},
+	"shipping":                  {"shipping:"},
+	"quality":                   {"quality:"},
+	"mail":                      {"mail:"},
 }
 
 var diagnosticScopeNames = map[string]string{
-	"export":                  "销售与出口",
-	"procurement_requirement": "采购需求",
-	"procurement_sourcing":    "采购寻源",
-	"procurement_order":       "采购订单",
-	"shipping":                "船期管理",
-	"quality":                 "质检任务",
-	"mail":                    "邮件",
+	"export":                    "销售与出口",
+	"procurement_requirement":   "采购需求",
+	"procurement_sourcing":      "采购寻源",
+	"procurement_factory_quote": "工厂报价",
+	"procurement_order":         "采购订单",
+	"shipping":                  "船期管理",
+	"quality":                   "质检任务",
+	"mail":                      "邮件",
 }
 
 func employeeUsesScope(module string, permissions map[string]bool) bool {

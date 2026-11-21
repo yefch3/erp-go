@@ -95,9 +95,12 @@ func TestOperationalPresetRoleScopesExposeSharedWorkQueues(t *testing.T) {
 		// 采购员处理全公司的采购需求，但采购单仍只看本人负责的单据。
 		{"BUYER", "procurement_requirement", "ALL"},
 		{"BUYER", "procurement_order", "SELF"},
+		{"BUYER", factoryQuoteScopeModule, "SELF"},
 		// 采购经理需要查看并审批团队全部采购单和采购需求。
 		{"PROCUREMENT_MANAGER", "procurement_requirement", "ALL"},
 		{"PROCUREMENT_MANAGER", "procurement_order", "ALL"},
+		{"PROCUREMENT_MANAGER", factoryQuoteScopeModule, "ALL"},
+		{"BOSS", factoryQuoteScopeModule, "ALL"},
 		// 物流需要查看全公司的采购单才能执行收货。
 		{"LOGISTICS", "procurement_order", "ALL"},
 	}

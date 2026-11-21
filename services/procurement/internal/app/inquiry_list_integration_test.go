@@ -281,8 +281,8 @@ func TestProcurementQuoteDraftKeepsUncheckedPricesPrivate(t *testing.T) {
 		t.Fatalf("draft lost its selection or unchecked values: %+v", draft.Body)
 	}
 	peer, err := s.readInquiry(ctx, tenant, inquiryID(inquiry.ID), Operator{ID: 202}, "PROCUREMENT")
-	if err != nil || len(peer.Quotes) != 1 || len(peer.Quotes[0].Body.DraftPrices) != 0 {
-		t.Fatalf("unchecked values visible to another employee: %v", err)
+	if err != nil || len(peer.Quotes) != 0 {
+		t.Fatalf("another buyer can see the quote: %v", err)
 	}
 	input.QuoteID, input.QuoteVersion, input.Submit = draft.ID, draft.Version, true
 	published := call(201, input).Quotes[0]

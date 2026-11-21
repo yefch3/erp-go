@@ -26,15 +26,15 @@ WITH scoped AS (
 ), pending AS (
   SELECT r.batch_key, r.id, r.required_date, r.contract_no, r.product_name, r.product_code
   FROM scoped r
-  WHERE r.status = 'WAITING_REQUOTE'
-    AND ($4::text = '' OR r.batch_key = $4)
-    AND contract_requirement_open(r.tenant_id, r.id) > (
+  WHERE ($4::text <> '' AND r.batch_key = $4 AND (r.status = 'WAITING_REQUOTE' OR EXISTS (
+    SELECT 1 FROM purchase_execution_assignments a WHERE a.tenant_id=r.tenant_id AND a.requirement_id=r.id AND NOT a.cancelled
+  ))) OR ($4 = '' AND r.status = 'WAITING_REQUOTE' AND contract_requirement_open(r.tenant_id, r.id) > (
       SELECT coalesce(sum(i.qty), 0)
       FROM purchase_order_items i
       JOIN purchase_orders o ON o.tenant_id = i.tenant_id AND o.id = i.po_id
       WHERE i.tenant_id = r.tenant_id AND i.requirement_id = r.id
         AND o.status IN ('DRAFT', 'PENDING_APPROVAL')
-    )
+    ))
 ), candidates AS (
   SELECT batch_key, min(required_date) AS earliest, array_agg(id ORDER BY id) AS ids
   FROM pending
@@ -102,7 +102,7 @@ func (s *Service) ListExecutionBatchRequirements(ctx context.Context, tenantID i
 			return err
 		}
 		requirements, err = s.q.WithTx(tx).ListRequirements(ctx, store.ListRequirementsParams{
-			TenantID: tenantID, Status: "WAITING_REQUOTE", ScopeAll: visible.All, OwnerIds: visible.EmployeeIDs,
+			TenantID: tenantID, ScopeAll: visible.All, OwnerIds: visible.EmployeeIDs,
 			RequirementIds: ids, RowLimit: math.MaxInt32,
 		})
 		return err

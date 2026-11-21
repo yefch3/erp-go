@@ -51,8 +51,12 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 		return nil, err
 	}
 	out := make([]*prv1.Requirement, 0, len(rows))
+	allFactoryQuotes, err := h.svc.CanViewAllFactoryQuotes(ctx, operator)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range rows {
-		out = append(out, &prv1.Requirement{
+		item := &prv1.Requirement{
 			Id: r.ID, ContractId: r.ContractID, ContractNo: r.ContractNo,
 			ContractVersionId: r.ContractVersionID, VersionNo: r.VersionNo,
 			ContractItemId: r.ContractItemID, CustomerName: r.CustomerName,
@@ -74,7 +78,14 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 			Moq: r.Moq, LeadTime: r.LeadTime,
 			SourcePaymentTerms: r.SourcePaymentTerms, SourceIncoterm: r.SourceIncoterm,
 			SourceValidUntil: r.SourceValidUntil, SourceSalesRemark: r.SourceSalesRemark, ContractItemRemark: r.ContractItemRemark, PresaleReferenceJson: r.PresaleReferenceJson,
-		})
+		}
+		if (r.Status == "WAITING_REQUOTE" || req.GetExecutionBatchView()) && !allFactoryQuotes {
+			item.SupplierId, item.FactoryId, item.SupplierQuoteLineId = 0, 0, 0
+			item.SupplierCode, item.SupplierName, item.FactoryCode, item.FactoryName = "", "", "", ""
+			item.SourceCurrency, item.SourceUnitPrice, item.SourcePaymentTerms, item.SourceIncoterm = "", "", "", ""
+			item.Moq, item.LeadTime, item.SourceValidUntil, item.PresaleReferenceJson = "", "", "", ""
+		}
+		out = append(out, item)
 	}
 	return &prv1.ListRequirementsResponse{
 		Requirements: out, Meta: &commonv1.PageMeta{Total: total}, ExecutionQuoteStatuses: statuses,
@@ -89,7 +100,8 @@ func (h *Handler) ListExecutionSupplierQuotes(ctx context.Context, req *prv1.Lis
 	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
 		return nil, err
 	}
-	rows, err := h.svc.ListExecutionSupplierQuotes(ctx, grpcx.TenantID(ctx), req.GetRequirementId())
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows, err := h.svc.ListVisibleExecutionSupplierQuotes(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +117,11 @@ func (h *Handler) SaveExecutionSupplierQuote(ctx context.Context, req *prv1.Save
 		return nil, err
 	}
 	op, _ := grpcx.OperatorFromContext(ctx)
+	if req.GetId() > 0 {
+		if err := h.svc.AuthorizeExecutionQuote(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+			return nil, err
+		}
+	}
 	q, err := h.svc.SaveExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), app.SaveExecutionSupplierQuoteInput{ID: req.GetId(), RequirementID: req.GetRequirementId(), SupplierID: req.GetSupplierId(), Currency: req.GetCurrency(), UnitPrice: req.GetUnitPrice(), ExpectedDate: req.GetExpectedDate(), PaymentTerms: req.GetPaymentTerms(), ValidUntil: req.GetValidUntil(), Remark: req.GetRemark(), QuoteCategory: req.GetQuoteCategory(), Incoterm: req.GetIncoterm(), CalculatedUnitPrice: req.GetCalculatedUnitPrice(), CalculationInput: req.GetCalculationInput()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
@@ -117,7 +134,11 @@ func (h *Handler) SelectExecutionSupplierQuote(ctx context.Context, req *prv1.Se
 		return nil, err
 	}
 	op, _ := grpcx.OperatorFromContext(ctx)
-	q, err := h.svc.SelectExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	operator := app.Operator{ID: op.EmployeeID, Name: op.Name}
+	if err := h.svc.AuthorizeExecutionQuoteSelection(ctx, grpcx.TenantID(ctx), req.GetId(), operator); err != nil {
+		return nil, err
+	}
+	q, err := h.svc.SelectExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId(), operator)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +147,10 @@ func (h *Handler) SelectExecutionSupplierQuote(ctx context.Context, req *prv1.Se
 
 func (h *Handler) DeleteExecutionSupplierQuote(ctx context.Context, req *prv1.DeleteExecutionSupplierQuoteRequest) (*prv1.DeleteExecutionSupplierQuoteResponse, error) {
 	if err := h.authorizeRequirement(ctx, req.GetRequirementId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.AuthorizeExecutionQuote(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
 		return nil, err
 	}
 	if err := h.svc.DeleteExecutionSupplierQuote(ctx, grpcx.TenantID(ctx), req.GetRequirementId(), req.GetId()); err != nil {

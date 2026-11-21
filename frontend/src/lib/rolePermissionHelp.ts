@@ -223,6 +223,11 @@ const permissionNotes: Readonly<Partial<Record<string, HelpText>>> = {
     'Assign the lead buyer, create a unified purchase plan, confirm a cost scenario, submit plans to sales or request follow-up sourcing. Creating the formal customer quotation uses Manage quotations.',
     'Asigna al comprador principal, crea un plan unificado, confirma un escenario de costos, lo envía a ventas o solicita cotizaciones adicionales. Crear la cotización formal requiere Gestionar cotizaciones.',
   ],
+  'procurement:execution-quote:select': [
+    '在实单询价中勾选工厂报价并确认后，原报价录入人负责该规格的议价和生成采购草稿。也可取消尚未生成草稿的指派。可选择的报价由「工厂报价可见范围」决定。',
+    'Confirm a selected factory quote in an execution inquiry to assign negotiation and draft purchase order creation for that specification to the employee who entered the quote. Assignments can be cancelled before a draft is created. Factory quote visibility determines which quotes can be selected.',
+    'Al confirmar una cotización de fábrica en una consulta de ejecución, quien registró la cotización se encarga de negociar y generar el borrador de compra de esa especificación. Se puede cancelar la asignación antes de generar el borrador. La visibilidad de cotizaciones determina cuáles se pueden seleccionar.',
+  ],
   'procurement:sourcing:price': [
     '手工录入或批量导入供应商报价，建立成本方案，处理被分派的补充询价或重新议价任务。确认成本方案另需相应权限。',
     'Enter or bulk-import supplier quotes, create cost scenarios and resolve assigned re-quote or renegotiation tasks. Confirming cost scenarios requires separate access.',
@@ -343,6 +348,11 @@ const scopeModules: Readonly<Record<string, HelpText>> = {
     '影响「实单询价」的采购需求。合同生成的需求通常归合同销售负责人，手工需求归创建人。',
     'Applies to execution-sourcing requirements. Contract-generated requirements usually belong to the contract salesperson. Manual ones belong to their creator.',
     'Se aplica a las necesidades de ejecución. Las generadas desde un contrato suelen pertenecer a su vendedor. Las manuales pertenecen a quien las creó.',
+  ],
+  procurement_factory_quote: [
+    '按报价录入人筛选售前询价和实单询价里的工厂报价。采购需求继续按自己的可见范围展示。选厂和代做仍需相应的业务权限。',
+    'Filters factory quotes in presales and execution inquiries by who entered them. Purchase requirements have a separate scope. Selecting factories and acting for another buyer still require the relevant permissions.',
+    'Filtra por autor las cotizaciones de fábrica en consultas de preventa y ejecución. Las necesidades de compra tienen su propio alcance. Seleccionar fábricas o actuar por otro comprador requiere los permisos correspondientes.',
   ],
   daily_base_price: [
     '按录入人限制可修改或删除的每日基价和基差。查看趋势与管理配置另有功能权限。',

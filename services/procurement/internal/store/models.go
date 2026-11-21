@@ -443,6 +443,37 @@ type ProcurementReworkRequest struct {
 	ResolutionNote      string
 }
 
+type PurchaseExecutionAssignment struct {
+	ID              int64
+	TenantID        int64
+	RequirementID   int64
+	QuoteID         int64
+	BuyerID         int64
+	BuyerName       string
+	Quantity        pgtype.Numeric
+	Instructions    string
+	AssignedBy      int64
+	ChangedBy       int64
+	NegotiatedPrice pgtype.Numeric
+	ExpectedDate    pgtype.Date
+	PaymentTerms    string
+	Remark          string
+	PoID            *int64
+	Cancelled       bool
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type PurchaseExecutionAssignmentFile struct {
+	ID             int64
+	TenantID       int64
+	AssignmentID   int64
+	FileName       string
+	ContentType    string
+	FileData       []byte
+	UploadedByID   int64
+	UploadedByName string
+}
+
 type PurchaseExecutionInquiryFile struct {
 	ID             int64
 	TenantID       int64

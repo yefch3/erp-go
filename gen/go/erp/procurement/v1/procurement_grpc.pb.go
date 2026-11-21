@@ -2381,6 +2381,7 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 const (
 	RequirementService_ListRequirements_FullMethodName             = "/erp.procurement.v1.RequirementService/ListRequirements"
 	RequirementService_ListExecutionSupplierQuotes_FullMethodName  = "/erp.procurement.v1.RequirementService/ListExecutionSupplierQuotes"
+	RequirementService_ManageExecutionAssignment_FullMethodName    = "/erp.procurement.v1.RequirementService/ManageExecutionAssignment"
 	RequirementService_SaveExecutionSupplierQuote_FullMethodName   = "/erp.procurement.v1.RequirementService/SaveExecutionSupplierQuote"
 	RequirementService_SelectExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/SelectExecutionSupplierQuote"
 	RequirementService_DeleteExecutionSupplierQuote_FullMethodName = "/erp.procurement.v1.RequirementService/DeleteExecutionSupplierQuote"
@@ -2409,6 +2410,7 @@ const (
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(ctx context.Context, in *ListExecutionSupplierQuotesRequest, opts ...grpc.CallOption) (*ListExecutionSupplierQuotesResponse, error)
+	ManageExecutionAssignment(ctx context.Context, in *ManageExecutionAssignmentRequest, opts ...grpc.CallOption) (*ManageExecutionAssignmentResponse, error)
 	SaveExecutionSupplierQuote(ctx context.Context, in *SaveExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SaveExecutionSupplierQuoteResponse, error)
 	SelectExecutionSupplierQuote(ctx context.Context, in *SelectExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(ctx context.Context, in *DeleteExecutionSupplierQuoteRequest, opts ...grpc.CallOption) (*DeleteExecutionSupplierQuoteResponse, error)
@@ -2455,6 +2457,16 @@ func (c *requirementServiceClient) ListExecutionSupplierQuotes(ctx context.Conte
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListExecutionSupplierQuotesResponse)
 	err := c.cc.Invoke(ctx, RequirementService_ListExecutionSupplierQuotes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) ManageExecutionAssignment(ctx context.Context, in *ManageExecutionAssignmentRequest, opts ...grpc.CallOption) (*ManageExecutionAssignmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ManageExecutionAssignmentResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ManageExecutionAssignment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2613,6 +2625,7 @@ func (c *requirementServiceClient) ContractProcurementProgress(ctx context.Conte
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
 	ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error)
+	ManageExecutionAssignment(context.Context, *ManageExecutionAssignmentRequest) (*ManageExecutionAssignmentResponse, error)
 	SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error)
 	SelectExecutionSupplierQuote(context.Context, *SelectExecutionSupplierQuoteRequest) (*SelectExecutionSupplierQuoteResponse, error)
 	DeleteExecutionSupplierQuote(context.Context, *DeleteExecutionSupplierQuoteRequest) (*DeleteExecutionSupplierQuoteResponse, error)
@@ -2650,6 +2663,9 @@ func (UnimplementedRequirementServiceServer) ListRequirements(context.Context, *
 }
 func (UnimplementedRequirementServiceServer) ListExecutionSupplierQuotes(context.Context, *ListExecutionSupplierQuotesRequest) (*ListExecutionSupplierQuotesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListExecutionSupplierQuotes not implemented")
+}
+func (UnimplementedRequirementServiceServer) ManageExecutionAssignment(context.Context, *ManageExecutionAssignmentRequest) (*ManageExecutionAssignmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ManageExecutionAssignment not implemented")
 }
 func (UnimplementedRequirementServiceServer) SaveExecutionSupplierQuote(context.Context, *SaveExecutionSupplierQuoteRequest) (*SaveExecutionSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveExecutionSupplierQuote not implemented")
@@ -2746,6 +2762,24 @@ func _RequirementService_ListExecutionSupplierQuotes_Handler(srv interface{}, ct
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).ListExecutionSupplierQuotes(ctx, req.(*ListExecutionSupplierQuotesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_ManageExecutionAssignment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ManageExecutionAssignmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ManageExecutionAssignment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ManageExecutionAssignment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ManageExecutionAssignment(ctx, req.(*ManageExecutionAssignmentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3016,6 +3050,10 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListExecutionSupplierQuotes",
 			Handler:    _RequirementService_ListExecutionSupplierQuotes_Handler,
+		},
+		{
+			MethodName: "ManageExecutionAssignment",
+			Handler:    _RequirementService_ManageExecutionAssignment_Handler,
 		},
 		{
 			MethodName: "SaveExecutionSupplierQuote",

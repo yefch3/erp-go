@@ -412,6 +412,7 @@ message LinkCustomerQuotationResponse { int64 quotation_id = 1; string quote_no 
 service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
   rpc ListExecutionSupplierQuotes(ListExecutionSupplierQuotesRequest) returns (ListExecutionSupplierQuotesResponse);
+  rpc ManageExecutionAssignment(ManageExecutionAssignmentRequest) returns (ManageExecutionAssignmentResponse);
   rpc SaveExecutionSupplierQuote(SaveExecutionSupplierQuoteRequest) returns (SaveExecutionSupplierQuoteResponse);
   rpc SelectExecutionSupplierQuote(SelectExecutionSupplierQuoteRequest) returns (SelectExecutionSupplierQuoteResponse);
   rpc DeleteExecutionSupplierQuote(DeleteExecutionSupplierQuoteRequest) returns (DeleteExecutionSupplierQuoteResponse);
@@ -3314,3 +3315,61 @@ message ListShippingHistoricalPurchasesResponse { repeated ShippingHistoricalPur
 
 message DeleteTravelReimbursementRequest { int64 id = 1; }
 message DeleteTravelReimbursementResponse {}
+
+message ExecutionAssignment {
+  int64 id = 1;
+  int64 requirement_id = 2;
+  int64 quote_id = 3;
+  int64 buyer_id = 4;
+  string buyer_name = 5;
+  string quantity = 6;
+  string instructions = 7;
+  string supplier_name = 8;
+  string currency = 9;
+  string initial_price = 10;
+  string negotiated_price = 11;
+  string expected_date = 12;
+  string payment_terms = 13;
+  string remark = 14;
+  int64 po_id = 15;
+  string order_status = 16;
+  string product_name = 17;
+  string uom_code = 18;
+  string contract_no = 19;
+  string batch_key = 20;
+  int64 assigned_by = 21;
+  int64 changed_by = 22;
+  repeated ExecutionAssignmentFile files = 23;
+  string specification = 24;
+}
+message ExecutionAssignmentFile {
+  int64 id = 1;
+  string file_name = 2;
+  string content_type = 3;
+}
+message ManageExecutionAssignmentRequest {
+  string action = 1;
+  int64 id = 2;
+  int64 requirement_id = 3;
+  int64 quote_id = 4;
+  int64 buyer_id = 5;
+  string quantity = 6;
+  string instructions = 7;
+  string negotiated_price = 8;
+  string expected_date = 9;
+  string payment_terms = 10;
+  string remark = 11;
+  string file_name = 12;
+  string content_type = 13;
+  bytes file_data = 14;
+  repeated int64 file_ids = 15;
+  int64 file_id = 16;
+}
+message ManageExecutionAssignmentResponse {
+  repeated ExecutionAssignment assignments = 1;
+  int64 id = 2;
+  int64 order_id = 3;
+  string file_name = 4;
+  string content_type = 5;
+  bytes file_data = 6;
+}

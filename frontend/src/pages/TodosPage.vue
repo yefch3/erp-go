@@ -83,6 +83,17 @@
       <template v-if="activeTab === 'pending'">
         <div v-loading="loading" class="pending-content">
           <InquiryTodos @count="inquiryPendingCount=$event" />
+          <section v-if="visibleNegotiationTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><h3>实单议价与草稿退回</h3></div>
+            <el-table :data="visibleNegotiationTasks" class="home-table" size="small">
+              <el-table-column label="采购批次" prop="contractNo" min-width="130" />
+              <el-table-column label="产品 / 工厂" min-width="200"><template #default="{row}"><strong>{{ row.productName }}</strong><div class="item-meta">{{ row.supplierName }}</div></template></el-table-column>
+              <el-table-column label="议价备注" prop="instructions" min-width="170" show-overflow-tooltip />
+              <el-table-column label="操作" width="128"><template #default="{row}">
+                <el-button link type="primary" @click="openNegotiationTodo(row)">{{ row.orderStatus === 'REJECTED' ? '修改原草稿' : '处理议价' }}</el-button>
+              </template></el-table-column>
+            </el-table>
+          </section>
           <el-alert v-if="executionTasksError" title="合同执行待办暂时无法加载，请刷新重试" type="warning" :closable="false" show-icon />
           <section v-if="showPurchaseFinanceSection" class="todo-source-section">
             <div class="todo-source-head"><div><h3>采购合同财务核验</h3><p>采购已上传双方签署合同，请查看合同附件并核验。</p></div><el-tag v-if="!executionTasksError" :type="visiblePurchaseFinanceTasks.length?'warning':'info'" effect="plain">{{visiblePurchaseFinanceTasks.length}} 项</el-tag></div>
@@ -313,6 +324,29 @@ const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+interface NegotiationTodo {
+  id:string; batchKey:string; contractNo:string; productName:string; supplierName:string
+  instructions:string; poId:string; orderStatus:string
+}
+const negotiationTasks = ref<NegotiationTodo[]>([])
+const visibleNegotiationTasks = computed(() => {
+  if (bizType.value && bizType.value !== 'PURCHASE_ORDER') return []
+  const search = keyword.value.trim().toLocaleLowerCase()
+  return negotiationTasks.value.filter(task => !search || [task.contractNo,task.productName,task.supplierName,task.instructions].some(value => value?.toLocaleLowerCase().includes(search)))
+})
+function openNegotiationTodo(task: NegotiationTodo) {
+  if (task.orderStatus === 'REJECTED') return router.push({path:'/purchase-orders',query:{status:'REJECTED',order:task.poId}})
+  return router.push({path:`/requirements/${encodeURIComponent(task.batchKey)}`,query:{step:'negotiation',assignment:task.id}})
+}
+async function loadNegotiationTasks() {
+  if (!auth.can('procurement:requirement:read')) return
+  try {
+    const result = await post<{assignments?:NegotiationTodo[]}>('/execution-assignments',{action:'inbox'},quietErrors)
+    negotiationTasks.value = result.assignments ?? []
+  } catch {
+    negotiationTasks.value = []
+  }
+}
 const showPurchaseFinanceSection=computed(()=>auth.can('procurement:order:read')&&auth.can('procurement:recon:write')&&(!bizType.value||bizType.value==='PURCHASE_ORDER'))
 const showLogisticsFinanceSection=computed(()=>auth.can('procurement:order:read')&&auth.can('procurement:recon:write')&&(!bizType.value||bizType.value==='SHIPPING_REQUOTE'))
 const today = computed(() => new Intl.DateTimeFormat(
@@ -609,8 +643,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadNegotiationTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadNegotiationTasks(), loadQualityTasks(),loadQualityProcurementTasks(),loadDeliveryTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {

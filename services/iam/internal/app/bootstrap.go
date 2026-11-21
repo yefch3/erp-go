@@ -255,6 +255,7 @@ var superAdminScopeModules = []string{
 	"procurement_requirement",
 	"daily_base_price",
 	"procurement_sourcing",
+	factoryQuoteScopeModule,
 }
 
 // splitDomains turns the configured list into lower-cased entries, dropping

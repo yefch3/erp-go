@@ -21,6 +21,8 @@ type Visibility struct {
 	ScopeType   string
 }
 
+const factoryQuoteScopeModule = "procurement_factory_quote"
+
 // VisibleEmployees resolves the data scope attached to someone's roles.
 //
 // The default when no scope is configured is SELF, not ALL. A role nobody has
@@ -52,6 +54,9 @@ func (s *Service) VisibleEmployees(ctx context.Context, tenantID, employeeID int
 	}
 	scopeType := scope.ScopeType
 	if errors.Is(err, pgx.ErrNoRows) || scopeType == "" {
+		scopeType = "SELF"
+	}
+	if module == factoryQuoteScopeModule && scopeType != "ALL" {
 		scopeType = "SELF"
 	}
 
@@ -164,6 +169,9 @@ func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, modu
 	if !scopeTypes[scopeType] {
 		return apierr.Invalid("IAM_SCOPE_TYPE_INVALID", "不支持的数据范围").
 			WithMeta("scope_type", scopeType)
+	}
+	if module == factoryQuoteScopeModule && scopeType != "SELF" && scopeType != "ALL" {
+		return apierr.Invalid("IAM_SCOPE_TYPE_INVALID", "工厂报价可见范围只支持「仅本人录入」或「全部」")
 	}
 	// A custom scope naming no departments would silently behave as "only
 	// myself", which is not what anyone picking CUSTOM meant.

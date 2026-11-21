@@ -25,9 +25,11 @@ import (
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
 	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "sales:inquiry:delete", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read",
+		"masterdata:supplier:read", "procurement:requirement:read", "procurement:sourcing:read", "procurement:sourcing:write",
+		"procurement:sourcing:price", "procurement:sourcing:approve", "procurement:execution-quote:select", "procurement:order:write", "procurement:order:submit",
 		// 员工邮箱监管（迁移 00074）。给 BOSS，不给别人——读自己的邮件和读
 		// 别人的邮件是两件事。两条分开：看信箱，和看"谁看过谁的信箱"。
-		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"procurement_order", "ALL"}, {"export", "ALL"}}},
+		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -148,6 +150,7 @@ var presetRoles = []presetRole{
 			// 采购需求是一张共享待办池，采购员需要从全公司的需求中合并下单；
 			// 采购单仍按 buyer 隔离，避免普通采购员互相修改采购单。
 			{"procurement_order", "SELF"}, {"procurement_requirement", "ALL"},
+			{factoryQuoteScopeModule, "SELF"},
 			{"daily_base_price", "SELF"},
 			{"procurement_sourcing", "ALL"}, {"quality", "SELF"},
 		},
@@ -165,7 +168,7 @@ var presetRoles = []presetRole{
 			"procurement:requirement:exception", "procurement:requirement:read",
 			"procurement:requirement:write",
 			"procurement:daily-price:read", "procurement:daily-price:write", "procurement:daily-price:manage",
-			"procurement:sourcing:approve", "procurement:sourcing:price",
+			"procurement:sourcing:approve", "procurement:sourcing:price", "procurement:execution-quote:select",
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",
@@ -175,6 +178,7 @@ var presetRoles = []presetRole{
 			// 采购经理需要审批团队采购单并统筹全部采购需求；SELF 会让分配给
 			// 他的审批任务存在，但进入具体单据后因看不到数据而失败。
 			{"procurement_order", "ALL"}, {"procurement_requirement", "ALL"},
+			{factoryQuoteScopeModule, "ALL"},
 			{"daily_base_price", "ALL"},
 			{"procurement_sourcing", "ALL"}, {"quality", "ALL"},
 		},
