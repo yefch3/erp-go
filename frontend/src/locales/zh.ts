@@ -323,7 +323,7 @@ basicsSaved: "基本资料已保存",
   },
   inquiryWorkspace: {
     personalQuotes: { waitingForMe: '待我报价', myQuoted: '我已报价', quoteUpdated: '报价已更新', copy: '基于此报价新建' },
-    bulkSelection: { actions: "批量勾选", include: "纳入本次报价", title: '采购报价规格选择', selectAll: '全选当前询盘', clearAll: '取消全部', progress: '已选择 {count}/{total} 项', selectGroup: '选择整组：{name}', hint: '全选和整组选择不受搜索、筛选或分页影响；各规格分别填写价格。', clearConfirm: "确定取消所有勾选？已填内容可以保存为草稿。" },
+    bulkSelection: { includeShort: "纳入", actions: "批量勾选", include: "纳入本次报价", title: '采购报价规格选择', selectAll: '全选当前询盘', clearAll: '取消全部', progress: '已选择 {count}/{total} 项', selectGroup: '选择整组：{name}', hint: '全选和整组选择不受搜索、筛选或分页影响；各规格分别填写价格。', clearConfirm: "确定取消所有勾选？已填内容可以保存为草稿。" },
     quoteDeletion: { title: '删除工厂报价', confirm: '确定删除“{company}”的整份报价？删除后采购和销售将不再看到该报价；已加入客户报价的来源会标记为已移除，请通知销售检查并重新选择。', deleted: '工厂报价已删除' },
     quoteComparisonCalculation: '报价比较与核算',
     inquiryTitle: '客户询盘', inquirySubtitle: '整理客户需求，提交询价并跟进处理进度。', quotationTitle: '客户报价', quotationSubtitle: '查看采购与物流已提交的报价。',
