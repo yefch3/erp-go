@@ -1,26 +1,441 @@
-<template><div v-loading="loading"><el-button link @click="backToSuppliers">← {{t('suppliers.back')}}</el-button><div v-if="supplier" class="hero"><div><small>{{supplier.code}}</small><h2>{{displayName}}</h2><div><el-tag v-for="v in supplier.businessTypes" :key="v" effect="plain">{{optionLabel(v)}}</el-tag><el-tag :type="supplier.status==='ACTIVE'?'success':'info'">{{supplier.status==='ACTIVE'?t('common.active'):t('common.inactive')}}</el-tag></div></div><el-button v-if="auth.can('masterdata:supplier:write')" @click="editOpen=true">{{t('suppliers.editProfile')}}</el-button></div>
-<el-card v-if="supplier" shadow="never"><el-tabs v-model="tab" @tab-change="loadTab"><el-tab-pane :label="t('suppliers.profile')" name="profile"><el-descriptions :column="2" border><el-descriptions-item :label="t('suppliers.nameZh')">{{supplier.nameZh||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.nameEn')">{{supplier.nameEn||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.country')">{{supplier.countryCode?countryName(supplier.countryCode,locale):'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.currency')">{{supplier.currency}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.taxId')">{{supplier.taxId||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.paymentTerm')">{{supplier.paymentTerm||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.paymentDays')">{{Number(supplier.paymentDays)>0?t('suppliers.paymentDaysValue',{n:supplier.paymentDays}):t('suppliers.paymentDaysUnset')}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.registeredAddress')" :span="2">{{supplier.registeredAddress||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.address')" :span="2">{{supplier.address||'—'}}</el-descriptions-item><el-descriptions-item :label="t('suppliers.remark')" :span="2">{{supplier.remark||'—'}}</el-descriptions-item></el-descriptions></el-tab-pane>
-<el-tab-pane label="供应商资料" name="documents"><SupplierDocuments :supplier-id="id" :can-write="auth.can('masterdata:supplier:write')"/></el-tab-pane>
-<el-tab-pane :label="t('suppliers.contacts')" name="contacts"><section-head :title="t('suppliers.contacts')" :button="t('suppliers.addContact')" @add="openContact"/><el-table :data="contacts"><el-table-column :label="t('suppliers.name')" prop="name"/><el-table-column :label="t('suppliers.department')" prop="department"/><el-table-column :label="t('suppliers.phone')" prop="phone"/><el-table-column :label="t('suppliers.email')" prop="email"/><el-table-column :label="t('suppliers.primary')" width="90"><template #default="{row}"><el-tag v-if="row.isPrimary" type="success">{{t('suppliers.primary')}}</el-tag></template></el-table-column><el-table-column :label="t('common.actions')"><template #default="{row}"><el-button link type="danger" @click="removeContact(row)">{{t('common.deactivate')}}</el-button></template></el-table-column></el-table></el-tab-pane>
-<el-tab-pane :label="t('credit.tab')" name="credit"><CreditRating v-if="supplier" party="suppliers" :party-id="supplier.id" :grade="supplier.creditGrade||''" :graded-at="supplier.creditGradedAt||''" :can-rate="auth.can('masterdata:supplier:write')" @rated="onRated"/></el-tab-pane>
-<el-tab-pane :label="t('suppliers.owners')" name="owners"><section-head :title="t('suppliers.owners')" :button="canManageOwners?t('suppliers.addOwner'):''" @add="ownerOpen=true"/><el-table :data="owners"><el-table-column :label="t('suppliers.name')" prop="employeeName"/><el-table-column :label="t('suppliers.responsibility')" prop="responsibilityCode"/><el-table-column :label="t('suppliers.primary')"><template #default="{row}"><el-tag v-if="row.isPrimary" type="success">{{t('suppliers.primary')}}</el-tag></template></el-table-column><el-table-column :label="t('suppliers.period')"><template #default="{row}">{{row.startDate||'—'}} ~ {{row.endDate||'—'}}</template></el-table-column><el-table-column v-if="canManageOwners" :label="t('common.actions')"><template #default="{row}"><el-button link type="danger" @click="removeOwner(row)">{{t('common.deactivate')}}</el-button></template></el-table-column></el-table></el-tab-pane>
-<el-tab-pane :label="t('suppliers.changes')" name="changes"><el-timeline><el-timeline-item v-for="c in changes" :key="c.id" :timestamp="formatTime(c.createdAt)"><strong>{{changeSummary(c)}}</strong><p>{{operatorName(c.operatorName)||'—'}} · {{changeSection(c.section)}}</p></el-timeline-item></el-timeline></el-tab-pane></el-tabs></el-card>
+<template>
+  <div v-loading="loading" class="supplier-detail">
+    <template v-if="supplier">
+      <header class="hero">
+        <div class="hero-main">
+          <h1>{{ displayName }} <small v-if="supplier.shortName && fullName !== displayName">{{ fullName }}</small></h1>
+          <div class="hero-meta">
+            <span>{{ supplier.code }}</span>
+            <span v-if="supplier.countryCode">{{ countryName(supplier.countryCode, locale) }}</span>
+            <el-tag v-for="role in supplier.businessTypes" :key="role" size="small" effect="plain">{{ optionLabel(role) }}</el-tag>
+            <el-tag size="small" :type="supplier.status === 'ACTIVE' ? 'success' : 'info'">
+              {{ supplier.status === 'ACTIVE' ? t('common.active') : t('common.inactive') }}
+            </el-tag>
+          </div>
+        </div>
+        <el-button size="small" class="hero-back" @click="backToSuppliers">← {{ t('suppliers.back') }}</el-button>
+      </header>
 
-<el-dialog v-model="editOpen" :title="t('suppliers.editProfile')" width="min(860px, 94vw)" top="5vh" class="supplier-edit-dialog" append-to-body><el-form :model="edit" label-width="120px" class="form-grid"><el-form-item :label="t('suppliers.nameZh')"><el-input v-model="edit.nameZh"/></el-form-item><el-form-item :label="t('suppliers.nameEn')"><el-input v-model="edit.nameEn"/></el-form-item><el-form-item :label="t('suppliers.country')"><el-select v-model="edit.countryCode" filterable><el-option v-for="c in countryOptions(locale)" :key="c.code" :label="c.name" :value="c.code"/></el-select></el-form-item><el-form-item :label="t('suppliers.taxId')"><el-input v-model="edit.taxId"/></el-form-item><el-form-item :label="t('suppliers.businessType')" class="full business-types"><el-checkbox-group v-model="edit.businessTypes"><el-checkbox v-for="o in businessOptions" :key="o.code" :value="o.code">{{optionLabel(o.code)}}</el-checkbox></el-checkbox-group></el-form-item><el-form-item :label="t('suppliers.paymentTerm')"><el-select v-model="edit.paymentTerm" filterable allow-create default-first-option clearable :placeholder="t('suppliers.paymentTermPlaceholder')"><el-option v-for="o in paymentOptions" :key="o.code" :label="o.label" :value="o.code"/></el-select></el-form-item><el-form-item :label="t('suppliers.paymentDays')" class="payment-days"><div class="payment-days-field"><el-input-number v-model="edit.paymentDays" :min="0" :max="365" :step="15" controls-position="right"/><span class="hint">{{t('suppliers.paymentDaysHint')}}</span></div></el-form-item><el-form-item :label="t('suppliers.registeredAddress')" class="full"><el-input v-model="edit.registeredAddress"/></el-form-item><el-form-item :label="t('suppliers.address')" class="full"><el-input v-model="edit.address"/></el-form-item><el-form-item :label="t('suppliers.remark')" class="full"><el-input v-model="edit.remark" type="textarea" :rows="3"/></el-form-item></el-form><template #footer><el-button @click="editOpen=false">{{t('common.cancel')}}</el-button><el-button type="primary" @click="saveProfile">{{t('common.save')}}</el-button></template></el-dialog>
-<el-dialog v-model="contactOpen" :title="t('suppliers.addContact')" width="520px"><el-form :model="contact" label-width="110px"><el-form-item :label="t('suppliers.name')" required><el-input v-model="contact.name"/></el-form-item><el-form-item :label="t('suppliers.department')"><el-input v-model="contact.department"/></el-form-item><el-form-item :label="t('suppliers.titleField')"><el-input v-model="contact.title"/></el-form-item><el-form-item :label="t('suppliers.phone')"><el-input v-model="contact.phone"/></el-form-item><el-form-item :label="t('suppliers.email')"><el-input v-model="contact.email"/></el-form-item><el-form-item><el-checkbox v-model="contact.isPrimary">{{t('suppliers.primary')}}</el-checkbox></el-form-item></el-form><template #footer><el-button @click="contactOpen=false">{{t('common.cancel')}}</el-button><el-button type="primary" @click="saveContact">{{t('common.save')}}</el-button></template></el-dialog>
-<el-dialog v-model="ownerOpen" :title="t('suppliers.addOwner')" width="520px"><el-form :model="owner" label-width="120px"><el-form-item :label="t('suppliers.employee')" required><el-select v-model="owner.employeeId" filterable @change="employeeChanged"><el-option v-for="e in employees" :key="e.id" :label="`${e.employeeNo} · ${e.name}`" :value="e.id"/></el-select></el-form-item><el-form-item :label="t('suppliers.responsibility')"><el-select v-model="owner.responsibilityCode"><el-option v-for="o in ownerOptions" :key="o.code" :label="o.label" :value="o.code"/></el-select></el-form-item><el-form-item :label="t('suppliers.period')"><el-date-picker v-model="owner.dates" type="daterange" value-format="YYYY-MM-DD"/></el-form-item><el-form-item><el-checkbox v-model="owner.isPrimary">{{t('suppliers.primary')}}</el-checkbox></el-form-item></el-form><template #footer><el-button @click="ownerOpen=false">{{t('common.cancel')}}</el-button><el-button type="primary" @click="saveOwner">{{t('common.save')}}</el-button></template></el-dialog></div></template>
+      <nav class="section-nav" :aria-label="t('suppliers.profile')">
+        <button v-for="section in sections" :key="section.key" type="button" :aria-current="activeSection === section.key ? 'location' : undefined" @click="selectSection(section.key)">
+          {{ section.label }}
+        </button>
+      </nav>
+      <div class="detail-sheet">
+        <section id="supplier-profile" class="detail-section" tabindex="-1">
+          <h2>{{ t('suppliers.profile') }}</h2>
+          <el-form v-if="canWrite" label-position="top" size="small" :disabled="savingProfile" @submit.prevent="saveProfile">
+            <SupplierProfileFields v-model="edit" :business-options="businessOptions" :payments="paymentOptions" :role-label="optionLabel" />
+            <div v-if="dirty" class="profile-actions">
+              <span v-if="profileError" class="error-text" role="alert">{{ profileError }}</span>
+              <el-button size="small" :disabled="savingProfile" @click="cancelProfile">{{ t('common.cancel') }}</el-button>
+              <el-button size="small" type="primary" native-type="submit" :loading="savingProfile">{{ t('common.save') }}</el-button>
+            </div>
+          </el-form>
+          <dl v-else class="profile-read">
+            <div v-for="field in readFields" :key="field.label" :class="{ 'full-line': field.wide }">
+              <dt>{{ field.label }}</dt><dd>{{ field.value || '—' }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="supplier-contacts" class="detail-section" tabindex="-1">
+          <div class="section-head">
+            <h2>{{ t('suppliers.contacts') }} <small>{{ contacts.length }}</small></h2>
+            <el-button v-if="canWrite" link type="primary" @click="openContact">{{ t('suppliers.addContact') }}</el-button>
+          </div>
+          <p v-if="!contacts.length" class="empty">{{ t('suppliers.noRecords') }}</p>
+          <div v-else class="record-list">
+            <article v-for="row in contacts" :key="row.id" class="record-row">
+              <div class="record-name"><strong>{{ row.name || '—' }}</strong><el-tag v-if="row.isPrimary" type="success" size="small">{{ t('suppliers.primary') }}</el-tag></div>
+              <div class="record-detail"><span v-if="row.email">{{ row.email }}</span><span v-if="row.phone">{{ row.phone }}</span></div>
+              <div class="record-meta">{{ [row.department, row.title].filter(Boolean).join(' · ') }}</div>
+              <el-button v-if="canWrite" class="record-action" size="small" link type="danger" @click="removeContact(row)">{{ t('common.deactivate') }}</el-button>
+            </article>
+          </div>
+        </section>
+
+        <section id="supplier-owners" class="detail-section" tabindex="-1">
+          <div class="section-head">
+            <h2>{{ t('suppliers.owners') }} <small>{{ owners.length }}</small></h2>
+            <el-button v-if="canEditOwners" link type="primary" @click="openOwner">{{ t('suppliers.addOwner') }}</el-button>
+          </div>
+          <p v-if="!owners.length" class="empty">{{ t('suppliers.noRecords') }}</p>
+          <div v-else class="record-list">
+            <article v-for="row in owners" :key="row.id" class="record-row">
+              <div class="record-name"><strong>{{ row.employeeName }}</strong><el-tag v-if="row.isPrimary" type="success" size="small">{{ t('suppliers.primary') }}</el-tag></div>
+              <div>{{ ownerOptions.find(option => option.code === row.responsibilityCode)?.label || row.responsibilityCode }}</div>
+              <div class="record-meta">{{ [row.startDate, row.endDate].filter(Boolean).join(' ~ ') || '—' }}</div>
+              <el-button v-if="canEditOwners" class="record-action" size="small" link type="danger" @click="removeOwner(row)">{{ t('common.deactivate') }}</el-button>
+            </article>
+          </div>
+        </section>
+
+        <section id="supplier-credit" class="detail-section" tabindex="-1">
+          <h2>{{ t('credit.tab') }}</h2>
+          <CreditRating party="suppliers" :party-id="supplier.id" :grade="supplier.creditGrade || ''" :graded-at="supplier.creditGradedAt || ''" :can-rate="canWrite" compact @rated="onRated" />
+        </section>
+
+        <section id="supplier-documents" class="detail-section" tabindex="-1">
+          <h2>{{ t('suppliers.documents') }}</h2>
+          <SupplierDocuments :supplier-id="id" :can-write="canWrite" />
+        </section>
+
+        <section id="supplier-changes" class="detail-section" tabindex="-1">
+          <h2>{{ t('suppliers.changes') }}</h2>
+          <p v-if="!changes.length" class="empty">{{ t('suppliers.noRecords') }}</p>
+          <el-timeline v-else class="history">
+            <el-timeline-item v-for="change in changes" :key="change.id" :timestamp="formatTime(change.createdAt)">
+              <strong>{{ changeSummaryLabel(change, 'supplier', t) }}</strong>
+              <p>{{ operatorDisplayName(change.operatorName, t) || '—' }} · {{ changeSectionLabel(change.section, t) }}</p>
+            </el-timeline-item>
+          </el-timeline>
+        </section>
+      </div>
+    </template>
+
+    <el-dialog v-model="contactOpen" :title="t('suppliers.addContact')" width="min(520px, 94vw)">
+      <el-form size="small" :model="contact" label-position="top" @submit.prevent="saveContact">
+        <el-form-item :label="t('suppliers.name')" required><el-input v-model="contact.name" /></el-form-item>
+        <el-form-item :label="t('suppliers.department')"><el-input v-model="contact.department" /></el-form-item>
+        <el-form-item :label="t('suppliers.titleField')"><el-input v-model="contact.title" /></el-form-item>
+        <el-form-item :label="t('suppliers.phone')"><el-input v-model="contact.phone" /></el-form-item>
+        <el-form-item :label="t('suppliers.email')"><el-input v-model="contact.email" /></el-form-item>
+        <el-form-item><el-checkbox v-model="contact.isPrimary">{{ t('suppliers.primary') }}</el-checkbox></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="savingRelation" @click="contactOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingRelation" @click="saveContact">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="ownerOpen" :title="t('suppliers.addOwner')" width="min(520px, 94vw)">
+      <el-form size="small" :model="owner" label-position="top" @submit.prevent="saveOwner">
+        <el-form-item :label="t('suppliers.employee')" required>
+          <el-select v-model="owner.employeeId" filterable @change="employeeChanged">
+            <el-option v-for="person in employees" :key="person.id" :label="[person.employeeNo, person.name].filter(Boolean).join(' · ')" :value="person.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('suppliers.responsibility')">
+          <el-select v-model="owner.responsibilityCode">
+            <el-option v-for="option in ownerOptions" :key="option.code" :label="option.label" :value="option.code" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('suppliers.period')">
+          <el-date-picker v-model="owner.dates" type="daterange" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item><el-checkbox v-model="owner.isPrimary">{{ t('suppliers.primary') }}</el-checkbox></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="savingRelation" @click="ownerOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingRelation" @click="saveOwner">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
 <script setup lang="ts">
-import {computed,defineComponent,h,onMounted,reactive,ref} from 'vue';import {ElButton,ElMessage,ElMessageBox} from 'element-plus';import {useI18n} from 'vue-i18n';import {useRoute,useRouter} from 'vue-router';import {del,get,post,put} from '../api';import {countryName,countryOptions} from '../lib/countries';import {businessRoleLabel,changeSectionLabel,changeSummaryLabel,operatorDisplayName} from '../lib/masterDataDisplay';import {supplierDetailLookups} from '../lib/supplierDetailLookups';import {useAuthStore} from '../stores/auth';import CreditRating from '../components/CreditRating.vue';import SupplierDocuments from '../components/SupplierDocuments.vue'
-const SectionHead=defineComponent({props:{title:String,button:String},emits:['add'],setup(p,{emit}){return()=>h('div',{class:'section-head'},[h('h3',p.title),p.button?h(ElButton,{type:'primary',onClick:()=>emit('add')},()=>p.button):null])}})
-const {t,locale}=useI18n(),route=useRoute(),router=useRouter(),auth=useAuthStore();const id=String(route.params.id),supplier=ref<any>(),loading=ref(false),tab=ref(String(route.query.tab||'profile')),editOpen=ref(false),contactOpen=ref(false),ownerOpen=ref(false),canManageOwners=ref(false),contacts=ref<any[]>([]),owners=ref<any[]>([]),changes=ref<any[]>([]),employees=ref<any[]>([]),businessOptions=ref<any[]>([]),paymentOptions=ref<any[]>([]),ownerOptions=ref<any[]>([]);const edit=reactive<any>({}),contact=reactive({name:'',department:'',title:'',phone:'',email:'',isPrimary:false,remark:''}),owner=reactive<any>({employeeId:'',employeeName:'',responsibilityCode:'PROCUREMENT',isPrimary:false,dates:[]});const displayName=computed(()=>locale.value==='zh'?supplier.value?.nameZh||supplier.value?.nameEn||supplier.value?.name:supplier.value?.nameEn||supplier.value?.nameZh||supplier.value?.name);function optionLabel(v:string){return businessRoleLabel(v,t,businessOptions.value.find(o=>o.code===v)?.label||v)}function changeSummary(c:any){return changeSummaryLabel(c,'supplier',t)}function changeSection(v:string){return changeSectionLabel(v,t)}function operatorName(v:string){return operatorDisplayName(v,t)}function formatTime(v:string){return v?new Date(v).toLocaleString():''}
-function backToSuppliers(){const back=String(window.history.state?.back||'');if(back==='/basic/suppliers'||back.startsWith('/basic/suppliers?'))router.back();else router.push('/basic/suppliers')}
-async function load(){loading.value=true;try{const d=await get<any>(`/suppliers/${id}`);supplier.value=d.supplier;Object.assign(edit,d.supplier)}finally{loading.value=false}}async function loadTab(){await router.replace({query:{...route.query,tab:tab.value}});if(tab.value==='contacts')contacts.value=(await get<any>(`/suppliers/${id}/contacts`)).contacts||[];if(tab.value==='owners')owners.value=(await get<any>(`/suppliers/${id}/owners`)).owners||[];if(tab.value==='changes')changes.value=(await get<any>(`/suppliers/${id}/changes`)).changes||[]}
-// 评完就地更新顶上那个当前评级，不用刷整页；组件自己会重拉历史。
-function onRated(grade:string){if(!supplier.value)return;supplier.value.creditGrade=grade;supplier.value.creditGradedAt=new Date().toISOString()}
-async function saveProfile(){if(!String(edit.nameZh||'').trim()&&!String(edit.nameEn||'').trim()){ElMessage.warning(t('suppliers.nameRequired'));return}const payload={name:edit.nameZh||edit.nameEn,country:edit.countryCode,address:edit.address||'',currency:edit.currency||'',contactName:edit.contactName||'',contactPhone:edit.contactPhone||'',contactEmail:edit.contactEmail||'',remark:edit.remark||'',nameZh:edit.nameZh||'',nameEn:edit.nameEn||'',shortName:edit.shortName||'',countryCode:edit.countryCode||'',taxId:edit.taxId||'',registeredAddress:edit.registeredAddress||'',paymentTerm:edit.paymentTerm||'',businessTypes:Array.isArray(edit.businessTypes)?edit.businessTypes:[],paymentDays:Number(edit.paymentDays||0)};await put(`/suppliers/${id}`,payload);editOpen.value=false;ElMessage.success(t('suppliers.saved'));load()}function openContact(){Object.assign(contact,{name:'',department:'',title:'',phone:'',email:'',isPrimary:false,remark:''});contactOpen.value=true}async function saveContact(){await post(`/suppliers/${id}/contacts`,{contact});contactOpen.value=false;loadTab()}async function removeContact(r:any){await ElMessageBox.confirm(t('suppliers.confirmDeactivate'));await del(`/suppliers/${id}/contacts/${r.id}`);loadTab()}function employeeChanged(v:string){owner.employeeName=employees.value.find(e=>String(e.id)===String(v))?.name||''}async function saveOwner(){if(!canManageOwners.value)return;await post(`/suppliers/${id}/owners`,{owner:{employeeId:owner.employeeId,employeeName:owner.employeeName,responsibilityCode:owner.responsibilityCode,isPrimary:owner.isPrimary,startDate:owner.dates?.[0]||'',endDate:owner.dates?.[1]||''}});ownerOpen.value=false;loadTab()}async function removeOwner(r:any){if(!canManageOwners.value)return;await ElMessageBox.confirm(t('suppliers.confirmDeactivate'));await del(`/suppliers/${id}/owners/${r.id}`);loadTab()}
-// 下拉选项、能不能管负责人、员工名单各请求各的（规矩在 lib/supplierDetailLookups）：谁失败只少谁，
-// 不能管负责人的人也不会再被顺手查一次员工名单、弹一条「没有权限」。它们也不等当前页签的数据。
-function loadLookups(){const l=supplierDetailLookups(get);l.businessOptions.then(v=>{businessOptions.value=v});l.paymentOptions.then(v=>{paymentOptions.value=v});l.ownerOptions.then(v=>{ownerOptions.value=v});l.canManageOwners.then(v=>{canManageOwners.value=v});l.employees.then(v=>{employees.value=v})}
-onMounted(async()=>{await load();loadLookups();await loadTab()})
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { del, get, post, put, quietErrors, type Envelope } from '../api'
+import { countryName } from '../lib/countries'
+import { businessRoleLabel, changeSectionLabel, changeSummaryLabel, operatorDisplayName } from '../lib/masterDataDisplay'
+import { supplierDetailLookups, type LookupOption, type OwnerCandidate } from '../lib/supplierDetailLookups'
+import { supplierProfile, type SupplierProfile } from '../lib/supplierProfile'
+import { useAuthStore } from '../stores/auth'
+import CreditRating from '../components/CreditRating.vue'
+import SupplierDocuments from '../components/SupplierDocuments.vue'
+import SupplierProfileFields from '../components/SupplierProfileFields.vue'
+
+interface Supplier extends SupplierProfile {
+  id: string
+  code: string
+  name: string
+  country: string
+  status: string
+  contactName?: string
+  contactPhone?: string
+  contactEmail?: string
+  creditGrade?: string
+  creditGradedAt?: string
+}
+interface ContactRow { id: string; name: string; email: string; phone: string; department: string; title: string; isPrimary: boolean }
+interface OwnerRow { id: string; employeeName: string; responsibilityCode: string; startDate: string; endDate: string; isPrimary: boolean }
+interface ChangeRow { id: string; summary: string; operatorName: string; section: string; createdAt: string }
+
+const { t, locale } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+const id = String(route.params.id)
+const endpoint = '/suppliers/' + id
+const supplier = ref<Supplier>()
+const loading = ref(true)
+const canWrite = computed(() => auth.can('masterdata:supplier:write'))
+const canManageOwners = ref(false)
+const canEditOwners = computed(() => canWrite.value && canManageOwners.value)
+const contacts = ref<ContactRow[]>([])
+const owners = ref<OwnerRow[]>([])
+const changes = ref<ChangeRow[]>([])
+const employees = ref<(OwnerCandidate & { employeeNo?: string })[]>([])
+const businessOptions = ref<LookupOption[]>([])
+const paymentOptions = ref<LookupOption[]>([])
+const ownerOptions = ref<LookupOption[]>([])
+const edit = ref(supplierProfile())
+const baseline = ref(supplierProfile())
+const profileError = ref('')
+const savingProfile = ref(false)
+const dirty = computed(() => JSON.stringify(supplierProfile(edit.value)) !== JSON.stringify(baseline.value))
+const contactOpen = ref(false)
+const ownerOpen = ref(false)
+const savingRelation = ref(false)
+const newContact = () => ({ name: '', department: '', title: '', phone: '', email: '', isPrimary: false, remark: '' })
+const newOwner = () => ({ employeeId: '', employeeName: '', responsibilityCode: 'PROCUREMENT', isPrimary: false, dates: [] as string[] })
+const contact = reactive(newContact())
+const owner = reactive(newOwner())
+
+const fullName = computed(() => locale.value === 'zh'
+  ? supplier.value?.nameZh || supplier.value?.nameEn || supplier.value?.name
+  : supplier.value?.nameEn || supplier.value?.nameZh || supplier.value?.name)
+const displayName = computed(() => supplier.value?.shortName?.trim() || fullName.value)
+const sections = computed(() => [
+  { key: 'profile', label: t('suppliers.profile') },
+  { key: 'contacts', label: t('suppliers.contacts') },
+  { key: 'owners', label: t('suppliers.owners') },
+  { key: 'credit', label: t('credit.tab') },
+  { key: 'documents', label: t('suppliers.documents') },
+  { key: 'changes', label: t('suppliers.changes') },
+])
+const activeSection = ref('profile')
+const readFields = computed(() => {
+  const value = supplier.value
+  if (!value) return []
+  return [
+    { label: t('suppliers.nameZh'), value: value.nameZh },
+    { label: t('suppliers.nameEn'), value: value.nameEn },
+    { label: t('suppliers.shortName'), value: value.shortName },
+    { label: t('suppliers.country'), value: value.countryCode ? countryName(value.countryCode, locale.value) : '' },
+    { label: t('suppliers.taxId'), value: value.taxId },
+    { label: t('suppliers.businessType'), value: (value.businessTypes || []).map(optionLabel).join(' · ') },
+    { label: t('suppliers.currency'), value: value.currency },
+    { label: t('suppliers.paymentTerm'), value: value.paymentTerm },
+    { label: t('suppliers.registeredAddress'), value: value.registeredAddress, wide: true },
+    { label: t('suppliers.address'), value: value.address, wide: true },
+    { label: t('suppliers.remark'), value: value.remark, wide: true },
+  ]
+})
+
+function optionLabel(code: string) {
+  return businessRoleLabel(code, t, businessOptions.value.find(option => option.code === code)?.label || code)
+}
+
+function backToSuppliers() {
+  const back = String(window.history.state?.back || '')
+  if (back === '/basic/suppliers' || back.startsWith('/basic/suppliers?')) router.back()
+  else void router.push('/basic/suppliers')
+}
+
+async function jump(section: unknown, behavior: ScrollBehavior = 'smooth') {
+  if (typeof section !== 'string' || !sections.value.some(item => item.key === section)) return
+  activeSection.value = section
+  await nextTick()
+  const target = document.getElementById('supplier-' + section)
+  target?.scrollIntoView({ block: 'start', behavior })
+  target?.focus({ preventScroll: true })
+}
+
+function selectSection(section: string) {
+  if (route.query.tab === section) void jump(section)
+  else void router.replace({ query: { ...route.query, tab: section } })
+}
+watch(() => route.query.tab, section => void jump(section))
+
+function formatTime(value: string) {
+  return value ? new Date(value).toLocaleString(locale.value) : ''
+}
+
+function acceptProfile(value: Supplier) {
+  supplier.value = value
+  baseline.value = supplierProfile(value)
+  cancelProfile()
+}
+
+function cancelProfile() {
+  edit.value = supplierProfile(baseline.value)
+  profileError.value = ''
+}
+
+async function saveProfile() {
+  if (!canWrite.value || !supplier.value || !dirty.value || savingProfile.value) return
+  const value = supplierProfile(edit.value)
+  if (!value.nameZh.trim() && !value.nameEn.trim()) {
+    profileError.value = t('suppliers.nameRequired')
+    return
+  }
+  const current = supplier.value
+  const { supplier: updated } = await persistProfile(value, current)
+  if (updated) {
+    acceptProfile(updated)
+    ElMessage.success(t('suppliers.saved'))
+    await Promise.allSettled([loadChanges()])
+  }
+}
+
+async function persistProfile(value: SupplierProfile, current: Supplier) {
+  savingProfile.value = true
+  profileError.value = ''
+  try {
+    return await put<{ supplier: Supplier }>(endpoint, {
+      ...value,
+      name: value.nameZh || value.nameEn,
+      country: value.countryCode === current.countryCode ? current.country : value.countryCode,
+      contactName: current.contactName || '',
+      contactPhone: current.contactPhone || '',
+      contactEmail: current.contactEmail || '',
+    }, quietErrors)
+  } catch (error) {
+    profileError.value = (error as Partial<Envelope<unknown>> | undefined)?.message || t('common.requestFailed')
+    return { supplier: undefined }
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function loadContacts() {
+  contacts.value = (await get<{ contacts?: ContactRow[] }>(endpoint + '/contacts')).contacts || []
+}
+
+async function loadOwners() {
+  owners.value = (await get<{ owners?: OwnerRow[] }>(endpoint + '/owners')).owners || []
+}
+
+async function loadChanges() {
+  changes.value = (await get<{ changes?: ChangeRow[] }>(endpoint + '/changes')).changes || []
+}
+
+async function refreshRelations(load: () => Promise<void>) {
+  await Promise.allSettled([load(), loadChanges()])
+}
+
+function openContact() {
+  if (!canWrite.value) return
+  Object.assign(contact, newContact())
+  contactOpen.value = true
+}
+
+async function saveContact() {
+  if (!canWrite.value || savingRelation.value) return
+  savingRelation.value = true
+  try {
+    await post(endpoint + '/contacts', { contact })
+    contactOpen.value = false
+    await refreshRelations(loadContacts)
+  } finally {
+    savingRelation.value = false
+  }
+}
+
+async function removeContact(row: ContactRow) {
+  if (!canWrite.value) return
+  try { await ElMessageBox.confirm(t('suppliers.confirmDeactivate')) } catch { return }
+  await del(endpoint + '/contacts/' + row.id)
+  await refreshRelations(loadContacts)
+}
+
+function openOwner() {
+  if (!canEditOwners.value) return
+  Object.assign(owner, newOwner())
+  ownerOpen.value = true
+}
+
+function employeeChanged(value: string) {
+  owner.employeeName = employees.value.find(employee => String(employee.id) === String(value))?.name || ''
+}
+
+async function saveOwner() {
+  if (!canEditOwners.value || savingRelation.value) return
+  const { dates, ...fields } = owner
+  savingRelation.value = true
+  try {
+    await post(endpoint + '/owners', { owner: { ...fields, startDate: dates?.[0] || '', endDate: dates?.[1] || '' } })
+    ownerOpen.value = false
+    await refreshRelations(loadOwners)
+  } finally {
+    savingRelation.value = false
+  }
+}
+
+async function removeOwner(row: OwnerRow) {
+  if (!canEditOwners.value) return
+  try { await ElMessageBox.confirm(t('suppliers.confirmDeactivate')) } catch { return }
+  await del(endpoint + '/owners/' + row.id)
+  await refreshRelations(loadOwners)
+}
+
+function onRated(grade: string) {
+  if (!supplier.value) return
+  supplier.value.creditGrade = grade
+  supplier.value.creditGradedAt = new Date().toISOString()
+}
+
+onMounted(async () => {
+  try {
+    acceptProfile((await get<{ supplier: Supplier }>(endpoint)).supplier)
+    const lookups = supplierDetailLookups(get)
+    void lookups.businessOptions.then(value => { businessOptions.value = value })
+    void lookups.paymentOptions.then(value => { paymentOptions.value = value })
+    void lookups.ownerOptions.then(value => { ownerOptions.value = value })
+    void lookups.canManageOwners.then(value => { canManageOwners.value = value })
+    void lookups.employees.then(value => { employees.value = value })
+    await Promise.allSettled([loadContacts(), loadOwners(), loadChanges()])
+    await jump(route.query.tab, 'instant')
+  } finally {
+    loading.value = false
+  }
+})
 </script>
-<style scoped>.hero{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(120deg,#f2f8fa,#fff);border:1px solid #dce6eb;border-radius:16px;padding:22px 26px;margin:12px 0 18px}.hero h2{margin:4px 0 10px;color:#18324a}.hero .el-tag+.el-tag{margin-left:6px}.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px}.form-grid .full{grid-column:1/-1}.form-grid :deep(.el-select){width:100%}.business-types :deep(.el-checkbox-group){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px;width:100%}.business-types :deep(.el-checkbox){margin-right:0;white-space:normal}.payment-days-field{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%}.payment-days-field :deep(.el-input-number){width:160px}.hint{color:var(--el-text-color-secondary);font-size:12px;line-height:1.6}.el-timeline p{color:#82909b}:global(.supplier-edit-dialog .el-dialog__body){max-height:70vh;overflow-y:auto;padding-right:28px}@media(max-width:760px){.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.business-types :deep(.el-checkbox-group){grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.business-types :deep(.el-checkbox-group){grid-template-columns:1fr}}</style>
+
+<style scoped>
+.supplier-detail { max-width: 1500px; margin: 0 auto; }
+.hero { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; padding: 14px 18px; gap: 10px 20px; color: #fff; background: linear-gradient(120deg, #143f5a, #176b87); border-radius: 10px; }
+.hero-main { min-width: 0; }
+.hero h1 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.hero h1 small { margin-inline-start: 6px; color: #e5f2f7; font-size: 12px; font-weight: 400; }
+.hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 7px; color: #e5f2f7; font-size: 13px; }
+.hero-back { flex: none; }
+.section-nav { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 2px 8px; margin-block: 8px; padding: 4px 8px; border: 1px solid #dce7f4; border-radius: 9px; background: #fff; }
+.section-nav button { padding: 6px 9px; font: inherit; font-size: 13px; color: #205573; background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
+.section-nav button:hover, .section-nav button:focus-visible, .section-nav [aria-current='location'] { background: #edf6fb; }
+.section-nav [aria-current='location'] { font-weight: 600; }
+.detail-sheet { padding-inline: 16px; border: 1px solid #e4ebf3; border-radius: 9px; background: #fff; }
+.detail-section { padding-block: 12px; font-size: 13px; scroll-margin-top: 82px; }
+.detail-section:focus { outline: none; }
+.detail-section + .detail-section { border-top: 1px solid #e4ebf3; }
+.detail-section h2 { margin: 0 0 8px; color: #173b52; font-size: 14px; }
+.detail-section h2 small { margin-inline-start: 4px; color: var(--el-text-color-secondary); font-weight: 400; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.profile-actions .el-button + .el-button { margin-left: 0; }
+.error-text { margin-inline-end: auto; color: var(--el-color-danger-dark-2); font-size: 12px; }
+.profile-read { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
+.profile-read dt { margin-bottom: 3px; color: var(--el-text-color-secondary); font-size: 12px; }
+.profile-read dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.full-line { grid-column: 1 / -1; }
+.record-list, .record-row + .record-row { border-top: 1px solid #edf0f3; }
+.record-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) max-content; align-items: start; gap: 4px 14px; padding-block: 7px; line-height: 20px; overflow-wrap: anywhere; }
+.record-name, .record-detail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; min-width: 0; }
+.record-meta, .empty, .history p { color: var(--el-text-color-secondary); font-size: 12px; }
+.record-action { justify-self: end; }
+.empty { margin: 0; }
+.history { margin: 0; padding: 4px 0 0 6px; }
+.history p { margin: 3px 0 0; }
+@media (max-width: 760px) { .profile-read { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) {
+  .profile-read { grid-template-columns: minmax(0, 1fr); }
+  .detail-section { scroll-margin-top: 112px; }
+  .record-row { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; }
+  .record-row > div { grid-column: 1; }
+  .record-action { grid-column: 2; grid-row: 1; }
+}
+</style>

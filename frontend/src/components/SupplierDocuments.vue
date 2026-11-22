@@ -1,13 +1,13 @@
 <template>
   <section v-loading="loading">
-    <div class="toolbar"><span class="hint">上传供应商资质、证书等附件，可设置到期提醒。</span><el-button v-if="canWrite" type="primary" @click="open()">上传文件</el-button></div>
-    <el-table :data="current" empty-text="暂无供应商资料">
+    <div v-if="canWrite" class="toolbar"><span class="hint">上传供应商资质、证书等附件，可设置到期提醒。</span><el-button size="small" type="primary" plain @click="open()">上传文件</el-button></div>
+    <el-table :data="current" size="small" class="file-list" empty-text="暂无供应商资料">
       <el-table-column label="文件" min-width="240"><template #default="{row}"><el-button v-if="previewable(row)" link type="primary" class="filename" @click="preview(row)">{{row.fileName}}</el-button><span v-else>{{row.fileName}}</span><span class="size">{{formatSize(row.sizeBytes)}}</span></template></el-table-column>
-      <el-table-column label="提醒日期" min-width="190"><template #default="{row}">{{reminderLabel(row)}}</template></el-table-column>
-      <el-table-column label="操作" width="150"><template #default="{row}"><el-dropdown trigger="click" @command="(command:string)=>action(command,row)"><el-button class="more-button">更多操作 <span>▼</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="download">下载</el-dropdown-item><el-dropdown-item v-if="canWrite" command="remind">设置提醒</el-dropdown-item><el-dropdown-item v-if="canWrite" command="delete" divided>删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column>
+      <el-table-column label="提醒日期" min-width="148"><template #default="{row}">{{reminderLabel(row)}}</template></el-table-column>
+      <el-table-column label="操作" width="105" align="right"><template #default="{row}"><el-dropdown trigger="click" @command="(command:string)=>action(command,row)"><el-button class="more-button" size="small" link type="primary">更多操作 <span>▼</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="download">下载</el-dropdown-item><el-dropdown-item v-if="canWrite" command="remind">设置提醒</el-dropdown-item><el-dropdown-item v-if="canWrite" command="delete" divided>删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column>
     </el-table>
     <el-dialog v-model="dialog" :title="editing?'设置提醒':'上传供应商资料'" width="min(440px,92vw)" append-to-body>
-      <el-form label-position="top">
+      <el-form label-position="top" size="small">
         <el-form-item v-if="!editing" label="文件" required><input :key="fileKey" type="file" aria-label="选择文件" @change="selectFile"><span class="hint upload-hint">图片、PDF 等，单个文件最大 10 MB</span></el-form-item>
         <p v-else>{{editing.fileName}}</p>
         <el-form-item label="提醒日期（可选）"><el-date-picker v-model="reminderDate" type="date" value-format="YYYY-MM-DD" placeholder="选择提醒负责人更新的日期" clearable style="width:100%" /></el-form-item>
@@ -29,4 +29,15 @@ async function action(command:string,d:CustomerDocument){if(command==='download'
 function previewable(d:CustomerDocument){return['application/pdf','image/jpeg','image/png','image/gif','image/webp'].includes(d.contentType)}async function blob(d:CustomerDocument){return(await http.get<Blob>(`${endpoint.value}/${d.id}/file`,{responseType:'blob',timeout:120000})).data}async function download(d:CustomerDocument){const b=await blob(d),url=URL.createObjectURL(b),a=document.createElement('a');a.href=url;a.download=d.fileName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}function releasePreview(){if(previewURL.value)URL.revokeObjectURL(previewURL.value);previewURL.value='';previewBlob.value=null}async function preview(d:CustomerDocument){const b=await blob(d);releasePreview();previewURL.value=URL.createObjectURL(b);previewBlob.value=b;previewIsPDF.value=d.contentType==='application/pdf';previewOpen.value=true}function formatSize(v:string){const n=Number(v);return n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.ceil(n/1024)} KB`}
 onMounted(()=>{void load();timer=setInterval(()=>now.value=new Date(),60000)});onBeforeUnmount(()=>{clearInterval(timer);releasePreview()})
 </script>
-<style scoped>.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.hint,.size{color:#8492a6;font-size:13px}.size{margin-left:12px}.upload-hint{display:block;width:100%;margin-top:8px}.more-button span{font-size:10px;margin-left:5px}.filename{height:auto;white-space:normal;text-align:left}.image-preview{display:block;max-width:100%;max-height:70vh;margin:auto}</style>
+<style scoped>
+.toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.hint, .size { color: #526578; font-size: 12px; }
+.size { margin-inline-start: 6px; }
+.upload-hint { display: block; width: 100%; margin-top: 8px; }
+.more-button span { margin-inline-start: 4px; font-size: 8px; }
+.filename { max-width: 100%; height: auto; white-space: normal; text-align: start; }
+.file-list :deep(.cell) { overflow-wrap: anywhere; }
+.file-list :deep(.el-table__empty-block) { min-height: 34px; }
+.file-list :deep(.el-table__empty-text) { line-height: 34px; }
+.image-preview { display: block; max-width: 100%; max-height: 70vh; margin: auto; }
+</style>
