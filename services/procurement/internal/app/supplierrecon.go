@@ -222,10 +222,9 @@ func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
 type SupplierReconFilter struct {
 	Keyword      string
 	BusinessType string
-	// 两个互斥的筛子，都不给就是全部。只看逾期的；或者只看还没配账期的
-	// （后者是催配置，不是催钱）。和客户侧同款。
-	OverdueOnly bool
-	UnsetOnly   bool
+	OverdueOnly  bool
+	UnsetOnly    bool
+	DueSoonOnly  bool
 	// 只看确认完成了的。默认视图（false）是「还要人来处理的」。
 	ClosedOnly bool
 	Page       int32
@@ -405,11 +404,12 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	        OR (po.payable_due_date IS NOT NULL AND po.payable_due_date < current_date))
 	   AND ($5::bool = false OR po.payable_due_date IS NULL)
 	   AND ($8::text='' OR po.business_type=$8::text)
+	   AND ($9::bool = false OR po.payable_due_date BETWEEN current_date AND current_date + 30)
 	 -- 该付的排在前面，没配账期的垫底：它们缺的是配置，不是钱。
 	 ORDER BY po.payable_due_date ASC NULLS LAST, po.id DESC
 	 LIMIT $6::int OFFSET $7::int`,
 		tenantID, f.ClosedOnly, strings.TrimSpace(f.Keyword),
-		f.OverdueOnly, f.UnsetOnly, size, (page-1)*size, strings.ToUpper(strings.TrimSpace(f.BusinessType)))
+		f.OverdueOnly, f.UnsetOnly, size, (page-1)*size, strings.ToUpper(strings.TrimSpace(f.BusinessType)), f.DueSoonOnly)
 	if err != nil {
 		return nil, 0, err
 	}

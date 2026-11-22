@@ -4,16 +4,18 @@
       <template #actions><el-button v-if="!isReimbursement && canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
     </WorkflowPageHeader>
 
-    <el-radio-group v-if="canReadRecon" :model-value="isReimbursement ? 'travel' : 'payables'" class="module-tabs" @update:model-value="switchSection">
-      <el-radio-button value="payables">{{ t('supplierRecon.supplierPaymentsTab') }}</el-radio-button>
-      <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
-    </el-radio-group>
+    <div v-if="canReadRecon" class="finance-navigation">
+      <el-radio-group :model-value="isReimbursement ? 'travel' : 'payables'" :aria-label="t('supplierRecon.title')" @update:model-value="switchSection">
+        <el-radio-button value="payables">{{ t('supplierRecon.supplierPaymentsTab') }}</el-radio-button>
+        <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
+      </el-radio-group>
+      <el-radio-group v-if="!isReimbursement" :model-value="isContractReview ? 'contracts' : isDone ? 'done' : 'open'" :aria-label="t('supplierRecon.supplierPaymentsTab')" size="small" @update:model-value="switchTab">
+        <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
+        <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
+        <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
+      </el-radio-group>
+    </div>
     <TravelReimbursementPanel v-if="isReimbursement" />
-    <el-radio-group v-if="!isReimbursement" :model-value="isContractReview?'contracts':isDone?'done':'open'" class="tabs" @update:model-value="switchTab">
-      <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
-      <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
-      <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
-    </el-radio-group>
     <PurchaseContractReviewPanel v-if="!isReimbursement&&isContractReview" :order-id="String(route.query.order||'')" :initial-keyword="String(route.query.keyword||'')" @verified="reload"/>
     <div v-show="!isReimbursement&&!isContractReview" class="legacy-recon">
 
@@ -47,52 +49,37 @@
       <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
-    <!-- 三个数字回答「今天还有多少活」。全是全局合计，不是当前页——
-         页面上的合计如果跟着翻页变，那就不是合计了。 -->
-    <section class="metrics">
-      <div class="metric" :class="{ 'is-alarm': overdueCount > 0 }">
-        <span class="metric-label">{{ t('supplierRecon.overdueCount') }}</span>
-        <strong class="metric-value">{{ overdueCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.overdueHint') }}</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">{{ t('supplierRecon.dueSoonCount') }}</span>
-        <strong class="metric-value">{{ dueSoonCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.dueSoonHint') }}</span>
-      </div>
-      <div class="metric" :class="{ 'is-warn': unsetCount > 0 }">
-        <span class="metric-label">{{ t('supplierRecon.unsetCount') }}</span>
-        <strong class="metric-value">{{ unsetCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.unsetHint') }}</span>
-      </div>
-    </section>
-
     <section class="panel">
+      <el-radio-group v-if="!isDone" v-model="view" :aria-label="t('supplierRecon.dueDate')" class="due-filters" @change="reloadList">
+        <el-radio-button value="">{{ t('supplierRecon.viewAll') }}</el-radio-button>
+        <el-radio-button value="overdue">
+          {{ t('supplierRecon.overdueCount') }} <strong class="due-count due-count-overdue">{{ dueCounts?.overdue ?? '—' }}</strong>
+        </el-radio-button>
+        <el-radio-button value="soon">
+          {{ t('supplierRecon.dueSoonCount') }} <strong class="due-count">{{ dueCounts?.soon ?? '—' }}</strong>
+        </el-radio-button>
+        <el-radio-button value="unset">
+          {{ t('supplierRecon.unsetCount') }} <strong class="due-count due-count-unset">{{ dueCounts?.unset ?? '—' }}</strong>
+        </el-radio-button>
+      </el-radio-group>
       <div class="filters">
-        <!-- 主页签：供应商对账下面的两个子页。状态放在地址的 query 里，
-             前进/后退和分享链接都对；菜单高亮看的是 route.path，不受
-             query 影响，仍然稳稳停在「供应商对账」上。 -->
-        <!-- 次级筛子，只在待核销那一档下有意义：已完成的单不用再催。 -->
-        <el-radio-group v-if="!isDone" v-model="view" @change="reload">
-          <el-radio-button value="">{{ t('supplierRecon.viewAll') }}</el-radio-button>
-          <el-radio-button value="overdue">{{ t('supplierRecon.viewOverdue') }}</el-radio-button>
-          <el-radio-button value="unset">{{ t('supplierRecon.viewUnset') }}</el-radio-button>
-        </el-radio-group>
-        <el-select v-model="businessType" :placeholder="t('supplierRecon.businessType')" style="width: 170px" @change="reload">
+        <div class="payment-search">
+          <el-input
+            v-model="keyword"
+            clearable
+            :aria-label="t('supplierRecon.search')"
+            :placeholder="t('supplierRecon.search')"
+            @keyup.enter="reloadList"
+            @clear="reloadList"
+          />
+          <el-button type="primary" @click="reloadList">{{ t('common.query') }}</el-button>
+        </div>
+        <el-select v-model="businessType" :aria-label="t('supplierRecon.businessType')" :placeholder="t('supplierRecon.businessType')" class="business-filter" @change="reload">
           <el-option :label="t('supplierRecon.businessTypes.ALL')" value="" />
           <el-option :label="t('supplierRecon.businessTypes.PROCUREMENT')" value="PROCUREMENT" />
           <el-option :label="t('supplierRecon.businessTypes.LOGISTICS')" value="LOGISTICS" />
           <el-option :label="t('supplierRecon.businessTypes.MANUAL')" value="MANUAL" />
         </el-select>
-        <el-input
-          v-model="keyword"
-          clearable
-          :placeholder="t('supplierRecon.search')"
-          style="max-width: 260px"
-          @keyup.enter="reload"
-          @clear="reload"
-        />
-        <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
       <el-table v-loading="loading" :data="rows" class="supplier-payments-table" @expand-change="onExpand">
@@ -573,15 +560,11 @@ const emptyText = computed(() =>
 const keyword = ref(String(route.query.keyword ?? ''))
 const loading = ref(false)
 
-// 三个数字算的是「当前这一页之外的全局」，所以各查一次 total——页面上的
-// 合计如果只统计当前页，会在翻页时变化，那就不是合计了。
-const overdueCount = ref(0)
-const dueSoonCount = ref(0)
-const unsetCount = ref(0)
-
-const dueSoonDays = 30
-const view = ref('')
+const dueCounts = ref<{ overdue: number; soon: number; unset: number }>()
+const view = ref<'' | 'overdue' | 'soon' | 'unset'>('')
 const businessType = ref('')
+let listRequest = 0
+let metricsRequest = 0
 
 const paymentWholeAmount = new Intl.NumberFormat('en-US')
 function formatListPayment(value: string, currency: string) {
@@ -629,7 +612,8 @@ async function openManual() {
 }
 
 async function load() {
-  if(isContractReview.value)return
+  const request = ++listRequest
+  if (isReimbursement.value || isContractReview.value) return
   loading.value = true
   try {
     const d = await fetchPage({
@@ -637,36 +621,45 @@ async function load() {
       view: isDone.value ? 'done' : '',
       overdue: !isDone.value && view.value === 'overdue' ? '1' : '',
       unset: !isDone.value && view.value === 'unset' ? '1' : '',
+      due_soon: !isDone.value && view.value === 'soon' ? '1' : '',
       keyword: keyword.value,
       business_type: businessType.value,
     })
+    if (request !== listRequest) return
     rows.value = d.items ?? []
     total.value = Number(d.total ?? 0)
   } catch {
+    if (request !== listRequest) return
     // 失败时必须清空，不能把上一次的数据留在表上。表头和操作列已经按
     // 当前页签渲染了——留着旧数据，就会在「已完成」页里列出从没确认过的
     // 单，每行挂着一个「撤销完成」按钮。错误提示由 api 层统一弹。
     rows.value = []
     total.value = 0
   } finally {
-    loading.value = false
+    if (request === listRequest) loading.value = false
   }
 }
 
 async function loadMetrics() {
-  if(isContractReview.value)return
-  const [overdue, unset, sample] = await Promise.all([
-    fetchPage({ page: 1, page_size: 1, overdue: '1' }),
-    fetchPage({ page: 1, page_size: 1, unset: '1' }),
-    // 「30 天内到期」没有独立筛子（服务端只认逾期/未配置两个），所以拉一页
-    // 算：够用且不必为一个提示数字再开一个接口。
-    fetchPage({ page: 1, page_size: 200 }),
-  ])
-  overdueCount.value = Number(overdue.total ?? 0)
-  unsetCount.value = Number(unset.total ?? 0)
-  dueSoonCount.value = (sample.items ?? []).filter(
-    (r) => !r.dueUnset && r.overdueDays <= 0 && -r.overdueDays <= dueSoonDays,
-  ).length
+  const request = ++metricsRequest
+  dueCounts.value = undefined
+  if (isDone.value || isReimbursement.value || isContractReview.value) return
+  const params = { page: 1, page_size: 1, business_type: businessType.value }
+  try {
+    const [overdue, soon, unset] = await Promise.all([
+      fetchPage({ ...params, overdue: '1' }),
+      fetchPage({ ...params, due_soon: '1' }),
+      fetchPage({ ...params, unset: '1' }),
+    ])
+    if (request !== metricsRequest) return
+    dueCounts.value = {
+      overdue: Number(overdue.total ?? 0),
+      soon: Number(soon.total ?? 0),
+      unset: Number(unset.total ?? 0),
+    }
+  } catch {
+    // API errors are shown by the request layer. Unknown totals stay unset.
+  }
 }
 
 // ── 改应付到期日 ──────────────────────────────────────────
@@ -964,39 +957,31 @@ async function reopenRow(row: Row) {
   reload()
 }
 
-function reload() {
+function reloadList() {
   page.value = 1
-  load()
-  loadMetrics()
+  void load()
 }
 
-watch(() => route.query.keyword, (value) => {
-  keyword.value = String(value ?? '')
-  reload()
-})
+function reload() {
+  reloadList()
+  void loadMetrics()
+}
 
 // 待核销 ⇄ 已完成是**同一个组件实例**——vue-router 原地复用，setup 和
 // onMounted 都不会再跑一遍。不盯着它重新拉数据的话，切过去表头和按钮都
 // 变了（isDone 是响应式的），表格里却还是上一页那批数据：对着一张从没
 // 确认过的单点「撤销完成」。ReceivableDuePage 和 SourcingCasesListPage
 // 都踩过同一个坑。
-watch(isDone, () => {
-  view.value = ''
-  entries.value = {}
-  files.value = {}
+watch([isDone, isContractReview, isReimbursement, () => route.query.keyword], ([done, , , routeKeyword], [wasDone, , , oldKeyword]) => {
+  if (routeKeyword !== oldKeyword) keyword.value = String(routeKeyword ?? '')
+  if (done !== wasDone) {
+    view.value = ''
+    entries.value = {}
+    files.value = {}
+  }
   reload()
 })
-watch(isContractReview,active=>{if(!active)reload()})
-
-watch(isReimbursement, (active) => {
-  if (!active) { load(); loadMetrics() }
-})
-
-onMounted(() => {
-	if (isReimbursement.value) return
-  load()
-  loadMetrics()
-})
+onMounted(reload)
 </script>
 
 <style scoped>
@@ -1017,70 +1002,40 @@ onMounted(() => {
 }
 :global(.finance-manual-dialog .el-dialog__body){max-height:calc(88vh - 120px);overflow-y:auto;padding:12px 20px}:global(.finance-manual-dialog .el-dialog__footer){border-top:1px solid #e5edf2;padding-top:12px}:global(.finance-manual-dialog .el-form-item){margin-bottom:14px}.manual-source-hint{font-size:12px;color:#6b7e8b;line-height:1.6;margin:0 0 14px}.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid #dce8ed;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 6px 18px rgba(25, 72, 91, .035);
+.finance-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dce8ed;
 }
-.metric {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 4px 12px;
-  min-height: 62px;
-  overflow: hidden;
-  padding: 10px 16px 10px 30px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+.due-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.due-filters :deep(.el-radio-button) {
+  --el-radio-button-checked-bg-color: #eaf6fc;
+  --el-radio-button-checked-border-color: #8ec5e1;
+  --el-radio-button-checked-text-color: #155674;
+}
+.due-filters :deep(.el-radio-button__inner) {
   box-shadow: none;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
 }
-.metric + .metric { border-left: 1px solid #e5edf1; }
-.metric::before {
-  position: absolute;
-  top: 17px;
-  left: 16px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #4ac1ff;
-  content: '';
+.due-filters :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  border-color: var(--el-radio-button-checked-border-color);
 }
-.metric.is-warn {
-  background: #fffdf9;
-}
-.metric.is-warn::before { background: #e5a33b; }
-.metric-label {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-.metric-value {
-  color: #141817;
-  font-size: 22px;
-  line-height: 1.15;
+.due-count {
+  margin-inline-start: 3px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.metric-hint {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--el-text-color-placeholder);
-}
-/* 卡片是 flex column，link 按钮默认撑满一行会让文字居中——按内容宽度
-   靠左收住，和上面三行文字对齐。 */
-.metric-action {
-  align-self: flex-start;
-  margin-top: 2px;
-  font-size: 12px;
-}
+.due-count-overdue { color: #b42318; }
+.due-count-unset { color: #8a540c; }
 .panel {
   min-width: 0;
   padding: 14px 16px;
@@ -1095,10 +1050,19 @@ onMounted(() => {
 .filters {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
+.payment-search {
+  display: flex;
+  align-items: center;
+  flex: 0 1 380px;
+  min-width: 0;
+  gap: 8px;
+}
+.business-filter { width: min(190px, 100%); }
 .sub {
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -1155,10 +1119,6 @@ onMounted(() => {
 .drop-arrow { margin-left: 7px; font-size: 10px; }
 .detail-summary { margin-bottom: 18px; }
 .detail-heading { margin: 0 0 10px; font-size: 15px; }
-.metric.is-alarm {
-  background: #fffafb;
-}
-.metric.is-alarm::before { background: #ff6b72; }
 .po-no {
   font-variant-numeric: tabular-nums;
 }

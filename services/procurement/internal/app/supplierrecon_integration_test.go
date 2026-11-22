@@ -763,6 +763,54 @@ func TestPayableDueIsReadFromTheOrderItself(t *testing.T) {
 	}
 }
 
+func TestSupplierReconDueSoonFiltersBeforeCountingAndPaging(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+
+	for _, order := range []struct {
+		no           string
+		days         int
+		businessType string
+	}{
+		{"PO-DUE-YESTERDAY", -1, "PROCUREMENT"},
+		{"PO-DUE-TODAY", 0, "PROCUREMENT"},
+		{"PO-DUE-DAY30", 30, "PROCUREMENT"},
+		{"PO-DUE-DAY31", 31, "PROCUREMENT"},
+		{"PO-DUE-LOGISTICS", 5, "LOGISTICS"},
+	} {
+		id := seedReconOrder(ctx, t, svc.pool, tenantID, order.no, "1000", "ORDERED")
+		if _, err := svc.pool.Exec(ctx, `
+			UPDATE purchase_orders
+			   SET payable_due_date = current_date + $3::int, business_type = $4
+			 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id, order.days, order.businessType); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-MISSING", "1000", "ORDERED")
+
+	filter := SupplierReconFilter{DueSoonOnly: true, BusinessType: "PROCUREMENT", Page: 1, PageSize: 1}
+	for _, want := range []string{"PO-DUE-TODAY", "PO-DUE-DAY30"} {
+		rows, total, err := svc.ListSupplierRecon(ctx, tenantID, filter, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if total != 2 || len(rows) != 1 || rows[0].PONo != want {
+			t.Fatalf("page %d: want total 2 and %s, got total %d and %+v", filter.Page, want, total, rows)
+		}
+		filter.Page++
+	}
+	filter.Keyword, filter.Page = "DAY30", 1
+	rows, total, err := svc.ListSupplierRecon(ctx, tenantID, filter, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].PONo != "PO-DUE-DAY30" {
+		t.Fatalf("search within due soon: want one matching order, got total %d and %+v", total, rows)
+	}
+}
+
 // 审批通过**不许动**员工填下的应付到期日。
 //
 // 上一版 SetPurchaseOrderOrdered 里有一句无条件赋值：
