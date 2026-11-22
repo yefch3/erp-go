@@ -129,6 +129,13 @@ export default {
   },
   purchaseOrderContext: { remark: '采购单备注', remarkHint: '来自当前采购单，由采购填写，仅供查看。', emptyRemark: '未填写采购单备注', supplier: '工厂 / 供应商', shippingTitle: '本合同采购工厂及备注', shippingHint: '仅展示本合同已下单的采购工厂与备注，不开放采购价格或采购单详情。', loadFailed: '采购工厂及备注加载失败，请重试', noOrders: '暂无本合同已下单的采购记录' },
   quality: {
+    lineSearch: '搜索产品或规格',
+    roundEntryHint: '本轮只保存已填写且有效的规格，留空的规格继续待检。',
+    readyRoundLines: '本轮将保存 {n} 项',
+    incompleteRoundLines: '还有 {n} 项未填完整',
+    historyUnqualifiedQty: '不合格数量',
+    noMatchingLines: '没有符合条件的规格',
+    invalidRoundLine: '请补全或核对「{product}」的质检结果及数量后再保存。',
     viewProgress: '查看质检进度', afterOrder: '采购单下单后可申请质检。', inactiveOrder: '已结案或已作废，仅可查看已有质检记录。', purchaseOnly: '仅采购订单可申请出货前质检。',
     pendingFiles: "待上传文件",
     pendingHint: "以下文件尚未保存，点击“上传资料”后才会进入已上传资料。",

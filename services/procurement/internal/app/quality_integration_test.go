@@ -11,6 +11,45 @@ import (
 
 type qualityFiles struct{}
 
+func TestQualityRoundLeavesUnsubmittedSpecsPending(t *testing.T) {
+	f := newDeliveryQualityFixture(t)
+	ctx := context.Background()
+	var requirement int64
+	if err := f.pool.QueryRow(ctx, `INSERT INTO purchase_requirements
+		(tenant_id, contract_id, contract_no, contract_version_id, contract_item_id, product_id, product_name, uom_code, required_qty, ordered_qty, status)
+		VALUES ($1, 991, 'CT-QUALITY', 1, 993, 12, 'Pipe', 'PCS', 4, 4, 'ORDERED') RETURNING id`, f.tenant).Scan(&requirement); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO purchase_order_items
+		(tenant_id, po_id, requirement_id, product_id, product_name, uom_code, qty, unit_price, amount)
+		VALUES ($1, $2, $3, 12, 'Pipe', 'PCS', 4, 100, 400)`, f.tenant, f.po, requirement); err != nil {
+		t.Fatal(err)
+	}
+	task := f.apply(t)
+	if len(task.Lines) != 2 {
+		t.Fatalf("expected two specifications: %+v", task.Lines)
+	}
+	firstID, secondID := task.Lines[0].ID, task.Lines[1].ID
+	qc := Operator{ID: 88, Name: "QC"}
+	partial, err := f.svc.SubmitQualityRound(ctx, f.tenant, task.ID, SubmitQualityInput{
+		Lines: []SubmitQualityLine{{TaskLineID: firstID, Result: "PASS", InspectedQty: "10", QualifiedQty: "10", UnqualifiedQty: "0"}},
+	}, qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial.Status == "COMPLETED" || len(partial.Rounds) != 1 || len(partial.Rounds[0].Lines) != 1 ||
+		partial.Lines[0].FinalResult != "PASS" || partial.Lines[1].FinalResult != "PENDING" ||
+		partial.Lines[1].QualifiedQty != "0.0000" || partial.Lines[1].UnresolvedQty != "4.0000" {
+		t.Fatalf("submitting one specification changed an unsubmitted line: %+v", partial)
+	}
+	completed, err := f.svc.SubmitQualityRound(ctx, f.tenant, task.ID, SubmitQualityInput{
+		Lines: []SubmitQualityLine{{TaskLineID: secondID, Result: "PASS", InspectedQty: "4", QualifiedQty: "4", UnqualifiedQty: "0"}},
+	}, qc)
+	if err != nil || completed.Status != "COMPLETED" || len(completed.Rounds) != 2 {
+		t.Fatalf("expected the same task to complete with both rounds: %+v, %v", completed, err)
+	}
+}
+
 func (qualityFiles) PresignPut(context.Context, string) (string, int32, error) {
 	return "http://upload.local", 600, nil
 }
