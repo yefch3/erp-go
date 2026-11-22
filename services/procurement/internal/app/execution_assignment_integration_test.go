@@ -151,6 +151,12 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	if run(manager, draft).OrderID != po {
 		t.Fatal("draft retry created another order")
 	}
+	if linked, err := svc.OrderFromExecutionNegotiation(ctx, tenant, po); err != nil || !linked {
+		t.Fatalf("negotiated draft source: linked=%v err=%v", linked, err)
+	}
+	if linked, err := svc.OrderFromExecutionNegotiation(ctx, tenant+1, po); err != nil || linked {
+		t.Fatalf("unexpected draft source for another tenant: linked=%v err=%v", linked, err)
+	}
 	head, err := svc.GetOrder(ctx, tenant, po)
 	if err != nil || head.BuyerID != buyer.ID || head.Remark != "议价备注" {
 		t.Fatalf("owner=%d remark=%q err=%v", head.BuyerID, head.Remark, err)
@@ -178,6 +184,21 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	returned := run(buyer, ExecutionAssignmentInput{Action: "inbox"}).Assignments
 	if len(returned) != 1 || returned[0].OrderID != po || returned[0].OrderStatus != "REJECTED" {
 		t.Fatalf("return inbox: %+v", returned)
+	}
+	if _, err := svc.UpdateOrder(ctx, tenant, po, CreateOrderInput{
+		SupplierID: 6, Currency: "CNY", ExpectedDate: "2027-01-02",
+		FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "PORT", DeliveryPortName: "自填测试港",
+		Lines: []OrderLine{{RequirementID: requirement, Qty: "100", UnitPrice: "3.6"}},
+	}, buyer); err != nil {
+		t.Fatalf("save returned draft: %v", err)
+	}
+	if updated, err := svc.GetOrder(ctx, tenant, po); err != nil || updated.DeliveryPortID != 0 ||
+		updated.DeliveryPortName != "自填测试港" || updated.DeliveryLocationType != "PORT" {
+		t.Fatalf("saved manual port: id=%d name=%q type=%q err=%v", updated.DeliveryPortID, updated.DeliveryPortName, updated.DeliveryLocationType, err)
+	}
+	if items, err := svc.OrderItems(ctx, tenant, po); err != nil || len(items) != 1 ||
+		items[0].RequirementID != requirement || items[0].UnitPrice != "3.6000" {
+		t.Fatalf("saved draft items: %+v err=%v", items, err)
 	}
 	if _, err = svc.UploadOrderDraftFile(ctx, tenant, po, "extra.pdf", "application/pdf", []byte("extra"), buyer); err != nil {
 		t.Fatal(err)

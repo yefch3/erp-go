@@ -107,13 +107,23 @@
       />
     </el-card>
 
-    <el-dialog v-model="createOpen" :title="editing ? t('orders.editFor', { no: editing.poNo }) : t('orders.create')" width="900px">
-      <el-alert type="info" :closable="false" show-icon class="alert">
+    <el-dialog
+      v-model="createOpen"
+      :title="editing ? t('orders.editFor', { no: editing.poNo }) : t('orders.create')"
+      :class="{ 'negotiated-draft-dialog': negotiatedDraftItems }"
+      :width="negotiatedDraftItems ? 'min(940px, calc(100vw - 32px))' : '900px'"
+      :top="negotiatedDraftItems ? '5vh' : undefined"
+    >
+      <el-alert v-if="!negotiatedDraftItems" type="info" :closable="false" show-icon class="alert">
         {{ t('orders.createHint') }}
       </el-alert>
-      <el-form label-width="90px" class="head-form">
-        <el-form-item :label="t('orders.supplier')" required>
-          <div class="supplier-row">
+      <el-form
+        label-width="90px" class="head-form" :class="{ 'negotiated-draft-form': negotiatedDraftItems }"
+        :label-position="negotiatedDraftItems ? 'top' : undefined" :size="negotiatedDraftItems ? 'small' : undefined"
+      >
+        <el-form-item class="draft-supplier" :label="t('orders.supplier')" required>
+          <el-input v-if="negotiatedDraftItems" :model-value="negotiatedSupplierLabel" readonly aria-label="供应商" />
+          <div v-else class="supplier-row">
             <el-select v-model="form.supplierId" filterable :disabled="supplierLocked" style="width: 420px">
               <el-option
                 v-for="s in suppliers"
@@ -130,28 +140,47 @@
             比价确认的方案定的是「{{ scenarioSupplierName }}」<template v-if="switchSupplier">，换一家要在下面写明原因</template>
           </div>
         </el-form-item>
-        <el-form-item :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
+        <el-form-item class="draft-date" :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
           <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
         </el-form-item>
-        <el-form-item :label="t('orders.payableDue')">
-      <el-date-picker v-model="form.payableDueDate" type="date" value-format="YYYY-MM-DD" clearable
-                      :placeholder="t('orders.payableDueHint')" style="width: 200px" />
-    </el-form-item>
-    <el-form-item label="履约方式" required>
-          <el-radio-group v-model="form.fulfillmentMode">
+        <el-form-item class="draft-date" :label="t('orders.payableDue')">
+          <el-date-picker v-model="form.payableDueDate" type="date" value-format="YYYY-MM-DD" clearable
+                          :placeholder="negotiatedDraftItems ? 'YYYY-MM-DD' : t('orders.payableDueHint')" style="width: 200px" />
+        </el-form-item>
+        <el-form-item class="draft-fulfillment" label="履约方式" required>
+          <el-select v-if="negotiatedDraftItems" v-model="form.fulfillmentMode" aria-label="履约方式">
+            <el-option value="DIRECT_SHIP" label="直接发往港口/指定地点" />
+            <el-option value="WAREHOUSE" label="先入库再发货" />
+          </el-select>
+          <el-radio-group v-else v-model="form.fulfillmentMode">
             <el-radio-button value="DIRECT_SHIP">直接发往港口/指定地点</el-radio-button>
             <el-radio-button value="WAREHOUSE">先入库再发货</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <template v-if="form.fulfillmentMode === 'DIRECT_SHIP'">
-          <el-form-item label="收货地点" required>
-            <el-radio-group v-model="form.deliveryLocationType">
+          <el-form-item class="draft-location" label="收货地点" required>
+            <el-select v-if="negotiatedDraftItems" v-model="form.deliveryLocationType" aria-label="收货地点">
+              <el-option value="PORT" label="港口" />
+              <el-option value="CUSTOM" label="自定义地址" />
+            </el-select>
+            <el-radio-group v-else v-model="form.deliveryLocationType">
               <el-radio value="PORT">港口</el-radio>
               <el-radio value="CUSTOM">自定义地址</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item v-if="form.deliveryLocationType === 'PORT'" label="收货港口" required>
-            <el-select v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
+          <el-form-item v-if="form.deliveryLocationType === 'PORT'" class="draft-destination" label="收货港口" required>
+            <el-select
+              v-if="negotiatedDraftItems" :model-value="form.deliveryPortId || form.deliveryPortName || undefined"
+              aria-label="收货港口" filterable allow-create default-first-option clearable
+              placeholder="选择港口，或输入后按回车" @change="setNegotiatedDeliveryPort"
+            >
+              <el-option v-for="port in deliveryPorts" :key="port.id" :value="Number(port.id)" :label="portLabel(port)" />
+              <el-option
+                v-if="form.deliveryPortId && !deliveryPorts.some(port => Number(port.id) === form.deliveryPortId)"
+                :value="form.deliveryPortId" :label="form.deliveryPortName || form.deliveryPortCode || String(form.deliveryPortId)"
+              />
+            </el-select>
+            <el-select v-else v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
               <el-option
                 v-for="p in deliveryPorts"
                 :key="p.id"
@@ -160,26 +189,51 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item v-else label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
+          <el-form-item v-else class="draft-destination" label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
         </template>
-        <el-form-item v-else label="入库仓库" required>
+        <el-form-item v-else class="draft-destination draft-warehouse" label="入库仓库" required>
           <el-select v-model="form.warehouseId" style="width: 420px" @change="selectOrderWarehouse">
             <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="调整原因" :required="reasonRequired">
+        <el-form-item v-if="showAdjustmentReason" class="draft-note" label="调整原因" :required="reasonRequired">
           <el-input v-model="form.sourceChangeReason" :placeholder="reasonPlaceholder" />
           <div v-if="isReorder && !switchSupplier" class="form-note">
             这批之前已经下过单，本次买的是剩下的数量
           </div>
         </el-form-item>
-        <el-form-item :label="t('orders.remark')">
-          <el-input v-model="form.remark" type="textarea" :rows="2" />
+        <el-form-item class="draft-note" :class="{ 'draft-note-full': !showAdjustmentReason }" :label="t('orders.remark')">
+          <el-input v-model="form.remark" type="textarea" :rows="2" :autosize="negotiatedDraftItems ? { minRows: 1, maxRows: 4 } : false" />
         </el-form-item>
       </el-form>
 
-      <div class="side-title">{{ t('orders.pickRequirements') }}</div>
-      <el-table :data="pending" size="small" max-height="320">
+      <div class="side-title" :class="{ 'negotiated-draft-heading': negotiatedDraftItems }">{{ negotiatedDraftItems ? '采购明细' : t('orders.pickRequirements') }}</div>
+      <el-table v-if="negotiatedDraftItems" :data="negotiatedDraftItems" row-key="id" size="small">
+        <el-table-column label="产品规格" min-width="220">
+          <template #default="{ row }">
+            <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name />
+          </template>
+        </el-table-column>
+        <el-table-column label="数量 / 单位" width="155">
+          <template #default="{ row }">
+            <el-input
+              :model-value="draftCellValue('qty', row.requirementId)" size="small" inputmode="decimal" :aria-label="`数量 ${row.productName}`"
+              @blur="editedDraftCell = ''" @update:model-value="updateDraftCell('qty', row.requirementId, $event)"
+            >
+              <template #append>{{ row.uomCode }}</template>
+            </el-input>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('orders.unitPrice')" width="130">
+          <template #default="{ row }">
+            <el-input
+              :model-value="draftCellValue('price', row.requirementId)" size="small" inputmode="decimal" :aria-label="`单价 ${row.productName}`"
+              @blur="editedDraftCell = ''" @update:model-value="updateDraftCell('price', row.requirementId, $event)"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-table v-else :data="pending" size="small" max-height="320">
         <el-table-column :label="t('orders.product')" min-width="180">
           <template #default="{ row }">
             <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/>
@@ -211,30 +265,55 @@
         </el-table-column>
         <template #empty>{{ t('orders.noPending') }}</template>
       </el-table>
-      <div class="total-row">
+      <div v-if="!negotiatedDraftItems" class="total-row">
         {{ t('orders.estimated') }}<span class="num money">{{ estimated }}</span>
       </div>
 
       <template #footer>
-        <el-button @click="createOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">
-          {{ approvalEntry ? t('orders.createDraft') : common('save') }}
-        </el-button>
+        <div :class="{ 'negotiated-draft-footer': negotiatedDraftItems }">
+          <div v-if="negotiatedDraftItems" class="total-row">
+            {{ t('orders.estimated') }}<strong class="num money">{{ draftTotalFormat.format(Number(estimated)) }}</strong> {{ form.currency }}
+          </div>
+          <div>
+            <el-button @click="createOpen = false">{{ common('cancel') }}</el-button>
+            <el-button type="primary" :loading="saving" @click="submitCreate">
+              {{ approvalEntry ? t('orders.createDraft') : common('save') }}
+            </el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailOpen" :title="detail?.poNo" :width="detail?.historical ? 'min(1040px,94vw)' : '820px'" :top="detail?.historical ? '5vh' : '15vh'" :class="{'historical-order-detail':detail?.historical}">
+    <el-dialog
+      v-model="detailOpen" :title="detail?.poNo"
+      :width="detail?.historical ? 'min(1040px,94vw)' : compactDraftDetail ? 'min(880px, calc(100vw - 32px))' : '820px'"
+      :top="detail?.historical || compactDraftDetail ? '5vh' : '15vh'"
+      :class="{ 'historical-order-detail': detail?.historical, 'compact-draft-detail': compactDraftDetail }"
+    >
       <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
       <div v-if="detail && approvalTaskFor(detail)" class="next-step">
         <span class="next-step-label">{{ t('orders.approvalDecision') }}</span>
         <el-button size="small" type="success" @click="actOnOrderApproval(detail, 'APPROVE')">{{ t('todos.approve') }}</el-button>
         <el-button size="small" type="danger" @click="actOnOrderApproval(detail, 'REJECT')">{{ t('todos.reject') }}</el-button>
       </div>
-      <div v-else-if="detailNext" class="next-step">
+      <div v-else-if="detailNext && !compactDraftDetail" class="next-step">
         <span class="next-step-label">{{ t('orders.nextStep') }}</span>
         <el-button size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
       </div>
-      <el-descriptions :column="detail?.historical ? 2 : 3" :label-width="detail?.historical ? 110 : undefined" border size="small" class="desc">
+      <section v-if="compactDraftDetail && detail" class="draft-detail-summary">
+        <header class="draft-detail-heading">
+          <el-tag size="small" :type="detail.status === 'REJECTED' ? 'danger' : 'info'">{{ orderStatusLabel(detail) }}</el-tag>
+          <el-button v-if="detailNext" size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
+        </header>
+        <dl class="draft-detail-facts">
+          <div><dt>{{ t('orders.supplier') }}</dt><dd>{{ detail.supplierName || '—' }}</dd></div>
+          <div><dt>{{ t('orders.buyer') }}</dt><dd>{{ detail.buyerName || '—' }}</dd></div>
+          <div><dt>{{ t('orders.expected') }}</dt><dd>{{ detail.expectedDate || '—' }}</dd></div>
+          <div><dt>{{ t('orders.payableDue') }}</dt><dd>{{ detail.payableDueDate || '—' }}</dd></div>
+          <div><dt>{{ t('orders.amount') }}</dt><dd class="num">{{ draftTotalFormat.format(Number(detail.totalAmount)) }} {{ detail.currency }}</dd></div>
+        </dl>
+      </section>
+      <el-descriptions v-else :column="detail?.historical ? 2 : 3" :label-width="detail?.historical ? 110 : undefined" border size="small" class="desc">
         <el-descriptions-item :label="t('orders.supplier')">{{ detail?.supplierName || (detail?.historical ? '待补充供应商' : '—') }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.amount')">
           {{ detail?.currency }} {{ detail?.totalAmount }}
@@ -263,49 +342,59 @@
       </section>
 
       <el-alert v-if="detail?.status === 'REJECTED' && detail.rejectReason" :title="detail.rejectReason" type="error" :closable="false" show-icon />
-      <section v-if="detailDraftFiles.length || canEditDraftFiles" class="order-draft-files">
-        <div class="side-title">采购资料</div>
-        <label v-if="canEditDraftFiles" class="draft-upload">
-          <input type="file" multiple :disabled="uploadingDraftFiles" @change="uploadDraftFiles" />
-          {{ uploadingDraftFiles ? '上传中…' : '补充采购资料' }}
-        </label>
-        <div v-for="file in detailDraftFiles" :key="file.id" class="order-draft-file">
-          <span><strong>{{ file.fileName }}</strong><small>{{ formatDraftFileSize(file.sizeBytes) }} · {{ file.uploadedByName }} · {{ formatTime(file.uploadedAt) }}</small></span>
-          <span><el-button link type="primary" :loading="previewingDraftFileId===file.id" @click="previewDraftFile(file)">预览</el-button><el-button link type="primary" @click="downloadDraftFile(file)">下载</el-button><el-button v-if="canEditDraftFiles" link type="danger" @click="deleteDraftFile(file)">删除</el-button></span>
-        </div>
+      <section v-if="compactDraftDetail && detail?.remark" class="draft-detail-remark">
+        <h3 class="side-title">{{ t('orders.remark') }}</h3>
+        <p>{{ detail.remark }}</p>
       </section>
+      <div id="purchase-order-detail-attachments"></div>
 
-      <FilePreviewDialog v-model="draftFilePreviewOpen" :source="draftFilePreviewSource" :title="draftFilePreviewTitle" :content-type="draftFilePreviewType" />
-
+      <div v-if="compactDraftDetail" class="side-title draft-detail-table-heading">采购明细</div>
       <el-table :data="detailItems" size="small">
-        <el-table-column :label="t('orders.product')" min-width="180">
+        <el-table-column :label="compactDraftDetail ? '产品规格' : t('orders.product')" min-width="180">
           <template #default="{ row }">
             <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name/>
-            <div class="sub">
+            <div v-if="!compactDraftDetail || row.source === 'MANUAL' || row.contractNo || row.customerName || row.contractOwner" class="sub">
               <template v-if="row.source === 'MANUAL'">{{ t('orders.manual') }}</template>
               <template v-else>{{ row.contractNo }} · {{ row.customerName }}<template v-if="row.contractOwner"> · {{ t('orders.contractOwner') }} {{ row.contractOwner }}</template></template>
             </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('orders.orderQty')" width="100" align="right">
-          <template #default="{ row }"><span class="num">{{ trim(row.qty) }}</span></template>
+          <template #default="{ row }"><span class="num">{{ compactDraftDetail && row.uomCode ? `${trim(row.qty)} ${row.uomCode}` : trim(row.qty) }}</span></template>
         </el-table-column>
         <el-table-column :label="t('orders.unitPrice')" width="100" align="right">
-          <template #default="{ row }"><span class="num">{{ trim(row.unitPrice) }}</span></template>
+          <template #default="{ row }"><span class="num">{{ compactDraftDetail && row.unitPrice ? draftUnitPriceFormat.format(Number(row.unitPrice)) : trim(row.unitPrice) }}</span></template>
         </el-table-column>
         <el-table-column :label="t('orders.amount')" width="110" align="right">
-          <template #default="{ row }"><span class="num">{{ row.amount }}</span></template>
+          <template #default="{ row }"><span class="num">{{ compactDraftDetail && row.amount ? draftTotalFormat.format(Number(row.amount)) : row.amount }}</span></template>
         </el-table-column>
-        <el-table-column :label="t(detail?.fulfillmentMode==='WAREHOUSE'?'purchaseFulfillment.completeWarehouse':'purchaseFulfillment.completeDelivery')" width="100" align="right">
+        <el-table-column v-if="!editableDraftDetail" :label="t(detail?.fulfillmentMode==='WAREHOUSE'?'purchaseFulfillment.completeWarehouse':'purchaseFulfillment.completeDelivery')" width="100" align="right">
           <template #default="{ row }">
             <span class="num" :class="{ dim: Number(row.receivedQty) === 0 }">{{ trim(row.receivedQty) }}</span>
           </template>
         </el-table-column>
       </el-table>
 
-      <PurchaseQualityPanel v-if="detailOpen && detail" :order-id="detail.id" :key="detail.id+':'+qualityRevision" :can-request="canRequestQuality(detail)" :request-hint="qualityRequestHint(detail)" @request="openQualityApplication(detail!)" />
+      <Teleport defer to="#purchase-order-detail-attachments" :disabled="compactDraftDetail">
+        <section v-if="detailDraftFiles.length || canEditDraftFiles" class="order-draft-files" :class="{ 'draft-detail-files': compactDraftDetail }">
+          <div :class="{ 'draft-detail-heading': compactDraftDetail }">
+            <div class="side-title">采购资料</div>
+            <label v-if="canEditDraftFiles" class="draft-upload">
+              <input type="file" multiple :disabled="uploadingDraftFiles" @change="uploadDraftFiles" />
+              {{ uploadingDraftFiles ? '上传中…' : '补充采购资料' }}
+            </label>
+          </div>
+          <div v-for="file in detailDraftFiles" :key="file.id" class="order-draft-file">
+            <span><strong>{{ file.fileName }}</strong><small>{{ formatDraftFileSize(file.sizeBytes) }} · {{ file.uploadedByName }} · {{ formatTime(file.uploadedAt) }}</small></span>
+            <span><el-button link type="primary" :loading="previewingDraftFileId===file.id" @click="previewDraftFile(file)">预览</el-button><el-button link type="primary" @click="downloadDraftFile(file)">下载</el-button><el-button v-if="canEditDraftFiles" link type="danger" @click="deleteDraftFile(file)">删除</el-button></span>
+          </div>
+        </section>
+      </Teleport>
+      <FilePreviewDialog v-model="draftFilePreviewOpen" :source="draftFilePreviewSource" :title="draftFilePreviewTitle" :content-type="draftFilePreviewType" />
 
-      <template v-if="detailReceipts.length">
+      <PurchaseQualityPanel v-if="detailOpen && detail && !editableDraftDetail" :order-id="detail.id" :key="detail.id+':'+qualityRevision" :can-request="canRequestQuality(detail)" :request-hint="qualityRequestHint(detail)" @request="openQualityApplication(detail!)" />
+
+      <template v-if="!editableDraftDetail && detailReceipts.length">
         <div class="side-title">{{ t('orders.receipts') }}</div>
         <el-table :data="detailReceipts" size="small">
           <el-table-column :label="t('orders.receiptNo')" width="170">
@@ -738,9 +827,33 @@ const approvalEntry = ref(false)
 const switchSupplier = ref(false)
 const editing = ref<Order | null>(null)
 const pending = ref<Requirement[]>([])
+const negotiatedDraftItems = ref<OrderItem[] | null>(null)
+const draftAdjustmentShown = ref(false)
+const draftAdjustmentRequired = ref(false)
+const editedDraftCell = ref('')
+const negotiatedSupplierLabel = computed(() => [editing.value?.supplierCode, editing.value?.supplierName].filter(Boolean).join(' · '))
+const editorRequirementIds = computed(() => negotiatedDraftItems.value
+  ? negotiatedDraftItems.value.map(item => item.requirementId)
+  : pending.value.map(requirement => requirement.id))
 const suppliers = ref<Supplier[]>([])
 const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
+const draftTotalFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const draftUnitPriceFormat = new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function draftCellValue(field: 'qty' | 'price', id: string) {
+  const value = (field === 'qty' ? qtyOf[id] : priceOf[id]) ?? ''
+  // Formatting must never replace the value used in the save payload.
+  if (!value || editedDraftCell.value === `${field}:${id}` || !Number.isFinite(Number(value))) return value
+  if (field === 'qty') return /^[+-]?\d+\.\d+$/.test(value) ? trim(value) : value
+  return draftUnitPriceFormat.format(Number(value))
+}
+
+function updateDraftCell(field: 'qty' | 'price', id: string, value: string) {
+  const values = field === 'qty' ? qtyOf : priceOf
+  values[id] = value
+  editedDraftCell.value = `${field}:${id}`
+}
 const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', payableDueDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
 const deliveryPorts = ref<{ id: string; unLocode: string; nameZh: string; nameEn: string }[]>([])
 
@@ -749,13 +862,14 @@ const detail = ref<Order | null>(null)
 const detailItems = ref<OrderItem[]>([])
 const detailReceipts = ref<Receipt[]>([])
 const detailDraftFiles = ref<OrderDraftFile[]>([])
+const editableDraftDetail = computed(() => ['DRAFT', 'REJECTED'].includes(detail.value?.status ?? ''))
+const compactDraftDetail = computed(() => editableDraftDetail.value && !detail.value?.historical)
 const draftFilePreviewOpen = ref(false)
 const draftFilePreviewSource = ref<Blob | null>(null)
 const draftFilePreviewTitle = ref('')
 const draftFilePreviewType = ref('')
 const previewingDraftFileId = ref('')
 interface QualityDetail {id:string;taskNo:string;status:string;lines:Array<{productName:string;requestedQty:string;qualifiedQty:string;uomCode:string;finalResult:string;issueDescription:string}>;files:Array<{id:string;fileName:string;downloadUrl:string}>;procurementHandlingStatus:string;procurementHandlingAction:string;procurementHandlingNote:string;procurementHandledByName:string}
-const qualityDetails=ref<QualityDetail[]>([])
 
 const warehouses = ref<Warehouse[]>([])
 const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType === 'PORT_TERMINAL'))
@@ -829,8 +943,8 @@ const common = (k: string) => t(`common.${k}`)
 // authority; this is so nobody submits a number they have not seen.
 const estimated = computed(() => {
   let sum = 0
-  for (const r of pending.value) {
-    sum += Number(qtyOf[r.id] ?? 0) * Number(priceOf[r.id] ?? 0)
+  for (const id of editorRequirementIds.value) {
+    sum += Number(qtyOf[id] ?? 0) * Number(priceOf[id] ?? 0)
   }
   return sum.toFixed(2)
 })
@@ -849,9 +963,11 @@ const scenarioSupplierName = computed(() => quotationLines.value[0]?.supplierNam
 const isReorder = computed(() => quotationLines.value.some((r) => Number(r.orderedQty ?? 0) > 0))
 const supplierLocked = computed(() => approvalEntry.value && !switchSupplier.value)
 const reasonRequired = computed(() =>
-  quotationLines.value.length > 0 && (switchSupplier.value || isReorder.value),
+  negotiatedDraftItems.value ? draftAdjustmentRequired.value : quotationLines.value.length > 0 && (switchSupplier.value || isReorder.value),
 )
+const showAdjustmentReason = computed(() => !negotiatedDraftItems.value || draftAdjustmentShown.value || reasonRequired.value)
 const reasonPlaceholder = computed(() => {
+  if (negotiatedDraftItems.value) return '请说明本次调整的原因'
   if (switchSupplier.value && scenarioSupplierName.value)
     return `为什么不向「${scenarioSupplierName.value}」采购？如：本批只能供 80 吨，余量转其他工厂`
   if (isReorder.value) return '这批之前已经下过单，请说明为什么再开一张。如：首批只排到 80 吨，余量本月底补齐'
@@ -1089,6 +1205,7 @@ function openOf(r: Requirement): string {
 
 async function openCreate(preselect?: string[]) {
 	editing.value = null
+  negotiatedDraftItems.value = null
 	approvalEntry.value = Boolean(preselect?.length)
   form.supplierId = 0
   form.currency = 'CNY'
@@ -1156,11 +1273,21 @@ function openContract(row:Order){contractOrder.value=row;contractForm.contractNo
 async function saveContract(){const row=contractOrder.value,file=contractFile.value;if(!row||!file){ElMessage.warning('请选择双方签署合同文件');return}if(!contractForm.contractNo.trim()||!contractForm.paymentTerms.trim()){ElMessage.warning('请填写采购合同号和付款条件');return}saving.value=true;try{const signed=await post<{fileKey:string;uploadUrl:string}>(`/purchase-orders/${row.id}/contract/presign`,{file_name:file.name});const putResult=await fetch(signed.uploadUrl,{method:'PUT',body:file});if(!putResult.ok)throw new Error('合同文件上传失败');await post(`/purchase-orders/${row.id}/contract`,{contract_no:contractForm.contractNo,payment_terms:contractForm.paymentTerms,file_key:signed.fileKey,file_name:file.name});ElMessage.success('签署合同已保存，等待财务审核');contractOpen.value=false;status.value='PENDING_CONTRACT';await router.replace({path:'/purchase-orders',query:{status:'PENDING_CONTRACT',order:row.id}});await reload()}finally{saving.value=false}}
 async function openEdit(row: Order) {
  if(row.historical){historyId.value=row.id;historyOpen.value=true;return}
-  const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([
-    get<{ order: Order; items: OrderItem[] }>(`/purchase-orders/${row.id}`),
-    get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
-    get<{ requirements: Requirement[] }>('/requirements', { status: 'PARTIALLY_ORDERED', page_size: 200 }),
-    get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
+  const { order: current, items = [], fromExecutionNegotiation, sourceChangeReason } = await get<{
+    order: Order; items?: OrderItem[]; fromExecutionNegotiation?: boolean; sourceChangeReason?: string
+  }>(`/purchase-orders/${row.id}`)
+  if (!['DRAFT', 'REJECTED'].includes(current.status)) {
+    ElMessage.warning(t('orders.notEditable'))
+    await load()
+    return
+  }
+  const [requirements, sups, ports, whs] = await Promise.all([
+    fromExecutionNegotiation ? Promise.resolve([]) : Promise.all([
+      get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
+      get<{ requirements: Requirement[] }>('/requirements', { status: 'PARTIALLY_ORDERED', page_size: 200 }),
+    ]).then(pages => pages.flatMap(page => page.requirements ?? [])),
+    fromExecutionNegotiation ? Promise.resolve({ suppliers: [] })
+      : get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
     canReadPorts
       ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
       : Promise.resolve({ ports: [] }),
@@ -1168,13 +1295,9 @@ async function openEdit(row: Order) {
       ? get<{ warehouses: Warehouse[] }>('/warehouses')
       : Promise.resolve({ warehouses: [] }),
   ])
-  const current = detailData.order
-  if (!['DRAFT', 'REJECTED'].includes(current.status)) {
-    ElMessage.warning(t('orders.notEditable'))
-    await load()
-    return
-  }
   editing.value = current
+  negotiatedDraftItems.value = fromExecutionNegotiation ? items : null
+  if (fromExecutionNegotiation) approvalEntry.value = false
   form.supplierId = Number(current.supplierId)
   form.currency = current.currency || 'CNY'
   form.expectedDate = current.expectedDate || ''
@@ -1188,15 +1311,18 @@ async function openEdit(row: Order) {
   form.warehouseId = Number(current.warehouseId || 0)
   form.warehouseName = current.warehouseName || ''
   form.deliveryAddress = current.deliveryAddress || ''
-  form.sourceChangeReason = ''
+  form.sourceChangeReason = fromExecutionNegotiation ? sourceChangeReason ?? '' : ''
+  draftAdjustmentShown.value = Boolean(form.sourceChangeReason.trim())
+  draftAdjustmentRequired.value = false
+  editedDraftCell.value = ''
   switchSupplier.value = false
   Object.keys(qtyOf).forEach((key) => delete qtyOf[key])
   Object.keys(priceOf).forEach((key) => delete priceOf[key])
-  pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
+  pending.value = requirements
   suppliers.value = sups.suppliers ?? []
   deliveryPorts.value = ports.ports ?? []
   warehouses.value = whs.warehouses ?? []
-  for (const item of detailData.items ?? []) {
+  for (const item of items) {
     qtyOf[item.requirementId] = item.qty
     priceOf[item.requirementId] = item.unitPrice
   }
@@ -1205,17 +1331,19 @@ async function openEdit(row: Order) {
 
 async function submitCreate() {
   const wasApprovalEntry = approvalEntry.value
-  const supplier = suppliers.value.find((s) => Number(s.id) === form.supplierId)
+  const supplier = negotiatedDraftItems.value && editing.value
+    ? { id: editing.value.supplierId, name: editing.value.supplierName }
+    : suppliers.value.find((s) => Number(s.id) === form.supplierId)
   if (!supplier) {
     ElMessage.warning(t('orders.supplierRequired'))
     return
   }
-  const lines = pending.value
-    .filter((r) => Number(qtyOf[r.id] ?? 0) > 0)
-    .map((r) => ({
-      requirement_id: Number(r.id),
-      qty: qtyOf[r.id],
-      unit_price: priceOf[r.id] || '0',
+  const lines = editorRequirementIds.value
+    .filter(id => Number(qtyOf[id] ?? 0) > 0)
+    .map(id => ({
+      requirement_id: Number(id),
+      qty: qtyOf[id],
+      unit_price: priceOf[id] || '0',
     }))
   if (!lines.length) {
     ElMessage.warning(t('orders.pickSomething'))
@@ -1231,7 +1359,7 @@ async function submitCreate() {
   }
   if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'PORT' &&
       !form.deliveryPortId && !form.deliveryPortName.trim()) {
-    ElMessage.warning('请选择收货港口')
+    ElMessage.warning(negotiatedDraftItems.value ? '请选择或输入收货港口' : '请选择收货港口')
     return
   }
   if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'CUSTOM' &&
@@ -1242,7 +1370,8 @@ async function submitCreate() {
   // 换供应商或补购都是对已确认方案的偏离，原因必填。后端也会拦，这里先说
   // 一声，省一趟白跑。
   if (reasonRequired.value && !form.sourceChangeReason.trim()) {
-    ElMessage.warning(switchSupplier.value ? '换供应商请填写调整原因' : '补购剩余数量请填写调整原因')
+    ElMessage.warning(negotiatedDraftItems.value ? '请填写调整原因'
+      : switchSupplier.value ? '换供应商请填写调整原因' : '补购剩余数量请填写调整原因')
     return
   }
   saving.value = true
@@ -1266,7 +1395,15 @@ async function submitCreate() {
     }
     let res: { id?: string; poNo: string }
     if (editing.value) {
-      res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
+      try {
+        res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
+      } catch (error) {
+        const code = (error as ApiFailure).code
+        if (negotiatedDraftItems.value && (code === 'PO_SOURCE_CHANGE_REASON_REQUIRED' || code === 'PO_SUPPLIER_CHANGE_REASON_REQUIRED')) {
+          draftAdjustmentRequired.value = true
+        }
+        throw error
+      }
     } else {
       try {
         res = await post<{ id: string; poNo: string }>(
@@ -1322,6 +1459,17 @@ function selectDeliveryPort(id: number) {
   form.deliveryPortName = port?.nameZh || port?.nameEn || ''
 }
 
+function setNegotiatedDeliveryPort(value: number | string | undefined) {
+  if (typeof value === 'number') {
+    form.deliveryPortId = value
+    selectDeliveryPort(value)
+  } else {
+    form.deliveryPortId = 0
+    form.deliveryPortCode = ''
+    form.deliveryPortName = value?.trim() ?? ''
+  }
+}
+
 function portLabel(port: { unLocode?: string; nameZh?: string; nameEn?: string }) {
   return [port.unLocode, port.nameZh || port.nameEn].filter(Boolean).join(' · ')
 }
@@ -1331,11 +1479,13 @@ function selectOrderWarehouse(id: number) {
 }
 
 async function openDetail(row: Pick<Order, 'id'>) {
-  const [d,q,f] = await Promise.all([get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${row.id}`),get<{tasks:QualityDetail[]}>(`/purchase-orders/${row.id}/quality-inspections`),get<{files:OrderDraftFile[]}>(`/purchase-orders/${row.id}/draft-files`)])
+  const [d, f] = await Promise.all([
+    get<{order: Order; items: OrderItem[]; receipts: Receipt[]}>(`/purchase-orders/${row.id}`),
+    get<{files: OrderDraftFile[]}>(`/purchase-orders/${row.id}/draft-files`),
+  ])
   detail.value = d.order
   detailItems.value = d.items ?? []
   detailReceipts.value = d.receipts ?? []
-  qualityDetails.value=q.tasks??[]
   detailDraftFiles.value=f.files??[]
   detailOpen.value = true
 }
@@ -1803,6 +1953,77 @@ onMounted(async () => {
   margin-left: 8px;
   font-size: 16px;
 }
+:global(.negotiated-draft-dialog) {
+  --el-dialog-padding-primary: 18px;
+  border-radius: 10px;
+}
+:global(.negotiated-draft-dialog .el-dialog__body) {
+  max-height: calc(90dvh - 108px);
+  overflow-y: auto;
+}
+:global(.negotiated-draft-dialog .el-dialog__footer) {
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.negotiated-draft-form {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 0;
+}
+.negotiated-draft-form :deep(.el-form-item) {
+  min-width: 0;
+  margin-bottom: 0;
+}
+.negotiated-draft-form :deep(.el-form-item__label) {
+  margin-bottom: 4px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.negotiated-draft-form .supplier-row,
+.negotiated-draft-form :deep(.el-date-editor),
+.negotiated-draft-form :deep(.el-select) {
+  width: 100% !important;
+}
+.negotiated-draft-form .draft-supplier,
+.negotiated-draft-form .draft-note { grid-column: span 6; }
+.negotiated-draft-form .draft-note-full { grid-column: 1 / -1; }
+.negotiated-draft-form .draft-date,
+.negotiated-draft-form .draft-location { grid-column: span 3; }
+.negotiated-draft-form .draft-fulfillment { grid-column: span 5; }
+.negotiated-draft-form .draft-destination { grid-column: span 4; }
+.negotiated-draft-form .draft-warehouse { grid-column: span 7; }
+.negotiated-draft-heading {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: #173d50;
+}
+.negotiated-draft-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.negotiated-draft-footer .total-row {
+  margin-top: 0;
+  text-align: left;
+}
+@media (max-width: 800px) {
+  .negotiated-draft-form .draft-fulfillment,
+  .negotiated-draft-form .draft-location { grid-column: span 6; }
+  .negotiated-draft-form .draft-destination { grid-column: 1 / -1; }
+  .negotiated-draft-form .draft-warehouse { grid-column: span 6; }
+}
+@media (max-width: 560px) {
+  .negotiated-draft-form .draft-supplier,
+  .negotiated-draft-form .draft-fulfillment,
+  .negotiated-draft-form .draft-location,
+  .negotiated-draft-form .draft-destination,
+  .negotiated-draft-form .draft-note { grid-column: 1 / -1; }
+  .negotiated-draft-form .draft-date { grid-column: span 6; }
+}
 .desc {
   margin-bottom: 14px;
 }
@@ -1815,6 +2036,65 @@ onMounted(async () => {
 .order-draft-file>span:first-child { display:flex;flex-direction:column;gap:2px;min-width:0; }
 .order-draft-file strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344f5d;font-weight:500; }
 .order-draft-file small { color:#7b8d97;font-size:12px; }
+:global(.compact-draft-detail) {
+  --el-dialog-padding-primary: 18px;
+  border-radius: 10px;
+}
+:global(.compact-draft-detail .el-dialog__body) {
+  max-height: calc(90dvh - 64px);
+  overflow-y: auto;
+}
+.draft-detail-summary { padding-bottom: 10px; }
+.draft-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.draft-detail-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) repeat(4, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 8px 0 0;
+}
+.draft-detail-facts dt {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.draft-detail-facts dd {
+  margin: 2px 0 0;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.draft-detail-remark,
+.order-draft-files.draft-detail-files {
+  margin: 0;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+  border-radius: 0;
+  background: transparent;
+}
+.draft-detail-remark .side-title { margin: 0 0 4px; }
+.draft-detail-remark p {
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.draft-detail-heading .side-title { margin: 0; }
+.draft-detail-table-heading {
+  margin-top: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: #173d50;
+}
+@media (max-width: 760px) {
+  .draft-detail-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .draft-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
