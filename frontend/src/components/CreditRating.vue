@@ -1,5 +1,5 @@
 <template>
-  <section class="credit">
+  <section class="credit" :class="{ 'credit--compact': compact }">
     <header class="credit-head">
       <div class="credit-now">
         <span class="credit-label">{{ t('credit.currentGrade') }}</span>
@@ -9,7 +9,7 @@
              上周刚判的 A 一模一样，而它们说的完全不是一回事。 -->
         <span class="credit-age" :class="{ 'is-stale': stale }">{{ ageLabel }}</span>
       </div>
-      <el-button v-if="canRate" type="primary" plain @click="openRate">
+      <el-button v-if="canRate" type="primary" plain :size="compact ? 'small' : undefined" @click="openRate">
         {{ grade ? t('credit.rerate') : t('credit.rateNow') }}
       </el-button>
     </header>
@@ -42,10 +42,11 @@
         <p v-if="evidenceText(r)" class="credit-evidence">{{ evidenceText(r) }}</p>
       </el-timeline-item>
     </el-timeline>
+    <p v-else-if="compact" class="credit-empty">{{ t('credit.emptyHistory') }}</p>
     <el-empty v-else :description="t('credit.emptyHistory')" :image-size="60" />
 
     <el-dialog v-model="rateOpen" :title="t('credit.dialogTitle')" width="520px">
-      <el-form label-width="82px">
+      <el-form label-width="82px" :size="compact ? 'small' : undefined">
         <el-form-item :label="t('credit.grade')" required>
           <el-radio-group v-model="form.grade">
             <el-radio-button v-for="g in grades" :key="g" :value="g">{{ g }}</el-radio-button>
@@ -86,6 +87,7 @@ const props = defineProps<{
   grade: string
   gradedAt: string
   canRate: boolean
+  compact?: boolean
 }>()
 const emit = defineEmits<{ (e: 'rated', grade: string): void }>()
 
@@ -296,4 +298,21 @@ onMounted(load)
   line-height: 1.5;
   color: var(--el-text-color-secondary);
 }
+.credit--compact { gap: 8px; font-size: 13px; }
+.credit--compact .credit-now { gap: 6px; flex-wrap: wrap; }
+.credit--compact .credit-label,
+.credit--compact .credit-none { font-size: 12px; }
+.credit--compact .credit-grade { font-size: 20px; }
+.credit--compact .credit-grade.is-inline { font-size: 14px; }
+.credit--compact .credit-dims {
+  gap: 5px 12px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.credit--compact .dim-value { font-size: 13px; }
+.credit--compact .credit-history { margin: 0; }
+.credit--compact :deep(.el-timeline-item) { padding-bottom: 9px; }
+.credit-empty { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>

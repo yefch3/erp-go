@@ -1,452 +1,259 @@
 <template>
   <div v-loading="loading" class="customer-detail">
-    <button class="back" type="button" @click="router.push('/basic/customers')">
-      ← 返回客户列表
-    </button>
-
-    <section v-if="customer" class="hero">
-      <div class="avatar">{{ displayName.slice(0, 1).toUpperCase() }}</div>
+    <header v-if="customer" class="hero">
       <div class="hero-main">
-        <div class="eyebrow">{{ customer.code }}</div>
         <h1>{{ displayName }} <small v-if="displayName !== customer.name">{{ customer.name }}</small></h1>
-        <div class="hero-tags">
-          <el-tag>{{ displayCountry(customer.countryCode) }}</el-tag>
-          <el-tag v-if="customer.customerType" type="info">{{
-            optionLabel(types, customer.customerType)
-          }}</el-tag>
-          <el-tag :type="businessTag(customer.businessStatus)">{{
-            businessLabel(customer.businessStatus)
-          }}</el-tag>
-          <el-tag :type="customer.status === 'ACTIVE' ? 'success' : 'info'">{{
-            customer.status === "ACTIVE" ? "已启用" : "已停用"
-          }}</el-tag>
+        <div class="hero-meta">
+          <span class="hero-code">{{ customer.code }}</span>
+          <span>{{ displayCountry(customer.countryCode) }}</span>
+          <el-tag v-if="customer.customerType" size="small" type="info">
+            {{ optionLabel(types, customer.customerType) }}
+          </el-tag>
+          <el-tag size="small" :type="businessTag(customer.businessStatus)">
+            {{ businessLabel(customer.businessStatus) }}
+          </el-tag>
+          <el-tag size="small" :type="customer.status === 'ACTIVE' ? 'success' : 'info'">
+            {{ customer.status === "ACTIVE" ? "已启用" : "已停用" }}
+          </el-tag>
         </div>
       </div>
-    </section>
+      <el-button class="hero-back" size="small" @click="router.push('/basic/customers')">
+        ← 返回客户列表
+      </el-button>
+    </header>
 
     <nav v-if="customer" class="section-nav" aria-label="客户详情分区">
-      <button v-for="section in sections" :key="section.key" type="button" @click="navigateCustomerSection(section.key)">
+      <button
+        v-for="section in sections"
+        :key="section.key"
+        type="button"
+        :aria-current="currentSection === section.key ? 'location' : undefined"
+        @click="navigateCustomerSection(section.key)"
+      >
         {{ section.label }}
       </button>
     </nav>
     <div v-if="customer" class="detail-sections">
-      <section v-for="tab in sections" :id="'customer-' + tab.key" :key="tab.key" class="detail-section" tabindex="-1">
-      <template v-if="tab.key === 'documents'">
-        <SectionHead title="客户资料与附件" />
-        <CustomerDocuments :customer-id="id" :can-write="canWrite" />
-      </template>
-<template v-if="tab.key === 'basic'"><CustomerBasicInfo :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @edit-contact="openContact" @edit-owner="openOwner" />
-        <div class="extra-profile">
-          <SectionHead title="其他资料" :action="canWrite ? '编辑其他资料' : ''" @action="openProfile" />
-          <div class="profile-fields">
-            <InfoRow label="英文名称" :value="customer.englishName" />
-            <InfoRow label="官网" :value="customer.website" />
-            <InfoRow label="所属行业" :value="customer.industry" />
-            <InfoRow label="主要语言" :value="customer.primaryLanguage" />
-            <InfoRow label="所在时区" :value="customer.timezone" />
-            <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
-            <InfoRow class="profile-remark" label="备注" :value="customer.remark" />
+      <section v-for="section in sections" :id="'customer-' + section.key" :key="section.key" class="detail-section" tabindex="-1">
+        <template v-if="section.key === 'basic'">
+          <CustomerBasicInfo
+            :ref="(el: any) => templateBasic = el"
+            :customer-id="id"
+            :can-write="canWrite"
+            :busy="saving"
+            @saving-change="basicSaving = $event"
+            @updated="refreshAfterBasicSave"
+          />
+          <div class="content-block">
+            <SectionHead title="其他资料" />
+            <el-form v-if="canWrite" class="inline-edit" label-position="top" size="small" :disabled="saving || basicSaving" @submit.prevent="saveProfile">
+              <div class="profile-fields">
+                <el-form-item label="英文名称"><el-input v-model="profileForm.englishName" /></el-form-item>
+                <el-form-item label="官网" :error="websiteInvalid ? '请填写完整的 http:// 或 https:// 地址' : ''"><el-input v-model="profileForm.website" @input="websiteInvalid = false" /></el-form-item>
+                <el-form-item label="所属行业"><el-input v-model="profileForm.industry" /></el-form-item>
+                <el-form-item label="主要语言"><el-input v-model="profileForm.primaryLanguage" /></el-form-item>
+                <el-form-item label="标签">
+                  <el-select v-model="profileForm.tags" multiple allow-create filterable default-first-option />
+                </el-form-item>
+                <el-form-item label="业务状态">
+                  <el-select v-model="profileForm.businessStatus">
+                    <el-option v-for="status in businessStatuses" :key="status" :label="businessLabel(status)" :value="status" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="备注" class="profile-remark"><el-input v-model="profileForm.remark" type="textarea" :autosize="{ minRows: 2 }" /></el-form-item>
+              </div>
+              <InlineActions v-if="profileDirty" :error="profileSaveError" :busy="saving || basicSaving" @cancel="cancelProfile" />
+            </el-form>
+            <div v-else class="profile-fields">
+              <InfoRow label="英文名称" :value="customer.englishName" />
+              <InfoRow label="官网" :value="customer.website" />
+              <InfoRow label="所属行业" :value="customer.industry" />
+              <InfoRow label="主要语言" :value="customer.primaryLanguage" />
+              <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
+              <InfoRow label="业务状态" :value="businessLabel(customer.businessStatus)" />
+              <InfoRow class="profile-remark" label="备注" :value="customer.remark" />
+            </div>
           </div>
-          <InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
+          <div v-if="visibleCustomFields.length" class="content-block">
+            <SectionHead title="Excel 扩展信息" />
             <div v-for="field in visibleCustomFields" :key="field.fieldKey" class="custom-info-row">
               <span>{{ field.displayName }}</span>
               <strong>{{ field.value || '—' }}</strong>
               <el-button v-if="canWrite" link type="primary" @click="openCustomerField(field)">修改字段名</el-button>
             </div>
-          </InfoCard>
-        </div>
-      </template>
-<template v-if="tab.key === 'addresses'">
-        <div class="tab-stack">
-          <section class="content-section">
-            <SectionHead
-              title="工商与税务资料"
-              :action="canWrite ? '编辑税务资料' : ''"
-              @action="openTax"
-            />
-            <InfoCard title="注册资料" icon="证" class="registration-card">
-              <InfoRow label="注册名称" :value="customer.registeredName" />
-              <InfoRow label="公司注册号" :value="customer.registrationNo" />
-              <InfoRow label="税号" :value="customer.taxId" />
-            </InfoCard>
-          </section>
-          <section class="content-section">
-        <SectionHead
-          title="地址簿"
-          :count="addresses.length"
-          :action="canWrite ? '新增地址' : ''"
-          @action="openAddress()"
-        />
-        <EmptyState v-if="!addresses.length" text="还没有维护地址" />
-        <div v-else class="record-grid">
-          <article
-            v-for="item in addresses"
-            :key="item.id"
-            class="record-card"
-            :class="{ inactive: item.status !== 'ACTIVE' }"
-          >
-            <div class="record-title">
-              <strong>{{ addressTypeLabel(item.addressType) }}</strong
-              ><el-tag v-if="item.isDefault" size="small" type="success"
-                >默认</el-tag
-              >
-            </div>
-            <p>
-              {{
-                [
-                  displayCountry(item.countryCode),
-                  item.state,
-                  item.city,
-                  item.postalCode,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              }}
-            </p>
-            <p class="record-main">{{ item.addressLine }}</p>
-            <div
-              v-if="canWrite && item.status === 'ACTIVE'"
-              class="record-actions"
-            >
-              <el-button link type="primary" @click="openAddress(item)"
-                >编辑</el-button
-              ><el-button link type="danger" @click="removeAddress(item)"
-                >停用</el-button
-              >
-            </div>
-          </article>
-        </div>
-          </section>
-        </div>
-      </template>
-<template v-if="tab.key === 'contacts'">
-        <div class="tab-stack">
-          <section class="content-section">
-        <SectionHead
-          title="客户联系人"
-          :count="contacts.length"
-          :action="canWrite ? '新增联系人' : ''"
-          @action="openContact()"
-        />
-        <EmptyState v-if="!contacts.length" text="还没有维护联系人" />
-        <div v-else class="record-grid">
-          <article
-            v-for="item in contacts"
-            :key="item.id"
-            class="record-card"
-            :class="{ inactive: item.status !== 'ACTIVE' }"
-          >
-            <div class="record-title">
-              <strong>{{ item.name || "姓名待补充" }}</strong
-              ><el-tag v-if="item.isPrimary" size="small" type="success"
-                >主要联系人</el-tag
-              ><el-tag v-if="item.status !== 'ACTIVE'" size="small"
-                >已停用</el-tag
-              >
-            </div>
-            <p>
-              {{
-                [item.department, item.title].filter(Boolean).join(" · ") ||
-                "未填写部门和职位"
-              }}
-            </p>
-            <div class="contact-lines">
-              <span>✉ {{ item.email || "—" }}</span>
-              <span v-for="email in item.additionalEmails || []" :key="email">补充邮箱：{{ email }}</span>
-              <span>☎ {{ item.phone || item.mobile || "—" }}</span
-              ><span v-if="item.language">首选语言：{{ item.language }}</span>
-            </div>
-            <div class="mail-preferences">
-              <el-tag
-                size="small"
-                :type="emailPermissionTag(item.emailPermission)"
-                >{{ emailPermissionLabel(item.emailPermission) }}</el-tag
-              ><el-tag
-                v-for="category in item.emailCategories || []"
-                :key="category"
-                size="small"
-                type="info"
-                >{{ emailCategoryLabel(category) }}</el-tag
-              ><span
-                v-if="
-                  item.emailPermission === 'ALLOWED' &&
-                  !(item.emailCategories || []).length
-                "
-                >全部邮件类型</span
-              >
-            </div>
-            <div
-              v-if="canWrite && item.status === 'ACTIVE'"
-              class="record-actions"
-            >
-              <el-button link type="primary" @click="openContact(item)"
-                >编辑</el-button
-              ><el-button link type="danger" @click="removeContact(item)"
-                >停用</el-button
-              >
-            </div>
-          </article>
-        </div>
-          </section>
-        </div>
-      </template>
-<template v-if="tab.key === 'credit'">
-        <div class="tab-stack">
-          <section class="content-section">
-        <SectionHead
-          title="结算与信用"
-          :action="canWrite ? '编辑结算信用' : ''"
-          @action="openCredit"
-        />
-        <div class="credit-board">
-          <div>
-            <span>默认币种</span><strong>{{ customer.currency || "—" }}</strong>
           </div>
-          <div>
-            <span>付款方式</span
-            ><strong>{{
-              optionLabel(paymentOptions, customer.paymentTerm)
-            }}</strong>
-          </div>
-          <div>
-            <span>信用额度</span
-            ><strong>{{
-              formatCredit(customer.creditLimitMinor, customer.creditCurrency)
-            }}</strong>
-          </div>
-          <div>
-            <span>信用状态</span
-            ><el-tag :type="creditTag(customer.creditStatus)">{{
-              creditLabel(customer.creditStatus)
-            }}</el-tag>
-          </div>
-        </div>
-          </section>
+        </template>
 
-          <section class="content-section">
-        <SectionHead title="信用评级" />
-        <CreditRating
-          v-if="customer"
-          party="customers"
-          :party-id="customer.id"
-          :grade="customer.creditGrade || ''"
-          :graded-at="customer.creditGradedAt || ''"
-          :can-rate="canWrite"
-          @rated="onRated"
-        />
-          </section>
-        </div>
-      </template>
-<template v-if="tab.key === 'owners'">
-        <div class="tab-stack">
-          <section class="content-section">
-        <SectionHead
-          title="内部负责人"
-          :count="owners.length"
-          :action="canWrite ? '添加负责人' : ''"
-          @action="openOwner"
-        />
-        <el-alert
-          type="info"
-          :closable="false"
-          title="一个客户可由多名员工按销售、跟单、单证、财务等职责共同负责。"
-        />
-        <EmptyState v-if="!owners.length" text="还没有关联负责人" />
-        <div v-else class="owner-list">
-          <div v-for="item in owners" :key="item.id" class="owner-row">
-            <div class="owner-avatar">{{ item.employeeName.slice(0, 1) }}</div>
-            <div class="owner-info">
-              <div>
-                <strong>{{ item.employeeName }}</strong
-                ><el-tag v-if="item.isPrimary" size="small" type="success"
-                  >主要负责人</el-tag
-                >
-              </div>
-              <span>{{
-                optionLabel(responsibilities, item.responsibilityCode)
-              }}</span>
+        <template v-if="section.key === 'addresses'">
+          <SectionHead title="工商与税务资料" />
+          <el-form v-if="canWrite" class="inline-edit" label-position="top" size="small" :disabled="saving || basicSaving" @submit.prevent="saveTax">
+            <div class="profile-fields">
+              <el-form-item label="注册名称"><el-input v-model="taxForm.registeredName" /></el-form-item>
+              <el-form-item label="公司注册号"><el-input v-model="taxForm.registrationNo" /></el-form-item>
+              <el-form-item label="税号"><el-input v-model="taxForm.taxId" @blur="checkTaxDuplicates" /></el-form-item>
             </div>
-            <div class="owner-date">
-              {{ item.startDate || "立即生效"
-              }}<span v-if="item.endDate"> 至 {{ item.endDate }}</span>
-            </div>
-            <div
-              v-if="canWrite && item.status === 'ACTIVE'"
-              class="owner-actions"
-            >
-              <el-button link type="primary" @click="openOwner(item)"
-                >编辑</el-button
-              >
-              <el-button link type="danger" @click="removeOwner(item)"
-                >移除</el-button
-              >
+            <InlineActions v-if="taxDirty" :error="taxSaveError" :busy="saving || basicSaving" @cancel="cancelTax" />
+          </el-form>
+          <div v-else class="profile-fields">
+            <InfoRow label="注册名称" :value="customer.registeredName" />
+            <InfoRow label="公司注册号" :value="customer.registrationNo" />
+            <InfoRow label="税号" :value="customer.taxId" />
+          </div>
+
+          <div class="content-block">
+            <SectionHead title="地址簿" :count="addresses.length" :action="canWrite ? '新增地址' : ''" @action="openAddress()" />
+            <p v-if="!addresses.length" class="empty-state">还没有维护地址</p>
+            <div v-else class="record-list">
+              <article v-for="item in addresses" :key="item.id" class="record-row">
+                <div class="record-title">
+                  <strong>{{ addressTypeLabel(item.addressType) }}</strong>
+                  <el-tag v-if="item.isDefault" size="small" type="success">默认</el-tag>
+                  <el-tag v-if="item.status !== 'ACTIVE'" size="small" type="info">已停用</el-tag>
+                </div>
+                <div class="record-detail">{{ item.addressLine || "—" }}</div>
+                <div class="record-meta">{{ [item.countryCode && displayCountry(item.countryCode), item.state, item.city, item.postalCode].filter(Boolean).join(" · ") }}</div>
+                <div v-if="canWrite && item.status === 'ACTIVE'" class="record-actions">
+                  <el-button size="small" link type="primary" @click="openAddress(item)">编辑</el-button>
+                  <el-button size="small" link type="danger" @click="removeAddress(item)">停用</el-button>
+                </div>
+              </article>
             </div>
           </div>
-        </div>
-          </section>
-        </div>
-      </template>
-<template v-if="tab.key === 'changes'">
-        <div class="tab-stack">
-          <section class="content-section">
-        <SectionHead title="客户资料变更记录" :count="changeTotal" />
-        <EmptyState v-if="!changes.length" text="还没有变更记录" />
-        <el-timeline v-else class="history">
-          <el-timeline-item
-            v-for="item in changes"
-            :key="item.id"
-            :timestamp="formatTime(item.createdAt)"
-            placement="top"
-          >
-            <div class="history-card">
-              <strong>{{ item.summary }}</strong>
-              <p>
-                {{ sectionLabel(item.section) }} ·
-                {{ item.operatorName || `员工 ${item.operatorId}` }}
-              </p>
+        </template>
+
+        <template v-if="section.key === 'contacts'">
+          <SectionHead title="客户联系人" :count="contacts.length" :action="canWrite ? '新增联系人' : ''" @action="openContact()" />
+          <p v-if="!contacts.length" class="empty-state">还没有维护联系人</p>
+          <div v-else class="record-list">
+            <article v-for="item in contacts" :key="item.id" class="record-row">
+              <div>
+                <div class="record-title">
+                  <strong>{{ item.name || "姓名待补充" }}</strong>
+                  <el-tag v-if="item.isPrimary" size="small" type="success">主要联系人</el-tag>
+                  <el-tag v-if="item.status !== 'ACTIVE'" size="small" type="info">已停用</el-tag>
+                </div>
+                <div v-if="item.department || item.title" class="record-meta record-note">
+                  {{ [item.department, item.title].filter(Boolean).join(" · ") }}
+                </div>
+              </div>
+              <div class="record-detail contact-methods">
+                <div v-if="item.email || item.additionalEmails?.length">
+                  <span v-if="item.email">{{ item.email }}</span>
+                  <span v-for="email in item.additionalEmails || []" :key="email" class="record-meta" title="补充邮箱">{{ email }}</span>
+                </div>
+                <div v-if="item.phone || item.mobile">
+                  <span v-if="item.phone">{{ item.phone }}</span>
+                  <span v-if="item.mobile && item.mobile !== item.phone">{{ item.mobile }}</span>
+                </div>
+                <span v-if="!item.email && !item.additionalEmails?.length && !item.phone && !item.mobile" class="record-meta">—</span>
+              </div>
+              <div class="record-meta">
+                <div class="mail-preferences">
+                  <el-tag size="small" :type="emailPermissionTag(item.emailPermission)">{{ emailPermissionLabel(item.emailPermission) }}</el-tag>
+                  <el-tag v-for="category in item.emailCategories || []" :key="category" size="small" type="info">{{ emailCategoryLabel(category) }}</el-tag>
+                  <span v-if="(!item.emailPermission || item.emailPermission === 'ALLOWED') && !item.emailCategories?.length">全部邮件类型</span>
+                </div>
+                <div v-if="item.language" class="record-note">首选语言：{{ item.language }}</div>
+              </div>
+              <div v-if="canWrite && item.status === 'ACTIVE'" class="record-actions">
+                <el-button size="small" link type="primary" @click="openContact(item)">编辑</el-button>
+                <el-button size="small" link type="danger" @click="removeContact(item)">停用</el-button>
+              </div>
+            </article>
+          </div>
+        </template>
+
+        <template v-if="section.key === 'owners'">
+          <SectionHead title="内部负责人" :count="owners.length" :action="canWrite ? '添加负责人' : ''" @action="openOwner()" />
+          <p v-if="!owners.length" class="empty-state">还没有关联负责人</p>
+          <div v-else class="record-list">
+            <article v-for="item in owners" :key="item.id" class="record-row">
+              <div class="record-title">
+                <strong>{{ item.employeeName }}</strong>
+                <el-tag v-if="item.isPrimary" size="small" type="success">主要负责人</el-tag>
+                <el-tag v-if="item.status !== 'ACTIVE'" size="small" type="info">已停用</el-tag>
+              </div>
+              <div class="record-detail">{{ optionLabel(responsibilities, item.responsibilityCode) }}</div>
+              <div class="record-meta">
+                {{ item.startDate || "立即生效" }}<span v-if="item.endDate"> 至 {{ item.endDate }}</span>
+              </div>
+              <div v-if="canWrite && item.status === 'ACTIVE'" class="record-actions">
+                <el-button size="small" link type="primary" @click="openOwner(item)">编辑</el-button>
+                <el-button size="small" link type="danger" @click="removeOwner(item)">移除</el-button>
+              </div>
+            </article>
+          </div>
+        </template>
+
+        <template v-if="section.key === 'credit'">
+          <SectionHead title="结算与信用" />
+          <el-form v-if="canWrite" class="inline-edit" label-position="top" size="small" :disabled="saving || basicSaving" @submit.prevent="saveCredit">
+            <div class="profile-fields">
+              <el-form-item label="默认币种">
+                <el-select v-model="creditForm.currency"><el-option v-for="currency in CURRENCIES" :key="currency" :value="currency" /></el-select>
+              </el-form-item>
+              <el-form-item label="付款方式">
+                <el-select v-model="creditForm.paymentTerm" clearable>
+                  <el-option v-for="option in paymentOptions" :key="option.code" :label="option.label" :value="option.code" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="信用额度" :error="creditAmountError">
+                <el-input-number v-model="creditForm.creditAmount" :min="0" :step="0.01" :precision="2" :controls="false" @change="creditAmountError = ''" />
+              </el-form-item>
+              <el-form-item label="额度币种">
+                <el-select v-model="creditForm.creditCurrency"><el-option v-for="currency in CURRENCIES" :key="currency" :value="currency" /></el-select>
+              </el-form-item>
+              <el-form-item label="信用状态">
+                <el-select v-model="creditForm.creditStatus">
+                  <el-option label="正常" value="NORMAL" />
+                  <el-option label="关注" value="WATCH" />
+                  <el-option label="暂停赊销" value="CREDIT_SUSPENDED" />
+                </el-select>
+              </el-form-item>
             </div>
-          </el-timeline-item>
-        </el-timeline>
-          </section>
-        </div>
-      </template>
+            <InlineActions v-if="creditDirty" :error="creditSaveError" :busy="saving || basicSaving" @cancel="cancelCredit" />
+          </el-form>
+          <div v-else class="profile-fields">
+            <InfoRow label="默认币种" :value="customer.currency" />
+            <InfoRow label="付款方式" :value="optionLabel(paymentOptions, customer.paymentTerm)" />
+            <InfoRow label="信用额度" :value="formatCredit(customer.creditLimitMinor, customer.creditCurrency)" />
+            <div class="info-row">
+              <span class="info-row__label">信用状态</span>
+              <el-tag size="small" :type="creditTag(customer.creditStatus)">{{ creditLabel(customer.creditStatus) }}</el-tag>
+            </div>
+          </div>
+
+          <div class="content-block">
+            <SectionHead title="信用评级" />
+            <CreditRating
+              party="customers"
+              :party-id="customer.id"
+              :grade="customer.creditGrade || ''"
+              :graded-at="customer.creditGradedAt || ''"
+              :can-rate="canWrite"
+              compact
+              @rated="onRated"
+            />
+          </div>
+        </template>
+
+        <template v-if="section.key === 'documents'">
+          <SectionHead title="客户资料与附件" />
+          <CustomerDocuments :customer-id="id" :can-write="canWrite" />
+        </template>
+
+        <template v-if="section.key === 'changes'">
+          <SectionHead title="客户资料变更记录" :count="changeTotal" />
+          <p v-if="!changes.length" class="empty-state">还没有变更记录</p>
+          <el-timeline v-else class="history">
+            <el-timeline-item v-for="item in changes" :key="item.id" :timestamp="formatTime(item.createdAt)" placement="top">
+              <strong>{{ item.summary }}</strong>
+              <p>{{ sectionLabel(item.section) }} · {{ item.operatorName || '员工 ' + item.operatorId }}</p>
+            </el-timeline-item>
+          </el-timeline>
+        </template>
       </section>
     </div>
-
-    <el-dialog v-model="taxOpen" title="编辑税务资料" width="680px">
-      <el-form :model="taxForm" label-width="110px" class="two-col-form">
-        <el-form-item label="注册名称">
-          <el-input v-model="taxForm.registeredName" />
-        </el-form-item>
-        <el-form-item label="公司注册号">
-          <el-input v-model="taxForm.registrationNo" />
-        </el-form-item>
-        <el-form-item label="税号">
-          <el-input v-model="taxForm.taxId" @blur="checkTaxDuplicates" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="taxOpen = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTax">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="creditOpen" title="编辑结算信用" width="680px">
-      <el-form :model="creditForm" label-width="110px" class="two-col-form">
-        <el-form-item label="默认币种">
-          <el-select v-model="creditForm.currency">
-            <el-option v-for="c in CURRENCIES" :key="c" :value="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="付款方式">
-          <el-select v-model="creditForm.paymentTerm" clearable>
-            <el-option
-              v-for="o in paymentOptions"
-              :key="o.code"
-              :label="o.label"
-              :value="o.code"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="信用额度">
-          <el-input-number
-            v-model="creditForm.creditAmount"
-            :min="0"
-            :precision="2"
-          />
-        </el-form-item>
-        <el-form-item label="额度币种">
-          <el-select v-model="creditForm.creditCurrency">
-            <el-option v-for="c in CURRENCIES" :key="c" :value="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="信用状态">
-          <el-select v-model="creditForm.creditStatus">
-            <el-option label="正常" value="NORMAL" />
-            <el-option label="关注" value="WATCH" />
-            <el-option label="暂停赊销" value="CREDIT_SUSPENDED" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="creditOpen = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveCredit">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="profileOpen" title="完善客户详细资料" width="780px">
-      <el-form :model="profileForm" label-width="110px" class="two-col-form">
-        <el-form-item label="客户简称"
-          ><el-input v-model="profileForm.shortName" /></el-form-item
-        ><el-form-item label="英文名称"
-          ><el-input v-model="profileForm.englishName"
-        /></el-form-item>
-        <el-form-item label="客户类型"
-          ><el-select v-model="profileForm.customerType" clearable
-            ><el-option
-              v-for="o in types"
-              :key="o.code"
-              :label="o.label"
-              :value="o.code" /></el-select></el-form-item
-        ><el-form-item label="所属行业"
-          ><el-input v-model="profileForm.industry"
-        /></el-form-item>
-        <el-form-item label="客户来源"
-          ><el-select v-model="profileForm.source" clearable
-            ><el-option
-              v-for="o in sources"
-              :key="o.code"
-              :label="o.label"
-              :value="o.code" /></el-select></el-form-item
-        ><el-form-item label="业务状态"
-          ><el-select v-model="profileForm.businessStatus"
-            ><el-option label="潜在" value="PROSPECT" /><el-option
-              label="合作中"
-              value="COOPERATING" /><el-option
-              label="暂停合作"
-              value="PAUSED" /><el-option
-              label="已停用"
-              value="INACTIVE" /></el-select
-        ></el-form-item>
-        <el-form-item label="官网"
-          ><el-input v-model="profileForm.website" /></el-form-item
-        ><el-form-item label="主要语言"
-          ><el-input v-model="profileForm.primaryLanguage"
-        /></el-form-item>
-        <el-form-item label="所在时区"
-          ><el-select
-            v-model="profileForm.timezone"
-            filterable
-            clearable
-            placeholder="选择标准 IANA 时区"
-            ><el-option
-              v-for="zone in profileTimezoneOptions"
-              :key="zone"
-              :label="zone"
-              :value="zone" /></el-select></el-form-item
-        ><el-form-item label="标签"
-        ><el-select
-            v-model="profileForm.tags"
-            multiple
-            allow-create
-            filterable
-            default-first-option
-        /></el-form-item>
-        <el-form-item label="备注" class="full-row">
-          <el-input v-model="profileForm.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form
-      ><template #footer
-        ><el-button @click="profileOpen = false">取消</el-button
-        ><el-button type="primary" :loading="saving" @click="saveProfile"
-          >保存</el-button
-        ></template
-      >
-    </el-dialog>
 
     <el-dialog v-model="customerFieldOpen" title="修改客户字段" width="560px">
       <el-alert type="info" :closable="false" title="修改显示名称会同步应用到所有客户，已保存的数据不会改变。" />
@@ -636,16 +443,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch, type Ref } from "vue";
+import { ElButton, ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
-import { del, get, post, put } from "../api";
+import { del, get, post, put, quietErrors, type Envelope } from "../api";
 import CustomerBasicInfo from "../components/CustomerBasicInfo.vue";
 import CustomerDocuments from "../components/CustomerDocuments.vue";
 import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
 import { isSystemCustomerFieldDefinition } from "../lib/customerImport";
-import { portTimezoneOptions } from "../lib/portOptions";
 import {
   customerAddressInput,
   customerContactInput,
@@ -661,27 +467,6 @@ const InfoRow = defineComponent({
     h("div", { class: "info-row" }, [
       h("span", { class: "info-row__label" }, p.label),
       h("strong", { class: "info-row__value" }, String(p.value || "—")),
-    ]),
-});
-const InfoCard = defineComponent({
-  props: { title: String, icon: String },
-  setup:
-    (p, { slots }) =>
-    () =>
-      h("article", { class: "info-card" }, [
-        h("header", { class: "info-card__header" }, [
-          h("i", { class: "info-card__icon" }, p.icon),
-          h("strong", { class: "info-card__title" }, p.title),
-        ]),
-        h("div", { class: "info-card__body" }, slots.default?.()),
-      ]),
-});
-const EmptyState = defineComponent({
-  props: { text: String },
-  setup: (p) => () =>
-    h("div", { class: "empty-state" }, [
-      h("div", { class: "empty-icon" }, "＋"),
-      h("p", p.text),
     ]),
 });
 const SectionHead = defineComponent({
@@ -700,11 +485,22 @@ const SectionHead = defineComponent({
         p.action
           ? h(
               "button",
-              { class: "section-head__action", onClick: () => emit("action") },
+              { class: "section-head__action", type: "button", onClick: () => emit("action") },
               p.action,
             )
           : null,
       ]),
+});
+
+const InlineActions = defineComponent({
+  props: { busy: Boolean, error: String },
+  emits: ["cancel"],
+  setup: (p, { emit }) => () =>
+    h("div", { class: "inline-actions" }, [
+      p.error ? h("span", { class: "inline-error", role: "alert" }, p.error) : null,
+      h(ElButton, { size: "small", disabled: p.busy, onClick: () => emit("cancel") }, () => "取消"),
+      h(ElButton, { size: "small", type: "primary", nativeType: "submit", disabled: p.busy }, () => "保存修改"),
+    ]),
 });
 
 const route = useRoute(),
@@ -719,6 +515,7 @@ function onRated(grade: string) {
   if (!customer.value) return;
   customer.value.creditGrade = grade;
   customer.value.creditGradedAt = new Date().toISOString();
+  void templateBasic.value?.load();
 }
 const loading = ref(true),
   saving = ref(false);
@@ -729,7 +526,6 @@ const customer = ref<any>(null),
   owners = ref<any[]>([]),
   changes = ref<any[]>([]),
   changeTotal = ref(0);
-const profileTimezoneOptions = computed(() => portTimezoneOptions(customer.value?.countryCode ?? ""));
 const visibleCustomFields = computed(() => (customer.value?.customFields || []).filter((field: any) =>
   String(field.value ?? "").trim() && !isSystemCustomerFieldDefinition(field),
 ));
@@ -739,20 +535,14 @@ const types = ref<any[]>([]),
   responsibilities = ref<any[]>([]),
   employees = ref<any[]>([]);
 const countryChoices = computed(() => countryOptions("zh-CN"));
-const taxOpen = ref(false),
-  creditOpen = ref(false),
-  profileOpen = ref(false),
-  customerFieldOpen = ref(false),
+const customerFieldOpen = ref(false),
   addressOpen = ref(false),
   contactOpen = ref(false),
   ownerOpen = ref(false);
 const addressEditing = ref<string | null>(null),
   contactEditing = ref<string | null>(null),
   ownerEditing = ref<string | null>(null);
-const taxForm = reactive<any>({}),
-  creditForm = reactive<any>({}),
-  profileForm = reactive<any>({}),
-  customerFieldForm = reactive<any>({ fieldKey: "", displayName: "", aliases: [], sortOrder: 0 }),
+const customerFieldForm = reactive<any>({ fieldKey: "", displayName: "", aliases: [], sortOrder: 0 }),
   addressForm = reactive<any>({}),
   contactForm = reactive<any>({}),
   ownerForm = reactive<any>({});
@@ -834,11 +624,8 @@ function emailPermissionLabel(v: string) {
   );
 }
 function emailPermissionTag(v: string) {
-  return v === "ALLOWED"
-    ? "success"
-    : v === "OPTED_OUT"
-      ? "warning"
-      : ("danger" as any);
+  if (v === "INVALID") return "danger";
+  return v === "OPTED_OUT" ? "warning" : "success";
 }
 function emailCategoryLabel(v: string) {
   return (
@@ -863,6 +650,9 @@ function formatTime(v: string) {
 }
 
 const templateBasic = ref<InstanceType<typeof CustomerBasicInfo> | null>(null);
+async function refreshAfterBasicSave() {
+  await Promise.all([loadCustomer(), loadAddresses(), loadChanges()]);
+}
 const displayName = computed(() => customer.value?.shortName?.trim() || customer.value?.name || "");
 const sections = [
   { key: "basic", label: "基本资料" },
@@ -873,8 +663,10 @@ const sections = [
   { key: "documents", label: "客户资料与附件" },
   { key: "changes", label: "变更记录" },
 ];
+const currentSection = ref("basic");
 async function navigateCustomerSection(section: unknown, behavior: ScrollBehavior = "smooth") {
   if (!sections.some((item) => item.key === section)) return;
+  currentSection.value = String(section);
   await nextTick();
   const target = document.getElementById("customer-" + section);
   target?.scrollIntoView({ block: "start", behavior });
@@ -916,26 +708,79 @@ async function loadChanges() {
   changes.value = d.changes || [];
   changeTotal.value = Number(d.meta?.total || 0);
 }
-function openTax() {
-  const c = customer.value;
-  Object.assign(taxForm, {
-    registeredName: c.registeredName,
-    registrationNo: c.registrationNo,
-    taxId: c.taxId,
+const basicSaving = ref(false);
+const businessStatuses = ["PROSPECT", "COOPERATING", "PAUSED", "INACTIVE"];
+const websiteInvalid = ref(false);
+const creditAmountError = ref("");
+
+function sectionDraft<T extends object>(read: () => T) {
+  const baseline = computed(read);
+  const form = ref(read()) as Ref<T>;
+  const error = ref("");
+  const fields = Object.keys(baseline.value) as (keyof T)[];
+  const differs = (key: keyof T, saved: T) =>
+    JSON.stringify(form.value[key] ?? "") !== JSON.stringify(saved[key] ?? "");
+  const dirty = computed(() => fields.some((key) => differs(key, baseline.value)));
+  watch(baseline, (next, previous) => {
+    const updated = { ...next };
+    for (const key of fields) {
+      if (differs(key, previous)) updated[key] = form.value[key];
+    }
+    form.value = updated;
   });
-  taxOpen.value = true;
+  function reset() {
+    form.value = { ...baseline.value };
+    error.value = "";
+  }
+  return { form, baseline, dirty, error, reset };
 }
+
+const { form: profileForm, baseline: savedProfile, dirty: profileDirty, error: profileSaveError, reset: resetProfile } = sectionDraft(() => {
+  const c = customer.value;
+  return {
+    englishName: c?.englishName || "",
+    industry: c?.industry || "",
+    website: c?.website || "",
+    primaryLanguage: c?.primaryLanguage || "",
+    tags: [...(c?.tags || [])] as string[],
+    remark: c?.remark || "",
+    businessStatus: c?.businessStatus || "PROSPECT",
+  };
+});
+const { form: taxForm, baseline: savedTax, dirty: taxDirty, error: taxSaveError, reset: cancelTax } = sectionDraft(() => ({
+  registeredName: customer.value?.registeredName || "",
+  registrationNo: customer.value?.registrationNo || "",
+  taxId: customer.value?.taxId || "",
+}));
+const { form: creditForm, baseline: savedCredit, dirty: creditDirty, error: creditSaveError, reset: resetCredit } = sectionDraft(() => {
+  const c = customer.value;
+  return {
+    currency: c?.currency || "USD",
+    paymentTerm: c?.paymentTerm || "",
+    creditAmount: Number(c?.creditLimitMinor || 0) / 100,
+    creditCurrency: c?.creditCurrency || c?.currency || "USD",
+    creditStatus: c?.creditStatus || "NORMAL",
+  };
+});
+function cancelProfile() {
+  resetProfile();
+  websiteInvalid.value = false;
+}
+function cancelCredit() {
+  resetCredit();
+  creditAmountError.value = "";
+}
+
 async function checkTaxDuplicates() {
-  if (!taxForm.taxId) return;
+  const taxId = taxForm.value.taxId.trim();
+  if (!canWrite.value || !taxId || taxId === savedTax.value.taxId) return;
   const d = await get<any>("/customers/duplicates", {
     name: customer.value.name,
-    tax_id: taxForm.taxId,
+    tax_id: taxId,
     exclude_id: id,
   });
-  if (d.candidates?.length) {
-    ElMessage.warning(
-      `发现相似客户：${d.candidates.map((x: any) => x.name).join("、")}`,
-    );
+  if (taxForm.value.taxId.trim() === taxId && d.candidates?.length) {
+    ElMessage.warning(`发现相似客户：${d.candidates.map((x: any) => x.name).join("、")}`);
   }
 }
 function profilePayload(overrides: Record<string, unknown> = {}) {
@@ -963,72 +808,78 @@ function profilePayload(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-async function saveTax() {
+async function saveInlineSection(
+  name: string,
+  error: Ref<string>,
+  reset: () => void,
+  write: (saveLegacy: typeof writeLegacyCustomer) => Promise<void>,
+) {
+  if (!canWrite.value || saving.value || basicSaving.value) return;
+  let legacySaved = false;
   saving.value = true;
+  error.value = "";
   try {
-    await put(`/customers/${id}/profile`, profilePayload(taxForm));
-    taxOpen.value = false;
-    await loadCustomer();
-    ElMessage.success("税务资料已保存");
-  } finally {
-    saving.value = false;
-  }
-}
-function openCredit() {
-  const c = customer.value;
-  Object.assign(creditForm, {
-    currency: c.currency || "USD",
-    paymentTerm: c.paymentTerm,
-    creditAmount: Number(c.creditLimitMinor || 0) / 100,
-    creditCurrency: c.creditCurrency || c.currency || "USD",
-    creditStatus: c.creditStatus || "NORMAL",
-  });
-  creditOpen.value = true;
-}
-async function saveCredit() {
-  const c = customer.value;
-  saving.value = true;
-  try {
-    await put(`/customers/${id}`, {
-      name: c.name,
-      countryCode: c.countryCode,
-      currency: creditForm.currency,
-      paymentTerm: creditForm.paymentTerm,
-      remark: c.remark,
+    await write(async (overrides) => {
+      await writeLegacyCustomer(overrides);
+      legacySaved = true;
     });
-    await put(
-      `/customers/${id}/profile`,
-      profilePayload({
-        creditLimitMinor: Math.round(
-          Number(creditForm.creditAmount || 0) * 100,
-        ),
-        creditCurrency: creditForm.creditCurrency,
-        creditStatus: creditForm.creditStatus,
-      }),
-    );
-    creditOpen.value = false;
     await loadCustomer();
-    ElMessage.success("结算信用已保存");
+    reset();
+    ElMessage.success(name + "已保存");
+    await loadChanges();
+  } catch (err) {
+    const failure = err as Partial<Envelope<unknown>> | undefined;
+    const message = failure?.success === false && failure.message ? failure.message : "保存失败，请重试。";
+    error.value = (legacySaved ? "部分资料已保存。" : "") + message;
   } finally {
     saving.value = false;
   }
 }
-function openProfile() {
+
+async function writeLegacyCustomer(overrides: { currency?: string; paymentTerm?: string; remark?: string }) {
   const c = customer.value;
-  Object.assign(profileForm, {
-    shortName: c.shortName,
-    englishName: c.englishName,
-    customerType: c.customerType,
-    industry: c.industry,
-    source: c.source,
-    tags: c.tags || [],
-    website: c.website,
-    primaryLanguage: c.primaryLanguage,
-    timezone: c.timezone,
+  await put(`/customers/${id}`, {
+    name: c.name,
+    countryCode: c.countryCode,
+    country: c.country,
+    address: c.address,
+    currency: c.currency,
+    paymentTerm: c.paymentTerm,
     remark: c.remark,
-    businessStatus: c.businessStatus || "PROSPECT",
+    ...overrides,
+  }, quietErrors);
+  customer.value = { ...customer.value, ...overrides };
+}
+
+async function saveTax() {
+  if (!taxDirty.value) return;
+  await saveInlineSection("税务资料", taxSaveError, cancelTax, async () => {
+    await put(`/customers/${id}/profile`, profilePayload(taxForm.value), quietErrors);
   });
-  profileOpen.value = true;
+}
+
+async function saveCredit() {
+  if (!creditDirty.value) return;
+  const { currency, paymentTerm, creditAmount, creditCurrency, creditStatus } = creditForm.value;
+  const saved = savedCredit.value;
+  const amountChanged = (creditAmount ?? 0) !== saved.creditAmount;
+  const creditLimitMinor = Math.round((creditAmount || 0) * 100);
+  if (amountChanged && (!Number.isSafeInteger(creditLimitMinor) || creditLimitMinor < 0)) {
+    creditAmountError.value = "请输入有效的信用额度";
+    return;
+  }
+  await saveInlineSection("结算信用", creditSaveError, cancelCredit, async (saveLegacy) => {
+    if (currency !== saved.currency || (paymentTerm || "") !== saved.paymentTerm) {
+      await saveLegacy({ currency, paymentTerm: paymentTerm || "" });
+    }
+    if (amountChanged || creditCurrency !== saved.creditCurrency || creditStatus !== saved.creditStatus) {
+      await put(`/customers/${id}/profile`, profilePayload({
+        creditLimitMinor: amountChanged ? String(creditLimitMinor) : customer.value.creditLimitMinor || 0,
+        creditCurrency,
+        creditStatus,
+      }), quietErrors);
+    }
+  });
 }
 function openCustomerField(field: any) {
   Object.assign(customerFieldForm, {
@@ -1059,34 +910,18 @@ async function saveCustomerField() {
   }
 }
 async function saveProfile() {
-  const error = validateCustomerProfile(profileForm);
-  if (error) {
-    ElMessage.warning(
-      error === "websiteInvalid"
-        ? "官网必须是以 http:// 或 https:// 开头的完整地址"
-        : "请输入有效的 IANA 时区，例如 Asia/Shanghai",
-    );
-    return;
-  }
-  saving.value = true;
-  try {
-    const c = customer.value;
-    await put(`/customers/${id}`, {
-      name: c.name,
-      countryCode: c.countryCode,
-      currency: c.currency,
-      paymentTerm: c.paymentTerm,
-      remark: profileForm.remark,
-    });
-    const profileDetails = { ...profileForm };
-    delete profileDetails.remark;
-    await put(`/customers/${id}/profile`, profilePayload(profileDetails));
-    profileOpen.value = false;
-    await loadCustomer();
-    ElMessage.success("详细资料已保存");
-  } finally {
-    saving.value = false;
-  }
+  if (!profileDirty.value) return;
+  const { remark, ...profile } = profileForm.value;
+  websiteInvalid.value = validateCustomerProfile({ website: profile.website }) === "websiteInvalid";
+  if (websiteInvalid.value) return;
+
+  const { remark: savedRemark, ...saved } = savedProfile.value;
+  await saveInlineSection("其他资料", profileSaveError, cancelProfile, async (saveLegacy) => {
+    if (remark !== savedRemark) await saveLegacy({ remark });
+    if (JSON.stringify(profile) !== JSON.stringify(saved)) {
+      await put(`/customers/${id}/profile`, profilePayload(profile), quietErrors);
+    }
+  });
 }
 
 function openAddress(item?: any) {
@@ -1120,7 +955,7 @@ async function saveAddress() {
       ? await put(`/customers/${id}/addresses/${addressEditing.value}`, body)
       : await post(`/customers/${id}/addresses`, body);
     addressOpen.value = false;
-    await loadAddresses();
+    await Promise.all([loadAddresses(), templateBasic.value?.load()]);
     ElMessage.success("地址已保存");
   } finally {
     saving.value = false;
@@ -1132,7 +967,7 @@ async function removeAddress(item: any) {
     "停用地址",
   );
   await del(`/customers/${id}/addresses/${item.id}`);
-  await loadAddresses();
+  await Promise.all([loadAddresses(), templateBasic.value?.load()]);
 }
 
 function openContact(item?: any) {
@@ -1186,7 +1021,6 @@ async function saveContact() {
       : await post(`/customers/${id}/contacts`, body);
     contactOpen.value = false;
     await loadContacts();
-    await templateBasic.value?.load();
     ElMessage.success("联系人已保存");
   } finally {
     saving.value = false;
@@ -1264,7 +1098,6 @@ async function saveOwner() {
     }
     ownerOpen.value = false;
     await loadOwners();
-    await templateBasic.value?.load();
     ElMessage.success("负责人已保存");
   } finally {
     saving.value = false;
@@ -1314,57 +1147,42 @@ onMounted(async () => {
   max-width: 1500px;
   margin: 0 auto;
 }
-.back {
-  border: 0;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  margin: 0 0 14px;
-  padding: 0;
-}
 .hero {
   display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 14px 20px;
-  border: 1px solid #dce7f4;
-  border-radius: 16px;
-  background: linear-gradient(125deg, #f7fbff 0%, #fff 58%, #f7f9fc 100%);
-  box-shadow: 0 8px 28px rgba(31, 78, 121, 0.06);
-}
-.avatar {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding: 14px 18px;
   color: #fff;
-  background: linear-gradient(145deg, #2f80ed, #56ccf2);
-  font-size: 22px;
-  font-weight: 700;
+  background: linear-gradient(120deg, #143f5a, #176b87);
+  border-radius: 10px;
 }
-.hero-main {
-  flex: 1;
-}
-.eyebrow {
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  color: #6b7b8c;
-}
+.hero-main { min-width: 0; }
 .hero h1 {
-  margin: 3px 0 9px;
-  font-size: 22px;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
-.hero-tags {
+.hero h1 small {
+  display: inline-block;
+  margin-inline-start: 6px;
+  color: #e5f2f7;
+  font-size: 12px;
+  font-weight: 400;
+}
+.hero-meta {
   display: flex;
-  gap: 8px;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 7px;
+  color: #e5f2f7;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
-.hero-actions {
-  display: flex;
-  gap: 10px;
-}
+.hero-code { font-variant-numeric: tabular-nums; }
+.hero-back { flex: none; }
 .section-nav {
   position: sticky;
   top: 0;
@@ -1372,8 +1190,8 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 8px;
-  margin-block: 12px;
-  padding: 6px 10px;
+  margin-block: 8px;
+  padding: 4px 8px;
   border: 1px solid #dce7f4;
   border-radius: 9px;
   background: #fff;
@@ -1381,7 +1199,7 @@ onMounted(async () => {
 .section-nav button {
   padding: 6px 9px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   color: #205573;
   background: transparent;
   border: 0;
@@ -1389,249 +1207,79 @@ onMounted(async () => {
   cursor: pointer;
 }
 .section-nav button:hover,
-.section-nav button:focus-visible { background: #edf6fb; }
-.detail-sections { display: grid; gap: 12px; }
+.section-nav button:focus-visible,
+.section-nav button[aria-current='location'] { background: #edf6fb; }
+.section-nav button[aria-current='location'] { color: #135a7b; font-weight: 600; }
+.detail-sections {
+  padding-inline: 16px;
+  border: 1px solid #e4ebf3;
+  border-radius: 9px;
+  background: #fff;
+}
 .detail-section {
   min-width: 0;
-  padding: 14px 16px;
+  padding: 11px 0;
+  font-size: 13px;
   scroll-margin-top: 86px;
-  border: 1px solid #e4ebf3;
-  border-radius: 10px;
-  background: #fff;
 }
+.detail-section + .detail-section { border-top: 1px solid #e4ebf3; }
 .detail-section:focus { outline: none; }
-.detail-section .content-section { padding: 0; border: 0; }
-.extra-profile { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4ebf3; }
-.profile-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); column-gap: 16px; }
-.profile-remark { grid-column: 1 / -1; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hero h1 small { font-weight: 400; font-size: 14px; margin-inline-start: 8px; }
-
-.tab-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.content-section {
-  padding: 20px;
-  border: 1px solid #e4ebf3;
-  border-radius: 12px;
-  background: #fff;
-}
-.registration-card :deep(.info-card__body) {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 16px;
-}
-.detail-sections :deep(.info-card) {
-  border: 1px solid #e4ebf3;
-  border-radius: 12px;
-  overflow: hidden;
-}
-.detail-sections :deep(.info-card__header) {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 14px 16px;
-  background: #f8fafc;
-}
-.detail-sections :deep(.info-card__icon) {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  background: #e8f3ff;
-  color: #2474d2;
-  font-style: normal;
-}
-.detail-sections :deep(.info-card__title) {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.detail-sections :deep(.info-card__body) {
-  padding: 8px 16px 12px;
-}
-.detail-sections :deep(.info-row) {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px dashed #edf0f3;
-}
-.detail-sections :deep(.info-row:last-child) {
-  border: 0;
-}
-.detail-sections :deep(.info-row__label) {
-  color: var(--el-text-color-secondary);
-}
-.detail-sections :deep(.info-row__value) {
-  font-weight: 500;
-  word-break: break-word;
-}
-.custom-info-row { display:grid; grid-template-columns:minmax(110px,.7fr) minmax(140px,1fr) auto; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--el-border-color-lighter); }
-.custom-info-row:last-child { border-bottom:0; }
-.custom-info-row > span { color:var(--el-text-color-secondary); font-size:13px; }
-.custom-info-row > strong { font-weight:500; overflow-wrap:anywhere; }
-.detail-sections :deep(.section-head) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 16px;
-}
-.detail-sections :deep(.section-head__main) {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.detail-sections :deep(.section-head__title) {
-  margin: 0;
-  font-size: 17px;
-}
-.detail-sections :deep(.section-head__count) {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
+.content-block { margin-top: 10px; }
+.profile-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; }
+.profile-remark { grid-column: 1 / -1; white-space: pre-wrap; }
+.inline-edit :deep(.el-form-item) { min-width: 0; margin-bottom: 4px; }
+.inline-edit :deep(.el-form-item__label) { margin-bottom: 2px; color: #526578; }
+.inline-edit :deep(.el-select), .inline-edit :deep(.el-input-number) { width: 100%; }
+.inline-edit :deep(.el-input-number input) { text-align: left; }
+.inline-edit :deep(.el-form-item.is-error) { margin-bottom: 16px; }
+.detail-sections :deep(.inline-actions) { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.detail-sections :deep(.inline-actions .el-button + .el-button) { margin-left: 0; }
+.detail-sections :deep(.inline-error) { margin-inline-end: auto; color: var(--el-color-danger-dark-2); font-size: 12px; }
+.info-row, .detail-sections :deep(.info-row) { display: grid; align-content: start; justify-items: start; gap: 4px; min-width: 0; }
+.info-row__label, .detail-sections :deep(.info-row__label) { color: #526578; font-size: 12px; }
+.detail-sections :deep(.info-row__value) { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.custom-info-row { display: grid; grid-template-columns: minmax(90px, .7fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid #edf0f3; }
+.custom-info-row:last-child { border-bottom: 0; }
+.custom-info-row > span { color: var(--el-text-color-secondary); font-size: 13px; }
+.custom-info-row > strong { font-weight: 500; overflow-wrap: anywhere; }
+.detail-sections :deep(.section-head) { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; }
+.detail-sections :deep(.section-head__main) { display: flex; align-items: center; gap: 8px; }
+.detail-sections :deep(.section-head__title) { margin: 0; color: #173b52; font-size: 14px; }
+.detail-sections :deep(.section-head__count) { color: var(--el-text-color-secondary); font-size: 12px; }
 .detail-sections :deep(.section-head__action) {
+  flex: none;
+  padding: 3px 0;
   border: 0;
-  border-radius: 8px;
-  padding: 8px 13px;
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: transparent;
+  color: #12638b;
+  font: inherit;
+  font-size: 13px;
   cursor: pointer;
 }
-.record-grid {
+.detail-sections :deep(.section-head__action:hover) { text-decoration: underline; }
+.record-list {
+  border-top: 1px solid #edf0f3;
+}
+.record-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 82px;
+  align-items: start;
+  gap: 4px 16px;
+  padding-block: 7px;
+  line-height: 20px;
 }
-.record-card {
-  position: relative;
-  padding: 18px;
-  border: 1px solid #e3e9f0;
-  border-radius: 12px;
-  background: #fff;
-}
-.record-card:hover {
-  border-color: #b8d6fb;
-  box-shadow: 0 7px 20px rgba(48, 103, 162, 0.08);
-}
-.record-card.inactive {
-  opacity: 0.58;
-  background: #fafafa;
-}
-.record-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.record-card p {
-  margin: 9px 0 0;
-  color: var(--el-text-color-secondary);
-}
-.record-card .record-main {
-  color: var(--el-text-color-primary);
-}
-.record-actions {
-  position: absolute;
-  right: 12px;
-  top: 9px;
-}
-.contact-lines {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin-top: 12px;
-  color: #536273;
-}
-.detail-sections :deep(.empty-state) {
-  display: grid;
-  place-items: center;
-  min-height: 170px;
-  border: 1px dashed #d7e0ea;
-  border-radius: 12px;
-  color: var(--el-text-color-secondary);
-}
-.detail-sections :deep(.empty-icon) {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #f1f6fc;
-  color: #6e9ed4;
-  font-size: 24px;
-}
-.credit-board {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  border: 1px solid #e3e9f0;
-  border-radius: 14px;
-  overflow: hidden;
-}
-.credit-board > div {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 22px;
-  border-right: 1px solid #e3e9f0;
-}
-.credit-board > div:last-child {
-  border: 0;
-}
-.credit-board span {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-.credit-board strong {
-  font-size: 19px;
-}
-.owner-list {
-  margin-top: 14px;
-  border: 1px solid #e4eaf1;
-  border-radius: 12px;
-  overflow: hidden;
-}
-.owner-row {
-  display: grid;
-  grid-template-columns: 44px 1fr 220px 110px;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid #edf0f3;
-}
-.owner-row:last-child {
-  border: 0;
-}
-.owner-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  background: #eaf4ff;
-  color: #2676d2;
-  font-weight: 700;
-}
-.owner-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.owner-info > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.owner-info span,
-.owner-date {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-.owner-actions {
-  display: flex;
-  justify-content: flex-end;
-}
+.record-row + .record-row { border-top: 1px solid #edf0f3; }
+.record-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.record-title strong { overflow-wrap: anywhere; }
+.record-detail, .record-meta { min-width: 0; overflow-wrap: anywhere; }
+.record-detail { white-space: pre-wrap; }
+.record-meta { color: var(--el-text-color-secondary); font-size: 12px; }
+.record-note { margin-top: 2px; }
+.record-actions { display: flex; justify-content: flex-end; align-items: center; }
+.record-actions .el-button + .el-button { margin-left: 8px; }
+.contact-methods > div { display: flex; flex-wrap: wrap; gap: 1px 12px; }
+.contact-methods span { min-width: 0; }
+.empty-state { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .form-tip {
   margin-top: 5px;
   color: var(--el-text-color-secondary);
@@ -1643,18 +1291,9 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.history {
-  padding-top: 8px;
-}
-.history-card {
-  padding: 12px 16px;
-  border: 1px solid #e4eaf1;
-  border-radius: 10px;
-}
-.history-card p {
-  margin: 6px 0 0;
-  color: var(--el-text-color-secondary);
-}
+.history { margin: 0; padding: 5px 0 0 5px; }
+.history strong { overflow-wrap: anywhere; }
+.history p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .two-col-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1671,51 +1310,22 @@ onMounted(async () => {
   width: 100%;
 }
 @media (max-width: 900px) {
-  .hero {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .hero-actions {
-    width: 100%;
-  }
-  .content-section {
-    padding: 16px;
-  }
-  .registration-card :deep(.info-card__body),
-  .record-grid,
-  .two-col-form {
-    grid-template-columns: 1fr;
-  }
-  .credit-board {
-    grid-template-columns: 1fr 1fr;
-  }
-  .owner-row {
-    grid-template-columns: 44px 1fr;
-  }
-  .owner-date,
-  .owner-actions {
-    grid-column: 2;
-  }
-  .owner-actions {
-    justify-content: flex-start;
-  }
-  .record-actions {
-    position: static;
-    margin-top: 10px;
-  }
+  .profile-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two-col-form { grid-template-columns: 1fr; }
+}
+@media (max-width: 540px) {
+  .hero { flex-wrap: wrap; }
+  .hero h1 small { display: block; margin-inline-start: 0; }
+  .profile-fields { grid-template-columns: minmax(0, 1fr); }
+  .detail-section { scroll-margin-top: 112px; }
+  .record-row { grid-template-columns: minmax(0, 1fr) 82px; gap: 3px 8px; }
+  .record-detail, .record-meta { grid-column: 1; }
+  .record-actions { grid-column: 2; grid-row: 1; }
 }
 .two-col-form .full-row {
   grid-column: 1/-1;
 }
-.mail-preferences {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
+.mail-preferences { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; }
 @media (max-width: 900px) {
   .two-col-form .full-row {
     grid-column: auto;

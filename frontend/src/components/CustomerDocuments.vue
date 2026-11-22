@@ -1,24 +1,24 @@
 <template>
   <section v-loading="loading" class="documents">
-    <div class="toolbar">
-      <span class="hint">上传附件，可设置提醒更换的日期。</span>
-      <el-button v-if="canWrite" type="primary" @click="open()">上传文件</el-button>
+    <div v-if="canWrite" class="toolbar">
+      <span class="hint">可按文件设置更换提醒。</span>
+      <el-button size="small" type="primary" plain @click="open()">上传文件</el-button>
     </div>
-    <el-table :data="current" empty-text="暂无附件" class="file-list">
+    <el-table :data="current" size="small" empty-text="暂无附件" class="file-list">
       <el-table-column label="文件" min-width="220">
         <template #default="{row}">
-          <el-button v-if="previewable(row)" link type="primary" class="filename" @click="preview(row)">{{ row.fileName }}</el-button>
+          <el-button v-if="previewable(row)" size="small" link type="primary" class="filename" @click="preview(row)">{{ row.fileName }}</el-button>
           <span v-else>{{ row.fileName }}</span>
           <span class="size">{{ formatSize(row.sizeBytes) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="提醒日期" min-width="185">
+      <el-table-column label="提醒日期" min-width="154">
         <template #default="{row}">{{ reminderLabel(row) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="160">
+      <el-table-column label="操作" width="105" align="right">
         <template #default="{row}">
           <el-dropdown trigger="click" @command="(command: string) => handleAction(command, row)">
-            <el-button link type="primary">更多操作 <span class="dropdown-arrow">▼</span></el-button>
+            <el-button size="small" link type="primary">更多操作 <span class="dropdown-arrow">▼</span></el-button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="download">下载</el-dropdown-item>
@@ -31,7 +31,7 @@
       </el-table-column>
     </el-table>
     <el-dialog v-model="dialog" :title="editing ? '设置提醒' : '上传文件'" width="min(440px, 92vw)" :close-on-click-modal="!saving" :before-close="closeDialog">
-      <el-form label-position="top" @submit.prevent="save">
+      <el-form label-position="top" size="small" @submit.prevent="save">
         <el-form-item v-if="!editing" label="文件" required>
           <input :key="fileKey" type="file" aria-label="选择文件" @change="selectFile" />
           <span class="hint upload-hint">图片、PDF 等，单个文件最大 10 MB</span>
@@ -117,10 +117,13 @@ onBeforeUnmount(()=>{clearInterval(timer);releasePreview()})
 </script>
 <style scoped>
 .dropdown-arrow { margin-left: 5px; font-size: 10px; }
-.documents { padding: 8px 0; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.hint, .size { color: #8492a6; font-size: 13px; }
-.size { margin-left: 12px; white-space: nowrap; }
+.documents { padding: 0; font-size: 13px; }
+.file-list :deep(.el-table__empty-block) { min-height: 34px; }
+.file-list :deep(.el-table__empty-text) { line-height: 34px; }
+.file-list :deep(.cell) { overflow-wrap: anywhere; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.hint, .size { color: #526578; font-size: 12px; }
+.size { margin-left: 6px; white-space: nowrap; }
 .filename { max-width: 100%; white-space: normal; text-align: left; height: auto; }
 .upload-hint { display: block; width: 100%; margin-top: 8px; }
 .selected-name { overflow-wrap: anywhere; }
