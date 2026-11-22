@@ -43,7 +43,7 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" min-width="125" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openBatchReview(row)">{{ t('common.detail') }}</el-button>
+            <el-button type="primary" link @click="openBatchReview(row)">{{ t('requirements.openInquiry') }}</el-button>
           </template>
         </el-table-column>
         <template #empty>{{ t('requirements.empty') }}</template>
