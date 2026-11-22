@@ -29,9 +29,47 @@
       <tbody><tr v-for="row in comparisonSpecificationRows(productGroupsFor(group.value))" :key="row.key" :class="{'selected-row':selectedRows(row).length}">
        <td><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
        <td class="quantity-cell"><span class="number-cell">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</span></td>
-       <td><el-select :model-value="specificationQuoteId(row)" filterable clearable :reserve-keyword="false" :disabled="!editable" :placeholder="t('inquiryWorkspace.offer.selectSupplierQuotes')" :aria-label="t('inquiryWorkspace.offer.specificationSupplierAria',{product:row.product.product,specification:specification(row.product)})" style="width:100%" @change="selectSpecificationQuote(row,$event)"><el-option v-for="candidate in supplierOptionsFor(row)" :key="candidate.quote.id" :value="candidate.quote.id" :label="supplierChoiceLabel(candidate)" class="supplier-choice-option"><div class="supplier-choice-line"><strong>{{candidate.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')}}</strong><span>{{priceOf(candidate.price)}} / {{candidate.product.unit}}</span><el-button link type="primary" size="small" @click.stop="preview=candidate.quote">{{t('inquiryWorkspace.offer.view')}}</el-button></div><small>{{t('inquiryWorkspace.offer.deliveryDate')}}: {{candidate.price.delivery||candidate.quote.body.delivery||'—'}}<template v-if="candidate.category==='REPROCESSING_CNY'"> · {{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}: {{formatCfrUnitPrice(candidate.price.factoryPrice)||'—'}}</template></small></el-option></el-select><small v-if="specificationQuoteIds(row).length>1" class="pending supplier-reselect">{{t('inquiryWorkspace.offer.reselectSingleSupplier')}}</small></td>
-       <td v-if="group.value!=='DIRECT_CFR_USD'&&row.key===row.productGroup.specs[0].key" :rowspan="row.productGroup.specs.length"><div class="description-logistics"><el-select :model-value="productFreightId(row.productGroup)" :disabled="!editable" :placeholder="t(hasProductFreight(row.productGroup)?'inquiryWorkspace.offer.productFreightMixed':'inquiryWorkspace.offer.logisticsSelectPlaceholder')" :aria-label="t('inquiryWorkspace.offer.productLogisticsAria',{product:row.productGroup.productName})" clearable class="description-logistics-select" size="small" @change="selectProductFreight(row.productGroup,$event)"><template #label="{value}"><span class="logistics-selection-label" :title="freightChoice(row.productGroup,value).name+' · '+freightChoice(row.productGroup,value).price"><span>{{freightChoice(row.productGroup,value).name}}</span><strong>{{freightChoice(row.productGroup,value).price}}</strong></span></template><el-option v-for="quote in logisticsQuotes" :key="quote.id" :value="quote.id" :disabled="!productFreightAvailable(row.productGroup,quote)" :label="productFreightChoiceLabel(row.productGroup,quote)" :title="productFreightLabel(row.productGroup,quote)" class="product-freight-option freight-choice-option"><div class="freight-choice-line"><strong>{{productFreightName(quote)}}</strong><span>{{productFreightPriceLabel(groupProducts(row.productGroup),quote)}}</span><el-button link type="primary" size="small" @click.stop="preview=quote">{{t('inquiryWorkspace.offer.viewFreightDetails')}}</el-button></div><small>{{quote.body.route||t('inquiryWorkspace.offer.routeMissing')}}<template v-if="quote.body.departure||quote.body.arrival"> · {{quote.body.departure||'—'}} → {{quote.body.arrival||'—'}}</template></small></el-option></el-select>
-         </div></td>
+       <td>
+        <el-select :model-value="specificationQuoteId(row)" filterable clearable :reserve-keyword="false" :disabled="!editable"
+         :placeholder="t('inquiryWorkspace.offer.selectSupplierQuotes')"
+         :aria-label="t('inquiryWorkspace.offer.specificationSupplierAria',{product:row.product.product,specification:specification(row.product)})"
+         style="width:100%" @change="selectSpecificationQuote(row,$event)">
+         <el-option v-for="candidate in supplierOptionsFor(row)" :key="candidate.quote.id" :value="candidate.quote.id"
+          :label="supplierChoiceLabel(candidate)" class="supplier-choice-option">
+          <div class="supplier-choice-line">
+           <span>{{supplierChoicePrice(candidate)}}</span>
+           <strong>{{supplierChoiceName(candidate)}}</strong>
+           <el-button link type="primary" size="small" @click.stop="preview=candidate.quote">{{t('inquiryWorkspace.offer.view')}}</el-button>
+          </div>
+          <small>{{t('inquiryWorkspace.offer.deliveryDate')}}: {{candidate.price.delivery||candidate.quote.body.delivery||'—'}}<template v-if="candidate.category==='REPROCESSING_CNY'"> · {{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}: {{formatCfrUnitPrice(candidate.price.factoryPrice)||'—'}}</template></small>
+         </el-option>
+        </el-select>
+        <small v-if="specificationQuoteIds(row).length>1" class="pending supplier-reselect">{{t('inquiryWorkspace.offer.reselectSingleSupplier')}}</small>
+       </td>
+       <td v-if="group.value!=='DIRECT_CFR_USD'&&row.key===row.productGroup.specs[0].key" :rowspan="row.productGroup.specs.length">
+        <div class="description-logistics">
+         <el-select :model-value="productFreightId(row.productGroup)" :disabled="!editable"
+          :placeholder="t(hasProductFreight(row.productGroup)?'inquiryWorkspace.offer.productFreightMixed':'inquiryWorkspace.offer.logisticsSelectPlaceholder')"
+          :aria-label="t('inquiryWorkspace.offer.productLogisticsAria',{product:row.productGroup.productName})"
+          clearable class="description-logistics-select" size="small" @change="selectProductFreight(row.productGroup,$event)">
+          <template #label="{value,label}">
+           <span class="logistics-selection-label" :title="label">
+            <strong>{{freightChoice(row.productGroup,value).price}}</strong>
+            <span>{{freightChoice(row.productGroup,value).name}}</span>
+           </span>
+          </template>
+          <el-option v-for="quote in logisticsQuotes" :key="quote.id" :value="quote.id" :disabled="!productFreightAvailable(row.productGroup,quote)"
+           :label="productFreightChoiceLabel(row.productGroup,quote)" :title="productFreightLabel(row.productGroup,quote)" class="product-freight-option freight-choice-option">
+           <div class="freight-choice-line">
+            <span>{{productFreightPriceLabel(groupProducts(row.productGroup),quote)}}</span>
+            <strong>{{productFreightName(quote)}}</strong>
+            <el-button link type="primary" size="small" @click.stop="preview=quote">{{t('inquiryWorkspace.offer.viewFreightDetails')}}</el-button>
+           </div>
+           <small>{{quote.body.route||t('inquiryWorkspace.offer.routeMissing')}}<template v-if="quote.body.departure||quote.body.arrival"> · {{quote.body.departure||'—'}} → {{quote.body.arrival||'—'}}</template></small>
+          </el-option>
+         </el-select>
+        </div>
+       </td>
        <td class="cfr-cell"><strong v-if="specificationQuoteIds(row).length===1&&selectedRows(row).length" class="single-cfr">{{candidateCfrText(selectedRows(row)[0])}}</strong><span v-else-if="specificationQuoteIds(row).length>1" class="pending">{{t('inquiryWorkspace.offer.reselectSingleSupplier')}}</span><span v-else>—</span></td>
       </tr></tbody>
      </table>
@@ -182,9 +220,14 @@ function productFreightId(group:ProductCandidateGroup){
 }
 function hasProductFreight(group:ProductCandidateGroup){const ids=new Set(groupProducts(group).map(p=>p.id));return selections.value.some(s=>ids.has(s.productId)&&s.category!=='DIRECT_CFR_USD'&&s.freightQuoteId)}
 function productFreightName(quote:Quote){return quote.body.company||quote.body.carrier||t('inquiryWorkspace.offer.logisticsMissing')}
-function productFreightChoiceLabel(group:ProductCandidateGroup,quote:Quote){const price=productFreightPriceLabel(groupProducts(group),quote);return productFreightName(quote)+(price?' · '+price:'')}
+function productFreightChoiceLabel(group:ProductCandidateGroup,quote:Quote){const price=productFreightPriceLabel(groupProducts(group),quote);return price?price+' · '+productFreightName(quote):productFreightName(quote)}
 function freightChoice(group:ProductCandidateGroup,id:string){const quote=logisticsQuotes.value.find(q=>q.id===id);return{name:quote?productFreightName(quote):'',price:productFreightPriceLabel(groupProducts(group),quote)}}
-function productFreightLabel(group:ProductCandidateGroup,quote:Quote){const products=groupProducts(group),covered=products.filter(p=>freightCovers(quote,p.id)).length;return `${quote.body.company||quote.body.carrier||t('inquiryWorkspace.offer.logisticsMissing')}${productFreightPriceSummary(products,quote)?' · '+productFreightPriceSummary(products,quote):''} · ${quote.body.route||quote.id}${covered<products.length?' · '+t('inquiryWorkspace.offer.productFreightCoverage',{covered,total:products.length}):''}`}
+function productFreightLabel(group:ProductCandidateGroup,quote:Quote){
+ const products=groupProducts(group),covered=products.filter(p=>freightCovers(quote,p.id)).length
+ const summary=productFreightPriceSummary(products,quote)
+ const coverage=covered<products.length?t('inquiryWorkspace.offer.productFreightCoverage',{covered,total:products.length}):''
+ return [summary,productFreightName(quote),quote.body.route||quote.id,coverage].filter(Boolean).join(' · ')
+}
 function selectProductFreight(group:ProductCandidateGroup,id?:string){
  const products=groupProducts(group),quote=logisticsQuotes.value.find(q=>q.id===id)
  if(!applyProductFreight(products,selections.value,quote))return
@@ -199,7 +242,9 @@ function comparisonSpecificationSentence(product:Product){
 function supplierOptionsFor(row:ComparisonSpecificationRow){return rowsFor(row.category,false).filter(candidate=>candidate.product.id===row.product.id)}
 function specificationQuoteIds(row:ComparisonSpecificationRow){return selections.value.filter(s=>s.productId===row.product.id&&s.category===row.category).map(s=>s.quoteId)}
 function specificationQuoteId(row:ComparisonSpecificationRow){const ids=specificationQuoteIds(row);return ids.length===1?ids[0]:undefined}
-function supplierChoiceLabel(row:Candidate){return `${row.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')} · ${priceOf(row.price)} / ${row.product.unit}`}
+function supplierChoicePrice(row:Candidate){return `${priceOf(row.price)} / ${row.product.unit}`}
+function supplierChoiceName(row:Candidate){return row.quote.body.company||t('inquiryWorkspace.offer.supplierMissing')}
+function supplierChoiceLabel(row:Candidate){return `${supplierChoicePrice(row)} · ${supplierChoiceName(row)}`}
 function selectSpecificationQuote(row:ComparisonSpecificationRow,quoteId:string|undefined){
  if(!offer.value)return
  const products=sameProductSpecs(row.product),key=freightProductKey(row.product),choice=productFreightChoices.value[key]
