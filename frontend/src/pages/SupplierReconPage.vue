@@ -95,10 +95,10 @@
         <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="rows" :row-class-name="rowClass" @expand-change="onExpand">
+      <el-table v-loading="loading" :data="rows" class="supplier-payments-table" @expand-change="onExpand">
         <!-- 展开看这张采购单付过哪几笔。明细按需加载：每行都预先拉一次，
              一页就是 20 次往返。 -->
-        <el-table-column type="expand">
+        <el-table-column type="expand" width="44">
           <template #default="{ row }">
             <div class="entries">
               <el-table v-if="entriesOf(row).length" :data="entriesOf(row)" size="small">
@@ -160,10 +160,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.businessType')" width="105">
+        <el-table-column :label="t('supplierRecon.businessType')" width="82">
           <template #default="{ row }"><el-tag size="small" effect="plain" :type="row.businessType === 'LOGISTICS' ? 'success' : row.businessType === 'MANUAL' ? 'info' : undefined">{{ t(`supplierRecon.businessTypes.${row.businessType || 'PROCUREMENT'}`) }}</el-tag></template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.order')" min-width="190">
+        <el-table-column :label="t('supplierRecon.order')" min-width="188">
           <template #default="{ row }">
             <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
                  而财务没有 procurement:order:read——给所有人挂链接等于每一行
@@ -179,26 +179,31 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.openAmount')" width="170" align="right">
+        <el-table-column :label="t('supplierRecon.openAmount')" width="130" align="right">
+          <template #header><span class="payment-list-amount">{{ t('supplierRecon.openAmount') }}</span></template>
           <template #default="{ row }">
-            <span class="num money" :class="{ over: Number(row.openAmount) < 0 }">
-              {{ row.currency }} {{ row.openAmount }}
-            </span>
-            <div v-if="Number(row.openAmount) < 0" class="sub over">{{ t('supplierRecon.overpaid') }}</div>
-            <div v-else class="sub">{{ t('supplierRecon.ofTotal', { total: row.orderedAmount }) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('supplierRecon.paid')" width="150" align="right">
-          <template #default="{ row }">
-            <span class="num" :class="{ dim: Number(row.paidAmount) === 0 }">{{ row.paidAmount }}</span>
-            <!-- 走发票那条路的钱在明细里看不见（那些核销行挂在发票上，不挂
-                 采购单）。不说明来处，这段差额会被当成漏记而重填一遍。 -->
-            <div v-if="Number(row.invoicePaidAmount)" class="sub">
-              {{ t('supplierRecon.viaInvoice', { n: row.invoicePaidAmount }) }}
+            <div class="payment-list-amount">
+              <span class="num money" :class="{ over: Number(row.openAmount) < 0 }">
+                {{ formatListPayment(row.openAmount, row.currency) }}
+              </span>
+              <div v-if="Number(row.openAmount) < 0" class="sub over">{{ t('supplierRecon.overpaid') }}</div>
+              <div v-else class="sub">{{ t('supplierRecon.ofTotal', { total: formatListPayment(row.orderedAmount, row.currency) }) }}</div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.orderStatus')" width="130">
+        <el-table-column :label="t('supplierRecon.paid')" width="122" align="right">
+          <template #header><span class="payment-list-amount">{{ t('supplierRecon.paid') }}</span></template>
+          <template #default="{ row }">
+            <div class="payment-list-amount">
+              <span class="num" :class="{ dim: Number(row.paidAmount) === 0 }">{{ formatListPayment(row.paidAmount, row.currency) }}</span>
+              <!-- 这部分付款挂在发票上，采购单付款明细不会重复列出。 -->
+              <div v-if="Number(row.invoicePaidAmount)" class="sub">
+                {{ t('supplierRecon.viaInvoice', { n: formatListPayment(row.invoicePaidAmount, row.currency) }) }}
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('supplierRecon.orderStatus')" width="110">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -211,14 +216,14 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.dueDate')" width="150">
+        <el-table-column :label="t('supplierRecon.dueDate')" width="124">
           <template #default="{ row }">
             <!-- 没配账期不是「今天到期」，所以给一个标签而不是一个日子。 -->
-            <el-tag v-if="row.dueUnset" size="small" type="warning" effect="plain">
+            <el-tag v-if="row.dueUnset" size="small" type="warning" effect="light">
               {{ t('supplierRecon.unsetTag') }}
             </el-tag>
             <template v-else>
-              <div class="num-cell">{{ row.dueDate }}</div>
+              <div class="payment-list-date">{{ row.dueDate }}</div>
               <!-- 已完成页只留日子，不留「逾期多少天」——那笔账已经了结了。 -->
               <div v-if="!isDone" class="sub" :class="{ overdue: row.overdueDays > 0 }">
                 {{ dueLabel(row) }}
@@ -226,7 +231,7 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.buyer')" min-width="110">
+        <el-table-column :label="t('supplierRecon.buyer')" width="86">
           <template #default="{ row }">{{ row.buyerName || '—' }}</template>
         </el-table-column>
         <!-- 已完成视图多一列：为什么算完了、谁说的。 -->
@@ -236,13 +241,13 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('common.actions')" width="110" align="center">
           <template #default="{ row }">
             <el-button v-if="isDone || !canWrite" type="primary" plain @click="handleRowCommand(row, 'detail')">
               {{ t('supplierRecon.viewDetails') }}
             </el-button>
             <el-dropdown v-else trigger="click" @command="(command: string) => handleRowCommand(row, command)">
-              <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
+              <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow" aria-hidden="true">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
                 <el-dropdown-item v-if="row.manuallyEntered && !Number(row.sourceBusinessId)" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
@@ -578,13 +583,17 @@ const dueSoonDays = 30
 const view = ref('')
 const businessType = ref('')
 
-// 已完成页上的到期日是历史，不是待办：一张 2023 年就结清的单不该顶着
-// 「逾期 700 天」的红底。催的是没结的账，结了的只剩记录。
-function rowClass({ row }: { row: Row }) {
-  if (isDone.value) return ''
-  // 未填日期已有橙色标签提示，不再把整行染黄，避免大量旧单铺满警告色。
-  if (row.dueUnset) return ''
-  return row.overdueDays > 0 ? 'row-overdue' : ''
+const paymentWholeAmount = new Intl.NumberFormat('en-US')
+function formatListPayment(value: string, currency: string) {
+  const raw = value?.trim() || ''
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw)
+  if (!parts) return raw || '—'
+  const fraction = parts[3] ?? ''
+  // Format the decimal string exactly, even when the amount exceeds number precision.
+  const cents = BigInt(parts[2]) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, '0')) + (fraction[2] >= '5' ? 1n : 0n)
+  const sign = cents ? parts[1] : ''
+  const amount = `${sign}${paymentWholeAmount.format(cents / 100n)}.${String(cents % 100n).padStart(2, '0')}`
+  return currency ? `${currency} ${amount}` : amount
 }
 
 function dueLabel(row: Row): string {
@@ -1131,14 +1140,16 @@ onMounted(() => {
 .num.dim {
   color: var(--el-text-color-placeholder);
 }
-.num-cell {
+.payment-list-amount {
+  display: block;
+  text-align: right;
+}
+.payment-list-date {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.sub.overdue {
-  color: var(--el-color-danger);
-}
-:deep(.row-overdue) {
-  background: rgba(245, 108, 108, 0.055);
+.supplier-payments-table .sub.overdue {
+  color: #b42318;
 }
 .row-actions { display: flex; align-items: center; white-space: nowrap; }
 .drop-arrow { margin-left: 7px; font-size: 10px; }
