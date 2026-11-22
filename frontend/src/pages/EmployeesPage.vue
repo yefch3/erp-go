@@ -3,39 +3,49 @@
     <BasicDataEmployeeNav />
     <el-card shadow="never" class="employee-card">
       <div class="filters">
-        <div class="filter-fields">
-          <el-input
-            v-model="keyword"
-            :placeholder="t('employees.searchPlaceholder')"
-            clearable
-            @keyup.enter="reload"
-            @clear="reload"
-          />
-          <el-select v-model="departmentId" :placeholder="t('employees.allDepartments')" clearable @change="reload">
-            <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
-          </el-select>
-          <el-select v-model="managerId" :placeholder="t('employees.allManagers')" clearable filterable @change="reload">
+        <div class="filter-toolbar">
+          <div class="filter-fields">
+            <el-input
+              v-model="keyword"
+              :aria-label="t('employees.searchPlaceholder')"
+              :placeholder="t('employees.searchPlaceholder')"
+              clearable
+              @keyup.enter="reload"
+              @clear="reload"
+            />
+            <el-select v-model="departmentId" :aria-label="t('employees.allDepartments')" :placeholder="t('employees.allDepartments')" clearable @change="reload">
+              <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
+            </el-select>
+            <el-select v-if="canReadRoles" v-model="roleId" :aria-label="t('employees.allRoles')" :placeholder="t('employees.allRoles')" clearable @change="reload">
+              <el-option v-for="r in roles" :key="r.id" :value="r.id" :label="r.name" />
+            </el-select>
+          </div>
+          <div class="filter-actions">
+            <el-button :aria-expanded="moreFiltersOpen" aria-controls="employee-extra-filters" @click="moreFiltersOpen = !moreFiltersOpen">
+              {{ t('employees.moreFilters') }}<span v-if="extraFilterCount" class="filter-count">({{ extraFilterCount }})</span>
+              <span class="dropdown-arrow" aria-hidden="true">{{ moreFiltersOpen ? '▴' : '▾' }}</span>
+            </el-button>
+            <el-button @click="resetFilters">{{ t('employees.resetFilters') }}</el-button>
+            <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
+          </div>
+        </div>
+        <div v-show="moreFiltersOpen" id="employee-extra-filters" class="extra-filters">
+          <el-select v-model="managerId" :aria-label="t('employees.allManagers')" :placeholder="t('employees.allManagers')" clearable filterable @change="reload">
             <el-option v-for="e in employeeOptions" :key="e.id" :value="e.id" :label="e.name" />
           </el-select>
-          <el-select v-if="canReadRoles" v-model="roleId" :placeholder="t('employees.allRoles')" clearable @change="reload">
-            <el-option v-for="r in roles" :key="r.id" :value="r.id" :label="r.name" />
-          </el-select>
-          <el-select v-model="employmentStatus" :placeholder="t('employees.employmentStatus')" clearable @change="reload">
+          <el-select v-model="employmentStatus" :aria-label="t('employees.employmentStatus')" :placeholder="t('employees.employmentStatus')" clearable @change="reload">
             <el-option value="ACTIVE" :label="t('employees.onDuty')" />
             <el-option value="INACTIVE" :label="t('employees.left')" />
           </el-select>
-          <el-select v-model="accountStatus" :placeholder="t('employees.accountStatus')" clearable @change="reload">
+          <el-select v-model="accountStatus" :aria-label="t('employees.accountStatus')" :placeholder="t('employees.accountStatus')" clearable @change="reload">
             <el-option value="ACTIVE" :label="t('employees.activated')" />
             <el-option value="PENDING" :label="t('employees.awaitingActivation')" />
             <el-option value="NONE" :label="t('employees.accountUnopened')" />
           </el-select>
         </div>
-        <div class="filter-actions">
-          <el-button @click="resetFilters">{{ t('employees.resetFilters') }}</el-button>
-          <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
-        </div>
       </div>
       <div class="list-actions">
+        <span v-if="selected.length" class="selection-count">{{ t('employees.selectedEmployees', { n: selected.length }) }}</span>
         <el-button v-if="canWrite && invitable.length" @click="inviteSelected">{{ t('employees.inviteSelected', { n: invitable.length }) }}</el-button>
         <el-button v-if="canGrant && selected.length" @click="openBatchRoles">{{ t('employees.assignRolesBatch', { n: selected.length }) }}</el-button>
         <el-button v-if="canWrite" @click="importOpen = true">{{ t('employees.import') }}</el-button>
@@ -59,20 +69,21 @@
           v-if="canWrite || canGrant"
           type="selection"
           width="48"
+          class-name="employee-selection-column"
+          label-class-name="employee-selection-column"
           :selectable="(row: Employee) => canInvite(row) || canGrant"
         />
         <el-table-column :label="t('employees.employeeInfo')" min-width="240">
+          <template #header><span class="employee-left-heading">{{ t('employees.employeeInfo') }}</span></template>
           <template #default="{ row }">
             <div class="employee-info">
-              <div class="employee-primary">
-                <el-button link class="employee-name" @click="openDetails(row)">{{ row.name }}</el-button>
-                <span class="employee-code">{{ row.code }}</span>
-              </div>
-              <span class="sub">{{ row.email || t('employees.noMailbox') }}</span>
+              <el-button link type="primary" class="employee-name" @click="openDetails(row)">{{ row.name }}</el-button>
+              <span v-if="row.email" class="sub employee-email">{{ row.email }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('employees.organization')" min-width="180">
+          <template #header><span class="employee-left-heading">{{ t('employees.organization') }}</span></template>
           <template #default="{ row }">
             <div class="cell-stack">
               <span>{{ row.departmentName || '—' }}</span>
@@ -81,9 +92,11 @@
           </template>
         </el-table-column>
         <el-table-column :label="t('employees.manager')" min-width="130">
-          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
+          <template #header><span class="employee-left-heading">{{ t('employees.manager') }}</span></template>
+          <template #default="{ row }"><span class="sub manager-name">{{ row.managerName || '—' }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('employees.activation')" min-width="155">
+        <el-table-column :label="t('employees.accountStatus')" min-width="148">
+          <template #header><span class="employee-left-heading">{{ t('employees.accountStatus') }}</span></template>
           <template #default="{ row }">
             <div class="cell-stack activation-cell">
               <!-- 有登录名就是已激活：users 里的一行只在有人有权设了密码时才
@@ -97,30 +110,29 @@
                 {{ t('employees.awaitingActivation') }}
               </el-tag>
               <el-tag v-else type="info" size="small">{{ t('employees.notInvited') }}</el-tag>
-              <span class="sub">{{ row.username || t('employees.noAccount') }}</span>
+              <span v-if="row.username" class="sub">{{ t('employees.usernameValue', { username: row.username }) }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="90" align="center">
+        <el-table-column :label="t('employees.employmentStatus')" min-width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
               {{ row.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="190" fixed="right" align="right">
+        <el-table-column v-if="canWrite" :label="t('common.actions')" width="100" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
-              <el-button link type="primary" @click="openDetails(row)">{{ t('employees.viewDetails') }}</el-button>
-              <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
-              <el-dropdown v-if="canWrite" trigger="click" @command="(command: string) => handleRowCommand(command, row)">
-                <el-button link type="primary">{{ t('employees.moreActions') }}<span class="dropdown-arrow">⌄</span></el-button>
+              <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(command, row)">
+                <el-button link type="primary">{{ t('employees.moreActions') }}<span class="dropdown-arrow" aria-hidden="true">▾</span></el-button>
                 <template #dropdown>
                   <!-- Two labelled sections. 账号 acts on the login (who can
                        get in and how); 人事 acts on the employment fact. They
                        used to sit in one flat list, and 标记离职 next to
                        发送邀请 read as if both were account switches. -->
                   <el-dropdown-menu>
+                    <el-dropdown-item command="edit">{{ t('common.edit') }}</el-dropdown-item>
                     <el-dropdown-item command="changes">{{ t('employees.changes') }}</el-dropdown-item>
                     <el-dropdown-item disabled class="menu-section" divided>{{ t('employees.sectionAccount') }}</el-dropdown-item>
                     <el-dropdown-item v-if="canGrant" command="roles">{{ t('employees.roles') }}</el-dropdown-item>
@@ -443,6 +455,8 @@ const managerId = ref(String(route.query.manager_id ?? ''))
 const roleId = ref(String(route.query.role_id ?? ''))
 const employmentStatus = ref(String(route.query.employment_status ?? ''))
 const accountStatus = ref(String(route.query.account_status ?? ''))
+const moreFiltersOpen = ref(false)
+const extraFilterCount = computed(() => [managerId.value, employmentStatus.value, accountStatus.value].filter(Boolean).length)
 const loading = ref(false)
 const saving = ref(false)
 // Which row's invitation is in flight, not a plain boolean: the spinner
@@ -521,9 +535,9 @@ function resetFilters() {
   reload()
 }
 
-// 列表只保留最常用的“编辑”，其余操作统一从更多菜单分发，避免操作列过宽。
 function handleRowCommand(command: string, row: Employee) {
   switch (command) {
+    case 'edit': void openEdit(row); break
     case 'changes': void openChanges(row); break
     case 'roles': void openRoles(row); break
     case 'invite': void invite(row); break
@@ -905,28 +919,45 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   padding: 0;
 }
 .filters {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
-  background: #f8fafc;
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
+.filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .filter-fields {
+  min-width: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(135px, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(2, minmax(110px, 1fr));
+  gap: 8px;
+}
+.extra-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 6px;
 }
 .filter-fields :deep(.el-select),
-.filter-fields :deep(.el-input) {
+.filter-fields :deep(.el-input),
+.extra-filters :deep(.el-select) {
   width: 100%;
 }
 .filter-actions {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   gap: 8px;
 }
+.filter-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.filter-count { margin-inline-start: 3px; color: var(--el-color-primary); }
+.selection-count { margin-inline-end: auto; font-size: 13px; color: var(--el-text-color-secondary); }
 .employee-table {
   width: calc(100% - 40px);
   margin: 16px 20px 0;
@@ -1011,28 +1042,21 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 .employee-info {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
   gap: 5px;
 }
-.employee-primary {
+.employee-left-heading { display: block; text-align: left; }
+.manager-name { display: block; text-align: left; margin-inline-end: 14px; }
+.employee-table :deep(.employee-selection-column > .cell) {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  justify-content: center;
 }
+.employee-email { overflow-wrap: anywhere; }
 .employee-name {
   padding: 0;
   height: auto;
-  color: var(--el-text-color-primary);
   font-weight: 600;
-}
-.employee-name:hover {
-  color: var(--el-color-primary);
-}
-.employee-code {
-  padding: 2px 7px;
-  border-radius: 5px;
-  background: #eef4ff;
-  color: var(--el-color-primary);
-  font-size: 12px;
 }
 .activation-cell {
   gap: 6px;
@@ -1040,11 +1064,7 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 .row-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-}
-.row-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
+  justify-content: center;
 }
 .dropdown-arrow {
   margin-left: 3px;
@@ -1087,11 +1107,6 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   flex-direction: column;
   gap: 6px;
 }
-@media (max-width: 1300px) {
-  .filter-fields {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
-  }
-}
 @media (max-width: 900px) {
   .page-head {
     align-items: flex-start;
@@ -1101,7 +1116,7 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-  .filters {
+  .filter-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1130,8 +1145,8 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   .filters {
     padding: 14px 12px;
   }
-  .filter-fields {
-    grid-template-columns: 1fr;
+  .filter-fields, .extra-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
   .filter-actions > :deep(.el-button) {
     flex: 1;
@@ -1148,6 +1163,6 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
     gap: 4px;
   }
 }
-.filters{gap:8px;padding:10px 14px;background:var(--el-bg-color)}.filter-fields{gap:8px}.list-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px 14px 0}.list-actions :deep(.el-button+.el-button){margin-left:0}.employee-table{width:calc(100% - 28px);margin:10px 14px 0}.employee-table :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.employee-table :deep(.el-table__row td.el-table__cell){padding:6px 0;font-size:12px}.employee-table :deep(.cell-stack){gap:1px}.employee-table :deep(.sub){font-size:11px}.pager{padding:8px 14px 10px}
+.list-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px 14px 0}.list-actions :deep(.el-button+.el-button){margin-left:0}.employee-table{width:calc(100% - 28px);margin:10px 14px 0}.employee-table :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.employee-table :deep(.el-table__row td.el-table__cell){padding:6px 0;font-size:12px}.employee-table :deep(.cell-stack){gap:1px}.employee-table :deep(.sub){font-size:11px}.pager{padding:8px 14px 10px}
 @media(max-width:620px){.list-actions{justify-content:stretch}.list-actions :deep(.el-button){flex:1}}
 </style>
