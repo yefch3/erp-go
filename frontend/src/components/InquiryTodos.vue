@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {get,post} from '../api'
+import {get,post,quietErrors} from '../api'
 import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import type {Result} from '../lib/inquiryWorkspace'
@@ -30,6 +30,7 @@ const emit=defineEmits<{count:[value:number]}>()
 const props=withDefaults(defineProps<{mode?:'pending'|'handled'}>(),{mode:'pending'})
 const mode=computed(()=>props.mode)
 type InquiryTodoRow={id:string;number:string;customer:string;taskKey:string;path:string;completedAt:string}
+type InquiryTodoSource=[view:string,permission:string,path:string,taskKey:string,state:string,automatic?:boolean]
 const auth=useAuthStore(),{t,locale}=useI18n(),rows=ref<InquiryTodoRow[]>([]),error=ref(''),keyword=ref(''),taskFilter=ref('')
 const taskOptions=computed(()=>[...new Set(rows.value.map(row=>row.taskKey))].map(key=>({key,label:t(key)})))
 const displayedRows=computed(()=>{const needle=keyword.value.trim().toLowerCase();return rows.value.filter(row=>(!taskFilter.value||row.taskKey===taskFilter.value)&&(!needle||`${row.number} ${row.customer} ${t(row.taskKey)}`.toLowerCase().includes(needle)))})
@@ -41,18 +42,30 @@ async function refresh():Promise<boolean>{
  if(refreshing)return false;refreshing=true
  const out:InquiryTodoRow[]=[]
  try{
- const offerStates=auth.can('export:quotation:read')?(await post<{summaries:Record<string,{status:string;confirmedAt:string}>}>('/customer-offer',{action:'summaries'})).summaries:{}
- const pending=[['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementWaiting','WAITING'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsWaiting','WAITING'],['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesUnsubmitted','UNSUBMITTED'],['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesWithdrawn','WITHDRAWN'],['QUOTATIONS','sales:inquiry:read','/sales/quotations','todos.inquiryTasks.quotationPending','']]
- const handled=[['QUOTATIONS','export:quotation:read','/sales/quotations','todos.inquiryTasks.quotationConfirmed',''],['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementQuoted','QUOTED'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsQuoted','QUOTED'],['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesSubmitted','INQUIRING']]
- for(const [view,permission,path,taskKey,state] of (mode.value==='handled'?handled:pending)){
- if(!auth.can(permission))continue
+ const pending:InquiryTodoSource[]=[
+  ['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementWaiting','WAITING',true],
+  ['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsWaiting','WAITING',true],
+  ['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesUnsubmitted','UNSUBMITTED'],
+  ['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesWithdrawn','WITHDRAWN'],
+  ['QUOTATIONS','sales:inquiry:read','/sales/quotations','todos.inquiryTasks.quotationPending','',true],
+ ]
+ const canReceiveAutomatic=mode.value==='pending'&&pending.some(([,permission,,,,automatic])=>automatic&&auth.can(permission))
+ const audience=canReceiveAutomatic
+  ? await get<{includeAutomaticQuotes:boolean}>('/me/inquiry-todo-audience',undefined,quietErrors).catch(()=>null)
+  : {includeAutomaticQuotes:false}
+ const offerStates=auth.can('export:quotation:read')&&(mode.value==='handled'||audience?.includeAutomaticQuotes&&auth.can('sales:inquiry:read'))
+  ? (await post<{summaries:Record<string,{status:string;confirmedAt:string}>}>('/customer-offer',{action:'summaries'})).summaries
+  : {}
+ const handled:InquiryTodoSource[]=[['QUOTATIONS','export:quotation:read','/sales/quotations','todos.inquiryTasks.quotationConfirmed',''],['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementQuoted','QUOTED'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsQuoted','QUOTED'],['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesSubmitted','INQUIRING']]
+ for(const [view,permission,path,taskKey,state,automatic] of (mode.value==='handled'?handled:pending)){
+ if(!auth.can(permission)||(automatic&&!audience?.includeAutomaticQuotes))continue
  let page=1,total=0;do{const r=await post<Result>('/inquiry-workspace',{action:'list',view,state,page,size:100});total=r.total;for(const i of r.items){if((view==='SALES'||view==='QUOTATIONS')&&!auth.owns(i.ownerId))continue;if(view==='QUOTATIONS'&&(mode.value==='handled'?offerStates[i.id]?.status!=='CONFIRMED':offerStates[i.id]?.status==='CONFIRMED'))continue;out.push({id:i.id,number:i.number,customer:i.body.customer,taskKey,path,completedAt:view==='QUOTATIONS'?offerStates[i.id]?.confirmedAt||'':i.submittedAt})}page++}while((page-1)*100<total)
  }
  if(mode.value==='pending'&&auth.can('export:contract:write')){
   for(const status of ['DRAFT','PENDING_SIGN']){let contractPage=1,contractTotal=0;do{const r=await get<{contracts:{id:string;contractNo:string;customerName:string;salesEmployeeId:string}[];meta:{total:number}}>('/contracts',{status,page:contractPage,page_size:100});contractTotal=Number(r.meta?.total||0);for(const c of r.contracts||[]){if(auth.owns(c.salesEmployeeId))out.push({id:c.id,number:c.contractNo,customer:c.customerName,taskKey:status==='DRAFT'?'todos.inquiryTasks.contractDraft':'todos.inquiryTasks.contractSigning',path:'/contracts',completedAt:''})}contractPage++}while((contractPage-1)*100<contractTotal)}
  }
- rows.value=out;emit('count',out.length);error.value=''
- return true
+ rows.value=out;emit('count',out.length);error.value=audience?'':t('todos.inquiryUnavailable')
+ return !!audience
  }catch{error.value=t('todos.inquiryUnavailable');return false}finally{refreshing=false}
 }
 // 询盘、采购需求、审批和单据有变化时服务端会推送，听到才重拉；不再每 5 秒

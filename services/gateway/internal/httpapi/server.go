@@ -327,6 +327,7 @@ func (s *Server) Router() http.Handler {
 		// Own identity and own password: being logged in is the only
 		// requirement, since neither can touch anybody else's account.
 		r.Get("/api/me/permissions", s.me)
+		r.Get("/api/me/inquiry-todo-audience", s.myInquiryTodoAudience)
 		// The live feed carries only "go and re-read X" hints, so being
 		// logged in is the whole requirement; every actual read still goes
 		// through its own permission-checked route.

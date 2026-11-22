@@ -2,12 +2,44 @@ package httpapi
 
 import (
 	"encoding/json"
-	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
-	"google.golang.org/grpc"
 	"io"
 	"net/http"
 	"net/url"
+
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
+	"google.golang.org/grpc"
 )
+
+// This audience only controls automatic quotation reminders. Inquiry access
+// and individually assigned work continue through their existing routes.
+func (s *Server) myInquiryTodoAudience(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	op, _ := grpcx.OperatorFromContext(ctx)
+	roles, err := s.Access.ListRoles(ctx, &iamv1.ListRolesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	for _, role := range roles.GetRoles() {
+		if role.GetCode() != "BOSS" && role.GetCode() != "SUPER_ADMIN" {
+			continue
+		}
+		members, err := s.Access.ListRoleMembers(ctx, &iamv1.ListRoleMembersRequest{RoleId: role.GetId()})
+		if err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
+		for _, member := range members.GetMembers() {
+			if member.GetEmployeeId() == op.EmployeeID {
+				s.writeJSON(w, map[string]bool{"includeAutomaticQuotes": false})
+				return
+			}
+		}
+	}
+	s.writeJSON(w, map[string]bool{"includeAutomaticQuotes": true})
+}
 
 // The procurement service validates a closed command schema and independently
 // enforces action permissions, ownership, scope and tenant on every request.
