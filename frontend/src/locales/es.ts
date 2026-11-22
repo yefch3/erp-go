@@ -1876,6 +1876,7 @@ basicsSaved: "Datos básicos guardados",
     },
   },
   ports: {
+    searchShort: "Nombre, código o ciudad", moreActions: "Más acciones",
     portShort: 'P', vesselShort: 'B', allShort: 'Todo',
     title: 'Puertos y buques', subtitle: 'Mantén códigos, nombres y zonas horarias de puertos', create: 'Nuevo puerto', edit: 'Editar puerto',
     categories: 'Categorías', portCategory: 'Puertos', vesselCategory: 'Buques', countryRegion: 'País / región', allCountries: 'Todos los países',

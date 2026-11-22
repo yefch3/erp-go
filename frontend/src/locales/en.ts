@@ -1867,6 +1867,7 @@ basicsSaved: "Basic information saved",
     },
   },
   ports: {
+    searchShort: "Name, code or city", moreActions: "More actions",
     portShort: 'P', vesselShort: 'V', allShort: 'All',
     title: 'Ports & vessels', subtitle: 'Maintain port codes, names and local time zones', create: 'New port', edit: 'Edit port',
     categories: 'Categories', portCategory: 'Ports', vesselCategory: 'Vessels', countryRegion: 'Country / region', allCountries: 'All countries',
