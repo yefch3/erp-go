@@ -21,11 +21,11 @@ func (s *Server) listSupplierRecon(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(q.Get("page"))
 	size, _ := strconv.Atoi(q.Get("page_size"))
 	resp, err := s.Orders.ListSupplierRecon(r.Context(), &prv1.ListSupplierReconRequest{
-		Keyword:    q.Get("keyword"),
-		ClosedOnly: q.Get("view") == "done",
-		// 两个互斥的筛子，和客户对账页同一套参数名。
+		Keyword:      q.Get("keyword"),
+		ClosedOnly:   q.Get("view") == "done",
 		OverdueOnly:  q.Get("overdue") == "1",
 		UnsetOnly:    q.Get("unset") == "1",
+		DueSoonOnly:  q.Get("due_soon") == "1",
 		Page:         int32(page),
 		PageSize:     int32(size),
 		BusinessType: q.Get("business_type"),

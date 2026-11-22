@@ -19,6 +19,7 @@ func (h *OrderHandler) ListSupplierRecon(ctx context.Context, req *prv1.ListSupp
 			ClosedOnly:   req.GetClosedOnly(),
 			OverdueOnly:  req.GetOverdueOnly(),
 			UnsetOnly:    req.GetUnsetOnly(),
+			DueSoonOnly:  req.GetDueSoonOnly(),
 			Page:         req.GetPage(),
 			PageSize:     req.GetPageSize(),
 			BusinessType: req.GetBusinessType(),
