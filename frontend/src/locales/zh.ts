@@ -1863,6 +1863,7 @@ basicsSaved: "基本资料已保存",
     },
   },
   ports: {
+    searchShort: "名称、代码或城市", moreActions: "更多操作",
     portShort: '港', vesselShort: '船', allShort: '全部',
     title: '船港管理', subtitle: '统一维护港口代码、名称和当地时区', create: '新增港口', edit: '编辑港口',
     categories: '船港分类', portCategory: '港口', vesselCategory: '船舶', countryRegion: '国家/地区', allCountries: '全部国家',
