@@ -6,14 +6,6 @@
         <h4>{{ group.title }}</h4>
         <dl><div v-for="field in group.fields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ display(field.key) }}</dd></div></dl>
       </div>
-      <div class="basic-card">
-        <h4>主要联系人 <el-button link type="primary" @click="$emit('navigate', 'contacts')">管理联系人</el-button></h4>
-        <dl><div v-for="field in contactFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ primaryContact?.[field.key] || '—' }}</dd></div></dl>
-      </div>
-      <div class="basic-card">
-        <h4>负责人 <el-button link type="primary" @click="$emit('navigate', 'owners')">管理负责人</el-button></h4>
-        <p>{{ owners.length ? owners.map(o => o.employeeName).join('、') : '未分配' }}</p>
-      </div>
     </div>
     <el-dialog v-model="editing" title="编辑基本资料" width="min(900px, 94vw)" top="5vh" append-to-body :close-on-click-modal="false">
       <el-scrollbar max-height="68vh">
@@ -58,12 +50,11 @@ import { get, put } from '../api'
 import { countryName } from '../lib/countries'
 import { resolveImportedCountry } from '../lib/customerImport'
 const props = defineProps<{ customerId: string; canWrite: boolean }>()
-const emit = defineEmits<{ updated: []; navigate: [tab: string]; tenant: [id: string]; 'edit-contact': [contact?: any]; 'edit-owner': [owner?: any] }>()
+const emit = defineEmits<{ updated: []; tenant: [id: string]; 'edit-contact': [contact?: any]; 'edit-owner': [owner?: any] }>()
 const loading = ref(false), saving = ref(false), editing = ref(false)
 const basic = ref<Record<string, string>>({}), form = reactive<Record<string, string>>({})
 const contacts = ref<any[]>([]), owners = ref<any[]>([])
 const activeContacts = computed(() => contacts.value.filter(c => c.status === 'ACTIVE'))
-const primaryContact = computed(() => contacts.value.find(c => c.isPrimary && c.status === 'ACTIVE') || contacts.value.find(c => c.status === 'ACTIVE'))
 const fields = [
   { key: 'code', label: '客户代码', max: 50 }, { key: 'name', label: '客户名称', max: 200 },
   { key: 'shortName', label: '客户简称', max: 100 }, { key: 'countryRegion', label: '所属地区', max: 100 },
@@ -105,8 +96,8 @@ defineExpose({ open, load })
 .basic-heading { margin-bottom:16px; }.basic-heading h3 { margin:0; }
 .basic-grid,.edit-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px; }
 .basic-card { border:1px solid var(--el-border-color-lighter);border-radius:12px;overflow:hidden; }
-.basic-card h4 { margin:0;padding:16px 20px;background:var(--el-fill-color-light); }
-.basic-card dl { margin:0;padding:8px 20px; }.basic-card dl>div { display:grid;grid-template-columns:110px 1fr;padding:12px 0;border-bottom:1px dashed var(--el-border-color-lighter); }
+.basic-card h4 { margin:0;padding:9px 14px;background:var(--el-fill-color-light); }
+.basic-card dl { margin:0;padding:4px 14px; }.basic-card dl>div { display:grid;grid-template-columns:110px 1fr;padding:7px 0;border-bottom:1px dashed var(--el-border-color-lighter); }
 .basic-card dl>div:last-child { border-bottom:0; }.basic-card dt { color:var(--el-text-color-secondary); }.basic-card dd { margin:0;overflow-wrap:anywhere; }.basic-card p { padding:0 20px; }
 .editor-content { padding-right:12px; }
 .editor-section + .editor-section { margin-top:24px; }
