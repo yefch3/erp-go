@@ -640,12 +640,11 @@ SELECT
     count(*) OVER () AS total
 FROM purchase_orders o
 WHERE o.tenant_id = $1::bigint
-  -- 审批未通过的草稿已退回实单询价重新处理，只作为审计记录保留，
-  -- 不再作为采购订单的一个业务栏目展示。
-  AND o.status <> 'REJECTED'
   -- Data scope: an order is visible when the caller's range covers its
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND ($2::bool OR o.buyer_id = ANY($3::bigint[]))
+  -- 退回单仍是原采购单，在草稿页或显式查询退回状态时可继续处理。
+  AND (o.status <> 'REJECTED' OR $4::text IN ('DRAFT', 'REJECTED'))
   -- 列表页把“当前工作”和“历史留档”分开：
   -- 已到货只保留尚待结案的采购单；已结案与已作废统一进入历史记录。
   AND (
@@ -661,7 +660,9 @@ WHERE o.tenant_id = $1::bigint
            AND o.status = 'ORDERED'
            AND (o.source_business_id = 0 OR o.contract_verified_at IS NOT NULL)
            AND o.closed_at IS NULL)
-       OR ($4::text NOT IN ('RECEIVED_OPEN', 'HISTORY', 'PENDING_CONTRACT', 'ORDERED')
+       OR ($4::text = 'DRAFT'
+           AND o.status IN ('DRAFT', 'REJECTED') AND o.closed_at IS NULL)
+       OR ($4::text NOT IN ('DRAFT', 'RECEIVED_OPEN', 'HISTORY', 'PENDING_CONTRACT', 'ORDERED')
            AND o.status = $4::text AND o.closed_at IS NULL)
   )
   -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），

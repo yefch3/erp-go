@@ -173,14 +173,30 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	if err != nil || len(files) != 1 || files[0].FileName != "quote.pdf" {
 		t.Fatalf("draft files: %+v %v", files, err)
 	}
+	checkDraftList := func(wantStatus, reason string) {
+		t.Helper()
+		rows, total, err := svc.ListOrders(ctx, tenant, OrderFilter{Status: "DRAFT", Keyword: head.PoNo}, 1, 100, buyer)
+		if wantStatus == "" {
+			if err != nil || total != 0 || len(rows) != 0 {
+				t.Fatalf("draft list should be empty: total=%d rows=%+v err=%v", total, rows, err)
+			}
+			return
+		}
+		if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != po || rows[0].Status != wantStatus || rows[0].RejectReason != reason {
+			t.Fatalf("draft list: want status=%s reason=%q, total=%d rows=%+v err=%v", wantStatus, reason, total, rows, err)
+		}
+	}
+	checkDraftList("DRAFT", "")
 	state, instance, err := svc.SubmitOrder(ctx, tenant, po, manager)
 	if err != nil || state != "PENDING_APPROVAL" {
 		t.Fatalf("submit: %s %v", state, err)
 	}
+	checkDraftList("", "")
 	state, err = svc.ApplyApprovalDecision(ctx, tenant, po, instance, "REJECTED", "补交原件", noopClaim)
 	if err != nil || state != "REJECTED" {
 		t.Fatalf("return: %s %v", state, err)
 	}
+	checkDraftList("REJECTED", "补交原件")
 	returned := run(buyer, ExecutionAssignmentInput{Action: "inbox"}).Assignments
 	if len(returned) != 1 || returned[0].OrderID != po || returned[0].OrderStatus != "REJECTED" {
 		t.Fatalf("return inbox: %+v", returned)
@@ -200,6 +216,7 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 		items[0].RequirementID != requirement || items[0].UnitPrice != "3.6000" {
 		t.Fatalf("saved draft items: %+v err=%v", items, err)
 	}
+	checkDraftList("DRAFT", "")
 	if _, err = svc.UploadOrderDraftFile(ctx, tenant, po, "extra.pdf", "application/pdf", []byte("extra"), buyer); err != nil {
 		t.Fatal(err)
 	}
@@ -207,4 +224,5 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	if err != nil || next != "PENDING_APPROVAL" || nextInstance == instance {
 		t.Fatalf("resubmit: %s %d %v", next, nextInstance, err)
 	}
+	checkDraftList("", "")
 }

@@ -813,7 +813,10 @@ const page = ref(1)
 const pageSize = 100
 // 采购单页面同时承接制单、审批状态查看和审批后的履约跟踪。
 // 真正的批准/驳回仍由个人审批任务执行，避免只凭采购单读取权限越权审批。
-const status = ref(String(route.query.status || 'ORDERED'))
+function listStatusFor(orderStatus: string) {
+  return orderStatus === 'REJECTED' ? 'DRAFT' : orderStatus
+}
+const status = ref(listStatusFor(String(route.query.status || 'ORDERED')))
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -1045,7 +1048,7 @@ async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
   await post(`/approvals/tasks/${taskID}/act`, { action, comment })
   ElMessage.success(t('todos.acted'))
   detailOpen.value = false
-  const nextStatus = action === 'APPROVE' ? 'PENDING_CONTRACT' : 'REJECTED'
+  const nextStatus = action === 'APPROVE' ? 'PENDING_CONTRACT' : 'DRAFT'
   status.value = nextStatus
   await router.replace({ path: '/purchase-orders', query: { status: nextStatus, order: row.id } })
   await reload()
@@ -1791,7 +1794,7 @@ onMounted(async () => {
     reload()
   }
   // 工作台的指标点进来要落在筛好的列表上（B4），不是全量。
-  const qsStatus = String(route.query.status ?? '')
+  const qsStatus = listStatusFor(String(route.query.status ?? ''))
   const qsUnsent = String(route.query.unsent ?? '')
   if (qsUnsent === '1') {
     if (status.value !== 'UNSENT') {
