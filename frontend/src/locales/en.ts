@@ -129,6 +129,13 @@ export default {
   },
   purchaseOrderContext: { remark: 'Purchase order remarks', remarkHint: 'Current purchase order remarks, entered by Procurement. Read-only.', emptyRemark: 'No purchase order remarks', supplier: 'Factory / supplier', shippingTitle: 'Contract factories and purchase remarks', shippingHint: 'Factories and remarks from placed purchases for this contract only. Purchase prices and order details are not shared.', loadFailed: 'Could not load factories and purchase remarks. Please retry.', noOrders: 'No placed purchases for this contract' },
   quality: {
+    lineSearch: 'Search product or specification',
+    roundEntryHint: 'Valid entries are saved in this round. Blank lines remain pending.',
+    readyRoundLines: '{n} lines will be saved',
+    incompleteRoundLines: '{n} incomplete lines',
+    historyUnqualifiedQty: 'Rejected quantity',
+    noMatchingLines: 'No matching specifications',
+    invalidRoundLine: 'Complete or check the inspection result and quantities for “{product}” before saving.',
     viewProgress: 'View inspection progress', afterOrder: 'Inspection can be requested once the order is placed.', inactiveOrder: 'This order is closed or cancelled. Existing inspections are available to view.', purchaseOnly: 'Pre-shipment inspection is available for procurement orders only.',
     pendingFiles: "Files ready to upload",
     pendingHint: "These files are not saved yet. Select Upload files to save them below.",
