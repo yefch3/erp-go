@@ -5,10 +5,10 @@
     </button>
 
     <section v-if="customer" class="hero">
-      <div class="avatar">{{ customer.name.slice(0, 1).toUpperCase() }}</div>
+      <div class="avatar">{{ displayName.slice(0, 1).toUpperCase() }}</div>
       <div class="hero-main">
         <div class="eyebrow">{{ customer.code }}</div>
-        <h1>{{ customer.name }}</h1>
+        <h1>{{ displayName }} <small v-if="displayName !== customer.name">{{ customer.name }}</small></h1>
         <div class="hero-tags">
           <el-tag>{{ displayCountry(customer.countryCode) }}</el-tag>
           <el-tag v-if="customer.customerType" type="info">{{
@@ -24,26 +24,38 @@
       </div>
     </section>
 
-    <div class="tab-order-tools"><el-button v-if="tabOrder.customized.value" link type="primary" @click="tabOrder.reset">恢复默认顺序</el-button></div>
-    <el-tabs
-      v-if="customer"
-      v-model="activeTab"
-      class="detail-tabs"
-      @tab-change="loadTab"
-    >
-      <el-tab-pane v-for="tab in tabOrder.columns.value" :key="tab.key" :name="tab.key">
-<template #label><ReorderableTableHeader :label="tab.label" hint="调整标签顺序" move-left-label="左移" move-right-label="右移" :can-move-left="!!layoutTenant && tabOrder.canMoveLeft(tab.key)" :can-move-right="!!layoutTenant && tabOrder.canMoveRight(tab.key)" @move-left="tabOrder.moveBy(tab.key, -1)" @move-right="tabOrder.moveBy(tab.key, 1)" /></template>
-<template v-if="tab.key === 'documents'">
-        <CustomerDocuments v-if="activeTab === 'documents'" :customer-id="id" :can-write="canWrite" />
+    <nav v-if="customer" class="section-nav" aria-label="客户详情分区">
+      <button v-for="section in sections" :key="section.key" type="button" @click="navigateCustomerSection(section.key)">
+        {{ section.label }}
+      </button>
+    </nav>
+    <div v-if="customer" class="detail-sections">
+      <section v-for="tab in sections" :id="'customer-' + tab.key" :key="tab.key" class="detail-section" tabindex="-1">
+      <template v-if="tab.key === 'documents'">
+        <SectionHead title="客户资料与附件" />
+        <CustomerDocuments :customer-id="id" :can-write="canWrite" />
       </template>
-<template v-if="tab.key === 'basic'"><CustomerBasicInfo v-if="activeTab === 'basic'" :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @navigate="navigateCustomerTab" @edit-contact="openContact" @edit-owner="openOwner" />
- <el-collapse style="margin-top:20px"><el-collapse-item title="其他已有资料" name="legacy"><el-button v-if="canWrite" link type="primary" @click="openProfile">编辑其他资料</el-button><p>英文名称：{{ customer.englishName || '—' }}　官网：{{ customer.website || '—' }}</p><p>备注：{{ customer.remark || '—' }}</p><InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
+<template v-if="tab.key === 'basic'"><CustomerBasicInfo :ref="(el: any) => templateBasic = el" :customer-id="id" :can-write="canWrite" @updated="loadCustomer" @edit-contact="openContact" @edit-owner="openOwner" />
+        <div class="extra-profile">
+          <SectionHead title="其他资料" :action="canWrite ? '编辑其他资料' : ''" @action="openProfile" />
+          <div class="profile-fields">
+            <InfoRow label="英文名称" :value="customer.englishName" />
+            <InfoRow label="官网" :value="customer.website" />
+            <InfoRow label="所属行业" :value="customer.industry" />
+            <InfoRow label="主要语言" :value="customer.primaryLanguage" />
+            <InfoRow label="所在时区" :value="customer.timezone" />
+            <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
+            <InfoRow class="profile-remark" label="备注" :value="customer.remark" />
+          </div>
+          <InfoCard v-if="visibleCustomFields.length" title="Excel 扩展信息" icon="扩">
             <div v-for="field in visibleCustomFields" :key="field.fieldKey" class="custom-info-row">
               <span>{{ field.displayName }}</span>
               <strong>{{ field.value || '—' }}</strong>
               <el-button v-if="canWrite" link type="primary" @click="openCustomerField(field)">修改字段名</el-button>
             </div>
-          </InfoCard></el-collapse-item></el-collapse></template>
+          </InfoCard>
+        </div>
+      </template>
 <template v-if="tab.key === 'addresses'">
         <div class="tab-stack">
           <section class="content-section">
@@ -52,18 +64,11 @@
               :action="canWrite ? '编辑税务资料' : ''"
               @action="openTax"
             />
-        <div class="card-grid">
-          <InfoCard title="注册资料" icon="证">
-            <InfoRow label="注册名称" :value="customer.registeredName" />
-            <InfoRow label="公司注册号" :value="customer.registrationNo" />
-            <InfoRow label="税号" :value="customer.taxId" />
-          </InfoCard>
-          <InfoCard title="开票资料" icon="票">
-            <InfoRow label="开票抬头" :value="customer.invoiceTitle" />
-            <InfoRow label="开票税号" :value="customer.invoiceTaxNo" />
-            <InfoRow label="开票备注" :value="customer.invoiceRemark" />
-          </InfoCard>
-        </div>
+            <InfoCard title="注册资料" icon="证" class="registration-card">
+              <InfoRow label="注册名称" :value="customer.registeredName" />
+              <InfoRow label="公司注册号" :value="customer.registrationNo" />
+              <InfoRow label="税号" :value="customer.taxId" />
+            </InfoCard>
           </section>
           <section class="content-section">
         <SectionHead
@@ -305,8 +310,8 @@
           </section>
         </div>
       </template>
-      </el-tab-pane>
-    </el-tabs>
+      </section>
+    </div>
 
     <el-dialog v-model="taxOpen" title="编辑税务资料" width="680px">
       <el-form :model="taxForm" label-width="110px" class="two-col-form">
@@ -318,15 +323,6 @@
         </el-form-item>
         <el-form-item label="税号">
           <el-input v-model="taxForm.taxId" @blur="checkTaxDuplicates" />
-        </el-form-item>
-        <el-form-item label="开票抬头">
-          <el-input v-model="taxForm.invoiceTitle" />
-        </el-form-item>
-        <el-form-item label="开票税号">
-          <el-input v-model="taxForm.invoiceTaxNo" />
-        </el-form-item>
-        <el-form-item label="开票备注" class="full-row">
-          <el-input v-model="taxForm.invoiceRemark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -640,13 +636,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref } from "vue";
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
 import CustomerBasicInfo from "../components/CustomerBasicInfo.vue";
-import ReorderableTableHeader from "../components/ReorderableTableHeader.vue";
-import { useTableColumnOrder } from "../composables/useTableColumnOrder";
 import CustomerDocuments from "../components/CustomerDocuments.vue";
 import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
@@ -727,8 +721,7 @@ function onRated(grade: string) {
   customer.value.creditGradedAt = new Date().toISOString();
 }
 const loading = ref(true),
-  saving = ref(false),
-  activeTab = ref(route.query.tab === "documents" ? "documents" : "basic");
+  saving = ref(false);
 const customer = ref<any>(null),
   customerFieldDefinitions = ref<any[]>([]),
   addresses = ref<any[]>([]),
@@ -869,10 +862,26 @@ function formatTime(v: string) {
   return v ? new Date(v).toLocaleString("zh-CN") : "—";
 }
 
-const layoutTenant = ref("");
 const templateBasic = ref<InstanceType<typeof CustomerBasicInfo> | null>(null);
-const tabOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-detail-tabs`, [{"key": "documents", "label": "客户资料"}, {"key": "basic", "label": "基本资料"}, {"key": "addresses", "label": "地址与税务"}, {"key": "contacts", "label": "联系人"}, {"key": "credit", "label": "结算信用"}, {"key": "owners", "label": "负责人"}, {"key": "changes", "label": "变更记录"}]);
-async function navigateCustomerTab(tab: string) { activeTab.value = tab; await loadTab(tab); }
+const displayName = computed(() => customer.value?.shortName?.trim() || customer.value?.name || "");
+const sections = [
+  { key: "basic", label: "基本资料" },
+  { key: "addresses", label: "地址与税务" },
+  { key: "contacts", label: "联系人" },
+  { key: "owners", label: "负责人" },
+  { key: "credit", label: "结算信用" },
+  { key: "documents", label: "客户资料与附件" },
+  { key: "changes", label: "变更记录" },
+];
+async function navigateCustomerSection(section: unknown, behavior: ScrollBehavior = "smooth") {
+  if (!sections.some((item) => item.key === section)) return;
+  await nextTick();
+  const target = document.getElementById("customer-" + section);
+  target?.scrollIntoView({ block: "start", behavior });
+  target?.focus({ preventScroll: true });
+}
+watch(() => route.query.tab, (section) => void navigateCustomerSection(section));
+
 async function loadCustomer() {
   const [d, fields] = await Promise.all([
     get<any>(`/customers/${id}`),
@@ -907,22 +916,12 @@ async function loadChanges() {
   changes.value = d.changes || [];
   changeTotal.value = Number(d.meta?.total || 0);
 }
-async function loadTab(name: any) {
-  if (name === "addresses") await loadAddresses();
-  if (name === "contacts") await loadContacts();
-  if (name === "owners") await loadOwners();
-  if (name === "changes") await loadChanges();
-}
-
 function openTax() {
   const c = customer.value;
   Object.assign(taxForm, {
     registeredName: c.registeredName,
     registrationNo: c.registrationNo,
     taxId: c.taxId,
-    invoiceTitle: c.invoiceTitle,
-    invoiceTaxNo: c.invoiceTaxNo,
-    invoiceRemark: c.invoiceRemark,
   });
   taxOpen.value = true;
 }
@@ -1286,11 +1285,13 @@ async function removeOwner(item: any) {
 
 onMounted(async () => {
   try {
-    layoutTenant.value = String((await get<any>("/customers/access")).tenantId);
-    const [, , typeData, sourceData, paymentData, respData] = await Promise.all(
+    const [, , , , , typeData, sourceData, paymentData, respData] = await Promise.all(
       [
         loadCustomer(),
         loadAddresses(),
+        loadContacts(),
+        loadOwners(),
+        loadChanges(),
         get<any>("/options", { category: "CUSTOMER_TYPE" }),
         get<any>("/options", { category: "CUSTOMER_SOURCE" }),
         get<any>("/options", { category: "PAYMENT_METHOD" }),
@@ -1301,7 +1302,7 @@ onMounted(async () => {
     sources.value = sourceData.options || [];
     paymentOptions.value = paymentData.options || [];
     responsibilities.value = respData.options || [];
-    await loadTab(activeTab.value);
+    await navigateCustomerSection(route.query.tab, "instant");
   } finally {
     loading.value = false;
   }
@@ -1325,21 +1326,22 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 24px 28px;
+  padding: 14px 20px;
   border: 1px solid #dce7f4;
   border-radius: 16px;
   background: linear-gradient(125deg, #f7fbff 0%, #fff 58%, #f7f9fc 100%);
   box-shadow: 0 8px 28px rgba(31, 78, 121, 0.06);
 }
 .avatar {
-  width: 62px;
-  height: 62px;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
   border-radius: 16px;
   display: grid;
   place-items: center;
   color: #fff;
   background: linear-gradient(145deg, #2f80ed, #56ccf2);
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 700;
 }
 .hero-main {
@@ -1352,7 +1354,7 @@ onMounted(async () => {
 }
 .hero h1 {
   margin: 3px 0 9px;
-  font-size: 26px;
+  font-size: 22px;
 }
 .hero-tags {
   display: flex;
@@ -1363,16 +1365,47 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
 }
-.detail-tabs {
-  margin-top: 18px;
-  padding: 0 22px 26px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 14px;
+.section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-block: 12px;
+  padding: 6px 10px;
+  border: 1px solid #dce7f4;
+  border-radius: 9px;
   background: #fff;
 }
-.detail-tabs :deep(.el-tabs__header) {
-  margin-bottom: 22px;
+.section-nav button {
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 14px;
+  color: #205573;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
 }
+.section-nav button:hover,
+.section-nav button:focus-visible { background: #edf6fb; }
+.detail-sections { display: grid; gap: 12px; }
+.detail-section {
+  min-width: 0;
+  padding: 14px 16px;
+  scroll-margin-top: 86px;
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #fff;
+}
+.detail-section:focus { outline: none; }
+.detail-section .content-section { padding: 0; border: 0; }
+.extra-profile { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4ebf3; }
+.profile-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); column-gap: 16px; }
+.profile-remark { grid-column: 1 / -1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hero h1 small { font-weight: 400; font-size: 14px; margin-inline-start: 8px; }
+
 .tab-stack {
   display: flex;
   flex-direction: column;
@@ -1384,24 +1417,24 @@ onMounted(async () => {
   border-radius: 12px;
   background: #fff;
 }
-.card-grid {
+.registration-card :deep(.info-card__body) {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
 }
-.detail-tabs :deep(.info-card) {
+.detail-sections :deep(.info-card) {
   border: 1px solid #e4ebf3;
   border-radius: 12px;
   overflow: hidden;
 }
-.detail-tabs :deep(.info-card__header) {
+.detail-sections :deep(.info-card__header) {
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 14px 16px;
   background: #f8fafc;
 }
-.detail-tabs :deep(.info-card__icon) {
+.detail-sections :deep(.info-card__icon) {
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -1411,28 +1444,28 @@ onMounted(async () => {
   color: #2474d2;
   font-style: normal;
 }
-.detail-tabs :deep(.info-card__title) {
+.detail-sections :deep(.info-card__title) {
   font-size: 15px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
-.detail-tabs :deep(.info-card__body) {
+.detail-sections :deep(.info-card__body) {
   padding: 8px 16px 12px;
 }
-.detail-tabs :deep(.info-row) {
+.detail-sections :deep(.info-row) {
   display: grid;
   grid-template-columns: 110px 1fr;
   gap: 14px;
   padding: 10px 0;
   border-bottom: 1px dashed #edf0f3;
 }
-.detail-tabs :deep(.info-row:last-child) {
+.detail-sections :deep(.info-row:last-child) {
   border: 0;
 }
-.detail-tabs :deep(.info-row__label) {
+.detail-sections :deep(.info-row__label) {
   color: var(--el-text-color-secondary);
 }
-.detail-tabs :deep(.info-row__value) {
+.detail-sections :deep(.info-row__value) {
   font-weight: 500;
   word-break: break-word;
 }
@@ -1440,26 +1473,26 @@ onMounted(async () => {
 .custom-info-row:last-child { border-bottom:0; }
 .custom-info-row > span { color:var(--el-text-color-secondary); font-size:13px; }
 .custom-info-row > strong { font-weight:500; overflow-wrap:anywhere; }
-.detail-tabs :deep(.section-head) {
+.detail-sections :deep(.section-head) {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin: 0 0 16px;
 }
-.detail-tabs :deep(.section-head__main) {
+.detail-sections :deep(.section-head__main) {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.detail-tabs :deep(.section-head__title) {
+.detail-sections :deep(.section-head__title) {
   margin: 0;
   font-size: 17px;
 }
-.detail-tabs :deep(.section-head__count) {
+.detail-sections :deep(.section-head__count) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
-.detail-tabs :deep(.section-head__action) {
+.detail-sections :deep(.section-head__action) {
   border: 0;
   border-radius: 8px;
   padding: 8px 13px;
@@ -1511,7 +1544,7 @@ onMounted(async () => {
   margin-top: 12px;
   color: #536273;
 }
-.detail-tabs :deep(.empty-state) {
+.detail-sections :deep(.empty-state) {
   display: grid;
   place-items: center;
   min-height: 170px;
@@ -1519,7 +1552,7 @@ onMounted(async () => {
   border-radius: 12px;
   color: var(--el-text-color-secondary);
 }
-.detail-tabs :deep(.empty-icon) {
+.detail-sections :deep(.empty-icon) {
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -1648,7 +1681,7 @@ onMounted(async () => {
   .content-section {
     padding: 16px;
   }
-  .card-grid,
+  .registration-card :deep(.info-card__body),
   .record-grid,
   .two-col-form {
     grid-template-columns: 1fr;

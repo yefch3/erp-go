@@ -129,109 +129,7 @@
       </el-card>
     </div>
 
-    <el-dialog
-      v-model="dialogOpen"
-      :title="editingId ? t('customers.edit') : t('customers.create')"
-      width="560px"
-    >
-      <el-form :model="form" label-width="110px" v-loading="loadingDetail">
-        <el-form-item :label="t('customers.code')">
-          <!-- The code is the customer's business identity: documents and
-               statements quote it, so it is fixed once issued. -->
-          <el-input
-            v-model="form.code"
-            :disabled="!!editingId"
-            :placeholder="t('customers.codeAuto')"
-          />
-        </el-form-item>
-        <el-form-item :label="t('customers.name')" required>
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item :label="t('customers.country')">
-          <!-- A code, not a name, and no allow-create. Free text is what made
-               Brazil / 巴西 / BR three countries; the whole point of grouping
-               is that it cannot happen again. Names come from the browser, so
-               this list reads in whatever language the user is in. -->
-          <el-select
-            v-model="form.countryCode"
-            filterable
-            clearable
-            :placeholder="t('customers.countryPick')"
-            style="width: 220px"
-          >
-            <el-option v-for="c in countries" :key="c.code" :value="c.code" :label="c.name" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('customers.currency')">
-          <el-select v-model="form.currency" style="width: 140px">
-            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('customers.timezone')">
-          <el-select
-            v-model="form.timezone"
-            filterable
-            clearable
-            :placeholder="t('customers.timezonePick')"
-            style="width: 100%"
-          >
-            <el-option v-for="zone in timezoneOptions" :key="zone" :label="zone" :value="zone" />
-          </el-select>
-          <div class="timezone-help">{{ t('customers.timezoneHelp') }}</div>
-        </el-form-item>
-        <el-form-item :label="t('customers.paymentTerm')">
-          <el-select v-model="form.paymentTerm" style="width: 200px" clearable>
-            <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('customers.address')">
-          <el-input v-model="form.address" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="t('customers.remark')">
-          <el-input v-model="form.remark" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-divider content-position="left">
-          {{ t('customers.contact') }}
-          <span class="hint">{{ t('customers.contactOptional') }}</span>
-        </el-divider>
-        <el-form-item :label="t('customers.contactName')">
-          <el-input v-model="form.contactName" style="width: 220px" placeholder="Hans Weber" />
-        </el-form-item>
-        <el-form-item :label="t('customers.contactPhone')">
-          <el-select
-            v-model="form.contactDial"
-            class="dial-select"
-            filterable
-            clearable
-            :placeholder="t('customers.dialCode')"
-          >
-            <!-- Options carry both the code and the country names so typing
-                 either one finds the entry; the closed field shows only the
-                 code, which is all that fits next to the number. -->
-            <template #label="{ value }">{{ value }}</template>
-            <el-option
-              v-for="d in DIAL_CODES"
-              :key="d.dial"
-              :value="d.dial"
-              :label="`${d.dial} ${d.countries}`"
-            >
-              <span class="dial-row">
-                <span>{{ d.dial }}</span>
-                <span class="dial-country">{{ d.countries }}</span>
-              </span>
-            </el-option>
-          </el-select>
-          <el-input v-model="form.contactPhone" class="phone-input" placeholder="138 0013 8000" />
-        </el-form-item>
-        <el-form-item :label="t('customers.contactEmail')">
-          <el-input v-model="form.contactEmail" style="width: 300px" placeholder="name@example.com" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
+    <CreateCustomerDialog v-if="auth.can('masterdata:customer:write')" v-model:open="dialogOpen" :can-manage-owners="canManageOwners" @created="changeScope" />
     <ImportCustomersDialog v-model:open="importOpen" @imported="changeScope" />
     <BulkOwnerDialog v-model:open="bulkOwnerOpen" entity-type="customer" :action="bulkOwnerAction" :selected-ids="selectedCustomers.map(row=>row.id)" @saved="bulkOwnersSaved" />
   </div>
@@ -241,19 +139,15 @@
 import MasterDataBulkDelete from '../components/MasterDataBulkDelete.vue'
 import ReorderableTableHeader from "../components/ReorderableTableHeader.vue"
 import { useTableColumnOrder } from "../composables/useTableColumnOrder"
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { del, get, post, put } from '../api'
-import { CURRENCIES } from '../constants'
-import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
-import { countryName, countryOptions } from '../lib/countries'
-import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
-import { portTimezoneOptions } from '../lib/portOptions'
+import { useRoute, useRouter } from 'vue-router'
+import { del, get, post } from '../api'
+import { countryName } from '../lib/countries'
 import { useAuthStore } from '../stores/auth'
-import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
 import { promptActivationReason } from '../lib/masterDataLifecycle'
+import CreateCustomerDialog from '../components/CreateCustomerDialog.vue'
 import ImportCustomersDialog from '../components/ImportCustomersDialog.vue'
 import BulkOwnerDialog from '../components/masterdata/BulkOwnerDialog.vue'
 
@@ -287,17 +181,9 @@ interface Customer {
 interface OptionItem { code: string; label: string }
 interface CountryGroup { code: string; customerCount: string }
 
-const EMPTY_FORM = {
-  code: '', name: '', country: '', countryCode: '', currency: 'USD', paymentTerm: '',
-  address: '', remark: '',
-  contactName: '', contactDial: '', contactPhone: '', contactEmail: '', timezone: '',
-}
-
 const { t, locale } = useI18n()
 const router = useRouter()
-// Built once per language rather than per render: the list is 249 entries and
-// sorting it by the reader's collation is the expensive part.
-const countries = computed(() => countryOptions(locale.value))
+const route = useRoute()
 const auth = useAuthStore()
 const canDelete = ref(false)
 const canManageOwners = ref(false)
@@ -305,7 +191,6 @@ const layoutTenant = ref('')
 const columnOrder = useTableColumnOrder(() => `tenant:${layoutTenant.value}:customer-list`, [{"key": "name", "label": "名称", "minWidth": 235}, {"key": "country", "label": "国家/地区", "minWidth": 125}, {"key": "type", "label": "客户类型", "minWidth": 110}, {"key": "contact", "label": "主要联系人", "minWidth": 140}, {"key": "owners", "label": "负责人", "minWidth": 175}, {"key": "status", "label": "状态", "minWidth": 80}, {"key": "actions", "label": "操作", "minWidth": 100}])
 const customers = ref<Customer[]>([])
 const countryGroups = ref<CountryGroup[]>([])
-const paymentOptions = ref<OptionItem[]>([])
 const typeOptions = ref<OptionItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -325,14 +210,6 @@ const moreFiltersOpen = ref(false)
 const extraFilterCount = computed(() => Number(Boolean(customerType.value)) + Number(Boolean(businessStatus.value)) + Number(showInactive.value))
 const importOpen = ref(false)
 const dialogOpen = ref(false)
-const saving = ref(false)
-const loadingDetail = ref(false)
-// null = the dialog is creating; an id = it is editing that customer.
-const editingId = ref<string | null>(null)
-// An update replaces the whole contact list, so contacts the dialog does not
-// show (secondary ones added through the API) are carried over untouched.
-const otherContacts = ref<Contact[]>([])
-const form = reactive({ ...EMPTY_FORM })
 const countryTotal = computed(() => countryGroups.value.reduce(
   (total, group) => total + Number(group.customerCount), 0,
 ))
@@ -341,24 +218,6 @@ const displayedCountryGroups = computed(() => [...countryGroups.value].sort((a, 
   if (!b.code) return -1
   return countryName(a.code, locale.value).localeCompare(countryName(b.code, locale.value), locale.value)
 }))
-const timezoneOptions = computed(() => portTimezoneOptions(form.countryCode))
-
-// Picking a country pre-fills the matching calling code. A code the user chose
-// themselves is never overwritten — only an empty one, or one that still
-// matches the previously selected country. Loading an existing customer is not
-// a choice, so it must not rewrite a phone the record already has.
-const hydrating = ref(false)
-watch(
-  () => form.countryCode,
-  (code, previous) => {
-    if (hydrating.value) return
-    const next = dialCodeOfCode(code)
-    if (next && (!form.contactDial || form.contactDial === dialCodeOfCode(previous ?? ''))) {
-      form.contactDial = next
-    }
-  },
-)
-
 async function load() {
   clearSelection()
   loading.value = true
@@ -416,101 +275,19 @@ function handleRowCommand(row: Customer, command: string) {
 function optionLabel(list:OptionItem[],code?:string){return list.find(o=>o.code===code)?.label||code||'—'}
 
 function openCreate() {
-  // The code is left blank on purpose: masterdata issues it when the customer
-  // is actually saved, so opening and abandoning this dialog costs no number.
-  // Typing one here still wins, for companies with their own conventions.
-  editingId.value = null
-  otherContacts.value = []
-  Object.assign(form, EMPTY_FORM)
   dialogOpen.value = true
 }
 
-async function openEdit(row: Customer) {
-  editingId.value = row.id
-  otherContacts.value = []
-  Object.assign(form, EMPTY_FORM)
-  dialogOpen.value = true
-  loadingDetail.value = true
-  try {
-    // The list row carries no contacts, address or remark - fetch the detail.
-    const { customer } = await get<{ customer: Customer }>(`/customers/${row.id}`)
-    const [primary, ...rest] = [...customer.contacts].sort(
-      (a, b) => Number(b.isPrimary) - Number(a.isPrimary),
-    )
-    otherContacts.value = rest
-    const phone = splitPhone(primary?.phone ?? '')
-    hydrating.value = true
-    Object.assign(form, {
-      code: customer.code, name: customer.name, country: customer.country,
-      countryCode: customer.countryCode ?? '',
-      currency: customer.currency, paymentTerm: customer.paymentTerm,
-      address: customer.address, remark: customer.remark,
-      timezone: customer.timezone ?? '',
-      contactName: primary?.name ?? '',
-      contactDial: phone.dial, contactPhone: phone.number,
-      contactEmail: primary?.email ?? '',
-    })
-    await nextTick()
-    hydrating.value = false
-  } catch {
-    hydrating.value = false
-    dialogOpen.value = false // the interceptor already surfaced the reason
-  } finally {
-    loadingDetail.value = false
+watch(() => [route.query.create, auth.can('masterdata:customer:write')], ([create, canWrite]) => {
+  if (create === '1' && canWrite) openCreate()
+}, { immediate: true })
+watch(dialogOpen, (open) => {
+  if (!open && route.query.create === '1') {
+    const query = { ...route.query }
+    delete query.create
+    void router.replace({ query })
   }
-}
-
-async function save() {
-  if (!form.name) {
-    ElMessage.warning(t('customers.required'))
-    return
-  }
-  // The calling code is stored together with the number so the phone stays
-  // dialable from anywhere; a bare code with no number is not a phone.
-  const phone = form.contactPhone ? `${form.contactDial} ${form.contactPhone}`.trim() : ''
-  if (form.contactName) {
-    const error = validateCustomerContact({ name: form.contactName, email: form.contactEmail, phone })
-    if (error) {
-      ElMessage.warning(t(`customers.${error}`))
-      return
-    }
-  }
-  if (validateCustomerProfile({ timezone: form.timezone })) {
-    ElMessage.warning(t('customers.timezoneInvalid'))
-    return
-  }
-  saving.value = true
-  const primary = form.contactName
-    ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
-    : []
-  const body = {
-    name: form.name, country: form.country, countryCode: form.countryCode,
-    address: form.address,
-    currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark,
-    timezone: form.timezone,
-    contacts: [...primary, ...otherContacts.value],
-  }
-  try {
-    const duplicateResult = await get<any>('/customers/duplicates', {
-      name: form.name,
-      email: form.contactEmail,
-      exclude_id: editingId.value || undefined,
-    })
-    await confirmPossibleDuplicates(duplicateResult.candidates || [], t)
-    if (editingId.value) {
-      await put(`/customers/${editingId.value}`, body)
-      ElMessage.success(t('customers.updated'))
-    } else {
-      // Code only travels on create; it is immutable afterwards.
-      await post('/customers', { ...body, code: form.code })
-      ElMessage.success(t('customers.created'))
-    }
-    dialogOpen.value = false
-    await Promise.all([load(), loadCountryGroups()])
-  } finally {
-    saving.value = false
-  }
-}
+})
 
 async function deleteCustomer(row: Customer) {
   if (!canDelete.value) return
@@ -533,9 +310,6 @@ onMounted(async () => {
   const access = await get<{ canDelete: boolean; canManageOwners:boolean; tenantId: string }>('/customers/access')
   canDelete.value = access.canDelete; canManageOwners.value=Boolean(access.canManageOwners); layoutTenant.value = String(access.tenantId)
   await Promise.all([load(), loadCountryGroups()])
-  paymentOptions.value = (
-    await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })
-  ).options
   typeOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'CUSTOMER_TYPE' })).options
 })
 </script>
@@ -621,7 +395,6 @@ onMounted(async () => {
 .muted { color: var(--el-text-color-secondary); }
 .customer-cards { display: none; }
 .pager { margin-top: 8px; justify-content: flex-end; }
-.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
 @media (max-width: 480px) {
   .customer-heading-actions { justify-content: flex-start; margin-inline-start: 0; }
   .pager { justify-content: center; }
