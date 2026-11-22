@@ -1,57 +1,74 @@
 <template>
   <div>
-    <div class="mobile-country" v-loading="countryLoading">
-      <div class="mobile-country__title">
-        <span>国家范围</span>
-        <strong>{{ selectedCountrySummary }}</strong>
-      </div>
-      <el-select class="country-select" v-model="selectedCountry" aria-label="按国家筛选客户" @change="selectCountry">
-        <el-option :label="`${t('customers.allCountries')}（${countryTotal}）`" value="" />
-        <el-option v-for="group in displayedCountryGroups" :key="group.code||'none'" :label="`${group.code ? countryName(group.code, locale) : t('customers.unclassified')}（${Number(group.customerCount)}）`" :value="group.code||'__UNCLASSIFIED__'" />
-      </el-select>
-    </div>
     <div class="customer-workspace">
       <el-card class="customer-list" shadow="never">
-      <div class="master-delete-toolbar"><MasterDataBulkDelete entity="CUSTOMER" @deleted="changeScope" /></div>
-      <div class="filters">
-        <el-input
-          v-model="keyword"
-          :placeholder="t('customers.searchPlaceholder')"
-          clearable
-          class="filter-search"
-          @keyup.enter="load"
-          @clear="load"
-        />
-        <el-button @click="load">{{ t('common.query') }}</el-button>
-        <el-select v-model="customerType" clearable :placeholder="t('customers.type')" class="filter-select" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
-        <el-select v-model="businessStatus" clearable :placeholder="t('customers.businessStatus')" class="filter-select" @change="changeFilters"><el-option :label="t('customers.statusProspect')" value="PROSPECT"/><el-option :label="t('customers.statusCooperating')" value="COOPERATING"/><el-option :label="t('customers.statusPaused')" value="PAUSED"/><el-option :label="t('customers.statusInactive')" value="INACTIVE"/></el-select>
-        <el-button v-if="columnOrder.customized.value" link type="primary" @click="columnOrder.reset">恢复默认列顺序</el-button>
-        <div class="filter-end">
-          <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
-          <div v-if="auth.can('masterdata:customer:write')" class="filter-actions">
-            <el-button @click="importOpen=true">{{ t('customers.bulkImport') }}</el-button>
-            <el-button type="primary" @click="openCreate">{{ t('customers.create') }}</el-button>
+      <div class="customer-list-heading">
+        <div class="customer-heading-text">
+          <h2>{{ t('customers.listTitle') }}</h2>
+          <span v-if="!loading" class="muted">{{ t('customers.resultCount', { count: total }) }}</span>
+        </div>
+        <div class="filters">
+          <el-input
+            v-model="keyword"
+            size="small"
+            :aria-label="t('customers.searchPlaceholder')"
+            :placeholder="t('customers.searchPlaceholder')"
+            clearable
+            class="filter-search"
+            @keyup.enter="load"
+            @clear="load"
+          />
+          <el-select v-model="selectedCountry" size="small" class="country-select" :aria-label="t('customers.country')"
+            :placeholder="t('customers.allCountryRegions')" :loading="countryLoading" @change="selectCountry">
+            <el-option :label="`${t('customers.allCountryRegions')}（${countryTotal}）`" value="" />
+            <el-option v-for="group in displayedCountryGroups" :key="group.code || 'none'"
+              :label="`${group.code ? countryName(group.code, locale) : t('customers.unclassified')}（${Number(group.customerCount)}）`"
+              :value="group.code || '__UNCLASSIFIED__'" />
+          </el-select>
+          <el-button size="small" :aria-expanded="moreFiltersOpen" aria-controls="customer-extra-filters" @click="moreFiltersOpen = !moreFiltersOpen">
+            {{ t('customers.moreFilters') }}<span v-if="extraFilterCount" class="filter-count">({{ extraFilterCount }})</span>
+            <span class="filter-arrow" aria-hidden="true">{{ moreFiltersOpen ? '▴' : '▾' }}</span>
+          </el-button>
+          <el-button size="small" @click="load">{{ t('common.query') }}</el-button>
+          <el-button v-if="columnOrder.customized.value" size="small" link type="primary" @click="columnOrder.reset">恢复默认列顺序</el-button>
+        </div>
+        <div class="customer-heading-actions">
+          <div v-if="auth.can('masterdata:customer:write')" class="customer-write-actions">
+            <el-button size="small" @click="importOpen=true">{{ t('customers.bulkImport') }}</el-button>
+            <el-button size="small" type="primary" @click="openCreate">{{ t('customers.create') }}</el-button>
           </div>
+          <MasterDataBulkDelete entity="CUSTOMER" @deleted="changeScope" />
         </div>
       </div>
+      <div v-show="moreFiltersOpen" id="customer-extra-filters" class="extra-filters">
+        <el-select v-model="customerType" clearable :aria-label="t('customers.type')" :placeholder="t('customers.type')" class="filter-select" @change="changeFilters">
+          <el-option v-for="option in typeOptions" :key="option.code" :label="option.label" :value="option.code" />
+        </el-select>
+        <el-select v-model="businessStatus" clearable :aria-label="t('customers.businessStatus')" :placeholder="t('customers.businessStatus')" class="filter-select" @change="changeFilters">
+          <el-option :label="t('customers.statusProspect')" value="PROSPECT" />
+          <el-option :label="t('customers.statusCooperating')" value="COOPERATING" />
+          <el-option :label="t('customers.statusPaused')" value="PAUSED" />
+          <el-option :label="t('customers.statusInactive')" value="INACTIVE" />
+        </el-select>
+        <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
+      </div>
 
-      <div v-if="canManageOwners" class="bulk-owner-bar">
-        <el-button @click="toggleSelectPage">{{ allPageSelected ? '取消全选' : '全选本页' }}</el-button>
+      <div v-if="canManageOwners && selectedCustomers.length" class="bulk-owner-bar">
         <span>已选择 <strong>{{ selectedCustomers.length }}</strong> 条</span>
-        <el-button type="primary" :disabled="!selectedCustomers.length" @click="openBulkOwners('ADD')">批量添加负责人</el-button>
-        <el-button :disabled="!selectedCustomers.length" @click="openBulkOwners('REMOVE')">批量移除负责人</el-button>
-        <el-button v-if="selectedCustomers.length" link @click="clearSelection">取消选择</el-button>
+        <el-button type="primary" @click="openBulkOwners('ADD')">批量添加负责人</el-button>
+        <el-button @click="openBulkOwners('REMOVE')">批量移除负责人</el-button>
+        <el-button link @click="clearSelection">取消选择</el-button>
       </div>
 
       <el-table ref="customerTable" class="customer-table" :data="customers" v-loading="loading" @selection-change="selectedCustomers=$event" @row-click="handleCustomerRowClick">
-        <el-table-column v-if="canManageOwners" type="selection" width="48" />
+        <el-table-column v-if="canManageOwners" type="selection" width="48" class-name="customer-selection-column" label-class-name="customer-selection-column" />
         <el-table-column v-for="column in columnOrder.columns.value" :key="column.key" :min-width="column.minWidth">
-<template #header><ReorderableTableHeader :label="column.label" hint="调整列顺序" move-left-label="左移" move-right-label="右移" :can-move-left="!!layoutTenant && columnOrder.canMoveLeft(column.key)" :can-move-right="!!layoutTenant && columnOrder.canMoveRight(column.key)" @move-left="columnOrder.moveBy(column.key, -1)" @move-right="columnOrder.moveBy(column.key, 1)" /></template>
+<template #header><ReorderableTableHeader :class="{ 'customer-name-heading': column.key === 'name' }" :label="column.label" hint="调整列顺序" move-left-label="左移" move-right-label="右移" :can-move-left="!!layoutTenant && columnOrder.canMoveLeft(column.key)" :can-move-right="!!layoutTenant && columnOrder.canMoveRight(column.key)" @move-left="columnOrder.moveBy(column.key, -1)" @move-right="columnOrder.moveBy(column.key, 1)" /></template>
 <template #default="{ row }">
 <template v-if="column.key === 'name'">
-            <button class="customer-identity" type="button" @click.stop="openDetail(row)">
-              <strong>{{ row.name }}</strong>
-              <span>{{ row.code }}<template v-if="row.shortName || row.englishName"> · {{ row.shortName || row.englishName }}</template></span>
+            <button class="customer-list-identity" type="button" :title="row.name" @click.stop="openDetail(row)">
+              <strong>{{ customerListName(row) }}</strong>
+              <span>{{ row.code }}</span>
             </button>
           </template>
 <template v-if="column.key === 'country'"><span>{{ row.country || (row.countryCode ? countryName(row.countryCode, locale) : '未设置') }}</span></template>
@@ -76,7 +93,7 @@
       <div v-loading="loading" class="customer-cards">
         <article v-for="row in customers" :key="row.id" class="customer-card" tabindex="0" @click="openDetail(row)" @keyup.enter="openDetail(row)">
           <div class="customer-card__head">
-            <div class="customer-card__identity"><strong>{{ row.name }}</strong><span>{{ row.code }}</span></div>
+            <div class="customer-card__identity"><strong :title="row.name">{{ customerListName(row) }}</strong><span>{{ row.code }}</span></div>
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ row.status === 'ACTIVE' ? t('common.active') : t('common.inactive') }}</el-tag>
           </div>
           <div class="customer-card__summary">
@@ -297,7 +314,6 @@ const customerTable = ref<any>()
 const selectedCustomers = ref<Customer[]>([])
 const bulkOwnerOpen = ref(false)
 const bulkOwnerAction = ref<'ADD'|'REMOVE'>('ADD')
-const allPageSelected = computed(()=>customers.value.length>0&&selectedCustomers.value.length===customers.value.length)
 const keyword = ref('')
 const showInactive = ref(false)
 const loading = ref(false)
@@ -305,6 +321,8 @@ const countryLoading = ref(false)
 const selectedCountry = ref('')
 const customerType = ref('')
 const businessStatus = ref('')
+const moreFiltersOpen = ref(false)
+const extraFilterCount = computed(() => Number(Boolean(customerType.value)) + Number(Boolean(businessStatus.value)) + Number(showInactive.value))
 const importOpen = ref(false)
 const dialogOpen = ref(false)
 const saving = ref(false)
@@ -324,14 +342,6 @@ const displayedCountryGroups = computed(() => [...countryGroups.value].sort((a, 
   return countryName(a.code, locale.value).localeCompare(countryName(b.code, locale.value), locale.value)
 }))
 const timezoneOptions = computed(() => portTimezoneOptions(form.countryCode))
-const selectedCountrySummary = computed(() => {
-  if (!selectedCountry.value) return `${t('customers.allCountries')} · ${countryTotal.value}`
-  const group = countryGroups.value.find(item => (item.code || '__UNCLASSIFIED__') === selectedCountry.value)
-  const name = selectedCountry.value === '__UNCLASSIFIED__'
-    ? t('customers.unclassified')
-    : countryName(selectedCountry.value, locale.value)
-  return `${name} · ${Number(group?.customerCount || 0)}`
-})
 
 // Picking a country pre-fills the matching calling code. A code the user chose
 // themselves is never overwritten — only an empty one, or one that still
@@ -391,9 +401,9 @@ function changeScope() {
 }
 function changeFilters(){page.value=1;load()}
 function openDetail(row:Customer){router.push(`/basic/customers/${row.id}`)}
+function customerListName(row: Customer) { return row.shortName?.trim() || row.name }
 function handleCustomerRowClick(row:Customer,column:any){if(column?.type==='selection')return;openDetail(row)}
 function clearSelection(){selectedCustomers.value=[];customerTable.value?.clearSelection()}
-function toggleSelectPage(){if(allPageSelected.value)clearSelection();else customerTable.value?.toggleAllSelection()}
 function openBulkOwners(action:'ADD'|'REMOVE'){bulkOwnerAction.value=action;bulkOwnerOpen.value=true}
 async function bulkOwnersSaved(){clearSelection();await load()}
 function changePage(p:number){page.value=p;void load()}
@@ -531,18 +541,90 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.master-delete-toolbar { display: flex; justify-content: flex-end; }
-.master-delete-toolbar:has(button) { margin-bottom: 12px; }
-.filters{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}.filter-actions{display:flex;align-items:center;gap:10px;margin-left:auto;white-space:nowrap}.filter-actions .el-button+.el-button{margin-left:0}.filter-search{width:min(300px,32%)}.filter-select{width:150px}.customer-workspace{display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px;align-items:start}.customer-workspace.collapsed{grid-template-columns:64px minmax(0,1fr)}.country-panel{position:sticky;top:16px}.country-panel :deep(.el-card__body){padding:10px}.country-panel__title{display:flex;align-items:center;justify-content:space-between;padding:4px 8px 10px;color:var(--el-text-color-secondary);font-size:13px;font-weight:600}.country-panel__title button{width:26px;height:26px;border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.country-item{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-radius:8px;padding:7px 9px;color:var(--el-text-color-regular);background:transparent;cursor:pointer;text-align:left}.country-item:hover{background:var(--el-fill-color-light)}.country-item.active{color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.country-item strong{min-width:28px;padding:2px 7px;border-radius:999px;color:inherit;background:var(--el-fill-color);font-size:12px;text-align:center}.customer-list{min-width:0}.customer-list :deep(.el-card__body){padding:16px 18px}.customer-table{width:100%;--el-table-row-hover-bg-color:var(--el-fill-color-light)}.customer-table :deep(.el-table__row){cursor:pointer}.customer-table :deep(th.el-table__cell){height:42px;padding:6px 0;color:var(--el-text-color-secondary);font-size:13px}.customer-table :deep(td.el-table__cell){padding:11px 0}.customer-identity{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:3px;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.customer-identity strong{max-width:100%;overflow:hidden;color:var(--el-text-color-primary);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.customer-identity span{max-width:100%;overflow:hidden;color:var(--el-text-color-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.muted,.stale-country{color:var(--el-text-color-secondary)}.customer-cards{display:none}.mobile-country{display:none;margin-bottom:10px}.mobile-country__title{display:flex;flex-direction:column;gap:2px;white-space:nowrap}.mobile-country__title span{color:var(--el-text-color-secondary);font-size:11px}.mobile-country__title strong{font-size:14px;font-weight:600}.country-select{width:100%}.pager{margin-top:12px;justify-content:flex-end}.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
-.bulk-owner-bar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--el-color-primary-light-7);border-radius:8px;background:var(--el-color-primary-light-9)}.bulk-owner-bar span{margin-right:auto;color:var(--el-text-color-regular)}
-@media(max-width:1450px){.customer-workspace,.customer-workspace.collapsed{grid-template-columns:1fr}.country-panel{display:none}.mobile-country{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 13px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-select{max-width:300px}}
-@media(max-width:820px){.customer-table{display:none}.customer-cards{display:grid;grid-template-columns:1fr;gap:10px}.customer-card{position:relative;display:grid;gap:9px;padding:14px 74px 14px 15px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color);cursor:pointer;outline:none}.customer-card:hover,.customer-card:focus-visible{border-color:var(--el-color-primary-light-5);box-shadow:0 3px 12px rgb(31 69 89 / 8%)}.customer-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.customer-card__identity{display:flex;min-width:0;flex-direction:column;gap:3px}.customer-card__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.customer-card__identity span{color:var(--el-color-primary);font-size:12px}.customer-card__summary{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--el-text-color-regular);font-size:13px}.customer-card__summary span+span:before{margin-right:14px;color:var(--el-border-color);content:'·'}.customer-card__facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}.customer-card__facts div{min-width:0}.customer-card__facts dt{margin-bottom:2px;color:var(--el-text-color-secondary);font-size:11px}.customer-card__facts dd{overflow:hidden;margin:0;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.customer-card__actions{position:absolute;right:14px;bottom:12px}}
-@media(max-width:760px){.mobile-country{align-items:stretch;flex-direction:column;gap:8px}.country-select{max-width:none}.mobile-country__title{flex-direction:row;align-items:baseline;justify-content:space-between}.filters{display:grid;grid-template-columns:minmax(0,1fr) auto}.filter-search{width:100%}.filter-select{width:100%}.filters .filter-select{grid-column:span 1}.filters .el-checkbox{grid-column:1/-1}.filter-actions{grid-column:1/-1;justify-content:flex-end;margin-left:0}.customer-list :deep(.el-card__body){padding:12px}.customer-cards{grid-template-columns:1fr}.customer-card__facts{grid-template-columns:1fr 1fr}.pager{justify-content:center}.pager :deep(.el-pagination__total){display:none}}
-@media(max-width:480px){.filters{grid-template-columns:1fr}.filters>*{grid-column:1!important}.filter-actions{justify-content:stretch}.filter-actions .el-button{flex:1}.customer-card{padding:13px 58px 13px 13px}.customer-card__facts{grid-template-columns:1fr}.customer-card__actions{right:12px}}
-.filter-end{display:flex;align-items:center;gap:10px;margin-left:auto;white-space:nowrap}.filter-end .filter-actions{margin-left:0}
-@media(max-width:760px){.filter-end{grid-column:1/-1;justify-content:space-between;margin-left:0}}
-@media(max-width:480px){.filter-end{flex-wrap:wrap}.filter-end .filter-actions{width:100%;margin-left:0}}
-.customer-workspace{display:block}.mobile-country{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--el-border-color-lighter);border-radius:10px;background:var(--el-bg-color)}.country-select{width:min(320px,45%);max-width:none}.customer-list :deep(.el-card__body){padding:12px 14px}.filters{gap:8px;margin-bottom:10px}.filter-search{width:min(300px,26%)}.filter-select{width:135px}.bulk-owner-bar{gap:8px;padding:7px 10px;margin-bottom:10px}.customer-table :deep(th.el-table__cell){height:36px;padding:4px 0;font-size:12px}.customer-table :deep(td.el-table__cell){padding:6px 0;font-size:12px}.customer-identity{gap:1px}.customer-identity strong{font-size:13px}.customer-identity span{font-size:11px}.pager{margin-top:8px}
-@media(max-width:820px){.customer-table{display:block}.customer-cards{display:none}.filter-search{width:100%}.mobile-country{flex-direction:row;align-items:center}.mobile-country__title{flex-direction:column}.country-select{width:min(320px,55%)}}
-@media(max-width:480px){.mobile-country{align-items:stretch;flex-direction:column}.country-select{width:100%}.mobile-country__title{flex-direction:row}.filters{grid-template-columns:minmax(0,1fr) auto}}
+.customer-list { min-width: 0; }
+.customer-list :deep(.el-card__body) { padding: 12px 14px; }
+.customer-list-heading,
+.customer-heading-text,
+.customer-heading-actions,
+.customer-write-actions,
+.filters,
+.extra-filters,
+.bulk-owner-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.customer-list-heading {
+  column-gap: 12px;
+  margin-bottom: 10px;
+}
+.customer-heading-text { gap: 6px; white-space: nowrap; }
+.customer-heading-text h2 { margin: 0; font-size: 16px; }
+.customer-heading-text span { font-size: 12px; }
+.customer-heading-actions { justify-content: flex-end; margin-inline-start: auto; gap: 10px; }
+.customer-list-heading :deep(.el-button) { height: 28px; padding: 0 9px; font-size: 12px; }
+.customer-list-heading :deep(.el-input__wrapper),
+.customer-list-heading :deep(.el-select__wrapper) { min-height: 28px; font-size: 12px; }
+.customer-heading-actions :deep(.el-button + .el-button),
+.filters :deep(.el-button + .el-button),
+.bulk-owner-bar :deep(.el-button + .el-button) { margin-left: 0; }
+.filters { max-width: 100%; }
+.filter-search { width: 168px; max-width: 100%; }
+.country-select { width: 148px; max-width: 100%; }
+.filter-count { margin-inline-start: 4px; color: var(--el-color-primary); }
+.filter-arrow { margin-inline-start: 4px; }
+.extra-filters {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+.filter-select { width: min(160px, 100%); }
+.bulk-owner-bar {
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 8px;
+  background: var(--el-color-primary-light-9);
+}
+.bulk-owner-bar span { margin-inline-end: auto; color: var(--el-text-color-regular); }
+.customer-table { width: 100%; --el-table-row-hover-bg-color: var(--el-fill-color-light); }
+.customer-table :deep(.el-table__row) { cursor: pointer; }
+.customer-table :deep(th.el-table__cell) { height: 36px; padding: 4px 0; font-size: 12px; }
+.customer-table :deep(td.el-table__cell) { padding: 6px 0; font-size: 12px; }
+.customer-table :deep(.customer-selection-column > .cell) { display: flex; justify-content: center; }
+.customer-name-heading :deep(.column-label) { margin-inline-end: auto; }
+.customer-list-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.customer-list-identity strong,
+.customer-list-identity span {
+  max-width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.customer-list-identity strong { color: var(--el-color-primary); font-size: 13px; }
+.customer-list-identity span { color: var(--el-text-color-secondary); font-size: 11px; }
+.muted { color: var(--el-text-color-secondary); }
+.customer-cards { display: none; }
+.pager { margin-top: 8px; justify-content: flex-end; }
+.hint{margin-left:8px;font-weight:400;font-size:12px;color:var(--el-text-color-secondary)}.dial-select{width:118px}.phone-input{width:200px;margin-left:8px}.dial-row{display:flex;justify-content:space-between;gap:18px}.dial-country{font-size:12px;color:var(--el-text-color-secondary)}.timezone-help{width:100%;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px;line-height:1.4}
+@media (max-width: 480px) {
+  .customer-heading-actions { justify-content: flex-start; margin-inline-start: 0; }
+  .pager { justify-content: center; }
+  .pager :deep(.el-pagination__total) { display: none; }
+}
 </style>
