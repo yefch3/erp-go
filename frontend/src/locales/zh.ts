@@ -1277,7 +1277,7 @@ basicsSaved: "基本资料已保存",
     exceptionStatuses: { OPEN: '待处理', RESOLVED: '已处理' },
     empty: '暂无采购单',
     statuses: {
-      DRAFT: '草稿', PENDING_APPROVAL: '审批中', REJECTED: '已驳回', PENDING_CONTRACT: '采购合同', PENDING_FINANCE: '待财务审核',
+      DRAFT: '草稿', PENDING_APPROVAL: '审批中', REJECTED: '已退回', PENDING_CONTRACT: '采购合同', PENDING_FINANCE: '待财务审核',
       ORDERED: '已下单', PARTIALLY_RECEIVED: '部分到货',
       RECEIVED: '已到货', CANCELLED: '已作废', HISTORY: '历史记录',
     },
