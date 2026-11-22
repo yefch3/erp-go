@@ -345,6 +345,14 @@ func (s *Service) createAssignmentDraft(ctx context.Context, tx pgx.Tx, tenant i
 	return head.ID, err
 }
 
+func (s *Service) OrderFromExecutionNegotiation(ctx context.Context, tenantID, orderID int64) (bool, error) {
+	var linked bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM purchase_execution_assignments WHERE tenant_id=$1 AND po_id=$2
+	)`, tenantID, orderID).Scan(&linked)
+	return linked, err
+}
+
 func (s *Service) listExecutionAssignments(ctx context.Context, tenant, buyer, requirement int64, manager bool) ([]ExecutionAssignment, error) {
 	visible, err := s.visibleRequirementsTo(ctx, Operator{ID: buyer})
 	if err != nil {

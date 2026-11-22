@@ -1221,6 +1221,8 @@ message GetOrderResponse {
   PurchaseOrder order = 1;
   repeated PurchaseOrderItem items = 2;
   repeated PurchaseReceipt receipts = 3;
+  bool from_execution_negotiation = 4;
+  string source_change_reason = 5;
 }
 
 message CreateOrderLine {

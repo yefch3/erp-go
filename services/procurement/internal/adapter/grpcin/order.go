@@ -236,7 +236,17 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			}
 		}
 	}
-	return &prv1.GetOrderResponse{Order: outOrder, Items: outItems, Receipts: outReceipts}, nil
+	resp := &prv1.GetOrderResponse{Order: outOrder, Items: outItems, Receipts: outReceipts}
+	if !outOrder.Historical && (head.Status == "DRAFT" || head.Status == "REJECTED") {
+		resp.FromExecutionNegotiation, err = h.svc.OrderFromExecutionNegotiation(ctx, tenantID, head.ID)
+		if err != nil {
+			return nil, err
+		}
+		if resp.FromExecutionNegotiation {
+			resp.SourceChangeReason = head.SourceChangeReason
+		}
+	}
+	return resp, nil
 }
 
 func orderDraftFileProto(f app.OrderDraftFile) *prv1.OrderDraftFile {
