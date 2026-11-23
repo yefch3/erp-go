@@ -1,6 +1,6 @@
 <template>
   <div ref="region" class="column-fill-region" tabindex="-1" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="cancelDrag" @keydown="onKeydown">
-    <div v-if="editable && rows.length > 1" class="column-fill-actions">
+    <div v-if="editable && rows.length > 1 && (!compactHint || selected.length > 1 || undoBatch)" class="column-fill-actions">
       <span>{{ hint || labels.hint }}</span>
       <template v-if="selected.length > 1">
         <strong>{{ labels.selected(selected.length) }}</strong>
@@ -26,6 +26,7 @@ const props=withDefaults(defineProps<{
   getCell?:(row:object,key:string)=>unknown
   setCell?:(row:object,key:string,value:unknown)=>void
   canFillRow?:(row:object)=>boolean
+  compactHint?:boolean
   hint?:string
 }>(),{editable:true})
 

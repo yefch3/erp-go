@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest'
 import {blankProduct,type Quote} from './inquiryWorkspace'
 import type {CategorySelection} from './customerOffer'
-import {applyProductFreight,commonProductFreight,freightCovers,freightProductKey,productFreightPriceLabel,productFreightPrices,productFreightPriceSummary} from './productFreight'
+import {freightPriceRanges,applyProductFreight,commonProductFreight,freightCovers,freightProductKey,productFreightPriceLabel,productFreightPrices,productFreightPriceSummary} from './productFreight'
 
 const products=[{...blankProduct(),id:'p1',product:'钢卷',specification:'3mm'},{...blankProduct(),id:'p2',product:'钢卷',specification:'4mm'}]
 const quote=(id='freight',version=2):Quote=>({id,version,kind:'LOGISTICS',submittedAt:'2026-11-16',body:{validUntil:'2999-01-01',freightRates:[{productId:'p1',usdPrice:'38'},{productId:'p2',usdPrice:'40'}]}} as Quote)
@@ -67,4 +67,12 @@ it('keeps price ranges, zero and separate units when USD is declared by the sele
  expect(productFreightPriceLabel(products,q)).toBe('0.00 / MT · 40.00 / CBM')
  expect(productFreightPriceLabel(products,undefined)).toBe('')
  expect(q.body.freightRates[0].usdPrice).toBe('0')
+})
+
+it('groups original freight rates by currency and unit, including zero and excluding blank prices',()=>{
+ const q=quote()
+ q.body.freightRates=[
+  ['USD','MT','67'],['CNY','MT','95'],['USD','mt','65'],['USD','PCS','0'],['USD','PCS',''],
+ ].map(([currency,unit,price])=>({productId:'p1',remark:'',currency,unit,price}))
+ expect(freightPriceRanges(q,products)).toEqual(['USD 65–67 / MT','CNY 95 / MT','USD 0 / PCS'])
 })

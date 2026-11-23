@@ -79,7 +79,7 @@
        </InquiryProducts>
       </section>
       <section v-else class="business-card product-card"><div class="section-title"><div><h3>{{t('inquiryWorkspace.detail.requirementsTitle')}}</h3><p>{{t('inquiryWorkspace.detail.requirementsHint')}}</p></div><div class="template-actions"><template v-if="view==='SALES'&&editable"><span class="template-label">{{t('inquiryWorkspace.templates')}}</span><el-select :model-value="item.body.template?.id" :placeholder="t('inquiryWorkspace.detail.selectTemplate')" @change="changeTemplate"><el-option v-for="template in selectableTemplates" :key="template.id" :label="`${templateName(template)} · v${template.version}${template.status==='ACTIVE'?'':t('inquiryWorkspace.detail.historical')}`" :value="template.id"/></el-select><el-button type="primary" plain @click="addProduct">{{t('inquiryWorkspace.detail.addProduct')}}</el-button></template><el-tag v-else-if="item.body.template" effect="plain">{{templateName(item.body.template)}} · v{{item.body.template.version}}</el-tag><el-button :icon="Download" :disabled="!item.body.products.length" @click="exportProducts">{{t('inquiryProducts.exportExcel')}}</el-button></div></div><div v-if="view==='PROCUREMENT'&&item.body.remark?.trim()" class="sales-remark"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><p>{{item.body.remark}}</p></div><el-collapse v-if="editor" v-model="requirementsOpen"><el-collapse-item :title="t('inquiryWorkspace.detail.viewRequirements')" name="products"><InquiryProducts :products="item.body.products" :fields="templateFields"/></el-collapse-item></el-collapse><InquiryProducts v-else :products="item.body.products" :fields="templateFields" :editable="!!editable" :inline-description="view!=='LOGISTICS'" @remove="item.body.products.splice($event,1)"/></section></el-tab-pane>
-     <el-tab-pane v-if="view!=='SALES'" :label="view==='QUOTATIONS'?t('inquiryWorkspace.quoteComparisonCalculation'):t('inquiryWorkspace.detail.submittedQuotes',{count:item.quotes?.length||0})" name="quotes">
+     <el-tab-pane v-if="view!=='SALES'" :label="view==='QUOTATIONS'?t('inquiryWorkspace.quoteComparisonCalculation'):t(view==='LOGISTICS'?'inquiryWorkspace.quotes.forwarderQuotes':'inquiryWorkspace.detail.submittedQuotes',{count:item.quotes?.length||0})" name="quotes">
      <div v-if="department&&item.body.remark?.trim()" class="sales-remark sales-remark--quotes"><strong>{{t('inquiryWorkspace.detail.salesRemark')}}</strong><ClampedText class="sales-remark__text" :text="item.body.remark.trim()" :lines="procurementQuoteEditing?2:3"/></div>
      <section v-if="!editor&&view!=='QUOTATIONS'" class="business-card quotes-section" :class="{'procurement-quotes':department}">
       <div v-if="!department" class="section-title">
@@ -88,11 +88,14 @@
       </div>
       <el-table :data="item.quotes||[]" :max-height="500" stripe :empty-text="t('inquiryWorkspace.quotes.empty')">
        <el-table-column v-if="view==='LOGISTICS'" :label="t('inquiryWorkspace.quotes.oceanUnitPrice')" min-width="162">
-        <template #default="{row:q}"><ClampedText :text="freightPriceSummary(q)" :lines="2"/></template>
+        <template #default="{row:q}"><strong v-for="range in freightPriceRanges(q,item.body.products)" :key="range" class="rate-range">{{range}}</strong></template>
        </el-table-column>
        <el-table-column prop="body.company" :label="t('inquiryWorkspace.quotes.quotingParty')" :min-width="department?142:180" show-overflow-tooltip/>
        <el-table-column v-if="view!=='LOGISTICS'" :label="t('inquiryWorkspace.quotes.type')" :min-width="department?130:145"><template #default="{row:q}"><el-tag size="small" :type="q.kind==='PROCUREMENT'?'warning':'success'">{{q.kind==='PROCUREMENT'?quoteCategoryLabel(q.body.quoteCategory):t('inquiryWorkspace.quotes.forwarder')}}</el-tag></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.quotes.content')" :min-width="department?145:250"><template #default="{row:q}"><strong class="compact-quote">{{quoteSummary(q)}}</strong><small>{{quoteSubline(q)}}</small></template></el-table-column>
+       <el-table-column v-if="view==='LOGISTICS'" :label="t('inquiryWorkspace.quotes.routeCoverage')" min-width="180">
+        <template #default="{row:q}"><span>{{freightRoute(q)}}</span><small>{{t('inquiryWorkspace.quotes.quotedProgress',{quoted:quotedCargoCount(q),total:item.body.products.length})}}</small></template>
+       </el-table-column>
+       <el-table-column v-else :label="t('inquiryWorkspace.quotes.content')" :min-width="department?145:250"><template #default="{row:q}"><strong class="compact-quote">{{quoteSummary(q)}}</strong><small>{{quoteSubline(q)}}</small></template></el-table-column>
        <el-table-column :label="t('inquiryWorkspace.quotes.author')" :min-width="department?118:180"><template #default="{row:q}">{{q.author||'—'}}<small>{{q.updatedBy&&q.updatedBy!==q.author?t('inquiryWorkspace.quotes.updatedBy',{name:q.updatedBy}):''}}</small></template></el-table-column>
        <el-table-column :label="t('inquiryWorkspace.submittedAt')" :min-width="department?132:155"><template #default="{row:q}">{{displayTime(q.submittedAt)}}</template></el-table-column>
        <el-table-column :label="t('common.status')" :width="department?82:100"><template #default="{row:q}"><el-tag size="small" effect="plain" :type="q.historical?'info':q.submittedAt?'success':'warning'">{{quoteStatus(q)}}</el-tag></template></el-table-column>
@@ -116,15 +119,24 @@
        </el-table-column>
       </el-table>
      </section>
-   <section v-if="editor" class="quote-editor" :class="{'factory-quote-editor':department}"><div class="quote-editor-heading"><div><h3>{{ quoteEditorTitle }}</h3><p v-if="!procurementQuoteEditing">{{t(view==='LOGISTICS'?'inquiryWorkspace.quotes.shippingEditorHint':'inquiryWorkspace.quotes.editorHint')}}</p></div><el-tag v-if="!procurementQuoteEditing" effect="plain">{{view==='LOGISTICS'?t('inquiryWorkspace.quotes.salesOutputUsd'):t('inquiryWorkspace.quotes.originalQuote')}}</el-tag></div><el-form label-position="top" class="inquiry-fields"><template v-if="view==='PROCUREMENT'"><el-form-item :label="t('inquiryWorkspace.quotes.factorySupplier')"><el-select v-model="editor.body.company" filterable allow-create default-first-option clearable remote :remote-method="procurementCompanySearch" :loading="procurementCompanyLoading" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" @visible-change="showProcurementCompanyOptions"><el-option v-for="option in procurementCompanyOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.quoteCategory')" required><el-select v-model="editor.body.quoteCategory" :placeholder="t('inquiryWorkspace.quotes.selectQuoteCategory')" @change="quoteCategoryChanged"><el-option v-for="category in quoteCategoryOptions" :key="category.value" :value="category.value" :label="category.label"/></el-select><small class="factory-quote-category-hint">{{t('inquiryWorkspace.quotes.editorHint')}}</small></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.currency')"><el-input v-model="editor.body.currency" maxlength="3" :disabled="!!procurementQuoteCurrency(editor.body.quoteCategory)"/></el-form-item><el-form-item :label="t('inquiryWorkspace.loadingPort')"><el-select v-model="editor.body.loadingPort" filterable allow-create default-first-option clearable remote :remote-method="portSearch" :loading="portLoading" :placeholder="t('inquiryWorkspace.quotes.portSelectOrType')" @visible-change="showPortOptions"><el-option v-for="option in portOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.unifiedDelivery')"><el-date-picker v-model="editor.body.delivery" type="date" value-format="YYYY-MM-DD"/></el-form-item>
+   <section v-if="editor" class="quote-editor" :class="{'factory-quote-editor':department}"><div class="quote-editor-heading"><div><h3>{{ quoteEditorTitle }}</h3><p v-if="!procurementQuoteEditing && view!=='LOGISTICS'">{{t('inquiryWorkspace.quotes.editorHint')}}</p></div><el-tag v-if="!procurementQuoteEditing && view!=='LOGISTICS'" effect="plain">{{t('inquiryWorkspace.quotes.originalQuote')}}</el-tag></div>
+    <section v-if="view==='LOGISTICS'" class="freight-extra">
+     <el-form label-position="left" label-width="102px" class="inquiry-fields freight-extra-fields" size="small"><el-form-item v-for="f in logisticsSecondaryFields" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]" :placeholder="f.key==='transitDays'?t('inquiryWorkspace.quotes.durationExample'):undefined"/></el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.quotes.validUntil')"><el-date-picker v-model="editor.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item>
+      <el-form-item class="freight-payment" :label="t('inquiryWorkspace.quotes.paymentTerms')"><el-input v-model="editor.body.paymentTerms"/></el-form-item>
+      <el-form-item :label="t('inquiryWorkspace.quotes.attachments')" class="freight-attachment"><el-button size="small" @click="freightAttachmentInput?.click()">{{t('inquiryWorkspace.quotes.addAttachment')}}</el-button><input hidden ref="freightAttachmentInput" type="file" @change="upload($event,true)"/><el-tag v-for="a in editor.body.attachments" :key="a.key" closable @close="editor!.body.attachments=editor!.body.attachments.filter(x=>x.key!==a.key)">{{a.name}}</el-tag></el-form-item>
+      <el-form-item :label="t('inquiryProducts.fields.remark')" class="freight-remark"><el-input v-model="editor.body.remark" type="textarea" :autosize="{minRows:1,maxRows:4}"/></el-form-item>
+      </el-form>
+    </section>
+    <el-form :label-position="view==='LOGISTICS'?'left':'top'" :label-width="view==='LOGISTICS'?'102px':undefined" class="inquiry-fields"><template v-if="view==='PROCUREMENT'"><el-form-item :label="t('inquiryWorkspace.quotes.factorySupplier')"><el-select v-model="editor.body.company" filterable allow-create default-first-option clearable remote :remote-method="procurementCompanySearch" :loading="procurementCompanyLoading" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" @visible-change="showProcurementCompanyOptions"><el-option v-for="option in procurementCompanyOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.quoteCategory')" required><el-select v-model="editor.body.quoteCategory" :placeholder="t('inquiryWorkspace.quotes.selectQuoteCategory')" @change="quoteCategoryChanged"><el-option v-for="category in quoteCategoryOptions" :key="category.value" :value="category.value" :label="category.label"/></el-select><small class="factory-quote-category-hint">{{t('inquiryWorkspace.quotes.editorHint')}}</small></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.currency')"><el-input v-model="editor.body.currency" maxlength="3" :disabled="!!procurementQuoteCurrency(editor.body.quoteCategory)"/></el-form-item><el-form-item :label="t('inquiryWorkspace.loadingPort')"><el-select v-model="editor.body.loadingPort" filterable allow-create default-first-option clearable remote :remote-method="portSearch" :loading="portLoading" :placeholder="t('inquiryWorkspace.quotes.portSelectOrType')" @visible-change="showPortOptions"><el-option v-for="option in portOptions" :key="option.value" :label="option.label" :value="option.value"/></el-select></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.unifiedDelivery')"><el-date-picker v-model="editor.body.delivery" type="date" value-format="YYYY-MM-DD"/></el-form-item>
      <el-form-item :label="t('inquiryWorkspace.quotes.validUntil')"><el-date-picker v-model="editor.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item>
      <el-form-item :label="t('inquiryWorkspace.quotes.paymentTerms')">
       <el-autocomplete v-model="editor.body.paymentTerms" :fetch-suggestions="factoryPaymentSuggestions" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" clearable/>
      </el-form-item>
      <el-form-item :label="t('inquiryWorkspace.quotes.attachments')" class="factory-quote-attachments"><input type="file" @change="upload($event,true)"/><el-tag v-for="a in editor.body.attachments" :key="a.key" closable @close="editor!.body.attachments=editor!.body.attachments.filter(x=>x.key!==a.key)">{{a.name}}</el-tag></el-form-item>
      <el-form-item :label="t('inquiryProducts.fields.remark')" class="wide"><el-input v-model="editor.body.remark" type="textarea" :autosize="{minRows:1,maxRows:4}"/></el-form-item>
-    </template><template v-else><el-form-item :label="t('inquiryWorkspace.quotes.forwarderName')"><el-autocomplete v-model="editor.body.company" :fetch-suggestions="companySuggestions" :placeholder="t('inquiryWorkspace.quotes.shippingCompanyPlaceholder')" :trigger-on-focus="true" clearable/></el-form-item><el-form-item v-for="f in logisticsPrimaryFields" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.departure')"><el-date-picker v-model="editor.body.departure" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.arrival')"><el-date-picker v-model="editor.body.arrival" value-format="YYYY-MM-DD"/></el-form-item></template></el-form>
-    <el-collapse v-if="view==='LOGISTICS'"><el-collapse-item :title="t('inquiryWorkspace.quotes.moreInfo')" name="more"><el-form label-position="top" class="inquiry-fields"><template v-if="view==='LOGISTICS'"><el-form-item :label="t('inquiryWorkspace.quotes.route')"><el-input v-model="editor.body.route" :placeholder="t('inquiryWorkspace.quotes.routeHint')"/></el-form-item></template><el-form-item :label="t('inquiryWorkspace.quotes.validUntil')"><el-date-picker v-model="editor.body.validUntil" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.paymentTerms')"><el-input v-model="editor.body.paymentTerms"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.attachments')" class="wide"><input type="file" @change="upload($event,true)"/><el-tag v-for="a in editor.body.attachments" :key="a.key" closable @close="editor!.body.attachments=editor!.body.attachments.filter(x=>x.key!==a.key)">{{a.name}}</el-tag></el-form-item><el-form-item :label="t('inquiryProducts.fields.remark')" class="wide"><el-input v-model="editor.body.remark" type="textarea"/></el-form-item></el-form></el-collapse-item></el-collapse>
+    </template><template v-else><el-form-item :label="t('inquiryWorkspace.quotes.forwarder')"><el-autocomplete v-model="editor.body.company" :fetch-suggestions="companySuggestions" :placeholder="t('inquiryWorkspace.quotes.shippingCompanyPlaceholder')" :trigger-on-focus="true" clearable/></el-form-item><el-form-item class="freight-currency-field" :label="t('inquiryWorkspace.quotes.currency')"><el-select :model-value="freightCurrency" filterable allow-create default-first-option @change="changeFreightCurrency"><el-option v-for="ccy in freightCurrencyOptions" :key="ccy" :label="ccy" :value="ccy"/></el-select><small class="sales-currency">{{t('inquiryWorkspace.quotes.salesCurrency')}}</small><div v-if="nonUsdCurrencies.length" class="freight-inline-rates" :aria-label="t('inquiryWorkspace.quotes.exchangeRates')"><label v-for="currency in nonUsdCurrencies" :key="currency" class="exchange-rate-field"><span>1 USD =</span><el-input v-model="editor.body.exchangeRates[currency]" inputmode="decimal" :placeholder="t('inquiryWorkspace.quotes.exchangeRatePlaceholder')"><template #append>{{currency}}</template></el-input></label></div></el-form-item><el-form-item v-for="f in logisticsPorts" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.departure')"><el-date-picker v-model="editor.body.departure" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.arrival')"><el-date-picker v-model="editor.body.arrival" value-format="YYYY-MM-DD"/></el-form-item></template></el-form>
+
      <template v-if="view==='PROCUREMENT'">
       <div class="factory-quote-products">
        <el-input v-model="productSearch" size="small" :placeholder="t('inquiryWorkspace.quotes.searchProducts')" @input="productPage=1"/>
@@ -192,21 +204,21 @@
       <el-pagination v-model:current-page="productPage" v-model:page-size="productSize" :page-sizes="[10,20,50,100]" :total="filteredProducts.length" layout="total, sizes, prev, pager, next"/>
      </template>
      <template v-else>
-      <section v-if="nonUsdCurrencies.length" class="exchange-rate-panel">
-       <div class="exchange-rate-copy"><span>{{t('inquiryWorkspace.quotes.exchangeRates')}}</span><strong>{{t('inquiryWorkspace.quotes.exchangeRatesHint')}}</strong></div>
-       <label v-for="currency in nonUsdCurrencies" :key="currency" class="exchange-rate-field"><span>1 USD =</span><el-input v-model="editor.body.exchangeRates[currency]" inputmode="decimal" :placeholder="t('inquiryWorkspace.quotes.exchangeRatePlaceholder')"><template #append>{{currency}}</template></el-input></label>
-      </section>
-      <div class="logistics-section-title logistics-section-title--cargo"><div><h4>{{t('inquiryWorkspace.quotes.applicableCargo')}}</h4><p>{{t('inquiryWorkspace.quotes.applicableCargoHint')}}</p></div><div class="freight-bulk-fill" role="group" :aria-label="t('inquiryWorkspace.quotes.bulkFill')"><span class="freight-bulk-fill__label"><b>{{t('inquiryWorkspace.quotes.bulkFill')}}</b><small>{{t('inquiryWorkspace.quotes.bulkFillHint')}}</small></span><el-input v-model="freightFill.price" class="freight-bulk-fill__price" inputmode="decimal" clearable :placeholder="t('inquiryWorkspace.quotes.bulkFillRate')" :aria-label="t('inquiryWorkspace.quotes.oceanUnitPrice')"/><el-input v-model="freightFill.currency" class="freight-bulk-fill__currency" maxlength="3" :placeholder="t('inquiryWorkspace.quotes.bulkFillCurrency')" :aria-label="t('inquiryWorkspace.quotes.currency')"/><el-input v-model="freightFill.unit" class="freight-bulk-fill__unit" :placeholder="t('inquiryWorkspace.quotes.bulkFillUnit')" :aria-label="t('inquiryWorkspace.quotes.pricingUnit')"/><el-button :disabled="!freightSelectionState.count" @click="fillFreightColumns(false)">{{t('inquiryWorkspace.quotes.fillSelected',{count:freightSelectionState.count})}}</el-button><el-button type="primary" plain :disabled="!item.body.products.length" @click="fillFreightColumns(true)">{{t('inquiryWorkspace.quotes.selectAllAndFill')}}</el-button><el-button v-if="freightFillUndo" link type="primary" @click="undoFreightColumns">{{t('inquiryWorkspace.quotes.undoFill')}}</el-button></div></div>
-      <ColumnFillRegion :rows="item.body.products" :fields="[{key:'price',column:3},{key:'currency',column:4},{key:'unit',column:5}]" :can-fill-row="canFillFreightRow" :get-cell="getFreightCell" :set-cell="setFreightCell">
+
+
+      <div class="logistics-section-title logistics-section-title--cargo"><div><h4>{{t('inquiryWorkspace.quotes.applicableCargo')}} <small>· {{t('inquiryWorkspace.quotes.cargoCount',{count:item.body.products.length})}}</small></h4></div><div class="freight-bulk-fill" role="group" :aria-label="t('inquiryWorkspace.quotes.bulkFill')"><span class="freight-bulk-fill__label"><b>{{t('inquiryWorkspace.quotes.batchPrice')}}</b></span><el-input v-model="freightFill.price" class="freight-bulk-fill__price" inputmode="decimal" clearable :placeholder="t('inquiryWorkspace.quotes.bulkFillRate')" :aria-label="t('inquiryWorkspace.quotes.oceanUnitPrice')"><template #suffix>{{freightFill.currency || freightCurrency}}</template></el-input><el-input v-if="freightOverrides" v-model="freightFill.currency" class="freight-bulk-fill__currency" maxlength="3" :placeholder="t('inquiryWorkspace.quotes.bulkFillCurrency')" :aria-label="t('inquiryWorkspace.quotes.currency')"/><el-input v-if="freightOverrides" v-model="freightFill.unit" class="freight-bulk-fill__unit" :placeholder="t('inquiryWorkspace.quotes.bulkFillUnit')" :aria-label="t('inquiryWorkspace.quotes.pricingUnit')"/><el-button :disabled="!freightSelectionState.count" @click="fillFreightColumns(false)">{{t('inquiryWorkspace.quotes.applySelected',{count:freightSelectionState.count})}}</el-button><el-button type="primary" plain :disabled="!item.body.products.length" @click="fillFreightColumns(true)">{{t('inquiryWorkspace.quotes.applyAll')}}</el-button><el-button link type="primary" :aria-expanded="freightOverrides" @click="freightOverrides=!freightOverrides">{{t('inquiryWorkspace.quotes.rowPricing')}}</el-button><el-button v-if="freightFillUndo" link type="primary" @click="undoFreightColumns">{{t('inquiryWorkspace.quotes.undoFill')}}</el-button></div></div>
+      <ColumnFillRegion compact-hint :rows="item.body.products" :fields="freightOverrides?[{key:'price',column:3},{key:'currency',column:4},{key:'unit',column:5}]:[{key:'price',column:3}]" :can-fill-row="canFillFreightRow" :get-cell="getFreightCell" :set-cell="setFreightCell">
       <el-table :data="item.body.products" class="freight-rate-table" table-layout="fixed">
        <el-table-column :label="t('inquiryProducts.select')" width="62" align="center"><template #header><el-checkbox :model-value="freightSelectionState.checked" :indeterminate="freightSelectionState.indeterminate" :disabled="!item.body.products.length" :aria-label="t('inquiryWorkspace.quotes.selectAllCargo')" @change="toggleAllFreightProducts(!freightSelectionState.checked)"/></template><template #default="{row}"><el-checkbox :model-value="!!freightRateFor(row.id)" @change="toggleFreightProduct(row,!!$event)"/></template></el-table-column>
-       <el-table-column prop="product" :label="t('inquiryProducts.fields.product')" min-width="150" show-overflow-tooltip/>
-       <el-table-column prop="quantity" :label="t('inquiryWorkspace.quotes.requiredQuantity')" min-width="90"/>
-       <el-table-column :label="t('inquiryWorkspace.quotes.oceanUnitPrice')" min-width="135"><template #default="{row}"><template v-if="freightRateFor(row.id)"><el-input v-model="freightRateFor(row.id)!.price" inputmode="decimal"/><small class="usd-preview">{{usdPreview(freightRateFor(row.id)!.price,freightRateFor(row.id)!.currency)}}</small></template></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.quotes.currency')" min-width="92"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.currency" maxlength="3"/></template></el-table-column>
-       <el-table-column :label="t('inquiryWorkspace.quotes.pricingUnit')" min-width="100"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.unit" :placeholder="row.unit||'MT'"/></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="220"><template #default="{row}"><ComparisonSpecification :product-name="freightSpecification(row)" :hide-name="!freightSpecification(row)" :text="inquiryProductDescription(row,templateFields)"/></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.requiredQuantity')" width="105" align="right"><template #default="{row}">{{row.quantity}} {{row.unit}}</template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.oceanUnitPrice')" width="195"><template #default="{row}"><el-input :model-value="freightRateFor(row.id)?.price ?? ''" inputmode="decimal" :placeholder="t('inquiryWorkspace.quotes.bulkFillRate')" :aria-label="t('inquiryWorkspace.quotes.oceanUnitPrice')" @update:model-value="setFreightPrice(row,$event)"><template v-if="!freightOverrides" #suffix>{{freightRateFor(row.id)?.currency || freightCurrency}} / {{freightRateFor(row.id)?.unit || row.unit || 'MT'}}</template></el-input><small v-if="freightRateFor(row.id)?.price && freightRateFor(row.id)!.currency.toUpperCase()!=='USD' && usdAmount(freightRateFor(row.id)!.price,freightRateFor(row.id)!.currency)!==null" class="usd-preview">{{usdPreview(freightRateFor(row.id)!.price,freightRateFor(row.id)!.currency)}}</small></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.currency')" v-if="freightOverrides" width="100"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.currency" maxlength="3"/></template></el-table-column>
+       <el-table-column :label="t('inquiryWorkspace.quotes.pricingUnit')" v-if="freightOverrides" width="105"><template #default="{row}"><el-input v-if="freightRateFor(row.id)" v-model="freightRateFor(row.id)!.unit" :placeholder="row.unit||'MT'"/></template></el-table-column>
       </el-table>
       </ColumnFillRegion>
+
+
       <div class="logistics-section-title"><div><h4>{{t('inquiryWorkspace.quotes.charges')}}</h4><p>{{t('inquiryWorkspace.quotes.chargesHint')}}</p></div><el-button @click="addCharge">{{t('inquiryWorkspace.quotes.addCharge')}}</el-button></div>
       <ColumnFillRegion :rows="editor.body.charges" :fields="[{key:'name',column:0},{key:'amount',column:2},{key:'currency',column:3},{key:'unit',column:4},{key:'quantity',column:5},{key:'remark',column:6}]">
       <el-table :data="editor.body.charges" :max-height="420" table-layout="fixed">
@@ -261,6 +273,7 @@
 </template>
 <script setup lang="ts">
 import ColumnFillRegion from '../components/ColumnFillRegion.vue'
+import {freightPriceRanges} from '../lib/productFreight'
 import ClampedText from '../components/ClampedText.vue'
 import {computed,h,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
@@ -284,7 +297,7 @@ import {parseTableFile} from '../lib/attachmentExcel'
 import {productsFromImportedSheet,selectImportTemplate} from '../lib/inquiryImport'
 import {buildInquiryProductsXlsx,exportableInquiryFields,safeInquiryExportName} from '../lib/inquiryProductExport'
 import {applyTemplateDefaults,blankBody,blankProduct,blankQuote,canonicalInquiryRouteID,pastePrices,chargeSubtotal,chargeTotals,productTotal,type FreightRate,type Inquiry,type InquiryTemplateSnapshot,type Result,type Quote,type QuoteBody,type Product} from '../lib/inquiryWorkspace'
-import {groupedQuantity,groupInquiryProducts,productSummary} from '../lib/inquiryList'
+import {freightSpecification,groupedQuantity,groupInquiryProducts,productSummary} from '../lib/inquiryList'
 import {procurementQuoteCategories,procurementQuoteCategory,procurementQuoteCurrency} from '../lib/quoteClassification'
 import {fillFreightTable,freightFillPatch,freightSelection,missingFreightPrices,pricedFreightRates,selectAllFreightRates,undoFreightFill,unselectAllFreightRates,type FreightFillInput,type FreightFillUndo} from '../lib/freightRateFill'
 import {afterFailure,afterSuccess,idleGate,mayAttempt,shouldWarn,type RefreshGate} from '../lib/refreshBackoff'
@@ -343,7 +356,8 @@ const editable=computed(()=>view.value==='SALES'&&item.value?.canEdit&&item.valu
 const basicInfoEditable=computed(()=>view.value==='SALES'&&!!item.value?.canEdit)
 const states=computed(()=>department.value?[{value:'WAITING',label:t('inquiryWorkspace.personalQuotes.waitingForMe')},{value:'MY_QUOTED',label:t('inquiryWorkspace.personalQuotes.myQuoted')},{value:'UPDATED',label:t('inquiryWorkspace.personalQuotes.quoteUpdated')}]:view.value==='SALES'?[{value:'UNSUBMITTED',label:t('inquiryWorkspace.statuses.unsubmitted')},{value:'INQUIRING',label:t('inquiryWorkspace.statuses.inquiring')},{value:'WITHDRAWN',label:t('inquiryWorkspace.statuses.withdrawn')}]:[{value:'INQUIRING',label:t('inquiryWorkspace.statuses.inquiring')},{value:'HAS_QUOTES',label:t('inquiryWorkspace.statuses.hasQuote')}])
 const quoteSectionTitle=computed(()=>t(view.value==='QUOTATIONS'?'inquiryWorkspace.quotes.originalSupplierQuotes':view.value==='PROCUREMENT'?'inquiryWorkspace.quotes.factoryQuote':'inquiryWorkspace.quotes.shippingQuote'))
-const quoteEditorTitle=computed(()=>t(view.value==='PROCUREMENT'?'inquiryWorkspace.quotes.factoryQuote':'inquiryWorkspace.quotes.shippingQuote'))
+const freightEditorMode=ref<'newFreight'|'copyFreight'|'editFreight'>('newFreight')
+const quoteEditorTitle=computed(()=>t(view.value==='LOGISTICS'?'inquiryWorkspace.quotes.'+freightEditorMode.value:'inquiryWorkspace.quotes.factoryQuote'))
 const quoteCategoryOptions=computed(()=>procurementQuoteCategories.map(category=>({...category,label:t(category.labelKey)})))
 const submittedProcurementQuotes=computed(()=>(item.value?.quotes||[]).filter(q=>q.kind==='PROCUREMENT'&&!!q.submittedAt))
 const submittedLogisticsQuotes=computed(()=>(item.value?.quotes||[]).filter(q=>q.kind==='LOGISTICS'&&!!q.submittedAt))
@@ -357,6 +371,8 @@ const productFields=computed(()=>[{key:'product',label:t('inquiryProducts.fields
 type QuoteTextKey={ [K in keyof QuoteBody]-?: QuoteBody[K] extends string ? K : never }[keyof QuoteBody]
 interface QuoteField {key:QuoteTextKey;label:string}
 const logisticsPrimaryFields=computed<QuoteField[]>(()=>[{key:'vessel',label:t('inquiryWorkspace.quotes.vessel')},{key:'voyage',label:t('inquiryWorkspace.quotes.voyage')},{key:'loadingPort',label:t('inquiryWorkspace.loadingPort')},{key:'destinationPort',label:t('inquiryWorkspace.destinationPort')},{key:'transitDays',label:t('inquiryWorkspace.quotes.transitDays')}])
+const logisticsPorts=computed(()=>logisticsPrimaryFields.value.filter(f=>['loadingPort','destinationPort'].includes(f.key)))
+const logisticsSecondaryFields=computed(()=>logisticsPrimaryFields.value.filter(f=>!['loadingPort','destinationPort'].includes(f.key)))
 const logisticsFields=computed<QuoteField[]>(()=>[...logisticsPrimaryFields.value,{key:'route',label:t('inquiryWorkspace.quotes.route')}])
 const quoteDisplayFields=computed<QuoteField[]>(()=>[{key:'company',label:t('inquiryWorkspace.quotes.factoryOrForwarder')},{key:'currency',label:t('inquiryWorkspace.quotes.currency')},{key:'delivery',label:t('inquiryWorkspace.quotes.unifiedDelivery')},{key:'validUntil',label:t('inquiryWorkspace.quotes.validUntil')},{key:'paymentTerms',label:t('inquiryWorkspace.quotes.paymentTerms')},...logisticsFields.value,{key:'departure',label:t('inquiryWorkspace.quotes.departure')},{key:'arrival',label:t('inquiryWorkspace.quotes.arrival')},{key:'remark',label:t('inquiryProducts.fields.remark')}])
 const chargeFields=computed(()=>[{key:'name',label:t('inquiryWorkspace.quotes.chargeName'),width:140},{key:'amount',label:t('inquiryWorkspace.quotes.amount'),width:110},{key:'remark',label:t('inquiryProducts.fields.remark'),width:170}])
@@ -432,9 +448,15 @@ function hasProcurementPrice(id:string){
  return !!(row?.price?.trim()||row?.factoryPrice?.trim()||row?.fobPrice?.trim())
 }
 function productFor(id:string){return item.value?.body.products.find(p=>p.id===id)}
-function freightPriceSummary(quote:Quote) {
- const prices=(quote.body.freightRates||[]).filter(rate=>String(rate.price??'').trim()!=='')
- return [...new Set(prices.map(rate=>[rate.currency||quote.body.currency,rate.price].filter(Boolean).join(' ')+(rate.unit?' / '+rate.unit:'')))].join(' · ')||'—'
+function quotedCargoCount(q:Quote){
+ const priced=new Set((q.body.freightRates||[]).filter(r=>String(r.price??'').trim()!=='').map(r=>r.productId))
+ return item.value?.body.products.filter(p=>priced.has(p.id)).length || 0
+}
+function freightRoute(q:Quote){
+ const {loadingPort,destinationPort,route}=q.body
+ if(!loadingPort&&!destinationPort)return route||'—'
+ const ports=[loadingPort||'—',destinationPort||'—'].join(' → ')
+ return route && loadingPort && destinationPort && route.includes(loadingPort) && route.includes(destinationPort)?route:ports
 }
 function quoteTotals(q:Quote){return(q.body.otherChargesTotalUsd||q.body.totalUsd)?t('inquiryWorkspace.quotes.usdChargesTotal',{total:q.body.otherChargesTotalUsd||q.body.totalUsd}):''}
 function canCopyQuote(q:Quote){return canWrite.value&&department.value&&!q.historical&&q.submittedAt&&q.authorId!==String(auth.employeeId)}
@@ -610,7 +632,24 @@ async function deleteQuote(q:Quote){
   ElMessage.success(t('inquiryWorkspace.quoteDeletion.deleted'))
  }finally{busy.value=false}
 }
-function editQuote(q?:Quote){detailTab.value='quotes';editor.value=q?normalizeQuote(structuredClone(JSON.parse(JSON.stringify(q)))):{id:'',kind:view.value,version:0,body:blankQuote(),authorId:'',author:'',submittedAt:'',updatedBy:'',updatedAt:'',canEdit:true};productPage.value=1;productSearch.value='';productFilter.value='all';requirementsOpen.value=[];if(!q&&item.value&&editor.value){editor.value.body.loadingPort=item.value.body.loadingPort;editor.value.body.destinationPort=item.value.body.destinationPort;if(view.value==='LOGISTICS')editor.value.body.incoterm=item.value.body.incoterm||''}}
+const freightAttachmentInput=ref<HTMLInputElement|null>(null)
+const freightCurrency=ref('USD')
+const freightOverrides=ref(false)
+const freightCurrencyOptions=computed(()=>[...new Set(['USD','CNY','EUR',freightCurrency.value,...(editor.value?.body.freightRates||[]).map(r=>r.currency).filter(Boolean)])])
+function changeFreightCurrency(value:string){
+ const next=value.trim().toUpperCase()
+ if(!/^[A-Z]{3}$/.test(next)){ElMessage.warning(t('inquiryWorkspace.quotes.fillInvalidCurrency'));return}
+ for(const rate of editor.value?.body.freightRates || []){
+  if(!rate.currency || rate.currency.toUpperCase()===freightCurrency.value)rate.currency=next
+ }
+ freightCurrency.value=next
+ freightFillUndo.value=null
+}
+function editQuote(q?:Quote){
+ const currencies=new Set((q?.body.freightRates||[]).map(r=>r.currency?.toUpperCase()).filter(Boolean))
+ freightCurrency.value=currencies.size===1?[...currencies][0]:q?.body.currency||'USD'
+ freightOverrides.value=currencies.size>1
+ freightEditorMode.value=q?(q.id?'editFreight':'copyFreight'):'newFreight';detailTab.value='quotes';editor.value=q?normalizeQuote(structuredClone(JSON.parse(JSON.stringify(q)))):{id:'',kind:view.value,version:0,body:blankQuote(),authorId:'',author:'',submittedAt:'',updatedBy:'',updatedAt:'',canEdit:true};productPage.value=1;productSearch.value='';productFilter.value='all';requirementsOpen.value=[];if(!q&&item.value&&editor.value){editor.value.body.loadingPort=item.value.body.loadingPort;editor.value.body.destinationPort=item.value.body.destinationPort;if(view.value==='LOGISTICS')editor.value.body.incoterm=item.value.body.incoterm||''}}
 function showProcurementCompanyOptions(visible:boolean){if(visible)void procurementCompanySearch('')}
 function showPortOptions(visible:boolean){if(visible)void portSearch('')}
 async function procurementCompanySearch(query=''){
@@ -639,7 +678,12 @@ function freightRateFor(productId:string){return editor.value?.body.freightRates
 function canFillFreightRow(row:object){return !!freightRateFor((row as Product).id)}
 function getFreightCell(row:object,key:string){return (freightRateFor((row as Product).id) as unknown as Record<string,unknown>|undefined)?.[key]}
 function setFreightCell(row:object,key:string,value:unknown){const rate=freightRateFor((row as Product).id) as unknown as Record<string,unknown>|undefined;if(rate)rate[key]=value}
-function toggleFreightProduct(product:Product,selected:boolean){if(!editor.value)return;if(selected){if(!freightRateFor(product.id))editor.value.body.freightRates.push({productId:product.id,price:'',currency:editor.value.body.currency||'USD',unit:product.unit||'MT',remark:''})}else editor.value.body.freightRates=editor.value.body.freightRates.filter(rate=>rate.productId!==product.id);editor.value.body.cargoIds=editor.value.body.freightRates.map(rate=>rate.productId)}
+function setFreightPrice(product:Product,price:string){
+ if(!freightRateFor(product.id) && price.trim())toggleFreightProduct(product,true)
+ const rate=freightRateFor(product.id)
+ if(rate)rate.price=price
+}
+function toggleFreightProduct(product:Product,selected:boolean){if(!editor.value)return;if(selected){if(!freightRateFor(product.id))editor.value.body.freightRates.push({productId:product.id,price:'',currency:freightCurrency.value,unit:product.unit||'MT',remark:''})}else editor.value.body.freightRates=editor.value.body.freightRates.filter(rate=>rate.productId!==product.id);editor.value.body.cargoIds=editor.value.body.freightRates.map(rate=>rate.productId)}
 // 运费表一键填写（逻辑在 lib/freightRateFill）。逐行勾选和拖动填充原样保留，这里只多给
 // 表头全选和「统一填写」条；勾选集合变了就照 toggleFreightProduct 的口径重算 cargoIds。
 const freightFill=reactive<FreightFillInput>({price:'',currency:'',unit:''}),freightFillUndo=ref<FreightFillUndo|null>(null)
@@ -651,16 +695,16 @@ function setFreightRates(rates:FreightRate[]){if(!editor.value)return;editor.val
 async function toggleAllFreightProducts(selected:boolean){
  if(!editor.value||!item.value)return
  const products=item.value.body.products
- if(selected){setFreightRates(selectAllFreightRates(products,editor.value.body.freightRates,editor.value.body.currency||'USD').rates);return}
+ if(selected){setFreightRates(selectAllFreightRates(products,editor.value.body.freightRates,freightCurrency.value).rates);return}
  const priced=pricedFreightRates(products,editor.value.body.freightRates)
  if(priced.length){try{await ElMessageBox.confirm(t('inquiryWorkspace.quotes.unselectAllConfirm',{count:priced.length}),t('inquiryWorkspace.messages.notice'),{type:'warning'})}catch{return}}
  if(editor.value)setFreightRates(unselectAllFreightRates(products,editor.value.body.freightRates))
 }
 function fillFreightColumns(selectAll:boolean){
  if(!editor.value||!item.value)return
- const parsed=freightFillPatch(freightFill)
+ const parsed=freightFillPatch(freightOverrides.value?freightFill:{price:freightFill.price,currency:'',unit:''})
  if('error' in parsed){ElMessage.warning({empty:t('inquiryWorkspace.quotes.fillEmpty'),price:t('inquiryWorkspace.quotes.fillInvalidPrice'),currency:t('inquiryWorkspace.quotes.fillInvalidCurrency')}[parsed.error]);return}
- const result=fillFreightTable(item.value.body.products,editor.value.body.freightRates,parsed.patch,{selectAll,currency:editor.value.body.currency||'USD'})
+ const result=fillFreightTable(item.value.body.products,editor.value.body.freightRates,parsed.patch,{selectAll,currency:freightCurrency.value})
  setFreightRates(result.rates);freightFillUndo.value=result.undo
  ElMessage.success(t('inquiryWorkspace.quotes.fillApplied',{count:result.count}))
 }
@@ -1040,4 +1084,31 @@ watch(view,()=>void initial())
 .logistics-detail .overview-grid .business-card {box-shadow:none;border:0;border-radius:0}
 .logistics-detail .procurement-detail-tabs :deep(.el-tabs__content) {overflow:visible}
 @media(max-width:640px){.logistics-detail .factory-quote-editor .inquiry-fields {grid-template-columns:minmax(0,1fr)}}
+.rate-range{display:block}
+.logistics-detail .logistics-section-title--cargo{margin:8px 12px;gap:6px}
+.logistics-detail .logistics-section-title--cargo{align-items:center}
+.logistics-detail .freight-bulk-fill{flex:0 1 auto;margin-left:auto;padding:0;border:0;background:transparent;justify-content:flex-start}
+.logistics-detail .freight-bulk-fill__label{margin:0}
+.logistics-detail .freight-bulk-fill__price{width:90px}
+.logistics-detail .factory-quote-editor .el-form--label-left :deep(.el-form-item__label){align-items:center;line-height:1.25}
+.logistics-detail .sales-remark--quotes{display:flex;align-items:baseline;gap:8px}
+.logistics-detail .sales-remark--quotes>strong{flex-shrink:0}
+.freight-currency-field :deep(.el-select){flex:1 1 95px}
+.freight-inline-rates{display:flex;flex-wrap:wrap;gap:4px 8px;margin-left:8px}
+.freight-inline-rates .el-input{width:110px}
+.logistics-detail .freight-rate-table :deep(tbody .el-table__cell){vertical-align:top}
+.freight-extra{border-bottom:1px solid var(--line);padding:4px 0}
+.logistics-detail .factory-quote-editor .freight-extra-fields{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 16px}
+.freight-extra-fields .freight-attachment,.freight-extra-fields .freight-payment{grid-column:span 2}
+.freight-extra-fields .freight-remark{grid-column:span 4}
+.freight-attachment :deep(.el-form-item__content){gap:4px 8px}
+.freight-attachment :deep(.el-tag){max-width:100%}
+.freight-attachment :deep(.el-tag__content){white-space:normal;overflow-wrap:anywhere}
+.sales-currency,.logistics-section-title--cargo h4 small{font-size:12px;font-weight:400;color:#536d7d}
+.sales-currency{margin-left:8px;white-space:nowrap}
+.logistics-detail .freight-bulk-fill__price{width:110px}
+@media(max-width:560px){.freight-extra-fields .freight-payment{grid-column:1/-1}}
+.logistics-detail .freight-rate-table :deep(.el-table__cell){padding:5px 0}
+@media(max-width:850px){.logistics-detail .factory-quote-editor .freight-extra-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.freight-extra-fields .freight-remark{grid-column:1/-1}}
+@media(max-width:560px){.logistics-detail .factory-quote-editor .freight-extra-fields{grid-template-columns:minmax(0,1fr)}.freight-extra-fields .freight-attachment{grid-column:1/-1}}
 </style>
