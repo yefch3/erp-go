@@ -20,22 +20,24 @@
   </section>
 </template>
 <script setup lang="ts">
-import {computed,onMounted,onUnmounted,ref} from 'vue'
+import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {get,post,quietErrors} from '../api'
+import {get,post} from '../api'
+import {receivesTodo,type TodoCategory,type TodoReception} from '../lib/todoReception'
 import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import type {Result} from '../lib/inquiryWorkspace'
 const emit=defineEmits<{count:[value:number]}>()
-const props=withDefaults(defineProps<{mode?:'pending'|'handled'}>(),{mode:'pending'})
+const props=withDefaults(defineProps<{mode?:'pending'|'handled'; reception?:TodoReception}>(),{mode:'pending'})
 const mode=computed(()=>props.mode)
 type InquiryTodoRow={id:string;number:string;customer:string;taskKey:string;path:string;completedAt:string}
-type InquiryTodoSource=[view:string,permission:string,path:string,taskKey:string,state:string,automatic?:boolean]
+type InquiryTodoSource=[view:string,permission:string,path:string,taskKey:string,state:string,category?:TodoCategory]
 const auth=useAuthStore(),{t,locale}=useI18n(),rows=ref<InquiryTodoRow[]>([]),error=ref(''),keyword=ref(''),taskFilter=ref('')
 const taskOptions=computed(()=>[...new Set(rows.value.map(row=>row.taskKey))].map(key=>({key,label:t(key)})))
 const displayedRows=computed(()=>{const needle=keyword.value.trim().toLowerCase();return rows.value.filter(row=>(!taskFilter.value||row.taskKey===taskFilter.value)&&(!needle||`${row.number} ${row.customer} ${t(row.taskKey)}`.toLowerCase().includes(needle)))})
 function displayTime(value:string){if(!value)return '—';const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString(locale.value,{hour12:false})}
 let refreshing=false
+let stopped=false
 // 返回是否拉成功；失败的那次 liveRefresh 记着，下次心跳再补。
 async function refresh():Promise<boolean>{
  // 上一次还没回来：这一次不算拉过——那一次可能是变化之前发出去的。
@@ -43,36 +45,35 @@ async function refresh():Promise<boolean>{
  const out:InquiryTodoRow[]=[]
  try{
  const pending:InquiryTodoSource[]=[
-  ['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementWaiting','WAITING',true],
-  ['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsWaiting','WAITING',true],
+  ['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementWaiting','WAITING','FACTORY_INQUIRY'],
+  ['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsWaiting','WAITING','LOGISTICS_INQUIRY'],
   ['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesUnsubmitted','UNSUBMITTED'],
   ['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesWithdrawn','WITHDRAWN'],
-  ['QUOTATIONS','sales:inquiry:read','/sales/quotations','todos.inquiryTasks.quotationPending','',true],
+  ['QUOTATIONS','sales:inquiry:read','/sales/quotations','todos.inquiryTasks.quotationPending','','SALES_INQUIRY'],
  ]
- const canReceiveAutomatic=mode.value==='pending'&&pending.some(([,permission,,,,automatic])=>automatic&&auth.can(permission))
- const audience=canReceiveAutomatic
-  ? await get<{includeAutomaticQuotes:boolean}>('/me/inquiry-todo-audience',undefined,quietErrors).catch(()=>null)
-  : {includeAutomaticQuotes:false}
- const offerStates=auth.can('export:quotation:read')&&(mode.value==='handled'||audience?.includeAutomaticQuotes&&auth.can('sales:inquiry:read'))
+ const reception=props.reception
+ const offerStates=auth.can('export:quotation:read')&&(mode.value==='handled'||receivesTodo(reception,'SALES_INQUIRY')&&auth.can('sales:inquiry:read'))
   ? (await post<{summaries:Record<string,{status:string;confirmedAt:string}>}>('/customer-offer',{action:'summaries'})).summaries
   : {}
  const handled:InquiryTodoSource[]=[['QUOTATIONS','export:quotation:read','/sales/quotations','todos.inquiryTasks.quotationConfirmed',''],['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','todos.inquiryTasks.procurementQuoted','QUOTED'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','todos.inquiryTasks.logisticsQuoted','QUOTED'],['SALES','sales:inquiry:read','/sales/inquiries','todos.inquiryTasks.salesSubmitted','INQUIRING']]
- for(const [view,permission,path,taskKey,state,automatic] of (mode.value==='handled'?handled:pending)){
- if(!auth.can(permission)||(automatic&&!audience?.includeAutomaticQuotes))continue
+ for(const [view,permission,path,taskKey,state,category] of (mode.value==='handled'?handled:pending)){
+ if(!auth.can(permission)||(category&&!receivesTodo(reception,category)))continue
  let page=1,total=0;do{const r=await post<Result>('/inquiry-workspace',{action:'list',view,state,page,size:100});total=r.total;for(const i of r.items){if((view==='SALES'||view==='QUOTATIONS')&&!auth.owns(i.ownerId))continue;if(view==='QUOTATIONS'&&(mode.value==='handled'?offerStates[i.id]?.status!=='CONFIRMED':offerStates[i.id]?.status==='CONFIRMED'))continue;out.push({id:i.id,number:i.number,customer:i.body.customer,taskKey,path,completedAt:view==='QUOTATIONS'?offerStates[i.id]?.confirmedAt||'':i.submittedAt})}page++}while((page-1)*100<total)
  }
  if(mode.value==='pending'&&auth.can('export:contract:write')){
   for(const status of ['DRAFT','PENDING_SIGN']){let contractPage=1,contractTotal=0;do{const r=await get<{contracts:{id:string;contractNo:string;customerName:string;salesEmployeeId:string}[];meta:{total:number}}>('/contracts',{status,page:contractPage,page_size:100});contractTotal=Number(r.meta?.total||0);for(const c of r.contracts||[]){if(auth.owns(c.salesEmployeeId))out.push({id:c.id,number:c.contractNo,customer:c.customerName,taskKey:status==='DRAFT'?'todos.inquiryTasks.contractDraft':'todos.inquiryTasks.contractSigning',path:'/contracts',completedAt:''})}contractPage++}while((contractPage-1)*100<contractTotal)}
  }
- rows.value=out;emit('count',out.length);error.value=audience?'':t('todos.inquiryUnavailable')
- return !!audience
+ if(stopped||reception!==props.reception)return false
+ rows.value=out;emit('count',out.length);error.value=''
+ return true
  }catch{error.value=t('todos.inquiryUnavailable');return false}finally{refreshing=false}
 }
 // 询盘、采购需求、审批和单据有变化时服务端会推送，听到才重拉；不再每 5 秒
 // 把五种询盘列表、报价状态和合同全拉一遍（见 lib/liveRefresh）。
 let liveRefresh:LiveRefresh|undefined
 onMounted(()=>{liveRefresh=useLiveRefresh(['inquiry.changed','requirement.changed','todo.changed','doc.changed'],{refresh});void refresh().then(ok=>{if(!ok)liveRefresh?.owe()})})
-onUnmounted(()=>liveRefresh?.stop())
+watch(()=>props.reception,()=>{rows.value=[];emit('count',0);void refresh().then(ok=>{if(!ok)liveRefresh?.owe()})})
+onUnmounted(()=>{stopped=true;liveRefresh?.stop()})
 </script>
 <style scoped>
 .inquiry-todos { margin-bottom: 26px; }

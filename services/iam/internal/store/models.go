@@ -77,6 +77,11 @@ type EmployeeRole struct {
 	RoleID     int64
 }
 
+type EmployeeTodoReception struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
 type PasswordReset struct {
 	ID          int64
 	TenantID    int64
@@ -126,6 +131,13 @@ type RolePermission struct {
 	TenantID     int64
 	RoleID       int64
 	PermissionID int64
+}
+
+type RoleTodoReception struct {
+	TenantID      int64
+	RoleID        int64
+	ApprovalsOnly bool
+	Categories    []string
 }
 
 type Tenant struct {

@@ -1727,6 +1727,8 @@ const (
 	AccessService_VisibleEmployees_FullMethodName        = "/erp.iam.v1.AccessService/VisibleEmployees"
 	AccessService_ListDataScopes_FullMethodName          = "/erp.iam.v1.AccessService/ListDataScopes"
 	AccessService_SetDataScope_FullMethodName            = "/erp.iam.v1.AccessService/SetDataScope"
+	AccessService_GetTodoReception_FullMethodName        = "/erp.iam.v1.AccessService/GetTodoReception"
+	AccessService_SetTodoReception_FullMethodName        = "/erp.iam.v1.AccessService/SetTodoReception"
 )
 
 // AccessServiceClient is the client API for AccessService service.
@@ -1768,6 +1770,8 @@ type AccessServiceClient interface {
 	ListDataScopes(ctx context.Context, in *ListDataScopesRequest, opts ...grpc.CallOption) (*ListDataScopesResponse, error)
 	// SetDataScope changes one role's scope for one module.
 	SetDataScope(ctx context.Context, in *SetDataScopeRequest, opts ...grpc.CallOption) (*SetDataScopeResponse, error)
+	GetTodoReception(ctx context.Context, in *GetTodoReceptionRequest, opts ...grpc.CallOption) (*GetTodoReceptionResponse, error)
+	SetTodoReception(ctx context.Context, in *SetTodoReceptionRequest, opts ...grpc.CallOption) (*SetTodoReceptionResponse, error)
 }
 
 type accessServiceClient struct {
@@ -1918,6 +1922,26 @@ func (c *accessServiceClient) SetDataScope(ctx context.Context, in *SetDataScope
 	return out, nil
 }
 
+func (c *accessServiceClient) GetTodoReception(ctx context.Context, in *GetTodoReceptionRequest, opts ...grpc.CallOption) (*GetTodoReceptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTodoReceptionResponse)
+	err := c.cc.Invoke(ctx, AccessService_GetTodoReception_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accessServiceClient) SetTodoReception(ctx context.Context, in *SetTodoReceptionRequest, opts ...grpc.CallOption) (*SetTodoReceptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetTodoReceptionResponse)
+	err := c.cc.Invoke(ctx, AccessService_SetTodoReception_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccessServiceServer is the server API for AccessService service.
 // All implementations must embed UnimplementedAccessServiceServer
 // for forward compatibility.
@@ -1957,6 +1981,8 @@ type AccessServiceServer interface {
 	ListDataScopes(context.Context, *ListDataScopesRequest) (*ListDataScopesResponse, error)
 	// SetDataScope changes one role's scope for one module.
 	SetDataScope(context.Context, *SetDataScopeRequest) (*SetDataScopeResponse, error)
+	GetTodoReception(context.Context, *GetTodoReceptionRequest) (*GetTodoReceptionResponse, error)
+	SetTodoReception(context.Context, *SetTodoReceptionRequest) (*SetTodoReceptionResponse, error)
 	mustEmbedUnimplementedAccessServiceServer()
 }
 
@@ -2008,6 +2034,12 @@ func (UnimplementedAccessServiceServer) ListDataScopes(context.Context, *ListDat
 }
 func (UnimplementedAccessServiceServer) SetDataScope(context.Context, *SetDataScopeRequest) (*SetDataScopeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetDataScope not implemented")
+}
+func (UnimplementedAccessServiceServer) GetTodoReception(context.Context, *GetTodoReceptionRequest) (*GetTodoReceptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTodoReception not implemented")
+}
+func (UnimplementedAccessServiceServer) SetTodoReception(context.Context, *SetTodoReceptionRequest) (*SetTodoReceptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetTodoReception not implemented")
 }
 func (UnimplementedAccessServiceServer) mustEmbedUnimplementedAccessServiceServer() {}
 func (UnimplementedAccessServiceServer) testEmbeddedByValue()                       {}
@@ -2282,6 +2314,42 @@ func _AccessService_SetDataScope_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccessService_GetTodoReception_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTodoReceptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).GetTodoReception(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_GetTodoReception_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).GetTodoReception(ctx, req.(*GetTodoReceptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccessService_SetTodoReception_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetTodoReceptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).SetTodoReception(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_SetTodoReception_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).SetTodoReception(ctx, req.(*SetTodoReceptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccessService_ServiceDesc is the grpc.ServiceDesc for AccessService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2344,6 +2412,14 @@ var AccessService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetDataScope",
 			Handler:    _AccessService_SetDataScope_Handler,
+		},
+		{
+			MethodName: "GetTodoReception",
+			Handler:    _AccessService_GetTodoReception_Handler,
+		},
+		{
+			MethodName: "SetTodoReception",
+			Handler:    _AccessService_SetTodoReception_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

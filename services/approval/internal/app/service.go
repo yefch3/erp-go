@@ -70,8 +70,14 @@ func New(pool *pgxpool.Pool, dir Directory, live Live, purchaseOrderFallbackRole
 // Always called after the transaction commits: a hint about a change that got
 // rolled back would send the browser to read something that never happened.
 func (s *Service) nudge(ctx context.Context, tenantID int64, employeeIDs []int64, eventType, subject string) {
-	if s.live == nil || len(employeeIDs) == 0 {
+	if s.live == nil {
 		return
+	}
+	if eventType == livefeed.TodoChanged && s.dir != nil {
+		admins, _, err := s.dir.RoleMembersByCode(ctx, superAdminRoleCode)
+		if err == nil {
+			employeeIDs = append(employeeIDs, admins...)
+		}
 	}
 	s.live.ToEmployees(ctx, tenantID, employeeIDs, livefeed.Event{
 		Type: eventType, Subject: subject,
