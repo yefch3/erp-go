@@ -163,6 +163,11 @@ func (a *Approvals) Submit(ctx context.Context, in app.ApprovalSubmission) (int6
 	return 0, err
 }
 
+func (a *Approvals) Withdraw(ctx context.Context, instanceID int64, reason string) error {
+	_, err := a.client.Withdraw(ctx, &apv1.WithdrawRequest{Id: instanceID, Reason: reason})
+	return err
+}
+
 func (a *Approvals) Involved(ctx context.Context, employeeID int64, bizType string) ([]int64, error) {
 	resp, err := a.client.MyInvolvedDocuments(ctx, &apv1.MyInvolvedDocumentsRequest{EmployeeId: employeeID, BizType: bizType})
 	if err != nil {

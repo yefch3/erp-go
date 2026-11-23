@@ -9,6 +9,7 @@ export interface ActionableApproval {
 interface ActionableTaskResponse {
   task?: { id?: string; assigneeId?: string }
   override?: boolean
+  withdrawablePurchaseOrderInstanceId?: string
 }
 
 // The backend is the single source of truth for both the assigned approver
@@ -19,6 +20,20 @@ export async function getActionableApproval(bizType: string, bizId: string | num
     biz_type: bizType,
     biz_id: bizId,
   })
+  return approvalFromResponse(data)
+}
+
+export async function getPurchaseOrderApprovalActions(orderId: string, includeWithdrawal: boolean) {
+  const data = await get<ActionableTaskResponse>('/approvals/actionable-task', {
+    biz_type: 'PURCHASE_ORDER',
+    biz_id: orderId,
+    include_withdrawal: includeWithdrawal ? '1' : undefined,
+  })
+  const instanceId = String(data.withdrawablePurchaseOrderInstanceId ?? '')
+  return { approval: approvalFromResponse(data), withdrawalInstanceId: instanceId === '0' ? '' : instanceId }
+}
+
+function approvalFromResponse(data: ActionableTaskResponse): ActionableApproval | null {
   const taskId = String(data.task?.id ?? '')
   if (!taskId) return null
   return {

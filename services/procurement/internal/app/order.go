@@ -696,40 +696,91 @@ func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operat
 	if err := s.checkContractExecution(ctx, tenantID, id); err != nil {
 		return "", 0, err
 	}
-	head, err := s.GetOrder(ctx, tenantID, id)
-	if err != nil {
-		return "", 0, err
-	}
-	if head.Status != poDraft && head.Status != "REJECTED" {
-		return "", 0, apierr.Conflict("PO_NOT_SUBMITTABLE", "只有草稿或已驳回的采购单可以提交审批").
-			WithMeta("status", head.Status)
-	}
-	items, err := s.q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{
-		TenantID: tenantID, PoID: id,
+	var instanceID int64
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		locked, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
+			TenantID: tenantID, ID: id,
+		})
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if locked.Status != poDraft && locked.Status != "REJECTED" {
+			return apierr.Conflict("PO_NOT_SUBMITTABLE", "只有草稿或已驳回的采购单可以提交审批").
+				WithMeta("status", locked.Status)
+		}
+		head, err := q.GetPurchaseOrder(ctx, store.GetPurchaseOrderParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		items, err := q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{TenantID: tenantID, PoID: id})
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			return apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法提交")
+		}
+		instanceID, err = s.approvals.Submit(ctx, ApprovalSubmission{
+			BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
+			Summary: orderSummary(head, items), SubmitterID: op.ID, SubmitterName: op.Name,
+			Amount: head.TotalAmount,
+		})
+		if err != nil {
+			return err
+		}
+		return q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
+			TenantID: tenantID, ID: id, InstanceID: instanceID,
+		})
 	})
 	if err != nil {
-		return "", 0, err
-	}
-	if len(items) == 0 {
-		return "", 0, apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法提交")
-	}
-
-	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{
-		BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
-		Summary:     orderSummary(head, items),
-		SubmitterID: op.ID, SubmitterName: op.Name,
-		Amount: head.TotalAmount,
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	if err := s.q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
-		TenantID: tenantID, ID: id, InstanceID: instanceID,
-	}); err != nil {
 		return "", 0, err
 	}
 	s.nudge(ctx, tenantID)
 	return poPending, instanceID, nil
+}
+
+type purchaseOrderApprovalWithdrawer interface {
+	Withdraw(context.Context, int64, string) error
+}
+
+func (s *Service) WithdrawOrderApproval(ctx context.Context, tenantID, id, instanceID int64, reason string) error {
+	if instanceID <= 0 {
+		return apierr.Invalid("PO_WITHDRAW_INPUT", "请选择当前审批")
+	}
+	approvals, ok := s.approvals.(purchaseOrderApprovalWithdrawer)
+	if !ok {
+		return apierr.Invalid("PO_WITHDRAW_UNAVAILABLE", "审批撤回服务不可用")
+	}
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		head, err := s.q.WithTx(tx).GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
+			TenantID: tenantID, ID: id,
+		})
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if head.Status != poPending || head.ApprovalInstanceID != instanceID {
+			return apierr.Conflict("PO_WITHDRAW_CHANGED", "采购单审批状态已变化，请刷新后重试")
+		}
+		// Approval verifies the authenticated caller and arbitrates against an
+		// approval decision on this exact instance before we reopen the draft.
+		if err := approvals.Withdraw(ctx, instanceID, reason); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE purchase_orders
+			SET status='DRAFT', approval_instance_id=NULL, reject_reason='', updated_at=now()
+			WHERE tenant_id=$1 AND id=$2`, tenantID, id)
+		return err
+	})
+	if err == nil {
+		s.nudge(ctx, tenantID)
+	}
+	return err
 }
 
 // commitOrderRequirements 在采购单和全部采购需求均已锁定的事务中执行。

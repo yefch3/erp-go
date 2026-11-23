@@ -632,7 +632,7 @@ import PurchaseQualityPanel from '../components/PurchaseQualityPanel.vue'
 import {deliveryStatusKey} from '../lib/purchaseDelivery'
 import PurchaseFulfillmentProgress from '../components/PurchaseFulfillmentProgress.vue'
 import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
-import { getActionableApproval } from '../lib/approvalAction'
+import { getPurchaseOrderApprovalActions } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
 import HistoricalShippingContextDialog from '../components/HistoricalShippingContextDialog.vue'
@@ -823,6 +823,8 @@ const saving = ref(false)
 const downloadingId = ref(0)
 const approvalTasks = ref<Record<string, string>>({})
 const approvalOverrides = ref<Record<string, boolean>>({})
+const withdrawalInstances = ref<Record<string, string>>({})
+const withdrawing = ref(false)
 
 const createOpen = ref(false)
 const approvalEntry = ref(false)
@@ -1059,6 +1061,7 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
   add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
+  add('withdrawApproval', t('orders.withdrawApproval'), canWithdrawApproval(row))
   if(qualityMenuTasks[row.id]===true)add('quality',t('quality.viewProgress'),true)
   else if(qualityMenuTasks[row.id]===false)add('quality',t('quality.apply'),canRequestQuality(row))
 	if (Number(row.sourceBusinessId)>0 && row.status==='ORDERED') {
@@ -1082,6 +1085,10 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
   ]
 }
 
+function canWithdrawApproval(row: Order) {
+  return canSubmit && row.status === 'PENDING_APPROVAL' && Boolean(withdrawalInstances.value[row.id])
+}
+
 function rowMenuActions(row: Order): { key: string; label: string; divided?: boolean }[] {
  if(row.historical && row.status==='DRAFT')return [{key:'detail',label:t('common.detail')},...(canWrite?[{key:'history',label:'继续补录'},{key:'buyer',label:t('orderBuyer.action')}]:[])]
 
@@ -1090,6 +1097,7 @@ function rowMenuActions(row: Order): { key: string; label: string; divided?: boo
       { key: 'detail', label: t('common.detail') },
       { key: 'approveDecision', label: t('todos.approve'), divided: true },
       { key: 'rejectDecision', label: t('todos.reject') },
+      ...(canWithdrawApproval(row) ? [{ key: 'withdrawApproval', label: t('orders.withdrawApproval'), divided: true }] : []),
     ]
   }
   const actions = allActions(row)
@@ -1142,6 +1150,7 @@ function runOrderAction(row: Order, key: string) {
     case 'rejectDecision': void actOnOrderApproval(row, 'REJECT'); break
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
+    case 'withdrawApproval': void withdrawApproval(row); break
     case 'receive': if(row.fulfillmentMode==='WAREHOUSE')void router.push('/warehouses/arrivals');else void openExecution(row); break
     case 'execution': openExecution(row); break
     case 'downloadXlsx': void downloadOrder(row, 'xlsx'); break
@@ -1182,12 +1191,14 @@ async function load() {
     total.value = Number(d.meta?.total ?? 0)
     approvalTasks.value = {}
     approvalOverrides.value = {}
+    withdrawalInstances.value = {}
     if (status.value === 'PENDING_APPROVAL') {
-      const resolved = await Promise.all(rows.value.map(async row => [String(row.id), await getActionableApproval('PURCHASE_ORDER', row.id)] as const))
-      for (const [orderID, action] of resolved) {
-        if (!action) continue
-        approvalTasks.value[orderID] = action.taskId
-        approvalOverrides.value[orderID] = action.override
+      const resolved = await Promise.all(rows.value.map(async row => [row.id, await getPurchaseOrderApprovalActions(row.id, canSubmit)] as const))
+      for (const [orderID, { approval, withdrawalInstanceId }] of resolved) {
+        if (withdrawalInstanceId) withdrawalInstances.value[orderID] = withdrawalInstanceId
+        if (!approval) continue
+        approvalTasks.value[orderID] = approval.taskId
+        approvalOverrides.value[orderID] = approval.override
       }
     }
   } finally {
@@ -1678,6 +1689,37 @@ async function submit(row: Order) {
   ElMessage.success(t('orders.submitted'))
   load()
 }
+async function withdrawApproval(row: Order) {
+  const instanceId = withdrawalInstances.value[row.id]
+  if (withdrawing.value || !canWithdrawApproval(row) || !instanceId) return
+  withdrawing.value = true
+  try {
+    try {
+      await ElMessageBox.confirm(
+        t('orders.withdrawApprovalHint', { no: row.poNo }), t('orders.withdrawApproval'), {
+          confirmButtonText: t('orders.withdrawApproval'),
+          cancelButtonText: common('cancel'),
+          type: 'warning',
+        },
+      )
+    } catch {
+      return
+    }
+    try {
+      await post(`/purchase-orders/${row.id}/withdraw-approval`, { approval_instance_id: instanceId })
+    } catch {
+      // The API toast explains the failure. Refresh to drop stale actions.
+      await load()
+      return
+    }
+    ElMessage.success(t('orders.withdrawApprovalDone'))
+    status.value = 'DRAFT'
+    await reload()
+  } finally {
+    withdrawing.value = false
+  }
+}
+
 function openCancel(row: Order) {
   cancelling.value = row
   cancelReason.value = ''

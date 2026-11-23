@@ -689,6 +689,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
+		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/withdraw-approval", s.withdrawOrderApproval)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract/presign", s.presignOrderContract)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/contract", s.saveOrderContract)
 		r.With(s.perm("procurement:recon:write")).Post("/api/purchase-orders/{id}/contract/verify", s.verifyOrderContract)

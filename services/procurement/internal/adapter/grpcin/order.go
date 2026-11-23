@@ -443,6 +443,16 @@ func (h *OrderHandler) SubmitOrder(ctx context.Context, req *prv1.SubmitOrderReq
 	return &prv1.SubmitOrderResponse{Status: status, ApprovalInstanceId: instanceID}, nil
 }
 
+func (h *OrderHandler) WithdrawOrderApproval(ctx context.Context, req *prv1.WithdrawOrderApprovalRequest) (*prv1.WithdrawOrderApprovalResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	if err := h.svc.WithdrawOrderApproval(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetApprovalInstanceId(), req.GetReason()); err != nil {
+		return nil, err
+	}
+	return &prv1.WithdrawOrderApprovalResponse{Status: "DRAFT"}, nil
+}
+
 func (h *OrderHandler) CancelOrder(ctx context.Context, req *prv1.CancelOrderRequest) (*prv1.CancelOrderResponse, error) {
 	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
 		return nil, err
