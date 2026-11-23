@@ -1769,6 +1769,8 @@ basicsSaved: "Basic information saved",
     },
   },
   todos: {
+    noMatchingTasks: 'No matching tasks',
+    clearFilters: 'Clear filters',
     title: 'My todos',
     eyebrow: 'PERSONAL WORKSPACE',
     greeting: 'Hello, {name}',
