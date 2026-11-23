@@ -92,8 +92,8 @@ func TestNewTenantGetsDefaultApprovalFlows(t *testing.T) {
 		t.Fatalf("第一个节点该落到直属上级头上，实际 %+v", tasks)
 	}
 
-	// ---- 采购单大额档：金额要真的选到那一档 ----
-	_, poTasks, err := svc.Submit(ctx, tenantID, SubmitInput{
+	// A large purchase still needs one decision in the default flow.
+	po, poTasks, err := svc.Submit(ctx, tenantID, SubmitInput{
 		BizType: "PURCHASE_ORDER", BizID: 2, BizNo: "PO-0001",
 		SubmitterID: 500, SubmitterName: "小王", Amount: "60000",
 	})
@@ -102,6 +102,10 @@ func TestNewTenantGetsDefaultApprovalFlows(t *testing.T) {
 	}
 	if len(poTasks) != 1 || poTasks[0].AssigneeID != 900 {
 		t.Fatalf("采购单第一个节点该落到直属上级头上，实际 %+v", poTasks)
+	}
+	approved, next, err := svc.Act(ctx, tenantID, 900, poTasks[0].ID, ActionApprove, "")
+	if err != nil || approved.ID != po.ID || approved.Status != statusApproved || len(next) != 0 {
+		t.Fatalf("large purchase should finish after one decision: instance=%+v next=%+v err=%v", approved, next, err)
 	}
 	defs, err := svc.ListDefinitions(ctx, tenantID, "")
 	if err != nil {
@@ -113,8 +117,8 @@ func TestNewTenantGetsDefaultApprovalFlows(t *testing.T) {
 			bands = append(bands, d.Name+"@"+d.MinAmount)
 		}
 	}
-	if len(bands) != 2 {
-		t.Fatalf("采购单该按金额分两档，实际 %v", bands)
+	if len(bands) != 1 {
+		t.Fatalf("预置采购单只需要一个一级审批档位，实际 %v", bands)
 	}
 
 	// ---- 播种只发生一次：再提交不会长出第二套 ----
@@ -298,7 +302,7 @@ func TestPurchaseFallbackUsesSuperAdminWhenProcurementManagerIsEmpty(t *testing.
 // 其他人的历史采购审批；普通员工仍然不能借任务编号越权。
 func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 	dir := stubDirectory{byCode: map[string][]int64{
-		"PROCUREMENT_MANAGER": {777},
+		"PROCUREMENT_MANAGER": {777, 778},
 		"SUPER_ADMIN":         {500},
 	}}
 	svc, cleanup := newSeedTestService(t, dir)
@@ -311,9 +315,26 @@ func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 		BizType: "PURCHASE_ORDER", BizID: 1, BizNo: "PO-OVERRIDE-1",
 		SubmitterID: 600, SubmitterName: "采购员", Amount: "1000",
 	})
-	if err != nil || len(tasks) != 1 || tasks[0].AssigneeID != 777 {
+	if err != nil || len(tasks) != 2 || tasks[0].AssigneeID != 777 {
 		t.Fatalf("采购单应先分配给采购经理: tasks=%+v err=%v", tasks, err)
 	}
+	assertInbox := func(actor int64, want int64) {
+		t.Helper()
+		rows, total, err := svc.MyTasks(ctx, tenantID, actor, "PURCHASE_ORDER", "", "PO-OVERRIDE-1", 1, 20)
+		if err != nil || total != want || int64(len(rows)) != want {
+			t.Fatalf("actor %d: expected %d actionable approvals, got %d (%v)", actor, want, total, err)
+		}
+		if want == 1 {
+			task, _, _, err := svc.ActionableTask(ctx, tenantID, actor, "PURCHASE_ORDER", 1)
+			if err != nil || task.ID != rows[0].ID {
+				t.Fatalf("actor %d: inbox task does not match actionable task", actor)
+			}
+		}
+	}
+	for _, actor := range []int64{777, 778, 500} {
+		assertInbox(actor, 1)
+	}
+	assertInbox(601, 0)
 	assigned, _, override, err := svc.ActionableTask(ctx, tenantID, 777, "PURCHASE_ORDER", 1)
 	if err != nil || assigned.ID != tasks[0].ID || override {
 		t.Fatalf("原审批人应直接取得任务: task=%+v override=%v err=%v", assigned, override, err)
@@ -335,6 +356,12 @@ func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
 	}
 	if approved.Status != statusApproved {
 		t.Fatalf("接管审批后采购单应通过，实际 %s", approved.Status)
+	}
+	for _, actor := range []int64{777, 778, 500} {
+		assertInbox(actor, 0)
+	}
+	if _, _, err := svc.Act(ctx, tenantID, 778, tasks[1].ID, ActionApprove, ""); err == nil {
+		t.Fatal("another leader approved the same order twice")
 	}
 }
 

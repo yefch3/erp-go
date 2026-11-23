@@ -323,9 +323,11 @@
 
     <el-dialog
       v-model="selectionReviewOpen" title="确认选厂并派发议价任务" width="min(980px, 94vw)"
+      @open="checkAssignmentRecipients"
       :close-on-click-modal="false" :close-on-press-escape="!dispatchingSelections" :show-close="!dispatchingSelections"
     >
       <p class="selection-review-hint">确认后，由各报价的原录入人负责议价和生成草稿。</p>
+      <el-alert v-if="recipientCheckFailed" :title="t('todoReception.recipientCheckFailed')" type="warning" :closable="false" />
       <el-table :data="pendingSelections" row-key="line.id" size="small" border max-height="440" class="execution-quote-grid">
         <el-table-column label="产品规格" min-width="190">
           <template #default="{row}">
@@ -334,7 +336,12 @@
           </template>
         </el-table-column>
         <el-table-column prop="quote.supplierName" label="工厂" min-width="105" />
-        <el-table-column prop="quote.createdByName" label="负责采购员" min-width="105" />
+        <el-table-column label="负责采购员" min-width="135">
+          <template #default="{ row }">
+            {{ row.quote.createdByName }}
+            <small v-if="approvalOnlyRecipients[row.quote.createdById]" class="selection-error">{{ t('todoReception.recipientApprovalsOnly') }}</small>
+          </template>
+        </el-table-column>
         <el-table-column label="单独要求（选填）" min-width="220">
           <template #default="{row}">
             <el-input
@@ -347,7 +354,7 @@
       </el-table>
       <template #footer>
         <el-button :disabled="dispatchingSelections" @click="selectionReviewOpen = false">返回勾选</el-button>
-        <el-button type="primary" :loading="dispatchingSelections" :disabled="!pendingSelections.length" @click="dispatchSelections">
+        <el-button type="primary" :loading="dispatchingSelections" :disabled="!pendingSelections.length || checkingRecipients" @click="dispatchSelections">
           确认派发 {{ pendingSelections.length }} 项
         </el-button>
       </template>
@@ -850,6 +857,32 @@ interface QuoteSelection {
 const quoteSelections = ref<Record<string, QuoteSelection>>({})
 const pendingSelections = computed(() => Object.values(quoteSelections.value))
 const selectionReviewOpen = ref(false)
+const approvalOnlyRecipients = ref<Record<string, boolean>>({})
+const recipientCheckFailed = ref(false)
+const checkingRecipients = ref(false)
+let recipientCheckRequest = 0
+
+async function checkAssignmentRecipients() {
+  const request = ++recipientCheckRequest
+  const ids = [...new Set(pendingSelections.value.map(row => row.quote.createdById).filter(id => /^[1-9]\d*$/.test(id)))]
+  approvalOnlyRecipients.value = {}
+  recipientCheckFailed.value = false
+  checkingRecipients.value = true
+  try {
+    const results: Record<string, boolean> = {}
+    for (let index = 0; index < ids.length; index += 100) {
+      const response = await post<{ approvalsOnly: Record<string, boolean> }>(
+        '/execution-assignments/todo-reception', { employeeIds: ids.slice(index, index + 100) }, quietErrors,
+      )
+      Object.assign(results, response.approvalsOnly)
+    }
+    if (request === recipientCheckRequest) approvalOnlyRecipients.value = results
+  } catch {
+    if (request === recipientCheckRequest) recipientCheckFailed.value = true
+  } finally {
+    if (request === recipientCheckRequest) checkingRecipients.value = false
+  }
+}
 const dispatchingSelections = ref(false)
 const assignmentBusy = ref(false)
 interface NegotiationEdit {

@@ -4,65 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	"google.golang.org/grpc"
 )
 
-type inquiryTodoRoleDirectory struct {
+type todoReceptionAccessStub struct {
 	iamv1.AccessServiceClient
-	roles   []*iamv1.Role
-	members map[int64][]*iamv1.RoleMember
+	lookedUp []int64
 }
 
-func (d inquiryTodoRoleDirectory) ListRoles(context.Context, *iamv1.ListRolesRequest, ...grpc.CallOption) (*iamv1.ListRolesResponse, error) {
-	return &iamv1.ListRolesResponse{Roles: d.roles}, nil
+func (s *todoReceptionAccessStub) GetTodoReception(_ context.Context, req *iamv1.GetTodoReceptionRequest, _ ...grpc.CallOption) (*iamv1.GetTodoReceptionResponse, error) {
+	s.lookedUp = append(s.lookedUp, req.GetEmployeeId())
+	return &iamv1.GetTodoReceptionResponse{Reception: &iamv1.TodoReception{
+		ApprovalsOnly: req.GetEmployeeId() == 15,
+	}}, nil
 }
 
-func (d inquiryTodoRoleDirectory) ListRoleMembers(_ context.Context, request *iamv1.ListRoleMembersRequest, _ ...grpc.CallOption) (*iamv1.ListRoleMembersResponse, error) {
-	return &iamv1.ListRoleMembersResponse{Members: d.members[request.GetRoleId()]}, nil
+func TestMyTodoReceptionUsesCurrentEmployee(t *testing.T) {
+	access := &todoReceptionAccessStub{}
+	server := &Server{Access: access}
+	request := httptest.NewRequest("GET", "/api/me/todo-reception?employeeId=11", nil)
+	rec := httptest.NewRecorder()
+	server.myTodoReception(rec, request.WithContext(as(4, 15)))
+	if rec.Code != 200 || len(access.lookedUp) != 1 || access.lookedUp[0] != 15 || !strings.Contains(rec.Body.String(), `"approvalsOnly":true`) {
+		t.Fatalf("expected logged-in employee setting: %d %s (lookups %v)", rec.Code, rec.Body.String(), access.lookedUp)
+	}
 }
 
-func TestInquiryTodoAudienceUsesCallerRoleMembership(t *testing.T) {
-	const buyer, buyerManager, sales, salesManager, boss, superAdmin, both int64 = 11, 12, 13, 14, 15, 16, 17
-	s := &Server{Access: inquiryTodoRoleDirectory{
-		roles: []*iamv1.Role{
-			{Id: 1, Code: "BUYER"}, {Id: 2, Code: "PROCUREMENT_MANAGER"},
-			{Id: 3, Code: "SALES"}, {Id: 4, Code: "SALES_MANAGER"},
-			{Id: 5, Code: "BOSS", Name: "总经理"}, {Id: 6, Code: "SUPER_ADMIN"},
-		},
-		members: map[int64][]*iamv1.RoleMember{
-			1: {{EmployeeId: buyer}}, 2: {{EmployeeId: buyerManager}, {EmployeeId: both}},
-			3: {{EmployeeId: sales}}, 4: {{EmployeeId: salesManager}},
-			5: {{EmployeeId: boss}, {EmployeeId: both}}, 6: {{EmployeeId: superAdmin}},
-		},
-	}}
-	for _, tc := range []struct {
-		name    string
-		id      int64
-		include bool
-	}{
-		{"buyer", buyer, true}, {"procurement manager", buyerManager, true},
-		{"sales", sales, true}, {"sales manager", salesManager, true},
-		{"boss", boss, false}, {"super admin", superAdmin, false}, {"boss and procurement manager", both, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			request := httptest.NewRequest("GET", "/api/me/inquiry-todo-audience?employeeId=11", nil)
-			s.myInquiryTodoAudience(rec, request.WithContext(as(4, tc.id)))
-			var response struct {
-				Data struct {
-					IncludeAutomaticQuotes *bool `json:"includeAutomaticQuotes"`
-				} `json:"data"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-				t.Fatal(err)
-			}
-			got := response.Data.IncludeAutomaticQuotes
-			if rec.Code != 200 || got == nil || *got != tc.include {
-				t.Fatalf("want include=%t for current caller, got status=%d body=%s", tc.include, rec.Code, rec.Body.String())
-			}
-		})
+func TestAssignedTodoReceptionPreviewOnlyFlagsApprovalsOnly(t *testing.T) {
+	access := &todoReceptionAccessStub{}
+	server := &Server{Access: access}
+	request := httptest.NewRequest("POST", "/api/execution-assignments/todo-reception", strings.NewReader(`{"employeeIds":["11","15","15"]}`))
+	rec := httptest.NewRecorder()
+	server.checkAssignmentTodoReception(rec, request.WithContext(as(4, 9)))
+	var response struct {
+		Data struct{ ApprovalsOnly map[string]bool }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != 200 || len(access.lookedUp) != 2 || len(response.Data.ApprovalsOnly) != 2 ||
+		!response.Data.ApprovalsOnly["15"] || response.Data.ApprovalsOnly["11"] {
+		t.Fatalf("unexpected assignment preview: %d %s (lookups %v)", rec.Code, rec.Body.String(), access.lookedUp)
 	}
 }

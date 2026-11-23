@@ -203,7 +203,7 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	}
 	// After the commit, never inside it: a hint about a change that rolled
 	// back would send browsers to read something that never happened.
-	s.nudge(ctx, tenantID, append(stale, assigneesOf(created)...), livefeed.TodoChanged, subjectOf(inst))
+	s.nudge(ctx, tenantID, append(append(stale, task.AssigneeID), assigneesOf(created)...), livefeed.TodoChanged, subjectOf(inst))
 	// The submitter is told on EVERY decision, not only the one that ends the
 	// flow. They are the person watching hardest, and until now a contract
 	// could move from the first approver to the second while their page still
@@ -213,7 +213,14 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 }
 
 func (s *Service) canSuperAdminOverride(ctx context.Context, bizType string, actorID int64) (bool, error) {
-	if strings.TrimSpace(bizType) == "" || actorID == 0 || s.dir == nil {
+	if strings.TrimSpace(bizType) == "" {
+		return false, nil
+	}
+	return s.isSuperAdmin(ctx, actorID)
+}
+
+func (s *Service) isSuperAdmin(ctx context.Context, actorID int64) (bool, error) {
+	if actorID == 0 || s.dir == nil {
 		return false, nil
 	}
 	members, found, err := s.dir.RoleMembersByCode(ctx, superAdminRoleCode)

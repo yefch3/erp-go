@@ -34,8 +34,16 @@ func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizTy
 			WithMeta("status", status)
 	}
 	page, size = normalizePage(page, size)
+	var includeOverride bool
+	if status == "" {
+		var err error
+		includeOverride, err = s.isSuperAdmin(ctx, assigneeID)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	rows, err := s.q.ListMyTasks(ctx, store.ListMyTasksParams{
-		TenantID: tenantID, AssigneeID: assigneeID, BizType: bizType,
+		TenantID: tenantID, AssigneeID: assigneeID, IncludeOverride: includeOverride, BizType: bizType,
 		Status: status, Keyword: keyword,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})

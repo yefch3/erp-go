@@ -48,6 +48,7 @@
                 {{ employee.remark || '—' }}
               </el-descriptions-item>
             </el-descriptions>
+            <TodoReceptionSettings target="employee" :target-id="employee.id" :editable="canWrite" />
           </el-tab-pane>
 
           <el-tab-pane :label="t('employees.organizationRelationship')" name="organization">
@@ -295,6 +296,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import MailboxCredentialsForm from '../components/MailboxCredentialsForm.vue'
+import TodoReceptionSettings from '../components/TodoReceptionSettings.vue'
 import type { VerifyResponse } from '../lib/mailUnlock'
 
 const { t } = useI18n()

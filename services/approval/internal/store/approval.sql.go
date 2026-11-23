@@ -881,33 +881,42 @@ SELECT
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = $1::bigint
-  AND t.assignee_id = $2::bigint
-  AND ($3::text = '' OR i.biz_type = $3::text)
-  AND ($4::text = ''
-       OR i.biz_no ILIKE '%' || $4::text || '%'
-       OR i.biz_summary::text ILIKE '%' || $4::text || '%'
-       OR i.submitter_name ILIKE '%' || $4::text || '%'
-       OR t.node_name ILIKE '%' || $4::text || '%')
+  AND (t.assignee_id = $2::bigint OR (
+       $3::boolean
+       AND i.status = 'RUNNING' AND t.node_seq = i.current_seq AND t.status = 'PENDING'
+       AND (i.biz_type <> 'TRAVEL_REIMBURSEMENT' OR i.submitter_id <> $2::bigint)
+       AND t.id = (SELECT candidate.id FROM approval_tasks candidate
+                   WHERE candidate.tenant_id = t.tenant_id AND candidate.instance_id = t.instance_id
+                     AND candidate.node_seq = t.node_seq AND candidate.status = 'PENDING'
+                   ORDER BY (candidate.assignee_id = $2::bigint) DESC, candidate.id LIMIT 1)
+  ))
+  AND ($4::text = '' OR i.biz_type = $4::text)
+  AND ($5::text = ''
+       OR i.biz_no ILIKE '%' || $5::text || '%'
+       OR i.biz_summary::text ILIKE '%' || $5::text || '%'
+       OR i.submitter_name ILIKE '%' || $5::text || '%'
+       OR t.node_name ILIKE '%' || $5::text || '%')
   AND CASE
-        WHEN $5::text = ''        THEN t.status = 'PENDING'
-        WHEN $5::text = 'HANDLED' THEN t.status <> 'PENDING'
-        ELSE t.status = $5::text
+        WHEN $6::text = ''        THEN t.status = 'PENDING'
+        WHEN $6::text = 'HANDLED' THEN t.status <> 'PENDING'
+        ELSE t.status = $6::text
       END
 ORDER BY
-  CASE WHEN $5::text = '' THEN t.created_at END ASC,
-  CASE WHEN $5::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
+  CASE WHEN $6::text = '' THEN t.created_at END ASC,
+  CASE WHEN $6::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
   t.id DESC
-LIMIT $7::int OFFSET $6::int
+LIMIT $8::int OFFSET $7::int
 `
 
 type ListMyTasksParams struct {
-	TenantID   int64
-	AssigneeID int64
-	BizType    string
-	Keyword    string
-	Status     string
-	RowOffset  int32
-	RowLimit   int32
+	TenantID        int64
+	AssigneeID      int64
+	IncludeOverride bool
+	BizType         string
+	Keyword         string
+	Status          string
+	RowOffset       int32
+	RowLimit        int32
 }
 
 type ListMyTasksRow struct {
@@ -940,6 +949,7 @@ func (q *Queries) ListMyTasks(ctx context.Context, arg ListMyTasksParams) ([]Lis
 	rows, err := q.db.Query(ctx, listMyTasks,
 		arg.TenantID,
 		arg.AssigneeID,
+		arg.IncludeOverride,
 		arg.BizType,
 		arg.Keyword,
 		arg.Status,

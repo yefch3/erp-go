@@ -150,6 +150,8 @@ service AccessService {
   rpc ListDataScopes(ListDataScopesRequest) returns (ListDataScopesResponse);
   // SetDataScope changes one role's scope for one module.
   rpc SetDataScope(SetDataScopeRequest) returns (SetDataScopeResponse);
+  rpc GetTodoReception(GetTodoReceptionRequest) returns (GetTodoReceptionResponse);
+  rpc SetTodoReception(SetTodoReceptionRequest) returns (SetTodoReceptionResponse);
 }
 
 // DataScope says how much of a module's documents a role may see.
@@ -873,3 +875,31 @@ message SetPlatformTenantStatusRequest {
   string status = 2;
 }
 message SetPlatformTenantStatusResponse { bool ok = 1; }
+
+message GetTodoReceptionRequest {
+  int64 role_id = 1;
+  int64 employee_id = 2;
+}
+
+message SetTodoReceptionRequest {
+  int64 role_id = 1;
+  int64 employee_id = 2;
+  bool approvals_only = 3;
+  repeated string categories = 4;
+}
+
+message GetTodoReceptionResponse {
+  TodoReception reception = 1;
+}
+
+message SetTodoReceptionResponse {
+  TodoReception reception = 1;
+}
+
+message TodoReception {
+  // Effective setting for an employee, or the role's configured setting.
+  bool approvals_only = 1;
+  repeated string categories = 2;
+  // Whether the employee has a personal approvals-only setting.
+  bool employee_override = 3;
+}

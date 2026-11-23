@@ -308,6 +308,10 @@ func (s *Server) Router() http.Handler {
 		// so it sits with the rest of employee editing.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/manager", s.setManager)
 		r.With(s.perm("iam:role:read")).Get("/api/roles", s.listRoles)
+		r.With(s.perm("iam:role:read")).Get("/api/roles/{id}/todo-reception", s.roleTodoReception)
+		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/todo-reception", s.saveRoleTodoReception)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/todo-reception", s.employeeTodoReception)
+		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}/todo-reception", s.saveEmployeeTodoReception)
 		r.With(s.perm("iam:role:read")).Get("/api/roles/all", s.listAllRoles)
 		r.With(s.perm("iam:role:write")).Post("/api/roles/{id}/status", s.setRoleStatus)
 		r.With(s.perm("iam:role:write")).Post("/api/roles", s.createRole)
@@ -327,7 +331,7 @@ func (s *Server) Router() http.Handler {
 		// Own identity and own password: being logged in is the only
 		// requirement, since neither can touch anybody else's account.
 		r.Get("/api/me/permissions", s.me)
-		r.Get("/api/me/inquiry-todo-audience", s.myInquiryTodoAudience)
+		r.Get("/api/me/todo-reception", s.myTodoReception)
 		// The live feed carries only "go and re-read X" hints, so being
 		// logged in is the whole requirement; every actual read still goes
 		// through its own permission-checked route.
@@ -585,6 +589,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:daily-price:delete")).Delete("/api/daily-prices/spreads/{id}", s.deleteDailySpread)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}/execution-quotes", s.listExecutionSupplierQuotes)
 		r.With(s.perm("procurement:requirement:read")).Post("/api/execution-assignments", s.manageExecutionAssignment)
+		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:execution-quote:select")).Post("/api/execution-assignments/todo-reception", s.checkAssignmentTodoReception)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/execution-suppliers/resolve", s.resolveExecutionSupplier)
 		r.With(s.perm("procurement:order:write")).Post("/api/requirements/{id}/execution-quotes", s.saveExecutionSupplierQuote)
 		r.With(s.perm("procurement:execution-quote:select")).Post("/api/requirements/{id}/execution-quotes/{quoteId}/select", s.selectExecutionSupplierQuote)

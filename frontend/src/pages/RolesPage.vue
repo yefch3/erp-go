@@ -140,6 +140,7 @@
             </details>
             <p v-if="hasMasterDataOwners" class="scope-note">{{ roleScopeHelp.ownerBased }}</p>
           </section>
+          <TodoReceptionSettings target="role" :target-id="selected.id" :editable="canWrite" />
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
         </div>
         <div v-else class="matrix empty">{{ t('roles.pickRole') }}</div>
@@ -196,6 +197,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import TodoReceptionSettings from '../components/TodoReceptionSettings.vue'
 import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'

@@ -30,19 +30,12 @@ var defaultFlows = map[string][]defaultFlow{
 			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
 		},
 	}},
-	// 采购单按金额分档：五百块的补货和五十万的承诺不该要同一套签字。
+	// 默认采购单由直属上级审批一次。公司仍可在审批流中维护自己的档位。
 	"PURCHASE_ORDER": {{
 		Name:      "采购单审批",
 		MinAmount: "0",
 		Nodes: []defaultNode{
 			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
-		},
-	}, {
-		Name:      "采购单审批（大额）",
-		MinAmount: "50000",
-		Nodes: []defaultNode{
-			{Seq: 1, Name: "直属上级审批", Type: "MANAGER", Ref: 1},
-			{Seq: 2, Name: "上级的上级审批", Type: "MANAGER", Ref: 2},
 		},
 	}},
 	"PURCHASE_ORDER_CHANGE": {{

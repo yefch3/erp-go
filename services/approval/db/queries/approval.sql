@@ -92,7 +92,15 @@ SELECT
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
-  AND t.assignee_id = sqlc.arg(assignee_id)::bigint
+  AND (t.assignee_id = sqlc.arg(assignee_id)::bigint OR (
+       sqlc.arg(include_override)::boolean
+       AND i.status = 'RUNNING' AND t.node_seq = i.current_seq AND t.status = 'PENDING'
+       AND (i.biz_type <> 'TRAVEL_REIMBURSEMENT' OR i.submitter_id <> sqlc.arg(assignee_id)::bigint)
+       AND t.id = (SELECT candidate.id FROM approval_tasks candidate
+                   WHERE candidate.tenant_id = t.tenant_id AND candidate.instance_id = t.instance_id
+                     AND candidate.node_seq = t.node_seq AND candidate.status = 'PENDING'
+                   ORDER BY (candidate.assignee_id = sqlc.arg(assignee_id)::bigint) DESC, candidate.id LIMIT 1)
+  ))
   AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text)
   AND (sqlc.arg(keyword)::text = ''
        OR i.biz_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
