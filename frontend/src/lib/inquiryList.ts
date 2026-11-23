@@ -50,6 +50,13 @@ export function specificationDisplay(product:Product):SpecificationDisplay {
   return description?{source:'description',value:description}:{source:'none',value:'—'}
 }
 
+export function freightSpecification(product:Product):string {
+  const dimensions=dimensionSummary(product)
+  if(dimensions)return dimensions
+  const size=product.product.match(/\b\d+(?:[.,]\d+)?\s*[×xX*]\s*\d+(?:[.,]\d+)?(?:\s*[×xX*]\s*\d+(?:[.,]\d+)?)?(?:\s*mm\b)?/i)
+  return product.specification?.trim() || size?.[0] || descriptionSpecification(product.product)
+}
+
 export function productSummary(product:Product|undefined):string {
   if(!product)return '—'
   return [product.product.trim(),materialSummary(product),dimensionSummary(product)||product.specification.trim()].filter(Boolean).join(' / ')||'—'

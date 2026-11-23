@@ -4,6 +4,22 @@ import {formatCfrUnitPrice} from './customerOffer'
 
 export const freightProductKey=(product:Pick<Product,'product'|'id'>)=>product.product.trim().toLocaleLowerCase()||product.id
 
+export function freightPriceRanges(quote:Quote,products:Product[]):string[] {
+ const groups=new Map<string,{currency:string;unit:string;min:number;max:number}>()
+ for(const rate of quote.body.freightRates || []){
+  const price=Number(rate.price)
+  if(!String(rate.price??'').trim() || !Number.isFinite(price))continue
+  const currency=(rate.currency || quote.body.currency || '—').trim().toUpperCase()
+  const unit=(rate.unit || products.find(p=>p.id===rate.productId)?.unit || '—').trim()
+  const key=JSON.stringify([currency,unit.toLowerCase()])
+  const group=groups.get(key)
+  if(group){group.min=Math.min(group.min,price);group.max=Math.max(group.max,price)}
+  else groups.set(key,{currency,unit,min:price,max:price})
+ }
+ return groups.size ? [...groups.values()].map(({currency,unit,min,max})=>
+  currency+' '+(min===max?min:min+'–'+max)+' / '+unit) : ['—']
+}
+
 export function productFreightPrices(products:Product[],quote?:Quote){
  if(!quote)return []
  return products.flatMap(product=>{

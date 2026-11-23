@@ -22,7 +22,7 @@
       <thead>
         <tr>
           <th v-if="cargoIds" scope="col">{{t('inquiryProducts.select')}}</th>
-          <th v-for="field in tableFields" :key="field.fieldKey" scope="col" :class="{'product-sticky':field.fieldKey==='product'}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined">{{fieldLabel(field)}}<span v-if="field.isRequired" class="required-mark"> *</span></th>
+          <th v-for="field in tableFields" :key="field.fieldKey" scope="col" :class="{'product-sticky':field.fieldKey==='product'}" :style="field.fieldKey==='product'?{left:cargoIds?'56px':'0'}:undefined">{{fieldLabel(field)}}<span v-if="field.isRequired && !combineQuantity" class="required-mark"> *</span></th>
           <th v-if="editable" scope="col">{{t('common.actions')}}</th>
         </tr>
       </thead>
@@ -36,7 +36,7 @@
                 <el-input v-else :ref="setEditInput" class="inline-editor" :model-value="value(row,field.fieldKey)" :type="field.dataType==='NUMBER'?'number':multilineField(field)?'textarea':'text'" :autosize="multilineField(field)?field.fieldKey==='remarks'?{minRows:1}:{minRows:1,maxRows:8}:undefined" :aria-label="fieldLabel(field)" @update:model-value="setValue(row,field.fieldKey,String($event??''))" @blur="stopEditing" @keydown.esc="stopEditing"/>
               </template>
               <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="selectCell($event,row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
-              <ComparisonSpecification v-else-if="mergedDescriptionField===field.fieldKey" class="product-description" :product-name="value(row,'product')" :text="productDescription(row)" hide-name/>
+              <ComparisonSpecification v-else-if="mergedDescriptionField===field.fieldKey" class="product-description" :product-name="combineQuantity ? freightSpecification(row) : value(row,'product')" :text="productDescription(row)" :hide-name="!combineQuantity || !freightSpecification(row)"/>
               <ClampedText v-else-if="compact&&field.fieldKey==='remarks'" :text="value(row,field.fieldKey)||'—'" :lines="2"/>
               <span v-else-if="combineQuantity&&field.fieldKey==='quantity'" class="quantity-with-unit">{{ [value(row,'quantity'),value(row,'quantity_unit')].filter(Boolean).join(' ') || '—' }}</span>
               <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
@@ -56,6 +56,7 @@ import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import {ElMessage} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import ClampedText from './ClampedText.vue'
+import {freightSpecification} from '../lib/inquiryList'
 import ComparisonSpecification from './ComparisonSpecification.vue'
 import {formatProductDescription} from '../lib/productDescription'
 import type {TemplateField} from '../lib/inquiryTemplates'
