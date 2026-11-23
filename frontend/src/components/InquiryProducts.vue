@@ -1,7 +1,7 @@
 <template>
   <div class="product-toolbar" :class="{'product-toolbar--compact':compact}">
     <el-input v-model="search" :placeholder="t('inquiryProducts.search')" clearable @input="page=1" />
-    <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span>{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span>{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
+    <div class="product-summary"><span><b>{{ products.length }}</b> {{ t('inquiryProducts.items') }}</span><span>{{ t('inquiryProducts.totalDemand') }} <b>{{ productTotal(products,'quantity','unit') }}</b></span><span v-if="!combineQuantity||productTotal(products,'weight')!=='—'">{{ t('inquiryProducts.totalWeight') }} {{ productTotal(products,'weight') }}</span><span v-if="!combineQuantity||productTotal(products,'volume')!=='—'">{{ t('inquiryProducts.totalVolume') }} {{ productTotal(products,'volume') }}</span></div>
     <div v-if="$slots.actions" class="product-toolbar__actions"><slot name="actions"/></div>
   </div>
   <div v-if="editable" class="product-fill-toolbar">
@@ -38,6 +38,7 @@
               <button v-else-if="editable" type="button" class="cell-preview" :class="{'cell-preview--empty':!value(row,field.fieldKey),'cell-preview--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}" :aria-label="`${fieldLabel(field)}：${value(row,field.fieldKey)||'—'}`" @click="selectCell($event,row,field.fieldKey)">{{value(row,field.fieldKey)||'—'}}</button>
               <ComparisonSpecification v-else-if="mergedDescriptionField===field.fieldKey" class="product-description" :product-name="value(row,'product')" :text="productDescription(row)" hide-name/>
               <ClampedText v-else-if="compact&&field.fieldKey==='remarks'" :text="value(row,field.fieldKey)||'—'" :lines="2"/>
+              <span v-else-if="combineQuantity&&field.fieldKey==='quantity'" class="quantity-with-unit">{{ [value(row,'quantity'),value(row,'quantity_unit')].filter(Boolean).join(' ') || '—' }}</span>
               <span v-else class="cell-value" :class="{'cell-value--clamped':field.fieldKey==='remarks'&&!isTextExpanded(row,field.fieldKey)}">{{value(row,field.fieldKey)||'—'}}</span>
               <button v-if="(!compact||editable)&&field.fieldKey==='remarks'&&canExpandText(row,field.fieldKey)&&editingCell!==cellKey(row,field.fieldKey)" type="button" class="cell-expand" @click="toggleText(row,field.fieldKey)">{{isTextExpanded(row,field.fieldKey)?t('inquiryProducts.collapseText'):t('inquiryProducts.expandText')}}</button>
             </div>
@@ -61,7 +62,7 @@ import type {TemplateField} from '../lib/inquiryTemplates'
 import {productTemplateValue,setProductTemplateValue,productTotal,type Product} from '../lib/inquiryWorkspace'
 import {inquiryProductFields,planInquiryColumns} from '../lib/inquiryProductLayout'
 import {fillProductColumn,firstSelectedValue,rowsBetween} from '../lib/inquiryColumnFill'
-const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[];compact?:boolean;inlineDescription?:boolean}>()
+const props=defineProps<{products:Product[];editable?:boolean;cargoIds?:string[];fields?:TemplateField[];compact?:boolean;inlineDescription?:boolean;combineQuantity?:boolean}>()
 const emit=defineEmits<{remove:[index:number];'update:cargoIds':[ids:string[]]}>()
 const {t,te}=useI18n()
 const search=ref(''),page=ref(1),size=ref(100)
@@ -105,8 +106,9 @@ const mergedDescriptionField=computed(()=>{
   :allFields.value.find(field=>!separateDescriptionFields.has(field.fieldKey))?.fieldKey||''
 })
 const separateDescriptionFields=new Set(['quantity','quantity_unit','unit'])
+const hasQuantity=computed(()=>allFields.value.some(field=>field.fieldKey==='quantity'))
 const displayFields=computed(()=>mergedDescriptionField.value
- ?allFields.value.filter(field=>field.fieldKey===mergedDescriptionField.value||separateDescriptionFields.has(field.fieldKey))
+ ?allFields.value.filter(field=>field.fieldKey===mergedDescriptionField.value||separateDescriptionFields.has(field.fieldKey)&&!(props.combineQuantity&&hasQuantity.value&&field.fieldKey!=='quantity'))
  :allFields.value)
 function productDescription(row:Product){
  return formatProductDescription(value(row,'product'),allFields.value
@@ -251,7 +253,7 @@ function canExpandText(product:Product,key:string){
  const visualLength=Array.from(text).reduce((length,char)=>length+(/[^\x00-\x7f]/.test(char)?2:1),0)
  return visualLength>280||text.split('\n').length>8
 }
-function fieldLabel(field:TemplateField){if(field.fieldKey===mergedDescriptionField.value)return t('inquiryWorkspace.list.productDetails');if(props.compact&&field.fieldKey==='quantity_unit')return t('inquiryProducts.fields.unit');const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
+function fieldLabel(field:TemplateField){if(props.combineQuantity&&field.fieldKey==='quantity')return t('inquiryWorkspace.list.quantityUnit');if(field.fieldKey===mergedDescriptionField.value)return t('inquiryWorkspace.list.productDetails');if(props.compact&&field.fieldKey==='quantity_unit')return t('inquiryProducts.fields.unit');const key=`inquiryProducts.fields.${field.fieldKey}`;return te(key)?t(key):field.displayName}
 </script>
 <style scoped>
 .product-grid{width:100%;overflow-x:auto;border:1px solid var(--el-border-color-lighter);border-radius:5px}
@@ -295,4 +297,5 @@ function fieldLabel(field:TemplateField){if(field.fieldKey===mergedDescriptionFi
 .product-grid--compact .cell-value { min-height:18px; line-height:18px; }
 .product-grid--compact :deep(.clamped-text__toggle) { margin-top:2px; }
 .product-grid--compact+.table-footer { margin:0; padding:7px 10px; }
+.quantity-with-unit {display:block;width:100%;text-align:right;font-variant-numeric:tabular-nums}
 </style>
