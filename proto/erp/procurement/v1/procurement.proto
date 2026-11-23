@@ -652,6 +652,7 @@ service PurchaseOrderService {
   // Spending money needs a signature. The approval engine routes on the
   // order total, so a large order can require more of them.
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
+  rpc WithdrawOrderApproval(WithdrawOrderApprovalRequest) returns (WithdrawOrderApprovalResponse);
   rpc SaveOrderContract(SaveOrderContractRequest) returns (SaveOrderContractResponse);
   rpc PresignOrderContractUpload(PresignOrderContractUploadRequest) returns (PresignOrderContractUploadResponse);
   rpc VerifyOrderContract(VerifyOrderContractRequest) returns (VerifyOrderContractResponse);
@@ -1294,6 +1295,16 @@ message SubmitOrderRequest {
 message SubmitOrderResponse {
   string status = 1;
   int64 approval_instance_id = 2;
+}
+
+message WithdrawOrderApprovalRequest {
+  int64 id = 1;
+  int64 approval_instance_id = 2;
+  string reason = 3;
+}
+
+message WithdrawOrderApprovalResponse {
+  string status = 1;
 }
 
 message CancelOrderRequest {

@@ -3136,6 +3136,7 @@ const (
 	PurchaseOrderService_CreateOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
 	PurchaseOrderService_UpdateOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
 	PurchaseOrderService_SubmitOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_WithdrawOrderApproval_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/WithdrawOrderApproval"
 	PurchaseOrderService_SaveOrderContract_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/SaveOrderContract"
 	PurchaseOrderService_PresignOrderContractUpload_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/PresignOrderContractUpload"
 	PurchaseOrderService_VerifyOrderContract_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/VerifyOrderContract"
@@ -3275,6 +3276,7 @@ type PurchaseOrderServiceClient interface {
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
+	WithdrawOrderApproval(ctx context.Context, in *WithdrawOrderApprovalRequest, opts ...grpc.CallOption) (*WithdrawOrderApprovalResponse, error)
 	SaveOrderContract(ctx context.Context, in *SaveOrderContractRequest, opts ...grpc.CallOption) (*SaveOrderContractResponse, error)
 	PresignOrderContractUpload(ctx context.Context, in *PresignOrderContractUploadRequest, opts ...grpc.CallOption) (*PresignOrderContractUploadResponse, error)
 	VerifyOrderContract(ctx context.Context, in *VerifyOrderContractRequest, opts ...grpc.CallOption) (*VerifyOrderContractResponse, error)
@@ -3626,6 +3628,16 @@ func (c *purchaseOrderServiceClient) SubmitOrder(ctx context.Context, in *Submit
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_SubmitOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) WithdrawOrderApproval(ctx context.Context, in *WithdrawOrderApprovalRequest, opts ...grpc.CallOption) (*WithdrawOrderApprovalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawOrderApprovalResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_WithdrawOrderApproval_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4597,6 +4609,7 @@ type PurchaseOrderServiceServer interface {
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
+	WithdrawOrderApproval(context.Context, *WithdrawOrderApprovalRequest) (*WithdrawOrderApprovalResponse, error)
 	SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error)
 	PresignOrderContractUpload(context.Context, *PresignOrderContractUploadRequest) (*PresignOrderContractUploadResponse, error)
 	VerifyOrderContract(context.Context, *VerifyOrderContractRequest) (*VerifyOrderContractResponse, error)
@@ -4820,6 +4833,9 @@ func (UnimplementedPurchaseOrderServiceServer) UpdateOrder(context.Context, *Upd
 }
 func (UnimplementedPurchaseOrderServiceServer) SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) WithdrawOrderApproval(context.Context, *WithdrawOrderApprovalRequest) (*WithdrawOrderApprovalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawOrderApproval not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) SaveOrderContract(context.Context, *SaveOrderContractRequest) (*SaveOrderContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SaveOrderContract not implemented")
@@ -5456,6 +5472,24 @@ func _PurchaseOrderService_SubmitOrder_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).SubmitOrder(ctx, req.(*SubmitOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_WithdrawOrderApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawOrderApprovalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).WithdrawOrderApproval(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_WithdrawOrderApproval_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).WithdrawOrderApproval(ctx, req.(*WithdrawOrderApprovalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -7198,6 +7232,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitOrder",
 			Handler:    _PurchaseOrderService_SubmitOrder_Handler,
+		},
+		{
+			MethodName: "WithdrawOrderApproval",
+			Handler:    _PurchaseOrderService_WithdrawOrderApproval_Handler,
 		},
 		{
 			MethodName: "SaveOrderContract",

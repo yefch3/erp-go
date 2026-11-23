@@ -124,6 +124,20 @@ func (s *Server) submitOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) withdrawOrderApproval(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.WithdrawOrderApprovalRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.WithdrawOrderApproval(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) presignOrderContract(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.PresignOrderContractUploadRequest{}
 	if !s.decodeBody(w, r, req) {

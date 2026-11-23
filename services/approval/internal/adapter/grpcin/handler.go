@@ -98,6 +98,12 @@ func (h *Handler) ActionableTask(ctx context.Context, req *apv1.ActionableTaskRe
 		return nil, err
 	}
 	resp := &apv1.ActionableTaskResponse{Override: override}
+	if req.GetIncludePurchaseOrderWithdrawal() && req.GetBizType() == "PURCHASE_ORDER" {
+		resp.WithdrawablePurchaseOrderInstanceId, err = h.svc.PurchaseOrderWithdrawalInstance(ctx, grpcx.TenantID(ctx), req.GetBizId(), actor)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if task.ID != 0 {
 		resp.Task = tasksToProto([]store.ApprovalTask{task})[0]
 		resp.Instance = instanceToProto(inst)

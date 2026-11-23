@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
@@ -29,7 +30,14 @@ func (assignmentTestAccess) Employee(_ context.Context, id int64) (EmployeeIdent
 	return EmployeeIdentity{ID: id, Name: fmt.Sprintf("buyer-%d", id)}, nil
 }
 
-type assignmentTestApproval struct{ next int64 }
+type assignmentTestApproval struct {
+	next, withdrawn int64
+}
+
+func (a *assignmentTestApproval) Withdraw(_ context.Context, instanceID int64, _ string) error {
+	a.withdrawn = instanceID
+	return nil
+}
 
 func (a *assignmentTestApproval) Submit(context.Context, ApprovalSubmission) (int64, error) {
 	a.next++
@@ -61,8 +69,9 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	}
 	buyer, other, manager := Operator{21, "buyer-21"}, Operator{22, "buyer-22"}, Operator{23, "manager"}
 	access := assignmentTestAccess{allQuotes: map[int64]bool{other.ID: true}, selectors: map[int64]bool{}}
+	approval := &assignmentTestApproval{next: 7000}
 	svc := New(pool, Deps{Numbering: &sequenceNumbering{}, Suppliers: supplierMapDirectoryStub{6: {ID: 6, Code: "S6", Name: "工厂", Currency: "CNY", Status: "ACTIVE"}},
-		Scopes: access, Permissions: access, People: access, Approvals: &assignmentTestApproval{next: 7000}})
+		Scopes: access, Permissions: access, People: access, Approvals: approval})
 	save := func(op Operator, price string) ExecutionSupplierQuote {
 		t.Helper()
 		q, err := svc.SaveExecutionSupplierQuote(ctx, tenant, SaveExecutionSupplierQuoteInput{RequirementID: requirement, SupplierID: 6, Currency: "CNY", UnitPrice: price, PaymentTerms: "T/T"}, op)
@@ -192,6 +201,27 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 		t.Fatalf("submit: %s %v", state, err)
 	}
 	checkDraftList("", "")
+	if err := svc.WithdrawOrderApproval(ctx, tenant, po, instance, ""); err != nil || approval.withdrawn != instance {
+		t.Fatalf("withdraw original draft: %d, %v", approval.withdrawn, err)
+	}
+	checkDraftList("DRAFT", "")
+	if reopened, err := svc.GetOrder(ctx, tenant, po); err != nil || reopened.ApprovalInstanceID != 0 || reopened.PoNo != head.PoNo {
+		t.Fatalf("reopened draft: %+v, %v", reopened, err)
+	}
+	if files, err := svc.ListOrderDraftFiles(ctx, tenant, po); err != nil || len(files) != 1 || files[0].FileName != "quote.pdf" {
+		t.Fatalf("reopened draft lost attachments: %+v, %v", files, err)
+	}
+	withdrawnInstance := instance
+	state, instance, err = svc.SubmitOrder(ctx, tenant, po, manager)
+	if err != nil || state != "PENDING_APPROVAL" || instance == withdrawnInstance {
+		t.Fatalf("resubmit after withdrawal: %s, %d, %v", state, instance, err)
+	}
+	if err := svc.WithdrawOrderApproval(ctx, tenant, po, withdrawnInstance, ""); apierr.CodeFromError(err) != "PO_WITHDRAW_CHANGED" {
+		t.Fatalf("stale withdrawal: %v", err)
+	}
+	if state, err := svc.ApplyApprovalDecision(ctx, tenant, po, withdrawnInstance, "APPROVED", "", noopClaim); err != nil || state != "PENDING_APPROVAL" {
+		t.Fatalf("stale decision: %s, %v", state, err)
+	}
 	state, err = svc.ApplyApprovalDecision(ctx, tenant, po, instance, "REJECTED", "补交原件", noopClaim)
 	if err != nil || state != "REJECTED" {
 		t.Fatalf("return: %s %v", state, err)

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
 func (s *Server) myTodos(w http.ResponseWriter, r *http.Request) {
@@ -44,10 +45,19 @@ func (s *Server) actionableApprovalTask(w http.ResponseWriter, r *http.Request) 
 	bizID, _ := strconv.ParseInt(r.URL.Query().Get("biz_id"), 10, 64)
 	resp, err := s.Approval.ActionableTask(r.Context(), &apv1.ActionableTaskRequest{
 		BizType: r.URL.Query().Get("biz_type"), BizId: bizID,
+		IncludePurchaseOrderWithdrawal: r.URL.Query().Get("include_withdrawal") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
+	}
+	if instanceID := resp.GetWithdrawablePurchaseOrderInstanceId(); instanceID != 0 {
+		// Apply purchase order scope before returning the withdrawal capability.
+		order, orderErr := s.Orders.GetOrder(r.Context(), &prv1.GetOrderRequest{Id: bizID})
+		if orderErr != nil || order.GetOrder().GetStatus() != "PENDING_APPROVAL" ||
+			order.GetOrder().GetApprovalInstanceId() != instanceID {
+			resp.WithdrawablePurchaseOrderInstanceId = 0
+		}
 	}
 	s.writeProto(w, resp)
 }
