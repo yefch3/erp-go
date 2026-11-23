@@ -1778,6 +1778,8 @@ basicsSaved: "Datos básicos guardados",
     },
   },
   todos: {
+    noMatchingTasks: 'No hay tareas que coincidan',
+    clearFilters: 'Quitar filtros',
     title: 'Mis pendientes',
     eyebrow: 'ESPACIO PERSONAL',
     greeting: 'Hola, {name}',

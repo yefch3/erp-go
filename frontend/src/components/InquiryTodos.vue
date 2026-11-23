@@ -1,7 +1,7 @@
 <template>
   <section v-if="rows.length || error || mode==='handled'" class="inquiry-todos">
     <div class="section-head">
-      <div><h3>{{ t(mode==='handled'?'todos.inquiryHandledTitle':'todos.inquiryTitle') }}</h3><p>{{ t(mode==='handled'?'todos.inquiryHandledHint':'todos.inquiryHint') }}</p></div>
+      <div><h3>{{ t(mode==='handled'?'todos.inquiryHandledTitle':'todos.inquiryTitle') }}</h3></div>
       <el-tag type="primary" effect="plain">{{ displayedRows.length }} {{ t('todos.items') }}</el-tag>
     </div>
     <div class="filters"><el-input v-model="keyword" clearable :placeholder="t('todos.inquirySearch')"/><el-select v-model="taskFilter" clearable :placeholder="t('todos.inquiryAllTypes')"><el-option v-for="task in taskOptions" :key="task.key" :label="task.label" :value="task.key"/></el-select></div>
@@ -27,7 +27,7 @@ import {receivesTodo,type TodoCategory,type TodoReception} from '../lib/todoRece
 import {useLiveRefresh,type LiveRefresh} from '../lib/liveRefresh'
 import {useAuthStore} from '../stores/auth'
 import type {Result} from '../lib/inquiryWorkspace'
-const emit=defineEmits<{count:[value:number]}>()
+const emit=defineEmits<{count:[value:number];state:[value:'loading'|'ready'|'error']}>()
 const props=withDefaults(defineProps<{mode?:'pending'|'handled'; reception?:TodoReception}>(),{mode:'pending'})
 const mode=computed(()=>props.mode)
 type InquiryTodoRow={id:string;number:string;customer:string;taskKey:string;path:string;completedAt:string}
@@ -41,7 +41,7 @@ let stopped=false
 // 返回是否拉成功；失败的那次 liveRefresh 记着，下次心跳再补。
 async function refresh():Promise<boolean>{
  // 上一次还没回来：这一次不算拉过——那一次可能是变化之前发出去的。
- if(refreshing)return false;refreshing=true
+ if(refreshing)return false;refreshing=true;emit('state','loading')
  const out:InquiryTodoRow[]=[]
  try{
  const pending:InquiryTodoSource[]=[
@@ -64,9 +64,9 @@ async function refresh():Promise<boolean>{
   for(const status of ['DRAFT','PENDING_SIGN']){let contractPage=1,contractTotal=0;do{const r=await get<{contracts:{id:string;contractNo:string;customerName:string;salesEmployeeId:string}[];meta:{total:number}}>('/contracts',{status,page:contractPage,page_size:100});contractTotal=Number(r.meta?.total||0);for(const c of r.contracts||[]){if(auth.owns(c.salesEmployeeId))out.push({id:c.id,number:c.contractNo,customer:c.customerName,taskKey:status==='DRAFT'?'todos.inquiryTasks.contractDraft':'todos.inquiryTasks.contractSigning',path:'/contracts',completedAt:''})}contractPage++}while((contractPage-1)*100<contractTotal)}
  }
  if(stopped||reception!==props.reception)return false
- rows.value=out;emit('count',out.length);error.value=''
+ rows.value=out;emit('count',out.length);error.value='';emit('state','ready')
  return true
- }catch{error.value=t('todos.inquiryUnavailable');return false}finally{refreshing=false}
+ }catch{emit('state','error');error.value=t('todos.inquiryUnavailable');return false}finally{refreshing=false}
 }
 // 询盘、采购需求、审批和单据有变化时服务端会推送，听到才重拉；不再每 5 秒
 // 把五种询盘列表、报价状态和合同全拉一遍（见 lib/liveRefresh）。
@@ -76,7 +76,7 @@ watch(()=>props.reception,()=>{rows.value=[];emit('count',0);void refresh().then
 onUnmounted(()=>{stopped=true;liveRefresh?.stop()})
 </script>
 <style scoped>
-.inquiry-todos { margin-bottom: 26px; }
+.inquiry-todos { margin: 12px 0; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .section-head h3 { margin: 0; color: #172b4d; font-size: 16px; }
 .section-head p { margin: 5px 0 0; color: #718096; font-size: 13px; }
@@ -84,6 +84,6 @@ onUnmounted(()=>{stopped=true;liveRefresh?.stop()})
 .item-title { color: #24364b; font-size: 14px; }
 .item-meta { margin-top: 5px; color: #718096; font-size: 12px; }
 .action-link { color: #1677ff; font-weight: 600; text-decoration: none; }
-.inquiry-todo-table { border: 1px solid #e5eaf1; border-radius: 10px; overflow: hidden; }
+.inquiry-todo-table { width: 100%; }
 @media(max-width:720px){.filters{flex-direction:column}.filters .el-input,.filters .el-select{width:100%;max-width:none}}
 </style>

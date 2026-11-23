@@ -1,15 +1,13 @@
 <template>
   <div class="home-page">
-    <section class="home-head workflow-head">
+    <section class="home-head">
       <div class="head-copy">
-        <span class="eyebrow">{{ t('todos.eyebrow') }}</span>
-        <h1>{{ t('todos.greeting', { name: auth.employeeName }) }}</h1>
-        <div class="head-meta">
+        <h1>{{ t('todos.title') }}</h1>
+        <div class="head-meta"><span>{{ auth.employeeName }}</span>
           <span>{{ auth.employeeDepartment || t('todos.departmentUnset') }}</span>
           <span class="meta-separator" aria-hidden="true" />
           <span>{{ today }}</span>
         </div>
-        <p class="head-subtitle">{{ t('todos.subtitle') }}</p>
       </div>
       <div class="head-actions">
         <span v-if="updatedAt" class="updated">{{ t('todos.updatedAt', { time: updatedAt }) }}</span>
@@ -18,19 +16,18 @@
     </section>
 
     <section class="summary-grid" aria-label="home summary">
-      <button class="summary-card active" type="button" @click="activate('pending')">
+      <button class="summary-card" :class="{ active: activeTab === 'pending' }" type="button" @click="activate('pending')">
         <span>{{ t('todos.summaryPending') }}</span>
         <strong>{{ combinedPendingAvailable ? combinedPendingTotal : '—' }}</strong>
-        <small>{{ t('todos.summaryPendingHint') }}</small>
       </button>
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'UPCOMING' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('UPCOMING')">
-        <span>{{ t('todos.summaryUpcoming') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.upcoming : '—' }}</strong><small>{{ t('todos.summaryUpcomingHint') }}</small>
+        <span>{{ t('todos.summaryUpcoming') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.upcoming : '—' }}</strong>
       </button>
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'OVERDUE', danger: reminderSummaryAvailable && reminderSummary.overdue > 0 }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('OVERDUE')">
-        <span>{{ t('todos.summaryOverdue') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.overdue : '—' }}</strong><small>{{ t('todos.summaryOverdueHint') }}</small>
+        <span>{{ t('todos.summaryOverdue') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.overdue : '—' }}</strong>
       </button>
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderRead === 'UNREAD' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateUnreadReminders">
-        <span>{{ t('todos.summaryUnread') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.unread : '—' }}</strong><small>{{ t('todos.summaryUnreadHint') }}</small>
+        <span>{{ t('todos.summaryUnread') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.unread : '—' }}</strong>
       </button>
     </section>
 
@@ -82,108 +79,7 @@
 
       <template v-if="activeTab === 'pending'">
         <div v-loading="loading" class="pending-content">
-          <el-alert v-if="todoReceptionError" :title="t('todoReception.loadFailed')" type="warning" :closable="false" />
-          <template v-if="showOperationalTodos && todoReception">
-          <InquiryTodos :reception="todoReception" @count="inquiryPendingCount=$event" />
-          <section v-if="visibleNegotiationTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><h3>实单议价与草稿退回</h3></div>
-            <el-table :data="visibleNegotiationTasks" class="home-table" size="small">
-              <el-table-column label="采购批次" prop="contractNo" min-width="130" />
-              <el-table-column label="产品 / 工厂" min-width="200"><template #default="{row}"><strong>{{ row.productName }}</strong><div class="item-meta">{{ row.supplierName }}</div></template></el-table-column>
-              <el-table-column label="议价备注" prop="instructions" min-width="170" show-overflow-tooltip />
-              <el-table-column label="操作" width="128"><template #default="{row}">
-                <el-button link type="primary" @click="openNegotiationTodo(row)">{{ row.orderStatus === 'REJECTED' ? '修改原草稿' : '处理议价' }}</el-button>
-              </template></el-table-column>
-            </el-table>
-          </section>
-          <el-alert v-if="executionTasksError" title="合同执行待办暂时无法加载，请刷新重试" type="warning" :closable="false" show-icon />
-          <section v-if="showPurchaseFinanceSection" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>采购合同财务核验</h3><p>采购已上传双方签署合同，请查看合同附件并核验。</p></div><el-tag v-if="!executionTasksError" :type="visiblePurchaseFinanceTasks.length?'warning':'info'" effect="plain">{{visiblePurchaseFinanceTasks.length}} 项</el-tag></div>
-            <el-table v-if="visiblePurchaseFinanceTasks.length" :data="visiblePurchaseFinanceTasks" class="home-table purchase-finance-todos">
-              <el-table-column label="采购单 / 供应商" width="260"><template #default="{row}"><div class="item-title">{{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div></template></el-table-column>
-              <el-table-column label="采购金额" width="140" align="right" class-name="purchase-amount"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
-              <el-table-column label="签署合同文件" min-width="260"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-attachment-link" title="进入核验页面查看合同附件"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg><span>{{row.signedContractName}}</span></router-link></template></el-table-column>
-              <el-table-column label="状态" width="120" align="center"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="125" fixed="right" align="center"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">进入核验</router-link></template></el-table-column>
-            </el-table>
-            <p v-else-if="!executionTasksError" class="item-meta">{{purchaseFinanceTasks.length?'没有符合当前筛选条件的待核验采购合同。':'暂无待核验采购合同。采购上传签署合同后会自动出现在这里；已核验的合同不会重复显示。'}} <router-link to="/supplier-recon?view=contracts" class="doc-link">前往出账</router-link></p>
-          </section>
-          <section v-if="showLogisticsFinanceSection" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>物流合同财务核验</h3><p>物流已上传双方签署合同，请进入出账查看附件并核验。</p></div><el-tag v-if="!executionTasksError" :type="visibleLogisticsFinanceTasks.length?'warning':'info'" effect="plain">{{visibleLogisticsFinanceTasks.length}} 项</el-tag></div>
-            <el-table v-if="visibleLogisticsFinanceTasks.length" :data="visibleLogisticsFinanceTasks" class="home-table">
-              <el-table-column label="物流合同 / 外销合同" min-width="230"><template #default="{row}"><div class="item-title">{{row.businessDocumentNo||'物流合同号未填写'}} <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">系统生成</el-tag></div><div class="item-meta">{{row.exportContractNo}}<template v-if="row.transportBatchNo"> · 第 {{row.transportBatchNo}} 批</template></div></template></el-table-column>
-              <el-table-column prop="supplierName" label="货代" min-width="160" show-overflow-tooltip/>
-              <el-table-column label="金额" width="140" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
-              <el-table-column prop="signedContractName" label="签署合同文件" min-width="210" show-overflow-tooltip/>
-              <el-table-column label="状态" width="120"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="125" fixed="right"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">查看并核验</router-link></template></el-table-column>
-            </el-table>
-            <p v-else-if="!executionTasksError" class="item-meta">暂无符合条件的待核验物流合同；已核验的合同不会重复显示。 <router-link to="/supplier-recon?view=contracts" class="doc-link">前往出账</router-link></p>
-          </section>
-          <section v-if="visibleFinanceTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>合同执行条件确认</h3><p>销售已上传客户签回件并开始执行，等待财务核对付款条件后放行。</p></div><el-tag type="warning" effect="plain">{{visibleFinanceTasks.length}} 项</el-tag></div>
-            <el-table :data="visibleFinanceTasks" class="home-table">
-              <el-table-column label="合同 / 客户" min-width="230"><template #default="{row}"><div class="item-title">{{row.contractNo}}</div><div class="item-meta">{{row.customerName}}</div></template></el-table-column>
-              <el-table-column label="合同金额" width="160" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
-              <el-table-column label="状态" width="130"><template #default><el-tag type="warning">待财务放行</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="160"><template #default="{row}"><router-link :to="{path:'/customer-recon',query:{keyword:row.contractNo,condition:row.id}}" class="doc-link">确认执行条件</router-link></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleDeliveryTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>待确认工厂交货</h3><p>整单质检已合格，由采购确认实际交货；部分交货后继续确认剩余数量。</p></div><el-tag type="warning">{{deliveryTasks.length}} 项</el-tag></div>
-            <el-table :data="visibleDeliveryTasks" class="home-table"><el-table-column prop="poNo" label="采购单号" min-width="180"/><el-table-column prop="supplierName" label="供应商" min-width="180"/><el-table-column prop="expectedDate" label="采购要求日期" width="150"/><el-table-column prop="progressText" label="交货进度" min-width="200"/><el-table-column label="状态" width="150"><template #default><el-tag type="success">整单质检合格</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{order:row.id,fulfillment:'1'}}" class="doc-link">确认工厂交货</router-link></template></el-table-column></el-table>
-          </section>
-          <section v-if="visibleQualityTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3><p>{{ t('quality.todoHint') }}</p></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
-            <el-table :data="visibleQualityTasks" class="home-table sourcing-todo-table">
-              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('quality.pending') }}</div></template></el-table-column>
-              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{ row }"><div class="item-title">{{ row.taskNo }} · {{ row.poNo }}</div><div class="item-meta">{{ row.supplierName }} · 整单质检</div><div class="item-summary">{{ t('quality.expectedDate') }}：{{ row.expectedDate || '—' }}</div></template></el-table-column>
-              <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('quality.pending') }}</el-tag></template></el-table-column>
-              <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{ row }"><router-link :to="{ path:'/quality/tasks', query:{ task:String(row.id) } }" class="doc-link">{{ t('quality.todoAction') }}</router-link></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleQualityProcurementTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>质检异常处理</h3><p>质检已有最终结果，请采购单负责人联系工厂并记录处理结果。</p></div><el-tag type="warning" effect="plain">{{qualityProcurementTasks.length}} 项</el-tag></div>
-            <el-table :data="visibleQualityProcurementTasks" class="home-table sourcing-todo-table">
-              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">禁止先发</div></template></el-table-column>
-              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{row.taskNo}} · {{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div><div class="item-summary">{{qualityTodoSummary(row)}}</div></template></el-table-column>
-              <el-table-column :label="t('common.actions')" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{status:'ORDERED',order:String(row.poId)}}" class="doc-link">进入采购单</router-link></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleExecutionProcurementTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>实单采购询价</h3><p>合同已满足执行条件，等待采购按合同批次重新询价。</p></div><el-tag type="warning" effect="plain">{{ executionProcurementTasks.length }} 项</el-tag></div>
-            <el-table :data="visibleExecutionProcurementTasks" class="home-table sourcing-todo-table">
-              <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
-              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单采购待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · {{ row.productNames }}</div><div class="item-summary">共 {{ row.productCount }} 项产品，要求到货 {{ row.requiredDate || '待确认' }}</div></template></el-table-column>
-              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleExecutionShippingTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>实单物流询价</h3><p>合同已满足执行条件，等待物流处理对应运输批次的询价。</p></div><el-tag type="warning" effect="plain">{{ executionShippingTasks.length }} 项</el-tag></div>
-            <el-table :data="visibleExecutionShippingTasks" class="home-table sourcing-todo-table">
-              <el-table-column label="优先级" width="145"><template #default="{row}"><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">{{ t(shippingTodoEntry(row)?.actionKey || 'shipping.todoViewOrder') }}</div></template></el-table-column>
-              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
-              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="150" fixed="right"><template #default="{row}"><router-link v-if="shippingTodoEntry(row)" :to="shippingTodoEntry(row)!.to" class="doc-link">{{ t(shippingTodoEntry(row)!.actionKey) }}</router-link><span v-else>{{t('todos.noSourceLink')}}</span></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleProcurementTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>{{ t('todos.procurementTasks') }}</h3><p>{{ t('todos.procurementTasksHint') }}</p></div><el-tag type="warning" effect="plain">{{ procurementTasks.length }} {{ t('todos.items') }}</el-tag></div>
-            <el-table :data="visibleProcurementTasks" class="home-table sourcing-todo-table">
-              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('todos.procurementActionRequired') }}</div></template></el-table-column>
-              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{ procurementReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||t('todos.allProducts') }} · {{ row.supplierName||t('todos.newSupplier') }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column>
-              <el-table-column :label="t('todos.submittedAt')" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column>
-              <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('todos.waitingForMe') }}</el-tag></template></el-table-column>
-              <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><router-link :to="{path:`/procurement/sourcing/${row.caseId}`,query:{tab:'plans',rework:String(row.id)}}" class="doc-link">{{ t('todos.goToSource') }}</router-link></template></el-table-column>
-            </el-table>
-          </section>
-          <section v-if="visibleShippingTasks.length" class="todo-source-section">
-            <div class="todo-source-head"><div><h3>船运补充任务</h3><p>销售退回指定报价，或向全部船运人员发布新增船运公司任务。</p></div><el-tag type="warning" effect="plain">{{ shippingTasks.length }} 项</el-tag></div>
-            <el-table :data="visibleShippingTasks" class="home-table sourcing-todo-table"><el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">需要补充船运报价</div></template></el-table-column><el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">{{ shippingReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||'全部货物' }} · {{ row.carrierForwarder||'新增船运公司' }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column><el-table-column label="发布于" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column><el-table-column label="操作" width="76" align="center" fixed="right"><template #default="{row}"><el-dropdown trigger="click" @command="handleShippingTaskAction($event,row)"><el-button text circle aria-label="操作"><span aria-hidden="true">•••</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="open">进入船运询价</el-dropdown-item><el-dropdown-item command="resolve" divided>完成任务</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column></el-table>
-          </section>
-          </template>
-          <div v-if="todos.length" class="todo-source-head approval-source-head"><div><h3>{{ t('todos.approvalTasks') }}</h3></div></div>
+          <div v-if="todos.length" class="todo-source-head approval-source-head"><div><h3>{{ t('todos.approvalTasks') }}</h3></div><span>{{ total }} {{ t('todos.items') }}</span></div>
         <el-table v-if="todos.length" :data="todos" class="home-table">
           <el-table-column :label="t('todos.priority')" width="145">
             <template #default="{ row }">
@@ -207,7 +103,109 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!todos.length && !todoReceptionError && (!showOperationalTodos || !visibleDeliveryTasks.length&&!executionTasksError&&!showPurchaseFinanceSection&&!showLogisticsFinanceSection&&!visibleFinanceTasks.length&&!inquiryPendingCount&&!visibleNegotiationTasks.length&&!visibleQualityTasks.length&&!visibleQualityProcurementTasks.length&&!visibleExecutionProcurementTasks.length&&!visibleExecutionShippingTasks.length&&!visibleProcurementTasks.length&&!visibleShippingTasks.length)" :description="t('todos.empty')" />
+          <el-alert v-if="todoReceptionError" :title="t('todoReception.loadFailed')" type="warning" :closable="false" />
+          <template v-if="showOperationalTodos && todoReception">
+          <InquiryTodos :reception="todoReception" @count="inquiryPendingCount=$event" @state="inquiryState=$event" />
+          <section v-if="visibleNegotiationTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><h3>实单议价与草稿退回</h3></div>
+            <el-table :data="visibleNegotiationTasks" class="home-table" size="small">
+              <el-table-column label="采购批次" prop="contractNo" min-width="130" />
+              <el-table-column label="产品 / 工厂" min-width="200"><template #default="{row}"><strong>{{ row.productName }}</strong><div class="item-meta">{{ row.supplierName }}</div></template></el-table-column>
+              <el-table-column label="议价备注" prop="instructions" min-width="170" show-overflow-tooltip />
+              <el-table-column label="操作" width="128"><template #default="{row}">
+                <el-button link type="primary" @click="openNegotiationTodo(row)">{{ row.orderStatus === 'REJECTED' ? '修改原草稿' : '处理议价' }}</el-button>
+              </template></el-table-column>
+            </el-table>
+          </section>
+          <el-alert v-if="executionTasksError" title="合同执行待办暂时无法加载，请刷新重试" type="warning" :closable="false" show-icon />
+          <section v-if="showPurchaseFinanceSection && visiblePurchaseFinanceTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>采购合同财务核验</h3></div><el-tag v-if="!executionTasksError" type="warning" effect="plain">{{visiblePurchaseFinanceTasks.length}} 项</el-tag></div>
+            <el-table :data="visiblePurchaseFinanceTasks" class="home-table purchase-finance-todos">
+              <el-table-column label="采购单 / 供应商" width="260"><template #default="{row}"><div class="item-title">{{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div></template></el-table-column>
+              <el-table-column label="采购金额" width="140" align="right" class-name="purchase-amount"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column label="签署合同文件" min-width="260"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-attachment-link" title="进入核验页面查看合同附件"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg><span>{{row.signedContractName}}</span></router-link></template></el-table-column>
+              <el-table-column label="状态" width="120" align="center"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="125" fixed="right" align="center"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">进入核验</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="showLogisticsFinanceSection && visibleLogisticsFinanceTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>物流合同财务核验</h3></div><el-tag v-if="!executionTasksError" type="warning" effect="plain">{{visibleLogisticsFinanceTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleLogisticsFinanceTasks" class="home-table">
+              <el-table-column label="物流合同 / 外销合同" min-width="230"><template #default="{row}"><div class="item-title">{{row.businessDocumentNo||'物流合同号未填写'}} <el-tag v-if="row.businessDocumentNoGenerated" size="small" type="info">系统生成</el-tag></div><div class="item-meta">{{row.exportContractNo}}<template v-if="row.transportBatchNo"> · 第 {{row.transportBatchNo}} 批</template></div></template></el-table-column>
+              <el-table-column prop="supplierName" label="货代" min-width="160" show-overflow-tooltip/>
+              <el-table-column label="金额" width="140" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column prop="signedContractName" label="签署合同文件" min-width="210" show-overflow-tooltip/>
+              <el-table-column label="状态" width="120"><template #default><el-tag type="warning">待财务核验</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="125" fixed="right"><template #default="{row}"><router-link :to="{path:'/supplier-recon',query:{view:'contracts',order:row.id}}" class="purchase-review-link">查看并核验</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleFinanceTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>合同执行条件确认</h3></div><el-tag type="warning" effect="plain">{{visibleFinanceTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleFinanceTasks" class="home-table">
+              <el-table-column label="合同 / 客户" min-width="230"><template #default="{row}"><div class="item-title">{{row.contractNo}}</div><div class="item-meta">{{row.customerName}}</div></template></el-table-column>
+              <el-table-column label="合同金额" width="160" align="right"><template #default="{row}">{{row.currency}} {{Number(row.totalAmount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}}</template></el-table-column>
+              <el-table-column label="状态" width="130"><template #default><el-tag type="warning">待财务放行</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="160"><template #default="{row}"><router-link :to="{path:'/customer-recon',query:{keyword:row.contractNo,condition:row.id}}" class="doc-link">确认执行条件</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleDeliveryTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>待确认工厂交货</h3></div><el-tag type="warning">{{deliveryTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleDeliveryTasks" class="home-table"><el-table-column prop="poNo" label="采购单号" min-width="180"/><el-table-column prop="supplierName" label="供应商" min-width="180"/><el-table-column prop="expectedDate" label="采购要求日期" width="150"/><el-table-column prop="progressText" label="交货进度" min-width="200"/><el-table-column label="状态" width="150"><template #default><el-tag type="success">整单质检合格</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{order:row.id,fulfillment:'1'}}" class="doc-link">确认工厂交货</router-link></template></el-table-column></el-table>
+          </section>
+          <section v-if="visibleQualityTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>{{ t('quality.todoTitle') }}</h3></div><el-tag type="warning" effect="plain">{{ qualityTasks.length }} {{ t('todos.items') }}</el-tag></div>
+            <el-table :data="visibleQualityTasks" class="home-table sourcing-todo-table">
+              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('quality.pending') }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{ row }"><div class="item-title">{{ row.taskNo }} · {{ row.poNo }}</div><div class="item-meta">{{ row.supplierName }} · 整单质检</div><div class="item-summary">{{ t('quality.expectedDate') }}：{{ row.expectedDate || '—' }}</div></template></el-table-column>
+              <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('quality.pending') }}</el-tag></template></el-table-column>
+              <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{ row }"><router-link :to="{ path:'/quality/tasks', query:{ task:String(row.id) } }" class="doc-link">{{ t('quality.todoAction') }}</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleQualityProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>质检异常处理</h3></div><el-tag type="warning" effect="plain">{{qualityProcurementTasks.length}} 项</el-tag></div>
+            <el-table :data="visibleQualityProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">禁止先发</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{row.taskNo}} · {{row.poNo}}</div><div class="item-meta">{{row.supplierName}}</div><div class="item-summary">{{qualityTodoSummary(row)}}</div></template></el-table-column>
+              <el-table-column :label="t('common.actions')" width="150"><template #default="{row}"><router-link :to="{path:'/purchase-orders',query:{status:'ORDERED',order:String(row.poId)}}" class="doc-link">进入采购单</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleExecutionProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>实单采购询价</h3></div><el-tag type="warning" effect="plain">{{ executionProcurementTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleExecutionProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">需要重新询价</div></template></el-table-column>
+              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单采购待重新询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · {{ row.productNames }}</div><div class="item-summary">共 {{ row.productCount }} 项产品，要求到货 {{ row.requiredDate || '待确认' }}</div></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="150" fixed="right"><template #default><router-link to="/requirements" class="doc-link">进入实单询价</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleExecutionShippingTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>实单物流询价</h3></div><el-tag type="warning" effect="plain">{{ executionShippingTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleExecutionShippingTasks" class="home-table sourcing-todo-table">
+              <el-table-column label="优先级" width="145"><template #default="{row}"><el-tag size="small" type="warning" effect="light">高</el-tag><div class="priority-reason">{{ t(shippingTodoEntry(row)?.actionKey || 'shipping.todoViewOrder') }}</div></template></el-table-column>
+              <el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">实单物流询价 · {{ row.contractNo }}</div><div class="item-meta">{{ row.customerName || '—' }} · 运输批次 #{{ row.batchNo }}</div><div class="item-summary">{{ row.portOfLoading || '待确认装货港' }} → {{ row.portOfDischarge || '待确认目的港' }}</div></template></el-table-column>
+              <el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="150" fixed="right"><template #default="{row}"><router-link v-if="shippingTodoEntry(row)" :to="shippingTodoEntry(row)!.to" class="doc-link">{{ t(shippingTodoEntry(row)!.actionKey) }}</router-link><span v-else>{{t('todos.noSourceLink')}}</span></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>{{ t('todos.procurementTasks') }}</h3></div><el-tag type="warning" effect="plain">{{ procurementTasks.length }} {{ t('todos.items') }}</el-tag></div>
+            <el-table :data="visibleProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('todos.procurementActionRequired') }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{ procurementReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||t('todos.allProducts') }} · {{ row.supplierName||t('todos.newSupplier') }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.submittedAt')" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column>
+              <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('todos.waitingForMe') }}</el-tag></template></el-table-column>
+              <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><router-link :to="{path:`/procurement/sourcing/${row.caseId}`,query:{tab:'plans',rework:String(row.id)}}" class="doc-link">{{ t('todos.goToSource') }}</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <section v-if="visibleShippingTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>船运补充任务</h3></div><el-tag type="warning" effect="plain">{{ shippingTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleShippingTasks" class="home-table sourcing-todo-table"><el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">需要补充船运报价</div></template></el-table-column><el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">{{ shippingReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||'全部货物' }} · {{ row.carrierForwarder||'新增船运公司' }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column><el-table-column label="发布于" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待部门处理</el-tag></template></el-table-column><el-table-column label="操作" width="76" align="center" fixed="right"><template #default="{row}"><el-dropdown trigger="click" @command="handleShippingTaskAction($event,row)"><el-button text circle aria-label="操作"><span aria-hidden="true">•••</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="open">进入船运询价</el-dropdown-item><el-dropdown-item command="resolve" divided>完成任务</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column></el-table>
+          </section>
+          </template>
+          <div v-if="showEmptyPending" class="pending-empty">
+            <HomeEmpty :description="keyword.trim() || bizType ? t('todos.noMatchingTasks') : t('todos.empty')" />
+            <el-button v-if="keyword.trim() || bizType" link type="primary" @click="clearPendingFilters">{{ t('todos.clearFilters') }}</el-button>
+          </div>
         </div>
       </template>
 
@@ -498,6 +496,23 @@ function onTabChange(tab: string | number) {
   void load()
 }
 
+const showEmptyPending = computed(() => {
+  if (loading.value || !operationalReady.value || sourceError.value || todoReceptionError.value || todos.value.length) return false
+  if (!showOperationalTodos.value) return true
+  return inquiryState.value === 'ready' && !executionTasksError.value && !inquiryPendingCount.value &&
+    ![visibleNegotiationTasks, visibleDeliveryTasks, visibleFinanceTasks, visibleQualityTasks,
+      visibleQualityProcurementTasks, visibleExecutionProcurementTasks, visibleExecutionShippingTasks,
+      visibleProcurementTasks, visibleShippingTasks].some(group => group.value.length) &&
+    !(showPurchaseFinanceSection.value && visiblePurchaseFinanceTasks.value.length) &&
+    !(showLogisticsFinanceSection.value && visibleLogisticsFinanceTasks.value.length)
+})
+const inquiryState = ref('loading')
+const operationalReady = ref(false)
+function clearPendingFilters() {
+  keyword.value = ''
+  bizType.value = ''
+  query()
+}
 function query() { page.value = 1; void load() }
 function changePage(next: number) { page.value = next; void load() }
 
@@ -668,6 +683,7 @@ async function load() {
 
 let operationalRefresh = 0
 async function loadOperationalTodos() {
+  operationalReady.value = false
   const request = ++operationalRefresh
   let reception: TodoReception
   try {
@@ -684,6 +700,7 @@ async function loadOperationalTodos() {
   todoReceptionError.value = false
   if (JSON.stringify(reception) !== JSON.stringify(todoReception.value)) todoReception.value = reception
   if (reception.approvalsOnly) {
+    operationalReady.value = true
     inquiryPendingCount.value = 0
     return
   }
@@ -698,6 +715,7 @@ async function loadOperationalTodos() {
     loadProcurementTasks(), loadShippingTasks(), loadExecutionTasks(), loadNegotiationTasks(), loadDeliveryTasks(),
     ...(quality ? [loadQualityTasks(), loadQualityProcurementTasks()] : []),
   ])
+  if (request === operationalRefresh) operationalReady.value = true
 }
 
 async function refreshAll() {
@@ -833,41 +851,29 @@ onUnmounted(() => {
 
 <style scoped>
 .home-page { max-width: 1500px; margin: 0 auto; color: #141817; }
-.home-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
-.workflow-head { min-height: 72px; padding: 16px 20px; border: 1px solid #d8eef8; border-left: 4px solid #4ac1ff; border-radius: 12px; background: linear-gradient(110deg, #eefaff 0%, #fff 64%, #effcf5 100%); }
-.head-copy { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 14px; row-gap: 3px; }
-.eyebrow { grid-column: 1 / -1; color: #158fc5; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
-.home-head h1 { grid-column: 1; grid-row: 2; margin: 0; color: #141817; font-size: 22px; line-height: 1.3; }
-.head-meta { grid-column: 2; grid-row: 2; display: flex; align-items: center; gap: 8px; color: #63747d; font-size: 12px; }
-.meta-separator { width: 3px; height: 3px; border-radius: 50%; background: #9eb0b8; }
-.head-subtitle { grid-column: 1 / -1; margin: 0; color: #60717c; font-size: 13px; }
-.head-actions { display: flex; align-items: center; gap: 12px; }
-.updated { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
-.pending-content { min-height: 260px; }
-.todo-source-section + .approval-source-head { margin-top: 24px; }
-.todo-source-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 18px 10px; }
-.todo-source-head h3 { margin: 0; font-size: 16px; }
-.todo-source-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
-.approval-source-head { padding-bottom: 0; }
-.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.summary-card { position: relative; min-height: 98px; overflow: hidden; padding: 15px 17px; text-align: left; border: 1px solid #dce8ed; border-radius: 12px; background: #fff; color: inherit; box-shadow: 0 5px 16px rgba(25, 72, 91, .035); }
-.summary-card::before { position: absolute; top: 15px; right: 16px; width: 7px; height: 7px; border-radius: 50%; background: #4ac1ff; content: ''; }
-.summary-card:not(:disabled) { cursor: pointer; }
-.summary-card:nth-child(2)::before, .summary-card:nth-child(4)::before { background: #1fbf6c; }
-.summary-card.active { border-color: #8dd8f8; background: #f5fbfe; box-shadow: 0 7px 20px rgba(74, 193, 255, .1); }
-.summary-card.danger { border-color: #ffc8cc; background: #fffafa; }
-.summary-card.danger::before { background: #ff6b72; }
-.summary-card span, .summary-card small { display: block; color: #6a7a83; }
-.summary-card span { font-size: 13px; }
-.summary-card small { font-size: 12px; }
-.summary-card strong { display: block; margin: 6px 0 2px; color: #141817; font-size: 26px; line-height: 1.15; font-variant-numeric: tabular-nums; }
-.summary-card:disabled { opacity: 1; }
-.work-card { border-color: #dceaf0; border-radius: 12px; box-shadow: 0 8px 26px rgba(25, 72, 91, .05); }
+.home-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 18px; border-radius:9px; color:white; background:linear-gradient(110deg,#153c58,#146a81); }
+.head-copy,.head-meta,.head-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.home-head h1 { margin:0; font-size:21px; }
+.head-meta,.updated { color:#dcecf4; font-size:12px; }
+.meta-separator { width:3px; height:3px; background:currentColor; border-radius:50%; }
+.summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; margin:10px 0; border:1px solid #dce6ec; background:#dce6ec; border-radius:8px; overflow:hidden; }
+.summary-card { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; border:0; background:white; color:#445b69; font-size:13px; }
+.summary-card:not(:disabled) { cursor:pointer; }
+.summary-card.active { background:#edf7fc; color:#165d82; }
+.summary-card strong { font-size:21px; font-variant-numeric:tabular-nums; }
+.summary-card.danger strong { color:#b63d44; }
+.work-card { border-radius:8px; }
+.work-card :deep(.el-card__body) { padding:10px 16px 16px; }
+.todo-source-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:12px 0 6px; color:#204257; }
+.todo-source-head h3 { margin:0; font-size:15px; }
+.approval-source-head span { font-size:12px; }
+.pending-empty { text-align:center; }
 .home-page :deep(.el-table) { --el-table-header-bg-color: #eef9fe; --el-table-header-text-color: #24323a; --el-table-row-hover-bg-color: #f0fbf6; }
 .home-page :deep(.el-table th.el-table__cell) { border-bottom-color: #d9edf5; font-weight: 650; }
-.home-tabs :deep(.el-tabs__header) { margin-bottom: 18px; }
-.filters { display: grid; grid-template-columns: minmax(260px, 1fr) 190px 180px auto; gap: 12px; margin-bottom: 16px; }
-.reminder-filters { grid-template-columns: minmax(240px, 1fr) 160px 160px 140px auto auto; }
+.home-tabs :deep(.el-tabs__header) { margin-bottom:8px; }
+.filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; }
+.filters .el-input { width:min(310px,100%); }
+.filters .el-select { width:154px; }
 .source-error { margin-bottom: 14px; }
 .home-table { width: 100%; }
 .home-page :deep(.purchase-finance-todos :is(th,td).el-table__cell > .cell){text-align:left!important}
@@ -892,6 +898,8 @@ onUnmounted(() => {
 .doc-link:hover { text-decoration: underline; }
 .no-link { color: var(--el-text-color-placeholder); font-size: 13px; }
 .pager { justify-content: flex-end; margin-top: 18px; }
-@media (max-width: 900px) { .home-head { align-items: flex-start; flex-direction: column; } .head-copy { grid-template-columns: 1fr; } .home-head h1, .head-meta, .head-subtitle { grid-column: 1; grid-row: auto; } .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { grid-template-columns: 1fr; } }
-@media (max-width: 560px) { .summary-grid { grid-template-columns: 1fr; } .head-actions { width: 100%; justify-content: space-between; } }
+@media (max-width: 680px) {
+  .home-head { align-items:flex-start; flex-wrap:wrap; }
+  .summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
 </style>
