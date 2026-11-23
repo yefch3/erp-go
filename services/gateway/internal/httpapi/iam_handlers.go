@@ -337,7 +337,7 @@ type employeeAccessDiagnostic struct {
 
 var diagnosticScopeModules = []string{
 	"export", "procurement_requirement", "procurement_sourcing", "procurement_factory_quote",
-	"procurement_order", "shipping", "quality", "mail",
+	"procurement_order", "shipping", "quality", "mail", "business_report",
 }
 
 var diagnosticScopePermissionPrefixes = map[string][]string{
@@ -349,6 +349,7 @@ var diagnosticScopePermissionPrefixes = map[string][]string{
 	"shipping":                  {"shipping:"},
 	"quality":                   {"quality:"},
 	"mail":                      {"mail:"},
+	"business_report":           {"report:business:"},
 }
 
 var diagnosticScopeNames = map[string]string{
@@ -360,6 +361,7 @@ var diagnosticScopeNames = map[string]string{
 	"shipping":                  "船期管理",
 	"quality":                   "质检任务",
 	"mail":                      "邮件",
+	"business_report":           "经理日报",
 }
 
 func employeeUsesScope(module string, permissions map[string]bool) bool {

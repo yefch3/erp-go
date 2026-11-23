@@ -539,6 +539,7 @@ function scopeModuleLabel(module: string): string {
     export: t('roles.scopeExport'), procurement_sourcing: t('roles.scopeSourcing'),
     procurement_order: t('roles.scopeOrder'), procurement_requirement: t('roles.scopeRequirement'),
     procurement_factory_quote: t('roles.scopeFactoryQuote'),
+    business_report: t('managerReport.title'),
     shipping: t('roles.scopeShipping'), quality: t('roles.scopeQuality'), mail: t('roles.scopeMail'),
   }
   return labels[module] ?? module

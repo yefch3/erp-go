@@ -106,7 +106,8 @@ LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 -- name: SetQuotationStatus :one
 UPDATE quotations SET
     status = sqlc.arg(new_status)::text,
-    sent_at = CASE WHEN sqlc.arg(new_status)::text = 'SENT' THEN now() ELSE sent_at END,
+    sent_at = CASE WHEN sqlc.arg(new_status)::text = 'SENT' THEN coalesce(sent_at, now()) ELSE sent_at END,
+    sent_by = CASE WHEN sqlc.arg(new_status)::text = 'SENT' AND sent_at IS NULL THEN $3::bigint ELSE sent_by END,
     responded_at = CASE WHEN sqlc.arg(new_status)::text IN ('ACCEPTED','REJECTED')
                         THEN now() ELSE responded_at END,
     -- The customer's words land with the answer and only with the answer.

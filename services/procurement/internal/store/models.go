@@ -749,6 +749,14 @@ type PurchaseOrderSendAttempt struct {
 	CompletedAt      pgtype.Timestamptz
 }
 
+type PurchaseOrderSubmissionActivity struct {
+	TenantID           int64
+	PoID               int64
+	ApprovalInstanceID int64
+	OperatorID         int64
+	SubmittedAt        pgtype.Timestamptz
+}
+
 type PurchaseProductionMilestone struct {
 	ID            int64
 	TenantID      int64

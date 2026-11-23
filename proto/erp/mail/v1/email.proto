@@ -3,6 +3,7 @@ syntax = "proto3";
 package erp.mail.v1;
 
 import "erp/common/v1/pagination.proto";
+import "erp/common/v1/daily_activity.proto";
 
 // EmailService owns correspondence with customers: what was composed, who it
 // went to, and what happened to each copy.
@@ -12,6 +13,7 @@ import "erp/common/v1/pagination.proto";
 // once - recipients cannot see each other, each mail is personalised, each is
 // retried on its own, and each carries its own delivery status.
 service EmailService {
+  rpc GetDailyMailReport(GetDailyMailReportRequest) returns (GetDailyMailReportResponse);
   rpc ListCampaigns(ListCampaignsRequest) returns (ListCampaignsResponse);
   rpc GetCampaign(GetCampaignRequest) returns (GetCampaignResponse);
   // Render as one chosen recipient will receive it. Required before sending:
@@ -2132,4 +2134,48 @@ message SupervisionLogEntry {
 
 message ListSupervisionLogResponse {
   repeated SupervisionLogEntry entries = 1;
+}
+
+message GetDailyMailReportRequest {
+  int64 day_start = 1;
+  int64 as_of = 2;
+  string trend_unit = 3; // Empty for daily reports, week or month otherwise.
+}
+
+message DailyMailCounts {
+  int64 received = 1;
+  int64 sent = 2;
+  int64 replied = 3;
+  int64 pending = 4;
+  int64 overdue = 5;
+  int64 oldest_pending_at = 6;
+}
+
+message DailyMailEmployee {
+  int64 employee_id = 1;
+  DailyMailCounts counts = 2;
+  string name = 3;
+  string department = 4;
+  erp.common.v1.DailyActivityRow activity = 5;
+}
+
+message GetDailyMailReportResponse {
+  DailyMailCounts total = 1;
+  repeated DailyMailEmployee employees = 2;
+  int64 mailboxes = 3;
+  int64 synced_mailboxes = 4;
+  int64 as_of = 5;
+  string date = 6;
+  string time_zone = 7;
+  erp.common.v1.DailyActivityRow activity_total = 8;
+  repeated string unavailable_activity_sources = 9;
+  string period = 10;
+  repeated ReportTrendBucket trend = 11;
+}
+
+message ReportTrendBucket {
+  string start_date = 1;
+  DailyMailCounts mail = 2;
+  erp.common.v1.DailyActivityRow activity = 3;
+  string end_date = 4;
 }

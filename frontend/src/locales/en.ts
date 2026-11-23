@@ -1,8 +1,10 @@
+import { managerReportEn } from './managerReport'
 import { purchaseFulfillmentEn } from './purchaseFulfillment'
 import { historicalShippingEn } from './historicalShipping'
 import { orderBuyerEn } from './orderBuyer'
 import { reimbursementExpenseEn } from './reimbursementExpense'
 export default {
+  managerReport: managerReportEn,
   reimbursementExpense: reimbursementExpenseEn,
   historicalShipping: historicalShippingEn,
   orderBuyer: orderBuyerEn,

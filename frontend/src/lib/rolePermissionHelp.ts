@@ -265,9 +265,9 @@ const permissionNotes: Readonly<Partial<Record<string, HelpText>>> = {
     'Crea tareas, cambia fechas previstas, contactos o lugares, acepta tareas y registra inspecciones y reinspecciones. Guardar evidencias requiere Guardar archivos de inspección.',
   ],
   'report:business:read': [
-    '经营报表的查看权限。角色清单保留此项，报表上线后才会显示相应入口。',
-    'Read access for business reports. This entry stays in the role catalogue. Availability depends on whether business reports are enabled in the current version.',
-    'Permiso de consulta de informes de gestión. La entrada se conserva en el catálogo. La disponibilidad depende de si la versión actual incluye dichos informes.',
+    '查看授权范围内的团队邮件活动和待回复统计。邮件明细继续受邮箱权限控制。',
+    'View team mail activity and reply queues within the reporting scope. Mail content follows the existing mailbox permissions.',
+    'Consulta la actividad de correo del equipo y las respuestas pendientes dentro del alcance del informe.',
   ],
 
   'sales:inquiry:delete': ['删除流程允许删除的客户询盘。', 'Delete customer inquiries when their status permits deletion.', 'Elimina consultas de clientes cuando su estado lo permite.'],

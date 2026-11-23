@@ -1,8 +1,10 @@
+import { managerReportZh } from './managerReport'
 import { purchaseFulfillmentZh } from './purchaseFulfillment'
 import { historicalShippingZh } from './historicalShipping'
 import { orderBuyerZh } from './orderBuyer'
 import { reimbursementExpenseZh } from './reimbursementExpense'
 export default {
+  managerReport: managerReportZh,
   reimbursementExpense: reimbursementExpenseZh,
   historicalShipping: historicalShippingZh,
   orderBuyer: orderBuyerZh,

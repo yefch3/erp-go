@@ -3229,6 +3229,7 @@ const (
 	PurchaseOrderService_UpdateManualPayable_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
 	PurchaseOrderService_CheckDeliveryQuality_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CheckDeliveryQuality"
 	PurchaseOrderService_AddOrderFollowUp_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AddOrderFollowUp"
+	PurchaseOrderService_GetDailyPurchaseActivity_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/GetDailyPurchaseActivity"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -3434,6 +3435,7 @@ type PurchaseOrderServiceClient interface {
 	// evidence fails closed; this never grants access to purchase prices.
 	CheckDeliveryQuality(ctx context.Context, in *CheckDeliveryQualityRequest, opts ...grpc.CallOption) (*CheckDeliveryQualityResponse, error)
 	AddOrderFollowUp(ctx context.Context, in *AddOrderFollowUpRequest, opts ...grpc.CallOption) (*AddOrderFollowUpResponse, error)
+	GetDailyPurchaseActivity(ctx context.Context, in *GetDailyPurchaseActivityRequest, opts ...grpc.CallOption) (*GetDailyPurchaseActivityResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -4564,6 +4566,16 @@ func (c *purchaseOrderServiceClient) AddOrderFollowUp(ctx context.Context, in *A
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) GetDailyPurchaseActivity(ctx context.Context, in *GetDailyPurchaseActivityRequest, opts ...grpc.CallOption) (*GetDailyPurchaseActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDailyPurchaseActivityResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetDailyPurchaseActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -4767,6 +4779,7 @@ type PurchaseOrderServiceServer interface {
 	// evidence fails closed; this never grants access to purchase prices.
 	CheckDeliveryQuality(context.Context, *CheckDeliveryQualityRequest) (*CheckDeliveryQualityResponse, error)
 	AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error)
+	GetDailyPurchaseActivity(context.Context, *GetDailyPurchaseActivityRequest) (*GetDailyPurchaseActivityResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -5112,6 +5125,9 @@ func (UnimplementedPurchaseOrderServiceServer) CheckDeliveryQuality(context.Cont
 }
 func (UnimplementedPurchaseOrderServiceServer) AddOrderFollowUp(context.Context, *AddOrderFollowUpRequest) (*AddOrderFollowUpResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddOrderFollowUp not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetDailyPurchaseActivity(context.Context, *GetDailyPurchaseActivityRequest) (*GetDailyPurchaseActivityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDailyPurchaseActivity not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -7150,6 +7166,24 @@ func _PurchaseOrderService_AddOrderFollowUp_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_GetDailyPurchaseActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDailyPurchaseActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetDailyPurchaseActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetDailyPurchaseActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetDailyPurchaseActivity(ctx, req.(*GetDailyPurchaseActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -7604,6 +7638,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddOrderFollowUp",
 			Handler:    _PurchaseOrderService_AddOrderFollowUp_Handler,
+		},
+		{
+			MethodName: "GetDailyPurchaseActivity",
+			Handler:    _PurchaseOrderService_GetDailyPurchaseActivity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

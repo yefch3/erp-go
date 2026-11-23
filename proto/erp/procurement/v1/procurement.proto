@@ -4,6 +4,7 @@ package erp.procurement.v1;
 
 import "erp/common/v1/failedevent.proto";
 import "erp/common/v1/pagination.proto";
+import "erp/common/v1/daily_activity.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
 
@@ -819,6 +820,7 @@ service PurchaseOrderService {
   // evidence fails closed; this never grants access to purchase prices.
   rpc CheckDeliveryQuality(CheckDeliveryQualityRequest) returns (CheckDeliveryQualityResponse);
   rpc AddOrderFollowUp(AddOrderFollowUpRequest) returns (AddOrderFollowUpResponse);
+  rpc GetDailyPurchaseActivity(GetDailyPurchaseActivityRequest) returns (GetDailyPurchaseActivityResponse);
 }
 
 
@@ -3387,4 +3389,13 @@ message ManageExecutionAssignmentResponse {
   string file_name = 4;
   string content_type = 5;
   bytes file_data = 6;
+}
+
+message GetDailyPurchaseActivityRequest {
+  int64 day_start = 1;
+  int64 as_of = 2;
+  string trend_unit = 3; // Empty for daily reports, week or month otherwise.
+}
+message GetDailyPurchaseActivityResponse {
+  repeated erp.common.v1.DailyActivityRow rows = 1;
 }
