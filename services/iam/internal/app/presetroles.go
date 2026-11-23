@@ -24,12 +24,12 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
-	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"sales:inquiry:read", "sales:inquiry:delete", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read",
+	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"report:business:read", "sales:inquiry:read", "sales:inquiry:delete", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read",
 		"masterdata:supplier:read", "procurement:requirement:read", "procurement:sourcing:read", "procurement:sourcing:write",
 		"procurement:sourcing:price", "procurement:sourcing:approve", "procurement:execution-quote:select", "procurement:order:write", "procurement:order:submit",
 		// 员工邮箱监管（迁移 00074）。给 BOSS，不给别人——读自己的邮件和读
 		// 别人的邮件是两件事。两条分开：看信箱，和看"谁看过谁的信箱"。
-		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
+		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"business_report", "ALL"}, {"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -48,7 +48,7 @@ var presetRoles = []presetRole{
 	{
 		Code: "SALES_MANAGER", Name: "销售经理",
 		Description: "管理团队客户询盘、客户报价、合同审批和负责人转移",
-		Permissions: []string{
+		Permissions: []string{"report:business:read",
 			"approval:task:act", "export:contract:approve", "export:contract:read", "export:contract:write",
 			"iam:employee:read", "masterdata:supplier:read",
 			"export:ownership:transfer", "export:quotation:read", "export:quotation:write",
@@ -56,7 +56,7 @@ var presetRoles = []presetRole{
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
 		},
-		Scopes: []presetScope{
+		Scopes: []presetScope{{"business_report", "DEPT_AND_SUB"},
 			{"export", "DEPT_AND_SUB"}, {"procurement_sourcing", "DEPT_AND_SUB"},
 		},
 	},
@@ -86,13 +86,13 @@ var presetRoles = []presetRole{
 	{
 		Code: "SHIPPING_MANAGER", Name: "船运经理",
 		Description: "管理售前船运询价、主责人员、统一方案与正式船期",
-		Permissions: []string{
+		Permissions: []string{"report:business:read",
 			"shipping:sourcing:read", "shipping:sourcing:write", "shipping:sourcing:approve",
 			"approval:task:act",
 			"shipping:schedule:read", "shipping:schedule:write",
 			"masterdata:supplier:read", "masterdata:port:read", "product:product:read",
 		},
-		Scopes: []presetScope{{"shipping", "ALL"}, {"procurement_sourcing", "ALL"}},
+		Scopes: []presetScope{{"business_report", "DEPT_AND_SUB"}, {"shipping", "ALL"}, {"procurement_sourcing", "ALL"}},
 	},
 	{
 		Code: "FINANCE", Name: "财务",
@@ -120,7 +120,7 @@ var presetRoles = []presetRole{
 	{
 		Code: "FINANCE_MANAGER", Name: "财务负责人",
 		Description: "审批全公司报销并管理收付款",
-		Permissions: []string{
+		Permissions: []string{"report:business:read",
 			"approval:task:act", "export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read", "fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
@@ -129,7 +129,7 @@ var presetRoles = []presetRole{
 			"procurement:recon:read", "procurement:recon:write", "procurement:reimbursement:manage",
 			"shipping:document:download", "shipping:document:view", "shipping:schedule:read",
 		},
-		Scopes: []presetScope{{"export", "ALL"}, {"mail", "SELF"}, {"procurement_order", "ALL"}, {"procurement_requirement", "SELF"}, {"procurement_sourcing", "SELF"}, {"shipping", "ALL"}},
+		Scopes: []presetScope{{"business_report", "DEPT_AND_SUB"}, {"export", "ALL"}, {"mail", "SELF"}, {"procurement_order", "ALL"}, {"procurement_requirement", "SELF"}, {"procurement_sourcing", "SELF"}, {"shipping", "ALL"}},
 	},
 	{
 		Code: "BUYER", Name: "采购专员",
@@ -158,7 +158,7 @@ var presetRoles = []presetRole{
 	{
 		Code: "PROCUREMENT_MANAGER", Name: "采购经理",
 		Description: "管理采购询价、例外需求、采购单审批与取消",
-		Permissions: []string{
+		Permissions: []string{"report:business:read",
 			"approval:task:act",
 			"masterdata:supplier:read",
 			"procurement:exception:write",
@@ -174,7 +174,7 @@ var presetRoles = []presetRole{
 			"product:product:read",
 			"quality:task:request",
 		},
-		Scopes: []presetScope{
+		Scopes: []presetScope{{"business_report", "DEPT_AND_SUB"},
 			// 采购经理需要审批团队采购单并统筹全部采购需求；SELF 会让分配给
 			// 他的审批任务存在，但进入具体单据后因看不到数据而失败。
 			{"procurement_order", "ALL"}, {"procurement_requirement", "ALL"},

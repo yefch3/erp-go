@@ -121,6 +121,7 @@ export const router = createRouter({
         // 供应商这边只剩这一页。待核销 / 已完成是它下面的两个子页，靠
         // ?view=done 分——一个服务一个菜单项，query 不影响 route.path，
         // 所以菜单高亮照常。
+        { path: 'manager/daily-report', component: () => import('./pages/ManagerDailyReportPage.vue'), meta: { permission: 'report:business:read' } },
         { path: 'supplier-recon', component: () => import('./pages/SupplierReconPage.vue') },
         // 三条退役地址一律重定向，不能直接删：路由表没有兜底路由，不匹配的
         // 地址会让 matched 变成空——连外面那层 Shell 都不渲染，老书签点进去

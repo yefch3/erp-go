@@ -67,6 +67,7 @@ const (
 	ShippingService_VerifyContractShippingContract_FullMethodName        = "/erp.shipping.v1.ShippingService/VerifyContractShippingContract"
 	ShippingService_MarkContractShippingPaymentRequested_FullMethodName  = "/erp.shipping.v1.ShippingService/MarkContractShippingPaymentRequested"
 	ShippingService_GetCargoScheduleProgress_FullMethodName              = "/erp.shipping.v1.ShippingService/GetCargoScheduleProgress"
+	ShippingService_GetDailyShippingActivity_FullMethodName              = "/erp.shipping.v1.ShippingService/GetDailyShippingActivity"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -129,6 +130,7 @@ type ShippingServiceClient interface {
 	MarkContractShippingPaymentRequested(ctx context.Context, in *MarkContractShippingPaymentRequestedRequest, opts ...grpc.CallOption) (*MarkContractShippingPaymentRequestedResponse, error)
 	// Internal, narrow projection for authorized purchase-order fulfillment views.
 	GetCargoScheduleProgress(ctx context.Context, in *GetCargoScheduleProgressRequest, opts ...grpc.CallOption) (*GetCargoScheduleProgressResponse, error)
+	GetDailyShippingActivity(ctx context.Context, in *GetDailyShippingActivityRequest, opts ...grpc.CallOption) (*GetDailyShippingActivityResponse, error)
 }
 
 type shippingServiceClient struct {
@@ -619,6 +621,16 @@ func (c *shippingServiceClient) GetCargoScheduleProgress(ctx context.Context, in
 	return out, nil
 }
 
+func (c *shippingServiceClient) GetDailyShippingActivity(ctx context.Context, in *GetDailyShippingActivityRequest, opts ...grpc.CallOption) (*GetDailyShippingActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDailyShippingActivityResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetDailyShippingActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShippingServiceServer is the server API for ShippingService service.
 // All implementations must embed UnimplementedShippingServiceServer
 // for forward compatibility.
@@ -679,6 +691,7 @@ type ShippingServiceServer interface {
 	MarkContractShippingPaymentRequested(context.Context, *MarkContractShippingPaymentRequestedRequest) (*MarkContractShippingPaymentRequestedResponse, error)
 	// Internal, narrow projection for authorized purchase-order fulfillment views.
 	GetCargoScheduleProgress(context.Context, *GetCargoScheduleProgressRequest) (*GetCargoScheduleProgressResponse, error)
+	GetDailyShippingActivity(context.Context, *GetDailyShippingActivityRequest) (*GetDailyShippingActivityResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
 }
 
@@ -832,6 +845,9 @@ func (UnimplementedShippingServiceServer) MarkContractShippingPaymentRequested(c
 }
 func (UnimplementedShippingServiceServer) GetCargoScheduleProgress(context.Context, *GetCargoScheduleProgressRequest) (*GetCargoScheduleProgressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCargoScheduleProgress not implemented")
+}
+func (UnimplementedShippingServiceServer) GetDailyShippingActivity(context.Context, *GetDailyShippingActivityRequest) (*GetDailyShippingActivityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDailyShippingActivity not implemented")
 }
 func (UnimplementedShippingServiceServer) mustEmbedUnimplementedShippingServiceServer() {}
 func (UnimplementedShippingServiceServer) testEmbeddedByValue()                         {}
@@ -1718,6 +1734,24 @@ func _ShippingService_GetCargoScheduleProgress_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_GetDailyShippingActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDailyShippingActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetDailyShippingActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetDailyShippingActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetDailyShippingActivity(ctx, req.(*GetDailyShippingActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShippingService_ServiceDesc is the grpc.ServiceDesc for ShippingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1916,6 +1950,10 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCargoScheduleProgress",
 			Handler:    _ShippingService_GetCargoScheduleProgress_Handler,
+		},
+		{
+			MethodName: "GetDailyShippingActivity",
+			Handler:    _ShippingService_GetDailyShippingActivity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

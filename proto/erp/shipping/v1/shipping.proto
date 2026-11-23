@@ -3,6 +3,7 @@ syntax = "proto3";
 package erp.shipping.v1;
 
 import "erp/common/v1/pagination.proto";
+import "erp/common/v1/daily_activity.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1";
 
@@ -62,6 +63,7 @@ service ShippingService {
   rpc MarkContractShippingPaymentRequested(MarkContractShippingPaymentRequestedRequest) returns (MarkContractShippingPaymentRequestedResponse);
   // Internal, narrow projection for authorized purchase-order fulfillment views.
   rpc GetCargoScheduleProgress(GetCargoScheduleProgressRequest) returns (GetCargoScheduleProgressResponse);
+  rpc GetDailyShippingActivity(GetDailyShippingActivityRequest) returns (GetDailyShippingActivityResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -660,3 +662,12 @@ message CorrectPortMetadataRequest {
   int32 route_version = 8;
 }
 message CorrectPortMetadataResponse { Schedule schedule = 1; }
+
+message GetDailyShippingActivityRequest {
+  int64 day_start = 1;
+  int64 as_of = 2;
+  string trend_unit = 3; // Empty for daily reports, week or month otherwise.
+}
+message GetDailyShippingActivityResponse {
+  repeated erp.common.v1.DailyActivityRow rows = 1;
+}

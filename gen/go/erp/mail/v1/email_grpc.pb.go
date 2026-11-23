@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	EmailService_GetDailyMailReport_FullMethodName           = "/erp.mail.v1.EmailService/GetDailyMailReport"
 	EmailService_ListCampaigns_FullMethodName                = "/erp.mail.v1.EmailService/ListCampaigns"
 	EmailService_GetCampaign_FullMethodName                  = "/erp.mail.v1.EmailService/GetCampaign"
 	EmailService_PreviewCampaign_FullMethodName              = "/erp.mail.v1.EmailService/PreviewCampaign"
@@ -121,6 +122,7 @@ const (
 // once - recipients cannot see each other, each mail is personalised, each is
 // retried on its own, and each carries its own delivery status.
 type EmailServiceClient interface {
+	GetDailyMailReport(ctx context.Context, in *GetDailyMailReportRequest, opts ...grpc.CallOption) (*GetDailyMailReportResponse, error)
 	ListCampaigns(ctx context.Context, in *ListCampaignsRequest, opts ...grpc.CallOption) (*ListCampaignsResponse, error)
 	GetCampaign(ctx context.Context, in *GetCampaignRequest, opts ...grpc.CallOption) (*GetCampaignResponse, error)
 	// Render as one chosen recipient will receive it. Required before sending:
@@ -358,6 +360,16 @@ type emailServiceClient struct {
 
 func NewEmailServiceClient(cc grpc.ClientConnInterface) EmailServiceClient {
 	return &emailServiceClient{cc}
+}
+
+func (c *emailServiceClient) GetDailyMailReport(ctx context.Context, in *GetDailyMailReportRequest, opts ...grpc.CallOption) (*GetDailyMailReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDailyMailReportResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetDailyMailReport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *emailServiceClient) ListCampaigns(ctx context.Context, in *ListCampaignsRequest, opts ...grpc.CallOption) (*ListCampaignsResponse, error) {
@@ -1253,6 +1265,7 @@ func (c *emailServiceClient) ListSupervisionLog(ctx context.Context, in *ListSup
 // once - recipients cannot see each other, each mail is personalised, each is
 // retried on its own, and each carries its own delivery status.
 type EmailServiceServer interface {
+	GetDailyMailReport(context.Context, *GetDailyMailReportRequest) (*GetDailyMailReportResponse, error)
 	ListCampaigns(context.Context, *ListCampaignsRequest) (*ListCampaignsResponse, error)
 	GetCampaign(context.Context, *GetCampaignRequest) (*GetCampaignResponse, error)
 	// Render as one chosen recipient will receive it. Required before sending:
@@ -1492,6 +1505,9 @@ type EmailServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedEmailServiceServer struct{}
 
+func (UnimplementedEmailServiceServer) GetDailyMailReport(context.Context, *GetDailyMailReportRequest) (*GetDailyMailReportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDailyMailReport not implemented")
+}
 func (UnimplementedEmailServiceServer) ListCampaigns(context.Context, *ListCampaignsRequest) (*ListCampaignsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCampaigns not implemented")
 }
@@ -1775,6 +1791,24 @@ func RegisterEmailServiceServer(s grpc.ServiceRegistrar, srv EmailServiceServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&EmailService_ServiceDesc, srv)
+}
+
+func _EmailService_GetDailyMailReport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDailyMailReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetDailyMailReport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetDailyMailReport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetDailyMailReport(ctx, req.(*GetDailyMailReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _EmailService_ListCampaigns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -3368,6 +3402,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.mail.v1.EmailService",
 	HandlerType: (*EmailServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetDailyMailReport",
+			Handler:    _EmailService_GetDailyMailReport_Handler,
+		},
 		{
 			MethodName: "ListCampaigns",
 			Handler:    _EmailService_ListCampaigns_Handler,

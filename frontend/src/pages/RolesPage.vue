@@ -241,6 +241,7 @@ const DATA_SCOPE_MODULES = [
   { key: 'shipping', label: 'roles.scopeShipping' },
   { key: 'quality', label: 'roles.scopeQuality' },
   { key: 'mail', label: 'roles.scopeMail' },
+  { key: 'business_report', label: 'managerReport.title' },
 ] as const
 const scopes = ref<Record<string, string>>({})
 const scopeValues = reactive<Record<string, string>>(
@@ -323,6 +324,7 @@ const scopePermissionPrefixes: Record<string, string[]> = {
   ],
   procurement_requirement: ['procurement:requirement:'],
   procurement_factory_quote: ['procurement:sourcing:', 'procurement:requirement:'],
+  business_report: ['report:business:'],
   daily_base_price: ['procurement:daily-price:'],
   shipping: ['shipping:'],
   quality: ['quality:'],

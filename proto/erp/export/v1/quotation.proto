@@ -3,6 +3,7 @@ syntax = "proto3";
 package erp.export.v1;
 
 import "erp/common/v1/pagination.proto";
+import "erp/common/v1/daily_activity.proto";
 
 // QuotationService owns quotations: what was offered to a customer, at which
 // prices, under which exchange rate. Once sent, a quotation is a promise, so
@@ -23,6 +24,7 @@ service QuotationService {
   rpc CancelQuotation(CancelQuotationRequest) returns (CancelQuotationResponse);
   rpc GetQuotationWorkbook(GetQuotationWorkbookRequest) returns (GetQuotationWorkbookResponse);
   rpc GetQuotationPdf(GetQuotationPdfRequest) returns (GetQuotationPdfResponse);
+  rpc GetDailyQuotationActivity(GetDailyQuotationActivityRequest) returns (GetDailyQuotationActivityResponse);
 }
 
 
@@ -263,3 +265,12 @@ message SetInquiryAvailabilityResponse {}
 
 message CustomerOfferRequest { string command_json = 1; }
 message CustomerOfferResponse { string result_json = 1; }
+
+message GetDailyQuotationActivityRequest {
+  int64 day_start = 1;
+  int64 as_of = 2;
+  string trend_unit = 3; // Empty for daily reports, week or month otherwise.
+}
+message GetDailyQuotationActivityResponse {
+  repeated erp.common.v1.DailyActivityRow rows = 1;
+}

@@ -248,6 +248,7 @@ func (s *Service) seedTenantCore(ctx context.Context, q *store.Queries, companyN
 // 加新模块时记得同时补这里和订正迁移——漏了的症状是「管理员说他看不见
 // 别人的单子」，而权限页上一切正常。
 var superAdminScopeModules = []string{
+	"business_report",
 	"export",
 	"quality",
 	"shipping",

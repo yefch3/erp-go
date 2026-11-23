@@ -684,7 +684,8 @@ func (q *Queries) SetQuotationOwner(ctx context.Context, arg SetQuotationOwnerPa
 const setQuotationStatus = `-- name: SetQuotationStatus :one
 UPDATE quotations SET
     status = $4::text,
-    sent_at = CASE WHEN $4::text = 'SENT' THEN now() ELSE sent_at END,
+    sent_at = CASE WHEN $4::text = 'SENT' THEN coalesce(sent_at, now()) ELSE sent_at END,
+    sent_by = CASE WHEN $4::text = 'SENT' AND sent_at IS NULL THEN $3::bigint ELSE sent_by END,
     responded_at = CASE WHEN $4::text IN ('ACCEPTED','REJECTED')
                         THEN now() ELSE responded_at END,
     -- The customer's words land with the answer and only with the answer.

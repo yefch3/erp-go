@@ -731,9 +731,15 @@ func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operat
 		if err != nil {
 			return err
 		}
-		return q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
+		if err := q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
 			TenantID: tenantID, ID: id, InstanceID: instanceID,
-		})
+		}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO purchase_order_submission_activity
+			(tenant_id,po_id,approval_instance_id,operator_id) VALUES ($1,$2,$3,$4)
+			ON CONFLICT (tenant_id,po_id,approval_instance_id) DO NOTHING`, tenantID, id, instanceID, op.ID)
+		return err
 	})
 	if err != nil {
 		return "", 0, err

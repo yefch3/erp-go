@@ -30,6 +30,9 @@
         <el-menu-item index="/emails" :style="moduleStyle('emails')" draggable="true" @dragstart="startModuleDrag('emails', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('emails')" @dragend="finishNavigationDrag">
           <span class="module-short" aria-hidden="true"><el-icon><Message /></el-icon></span><span class="module-label">{{ t('menu.emails') }}</span>
         </el-menu-item>
+        <el-menu-item v-if="auth.can('report:business:read')" index="/manager/daily-report" :style="moduleStyle('managerReport')" draggable="true" @dragstart="startModuleDrag('managerReport', $event)" @dragover.prevent @drop.prevent="dropModuleDirect('managerReport')" @dragend="finishNavigationDrag">
+          <span class="module-short" aria-hidden="true"><el-icon><DataBoard /></el-icon></span><span class="module-label">{{ t('managerReport.title') }}</span>
+        </el-menu-item>
         <!-- 一张订单的走向：签合同 → 采购 → 出货 → 收钱。四个分组按这个
              顺序排，相邻的就是流程上相邻的。 -->
         <el-popover
@@ -484,7 +487,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 
 const route = useRoute()
-const moduleDefaults = ['todos','emails','sales','procurement','quality','warehouse','logistics','finance','basic','system']
+const moduleDefaults = ['todos','emails','managerReport','sales','procurement','quality','warehouse','logistics','finance','basic','system']
 const childDefaults: Record<string,string[]> = {
   sales: ['/sales/inquiries','/sales/quotations','/sales/settings/inquiry-templates','/contracts'],
   procurement: ['/procurement/sourcing','/requirements','/purchase-orders'],
@@ -698,6 +701,7 @@ const hasBasicData = computed(() => basicDataItems.value.length > 0)
 const visibleModules = computed(() => sortByOrder([
   { key: 'todos', visible: true },
   { key: 'emails', visible: true },
+  { key: 'managerReport', visible: auth.can('report:business:read') },
   { key: 'sales', visible: hasSales.value },
   { key: 'procurement', visible: hasProcurement.value },
   { key: 'quality', visible: auth.can('quality:task:read') },

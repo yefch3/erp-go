@@ -19,17 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	QuotationService_CustomerOffer_FullMethodName          = "/erp.export.v1.QuotationService/CustomerOffer"
-	QuotationService_SetInquiryAvailability_FullMethodName = "/erp.export.v1.QuotationService/SetInquiryAvailability"
-	QuotationService_ListQuotations_FullMethodName         = "/erp.export.v1.QuotationService/ListQuotations"
-	QuotationService_GetQuotation_FullMethodName           = "/erp.export.v1.QuotationService/GetQuotation"
-	QuotationService_CreateQuotation_FullMethodName        = "/erp.export.v1.QuotationService/CreateQuotation"
-	QuotationService_UpdateQuotation_FullMethodName        = "/erp.export.v1.QuotationService/UpdateQuotation"
-	QuotationService_SendQuotation_FullMethodName          = "/erp.export.v1.QuotationService/SendQuotation"
-	QuotationService_RespondQuotation_FullMethodName       = "/erp.export.v1.QuotationService/RespondQuotation"
-	QuotationService_CancelQuotation_FullMethodName        = "/erp.export.v1.QuotationService/CancelQuotation"
-	QuotationService_GetQuotationWorkbook_FullMethodName   = "/erp.export.v1.QuotationService/GetQuotationWorkbook"
-	QuotationService_GetQuotationPdf_FullMethodName        = "/erp.export.v1.QuotationService/GetQuotationPdf"
+	QuotationService_CustomerOffer_FullMethodName             = "/erp.export.v1.QuotationService/CustomerOffer"
+	QuotationService_SetInquiryAvailability_FullMethodName    = "/erp.export.v1.QuotationService/SetInquiryAvailability"
+	QuotationService_ListQuotations_FullMethodName            = "/erp.export.v1.QuotationService/ListQuotations"
+	QuotationService_GetQuotation_FullMethodName              = "/erp.export.v1.QuotationService/GetQuotation"
+	QuotationService_CreateQuotation_FullMethodName           = "/erp.export.v1.QuotationService/CreateQuotation"
+	QuotationService_UpdateQuotation_FullMethodName           = "/erp.export.v1.QuotationService/UpdateQuotation"
+	QuotationService_SendQuotation_FullMethodName             = "/erp.export.v1.QuotationService/SendQuotation"
+	QuotationService_RespondQuotation_FullMethodName          = "/erp.export.v1.QuotationService/RespondQuotation"
+	QuotationService_CancelQuotation_FullMethodName           = "/erp.export.v1.QuotationService/CancelQuotation"
+	QuotationService_GetQuotationWorkbook_FullMethodName      = "/erp.export.v1.QuotationService/GetQuotationWorkbook"
+	QuotationService_GetQuotationPdf_FullMethodName           = "/erp.export.v1.QuotationService/GetQuotationPdf"
+	QuotationService_GetDailyQuotationActivity_FullMethodName = "/erp.export.v1.QuotationService/GetDailyQuotationActivity"
 )
 
 // QuotationServiceClient is the client API for QuotationService service.
@@ -55,6 +56,7 @@ type QuotationServiceClient interface {
 	CancelQuotation(ctx context.Context, in *CancelQuotationRequest, opts ...grpc.CallOption) (*CancelQuotationResponse, error)
 	GetQuotationWorkbook(ctx context.Context, in *GetQuotationWorkbookRequest, opts ...grpc.CallOption) (*GetQuotationWorkbookResponse, error)
 	GetQuotationPdf(ctx context.Context, in *GetQuotationPdfRequest, opts ...grpc.CallOption) (*GetQuotationPdfResponse, error)
+	GetDailyQuotationActivity(ctx context.Context, in *GetDailyQuotationActivityRequest, opts ...grpc.CallOption) (*GetDailyQuotationActivityResponse, error)
 }
 
 type quotationServiceClient struct {
@@ -175,6 +177,16 @@ func (c *quotationServiceClient) GetQuotationPdf(ctx context.Context, in *GetQuo
 	return out, nil
 }
 
+func (c *quotationServiceClient) GetDailyQuotationActivity(ctx context.Context, in *GetDailyQuotationActivityRequest, opts ...grpc.CallOption) (*GetDailyQuotationActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDailyQuotationActivityResponse)
+	err := c.cc.Invoke(ctx, QuotationService_GetDailyQuotationActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QuotationServiceServer is the server API for QuotationService service.
 // All implementations must embed UnimplementedQuotationServiceServer
 // for forward compatibility.
@@ -198,6 +210,7 @@ type QuotationServiceServer interface {
 	CancelQuotation(context.Context, *CancelQuotationRequest) (*CancelQuotationResponse, error)
 	GetQuotationWorkbook(context.Context, *GetQuotationWorkbookRequest) (*GetQuotationWorkbookResponse, error)
 	GetQuotationPdf(context.Context, *GetQuotationPdfRequest) (*GetQuotationPdfResponse, error)
+	GetDailyQuotationActivity(context.Context, *GetDailyQuotationActivityRequest) (*GetDailyQuotationActivityResponse, error)
 	mustEmbedUnimplementedQuotationServiceServer()
 }
 
@@ -240,6 +253,9 @@ func (UnimplementedQuotationServiceServer) GetQuotationWorkbook(context.Context,
 }
 func (UnimplementedQuotationServiceServer) GetQuotationPdf(context.Context, *GetQuotationPdfRequest) (*GetQuotationPdfResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetQuotationPdf not implemented")
+}
+func (UnimplementedQuotationServiceServer) GetDailyQuotationActivity(context.Context, *GetDailyQuotationActivityRequest) (*GetDailyQuotationActivityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDailyQuotationActivity not implemented")
 }
 func (UnimplementedQuotationServiceServer) mustEmbedUnimplementedQuotationServiceServer() {}
 func (UnimplementedQuotationServiceServer) testEmbeddedByValue()                          {}
@@ -460,6 +476,24 @@ func _QuotationService_GetQuotationPdf_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _QuotationService_GetDailyQuotationActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDailyQuotationActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuotationServiceServer).GetDailyQuotationActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: QuotationService_GetDailyQuotationActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuotationServiceServer).GetDailyQuotationActivity(ctx, req.(*GetDailyQuotationActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // QuotationService_ServiceDesc is the grpc.ServiceDesc for QuotationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -510,6 +544,10 @@ var QuotationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetQuotationPdf",
 			Handler:    _QuotationService_GetQuotationPdf_Handler,
+		},
+		{
+			MethodName: "GetDailyQuotationActivity",
+			Handler:    _QuotationService_GetDailyQuotationActivity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
