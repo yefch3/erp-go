@@ -49,8 +49,30 @@
         v-model="color"
         size="small"
         :predefine="SWATCHES"
+        :aria-label="t('editor.textColor')"
         @change="applyColor"
       />
+      <el-dropdown trigger="click" @command="applyHighlight">
+        <el-button
+          size="small"
+          :title="t('editor.highlight')"
+          @mousedown.prevent="rememberCaret"
+        >
+          <span class="highlight-icon" aria-hidden="true">A</span>
+          {{ t('editor.highlight') }}
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="swatch in HIGHLIGHTS" :key="swatch.name" :command="swatch.color">
+              <span class="highlight-swatch" :style="{ backgroundColor: swatch.color }" aria-hidden="true" />
+              {{ t(`editor.highlightColors.${swatch.name}`) }}
+            </el-dropdown-item>
+            <el-dropdown-item divided command="transparent">
+              {{ t('editor.clearHighlight') }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
       <span class="sep" />
 
@@ -189,6 +211,14 @@ const FONTS = [
 ]
 const SIZES = [12, 13, 14, 16, 18, 20, 24, 28]
 const SWATCHES = ['#000000', '#333333', '#c0392b', '#2980b9', '#27ae60', '#8e44ad']
+const HIGHLIGHTS = [
+  { name: 'yellow', color: '#fff29a' },
+  { name: 'green', color: '#c9f3b4' },
+  { name: 'blue', color: '#cce8ff' },
+  { name: 'pink', color: '#ffd6e7' },
+  { name: 'orange', color: '#ffdfb4' },
+  { name: 'purple', color: '#e6d8ff' },
+]
 
 const area = ref<HTMLDivElement>()
 const fontFamily = ref('')
@@ -219,6 +249,7 @@ watch(
 
 function setHTML(v: string) {
   if (!area.value) return
+  savedRange = null
   // mail-sandbox-ok: 这里进来的永远是我们自己写的正文——写信框里敲的字，或者
   // 一封草稿的 body，而草稿存进库时过的是发信那份白名单（mailPolicy），它连
   // <style> 带里面的 CSS 一起丢掉。收到的信的 HTML 到不了这一行；它要么进
@@ -403,7 +434,21 @@ function applySize(size: string) {
 
 function applyColor(c: string | null) {
   if (!c) return
+  restoreCaret()
   wrapSelection((el) => (el.style.color = c))
+}
+
+function applyHighlight(background: string) {
+  if (!savedRange || !area.value?.contains(savedRange.commonAncestorContainer) || !savedRange.toString()) {
+    ElMessage.info(t('editor.selectFirst'))
+    return
+  }
+  restoreCaret()
+  // Let the browser split/rewrite inline formatting on the selected runs.
+  // Wrapping a selection would leave any old highlight underneath the new one.
+  document.execCommand('styleWithCSS', false, 'true')
+  document.execCommand('hiliteColor', false, background)
+  emitChange()
 }
 
 function addLink() {
@@ -548,6 +593,19 @@ function insertImage(img: MailImage) {
   width: 1px;
   height: 18px;
   background: var(--el-border-color);
+}
+.highlight-icon {
+  font-weight: 700;
+  line-height: 1;
+  margin-right: 5px;
+  border-bottom: 3px solid #edbc29;
+}
+.highlight-swatch {
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 3px;
 }
 .grow {
   flex: 1;

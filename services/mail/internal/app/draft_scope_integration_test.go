@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,15 +148,23 @@ func TestDraftListCarriesWhatTheRowNeeds(t *testing.T) {
 	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
-	if _, err := svc.SaveDraft(ctx, tenantID, DraftInput{
-		Subject: "报价确认", Body: "<p>您好，</p><p>附上<b>最新</b>报价。</p>", Format: "HTML",
+	id, err := svc.SaveDraft(ctx, tenantID, DraftInput{
+		Subject: "报价确认", Body: `<p>您好，</p><p>附上<b><span style="background-color: rgb(255, 242, 154);">最新</span></b>报价。</p>`, Format: "HTML",
 		Recipients: []Recipient{
 			{Name: "林采购", Email: "lin@buyer.com"},
 			{Email: "wu@buyer.com"},
 		},
 		Attachments: []PendingAttachment{{FileName: "quote.xlsx", FileKey: "k/quote.xlsx"}},
-	}, op); err != nil {
+	}, op)
+	if err != nil {
 		t.Fatal(err)
+	}
+	reopened, err := svc.GetDraft(ctx, tenantID, id, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reopened.Body, `<b><span style="background-color: rgb(255, 242, 154);">最新</span></b>`) {
+		t.Errorf("高亮在重开草稿后丢失：%q", reopened.Body)
 	}
 	// 三样全空的一封。列表要照样列得出来——空草稿是很正常的东西。
 	if _, err := svc.SaveDraft(ctx, tenantID, DraftInput{Format: "HTML"}, op); err != nil {
