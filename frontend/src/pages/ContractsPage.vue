@@ -157,7 +157,7 @@
       <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
         <el-alert v-if="editable && missingContractParties(detail.version).length" type="warning" :closable="false" show-icon style="margin-bottom:14px">
           <template #title>提交前请补全：{{missingContractParties(detail.version).join('、')}}</template>
-          <el-button link type="primary" @click="openTerms">补全合同双方信息</el-button>
+          <el-button v-if="canEditDraft" link type="primary" @click="openTerms">补全合同双方信息</el-button>
         </el-alert>
         <div class="detail-head">
           <div v-if="detail.contract.entrySource!=='HISTORICAL_RECORD'" class="contract-overview">
@@ -187,17 +187,17 @@
             <span v-else-if="canWrite && !isMine" class="not-mine">{{ t('contracts.notOwner') }}</span>
           </div>
           <div v-if="!['EXISTING_CONTRACT','HISTORICAL_RECORD'].includes(detail.contract.entrySource||'')" id="contract-management-actions" class="detail-actions">
-        <ContractWorkflowPanel :contract="detail.contract" :version-status="detail.version.status" :compact="true" :show-records="detailTab==='records'" :can-edit="canWrite && isMine" @records="workflowRecords=$event" :has-primary="!!myConfirmationTask || (canWrite && isMine && (editable || detail.contract.status==='PENDING_SIGN'))" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()">
+        <ContractWorkflowPanel :contract="detail.contract" :version-status="detail.version.status" :compact="true" :show-records="detailTab==='records'" :can-edit="canWrite && isMine" @records="workflowRecords=$event" :has-primary="!!myConfirmationTask || canEditDraft || (canWrite && isMine && detail.contract.status==='PENDING_SIGN')" @changed="entrySaved(detail.contract.id)" @change="openChange" @deleted="detailOpen=false;load()">
           <template #primary>
             <el-button v-if="myConfirmationTask" type="primary" @click="confirmContract('APPROVE')">同意</el-button>
-            <template v-else-if="canWrite && isMine">
-              <el-button v-if="editable" type="primary" @click="submit(detail.contract)">提交上级确认</el-button>
+            <template v-else-if="canEditDraft || (canWrite && isMine)">
+              <el-button v-if="canEditDraft" type="primary" @click="submit(detail.contract)">提交上级确认</el-button>
               <el-button v-else-if="detail.contract.status==='PENDING_SIGN'" type="primary" @click="hasSignedCopy?sign(detail.contract):openSignedCopySection()">{{hasSignedCopy?'开始执行':'上传签回件'}}</el-button>
             </template>
           </template>
           <template #management>
             <el-dropdown-item v-if="myConfirmationTask" @click="confirmContract('RETURN')"><span class="management-icon" aria-hidden="true">↶</span><span class="management-label">退回修改</span></el-dropdown-item>
-            <el-dropdown-item :disabled="!editable || !canWrite || !isMine" @click="openTerms"><span class="management-icon" aria-hidden="true">✎</span><div class="management-item"><span class="management-label">编辑草稿</span><small v-if="!editable">仅限可编辑的草稿或退回版本</small><small v-else-if="!canWrite||!isMine">只有负责销售可以操作</small></div></el-dropdown-item>
+            <el-dropdown-item :disabled="!canEditDraft" @click="openTerms"><span class="management-icon" aria-hidden="true">✎</span><div class="management-item"><span class="management-label">编辑草稿</span><small v-if="!editable">仅限可编辑的草稿或退回版本</small><small v-else-if="!canEditDraft">仅负责销售或超级管理员可编辑</small></div></el-dropdown-item>
             <el-dropdown-item :disabled="!canWrite || !isMine || !['EXECUTING','EFFECTIVE'].includes(detail.contract.status)" @click="openSupplement"><span class="management-icon" aria-hidden="true">＋</span><div class="management-item"><span class="management-label">补充合同资料</span><small>{{!canWrite||!isMine?'只有负责销售可以操作':!['EXECUTING','EFFECTIVE'].includes(detail.contract.status)?'合同执行后可补充':'原合同号、应收日期等'}}</small></div></el-dropdown-item>
             <el-dropdown-item :disabled="!canTransfer" @click="openTransfer"><span class="management-icon" aria-hidden="true">⇄</span><div class="management-item"><span class="management-label">转移负责人</span><small v-if="!canTransfer">需要负责人转移权限</small></div></el-dropdown-item>
           </template>
@@ -970,6 +970,7 @@ interface Shipment {
   remainingQty: string
 }
 interface Detail {
+  canDelegateDraft?: boolean
  receiptSettlementStatus?:string
  shipmentProgressAvailable?:boolean
  acceptedOfferJson?:string
@@ -1480,6 +1481,7 @@ async function openSignedCopySection() {
 const editable = computed(
   () => detail.value?.version.status === 'DRAFT' && detail.value.version.id === detail.value.versions[0]?.id,
 )
+const canEditDraft = computed(() => canWrite && editable.value && (isMine.value || detail.value?.canDelegateDraft === true))
 const changeable = computed(
   () => ['EFFECTIVE', 'EXECUTING'].includes(detail.value?.contract.status ?? '') &&
     detail.value?.version.status === 'APPROVED',

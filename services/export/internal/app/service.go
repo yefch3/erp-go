@@ -149,6 +149,7 @@ type Approvals interface {
 // organisation chart.
 type Directory interface {
 	Get(ctx context.Context, employeeID int64) (Employee, error)
+	IsSuperAdmin(ctx context.Context, employeeID int64) (bool, error)
 }
 
 // Employee is the slice of a person export cares about: what to write on a

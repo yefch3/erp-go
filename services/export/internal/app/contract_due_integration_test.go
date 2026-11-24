@@ -54,6 +54,7 @@ func (dueProductStub) GetMany(_ context.Context, ids []int64) (map[int64]Product
 
 type dueDirectoryStub struct{}
 
+func (dueDirectoryStub) IsSuperAdmin(context.Context, int64) (bool, error) { return false, nil }
 func (dueDirectoryStub) Get(_ context.Context, employeeID int64) (Employee, error) {
 	return Employee{ID: employeeID, Name: "Original Buyer", Status: "ACTIVE"}, nil
 }

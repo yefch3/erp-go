@@ -276,7 +276,7 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		return ContractView{}, apierr.Conflict("EX_HISTORY_RECORD_ONLY", "历史合同是资料记录，不走新单修改或变更流程")
 	}
 
-	if err := s.mustOwnContract(ctx, op, view); err != nil {
+	if err := s.requireDraftActor(ctx, op, view); err != nil {
 		return ContractView{}, err
 	}
 	if view.Contract.Status != "DRAFT" && view.Contract.Status != "EXECUTING" && view.Contract.Status != "EFFECTIVE" {
@@ -326,7 +326,7 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		if err != nil {
 			return err
 		}
-		if locked.Status != view.Contract.Status || locked.SalesEmployeeID != op.ID {
+		if locked.Status != view.Contract.Status || locked.SalesEmployeeID != view.Contract.SalesEmployeeID {
 			return apierr.Conflict("EX_CONTRACT_CHANGED", "合同状态或负责人已变化，请刷新后重新操作")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE contracts SET external_contract_no=$3,updated_at=now(),updated_by=$4 WHERE tenant_id=$1 AND id=$2`, tenantID, id, meta.ExternalContractNo, op.ID); err != nil {
@@ -370,6 +370,11 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 			TenantID: tenantID, ID: id, DueDate: terms.ReceivableDueDate,
 		}); err != nil {
 			return err
+		}
+		if op.ID != locked.SalesEmployeeID {
+			if err := recordWorkflowAction(ctx, tx, tenantID, id, "delegate_draft_save", "", nil, op); err != nil {
+				return err
+			}
 		}
 		if len(lines) == 0 {
 			return nil
@@ -647,6 +652,26 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 		}
 	}
 	return view, nil
+}
+
+// CanDelegateDraft checks the actual actor's active IAM role. Approval involvement
+// and team-wide visibility do not confer the right to act for a salesperson.
+func (s *Service) CanDelegateDraft(ctx context.Context, op Operator, view ContractView) (bool, error) {
+	if op.ID <= 0 || op.ID == view.Contract.SalesEmployeeID || view.Version.Status != "DRAFT" || view.Contract.Status != "DRAFT" || view.Contract.EntrySource == "HISTORICAL_RECORD" || s.directory == nil {
+		return false, nil
+	}
+	return s.directory.IsSuperAdmin(ctx, op.ID)
+}
+
+func (s *Service) requireDraftActor(ctx context.Context, op Operator, view ContractView) error {
+	allowed, err := s.CanDelegateDraft(ctx, op, view)
+	if err != nil {
+		return err
+	}
+	if allowed {
+		return s.checkCustomerAccess(ctx, view.Contract.CustomerID)
+	}
+	return s.mustOwnContract(ctx, op, view)
 }
 
 // mustOwnContract is the write-side counterpart of GetContractFor. The read
