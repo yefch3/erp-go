@@ -124,7 +124,11 @@ func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContract
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.GetContractResponse{
+	canDelegate, err := h.svc.CanDelegateDraft(ctx, operator(ctx), view)
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.GetContractResponse{CanDelegateDraft: canDelegate,
 		ReceiptSettlementStatus: settlement, ShipmentProgressAvailable: true, AcceptedOfferJson: accepted, Contract: contractToProto(view), Version: versionToProto(view.Version),
 		Items: contractItemsToProto(view.Items), Versions: versionListToProto(view.Versions),
 		Shipments: shipments,

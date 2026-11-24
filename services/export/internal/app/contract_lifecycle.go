@@ -32,7 +32,7 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 	if err != nil {
 		return "", 0, err
 	}
-	if err := s.mustOwnContract(ctx, op, view); err != nil {
+	if err := s.requireDraftActor(ctx, op, view); err != nil {
 		return "", 0, err
 	}
 	if err := readyToSubmit(view); err != nil {
@@ -64,7 +64,7 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 		if locked.Status == "PENDING_APPROVAL" {
 			return nil // a concurrent submit already moved it; nothing to do
 		}
-		if locked.Status != view.Contract.Status {
+		if locked.Status != view.Contract.Status || locked.SalesEmployeeID != view.Contract.SalesEmployeeID {
 			return apierr.Conflict("EX_CONTRACT_STATUS_CHANGED", "合同状态已变化，请刷新后重试")
 		}
 		// Draft edits lock the same contract. Recheck the stored parties after
@@ -94,6 +94,11 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 			TenantID: tenantID, ID: id, UpdatedBy: op.ID,
 		}); err != nil {
 			return err
+		}
+		if op.ID != locked.SalesEmployeeID {
+			if err := recordWorkflowAction(ctx, tx, tenantID, id, "delegate_draft_submit", "", nil, op); err != nil {
+				return err
+			}
 		}
 		return q.SetContractVersionStatus(ctx, store.SetContractVersionStatusParams{
 			TenantID: tenantID, ID: view.Version.ID, NewStatus: "PENDING_APPROVAL",

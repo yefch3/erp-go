@@ -326,6 +326,7 @@ message GetContractResponse {
   // Final customer receipt settlement only; no amounts or payment history.
   string receipt_settlement_status = 7;
   bool shipment_progress_available = 8;
+  bool can_delegate_draft = 9;
 }
 
 // Progress for one product on a contract, summed across its lines. Grouped
