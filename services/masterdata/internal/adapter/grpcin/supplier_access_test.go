@@ -11,6 +11,7 @@ import (
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/masterdata/internal/app"
@@ -24,10 +25,10 @@ type supplierIAM struct {
 
 func (s supplierIAM) VisibleEmployees(ctx context.Context, req *iamv1.VisibleEmployeesRequest, _ ...grpc.CallOption) (*iamv1.VisibleEmployeesResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
-	if req.Module != "supplier" || req.EmployeeId != op.EmployeeID {
+	if (req.Module != "supplier" && req.Module != "supplier_read") || req.EmployeeId != op.EmployeeID {
 		return nil, errors.New("wrong supplier scope identity")
 	}
-	return &iamv1.VisibleEmployeesResponse{All: op.EmployeeID == 99}, s.failure
+	return &iamv1.VisibleEmployeesResponse{All: op.EmployeeID == 99 || (op.EmployeeID == 3 && req.Module == "supplier_read")}, s.failure
 }
 
 func TestSupplierAccessFailsClosedAndRestrictsDeletion(t *testing.T) {
@@ -117,20 +118,53 @@ func TestSupplierAccessLifecycleIntegration(t *testing.T) {
 		}
 		return result
 	}
-	created := must(tenant, 1, "CreateSupplier", &mdv1.CreateSupplierRequest{Code: "OWNER-SCOPE", NameZh: "Owner scoped supplier", CountryCode: "CN", BusinessTypes: []string{"GENERAL"}}).(*mdv1.CreateSupplierResponse).Supplier
+	created := must(tenant, 1, "CreateSupplier", &mdv1.CreateSupplierRequest{Code: "OWNER-SCOPE", NameZh: "Owner scoped supplier", CountryCode: "CN", BusinessTypes: []string{"GENERAL", "FORWARDER"}}).(*mdv1.CreateSupplierResponse).Supplier
 	id := created.Id
 	owners := must(tenant, 1, "ListSupplierOwners", &mdv1.ListSupplierOwnersRequest{SupplierId: id}).(*mdv1.ListSupplierOwnersResponse).Owners
 	if len(owners) != 1 || owners[0].EmployeeId != 1 || !owners[0].IsPrimary {
 		t.Fatalf("creator not assigned: %v", owners)
 	}
 	list := func(actor int64) *mdv1.ListSuppliersResponse {
-		return must(tenant, actor, "ListSuppliers", &mdv1.ListSuppliersRequest{Keyword: "Owner scoped", Page: &commonv1.PageRequest{Page: 1, PageSize: 20}}).(*mdv1.ListSuppliersResponse)
+		return must(tenant, actor, "ListSuppliers", &mdv1.ListSuppliersRequest{Keyword: "Owner scoped", BusinessType: "FORWARDER", Page: &commonv1.PageRequest{Page: 1, PageSize: 20}}).(*mdv1.ListSuppliersResponse)
 	}
 	if r := list(1); len(r.Suppliers) != 1 {
 		t.Fatal("creator cannot list supplier")
 	}
 	if r := list(2); len(r.Suppliers) != 0 {
 		t.Fatal("unassigned user can list supplier")
+	}
+	if r := list(3); len(r.Suppliers) != 1 {
+		t.Fatal("company-wide reader cannot list supplier")
+	}
+	detail := must(tenant, 3, "GetSupplier", &mdv1.GetSupplierRequest{Id: id}).(*mdv1.GetSupplierResponse)
+	if detail.CanMaintain == nil || detail.GetCanMaintain() {
+		t.Fatal("company-wide read granted maintenance of another employee's supplier")
+	}
+	for _, actor := range []int64{1, 99} {
+		detail := must(tenant, actor, "GetSupplier", &mdv1.GetSupplierRequest{Id: id}).(*mdv1.GetSupplierResponse)
+		if !detail.GetCanMaintain() {
+			t.Fatalf("actor %d lost existing maintenance access", actor)
+		}
+	}
+	if _, err := call(tenant+1, 3, "GetSupplier", &mdv1.GetSupplierRequest{Id: id}); err == nil {
+		t.Fatal("company-wide read scope leaked a supplier from another tenant")
+	}
+	for _, mutation := range []struct {
+		method string
+		req    any
+		code   string
+	}{
+		{"UpdateSupplier", &mdv1.UpdateSupplierRequest{Id: id}, "MD_SUPPLIER_NOT_FOUND"},
+		{"DeactivateSupplier", &mdv1.DeactivateSupplierRequest{Id: id}, "MD_SUPPLIER_DELETE_DENIED"},
+		{"CreateSupplierContact", &mdv1.CreateSupplierContactRequest{SupplierId: id}, "MD_SUPPLIER_NOT_FOUND"},
+		{"CreateSupplierOwner", &mdv1.CreateSupplierOwnerRequest{SupplierId: id}, "MD_SUPPLIER_OWNER_MANAGE_DENIED"},
+		{"DeleteSupplierDocument", &mdv1.DeleteSupplierDocumentRequest{SupplierId: id}, "MD_SUPPLIER_NOT_FOUND"},
+	} {
+		_, err := call(tenant, 3, mutation.method, mutation.req)
+		failure, _ := err.(*apierr.Error)
+		if failure == nil || failure.Code != mutation.code {
+			t.Fatalf("%s with company-wide read scope: got %v, want access rejection", mutation.method, err)
+		}
 	}
 	imported := must(tenant, 1, "ImportSuppliers", &mdv1.ImportSuppliersRequest{Confirm: true, Rows: []*mdv1.SupplierImportRow{{RowNumber: 2, Code: "OWNER-IMPORT", NameZh: "Imported owner supplier", CountryCode: "CN", BusinessTypes: []string{"GENERAL"}}}}).(*mdv1.ImportSuppliersResponse)
 	if imported.ImportedCount != 1 {

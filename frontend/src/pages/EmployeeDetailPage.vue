@@ -528,6 +528,7 @@ function findingType(severity: string): 'success' | 'warning' | 'info' | 'error'
 
 function scopeLabel(scope: string, module: string): string {
   if (scope === 'SELF' && module === 'procurement_factory_quote') return t('roles.scopeFactoryQuoteSelf')
+  if (module === 'supplier_read') return t(scope === 'ALL' ? 'roles.scopeSupplierAll' : 'roles.scopeSupplierSelf')
   const labels: Record<string, string> = {
     SELF: t('roles.scopes.SELF'), DEPT: t('roles.scopes.DEPT'),
     DEPT_AND_SUB: t('roles.scopes.DEPT_AND_SUB'), ALL: t('roles.scopes.ALL'),
@@ -541,6 +542,7 @@ function scopeModuleLabel(module: string): string {
     export: t('roles.scopeExport'), procurement_sourcing: t('roles.scopeSourcing'),
     procurement_order: t('roles.scopeOrder'), procurement_requirement: t('roles.scopeRequirement'),
     procurement_factory_quote: t('roles.scopeFactoryQuote'),
+    supplier_read: t('roles.scopeSupplier'),
     business_report: t('managerReport.title'),
     shipping: t('roles.scopeShipping'), quality: t('roles.scopeQuality'), mail: t('roles.scopeMail'),
   }

@@ -21,6 +21,8 @@ type Visibility struct {
 	ScopeType   string
 }
 
+const supplierReadScope = "supplier_read"
+
 const factoryQuoteScopeModule = "procurement_factory_quote"
 
 // VisibleEmployees resolves the data scope attached to someone's roles.
@@ -29,9 +31,9 @@ const factoryQuoteScopeModule = "procurement_factory_quote"
 // thought about yet should reveal the least, not the most; the alternative
 // fails open, which is how "we forgot to configure it" turns into a leak.
 func (s *Service) VisibleEmployees(ctx context.Context, tenantID, employeeID int64, module string) (Visibility, error) {
-	// Customer access follows the existing owner relation, never a department
-	// scope or document creator. Only the system's highest role bypasses it.
-	if module == "customer" || module == "supplier" {
+	// Customer access and supplier mutations keep the owner-based rule.
+	// Supplier reads may also be widened by an explicitly configured role.
+	if module == "customer" || module == "supplier" || module == supplierReadScope {
 		var all bool
 		err := s.pool.QueryRow(ctx, `SELECT EXISTS (
 			SELECT 1 FROM employee_roles er JOIN roles r ON r.id=er.role_id AND r.tenant_id=er.tenant_id
@@ -43,6 +45,23 @@ func (s *Service) VisibleEmployees(ctx context.Context, tenantID, employeeID int
 		}
 		if all {
 			return Visibility{All: true, ScopeType: "ALL"}, nil
+		}
+		if module == supplierReadScope {
+			scope, err := s.q.WidestDataScope(ctx, store.WidestDataScopeParams{
+				TenantID: tenantID, EmployeeID: employeeID, Module: module,
+			})
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return Visibility{}, err
+			}
+			if scope.ScopeType == "ALL" {
+				allowed, err := s.CheckPermission(ctx, tenantID, employeeID, "masterdata:supplier:read")
+				if err != nil {
+					return Visibility{}, err
+				}
+				if allowed {
+					return Visibility{All: true, ScopeType: "ALL"}, nil
+				}
+			}
 		}
 		return Visibility{EmployeeIDs: []int64{employeeID}, ScopeType: "SELF"}, nil
 	}
@@ -169,6 +188,9 @@ func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, modu
 	if !scopeTypes[scopeType] {
 		return apierr.Invalid("IAM_SCOPE_TYPE_INVALID", "不支持的数据范围").
 			WithMeta("scope_type", scopeType)
+	}
+	if module == supplierReadScope && scopeType != "SELF" && scopeType != "ALL" {
+		return apierr.Invalid("IAM_SCOPE_TYPE_INVALID", "供应商及货代数据范围仅支持本人负责或本公司全部")
 	}
 	if module == factoryQuoteScopeModule && scopeType != "SELF" && scopeType != "ALL" {
 		return apierr.Invalid("IAM_SCOPE_TYPE_INVALID", "工厂报价可见范围只支持「仅本人录入」或「全部」")
