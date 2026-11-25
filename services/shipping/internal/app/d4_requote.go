@@ -127,8 +127,10 @@ func scanRequoteOption(row pgx.Row) (ShippingRequoteOption, error) {
 	return v, err
 }
 
+// Keep the comparison list readable if a later deployment stores candidates
+// without preliminary ETD/ETA and the service is rolled back to this version.
 const requoteOptionSelect = `SELECT id,handoff_id,forwarder_id,forwarder_name,actual_carrier_id,actual_carrier_name,
-	service_option,currency,freight_amount::text,etd::text,eta::text,payment_terms,remark,
+	service_option,currency,freight_amount::text,coalesce(etd::text,''),coalesce(eta::text,''),payment_terms,remark,
 	created_by,created_by_name,created_at::text,updated_at::text FROM shipping_execution_requote_options`
 
 func (s *Service) ListShippingRequoteOptions(ctx context.Context, tenantID, handoffID int64) ([]ShippingRequoteOption, error) {
