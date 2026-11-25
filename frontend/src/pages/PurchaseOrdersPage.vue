@@ -118,10 +118,7 @@
       <el-alert v-if="!editing" type="info" :closable="false" show-icon class="alert">
         {{ t('orders.createHint') }}
       </el-alert>
-      <el-form
-        label-width="90px" class="head-form" :class="{ 'negotiated-draft-form': negotiatedDraftItems }"
-        :label-position="negotiatedDraftItems ? 'top' : undefined" :size="negotiatedDraftItems ? 'small' : undefined"
-      >
+      <el-form class="purchase-draft-form" label-position="top" size="small">
         <el-form-item class="draft-supplier" :label="t('orders.supplier')" required>
           <el-input v-if="negotiatedDraftItems || (editing && !canReadSuppliers)" :model-value="existingSupplierLabel" readonly :aria-label="t('orders.supplier')" />
           <div v-else class="supplier-row">
@@ -131,7 +128,6 @@
               :pinned-option="pinnedSupplier"
               :disabled="supplierLocked || !canReadSuppliers"
               :aria-label="t('orders.supplier')"
-              style="width: 420px; max-width: 100%"
               @update:model-value="form.supplierId = String($event || '')"
               @selected="selectedSupplierName = $event?.name || ''"
             />
@@ -147,11 +143,11 @@
           </div>
         </el-form-item>
         <el-form-item class="draft-date" :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
-          <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
+          <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item class="draft-date" :label="t('orders.payableDue')">
           <el-date-picker v-model="form.payableDueDate" type="date" value-format="YYYY-MM-DD" clearable
-                          placeholder="YYYY-MM-DD" :aria-label="t('orders.payableDue')" style="width: 200px" />
+                          placeholder="YYYY-MM-DD" :aria-label="t('orders.payableDue')" />
         </el-form-item>
         <el-form-item class="draft-note draft-note-full" :label="t('orders.paymentTerms')">
           <el-input v-model="form.paymentTerms" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }"
@@ -190,7 +186,7 @@
                 :value="form.deliveryPortId" :label="form.deliveryPortName || form.deliveryPortCode || String(form.deliveryPortId)"
               />
             </el-select>
-            <el-select v-else v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
+            <el-select v-else v-model="form.deliveryPortId" filterable @change="selectDeliveryPort">
               <el-option
                 v-for="p in deliveryPorts"
                 :key="p.id"
@@ -202,7 +198,7 @@
           <el-form-item v-else class="draft-destination" label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
         </template>
         <el-form-item v-else class="draft-destination draft-warehouse" label="入库仓库" required>
-          <el-select v-model="form.warehouseId" style="width: 420px" @change="selectOrderWarehouse">
+          <el-select v-model="form.warehouseId" @change="selectOrderWarehouse">
             <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
@@ -213,7 +209,7 @@
           </div>
         </el-form-item>
         <el-form-item class="draft-note" :class="{ 'draft-note-full': !showAdjustmentReason }" :label="t('orders.remark')">
-          <el-input v-model="form.remark" type="textarea" :rows="2" :autosize="negotiatedDraftItems ? { minRows: 1, maxRows: 4 } : false" />
+          <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" />
         </el-form-item>
       </el-form>
 
@@ -2019,15 +2015,12 @@ onMounted(async () => {
 .alert {
   margin-bottom: 14px;
 }
-.head-form {
-  margin-bottom: 6px;
-}
 .supplier-row {
   display: flex;
   flex-wrap: wrap;
   width: 100%;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 .form-note {
   margin-top: 2px;
@@ -2062,34 +2055,35 @@ onMounted(async () => {
   padding-top: 12px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
-.negotiated-draft-form {
+.purchase-draft-form {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 10px 14px;
   margin-bottom: 0;
 }
-.negotiated-draft-form :deep(.el-form-item) {
+.purchase-draft-form :deep(.el-form-item) {
   min-width: 0;
   margin-bottom: 0;
 }
-.negotiated-draft-form :deep(.el-form-item__label) {
+.purchase-draft-form :deep(.el-form-item__label) {
   margin-bottom: 4px;
   line-height: 1.35;
   font-weight: 600;
 }
-.negotiated-draft-form .supplier-row,
-.negotiated-draft-form :deep(.el-date-editor),
-.negotiated-draft-form :deep(.el-select) {
-  width: 100% !important;
+.purchase-draft-form :deep(.el-date-editor.el-input),
+.purchase-draft-form :deep(.el-select) {
+  width: 100%;
 }
-.negotiated-draft-form .draft-supplier,
-.negotiated-draft-form .draft-note { grid-column: span 6; }
-.negotiated-draft-form .draft-note-full { grid-column: 1 / -1; }
-.negotiated-draft-form .draft-date,
-.negotiated-draft-form .draft-location { grid-column: span 3; }
-.negotiated-draft-form .draft-fulfillment { grid-column: span 5; }
-.negotiated-draft-form .draft-destination { grid-column: span 4; }
-.negotiated-draft-form .draft-warehouse { grid-column: span 7; }
+.draft-location :deep(.el-radio-group) { gap: 4px 12px; }
+.draft-location :deep(.el-radio) { margin-inline-end: 0; }
+.purchase-draft-form .draft-supplier,
+.purchase-draft-form .draft-note { grid-column: span 6; }
+.purchase-draft-form .draft-note-full { grid-column: 1 / -1; }
+.purchase-draft-form .draft-date,
+.purchase-draft-form .draft-location { grid-column: span 3; }
+.purchase-draft-form .draft-fulfillment { grid-column: span 5; }
+.purchase-draft-form .draft-destination { grid-column: span 4; }
+.purchase-draft-form .draft-warehouse { grid-column: span 7; }
 .negotiated-draft-heading {
   margin-top: 14px;
   padding-top: 10px;
@@ -2108,18 +2102,18 @@ onMounted(async () => {
   text-align: left;
 }
 @media (max-width: 800px) {
-  .negotiated-draft-form .draft-fulfillment,
-  .negotiated-draft-form .draft-location { grid-column: span 6; }
-  .negotiated-draft-form .draft-destination { grid-column: 1 / -1; }
-  .negotiated-draft-form .draft-warehouse { grid-column: span 6; }
+  .purchase-draft-form .draft-fulfillment,
+  .purchase-draft-form .draft-location { grid-column: span 6; }
+  .purchase-draft-form .draft-destination { grid-column: 1 / -1; }
+  .purchase-draft-form .draft-warehouse { grid-column: span 6; }
 }
 @media (max-width: 560px) {
-  .negotiated-draft-form .draft-supplier,
-  .negotiated-draft-form .draft-fulfillment,
-  .negotiated-draft-form .draft-location,
-  .negotiated-draft-form .draft-destination,
-  .negotiated-draft-form .draft-note { grid-column: 1 / -1; }
-  .negotiated-draft-form .draft-date { grid-column: span 6; }
+  .purchase-draft-form .draft-supplier,
+  .purchase-draft-form .draft-fulfillment,
+  .purchase-draft-form .draft-location,
+  .purchase-draft-form .draft-destination,
+  .purchase-draft-form .draft-note { grid-column: 1 / -1; }
+  .purchase-draft-form .draft-date { grid-column: span 6; }
 }
 .desc {
   margin-bottom: 14px;
