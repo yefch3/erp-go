@@ -134,7 +134,7 @@
       <el-autocomplete v-model="editor.body.paymentTerms" :fetch-suggestions="factoryPaymentSuggestions" :placeholder="t('inquiryWorkspace.quotes.selectOrType')" clearable/>
      </el-form-item>
      <el-form-item :label="t('inquiryWorkspace.quotes.attachments')" class="factory-quote-attachments"><input type="file" @change="upload($event,true)"/><el-tag v-for="a in editor.body.attachments" :key="a.key" closable @close="editor!.body.attachments=editor!.body.attachments.filter(x=>x.key!==a.key)">{{a.name}}</el-tag></el-form-item>
-     <el-form-item :label="t('inquiryProducts.fields.remark')" class="wide"><el-input v-model="editor.body.remark" type="textarea" :autosize="{minRows:1,maxRows:4}"/></el-form-item>
+     <el-form-item :label="t('inquiryWorkspace.quotes.overallRemark')" class="wide"><el-input v-model="editor.body.remark" type="textarea" :autosize="{minRows:1,maxRows:4}"/></el-form-item>
     </template><template v-else><el-form-item :label="t('inquiryWorkspace.quotes.forwarder')"><el-autocomplete v-model="editor.body.company" :fetch-suggestions="companySuggestions" :placeholder="t('inquiryWorkspace.quotes.shippingCompanyPlaceholder')" :trigger-on-focus="true" clearable/></el-form-item><el-form-item class="freight-currency-field" :label="t('inquiryWorkspace.quotes.currency')"><el-select :model-value="freightCurrency" filterable allow-create default-first-option @change="changeFreightCurrency"><el-option v-for="ccy in freightCurrencyOptions" :key="ccy" :label="ccy" :value="ccy"/></el-select><small class="sales-currency">{{t('inquiryWorkspace.quotes.salesCurrency')}}</small><div v-if="nonUsdCurrencies.length" class="freight-inline-rates" :aria-label="t('inquiryWorkspace.quotes.exchangeRates')"><label v-for="currency in nonUsdCurrencies" :key="currency" class="exchange-rate-field"><span>1 USD =</span><el-input v-model="editor.body.exchangeRates[currency]" inputmode="decimal" :placeholder="t('inquiryWorkspace.quotes.exchangeRatePlaceholder')"><template #append>{{currency}}</template></el-input></label></div></el-form-item><el-form-item v-for="f in logisticsPorts" :key="f.key" :label="f.label"><el-input v-model="editor.body[f.key]"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.departure')"><el-date-picker v-model="editor.body.departure" value-format="YYYY-MM-DD"/></el-form-item><el-form-item :label="t('inquiryWorkspace.quotes.arrival')"><el-date-picker v-model="editor.body.arrival" value-format="YYYY-MM-DD"/></el-form-item></template></el-form>
 
      <template v-if="view==='PROCUREMENT'">
@@ -168,6 +168,7 @@
          <col class="factory-quote-table__check"/><col/><col class="factory-quote-table__quantity"/>
          <col v-if="editor.body.quoteCategory==='REPROCESSING_CNY'" class="factory-quote-table__price"/>
          <col class="factory-quote-table__price"/><col class="factory-quote-table__date"/>
+         <col class="factory-quote-table__remark"/>
         </colgroup>
         <thead>
          <tr>
@@ -177,6 +178,7 @@
           <th v-if="editor.body.quoteCategory==='REPROCESSING_CNY'" scope="col">{{t('inquiryWorkspace.quotes.exFactoryUnitPrice')}}</th>
           <th scope="col">{{quotePriceLabel(editor.body.quoteCategory)}}</th>
           <th scope="col">{{t('inquiryWorkspace.quotes.deliveryDate')}}</th>
+          <th scope="col">{{t('inquiryProducts.fields.remark')}}</th>
          </tr>
         </thead>
         <tbody>
@@ -195,8 +197,11 @@
           <td>
            <el-date-picker :model-value="priceFor(product.id)?.delivery??''" size="small" value-format="YYYY-MM-DD" :placeholder="editor.body.delivery||t('inquiryWorkspace.quotes.deliveryDate')" @update:model-value="updateProcurementPrice(product.id,'delivery',String($event??''))"/>
           </td>
+          <td>
+           <el-input :model-value="priceFor(product.id)?.remark??''" type="textarea" :autosize="{minRows:1,maxRows:5}" resize="none" size="small" :placeholder="t('inquiryWorkspace.quotes.specificationRemark')" :aria-label="t('inquiryWorkspace.quotes.specificationRemark')" @update:model-value="updateProcurementPrice(product.id,'remark',$event)"/>
+          </td>
          </tr>
-         <tr v-if="!pagedQuoteProducts.length"><td :colspan="editor.body.quoteCategory==='REPROCESSING_CNY'?6:5" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</td></tr>
+         <tr v-if="!pagedQuoteProducts.length"><td :colspan="editor.body.quoteCategory==='REPROCESSING_CNY'?7:6" class="empty-products">{{t('inquiryWorkspace.list.noProducts')}}</td></tr>
         </tbody>
        </table>
       </div>
@@ -258,7 +263,7 @@
     </el-form>
     <template #footer><el-button @click="uploadOpen=false">{{t('common.cancel')}}</el-button><el-button @click="startManualInquiry">{{t('inquiryWorkspace.manualEntry')}}</el-button><el-button type="primary" :loading="busy" @click="importInquiry">{{t('procurementIntakes.uploadAndReview')}}</el-button></template>
    </el-dialog>
-   <el-dialog :model-value="!!preview" :title="t('inquiryWorkspace.quotes.fullQuote')" width="92%" @close="preview=null"><template v-if="preview&&item"><div class="toolbar"><el-button v-for="a in preview.body.attachments" :key="a.key" link @click="download(a.key)">{{a.name}}</el-button></div><el-descriptions :column="3" border><el-descriptions-item v-if="preview.kind==='PROCUREMENT'" :label="t('inquiryWorkspace.quotes.quoteCategory')">{{quoteCategoryLabel(preview.body.quoteCategory)}}</el-descriptions-item><el-descriptions-item v-for="f in quoteDisplayFields" :key="f.key" :label="f.label">{{preview.body[f.key]||'—'}}</el-descriptions-item></el-descriptions><el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" :max-height="480"><el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="310"><template #default="{row}"><ComparisonSpecification :product-name="productFor(row.productId)?.product||''" :text="inquiryProductDescription(productFor(row.productId),templateFields)" hide-name/></template></el-table-column><el-table-column v-if="preview.body.quoteCategory==='REPROCESSING_CNY'" prop="factoryPrice" :label="t('inquiryWorkspace.quotes.exFactoryUnitPrice')"/><el-table-column prop="price" :label="quotePriceLabel(preview.body.quoteCategory)"/><el-table-column :label="t('inquiryWorkspace.quotes.deliveryDate')"><template #default="{row}">{{row.delivery||preview.body.delivery||'—'}}</template></el-table-column><el-table-column prop="remark" :label="t('inquiryProducts.fields.remark')"/></el-table><template v-else><p>{{t('inquiryWorkspace.quotes.applicableCargo')}}：{{preview.body.cargoIds?.length?preview.body.cargoIds.map(id=>productFor(id)?.product).join('、'):t('inquiryWorkspace.quotes.wholeShipment')}}</p><h4>{{t('inquiryWorkspace.quotes.productOceanFreight')}}</h4>
+   <el-dialog :model-value="!!preview" :title="t('inquiryWorkspace.quotes.fullQuote')" width="92%" @close="preview=null"><template v-if="preview&&item"><div class="toolbar"><el-button v-for="a in preview.body.attachments" :key="a.key" link @click="download(a.key)">{{a.name}}</el-button></div><el-descriptions :column="3" border><el-descriptions-item v-if="preview.kind==='PROCUREMENT'" :label="t('inquiryWorkspace.quotes.quoteCategory')">{{quoteCategoryLabel(preview.body.quoteCategory)}}</el-descriptions-item><el-descriptions-item v-for="f in quoteDisplayFields" :key="f.key" :label="preview.kind==='PROCUREMENT'&&f.key==='remark'?t('inquiryWorkspace.quotes.overallRemark'):f.label">{{preview.body[f.key]||'—'}}</el-descriptions-item></el-descriptions><el-table v-if="preview.kind==='PROCUREMENT'" :data="[...preview.body.prices,...(preview.body.draftPrices??[])]" :max-height="480"><el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="310"><template #default="{row}"><ComparisonSpecification :product-name="productFor(row.productId)?.product||''" :text="inquiryProductDescription(productFor(row.productId),templateFields)" hide-name/></template></el-table-column><el-table-column v-if="preview.body.quoteCategory==='REPROCESSING_CNY'" prop="factoryPrice" :label="t('inquiryWorkspace.quotes.exFactoryUnitPrice')"/><el-table-column prop="price" :label="quotePriceLabel(preview.body.quoteCategory)"/><el-table-column :label="t('inquiryWorkspace.quotes.deliveryDate')"><template #default="{row}">{{row.delivery||preview.body.delivery||'—'}}</template></el-table-column><el-table-column prop="remark" :label="t('inquiryWorkspace.quotes.specificationRemark')" min-width="190"><template #default="{row}"><span class="factory-quote-preview-remark">{{row.remark}}</span></template></el-table-column></el-table><template v-else><p>{{t('inquiryWorkspace.quotes.applicableCargo')}}：{{preview.body.cargoIds?.length?preview.body.cargoIds.map(id=>productFor(id)?.product).join('、'):t('inquiryWorkspace.quotes.wholeShipment')}}</p><h4>{{t('inquiryWorkspace.quotes.productOceanFreight')}}</h4>
 <el-table :data="preview.body.freightRates" :max-height="360">
  <el-table-column :label="t('inquiryProducts.fields.product')" min-width="170"><template #default="{row}">{{productFor(row.productId)?.product||'—'}}</template></el-table-column>
  <el-table-column :label="t('inquiryProducts.fields.specification')" min-width="180"><template #default="{row}">{{productFor(row.productId)?.specification||'—'}}</template></el-table-column>
@@ -437,7 +442,7 @@ async function clearProcurementProducts(){
 }
 function selectAllProcurementProducts(){selectProcurementProducts((item.value?.body.products||[]).map(p=>p.id),true)}
 function priceFor(id:string){return editor.value?.body.prices.find(p=>p.productId===id)}
-function updateProcurementPrice(id:string,field:'factoryPrice'|'price'|'delivery',value:string){
+function updateProcurementPrice(id:string,field:'factoryPrice'|'price'|'delivery'|'remark',value:string){
  if(!editor.value)return
  const row=priceFor(id)
  if(row)row[field]=value
@@ -1035,12 +1040,14 @@ watch(view,()=>void initial())
 .factory-quote-products>.el-select { width:115px; }
 .factory-quote-selection-count { color:#17475e; font-size:12px; white-space:nowrap; }
 .factory-quote-table-scroll { overflow-x:auto; border-block:1px solid var(--line); }
-.factory-quote-table { width:100%; min-width:620px; border-collapse:collapse; table-layout:fixed; font-size:12px; }
-.factory-quote-table.has-factory-price { min-width:720px; }
+.factory-quote-table { width:100%; min-width:810px; border-collapse:collapse; table-layout:fixed; font-size:12px; }
+.factory-quote-table.has-factory-price { min-width:918px; }
 .factory-quote-table__check { width:48px; }
 .factory-quote-table__quantity { width:98px; }
 .factory-quote-table__price { width:108px; }
 .factory-quote-table__date { width:140px; }
+.factory-quote-table__remark { width:190px; }
+.factory-quote-preview-remark { white-space:pre-wrap; overflow-wrap:anywhere; }
 .factory-quote-table th,.factory-quote-table td {
  height:37px;
  padding:4px 7px;
