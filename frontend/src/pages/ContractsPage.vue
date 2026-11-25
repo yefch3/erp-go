@@ -652,22 +652,29 @@
     </el-drawer>
 
     <!-- Edit the working draft: terms and lines -->
-    <el-dialog v-model="termsOpen" :title="t('contracts.editDraft')" width="min(860px,94vw)">
-      <ContractPartiesFields :model-value="termsForm" @update:model-value="Object.assign(termsForm,$event)" />
-      <el-form label-width="110px">
-        <div class="grid">
-          <el-form-item label="客户联系人"><el-input v-model="termsForm.customerContact" placeholder="按本合同填写联系人" /></el-form-item>
+    <el-dialog v-model="termsOpen" :title="t('contracts.editDraft')" class="contract-draft-editor" width="min(1040px,96vw)" top="3vh">
+      <template #header="{titleId}">
+        <div class="draft-heading"><h2 :id="titleId">{{ t('contracts.editDraft') }}</h2><span>{{detail?.contract.contractNo}}</span></div>
+      </template>
+      <ContractPartiesFields class="draft-parties" :model-value="termsForm" @update:model-value="Object.assign(termsForm,$event)" />
+      <el-form label-position="top" size="small" class="draft-fields">
+        <div class="draft-grid">
+          <el-form-item label="客户联系人" class="draft-contact">
+            <div class="draft-choice">
+              <el-input v-model="termsForm.customerContact" placeholder="选择或填写客户联系人"
+                @click="draftContactMenu?.handleOpen()" @input="draftContactMenu?.handleClose()" @keydown.esc="draftContactMenu?.handleClose()" />
+              <el-dropdown v-if="draftContactNames.length" ref="draftContactMenu" trigger="click" placement="bottom-start"
+                :show-arrow="false" :popper-options="draftChoicePopper" @command="termsForm.customerContact = $event">
+                <button type="button" aria-label="选择客户联系人"><span aria-hidden="true">▾</span></button>
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item v-for="name in draftContactNames" :key="name" :command="name">{{ name }}</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </div>
+          </el-form-item>
           <el-form-item label="原合同号"><el-input v-model="termsForm.externalContractNo"/></el-form-item>
-          <el-form-item :label="t('contracts.incoterm')">
-            <el-select v-model="termsForm.incoterm" style="width: 100%">
-              <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('contracts.paymentMethod')">
-            <el-select v-model="termsForm.paymentMethod" clearable style="width: 100%">
-              <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
-            </el-select>
-          </el-form-item>
+
+
           <el-form-item :label="t('contracts.portOfLoading')">
             <el-input v-model="termsForm.portOfLoading" />
           </el-form-item>
@@ -681,41 +688,81 @@
             <el-date-picker v-model="termsForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
                             clearable :placeholder="t('contracts.receivableDueHint')" style="width: 100%" />
           </el-form-item>
+          <el-form-item class="draft-trade" :label="t('contracts.incoterm')">
+            <div class="draft-choice">
+              <el-input v-model="termsForm.incoterm" @click="draftTradeMenu?.handleOpen()" @input="draftTradeMenu?.handleClose()"
+                @keydown.esc="draftTradeMenu?.handleClose()" :placeholder="t('contracts.draftTradeHint')" />
+              <el-dropdown ref="draftTradeMenu" trigger="click" placement="bottom-start" :show-arrow="false" :popper-options="draftChoicePopper" @command="termsForm.incoterm = $event">
+                <button type="button" :aria-label="t('contracts.incoterm')"><span aria-hidden="true">▾</span></button>
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item v-for="term in draftIncoterms" :key="term" :command="term">{{ term }}</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </div>
+          </el-form-item>
+          <el-form-item class="draft-payment" :label="t('contracts.paymentMethod')">
+            <div class="draft-choice">
+              <el-input class="payment-preview" :model-value="draftPaymentText.replace(/\s*\r?\n\s*/g, ' ')" readonly
+                tabindex="-1" aria-hidden="true" :placeholder="t('contracts.draftPaymentHint')" />
+              <el-input class="payment-editor" type="textarea" :autosize="{minRows:1,maxRows:5}"
+                @click="draftPaymentMenu?.handleOpen()" @input="draftPaymentMenu?.handleClose()" @keydown.esc="draftPaymentMenu?.handleClose()"
+                :model-value="draftPaymentText" @update:model-value="termsForm.paymentMethod = $event"
+                :aria-label="t('contracts.paymentMethod')" :placeholder="t('contracts.draftPaymentHint')" />
+              <el-dropdown v-if="paymentOptions.length" ref="draftPaymentMenu" trigger="click" placement="bottom-start" :show-arrow="false" :popper-options="draftChoicePopper" @command="termsForm.paymentMethod = $event">
+                <button type="button" :aria-label="t('contracts.paymentPresets')"><span aria-hidden="true">▾</span></button>
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item v-for="o in paymentOptions" :key="o.code" :command="o.code">{{ o.label }}</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </div>
+          </el-form-item>
         </div>
         <el-form-item :label="t('contracts.terms')">
-          <el-input v-model="termsForm.terms" type="textarea" :rows="4" />
+          <el-input v-model="termsForm.terms" type="textarea" :autosize="{minRows:1,maxRows:5}" />
         </el-form-item>
       </el-form>
 
-      <el-divider content-position="left">
-        {{ t('contracts.items') }}
-        <span class="hint">{{ t('contracts.editItemsHint') }}</span>
-      </el-divider>
-      <ColumnFillRegion :rows="termsForm.items" :fields="[{key:'spec',column:1},{key:'qty',column:2},{key:'uomCode',column:3},{key:'unitPrice',column:4}]">
-      <el-table :data="termsForm.items" size="small" max-height="440">
-        <el-table-column :label="t('contracts.product')" min-width="220">
+      <div class="draft-lines-title">
+        <strong>{{ t('contracts.items') }}</strong>
+        <el-button size="small" @click="termsForm.items.push({ productId: '', spec: '', qty: '', unitPrice: '' })">
+          {{ t('contracts.addItem') }}
+        </el-button>
+      </div>
+      <ColumnFillRegion :rows="termsForm.items" :set-cell="setDraftCell" :fields="[{key:'spec',column:0},{key:'qty',column:1},{key:'uomCode',column:1},{key:'unitPrice',column:2}]">
+      <el-table :data="termsForm.items" size="small" class="draft-items">
+        <el-table-column :label="t('inquiryWorkspace.list.productDetails')" class-name="draft-product" min-width="220">
           <template #default="{ row }">
-            <el-autocomplete
-              v-model="row.productName"
-              :fetch-suggestions="suggestContractProducts"
-              :placeholder="t('contractRepair.productPlaceholder')"
-              style="width:100%"
-              @input="row.productId='0';row.skuId='0';row.productCode=''"
-              @select="selectContractProduct(row,$event)"
-            />
+            <div class="draft-product-line">
+              <span class="draft-inline-field draft-name">
+                <span aria-hidden="true">{{ row.productName || t('contractRepair.productPlaceholder') }}</span>
+                <el-autocomplete data-column-fill-field="productName" v-model="row.productName"
+                  :fetch-suggestions="suggestContractProducts" :placeholder="t('contractRepair.productPlaceholder')"
+                  @input="row.productId='0';row.skuId='0';row.productCode=''"
+                  @select="selectContractProduct(row,$event)" />
+              </span><span class="draft-spec-label">{{ locale.startsWith('zh') ? '，' : ', ' }}{{ t('contracts.spec') }}{{ locale.startsWith('zh') ? '：' : ': ' }}</span><span class="draft-inline-field draft-spec">
+                <span aria-hidden="true">{{ row.spec || '—' }}</span>
+                <el-input data-column-fill-field="spec" v-model="row.spec" type="textarea" resize="none"
+                  :autosize="{minRows:1}" placeholder="—" :aria-label="t('contracts.spec')" />
+              </span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('contracts.spec')" width="150">
-          <template #default="{ row }"><el-input v-model="row.spec" /></template>
+        <el-table-column :label="t('contracts.qty') + ' / ' + t('contractRepair.unit')" width="154">
+          <template #default="{row}">
+            <div class="draft-quantity">
+              <el-input data-column-fill-field="qty" v-model="row.qty" :aria-label="t('contracts.qty')" />
+              <el-input data-column-fill-field="uomCode" v-model="row.uomCode" :aria-label="t('contractRepair.unit')" :disabled="!!row.productId && row.productId!=='0'" />
+            </div>
+          </template>
         </el-table-column>
-        <el-table-column :label="t('contracts.qty')" width="110">
-          <template #default="{ row }"><el-input v-model="row.qty" /></template>
+        <el-table-column :label="t('contracts.unitPrice') + ' (' + detail?.version.currency + ')'" width="138" align="right">
+          <template #default="{row}">
+            <el-input data-column-fill-field="unitPrice" :model-value="editingPrice === row ? priceText : displayDraftPrice(row.unitPrice)"
+              @focus="editingPrice=row; priceText=displayDraftPrice(row.unitPrice)" @blur="editingPrice=null"
+              @update:model-value="priceText=$event; row.unitPrice=$event" />
+          </template>
         </el-table-column>
-        <el-table-column :label="t('contractRepair.unit')" width="100"><template #default="{row}"><el-input v-model="row.uomCode" :disabled="!!row.productId && row.productId!=='0'"/></template></el-table-column>
-        <el-table-column :label="t('contracts.unitPrice')" width="110">
-          <template #default="{ row }"><el-input v-model="row.unitPrice" /></template>
-        </el-table-column>
-        <el-table-column :label="t('contracts.lineAmount')" width="110" align="right">
+        <el-table-column :label="t('contracts.lineAmount') + ' (' + detail?.version.currency + ')'" width="140" align="right">
           <template #default="{ row }">{{ lineAmount(row) }}</template>
         </el-table-column>
         <el-table-column width="60">
@@ -728,9 +775,6 @@
       </el-table>
       </ColumnFillRegion>
       <div class="items-foot">
-        <el-button @click="termsForm.items.push({ productId: '', spec: '', qty: '', unitPrice: '' })">
-          {{ t('contracts.addItem') }}
-        </el-button>
         <div class="totals">
           <span class="hint">{{ t('contracts.totalPreview') }}</span>
           <strong>{{ previewTotal(termsForm.items) }} {{ detail?.version.currency }}</strong>
@@ -847,10 +891,10 @@ import {parseContractOfferSnapshot} from '../lib/contractOfferSnapshot'
 import {isPendingContractChange,contractVersionPresentation} from '../lib/contractVersionPresentation'
 import {editableContractLine,contractLineAmount,contractTotal,type ContractEditLine} from '../lib/contractEditing'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type DropdownInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { del, get, post, put } from '../api'
+import { del, get, post, put, quietErrors } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 
 // 防重键：合同重复一张不是删一行的事——它会往下游派生采购需求。
@@ -1551,6 +1595,46 @@ watch(detailOpen, (open) => {
   if (!open && route.query.id) router.replace({ path: route.path })
 })
 
+// Use the whole field as the positioning anchor while keeping its text editable.
+const draftChoicePopper = {
+  modifiers: [{
+    name: 'fieldWidth', enabled: true, phase: 'beforeWrite' as const,
+    fn({ state }: { state: { rects: { reference: { width: number } }; styles: { popper: Record<string, string> } } }) {
+      state.styles.popper.width = state.rects.reference.width + 'px'
+      state.styles.popper.boxSizing = 'border-box'
+    },
+  }],
+}
+const draftContactMenu = ref<DropdownInstance>()
+const draftContactNames = ref<string[]>([])
+watch(() => termsOpen.value ? detail.value?.contract.customerId : undefined, async (id, _, onCleanup) => {
+  draftContactNames.value = []
+  if (!id) return
+  let active = true
+  onCleanup(() => { active = false })
+  try {
+    const result = await get<{ contacts?: { name: string }[] }>(`/customers/${id}/contacts`, undefined, quietErrors)
+    if (active) draftContactNames.value = [...new Set((result.contacts ?? []).map(contact => contact.name.trim()).filter(Boolean))]
+  } catch {
+    // Drafts can still use a manually entered contact when the directory is unavailable.
+  }
+})
+const draftTradeMenu = ref<DropdownInstance>()
+const draftPaymentMenu = ref<DropdownInstance>()
+const draftPaymentText = computed(() =>
+  paymentOptions.value.find(option => option.code === termsForm.paymentMethod)?.label ?? termsForm.paymentMethod ?? ''
+)
+const draftIncoterms = [...INCOTERMS, 'FCA', 'FAS', 'CPT', 'CIP', 'DAP', 'DPU']
+const editingPrice = ref<ChangeLine | null>(null)
+const priceText = ref('')
+function displayDraftPrice(value: string) {
+  return value && Number.isFinite(Number(value)) ? Number(value).toFixed(2) : value
+}
+function setDraftCell(target: object, key: string, value: unknown) {
+  const row = target as ChangeLine
+  if (key === 'uomCode' && row.productId && row.productId !== '0') return
+  if (key === 'spec' || key === 'qty' || key === 'uomCode' || key === 'unitPrice') row[key] = String(value ?? '')
+}
 async function suggestContractProducts(query:string,done:(rows:(Product & {value:string})[])=>void){
   try{await searchProducts(query);done(products.value.map(p=>({...p,value:p.name})))}catch{done([])}
 }
@@ -2233,6 +2317,47 @@ onUnmounted(stopListening)
   font-weight: 600;
 }
 .management-item small{display:block;font-size:12px;color:#64748b}.tab-refresh{float:right;position:relative;z-index:1;margin-top:8px}.contract-tabs{padding-right:40px}
+
+:global(.contract-draft-editor.el-dialog){padding:0;overflow:hidden;border-radius:8px}
+:global(.contract-draft-editor .el-dialog__header){padding:12px 20px;margin:0;background:linear-gradient(110deg,#153e59,#166980)}
+:global(.contract-draft-editor .el-dialog__headerbtn .el-icon){color:white}
+:global(.contract-draft-editor .el-dialog__body){max-height:calc(94vh - 112px);overflow:auto;padding:12px 20px}
+:global(.contract-draft-editor .el-dialog__footer){border-top:1px solid #dce5ea;padding:9px 20px}
+.draft-heading{display:flex;align-items:baseline;gap:12px;color:white}.draft-heading h2{font-size:18px;margin:0}.draft-heading span{font-size:13px}
+.draft-parties.contract-parties{margin:0 0 10px;padding:0;border:0;border-bottom:1px solid #dce5ea;background:transparent}
+.draft-parties :deep(header){margin-bottom:8px}.draft-parties :deep(.el-form-item),.draft-fields :deep(.el-form-item){margin-bottom:8px}
+.draft-parties :deep(.el-form-item__label),.draft-fields :deep(.el-form-item__label){margin-bottom:3px;font-size:13px;line-height:18px}
+.draft-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.draft-choice{position:relative;width:100%}
+.draft-choice :deep(.el-input__wrapper),.draft-choice :deep(textarea){padding-right:32px}
+.draft-choice :deep(.el-dropdown){position:absolute;inset:0;pointer-events:none}
+.draft-choice button{display:flex;justify-content:flex-end;align-items:flex-start;width:100%;height:100%;padding:0 4px;border:0;background:transparent;color:#63798a;pointer-events:none}
+.draft-choice button span{display:grid;place-items:center;width:26px;height:24px;pointer-events:auto;cursor:pointer}
+.draft-choice:has(.payment-editor:focus-within) .payment-preview{display:none}
+.draft-choice .payment-editor:focus-within{position:relative}
+.payment-preview{pointer-events:none}
+.payment-preview :deep(input){text-overflow:ellipsis}
+.payment-editor{position:absolute;inset:0 0 auto;opacity:0}
+.payment-editor:not(:focus-within){height:100%;overflow:hidden}
+.payment-editor:focus-within{opacity:1;z-index:1}
+.payment-editor :deep(textarea){resize:none;line-height:20px;padding-block:3px;background:var(--el-fill-color-blank)}
+.draft-payment :deep(.el-dropdown){z-index:2}
+.draft-lines-title{display:flex;align-items:center;justify-content:space-between;padding:10px 0 6px;border-top:1px solid #dce5ea;color:#173f52}
+.draft-quantity{display:grid;grid-template-columns:3fr 2fr;gap:3px}
+.draft-product-line{display:flex;align-items:baseline;flex-wrap:wrap;text-align:left;font-size:13px;color:#314f60}
+.draft-inline-field{position:relative;display:inline-block;max-width:100%;min-width:1.5em;vertical-align:baseline}
+.draft-inline-field > span{white-space:pre-wrap;overflow-wrap:anywhere;line-height:22px}
+.draft-inline-field :deep(.el-autocomplete),.draft-inline-field :deep(.el-textarea){position:absolute;inset:0;width:100%;opacity:0}
+.draft-inline-field:focus-within > span{visibility:hidden}
+.draft-inline-field:focus-within :deep(.el-autocomplete),.draft-inline-field:focus-within :deep(.el-textarea){opacity:1}
+.draft-inline-field :deep(.el-input__wrapper),.draft-inline-field :deep(textarea){padding:0;line-height:22px;font:inherit}
+.draft-name{font-weight:600}
+.draft-spec-label{white-space:pre;color:#637888}
+.draft-inline-field:hover,.draft-inline-field:has(.column-fill-selected){background:#eaf5fb}
+.draft-items :deep(input[data-column-fill-field="unitPrice"]){text-align:right}
+.draft-items :deep(input.column-fill-selected),.draft-items :deep(textarea.column-fill-selected){background:#dff1fc;outline:1px solid #43a9df}
+.contract-draft-editor .items-foot{justify-content:flex-end}
+@media(max-width:600px){.draft-grid{grid-template-columns:1fr}.draft-heading{flex-wrap:wrap}}
 </style>
 
 <style scoped>

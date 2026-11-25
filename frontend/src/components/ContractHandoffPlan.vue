@@ -7,9 +7,13 @@
   <el-table :data="items" border size="small" max-height="380" row-key="id">
    <el-table-column prop="productName" label="产品" min-width="180" fixed show-overflow-tooltip/>
    <el-table-column prop="spec" label="规格" min-width="170" show-overflow-tooltip/>
-   <el-table-column label="合同数量" width="120" align="right"><template #default="{row}">{{row.qty}} {{row.uomCode}}</template></el-table-column>
-   <el-table-column v-for="batch in plan.batches" :key="batch.batchNo" :label="`第 ${batch.batchNo} 批`" width="140"><template #default="{row}"><el-input v-model="batch.quantities[row.id]" :disabled="!canEdit" inputmode="decimal" aria-label="批次数量"/></template></el-table-column>
-   <el-table-column label="未分配" width="105" align="right"><template #default="{row}"><span :class="{mismatch:remaining(row)!=='0'}">{{remaining(row)}}</span></template></el-table-column>
+   <el-table-column label="合同数量" width="120" align="right"><template #default="{row}">{{displayQuantity(row.qty)}} {{row.uomCode}}</template></el-table-column>
+   <el-table-column v-for="batch in plan.batches" :key="batch.batchNo" :label="`第 ${batch.batchNo} 批`" width="140"><template #default="{row}"><el-input
+     :model-value="activeBatch === batch && activeItem === row.id ? editText : displayQuantity(batch.quantities[row.id] || '0')"
+     :disabled="!canEdit" inputmode="decimal" aria-label="批次数量"
+     @focus="startEditing(batch,row.id)" @blur="activeBatch=null"
+     @update:model-value="editText=$event; batch.quantities[row.id]=$event"/></template></el-table-column>
+   <el-table-column label="未分配" width="105" align="right"><template #default="{row}"><span :class="{mismatch:remaining(row)!=='0'}" :title="remaining(row)">{{displayQuantity(remaining(row))}}</span></template></el-table-column>
    <el-table-column prop="remark" label="交接备注" min-width="200" show-overflow-tooltip/>
   </el-table>
  </section>
@@ -24,6 +28,25 @@ type Plan={versionId:string;revision:number;batches:Batch[]}
 const props=defineProps<{contractId:string;versionId:string;items:Item[];canEdit:boolean}>()
 const plan=ref<Plan>({versionId:props.versionId,revision:0,batches:[]}),loading=ref(false),error=ref('')
 function scaled(raw:string){if(!/^\d+(\.\d{1,4})?$/.test(raw))return null;const [a,b='']=raw.split('.');return BigInt(a)*10000n+BigInt(b.padEnd(4,'0'))}
+const activeBatch = ref<Batch | null>(null)
+const activeItem = ref('')
+const editText = ref('')
+
+function displayQuantity(raw: string) {
+  const negative = raw.startsWith('-')
+  const magnitude = scaled(negative ? raw.slice(1) : raw)
+  if (magnitude === null) return raw
+  const cents = (magnitude + 50n) / 100n
+  return (negative && cents > 0n ? '-' : '') + `${cents / 100n}.${String(cents % 100n).padStart(2,'0')}`
+}
+
+function startEditing(batch: Batch, id: string) {
+  activeBatch.value = batch
+  activeItem.value = id
+  const raw = batch.quantities[id] || '0'
+  const display = displayQuantity(raw)
+  editText.value = scaled(display) === scaled(raw) ? display : raw
+}
 function remaining(row:Item){const total=scaled(row.qty);if(total===null)return '无效';let used=0n;for(const b of plan.value.batches){const q=scaled(b.quantities[row.id]||'0');if(q===null)return '无效';used+=q}const n=total-used,sign=n<0n?'-':'',v=n<0n?-n:n;return sign+`${v/10000n}.${String(v%10000n).padStart(4,'0')}`.replace(/\.?0+$/,'')}
 const balanced=computed(()=>plan.value.batches.length>0&&props.items.every(i=>remaining(i)==='0'))
 function addBatch(){plan.value.batches.push({batchNo:Math.max(0,...plan.value.batches.map(b=>b.batchNo))+1,title:'',quantities:Object.fromEntries(props.items.map(i=>[i.id,'0']))})}
