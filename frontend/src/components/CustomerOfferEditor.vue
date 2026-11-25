@@ -130,7 +130,25 @@
         <td :data-label="t('inquiryWorkspace.offer.customerSelectedPlan')"><el-checkbox :aria-label="t('inquiryWorkspace.offer.customerSelectedPlan')+' · '+row.product.product" :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)">{{t(negotiationFor(row).status==='AGREED'?'inquiryWorkspace.offer.planSelected':'inquiryWorkspace.offer.planPending')}}</el-checkbox></td>
         <td :data-label="t('inquiryWorkspace.offer.productDescription')"><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
         <td :data-label="t('inquiryWorkspace.offer.qtyUnit')">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</td>
-        <td :data-label="t('inquiryWorkspace.offer.selectedSupplier')"><strong>{{row.quote.body.company||'—'}}</strong></td>
+        <td :data-label="t('inquiryWorkspace.offer.selectedSupplier')">
+         <strong>{{row.quote.body.company||'—'}}</strong>
+         <el-popover v-if="row.price.remark?.trim()||row.quote.body.remark?.trim()" trigger="click"
+          placement="right-start" :width="360" :popper-style="{maxWidth:'calc(100vw - 24px)'}">
+          <template #reference>
+           <el-button link type="primary" size="small" class="customer-factory-remark-trigger">{{t('inquiryWorkspace.quotes.viewFactoryRemarks')}}</el-button>
+          </template>
+          <dl class="customer-factory-remark-details">
+           <template v-if="row.price.remark?.trim()">
+            <dt>{{t('inquiryWorkspace.quotes.specificationRemark')}}</dt>
+            <dd>{{row.price.remark.trim()}}</dd>
+           </template>
+           <template v-if="row.quote.body.remark?.trim()">
+            <dt>{{t('inquiryWorkspace.quotes.overallRemark')}}</dt>
+            <dd>{{row.quote.body.remark.trim()}}</dd>
+           </template>
+          </dl>
+         </el-popover>
+        </td>
         <td :data-label="t('inquiryWorkspace.offer.calculatedCustomerPrice')">USD {{formatCfrUnitPrice(initialCalculatedPrice(row))||'—'}} / {{row.product.unit}}</td>
         <td :data-label="t('inquiryWorkspace.offer.customerQuotePrice')"><el-input v-model="negotiationFor(row).proposedPrice" size="small" :disabled="!editable" inputmode="decimal" :aria-label="t('inquiryWorkspace.offer.customerQuotePrice')+' · '+row.product.product" :title="t('inquiryWorkspace.offer.customerQuotePricePlaceholder')" placeholder="—" @blur="normalizeProposedPrice(row)"><template #prepend>USD</template></el-input></td>
        </tr></tbody>
@@ -558,6 +576,11 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .negotiation-grid th{background:#f4f8fa;color:#365c6e}.negotiation-grid th:first-child{width:9em}.negotiation-grid th:nth-child(3){width:9%}.negotiation-grid th:nth-child(4){width:15%}.negotiation-grid th:nth-child(5){width:14%}.negotiation-grid th:last-child{width:17%}
 .negotiation-grid :deep(.el-checkbox__label){padding-left:5px;font-size:12px}
 .negotiation-grid :deep(.el-input-group__prepend){padding:0 6px}
+.customer-factory-remark-trigger{display:flex;height:auto;margin-top:4px;padding:0;line-height:1.4}
+.customer-factory-remark-details{max-height:50vh;overflow:auto;margin:0;line-height:1.5}
+.customer-factory-remark-details dt{font-weight:600}
+.customer-factory-remark-details dd{margin:3px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.customer-factory-remark-details dd+dt{margin-top:10px}
 @container(max-width:759px){
  .negotiation-grid{min-width:0;display:block}.negotiation-grid thead{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}.negotiation-grid tbody{display:block}
  .negotiation-grid tr{display:grid;grid-template-columns:1fr 1fr;align-items:start;padding:6px 8px;border-bottom:1px solid var(--line)}
