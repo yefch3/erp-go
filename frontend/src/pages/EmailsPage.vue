@@ -1724,7 +1724,8 @@ function onSortCommand(cmd: string) {
     return
   }
   const next = sortFromCommand(listSort.value, cmd)
-  pushState({ sort: sortParam(next), top: topParam(next) })
+  // 已发送不分档。改变那里的列或方向时，不要把收件箱的未读优先关掉。
+  pushState({ sort: sortParam(next), ...(canSortTop.value ? { top: topParam(next) } : {}) })
 }
 // 「星标优先 / 未读优先」只在收件箱那一族给：已发送的行是投递记录，没有
 // 星标也没有未读。搜索时也不给，和排序栏同一条理由——那条路上服务端不接。
@@ -2119,7 +2120,7 @@ interface UrlState {
   // 藏起来这件事本身就是那个代价。拆开之后两个框各管各的，左栏那个可以
   // 一直在。
   lq: string
-  // 优先显示：`star`、`unread`、`star,unread`，见 lib/mailSort 的 topParam。
+  // 优先显示：空 = 默认未读优先，`none` = 不分档，见 lib/mailSort 的 topParam。
   // 单开一个参数而不是塞进 sort，是因为两者互不影响——按大小排的同时可以
   // 星标优先，而默认排序不进地址栏，塞在一起时分档会跟着一起消失。
   top: string

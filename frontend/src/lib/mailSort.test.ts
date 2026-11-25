@@ -28,7 +28,7 @@ describe('地址栏里的排序', () => {
 
   it('其余都写成 列:方向，而且解回来是同一个', () => {
     for (const s of [S('size', 'desc'), S('subject', 'asc'), S('date', 'asc'), S('to', 'desc')]) {
-      expect(parseSort(sortParam(s))).toEqual(s)
+      expect(parseSort(sortParam(s))).toEqual({ ...s, unreadFirst: true })
     }
   })
 
@@ -41,17 +41,27 @@ describe('地址栏里的排序', () => {
   })
 
   it('只给列不给方向时用那列的自然方向', () => {
-    expect(parseSort('size')).toEqual(S('size', 'desc'))
-    expect(parseSort('subject')).toEqual(S('subject', 'asc'))
+    expect(parseSort('size')).toEqual({ ...DEFAULT_SORT, by: 'size' })
+    expect(parseSort('subject')).toEqual({ ...DEFAULT_SORT, by: 'subject', dir: 'asc' })
   })
 })
 
 describe('地址栏里的「优先显示」', () => {
-  it('都没开时不进地址栏', () => {
+  it('默认未读优先不进地址栏', () => {
+    expect(DEFAULT_SORT).toEqual(S('date', 'desc', { unreadFirst: true }))
     expect(topParam(DEFAULT_SORT)).toBe('')
+    expect(parseSort(undefined)).toEqual(DEFAULT_SORT)
   })
 
-  it('写成 star / unread / star,unread，解回来是同一个', () => {
+  it('手动关闭后用 top=none 保持，刷新或后退不会重新启用', () => {
+    const off = sortFromCommand(DEFAULT_SORT, 'top:unread')
+    expect(off).toEqual(S('date', 'desc'))
+    expect(topParam(off)).toBe('none')
+    expect(parseSort(sortParam(off), topParam(off))).toEqual(off)
+    expect(topParam(sortFromCommand(off, 'top:unread'))).toBe('')
+  })
+
+  it('分档组合解回来是同一个，也兼容原来的 top=unread 链接', () => {
     for (const s of [
       S('date', 'desc', { starFirst: true }),
       S('date', 'desc', { unreadFirst: true }),
@@ -59,6 +69,7 @@ describe('地址栏里的「优先显示」', () => {
     ]) {
       expect(parseSort(sortParam(s), topParam(s))).toEqual(s)
     }
+    expect(parseSort('', 'unread')).toEqual(DEFAULT_SORT)
   })
 
   it('分档和列是两件事，各走各的参数', () => {
@@ -87,8 +98,8 @@ describe('排序菜单', () => {
     expect(defaultDir('from')).toBe('asc')
     expect(defaultDir('to')).toBe('asc')
     expect(defaultDir('subject')).toBe('asc')
-    expect(sortFromCommand(DEFAULT_SORT, 'by:size')).toEqual(S('size', 'desc'))
-    expect(sortFromCommand(DEFAULT_SORT, 'by:subject')).toEqual(S('subject', 'asc'))
+    expect(sortFromCommand(DEFAULT_SORT, 'by:size')).toEqual({ ...DEFAULT_SORT, by: 'size' })
+    expect(sortFromCommand(DEFAULT_SORT, 'by:subject')).toEqual({ ...DEFAULT_SORT, by: 'subject', dir: 'asc' })
   })
 
   it('点的是当前这一列，什么都不变——方向是菜单里另外两项的事', () => {
@@ -114,9 +125,10 @@ describe('排序菜单', () => {
   })
 
   it('分档那两项是开关：点一下开，再点一下关，两个能同时开', () => {
-    const on = sortFromCommand(DEFAULT_SORT, 'top:star')
+    const off = S('date', 'desc')
+    const on = sortFromCommand(off, 'top:star')
     expect(on).toEqual(S('date', 'desc', { starFirst: true }))
-    expect(sortFromCommand(on, 'top:star')).toEqual(DEFAULT_SORT)
+    expect(sortFromCommand(on, 'top:star')).toEqual(off)
     const both = sortFromCommand(on, 'top:unread')
     expect(both).toEqual(S('date', 'desc', { starFirst: true, unreadFirst: true }))
     // 关掉一个，另一个还在。
@@ -139,12 +151,13 @@ describe('收件箱和已发送各认各的列', () => {
   })
 
   it('把「按发件人」硬套到已发送上时按默认排，而不是报错或乱排', () => {
-    expect(sortFor('sent', S('from', 'asc'))).toEqual(DEFAULT_SORT)
-    expect(sortFor('inbox', S('to', 'asc'))).toEqual(DEFAULT_SORT)
+    expect(sortFor('sent', S('from', 'asc'))).toEqual(S('date', 'desc'))
+    expect(sortFor('inbox', S('to', 'asc'))).toEqual(S('date', 'desc'))
     expect(sortFor('inbox', S('size', 'asc'))).toEqual(S('size', 'asc'))
   })
 
   it('已发送没有星标也没有未读，分档在那一侧不生效', () => {
+    expect(sortFor('sent', DEFAULT_SORT)).toEqual(S('date', 'desc'))
     expect(sortFor('sent', S('to', 'asc', { starFirst: true, unreadFirst: true }))).toEqual(
       S('to', 'asc'),
     )

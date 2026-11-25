@@ -24,8 +24,8 @@ export interface MailSort {
   unreadFirst: boolean
 }
 
-// 一直以来的顺序：新的在前、不分档。地址栏里不写它，/emails 就是 /emails。
-export const DEFAULT_SORT: MailSort = { by: 'date', dir: 'desc', starFirst: false, unreadFirst: false }
+// 默认未读优先，两档各自按时间倒序。地址栏里不写默认值。
+export const DEFAULT_SORT: MailSort = { by: 'date', dir: 'desc', starFirst: false, unreadFirst: true }
 
 const FIELDS: SortField[] = ['from', 'to', 'subject', 'date', 'size']
 
@@ -56,12 +56,11 @@ export function sortParam(s: MailSort): string {
   return `${s.by}:${s.dir}`
 }
 
-// 地址栏里的分档：`star`、`unread`、`star,unread`。都没开是空串。
+// 省略 top 表示默认未读优先；显式关掉两档时用 none，刷新后才不会重新打开。
+// 旧链接里显式写的 star / unread / star,unread 仍然按原来的组合解读。
 export function topParam(s: MailSort): string {
-  const on: string[] = []
-  if (s.starFirst) on.push('star')
-  if (s.unreadFirst) on.push('unread')
-  return on.join(',')
+  if (s.starFirst) return s.unreadFirst ? 'star,unread' : 'star'
+  return s.unreadFirst ? '' : 'none'
 }
 
 // 解地址栏。认不出的一律回默认：一个手改坏的链接该看到的是收件箱，不是白屏。
@@ -76,14 +75,12 @@ export function parseSort(raw: string | undefined | null, top?: string | null): 
   return base
 }
 
-// 认不出的档名**忽略**，不整条作废：`top=star,typo` 该给出星标优先，而不是
-// 退回不分档。退回的样子和「这个开关坏了」一模一样。
+// 忽略未知档名。整条没有有效档名时回到默认；只要有 star/unread，就尊重显式组合。
 function parseTop(raw: string | undefined | null): Pick<MailSort, 'starFirst' | 'unreadFirst'> {
   const parts = (raw ?? '').split(',')
-  return {
-    starFirst: parts.includes('star'),
-    unreadFirst: parts.includes('unread'),
-  }
+  const starFirst = parts.includes('star')
+  const unreadFirst = parts.includes('unread')
+  return { starFirst, unreadFirst: unreadFirst || (!starFirst && !parts.includes('none') && DEFAULT_SORT.unreadFirst) }
 }
 
 // 排序菜单里点了一项。
