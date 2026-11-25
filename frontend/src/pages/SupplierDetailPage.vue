@@ -172,7 +172,8 @@ const id = String(route.params.id)
 const endpoint = '/suppliers/' + id
 const supplier = ref<Supplier>()
 const loading = ref(true)
-const canWrite = computed(() => auth.can('masterdata:supplier:write'))
+const canMaintain = ref(false)
+const canWrite = computed(() => canMaintain.value && auth.can('masterdata:supplier:write'))
 const canManageOwners = ref(false)
 const canEditOwners = computed(() => canWrite.value && canManageOwners.value)
 const contacts = ref<ContactRow[]>([])
@@ -381,7 +382,9 @@ function onRated(grade: string) {
 
 onMounted(async () => {
   try {
-    acceptProfile((await get<{ supplier: Supplier }>(endpoint)).supplier)
+    const detail = await get<{ supplier: Supplier; canMaintain?: boolean }>(endpoint)
+    canMaintain.value = detail.canMaintain !== false
+    acceptProfile(detail.supplier)
     const lookups = supplierDetailLookups(get)
     void lookups.businessOptions.then(value => { businessOptions.value = value })
     void lookups.paymentOptions.then(value => { paymentOptions.value = value })

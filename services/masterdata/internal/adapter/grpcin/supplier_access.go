@@ -10,6 +10,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/masterdata/internal/app"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 // SupplierAccess applies tenant-scoped supplier ownership to every supplier RPC.
@@ -30,7 +31,24 @@ func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 		if !ok || op.TenantID <= 0 || op.EmployeeID <= 0 || access == nil {
 			return nil, apierr.Permission("MD_SUPPLIER_ACCESS_DENIED", "供应商访问需要登录用户")
 		}
-		visibility, err := access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: op.EmployeeID, Module: "supplier"})
+		module := "supplier"
+		// The company-wide scope applies only to these reads. Mutations must
+		// continue to use the original owner and administrator checks.
+		switch info.FullMethod {
+		case mdv1.SupplierService_GetSupplier_FullMethodName,
+			mdv1.SupplierService_ListSuppliers_FullMethodName,
+			mdv1.SupplierService_ListSupplierCountries_FullMethodName,
+			mdv1.SupplierService_ListSupplierContacts_FullMethodName,
+			mdv1.SupplierService_ListSupplierOwners_FullMethodName,
+			mdv1.SupplierService_ListSupplierChanges_FullMethodName,
+			mdv1.SupplierService_CheckSupplierDuplicates_FullMethodName,
+			mdv1.SupplierService_GetSupplierDeactivationImpact_FullMethodName,
+			mdv1.SupplierService_ListSupplierDocuments_FullMethodName,
+			mdv1.SupplierService_GetSupplierDocumentFile_FullMethodName,
+			mdv1.CreditRatingService_ListCreditRatings_FullMethodName:
+			module = "supplier_read"
+		}
+		visibility, err := access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: op.EmployeeID, Module: module})
 		if err != nil {
 			return nil, err
 		}
@@ -62,6 +80,25 @@ func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 				return nil, err
 			}
 		}
-		return next(ctx, req)
+		result, err := next(ctx, req)
+		detail, isDetail := result.(*mdv1.GetSupplierResponse)
+		if err != nil || !isDetail {
+			return result, err
+		}
+		canMaintain := true
+		if visibility.GetAll() {
+			ownerScope, err := access.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: op.EmployeeID, Module: "supplier"})
+			if err != nil {
+				return nil, err
+			}
+			if !ownerScope.GetAll() {
+				canMaintain, err = h.svc.CanAccessSupplier(ctx, op.TenantID, supplierID, op.EmployeeID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		detail.CanMaintain = proto.Bool(canMaintain)
+		return detail, nil
 	}
 }

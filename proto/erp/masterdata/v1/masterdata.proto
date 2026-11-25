@@ -907,6 +907,9 @@ message GetSupplierRequest {
 
 message GetSupplierResponse {
   Supplier supplier = 1;
+  // Whether existing owner-based rules allow maintenance of this record.
+  // The caller still needs the relevant operation permission.
+  optional bool can_maintain = 2;
 }
 
 message ListSuppliersRequest {

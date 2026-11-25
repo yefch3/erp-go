@@ -354,6 +354,11 @@ const scopeModules: Readonly<Record<string, HelpText>> = {
     'Filters factory quotes in presales and execution inquiries by who entered them. Purchase requirements have a separate scope. Selecting factories and acting for another buyer still require the relevant permissions.',
     'Filtra por autor las cotizaciones de fábrica en consultas de preventa y ejecución. Las necesidades de compra tienen su propio alcance. Seleccionar fábricas o actuar por otro comprador requiere los permisos correspondientes.',
   ],
+  supplier_read: [
+    '需要「查看供应商」权限。此范围控制供应商及货代档案的查看。编辑、删除及负责人管理仍按原有权限执行。',
+    'Requires View suppliers. This scope controls access to view supplier and freight forwarder records. Editing, deletion and owner management follow existing permissions.',
+    'Requiere Ver proveedores. Este alcance controla la consulta de fichas de proveedores y agentes de carga. La edición, la eliminación y la gestión de responsables conservan sus permisos actuales.',
+  ],
   daily_base_price: [
     '按录入人限制可修改或删除的每日基价和基差。查看趋势与管理配置另有功能权限。',
     'Limits whose daily base prices and spreads can be edited or deleted. Viewing trends and managing settings have separate permissions.',
@@ -390,15 +395,10 @@ const scopeCopy = {
     'Feature permissions control available actions. Configurable data scopes control whose records are covered and default to your own.',
     'Los permisos de función determinan las acciones disponibles. Los alcances configurables determinan qué registros se incluyen y, por defecto, abarcan los propios.',
   ],
-  empty: [
-    '这个角色当前启用的权限没有可在此设置的数据范围。',
-    'The permissions enabled for this role have no data scopes to configure here.',
-    'Los permisos habilitados para este rol no tienen alcances configurables aquí.',
-  ],
   ownerBased: [
-    '客户和供应商按档案上的有效负责人关系控制可见性。普通员工查看自己负责的档案，超级管理员可以查看全部。',
-    'Customer and supplier visibility follows active ownership on each record. Regular employees see records they own. Super administrators can see all records.',
-    'La visibilidad de clientes y proveedores sigue a los responsables activos de cada ficha. El personal ve las fichas a su cargo. Los superadministradores pueden ver todas.',
+    '客户按档案上的有效负责人关系控制可见性。普通员工查看自己负责的客户，超级管理员可以查看全部。',
+    'Customer visibility follows active ownership on each record. Regular employees see customers they own. Super administrators can see all customers.',
+    'La visibilidad de clientes sigue a los responsables activos de cada ficha. El personal ve los clientes a su cargo. Los superadministradores pueden ver todos.',
   ],
   optionsTitle: ['查看各范围的含义', 'What each scope covers', 'Qué abarca cada alcance'],
 } satisfies Record<string, HelpText>
@@ -410,7 +410,6 @@ export function scopeHelp(locale: string) {
 
   return {
     intro: scopeCopy.intro[index],
-    empty: scopeCopy.empty[index],
     ownerBased: scopeCopy.ownerBased[index],
     optionsTitle: scopeCopy.optionsTitle[index],
     modules: translate(scopeModules),

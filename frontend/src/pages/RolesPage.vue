@@ -110,7 +110,7 @@
                 <p>{{ roleScopeHelp.intro }}</p>
               </div>
             </div>
-            <div v-if="visibleScopeModules.length" class="scope-grid">
+            <div class="scope-grid">
               <div v-for="scopeModule in visibleScopeModules" :key="scopeModule.key" class="scope-card">
                 <span>{{ t(scopeModule.label) }}</span>
                 <el-select
@@ -119,17 +119,16 @@
                   :disabled="!canEditSelected"
                 >
                   <el-option
-                    v-for="k in scopeModule.key === 'procurement_factory_quote' ? FACTORY_QUOTE_SCOPE_TYPES : SCOPE_TYPES"
+                    v-for="k in (scopeModule.key === 'procurement_factory_quote' || scopeModule.key === 'supplier_read') ? OWNER_SCOPE_TYPES : SCOPE_TYPES"
                     :key="k"
                     :value="k"
-                    :label="t(k === 'SELF' && scopeModule.key === 'procurement_factory_quote' ? 'roles.scopeFactoryQuoteSelf' : `roles.scopes.${k}`)"
+                    :label="scopeOptionLabel(scopeModule.key, k)"
                   />
                 </el-select>
                 <p class="scope-description">{{ roleScopeHelp.modules[scopeModule.key] }}</p>
               </div>
             </div>
-            <p v-else class="scope-note">{{ roleScopeHelp.empty }}</p>
-            <details v-if="visibleScopeModules.length" class="scope-options">
+            <details class="scope-options">
               <summary>{{ roleScopeHelp.optionsTitle }}</summary>
               <dl>
                 <template v-for="k in explainedScopeTypes" :key="k">
@@ -138,7 +137,7 @@
                 </template>
               </dl>
             </details>
-            <p v-if="hasMasterDataOwners" class="scope-note">{{ roleScopeHelp.ownerBased }}</p>
+            <p v-if="hasCustomerPermissions" class="scope-note">{{ roleScopeHelp.ownerBased }}</p>
           </section>
           <TodoReceptionSettings target="role" :target-id="selected.id" :editable="canWrite" />
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
@@ -217,9 +216,7 @@ const selected = ref<Role | null>(null)
 const canEditSelected = computed(() => canWrite && selected.value?.code !== 'SUPER_ADMIN')
 const checked = ref<string[]>([])
 const roleScopeHelp = computed(() => scopeHelp(locale.value))
-const hasMasterDataOwners = computed(() => checked.value.some((code) =>
-  code.startsWith('masterdata:customer:') || code.startsWith('masterdata:supplier:'),
-))
+const hasCustomerPermissions = computed(() => checked.value.some((code) => code.startsWith('masterdata:customer:')))
 const loading = ref(false)
 const saving = ref(false)
 const createOpen = ref(false)
@@ -228,7 +225,7 @@ const activePermissionModule = ref('')
 // Absence of a row means SELF, so the picker shows SELF for an unconfigured
 // role rather than a blank that hides which way it will actually behave.
 const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
-const FACTORY_QUOTE_SCOPE_TYPES = ['SELF', 'ALL']
+const OWNER_SCOPE_TYPES = ['SELF', 'ALL']
 // This is the complete list of modules for which a business service asks IAM
 // to filter rows. Keeping the controls in one table makes omissions visible:
 // quality and mail used to fall back silently to SELF because this page had no
@@ -239,6 +236,7 @@ const DATA_SCOPE_MODULES = [
   { key: 'procurement_order', label: 'roles.scopeOrder' },
   { key: 'procurement_requirement', label: 'roles.scopeRequirement' },
   { key: 'procurement_factory_quote', label: 'roles.scopeFactoryQuote' },
+  { key: 'supplier_read', label: 'roles.scopeSupplier' },
   { key: 'daily_base_price', label: 'roles.scopeDailyPrice' },
   { key: 'shipping', label: 'roles.scopeShipping' },
   { key: 'quality', label: 'roles.scopeQuality' },
@@ -301,7 +299,7 @@ const enabledModuleCount = computed(() =>
   Object.values(grouped.value).filter((items) => enabledPermissionCount(items) > 0).length,
 )
 const hasUnsavedChanges = computed(() => {
-  if (!selected.value) return false
+  if (!selected.value || selected.value.code === 'SUPER_ADMIN') return false
   const before = [...selected.value.permissionCodes].sort()
   const after = [...new Set(checked.value)].sort()
   if (before.length !== after.length || before.some((code, index) => code !== after[index])) return true
@@ -333,6 +331,8 @@ const scopePermissionPrefixes: Record<string, string[]> = {
   mail: ['mail:'],
 }
 const visibleScopeModules = computed(() => DATA_SCOPE_MODULES.filter((module) => {
+  // A role can grant this scope while another assigned role grants feature access.
+  if (module.key === 'supplier_read') return true
   const configured = (scopes.value[`${selected.value?.id}:${module.key}`] ?? 'SELF') !== 'SELF'
   const relevant = checked.value.some((code) =>
     (scopePermissionPrefixes[module.key] ?? []).some((prefix) => code.startsWith(prefix)),
@@ -398,6 +398,13 @@ function syncScopeValues(roleId: string) {
   for (const module of DATA_SCOPE_MODULES) {
     scopeValues[module.key] = scopes.value[`${roleId}:${module.key}`] ?? 'SELF'
   }
+  if (selected.value?.code === 'SUPER_ADMIN') scopeValues.supplier_read = 'ALL'
+}
+
+function scopeOptionLabel(module: string, scope: string): string {
+  if (module === 'procurement_factory_quote' && scope === 'SELF') return t('roles.scopeFactoryQuoteSelf')
+  if (module === 'supplier_read') return t(scope === 'SELF' ? 'roles.scopeSupplierSelf' : 'roles.scopeSupplierAll')
+  return t(`roles.scopes.${scope}`)
 }
 
 async function loadScopes() {

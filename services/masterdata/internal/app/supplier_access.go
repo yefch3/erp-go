@@ -10,8 +10,8 @@ import (
 
 type supplierAccessKey struct{}
 
-// WithSupplierAccess is set by the authenticated RPC boundary. Zero means the
-// existing SUPER_ADMIN role; a positive ID means that employee's owner rows.
+// WithSupplierAccess sets the owner filter for the current RPC. Zero allows
+// tenant-wide access for that RPC, and a positive ID filters by employee.
 func WithSupplierAccess(ctx context.Context, employeeID int64) context.Context {
 	return context.WithValue(ctx, supplierAccessKey{}, employeeID)
 }
@@ -29,16 +29,7 @@ func supplierOwnerDisplayName(employeeID int64, name string) string {
 }
 
 func (s *Service) AuthorizeSupplier(ctx context.Context, tenantID, supplierID int64) error {
-	employeeID := supplierAccessEmployee(ctx)
-	if employeeID == 0 {
-		return nil
-	}
-	var allowed bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
-		SELECT 1 FROM supplier_owners WHERE tenant_id=$1 AND supplier_id=$2
-		AND employee_id=$3 AND status='ACTIVE'
-		AND (start_date IS NULL OR start_date <= CURRENT_DATE)
-		AND (end_date IS NULL OR end_date >= CURRENT_DATE))`, tenantID, supplierID, employeeID).Scan(&allowed)
+	allowed, err := s.CanAccessSupplier(ctx, tenantID, supplierID, supplierAccessEmployee(ctx))
 	if err != nil {
 		return err
 	}
@@ -46,4 +37,18 @@ func (s *Service) AuthorizeSupplier(ctx context.Context, tenantID, supplierID in
 		return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或无权访问")
 	}
 	return nil
+}
+
+// CanAccessSupplier applies the owner filter to an ID in the supplied tenant.
+func (s *Service) CanAccessSupplier(ctx context.Context, tenantID, supplierID, employeeID int64) (bool, error) {
+	if employeeID == 0 {
+		return true, nil
+	}
+	var allowed bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM supplier_owners WHERE tenant_id=$1 AND supplier_id=$2
+		AND employee_id=$3 AND status='ACTIVE'
+		AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+		AND (end_date IS NULL OR end_date >= CURRENT_DATE))`, tenantID, supplierID, employeeID).Scan(&allowed)
+	return allowed, err
 }
