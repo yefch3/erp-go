@@ -26,7 +26,7 @@ const (
 // opens in Excel, LibreOffice and Numbers and deliberately contains no macros,
 // external links or formulas.
 func Build(sheetName string, rows [][]string) ([]byte, error) {
-	return build(sheetName, rows, nil, nil)
+	return build(sheetName, rows, nil, nil, nil)
 }
 
 // Formula is a trusted, server-authored spreadsheet formula and its cached
@@ -41,23 +41,38 @@ type Formula struct {
 // explicitly addressed cells with trusted formulas. Formula references use
 // Excel notation such as H5.
 func BuildWithFormulas(sheetName string, rows [][]string, formulas map[string]Formula) ([]byte, error) {
-	return build(sheetName, rows, formulas, nil)
+	return build(sheetName, rows, formulas, nil, nil)
 }
 
 // BuildWithFormulasAndNumbers also writes explicitly addressed cells as real
 // spreadsheet numbers. Their display format keeps useful decimal places while
 // suppressing trailing zeroes. Callers must only mark trusted numeric fields.
 func BuildWithFormulasAndNumbers(sheetName string, rows [][]string, formulas map[string]Formula, numbers map[string]string) ([]byte, error) {
-	return build(sheetName, rows, formulas, numbers)
+	return build(sheetName, rows, formulas, numbers, nil)
 }
 
-func build(sheetName string, rows [][]string, formulas map[string]Formula, numbers map[string]string) ([]byte, error) {
+// BuildWrapped creates a worksheet with explicit column widths, wrapped data
+// text and row heights sized for the wrapped contents. Numbers are written as
+// numeric cells, while all other values remain literal text.
+func BuildWrapped(sheetName string, rows [][]string, numbers map[string]string, widths []int) ([]byte, error) {
+	return build(sheetName, rows, nil, numbers, widths)
+}
+
+func build(sheetName string, rows [][]string, formulas map[string]Formula, numbers map[string]string, widths []int) ([]byte, error) {
 	if len(rows) == 0 || len(rows) > MaxRows {
 		return nil, fmt.Errorf("xlsx rows out of range: %d", len(rows))
 	}
 	for _, row := range rows {
 		if len(row) > MaxColumns {
 			return nil, fmt.Errorf("xlsx columns out of range: %d", len(row))
+		}
+		if widths != nil && len(row) != len(widths) {
+			return nil, errors.New("xlsx column widths do not match row")
+		}
+	}
+	for _, width := range widths {
+		if width < 1 || width > 255 {
+			return nil, fmt.Errorf("xlsx column width out of range: %d", width)
 		}
 	}
 	if strings.TrimSpace(sheetName) == "" {
@@ -75,6 +90,13 @@ func build(sheetName string, rows [][]string, formulas map[string]Formula, numbe
 		"xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
 		"xl/styles.xml":              `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.####"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`,
 	}
+	if widths != nil {
+		styles := strings.Replace(parts["xl/styles.xml"], `<cellXfs count="3">`, `<cellXfs count="6">`, 1)
+		wrappedStyles := `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+			`<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>` +
+			`<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>`
+		parts["xl/styles.xml"] = strings.Replace(styles, `</cellXfs>`, wrappedStyles+`</cellXfs>`, 1)
+	}
 	var workbook bytes.Buffer
 	workbook.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="`)
 	escape(&workbook, sheetName)
@@ -83,12 +105,20 @@ func build(sheetName string, rows [][]string, formulas map[string]Formula, numbe
 
 	var sheet bytes.Buffer
 	sheet.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>`)
-	for column, width := range columnWidths(rows) {
+	columnSizes := widths
+	if columnSizes == nil {
+		columnSizes = columnWidths(rows)
+	}
+	for column, width := range columnSizes {
 		sheet.WriteString(`<col min="` + strconv.Itoa(column+1) + `" max="` + strconv.Itoa(column+1) + `" width="` + strconv.Itoa(width) + `" customWidth="1"/>`)
 	}
 	sheet.WriteString(`</cols><sheetData>`)
 	for ri, row := range rows {
-		sheet.WriteString(`<row r="` + strconv.Itoa(ri+1) + `">`)
+		sheet.WriteString(`<row r="` + strconv.Itoa(ri+1) + `"`)
+		if widths != nil && ri > 0 {
+			sheet.WriteString(` ht="` + strconv.Itoa(wrappedRowHeight(row, widths)) + `" customHeight="1"`)
+		}
+		sheet.WriteString(`>`)
 		for ci, value := range row {
 			ref := cellRef(ci, ri+1)
 			if formula, ok := formulas[ref]; ok {
@@ -108,7 +138,14 @@ func build(sheetName string, rows [][]string, formulas map[string]Formula, numbe
 				if parseErr != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 					return nil, fmt.Errorf("xlsx number is invalid at %s", ref)
 				}
-				sheet.WriteString(`<c r="` + ref + `" s="2"><v>`)
+				style := "2"
+				if widths != nil {
+					style = "4"
+					if parsed == math.Trunc(parsed) {
+						style = "5"
+					}
+				}
+				sheet.WriteString(`<c r="` + ref + `" s="` + style + `"><v>`)
 				escape(&sheet, number)
 				sheet.WriteString(`</v></c>`)
 				continue
@@ -119,6 +156,8 @@ func build(sheetName string, rows [][]string, formulas map[string]Formula, numbe
 			sheet.WriteString(`<c r="` + ref + `" t="inlineStr"`)
 			if ri == 0 {
 				sheet.WriteString(` s="1"`)
+			} else if widths != nil {
+				sheet.WriteString(` s="3"`)
 			}
 			sheet.WriteString(`><is><t xml:space="preserve">`)
 			escape(&sheet, value)
@@ -142,6 +181,27 @@ func build(sheetName string, rows [][]string, formulas map[string]Formula, numbe
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+func wrappedRowHeight(row []string, widths []int) int {
+	lineCount := 1
+	for column, text := range row {
+		// Allow for font differences and the cell's horizontal padding.
+		lineWidth := max(1, widths[column]*9/10-2)
+		lines := 0
+		for _, segment := range strings.Split(text, "\n") {
+			units := 0
+			for _, char := range segment {
+				units++
+				if char > 255 {
+					units++
+				}
+			}
+			lines += max(1, (units+lineWidth-1)/lineWidth)
+		}
+		lineCount = max(lineCount, lines)
+	}
+	return min(409, lineCount*17+4)
 }
 
 func columnWidths(rows [][]string) []int {
