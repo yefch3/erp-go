@@ -595,6 +595,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:execution-quote:select")).Post("/api/requirements/{id}/execution-quotes/{quoteId}/select", s.selectExecutionSupplierQuote)
 		r.With(s.perm("procurement:order:write")).Delete("/api/requirements/{id}/execution-quotes/{quoteId}", s.deleteExecutionSupplierQuote)
 		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:order:write")).Post("/api/requirements/purchase-template/export", s.exportPurchaseTemplate)
+		r.With(s.perm("procurement:requirement:read")).Post("/api/requirements/execution-rfq/export", s.exportExecutionRFQ)
 		r.Post("/api/inquiry-workspace", s.inquiryWorkspace)
 		r.Get("/api/inquiry-files", s.inquiryFile)
 		// 客户询盘由销售维护；客户选择项不因此开放完整客户档案菜单。

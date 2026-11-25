@@ -138,8 +138,11 @@
         </template>
 
         <div v-else class="inquiry-detail-tabs">
-          <el-button v-if="canOrder && activeInquiryTab === 'quotes'" type="primary" class="execution-add-quote" @click="openBatchQuoteEditor">添加工厂报价</el-button>
-          <el-tabs v-model="activeInquiryTab" class="inquiry-tabs" :class="{ 'has-quote-action': canOrder && activeInquiryTab === 'quotes' }" @tab-change="onInquiryTabChange">
+          <div v-if="activeInquiryTab === 'quotes'" class="execution-quote-actions">
+            <el-button :disabled="loading || !activeBatch.lines.some(line => Number(line.availableQty) > 0)" @click="openExecutionRFQExport">导出 Excel</el-button>
+            <el-button v-if="canOrder" type="primary" @click="openBatchQuoteEditor">添加工厂报价</el-button>
+          </div>
+          <el-tabs v-model="activeInquiryTab" class="inquiry-tabs" :class="{ 'has-quote-action': activeInquiryTab === 'quotes' }" @tab-change="onInquiryTabChange">
             <el-tab-pane v-for="tab in inquirySteps" :key="tab" :name="tab" :label="inquiryTabLabels[tab]">
               <template v-if="activeInquiryTab === tab">
                 <section v-for="note in sourceSalesRemarks(activeBatch)" :key="note.contractNo" class="source-sales-remark">
@@ -361,6 +364,52 @@
       </template>
     </el-dialog>
 
+    <el-dialog :model-value="!!executionRFQExport" title="导出工厂询价 Excel" width="min(1120px,94vw)" destroy-on-close @close="executionRFQExport=null">
+      <template v-if="executionRFQExport">
+        <div class="rfq-export-toolbar">
+          <p class="rfq-export-hint">
+            <strong>本次导出 {{ executionRFQExport.rows.length }} 条待采购规格</strong>
+            <span v-if="executionRFQExport.omittedCount"> · 另有 {{ executionRFQExport.omittedCount }} 条待采购量为 0</span>
+          </p>
+          <div v-if="executionRFQOptionalColumns.some(column => !executionRFQExport?.columns[column.key])" class="rfq-export-add-fields">
+            <template v-for="column in executionRFQOptionalColumns" :key="column.key">
+              <el-button v-if="!executionRFQExport.columns[column.key]" size="small" plain @click="addExecutionRFQColumn(column.key)">{{column.addLabel}}</el-button>
+            </template>
+          </div>
+        </div>
+        <el-table :data="executionRFQExport.rows" row-key="line.requirement_id" max-height="55vh" size="small" class="rfq-export-table">
+          <el-table-column label="产品名称" width="180">
+            <template #default="{row}"><el-input v-model="row.line.product_name" aria-label="产品名称" placeholder="填写产品名称" type="textarea" resize="none" :autosize="{minRows:1,maxRows:4}"/></template>
+          </el-table-column>
+          <el-table-column v-if="executionRFQExport.columns.material_standard" label="材质/标准" width="150">
+            <template #default="{row}"><el-input v-model="row.line.material_standard" aria-label="材质/标准" placeholder="—" type="textarea" resize="none" :autosize="{minRows:1,maxRows:4}"/></template>
+          </el-table-column>
+          <el-table-column v-if="executionRFQExport.columns.specification" label="规格" min-width="235">
+            <template #default="{row}"><el-input v-model="row.line.specification" aria-label="规格" placeholder="—" type="textarea" resize="none" :autosize="{minRows:1,maxRows:6}"/></template>
+          </el-table-column>
+          <el-table-column label="采购数量" width="108" align="right">
+            <template #default="{row}"><span class="rfq-export-qty">{{formatExportQuantity(row.line.available_qty)}}</span></template>
+          </el-table-column>
+          <el-table-column v-if="executionRFQExport.hasUnit" label="单位" width="66">
+            <template #default="{row}"><span class="rfq-export-unit">{{row.unit}}</span></template>
+          </el-table-column>
+          <el-table-column v-if="executionRFQExport.columns.technical_requirements" label="备注" min-width="235">
+            <template #default="{row}">
+              <el-input v-model="row.line.technical_requirements" aria-label="备注" placeholder="—" type="textarea" resize="none" :autosize="{minRows:1,maxRows:6}"/>
+              <details v-if="row.sourceRemark" class="rfq-export-source-note">
+                <summary>查看合同明细备注</summary>
+                <p>{{row.sourceRemark}}</p>
+              </details>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="executionRFQExport=null">取消</el-button>
+        <el-button type="primary" :loading="exportingExecutionRFQ" @click="downloadExecutionRFQ">下载 Excel</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog :model-value="!!presalePreview" title="售前参考" width="min(850px,94vw)" destroy-on-close @close="presalePreview=null">
       <template v-if="presalePreview">
         <ComparisonSpecification :product-name="presalePreview.productName" :text="requirementProductDescription(presalePreview)" hide-name />
@@ -570,6 +619,7 @@ import { del, download, get, post, postDownload, quietErrors, saveBlob } from '.
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { purchaseBatchKey } from '../lib/requirements'
+import { executionRFQExportRows } from '../lib/executionRFQExport'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import ReorderableTableHeader from '../components/ReorderableTableHeader.vue'
 import { useTableColumnOrder, type TableColumnDefinition } from '../composables/useTableColumnOrder'
@@ -789,6 +839,69 @@ const closing = ref<Requirement | null>(null)
 const closeReason = ref('')
 const selected = ref<Requirement[]>([])
 const activeBatch = ref<PurchaseBatch | null>(null)
+const executionRFQOptionalColumns = [
+  { key: 'material_standard', addLabel: '添加材质/标准' },
+  { key: 'specification', addLabel: '添加规格' },
+  { key: 'technical_requirements', addLabel: '添加备注' },
+] as const
+type ExecutionRFQOptionalColumn = typeof executionRFQOptionalColumns[number]['key']
+const executionRFQExport = ref<{
+  batchKey: string
+  rows: ReturnType<typeof executionRFQExportRows>
+  omittedCount: number
+  columns: Record<ExecutionRFQOptionalColumn, boolean>
+  hasUnit: boolean
+} | null>(null)
+const exportingExecutionRFQ = ref(false)
+
+function formatExportQuantity(value: string) {
+  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
+}
+
+function addExecutionRFQColumn(key: ExecutionRFQOptionalColumn) {
+  if (executionRFQExport.value) executionRFQExport.value.columns[key] = true
+}
+
+function openExecutionRFQExport() {
+  const batch = activeBatch.value
+  if (!batch) return
+  const rows = executionRFQExportRows(batch.lines)
+  if (!rows.length) return
+  executionRFQExport.value = {
+    batchKey: batch.key,
+    rows,
+    omittedCount: batch.lines.length - rows.length,
+    columns: {
+      material_standard: rows.some(row => row.line.material_standard.trim()),
+      specification: rows.some(row => row.line.specification.trim()),
+      technical_requirements: rows.some(row => row.line.technical_requirements.trim()),
+    },
+    hasUnit: rows.some(row => row.unit?.trim()),
+  }
+}
+
+async function downloadExecutionRFQ() {
+  const draft = executionRFQExport.value
+  if (!draft || exportingExecutionRFQ.value) return
+  if (draft.rows.some(row => !row.line.product_name.trim())) {
+    ElMessage.warning('请填写每条规格的产品名称')
+    return
+  }
+  exportingExecutionRFQ.value = true
+  try {
+    const file = await postDownload('/requirements/execution-rfq/export', {
+      batch_key: draft.batchKey,
+      lines: draft.rows.map(row => row.line),
+    })
+    if (executionRFQExport.value !== draft) return
+    saveBlob(file.blob, file.fileName || '工厂询价明细.xlsx')
+    executionRFQExport.value = null
+  } catch {
+    // The API displays the error. Keep the reviewed content available for retry.
+  } finally {
+    exportingExecutionRFQ.value = false
+  }
+}
 const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
 
@@ -1518,6 +1631,7 @@ onUnmounted(stopListening)
 
 watch(detailBatchKey, () => {
   batchQuoteOpen.value = false
+  executionRFQExport.value = null
   presalePreview.value = null
   assignments.value = []
   selectedNegotiationTasks.value = {}
@@ -1719,15 +1833,47 @@ onMounted(load)
 .inquiry-detail-card { overflow: visible; }
 .inquiry-detail-card :deep(.el-card__body) { padding: 0 12px 12px; }
 .inquiry-detail-tabs { position: relative; }
-.execution-add-quote { position: absolute; top: 5px; right: 0; z-index: 1; }
-.inquiry-tabs.has-quote-action :deep(.el-tabs__header) { padding-right: 130px; }
+.execution-quote-actions { position: absolute; top: 5px; right: 0; z-index: 1; display: flex; }
+.inquiry-tabs.has-quote-action :deep(.el-tabs__header) { padding-right: 245px; }
+.rfq-export-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+.rfq-export-hint { margin: 0; color: #526c7a; font-size: 13px; }
+.rfq-export-hint strong { color: #243f50; font-weight: 600; }
+.rfq-export-add-fields { display: flex; flex-wrap: wrap; gap: 6px; }
+.rfq-export-add-fields :deep(.el-button + .el-button) { margin-left: 0; }
+.rfq-export-table {
+  overflow: hidden;
+  border: 1px solid #dce7ed;
+  border-radius: 8px;
+  --el-table-border-color: #e5edf1;
+  --el-table-header-bg-color: #f0f6f8;
+  --el-table-header-text-color: #354e5e;
+  --el-table-tr-bg-color: #fff;
+  --el-table-row-hover-bg-color: #f6fafc;
+}
+.rfq-export-table :deep(.el-table__cell) { padding-block: 5px; vertical-align: top; }
+.rfq-export-table :deep(th.el-table__cell) { padding-block: 8px; }
+.rfq-export-table :deep(.el-textarea__inner) {
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #cddbe3;
+  color: #243f50;
+  line-height: 20px;
+}
+.rfq-export-table :deep(.el-textarea__inner:hover) { box-shadow: inset 0 0 0 1px #9eb8c8; }
+.rfq-export-table :deep(.el-textarea__inner:focus) { background: #fff; box-shadow: inset 0 0 0 1px #2396ca; }
+.rfq-export-qty, .rfq-export-unit { display: block; padding-block: 4px; line-height: 20px; }
+.rfq-export-qty { color: #243f50; font-variant-numeric: tabular-nums; font-weight: 600; }
+.rfq-export-source-note { margin-top: 4px; color: #526c7a; }
+.rfq-export-source-note summary { cursor: pointer; }
+.rfq-export-source-note p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inquiry-tabs { min-width: 0; }
 .inquiry-tabs :deep(.el-tabs__header) { margin: 0; border-bottom: 1px solid #e1e8ed; }
 .inquiry-tabs :deep(.el-tabs__nav-wrap::after) { display: none; }
 .inquiry-tabs :deep(.el-tabs__item) { height: 42px; padding: 0 15px; color: #527084; font-weight: 650; }
 .inquiry-tabs :deep(.el-tabs__item.is-active) { color: #0d779d; }
-@media (max-width: 430px) {
-  .execution-add-quote { position: static; margin-top: 6px; }
+@media (max-width: 660px) {
+  .execution-quote-actions { position: static; justify-content: flex-end; padding-block: 6px; }
   .inquiry-tabs.has-quote-action :deep(.el-tabs__header) { padding-right: 0; }
 }
 .pricing-category { margin: 9px 0; overflow: hidden; border: 1px solid #c9dce8; border-radius: 10px; background: #fff; }
