@@ -35,9 +35,6 @@ func TestD4RequoteLeavesActualCarrierForVesselNomination(t *testing.T) {
 		FinalServiceOption:  "Shanghai to Hamburg",
 		FinalCurrency:       "USD",
 		FinalFreightAmount:  "1280",
-		FinalETD:            "2026-10-25",
-		FinalETA:            "2026-11-25",
-		PaymentTerms:        "50% after booking",
 		ActualCarrierID:     0,
 		ActualCarrierName:   "",
 		ForwarderContractNo: "",
@@ -51,12 +48,11 @@ func TestD4RequoteAllowsBlankNotesAndStillRequiresCommercialTerms(t *testing.T) 
 	in := FinalRequoteInput{
 		FinalForwarderID: 9, FinalForwarderName: "Test Forwarder",
 		FinalCurrency: "USD", FinalFreightAmount: "100",
-		FinalETD: "2026-11-25", FinalETA: "2026-12-10", PaymentTerms: "T/T",
 	}
 	if _, err := validateFinalRequote(in); err != nil {
 		t.Fatalf("scheme description and remark must both be optional: %v", err)
 	}
-	for _, missing := range []string{"forwarder", "currency", "amount", "etd", "eta", "payment"} {
+	for _, missing := range []string{"forwarder", "currency", "amount"} {
 		t.Run(missing, func(t *testing.T) {
 			invalid := in
 			switch missing {
@@ -66,16 +62,29 @@ func TestD4RequoteAllowsBlankNotesAndStillRequiresCommercialTerms(t *testing.T) 
 				invalid.FinalCurrency = ""
 			case "amount":
 				invalid.FinalFreightAmount = ""
-			case "etd":
-				invalid.FinalETD = ""
-			case "eta":
-				invalid.FinalETA = ""
-			case "payment":
-				invalid.PaymentTerms = ""
 			}
 			if _, err := validateFinalRequote(invalid); err == nil {
 				t.Fatal("optional notes must not bypass required commercial terms")
 			}
 		})
+	}
+}
+
+func TestD4LaycanValidatesCalendarRange(t *testing.T) {
+	for _, tt := range []struct {
+		start, end string
+		valid      bool
+	}{
+		{"2026-12-01", "2026-12-05", true},
+		{"2026-12-01", "2026-12-01", true},
+		{"2026-12-05", "2026-12-01", false},
+		{"2026-02-29", "2026-03-01", false},
+		{"", "2026-12-01", false},
+		{"2026-12-01", "", false},
+		{"", "", false},
+	} {
+		if err := validateLaycan(tt.start, tt.end); (err == nil) != tt.valid {
+			t.Errorf("validateLaycan(%q, %q) = %v, valid=%t", tt.start, tt.end, err, tt.valid)
+		}
 	}
 }

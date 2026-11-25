@@ -17,6 +17,7 @@ const BizTypeShippingRequote = "SHIPPING_REQUOTE"
 
 type FinalRequoteInput struct {
 	OptionID, FinalForwarderID, ActualCarrierID                                                                                                                 int64
+	LaycanStart, LaycanEnd                                                                                                                                      string
 	FinalForwarderName, ActualCarrierName, FinalServiceOption, FinalCurrency, FinalFreightAmount, FinalETD, FinalETA, PaymentTerms, ForwarderContractNo, Remark string
 }
 type ShippingRequoteOption struct {
@@ -24,12 +25,14 @@ type ShippingRequoteOption struct {
 	ForwarderName, ActualCarrierName, ServiceOption         string
 	Currency, FreightAmount, ETD, ETA, PaymentTerms, Remark string
 	CreatedByName, CreatedAt, UpdatedAt                     string
+	LaycanStart, LaycanEnd                                  string
 }
 type ContractUpload struct {
 	Key, URL string
 	Expires  int32
 }
 type ContractHandoff struct {
+	LaycanStart, LaycanEnd                                                                                                                                                                                                                                                                                                      string
 	ForwarderContractNoGenerated                                                                                                                                                                                                                                                                                                bool
 	PresaleReferencesJSON, AllocationStatus                                                                                                                                                                                                                                                                                     string
 	LinkedContractID                                                                                                                                                                                                                                                                                                            int64
@@ -52,11 +55,11 @@ type ContractShippingCargoItem struct {
 	ProductCode, ProductName, Specification, Quantity, UomCode, Remark string
 }
 
-const handoffSelect = `SELECT presale_references_json,allocation_status,id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,batch_no,shipment_group_key,carrier_forwarder,service_option_name,customer_managed,currency,freight_amount::text,charge_basis,port_of_loading,port_of_discharge,coalesce(estimated_departure::text,''),coalesce(estimated_arrival::text,''),coalesce(valid_until::text,''),remark,source_sales_remark,status,coalesce(schedule_id,0),created_at::text,final_forwarder_id,final_forwarder_name,actual_carrier_id,actual_carrier_name,final_service_option,final_currency,final_freight_amount::text,coalesce(final_etd::text,''),coalesce(final_eta::text,''),payment_terms,forwarder_contract_no,coalesce(approval_instance_id,0),return_reason,operator_name,signed_contract_key,signed_contract_name,coalesce(signed_contract_uploaded_at::text,''),coalesce(contract_verified_at::text,''),contract_verified_by_name,coalesce(payment_requested_at::text,''),updated_at::text,coalesce((SELECT m.order_no FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),''),coalesce((SELECT m.amount_missing FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),false),coalesce((SELECT m.linked_contract_id FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),0),forwarder_contract_no_generated FROM contract_shipping_handoffs`
+const handoffSelect = `SELECT presale_references_json,allocation_status,id,contract_id,contract_no,contract_version_id,version_no,customer_id,customer_name,batch_no,shipment_group_key,carrier_forwarder,service_option_name,customer_managed,currency,freight_amount::text,charge_basis,port_of_loading,port_of_discharge,coalesce(estimated_departure::text,''),coalesce(estimated_arrival::text,''),coalesce(valid_until::text,''),remark,source_sales_remark,status,coalesce(schedule_id,0),created_at::text,final_forwarder_id,final_forwarder_name,actual_carrier_id,actual_carrier_name,final_service_option,final_currency,final_freight_amount::text,coalesce(final_etd::text,''),coalesce(final_eta::text,''),payment_terms,forwarder_contract_no,coalesce(approval_instance_id,0),return_reason,operator_name,signed_contract_key,signed_contract_name,coalesce(signed_contract_uploaded_at::text,''),coalesce(contract_verified_at::text,''),contract_verified_by_name,coalesce(payment_requested_at::text,''),updated_at::text,coalesce((SELECT m.order_no FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),''),coalesce((SELECT m.amount_missing FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),false),coalesce((SELECT m.linked_contract_id FROM manual_shipping_orders m WHERE m.tenant_id=contract_shipping_handoffs.tenant_id AND m.handoff_id=contract_shipping_handoffs.id),0),forwarder_contract_no_generated,coalesce(laycan_start::text,''),coalesce(laycan_end::text,'') FROM contract_shipping_handoffs`
 
 func scanHandoff(row pgx.Row) (ContractHandoff, error) {
 	var v ContractHandoff
-	err := row.Scan(&v.PresaleReferencesJSON, &v.AllocationStatus, &v.ID, &v.ContractID, &v.ContractNo, &v.ContractVersionID, &v.VersionNo, &v.CustomerID, &v.CustomerName, &v.BatchNo, &v.ShipmentGroupKey, &v.CarrierForwarder, &v.ServiceOptionName, &v.CustomerManaged, &v.Currency, &v.FreightAmount, &v.ChargeBasis, &v.PortOfLoading, &v.PortOfDischarge, &v.EstimatedDeparture, &v.EstimatedArrival, &v.ValidUntil, &v.Remark, &v.SourceSalesRemark, &v.Status, &v.ScheduleID, &v.CreatedAt, &v.FinalForwarderID, &v.FinalForwarderName, &v.ActualCarrierID, &v.ActualCarrierName, &v.FinalServiceOption, &v.FinalCurrency, &v.FinalFreightAmount, &v.FinalETD, &v.FinalETA, &v.PaymentTerms, &v.ForwarderContractNo, &v.ApprovalInstanceID, &v.ReturnReason, &v.OperatorName, &v.SignedContractKey, &v.SignedContractName, &v.SignedContractUploadedAt, &v.ContractVerifiedAt, &v.ContractVerifiedByName, &v.PaymentRequestedAt, &v.UpdatedAt, &v.ManualOrderNo, &v.AmountMissing, &v.LinkedContractID, &v.ForwarderContractNoGenerated)
+	err := row.Scan(&v.PresaleReferencesJSON, &v.AllocationStatus, &v.ID, &v.ContractID, &v.ContractNo, &v.ContractVersionID, &v.VersionNo, &v.CustomerID, &v.CustomerName, &v.BatchNo, &v.ShipmentGroupKey, &v.CarrierForwarder, &v.ServiceOptionName, &v.CustomerManaged, &v.Currency, &v.FreightAmount, &v.ChargeBasis, &v.PortOfLoading, &v.PortOfDischarge, &v.EstimatedDeparture, &v.EstimatedArrival, &v.ValidUntil, &v.Remark, &v.SourceSalesRemark, &v.Status, &v.ScheduleID, &v.CreatedAt, &v.FinalForwarderID, &v.FinalForwarderName, &v.ActualCarrierID, &v.ActualCarrierName, &v.FinalServiceOption, &v.FinalCurrency, &v.FinalFreightAmount, &v.FinalETD, &v.FinalETA, &v.PaymentTerms, &v.ForwarderContractNo, &v.ApprovalInstanceID, &v.ReturnReason, &v.OperatorName, &v.SignedContractKey, &v.SignedContractName, &v.SignedContractUploadedAt, &v.ContractVerifiedAt, &v.ContractVerifiedByName, &v.PaymentRequestedAt, &v.UpdatedAt, &v.ManualOrderNo, &v.AmountMissing, &v.LinkedContractID, &v.ForwarderContractNoGenerated, &v.LaycanStart, &v.LaycanEnd)
 	return v, err
 }
 func (s *Service) GetContractHandoff(ctx context.Context, tenantID, id int64) (ContractHandoff, error) {
@@ -114,8 +117,8 @@ func validateFinalRequote(in FinalRequoteInput) (decimal.Decimal, error) {
 	if err != nil || !amount.IsPositive() {
 		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_AMOUNT", "请填写有效的最终物流费用")
 	}
-	if in.FinalForwarderID == 0 || strings.TrimSpace(in.FinalForwarderName) == "" || strings.TrimSpace(in.FinalCurrency) == "" || !validD4Date(in.FinalETD) || !validD4Date(in.FinalETA) || strings.TrimSpace(in.PaymentTerms) == "" {
-		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_TERMS_REQUIRED", "请完整填写最终货代、费用、预计船期和付款条件")
+	if in.FinalForwarderID == 0 || strings.TrimSpace(in.FinalForwarderName) == "" || strings.TrimSpace(in.FinalCurrency) == "" {
+		return decimal.Zero, apierr.Invalid("SHIPPING_FINAL_TERMS_REQUIRED", "请填写货代和币种")
 	}
 	return amount, nil
 }
@@ -123,7 +126,7 @@ func scanRequoteOption(row pgx.Row) (ShippingRequoteOption, error) {
 	var v ShippingRequoteOption
 	err := row.Scan(&v.ID, &v.HandoffID, &v.ForwarderID, &v.ForwarderName, &v.ActualCarrierID, &v.ActualCarrierName,
 		&v.ServiceOption, &v.Currency, &v.FreightAmount, &v.ETD, &v.ETA, &v.PaymentTerms, &v.Remark,
-		&v.CreatedBy, &v.CreatedByName, &v.CreatedAt, &v.UpdatedAt)
+		&v.CreatedBy, &v.CreatedByName, &v.CreatedAt, &v.UpdatedAt, &v.LaycanStart, &v.LaycanEnd)
 	return v, err
 }
 
@@ -131,7 +134,7 @@ func scanRequoteOption(row pgx.Row) (ShippingRequoteOption, error) {
 // without preliminary ETD/ETA and the service is rolled back to this version.
 const requoteOptionSelect = `SELECT id,handoff_id,forwarder_id,forwarder_name,actual_carrier_id,actual_carrier_name,
 	service_option,currency,freight_amount::text,coalesce(etd::text,''),coalesce(eta::text,''),payment_terms,remark,
-	created_by,created_by_name,created_at::text,updated_at::text FROM shipping_execution_requote_options`
+	created_by,created_by_name,created_at::text,updated_at::text,coalesce(laycan_start::text,''),coalesce(laycan_end::text,'') FROM shipping_execution_requote_options`
 
 func (s *Service) ListShippingRequoteOptions(ctx context.Context, tenantID, handoffID int64) ([]ShippingRequoteOption, error) {
 	rows, err := s.pool.Query(ctx, requoteOptionSelect+` WHERE tenant_id=$1 AND handoff_id=$2 ORDER BY updated_at DESC,id DESC`, tenantID, handoffID)
@@ -158,12 +161,22 @@ func (s *Service) shippingRequoteOption(ctx context.Context, tenantID, handoffID
 	return v, err
 }
 
+func validateLaycan(start, end string) error {
+	if !validD4Date(start) || !validD4Date(end) || start > end {
+		return apierr.Invalid("SHIPPING_LAYCAN_INVALID", "请选择有效的受载期，结束日期不能早于开始日期")
+	}
+	return nil
+}
+
 func (s *Service) SaveFinalRequoteDraft(ctx context.Context, tenantID, id int64, in FinalRequoteInput, op Operator) (ContractHandoff, error) {
 	if err := s.checkHandoffExecution(ctx, tenantID, id); err != nil {
 		return ContractHandoff{}, err
 	}
 	amount, err := validateFinalRequote(in)
 	if err != nil {
+		return ContractHandoff{}, err
+	}
+	if err := validateLaycan(in.LaycanStart, in.LaycanEnd); err != nil {
 		return ContractHandoff{}, err
 	}
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -176,11 +189,11 @@ func (s *Service) SaveFinalRequoteDraft(ctx context.Context, tenantID, id int64,
 		}
 		if in.OptionID == 0 {
 			_, e = tx.Exec(ctx, `INSERT INTO shipping_execution_requote_options
-				(tenant_id,handoff_id,forwarder_id,forwarder_name,actual_carrier_id,actual_carrier_name,service_option,currency,freight_amount,etd,eta,payment_terms,remark,created_by,created_by_name)
-				VALUES($1,$2,$3,$4,$5,$6,$7,upper($8),$9::numeric,$10::date,$11::date,$12,$13,$14,$15)`, tenantID, id, in.FinalForwarderID, strings.TrimSpace(in.FinalForwarderName), in.ActualCarrierID, strings.TrimSpace(in.ActualCarrierName), strings.TrimSpace(in.FinalServiceOption), strings.TrimSpace(in.FinalCurrency), amount.StringFixed(2), in.FinalETD, in.FinalETA, strings.TrimSpace(in.PaymentTerms), strings.TrimSpace(in.Remark), op.ID, op.Name)
+				(tenant_id,handoff_id,forwarder_id,forwarder_name,actual_carrier_id,actual_carrier_name,service_option,currency,freight_amount,laycan_start,laycan_end,remark,created_by,created_by_name)
+				VALUES($1,$2,$3,$4,$5,$6,$7,upper($8),$9::numeric,$10::date,$11::date,$12,$13,$14)`, tenantID, id, in.FinalForwarderID, strings.TrimSpace(in.FinalForwarderName), in.ActualCarrierID, strings.TrimSpace(in.ActualCarrierName), strings.TrimSpace(in.FinalServiceOption), strings.TrimSpace(in.FinalCurrency), amount.StringFixed(2), in.LaycanStart, in.LaycanEnd, strings.TrimSpace(in.Remark), op.ID, op.Name)
 			return e
 		}
-		cmd, e = tx.Exec(ctx, `UPDATE shipping_execution_requote_options SET forwarder_id=$4,forwarder_name=$5,actual_carrier_id=$6,actual_carrier_name=$7,service_option=$8,currency=upper($9),freight_amount=$10::numeric,etd=$11::date,eta=$12::date,payment_terms=$13,remark=$14,updated_at=now() WHERE tenant_id=$1 AND handoff_id=$2 AND id=$3`, tenantID, id, in.OptionID, in.FinalForwarderID, strings.TrimSpace(in.FinalForwarderName), in.ActualCarrierID, strings.TrimSpace(in.ActualCarrierName), strings.TrimSpace(in.FinalServiceOption), strings.TrimSpace(in.FinalCurrency), amount.StringFixed(2), in.FinalETD, in.FinalETA, strings.TrimSpace(in.PaymentTerms), strings.TrimSpace(in.Remark))
+		cmd, e = tx.Exec(ctx, `UPDATE shipping_execution_requote_options SET forwarder_id=$4,forwarder_name=$5,actual_carrier_id=$6,actual_carrier_name=$7,service_option=$8,currency=upper($9),freight_amount=$10::numeric,laycan_start=$11::date,laycan_end=$12::date,remark=$13,updated_at=now() WHERE tenant_id=$1 AND handoff_id=$2 AND id=$3`, tenantID, id, in.OptionID, in.FinalForwarderID, strings.TrimSpace(in.FinalForwarderName), in.ActualCarrierID, strings.TrimSpace(in.ActualCarrierName), strings.TrimSpace(in.FinalServiceOption), strings.TrimSpace(in.FinalCurrency), amount.StringFixed(2), in.LaycanStart, in.LaycanEnd, strings.TrimSpace(in.Remark))
 		if e != nil {
 			return e
 		}
@@ -212,11 +225,16 @@ func (s *Service) SelectFinalRequoteDraft(ctx context.Context, tenantID, id, opt
 	if err != nil {
 		return ContractHandoff{}, err
 	}
-	amount, err := validateFinalRequote(FinalRequoteInput{FinalForwarderID: option.ForwarderID, FinalForwarderName: option.ForwarderName, ActualCarrierID: option.ActualCarrierID, ActualCarrierName: option.ActualCarrierName, FinalServiceOption: option.ServiceOption, FinalCurrency: option.Currency, FinalFreightAmount: option.FreightAmount, FinalETD: option.ETD, FinalETA: option.ETA, PaymentTerms: option.PaymentTerms, Remark: option.Remark})
+	amount, err := validateFinalRequote(FinalRequoteInput{FinalForwarderID: option.ForwarderID, FinalForwarderName: option.ForwarderName, FinalCurrency: option.Currency, FinalFreightAmount: option.FreightAmount})
 	if err != nil {
 		return ContractHandoff{}, err
 	}
-	cmd, err := s.pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET final_forwarder_id=$3,final_forwarder_name=$4,actual_carrier_id=$5,actual_carrier_name=$6,final_service_option=$7,final_currency=upper($8),final_freight_amount=$9::numeric,final_etd=$10::date,final_eta=$11::date,payment_terms=$12,forwarder_contract_no='',forwarder_contract_no_generated=false,remark=$13,approval_instance_id=0,status='DRAFT',return_reason='',operator_id=$14,operator_name=$15,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('WAITING_REQUOTE','RETURNED')`, tenantID, id, option.ForwarderID, strings.TrimSpace(option.ForwarderName), option.ActualCarrierID, strings.TrimSpace(option.ActualCarrierName), strings.TrimSpace(option.ServiceOption), strings.TrimSpace(option.Currency), amount.StringFixed(2), option.ETD, option.ETA, strings.TrimSpace(option.PaymentTerms), strings.TrimSpace(option.Remark), op.ID, op.Name)
+	// Preserve historical selections without treating their ETD/ETA as Laycan.
+	etd, eta, payment := option.ETD, option.ETA, option.PaymentTerms
+	if option.LaycanStart != "" {
+		etd, eta, payment = "", "", ""
+	}
+	cmd, err := s.pool.Exec(ctx, `UPDATE contract_shipping_handoffs SET final_forwarder_id=$3,final_forwarder_name=$4,actual_carrier_id=$5,actual_carrier_name=$6,final_service_option=$7,final_currency=upper($8),final_freight_amount=$9::numeric,final_etd=NULLIF($10,'')::date,final_eta=NULLIF($11,'')::date,payment_terms=$12,forwarder_contract_no='',forwarder_contract_no_generated=false,remark=$13,approval_instance_id=0,status='DRAFT',return_reason='',operator_id=$14,operator_name=$15,laycan_start=NULLIF($16,'')::date,laycan_end=NULLIF($17,'')::date,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('WAITING_REQUOTE','RETURNED')`, tenantID, id, option.ForwarderID, strings.TrimSpace(option.ForwarderName), option.ActualCarrierID, strings.TrimSpace(option.ActualCarrierName), strings.TrimSpace(option.ServiceOption), strings.TrimSpace(option.Currency), amount.StringFixed(2), etd, eta, strings.TrimSpace(payment), strings.TrimSpace(option.Remark), op.ID, op.Name, option.LaycanStart, option.LaycanEnd)
 	if err != nil {
 		return ContractHandoff{}, err
 	}
@@ -244,7 +262,14 @@ func (s *Service) SubmitFinalRequote(ctx context.Context, tenantID, id int64, in
 	if err != nil {
 		return ContractHandoff{}, err
 	}
-	summary, _ := json.Marshal(map[string]string{"contract": v.ContractNo, "forwarder": in.FinalForwarderName, "carrier": in.ActualCarrierName, "amount": amount.StringFixed(2) + " " + strings.ToUpper(in.FinalCurrency), "etd": in.FinalETD, "payment_terms": in.PaymentTerms})
+	fields := map[string]string{"contract": v.ContractNo, "forwarder": in.FinalForwarderName, "carrier": in.ActualCarrierName, "amount": amount.StringFixed(2) + " " + strings.ToUpper(in.FinalCurrency)}
+	if v.LaycanStart != "" {
+		fields["laycan"] = v.LaycanStart + " ~ " + v.LaycanEnd
+	} else {
+		// Existing drafts and historical orders may still carry these values.
+		fields["etd"], fields["payment_terms"] = in.FinalETD, in.PaymentTerms
+	}
+	summary, _ := json.Marshal(fields)
 	instance, err := s.approvals.Submit(ctx, ApprovalSubmission{BizType: BizTypeShippingRequote, BizID: id, BizNo: v.ContractNo, Summary: string(summary), SubmitterID: op.ID, SubmitterName: op.Name, Amount: amount.StringFixed(2)})
 	if err != nil {
 		return v, err

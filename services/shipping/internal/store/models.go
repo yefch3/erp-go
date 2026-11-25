@@ -61,6 +61,8 @@ type ContractShippingHandoff struct {
 	PresaleReferencesJson        string
 	AllocationStatus             string
 	ForwarderContractNoGenerated bool
+	LaycanStart                  pgtype.Date
+	LaycanEnd                    pgtype.Date
 }
 
 type ContractShippingHandoffCargo struct {
@@ -226,6 +228,8 @@ type ShippingExecutionRequoteOption struct {
 	CreatedByName     string
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
+	LaycanStart       pgtype.Date
+	LaycanEnd         pgtype.Date
 }
 
 type ShippingOperationalAlert struct {
