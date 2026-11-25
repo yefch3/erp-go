@@ -801,7 +801,7 @@ function summaryValueText(key: string, value: SummaryValue): string {
 
 function summaryText(raw: string): string {
   const summary = parseSummary(raw)
-  const preferred = ['customer', 'supplier', 'forwarder', 'amount', 'etd', 'eta', 'carrier', 'payment_terms', 'expected_date', 'delivery_date', 'lines']
+  const preferred = ['customer', 'supplier', 'forwarder', 'amount', 'laycan', 'etd', 'eta', 'carrier', 'payment_terms', 'expected_date', 'delivery_date', 'lines']
   const keys = [...preferred.filter((key) => key in summary), ...Object.keys(summary).filter((key) => !preferred.includes(key))]
   return keys
     .filter((key) => key !== 'approval_request_key' && !(key === 'currency' && 'amount' in summary))
