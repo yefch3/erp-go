@@ -1195,7 +1195,7 @@ basicsSaved: "基本资料已保存",
   },
   orders: {
     paymentTerms: '付款条件',
-    paymentTermsHint: '例如：30%预付款，70%发货前付清',
+    paymentTermsHint: '选择常用付款条件，或直接输入',
     returnedReason: '退回原因：{reason}',
     originalSupplierInactive: '原供应商已停用或不存在。可以暂存草稿，提交审批前请核对供应商。',
     title: '采购订单',

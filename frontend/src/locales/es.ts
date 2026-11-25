@@ -1203,7 +1203,7 @@ basicsSaved: "Datos básicos guardados",
   },
   orders: {
     paymentTerms: 'Condiciones de pago',
-    paymentTermsHint: 'Por ejemplo, 30 % por adelantado y 70 % antes del envío',
+    paymentTermsHint: 'Elige condiciones habituales o escribe las tuyas',
     returnedReason: 'Motivo de devolución: {reason}',
     originalSupplierInactive: 'El proveedor original está inactivo o no está disponible. Puedes guardar el borrador y revisar el proveedor antes de enviarlo.',
     moreActions: 'Más acciones',

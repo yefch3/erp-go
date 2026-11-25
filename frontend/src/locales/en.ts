@@ -1194,7 +1194,7 @@ basicsSaved: "Basic information saved",
   },
   orders: {
     paymentTerms: 'Payment terms',
-    paymentTermsHint: 'For example, 30% upfront and 70% before shipment',
+    paymentTermsHint: 'Select common terms or enter your own',
     returnedReason: 'Reason for return: {reason}',
     originalSupplierInactive: 'The original supplier is inactive or unavailable. You can save the draft and review the supplier before submitting it.',
     moreActions: 'More actions',

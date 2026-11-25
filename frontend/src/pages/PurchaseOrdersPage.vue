@@ -150,8 +150,20 @@
                           placeholder="YYYY-MM-DD" :aria-label="t('orders.payableDue')" />
         </el-form-item>
         <el-form-item class="draft-note draft-note-full" :label="t('orders.paymentTerms')">
-          <el-input v-model="form.paymentTerms" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }"
-                    :placeholder="t('orders.paymentTermsHint')" :aria-label="t('orders.paymentTerms')" />
+          <div class="payment-terms-picker">
+            <el-input v-model="form.paymentTerms" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }"
+                      :placeholder="t('orders.paymentTermsHint')" :aria-label="t('orders.paymentTerms')" />
+            <el-dropdown trigger="click" placement="bottom-end" @command="form.paymentTerms = String($event)">
+              <el-button :aria-label="t('orders.paymentTerms')">
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="term in paymentTermOptions" :key="term" :command="term">{{ term }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </el-form-item>
         <el-form-item class="draft-fulfillment" label="履约方式" required>
           <el-select v-if="negotiatedDraftItems" v-model="form.fulfillmentMode" aria-label="履约方式">
@@ -643,6 +655,8 @@ import { getPurchaseOrderApprovalActions } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
 import SupplierSelect from '../components/masterdata/SupplierSelect.vue'
+import { ArrowDown } from '@element-plus/icons-vue'
+import { paymentTermOptions } from '../lib/paymentTermOptions'
 import HistoricalShippingContextDialog from '../components/HistoricalShippingContextDialog.vue'
 import OrderBuyerDialog from '../components/OrderBuyerDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
@@ -2073,6 +2087,21 @@ onMounted(async () => {
 .purchase-draft-form :deep(.el-date-editor.el-input),
 .purchase-draft-form :deep(.el-select) {
   width: 100%;
+}
+.payment-terms-picker {
+  display: flex;
+  width: 100%;
+}
+.payment-terms-picker :deep(.el-textarea) { min-width: 0; }
+.payment-terms-picker :deep(.el-textarea__inner) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+.payment-terms-picker :deep(.el-button) {
+  height: 100%;
+  border-inline-start: 0;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
 }
 .draft-location :deep(.el-radio-group) { gap: 4px 12px; }
 .draft-location :deep(.el-radio) { margin-inline-end: 0; }
