@@ -10,9 +10,9 @@ import (
 )
 
 func TestSupplierReadScopeUsesActiveTenantRoles(t *testing.T) {
-	dsn := os.Getenv("CUSTOMER_SCOPE_TEST_DSN")
+	dsn := os.Getenv("IAM_TEST_DSN")
 	if dsn == "" {
-		t.Skip("CUSTOMER_SCOPE_TEST_DSN not set")
+		t.Skip("IAM_TEST_DSN not set")
 	}
 	ctx := context.Background()
 	cfg, err := pgxpool.ParseConfig(dsn)
