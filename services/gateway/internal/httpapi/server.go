@@ -726,6 +726,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/rounds", s.submitQualityRound)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files/presign", s.presignQualityFile)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files", s.registerQualityFile)
+		r.With(s.perm("quality:file:upload"), s.perm("quality:task:write")).Delete("/api/quality/tasks/{id}/files/{fileID}", s.deleteQualityFile)
 
 		// 供应商这边只剩「供应商对账」一个界面：一张采购单一行，员工手填
 		// 核销数字、手动确认完成。发票页、付款页、往来汇总页都已下线。

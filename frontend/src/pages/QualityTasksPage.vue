@@ -181,27 +181,34 @@
             <div class="upload-row">
               <el-form-item :label="t('quality.category')"><el-select v-model="fileCategory" size="small" :disabled="uploading" :aria-label="t('quality.category')"><el-option v-for="c in categories" :key="c" :value="c" :label="t(`quality.categories.${c}`)" /></el-select></el-form-item>
               <input ref="fileInput" class="quality-file-input" type="file" multiple hidden aria-hidden="true" tabindex="-1" :aria-label="t('quality.chooseFiles')" :disabled="uploading" @change="pickFiles">
-              <el-button size="small" :disabled="uploading" @click="fileInput?.click()">{{ t('quality.chooseFiles') }}</el-button>
-              <el-button size="small" type="primary" :loading="uploading" :disabled="!picked.length || saving" @click="uploadFiles">{{ t('quality.upload') }}</el-button>
+              <el-button size="small" :disabled="uploading" @click="fileInput?.click()">{{ t('quality.chooseMultipleFiles') }}</el-button>
+              <el-button size="small" type="primary" :loading="uploading" :disabled="!picked.length || saving || !!fileAction" @click="uploadFiles">{{ t('quality.upload') }}</el-button>
               <span class="upload-target">{{ t('quality.uploadRoundHint', { round: fileRoundLabel(activeRoundId) }) }}</span>
             </div>
             <div v-if="picked.length" class="staged-quality-files">
               <h4>{{ t('quality.pendingFiles') }}</h4>
+              <p class="sub">{{ t('quality.selectedFiles', { n: picked.length }) }}</p>
               <el-table :data="picked" size="small" class="pending-files-table">
-                <el-table-column prop="name" :label="t('quality.fileName')" min-width="280" show-overflow-tooltip/>
-                <el-table-column :label="t('quality.fileSize')" width="110" align="right"><template #default="{ row }">{{ formatFileSize(row.size) }}</template></el-table-column>
-                <el-table-column :label="t('common.actions')" width="95" align="center"><template #default="{ row }"><el-button link type="danger" :disabled="uploading" :aria-label="`${t('quality.removeFile')} ${row.name}`" @click="removePicked(row)">{{ t('quality.removeFile') }}</el-button></template></el-table-column>
+                <el-table-column prop="file.name" :label="t('quality.fileName')" min-width="250" show-overflow-tooltip/>
+                <el-table-column :label="t('quality.category')" min-width="115"><template #default="{ row }">{{ t(`quality.categories.${row.category}`) }}</template></el-table-column>
+                <el-table-column :label="t('quality.fileSize')" width="110" align="right"><template #default="{ row }">{{ formatFileSize(row.file.size) }}</template></el-table-column>
+                <el-table-column :label="t('common.actions')" width="95" align="center"><template #default="{ row }"><el-button link type="danger" :disabled="uploading" :aria-label="`${t('quality.removeFile')} ${row.file.name}`" @click="removePicked(row)">{{ t('quality.removeFile') }}</el-button></template></el-table-column>
               </el-table>
             </div>
           </template>
           <h4 v-if="picked.length && task.files?.length" class="quality-files-heading">{{ t('quality.uploadedFiles') }}</h4>
-          <el-table v-if="task.files?.length" :data="task.files" size="small" class="uploaded-files-table">
-            <el-table-column prop="fileName" :label="t('quality.fileName')" min-width="260" show-overflow-tooltip><template #default="{ row }"><a href="#" @click.prevent="openFile(row)">{{ row.fileName }}</a></template></el-table-column>
+          <el-table v-if="task.files?.length" :data="task.files" row-key="id" size="small" class="uploaded-files-table">
+            <el-table-column prop="fileName" :label="t('quality.fileName')" min-width="235" show-overflow-tooltip/>
             <el-table-column :label="t('quality.fileSize')" width="100" align="right"><template #default="{ row }">{{ formatFileSize(Number(row.sizeBytes)) }}</template></el-table-column>
             <el-table-column :label="t('quality.category')" width="115"><template #default="{ row }">{{ row.category ? t(`quality.categories.${row.category}`) : '—' }}</template></el-table-column>
             <el-table-column :label="t('quality.fileRound')" width="150"><template #default="{ row }">{{ fileRoundLabel(row.roundId) }}</template></el-table-column>
             <el-table-column prop="uploadedByName" :label="t('quality.uploader')" width="125" />
             <el-table-column :label="t('quality.uploadedAt')" width="180"><template #default="{ row }">{{ fmt(row.uploadedAt) }}</template></el-table-column>
+            <el-table-column :label="t('common.actions')" min-width="172"><template #default="{ row }">
+              <el-button link type="primary" :disabled="!!fileAction" @click="readFile(row, false)">{{ t('quality.previewFile') }}</el-button>
+              <el-button link type="primary" :disabled="!!fileAction" @click="readFile(row, true)">{{ t('quality.downloadFile') }}</el-button>
+              <el-button v-if="canUpload && canWrite" link type="danger" :disabled="!!fileAction || uploading || saving" @click="deleteFile(row)">{{ t('common.delete') }}</el-button>
+            </template></el-table-column>
           </el-table>
           <p v-else-if="!picked.length" class="files-empty">{{ t('quality.noAttachments') }}</p>
         </section>
@@ -252,6 +259,7 @@
         </section>
       </template>
     </el-dialog>
+    <FilePreviewDialog v-if="preview" :model-value="true" :title="preview.name" :source="preview.blob" :content-type="preview.type" @update:model-value="preview = null" />
   </div>
 </template>
 
@@ -260,14 +268,15 @@ import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { get, post, patch, del } from '../api'
+import { get, post, patch, del, saveBlob, quietErrors } from '../api'
 import { formatFileSize } from '../lib/pendingUploads'
-import { qualityFileRound } from '../lib/qualityFiles'
+import { qualityFileRound, stageQualityFiles, type PendingQualityFile, type QualityFileCategory } from '../lib/qualityFiles'
 import { qualityStatusKey } from '../lib/qualityStatus'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import PurchaseOrderRemark from '../components/PurchaseOrderRemark.vue'
-import { relayFailureReason, saveViaRelay, uploadViaRelay } from '../lib/storageRelay'
+import FilePreviewDialog from '../components/FilePreviewDialog.vue'
+import { fetchViaRelay, relayFailureReason, relayTimedOut, uploadViaRelay } from '../lib/storageRelay'
 type QLine={id:string;productName:string;spec:string;uomCode:string;requestedQty:string;qualifiedQty:string;unresolvedQty:string;finalResult:string;approvedReleaseQty:string}
 type RoundLine={taskLineId:string;result:string;inspectedQty:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string;handlingSuggestion?:string}
 type RoundEntry = {
@@ -279,7 +288,8 @@ type RoundEntry = {
   issueDescription: string
   handlingSuggestion: string
 }
-type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;purchaseOrderRemark?:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:any[]}
+type QAttachment={id:string;roundId?:string;category?:QualityFileCategory;fileName:string;contentType:string;sizeBytes:string;uploadedByName:string;uploadedAt:string;downloadUrl:string}
+type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;purchaseOrderRemark?:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:QAttachment[]}
 const { t, locale }=useI18n(); const route=useRoute(); const auth=useAuthStore(); const canWrite=auth.can('quality:task:write'); const canUpload=auth.can('quality:file:upload')
 type SourceOrder={id:string;poNo:string;supplierName:string;existingTaskId:string;lines?:{productName:string;spec:string;uomCode:string;qty:string}[]}
 const canCreate=auth.can('quality:task:read') && auth.can('quality:task:write')
@@ -321,7 +331,9 @@ async function saveBasics(){
   }finally{editing.value=false}
 }
 const tab=ref('PENDING'), keyword=ref(''), page=ref(1), total=ref(0), loading=ref(false), saving=ref(false), uploading=ref(false), detailOpen=ref(false); const rows=ref<QTask[]>([]), task=ref<QTask|null>(null)
-const round=reactive({inspectedAt:'',location:'',remark:''}); const roundOf=reactive<Record<string,RoundEntry>>({}); const categories=['PHOTO','VIDEO','REPORT','THIRD_PARTY','OTHER']; const fileCategory=ref('PHOTO'); const picked=ref<File[]>([]); const fileInput=ref<HTMLInputElement|null>(null)
+const round=reactive({inspectedAt:'',location:'',remark:''}); const roundOf=reactive<Record<string,RoundEntry>>({}); const categories:QualityFileCategory[]=['PHOTO','VIDEO','REPORT','THIRD_PARTY','OTHER']; const fileCategory=ref<QualityFileCategory>('PHOTO'); const picked=ref<PendingQualityFile[]>([]); const fileInput=ref<HTMLInputElement|null>(null)
+const fileAction=ref('')
+const preview=ref<{name:string;type:string;blob:Blob}|null>(null)
 const unresolvedLines=computed(()=>task.value?.lines.filter(l=>Number(l.unresolvedQty)>0)||[])
 const detailKeyword = ref('')
 const detailPage = ref(1)
@@ -414,6 +426,7 @@ function openDetail(nextTask: QTask) {
   detailPage.value = 1
   resetRoundHeader()
   resetPicked()
+  fileCategory.value = 'PHOTO'
   detailOpen.value = true
 }
 async function load(){loading.value=true;try{const d=await get<{tasks:QTask[];meta:{total:number}}>('/quality/tasks',{tab:tab.value,page:page.value,page_size: 100,keyword:keyword.value});rows.value=d.tasks||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
@@ -526,30 +539,61 @@ async function submitRound() {
 const activeRoundId=computed(()=>String(task.value?.rounds.at(-1)?.id||'0'))
 function fileRoundLabel(roundId?:string|number){const label=qualityFileRound(roundId,task.value?.rounds||[]);return t(label.key,label.params||{})}
 function resetPicked(){picked.value=[];if(fileInput.value)fileInput.value.value=''}
-function pickFiles(e:Event){const input=e.target as HTMLInputElement;const files=Array.from(input.files||[]);if(files.length)picked.value=files;input.value=''}
-function removePicked(file:File){if(!uploading.value)picked.value=picked.value.filter(item=>item!==file)}
-watch(detailOpen,open=>{if(!open&&!uploading.value)resetPicked()})
+function pickFiles(e:Event){const input=e.target as HTMLInputElement;if(!uploading.value)picked.value=stageQualityFiles(picked.value,Array.from(input.files||[]),fileCategory.value);input.value=''}
+function removePicked(file:PendingQualityFile){if(!uploading.value)picked.value=picked.value.filter(item=>item!==file)}
+watch(detailOpen,open=>{if(!open){preview.value=null;if(!uploading.value)resetPicked()}})
 // 资料经网关中转进存储（lib/storageRelay.ts）——国内直连存储会连接超时。传成功一份就从待传
 // 列表里拿掉一份：中途失败时再点只补传剩下的；失败原因连着文件名一起说，以前这里什么都不提示。
 async function uploadFiles(){
- if(!task.value||!picked.value.length||uploading.value||saving.value)return
- const target=task.value,files=[...picked.value],category=fileCategory.value,latestRound=Number(target.rounds.at(-1)?.id||0)
+ if(!task.value||!picked.value.length||uploading.value||saving.value||fileAction.value)return
+ const target=task.value,files=[...picked.value],latestRound=target.rounds.at(-1)?.id||'0'
  uploading.value=true
  try{
   let failed=false
-  for(const file of files){
+  for(const item of files){
+   const {file,category}=item
    try{
-    const p=await post<{fileKey:string;uploadUrl:string}>(`/quality/tasks/${target.id}/files/presign`,{file_name:file.name})
-    await uploadViaRelay(p.uploadUrl,file)
-    await post(`/quality/tasks/${target.id}/files`,{file_key:p.fileKey,file_name:file.name,content_type:file.type,size_bytes:file.size,category,round_id:latestRound,supplemental:target.status==='COMPLETED'})
-    picked.value=picked.value.filter(item=>item!==file)
-   }catch(err){ElMessage.error({message:`${t('quality.uploadFailed')}：${file.name}（${relayFailureReason(err)||t('common.networkError')}）`,duration:8000});failed=true;break}
+    if(!item.fileKey){
+     const p=await post<{fileKey:string;uploadUrl:string}>(`/quality/tasks/${target.id}/files/presign`,{file_name:file.name},quietErrors)
+     await uploadViaRelay(p.uploadUrl,file)
+     item.fileKey=p.fileKey
+    }
+    const {task:saved}=await post<{task:QTask}>(`/quality/tasks/${target.id}/files`,{file_key:item.fileKey,file_name:file.name,content_type:file.type,size_bytes:file.size,category,round_id:latestRound,supplemental:target.status==='COMPLETED'},quietErrors)
+    picked.value=picked.value.filter(queued=>queued!==item)
+    if(task.value?.id===target.id)syncTaskDetail(saved)
+   }catch(err){ElMessage.error({message:`${t('quality.uploadFailed')}：${file.name}（${relayFailureReason(err)||t('common.networkError')}）`,duration:8000});failed=true;if(relayTimedOut(err))break}
   }
   if(!failed)ElMessage.success(t('quality.uploaded'))
   await refresh()
- }finally{uploading.value=false}
+ }finally{uploading.value=false;if(!detailOpen.value)resetPicked()}
 }
-async function openFile(row:{downloadUrl:string;fileName:string}){try{await saveViaRelay(row.downloadUrl,row.fileName)}catch(err){ElMessage.error(`${t('quality.openFailed')}：${relayFailureReason(err)||t('common.networkError')}`)}}
+async function readFile(row:QAttachment, download:boolean){
+ const id=task.value?.id
+ if(!id||fileAction.value)return
+ fileAction.value=row.id
+ try{
+  // The original detail may have been open longer than the presigned URL.
+  const {task:latest}=await get<{task:QTask}>(`/quality/tasks/${id}`,{},quietErrors)
+  const file=latest.files?.find(item=>item.id===row.id)
+  if(!file?.downloadUrl)throw new Error(t('quality.fileUnavailable'))
+  const blob=await fetchViaRelay(file.downloadUrl)
+  if(download)saveBlob(blob,file.fileName)
+  else if(detailOpen.value&&task.value?.id===id)preview.value={name:file.fileName,type:file.contentType,blob}
+ }catch(err){ElMessage.error(`${t('quality.openFailed')}：${relayFailureReason(err)||t('common.networkError')}`)}
+ finally{fileAction.value=''}
+}
+async function deleteFile(row:QAttachment){
+ const id=task.value?.id
+ if(!id||!canUpload||!canWrite||fileAction.value||uploading.value||saving.value)return
+ try{await ElMessageBox.confirm(t('quality.deleteFileConfirm',{name:row.fileName}),t('common.delete'),{type:'warning',confirmButtonText:t('common.delete'),cancelButtonText:t('common.cancel')})}catch{return}
+ if(task.value?.id!==id||fileAction.value||uploading.value||saving.value)return
+ fileAction.value=row.id
+ try{
+  await del(`/quality/tasks/${id}/files/${row.id}`)
+  if(task.value?.id===id)await refresh()
+  ElMessage.success(t('quality.fileDeleted'))
+ }finally{fileAction.value=''}
+}
 onMounted(async()=>{await load();await openRequestedTask();const access=await get<{canDelete:boolean}>('/quality/access');canDelete.value=access.canDelete})
 watch(()=>route.query.task,()=>{void openRequestedTask()})
 </script>

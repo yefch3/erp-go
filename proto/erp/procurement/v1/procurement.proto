@@ -696,6 +696,7 @@ service PurchaseOrderService {
   rpc DecideQualityRelease(DecideQualityReleaseRequest) returns (DecideQualityReleaseResponse);
   rpc PresignQualityInspectionFile(PresignQualityInspectionFileRequest) returns (PresignQualityInspectionFileResponse);
   rpc RegisterQualityInspectionFile(RegisterQualityInspectionFileRequest) returns (RegisterQualityInspectionFileResponse);
+  rpc DeleteQualityInspectionFile(DeleteQualityInspectionFileRequest) returns (DeleteQualityInspectionFileResponse);
   // Procurement-facing read-only result and exception handling. These calls do
   // not grant access to the Quality workspace.
   rpc GetOrderQualityInspections(GetOrderQualityInspectionsRequest) returns (GetOrderQualityInspectionsResponse);
@@ -966,6 +967,8 @@ message RegisterQualityInspectionFileRequest {
   bool supplemental = 9;
 }
 message RegisterQualityInspectionFileResponse { QualityInspectionTask task = 1; }
+message DeleteQualityInspectionFileRequest { int64 id = 1; int64 file_id = 2; }
+message DeleteQualityInspectionFileResponse {}
 
 message GetOrderQualityInspectionsRequest { int64 po_id = 1; }
 message GetOrderQualityInspectionsResponse { repeated QualityInspectionTask tasks = 1; }

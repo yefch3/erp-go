@@ -1,5 +1,25 @@
 type Round = { id: string | number; roundNo: number }
 
+export type QualityFileCategory = 'PHOTO' | 'VIDEO' | 'REPORT' | 'THIRD_PARTY' | 'OTHER'
+export interface PendingQualityFile { file: File; category: QualityFileCategory; fileKey?: string }
+
+// Keep the category selected when each file was added, including files waiting for a retry.
+export function stageQualityFiles(
+  queued: readonly PendingQualityFile[], incoming: readonly File[], category: QualityFileCategory,
+): PendingQualityFile[] {
+  const next = [...queued]
+  const key = (file: File, type: QualityFileCategory) =>
+    JSON.stringify([type, file.name, file.size, file.lastModified, file.type])
+  const seen = new Set(queued.map(({ file, category: type }) => key(file, type)))
+  for (const file of incoming) {
+    const id = key(file, category)
+    if (seen.has(id)) continue
+    next.push({ file, category })
+    seen.add(id)
+  }
+  return next
+}
+
 // Match the persisted round ID. File order and the current task status cannot
 // establish which inspection an older attachment belongs to.
 export function qualityFileRound(roundId: string | number | undefined, rounds: readonly Round[]): {

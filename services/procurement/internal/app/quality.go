@@ -585,10 +585,34 @@ func (s *Service) RegisterQualityFile(ctx context.Context, tenantID, taskID int6
 			return QualityTask{}, apierr.Invalid("QUALITY_LINE_INVALID", "附件对应的产品不存在")
 		}
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO quality_inspection_files(tenant_id,task_id,round_id,task_line_id,category,object_key,file_name,content_type,size_bytes,supplemental,uploaded_by,uploaded_by_name) VALUES($1,$2,NULLIF($3,0),NULLIF($4,0),$5,$6,$7,$8,$9,$10,$11,$12)`, tenantID, taskID, in.RoundID, in.TaskLineID, category, in.Key, filepath.Base(in.FileName), in.ContentType, in.SizeBytes, in.Supplemental, op.ID, op.Name)
+	// A batch retry can follow a lost response even though the file was already registered.
+	_, err := s.pool.Exec(ctx, `INSERT INTO quality_inspection_files(tenant_id,task_id,round_id,task_line_id,category,object_key,file_name,content_type,size_bytes,supplemental,uploaded_by,uploaded_by_name) VALUES($1,$2,NULLIF($3,0),NULLIF($4,0),$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT (tenant_id,object_key) DO NOTHING`, tenantID, taskID, in.RoundID, in.TaskLineID, category, in.Key, filepath.Base(in.FileName), in.ContentType, in.SizeBytes, in.Supplemental, op.ID, op.Name)
 	if err != nil {
 		return QualityTask{}, err
 	}
 	s.nudge(ctx, tenantID)
 	return s.GetQualityTask(ctx, tenantID, taskID)
+}
+
+func (s *Service) DeleteQualityFile(ctx context.Context, tenantID, taskID, fileID int64) error {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var key string
+		err := tx.QueryRow(ctx, `DELETE FROM quality_inspection_files
+			WHERE tenant_id=$1 AND task_id=$2 AND id=$3 RETURNING object_key`, tenantID, taskID, fileID).Scan(&key)
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("QUALITY_FILE_NOT_FOUND", "质检附件不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if s.files == nil {
+			return apierr.Conflict("QUALITY_FILES_UNAVAILABLE", "附件服务暂不可用")
+		}
+		return s.files.Remove(ctx, key)
+	})
+	if err == nil {
+		s.nudge(ctx, tenantID)
+	}
+	return err
 }

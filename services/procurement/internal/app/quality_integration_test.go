@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -10,6 +11,80 @@ import (
 )
 
 type qualityFiles struct{}
+
+type recordingQualityFiles struct {
+	qualityFiles
+	removed []string
+	err     error
+}
+
+func (s *recordingQualityFiles) Remove(_ context.Context, key string) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.removed = append(s.removed, key)
+	return nil
+}
+
+func TestQualityAttachmentsAppendAndDeleteIndividually(t *testing.T) {
+	f := newDeliveryQualityFixture(t)
+	ctx := context.Background()
+	task := f.apply(t)
+	files := &recordingQualityFiles{}
+	svc := New(f.pool, Deps{Files: files})
+	op := Operator{ID: 88, Name: "QC"}
+	for _, category := range []string{"PHOTO", "REPORT", "OTHER"} {
+		for _, name := range []string{"first.txt", "second.txt"} {
+			key, _, _, err := svc.PresignQualityFile(ctx, f.tenant, task.ID, name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := RegisterQualityFileInput{Category: category, Key: key, FileName: name}
+			for attempt := 0; attempt < 2; attempt++ {
+				if _, err := svc.RegisterQualityFile(ctx, f.tenant, task.ID, input, op); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	registered, err := svc.GetQualityTask(ctx, f.tenant, task.ID)
+	if err != nil || len(registered.Files) != 6 {
+		t.Fatalf("expected 6 independent files after retries: %+v (%v)", registered.Files, err)
+	}
+	counts := map[string]int{}
+	for _, file := range registered.Files {
+		counts[file.Category]++
+		if file.DownloadURL == "" {
+			t.Fatalf("missing download address for %d", file.ID)
+		}
+	}
+	if counts["PHOTO"] != 2 || counts["REPORT"] != 2 || counts["OTHER"] != 2 {
+		t.Fatalf("categories lost: %v", counts)
+	}
+	first := registered.Files[0]
+	for _, pair := range [][2]int64{{f.tenant + 1, task.ID}, {f.tenant, task.ID + 1}} {
+		if err := svc.DeleteQualityFile(ctx, pair[0], pair[1], first.ID); code(err) != "QUALITY_FILE_NOT_FOUND" {
+			t.Fatalf("delete should be scoped to tenant and task: %v", err)
+		}
+	}
+	files.err = errors.New("storage unavailable")
+	if err := svc.DeleteQualityFile(ctx, f.tenant, task.ID, first.ID); !errors.Is(err, files.err) {
+		t.Fatalf("expected the storage failure: %v", err)
+	}
+	files.err = nil
+	if err := svc.DeleteQualityFile(ctx, f.tenant, task.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	remaining, err := svc.GetQualityTask(ctx, f.tenant, task.ID)
+	if err != nil || len(remaining.Files) != 5 || len(files.removed) != 1 || files.removed[0] != first.ObjectKey {
+		t.Fatalf("expected only one file removed: %+v / %v (%v)", remaining.Files, files.removed, err)
+	}
+	for _, file := range remaining.Files {
+		if file.ID == first.ID {
+			t.Fatal("removed file is still listed")
+		}
+	}
+}
 
 func TestQualityRoundLeavesUnsubmittedSpecsPending(t *testing.T) {
 	f := newDeliveryQualityFixture(t)
