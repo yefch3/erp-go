@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
@@ -82,6 +84,16 @@ func (s *Server) registerQualityFile(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+func (s *Server) deleteQualityFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileID"), 10, 64)
+	resp, err := s.Orders.DeleteQualityInspectionFile(r.Context(), &prv1.DeleteQualityInspectionFileRequest{Id: idFromPath(r), FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getOrderQualityInspections(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.GetOrderQualityInspections(r.Context(), &prv1.GetOrderQualityInspectionsRequest{PoId: idFromPath(r)})
 	if err != nil {

@@ -133,6 +133,17 @@ func (h *OrderHandler) RegisterQualityInspectionFile(ctx context.Context, req *p
 	return &prv1.RegisterQualityInspectionFileResponse{Task: qualityTaskProto(q)}, nil
 }
 
+func (h *OrderHandler) DeleteQualityInspectionFile(ctx context.Context, req *prv1.DeleteQualityInspectionFileRequest) (*prv1.DeleteQualityInspectionFileResponse, error) {
+	tenantID := grpcx.TenantID(ctx)
+	if err := h.svc.AuthorizeQualityTask(ctx, tenantID, req.GetId(), currentOp(ctx)); err != nil {
+		return nil, err
+	}
+	if err := h.svc.DeleteQualityFile(ctx, tenantID, req.GetId(), req.GetFileId()); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteQualityInspectionFileResponse{}, nil
+}
+
 func (h *OrderHandler) GetOrderQualityInspections(ctx context.Context, req *prv1.GetOrderQualityInspectionsRequest) (*prv1.GetOrderQualityInspectionsResponse, error) {
 	if err := h.authorizeOrder(ctx, req.GetPoId()); err != nil {
 		return nil, err
