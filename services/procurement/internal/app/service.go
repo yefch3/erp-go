@@ -76,6 +76,7 @@ type EmployeeIdentity struct {
 // is written. Names and codes sent by a browser are display values, not facts.
 type Suppliers interface {
 	Get(ctx context.Context, id int64) (Supplier, error)
+	IsActive(ctx context.Context, tenantID, id int64) (bool, error)
 }
 
 type Products interface {

@@ -1226,6 +1226,8 @@ message GetOrderResponse {
   repeated PurchaseReceipt receipts = 3;
   bool from_execution_negotiation = 4;
   string source_change_reason = 5;
+  // Set when the supplier attached to the editable order could be checked.
+  optional bool supplier_active = 6;
 }
 
 message CreateOrderLine {
@@ -1255,6 +1257,7 @@ message CreateOrderRequest {
   string warehouse_name = 14;
   string delivery_address = 15;
   string source_change_reason = 16;
+  optional string payment_terms = 18;
 }
 
 message CreateOrderResponse {
@@ -1282,6 +1285,9 @@ message UpdateOrderRequest {
   string warehouse_name = 15;
   string delivery_address = 16;
   string source_change_reason = 17;
+  optional string payment_terms = 19;
+  // Keep the supplier snapshot on the order. supplier_id must still match the saved order.
+  bool keep_current_supplier = 20;
 }
 
 message UpdateOrderResponse {

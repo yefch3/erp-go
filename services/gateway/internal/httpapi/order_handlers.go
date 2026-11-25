@@ -101,9 +101,11 @@ func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
-		s.writeGRPCError(w, err)
-		return
+	if !req.GetKeepCurrentSupplier() {
+		if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
 	}
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Orders.UpdateOrder(r.Context(), req)

@@ -242,8 +242,9 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 		if err != nil {
 			return nil, err
 		}
-		if resp.FromExecutionNegotiation {
-			resp.SourceChangeReason = head.SourceChangeReason
+		resp.SourceChangeReason = head.SourceChangeReason
+		if active, availabilityErr := h.svc.IsOrderSupplierActive(ctx, tenantID, head.SupplierID); availabilityErr == nil {
+			resp.SupplierActive = &active
 		}
 	}
 	return resp, nil
@@ -391,7 +392,7 @@ func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderReq
 		SupplierID: req.GetSupplierId(), SupplierCode: req.GetSupplierCode(),
 		SupplierName: req.GetSupplierName(), Currency: req.GetCurrency(),
 		ExpectedDate: req.GetExpectedDate(), PayableDueDate: req.GetPayableDueDate(),
-		Remark: req.GetRemark(), Lines: lines,
+		Remark: req.GetRemark(), Lines: lines, PaymentTerms: req.PaymentTerms,
 		FulfillmentMode: req.GetFulfillmentMode(), DeliveryLocationType: req.GetDeliveryLocationType(),
 		DeliveryPortID: req.GetDeliveryPortId(), DeliveryPortCode: req.GetDeliveryPortCode(), DeliveryPortName: req.GetDeliveryPortName(),
 		WarehouseID: req.GetWarehouseId(), WarehouseName: req.GetWarehouseName(), DeliveryAddress: req.GetDeliveryAddress(),
@@ -418,8 +419,9 @@ func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderReq
 		SupplierID: req.GetSupplierId(), SupplierCode: req.GetSupplierCode(),
 		SupplierName: req.GetSupplierName(), Currency: req.GetCurrency(),
 		ExpectedDate: req.GetExpectedDate(), PayableDueDate: req.GetPayableDueDate(),
-		Remark: req.GetRemark(), Lines: lines,
-		FulfillmentMode: req.GetFulfillmentMode(), DeliveryLocationType: req.GetDeliveryLocationType(),
+		Remark: req.GetRemark(), Lines: lines, PaymentTerms: req.PaymentTerms,
+		KeepCurrentSupplier: req.GetKeepCurrentSupplier(),
+		FulfillmentMode:     req.GetFulfillmentMode(), DeliveryLocationType: req.GetDeliveryLocationType(),
 		DeliveryPortID: req.GetDeliveryPortId(), DeliveryPortCode: req.GetDeliveryPortCode(), DeliveryPortName: req.GetDeliveryPortName(),
 		WarehouseID: req.GetWarehouseId(), WarehouseName: req.GetWarehouseName(), DeliveryAddress: req.GetDeliveryAddress(),
 		SourceChangeReason: req.GetSourceChangeReason(),

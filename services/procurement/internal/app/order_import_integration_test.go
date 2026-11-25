@@ -26,6 +26,10 @@ func (s supplierMapDirectoryStub) Get(_ context.Context, id int64) (Supplier, er
 	return Supplier{}, fmt.Errorf("supplier %d not found", id)
 }
 
+func (s supplierMapDirectoryStub) IsActive(_ context.Context, _, id int64) (bool, error) {
+	return s[id].Status == "ACTIVE", nil
+}
+
 func TestPurchaseTemplateExportPreviewAndConfirm(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
 	if dsn == "" {

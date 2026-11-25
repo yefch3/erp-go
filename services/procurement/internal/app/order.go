@@ -44,9 +44,11 @@ type OrderLine struct {
 }
 
 type CreateOrderInput struct {
-	SupplierID   int64
-	SupplierCode string
-	SupplierName string
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	KeepCurrentSupplier bool
+	PaymentTerms        *string
 	// 应付到期日（YYYY-MM-DD），这张单的钱什么时候该付出去。**员工手填**，
 	// 空表示还没定。
 	//
@@ -131,17 +133,16 @@ type preparedOrder struct {
 // prepareOrder 统一校验采购单和解析明细。
 // requireDelivery 为 true 时执行 P8 新采购流程的履约地点校验；旧模板导入先生成草稿，允许稍后补齐配送信息。
 func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, requireDelivery bool) (preparedOrder, error) {
-	if in.SupplierID == 0 {
+	if in.SupplierID <= 0 {
 		return preparedOrder{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
 	}
-	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
-	if err != nil {
-		return preparedOrder{}, err
+	if !in.KeepCurrentSupplier {
+		supplier, err := s.supplierForOrder(ctx, in.SupplierID)
+		if err != nil {
+			return preparedOrder{}, err
+		}
+		in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
 	}
-	// Supplier code/name are immutable document snapshots, but their source is
-	// master data at write time—not display strings supplied by the browser.
-	// 账期同理：从主数据取，不听浏览器的——它决定这张单什么时候该付钱。
-	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
 	// 到期日相反：它没有主数据来源，是员工在这份单上填的。只校验格式——
 	// 不校验它是不是在过去，补录一张上个月就该付的单是正当操作。
 	if err := validBusinessDate(in.PayableDueDate, "PO_DUE_DATE_INVALID", "应付到期日"); err != nil {
@@ -368,6 +369,11 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	// Other supplier groups must retain their own documents and lines.
 	// This also makes the UI's multi-supplier loop safe to retry.
 	reusedExecutionDraft := false
+	// Older execution-order callers supplied terms in the remark.
+	paymentTerms := strings.TrimSpace(in.Remark)
+	if in.PaymentTerms != nil {
+		paymentTerms = strings.TrimSpace(*in.PaymentTerms)
+	}
 	if allExecutionRequote && executionContractID > 0 && prepared.assignmentID == 0 {
 		var existingID int64
 		var existingStatus string
@@ -412,7 +418,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				return head, updateErr
 			}
 			head = store.CreatePurchaseOrderRow(updated)
-			if _, updateErr = tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark)); updateErr != nil {
+			if _, updateErr = tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, paymentTerms); updateErr != nil {
 				return head, updateErr
 			}
 			if updateErr = q.DeletePurchaseOrderItems(ctx, store.DeletePurchaseOrderItemsParams{TenantID: tenantID, PoID: head.ID}); updateErr != nil {
@@ -471,8 +477,12 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		return head, err
 	}
 	if allExecutionRequote && !reusedExecutionDraft {
-		_, err := tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, strings.TrimSpace(in.Remark))
+		_, err := tx.Exec(ctx, `UPDATE purchase_orders SET source_business_id=$3,export_contract_no=$4,business_document_no=$4,payment_terms=$5 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, executionContractID, executionContractNo, paymentTerms)
 		if err != nil {
+			return head, err
+		}
+	} else if !allExecutionRequote && in.PaymentTerms != nil {
+		if _, err := tx.Exec(ctx, `UPDATE purchase_orders SET payment_terms=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, head.ID, paymentTerms); err != nil {
 			return head, err
 		}
 	}
@@ -551,6 +561,12 @@ func (s *Service) UpdateOrder(
 		if head.Status != poDraft && head.Status != "REJECTED" {
 			return apierr.Conflict("PO_NOT_EDITABLE", "只有草稿或已驳回的采购单可以编辑").
 				WithMeta("status", head.Status)
+		}
+		if in.KeepCurrentSupplier {
+			if in.SupplierID != head.SupplierID {
+				return apierr.Conflict("PO_SUPPLIER_CHANGED", "采购单的供应商已变更，请刷新后重试")
+			}
+			in.SupplierCode, in.SupplierName = head.SupplierCode, head.SupplierName
 		}
 		var assignedRequirement, assignedQuote, assignedSupplier int64
 		var assignedQuantity string
@@ -632,6 +648,11 @@ func (s *Service) UpdateOrder(
 		if reqErr != nil {
 			return reqErr
 		}
+		if in.PaymentTerms != nil {
+			if _, reqErr = tx.Exec(ctx, `UPDATE purchase_orders SET payment_terms=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, id, strings.TrimSpace(*in.PaymentTerms)); reqErr != nil {
+				return reqErr
+			}
+		}
 		if reqErr = q.DeletePurchaseOrderItems(ctx, store.DeletePurchaseOrderItemsParams{
 			TenantID: tenantID, PoID: id,
 		}); reqErr != nil {
@@ -669,6 +690,15 @@ func (s *Service) UpdateOrder(
 	}
 	s.nudge(ctx, tenantID)
 	return updated, nil
+}
+
+// IsOrderSupplierActive verifies availability of the supplier already attached
+// to an authorized order without returning any supplier master-data fields.
+func (s *Service) IsOrderSupplierActive(ctx context.Context, tenantID, id int64) (bool, error) {
+	if s.suppliers == nil {
+		return false, apierr.Internal("PO_SUPPLIER_DIRECTORY_UNAVAILABLE", "供应商主数据服务未配置")
+	}
+	return s.suppliers.IsActive(ctx, tenantID, id)
 }
 
 func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, error) {
@@ -716,6 +746,20 @@ func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operat
 		if err != nil {
 			return err
 		}
+		var paymentTerms string
+		if err := tx.QueryRow(ctx, `SELECT payment_terms FROM purchase_orders WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&paymentTerms); err != nil {
+			return err
+		}
+		if strings.TrimSpace(paymentTerms) == "" {
+			return apierr.Invalid("PO_PAYMENT_TERMS_REQUIRED", "请在采购单中填写付款条件，再提交审批")
+		}
+		active, err := s.IsOrderSupplierActive(ctx, tenantID, head.SupplierID)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return apierr.Invalid("PO_SUPPLIER_INACTIVE", "原供应商不存在或已停用，请核对供应商后再提交审批")
+		}
 		items, err := q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{TenantID: tenantID, PoID: id})
 		if err != nil {
 			return err
@@ -725,7 +769,7 @@ func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operat
 		}
 		instanceID, err = s.approvals.Submit(ctx, ApprovalSubmission{
 			BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
-			Summary: orderSummary(head, items), SubmitterID: op.ID, SubmitterName: op.Name,
+			Summary: orderSummary(head, items, paymentTerms), SubmitterID: op.ID, SubmitterName: op.Name,
 			Amount: head.TotalAmount,
 		})
 		if err != nil {
@@ -1328,7 +1372,7 @@ func (s *Service) OrderReceipts(ctx context.Context, tenantID, poID int64) ([]st
 
 // orderSummary 生成审批待办中使用的采购单只读摘要。
 // 审批人无需读取采购服务数据库，也能看到供应商、金额、交期和逐项采购内容。
-func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) string {
+func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow, paymentTerms string) string {
 	type line struct {
 		Product string `json:"product"`
 		Qty     string `json:"qty"`
@@ -1336,14 +1380,15 @@ func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderIte
 		Amount  string `json:"amount"`
 	}
 	body := struct {
-		Supplier string `json:"supplier"`
-		Currency string `json:"currency"`
-		Amount   string `json:"amount"`
-		Expected string `json:"expected_date"`
-		Lines    []line `json:"lines"`
+		Supplier     string `json:"supplier"`
+		Currency     string `json:"currency"`
+		Amount       string `json:"amount"`
+		Expected     string `json:"expected_date"`
+		PaymentTerms string `json:"payment_terms"`
+		Lines        []line `json:"lines"`
 	}{
 		Supplier: head.SupplierName, Currency: head.Currency,
-		Amount: head.TotalAmount, Expected: head.ExpectedDate,
+		Amount: head.TotalAmount, Expected: head.ExpectedDate, PaymentTerms: paymentTerms,
 	}
 	for _, item := range items {
 		body.Lines = append(body.Lines, line{

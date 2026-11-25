@@ -8,6 +8,13 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 )
 
+func (s *Service) IsSupplierActive(ctx context.Context, tenantID, supplierID int64) (bool, error) {
+	var active bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM suppliers WHERE tenant_id=$1 AND id=$2 AND status='ACTIVE')`, tenantID, supplierID).Scan(&active)
+	return active, err
+}
+
 type supplierAccessKey struct{}
 
 // WithSupplierAccess sets the owner filter for the current RPC. Zero allows
