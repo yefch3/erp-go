@@ -144,6 +144,22 @@ func (h *OrderHandler) DeleteQualityInspectionFile(ctx context.Context, req *prv
 	return &prv1.DeleteQualityInspectionFileResponse{}, nil
 }
 
+func (h *OrderHandler) ReadQualityInspectionFile(ctx context.Context, req *prv1.ReadQualityInspectionFileRequest) (*prv1.ReadQualityInspectionFileResponse, error) {
+	tenantID := grpcx.TenantID(ctx)
+	if poID := req.GetPoId(); poID != 0 {
+		if err := h.authorizeOrder(ctx, poID); err != nil {
+			return nil, err
+		}
+	} else if err := h.svc.AuthorizeQualityTask(ctx, tenantID, req.GetId(), currentOp(ctx)); err != nil {
+		return nil, err
+	}
+	file, err := h.svc.ReadQualityFile(ctx, tenantID, req.GetId(), req.GetFileId(), req.GetPoId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ReadQualityInspectionFileResponse{FileName: file.FileName, ContentType: file.ContentType, Content: file.Data}, nil
+}
+
 func (h *OrderHandler) GetOrderQualityInspections(ctx context.Context, req *prv1.GetOrderQualityInspectionsRequest) (*prv1.GetOrderQualityInspectionsResponse, error) {
 	if err := h.authorizeOrder(ctx, req.GetPoId()); err != nil {
 		return nil, err

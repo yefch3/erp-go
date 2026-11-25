@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,10 @@ import (
 )
 
 type qualityFiles struct{}
+
+func (qualityFiles) OpenQualityObject(_ context.Context, key string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader(key)), nil
+}
 
 type recordingQualityFiles struct {
 	qualityFiles
@@ -213,6 +219,33 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	if err != nil || duplicate.ID != task.ID {
 		t.Fatalf("repeat application should return the one existing task: task=%#v err=%v", duplicate, err)
 	}
+	const legacyName = "旧验货 报告.pdf"
+	legacyKey, _, _, err := svc.PresignQualityFile(ctx, tenant, task.ID, legacyName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = svc.RegisterQualityFile(ctx, tenant, task.ID, RegisterQualityFileInput{
+		Category: "REPORT", Key: legacyKey, FileName: legacyName, ContentType: "application/pdf",
+	}, qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID := task.Files[0].ID
+	checkLegacyFile := func(stage string) {
+		t.Helper()
+		for _, order := range []int64{0, po} {
+			file, err := svc.ReadQualityFile(ctx, tenant, task.ID, legacyID, order)
+			if err != nil || file.FileName != legacyName || file.ContentType != "application/pdf" || string(file.Data) != legacyKey {
+				t.Fatalf("%s: existing object not readable via task/order %d: %+v %v", stage, order, file, err)
+			}
+		}
+	}
+	checkLegacyFile("before submission")
+	for _, tt := range [][3]int64{{tenant + 1, task.ID, 0}, {tenant, task.ID + 1, 0}, {tenant, task.ID, po + 1}} {
+		if _, err := svc.ReadQualityFile(ctx, tt[0], tt[1], legacyID, tt[2]); code(err) != "QUALITY_FILE_NOT_FOUND" {
+			t.Fatalf("attachment escaped its tenant, task or order: %v", err)
+		}
+	}
 	// The purchase request is the handoff. Quality records the first round
 	// directly without a redundant accept/start transition.
 	task, err = svc.SubmitQualityRound(ctx, tenant, task.ID, SubmitQualityInput{Lines: []SubmitQualityLine{{TaskLineID: task.Lines[0].ID, Result: "PARTIAL", InspectedQty: "10", QualifiedQty: "8", UnqualifiedQty: "2", IssueDescription: "surface"}}}, qc)
@@ -222,6 +255,7 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	if task.Status != "REINSPECTION" || task.ProcurementHandlingStatus != "PENDING" || task.Lines[0].QualifiedQty != "8.0000" || task.Lines[0].UnresolvedQty != "2.0000" {
 		t.Fatalf("partial=%#v", task)
 	}
+	checkLegacyFile("after submission")
 	if _, err = svc.DecideQualityRelease(ctx, tenant, task.ID, []DecideQualityLine{{TaskLineID: task.Lines[0].ID, Qty: "3"}}, buyer); code(err) != "QUALITY_PARTIAL_SHIPMENT_DISABLED" {
 		t.Fatalf("partial release must be disabled, got %v", err)
 	}
@@ -238,7 +272,7 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, err = svc.RegisterQualityFile(ctx, tenant, task.ID, RegisterQualityFileInput{Category: "PHOTO", Key: key, FileName: "现场 照片.jpg", ContentType: "image/jpeg", SizeBytes: 12}, qc)
-	if err != nil || len(task.Files) != 1 || task.Files[0].DownloadURL == "" {
+	if err != nil || len(task.Files) != 2 || task.Files[0].DownloadURL == "" || task.Files[1].DownloadURL == "" {
 		t.Fatalf("files=%#v err=%v", task.Files, err)
 	}
 	task, err = svc.SubmitQualityRound(ctx, tenant, task.ID, SubmitQualityInput{Lines: []SubmitQualityLine{{TaskLineID: task.Lines[0].ID, Result: "PASS", InspectedQty: "2", QualifiedQty: "2", UnqualifiedQty: "0"}}}, qc)
@@ -248,6 +282,7 @@ func TestFactoryQualityLifecycleAndQuantityGuard(t *testing.T) {
 	if task.Status != "COMPLETED" || len(task.Rounds) != 2 || task.Lines[0].ApprovedReleaseQty != "10.0000" {
 		t.Fatalf("completed=%#v", task)
 	}
+	checkLegacyFile("after completion")
 	if task.PurchaseOrderRemark != updatedRemark || task.Remark != inspectionRemark {
 		t.Fatalf("completing inspection changed source remarks: %+v", task)
 	}

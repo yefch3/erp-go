@@ -268,15 +268,15 @@ import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { get, post, patch, del, saveBlob, quietErrors } from '../api'
+import { get, post, patch, del, http, saveBlob, quietErrors } from '../api'
 import { formatFileSize } from '../lib/pendingUploads'
-import { qualityFileRound, stageQualityFiles, type PendingQualityFile, type QualityFileCategory } from '../lib/qualityFiles'
+import { qualityAttachmentPath, qualityFileRound, stageQualityFiles, type PendingQualityFile, type QualityFileCategory } from '../lib/qualityFiles'
 import { qualityStatusKey } from '../lib/qualityStatus'
 import { useAuthStore } from '../stores/auth'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
 import PurchaseOrderRemark from '../components/PurchaseOrderRemark.vue'
 import FilePreviewDialog from '../components/FilePreviewDialog.vue'
-import { fetchViaRelay, relayFailureReason, relayTimedOut, uploadViaRelay } from '../lib/storageRelay'
+import { RELAY_DOWNLOAD_TIMEOUT_MS, relayFailureReason, relayTimedOut, uploadViaRelay } from '../lib/storageRelay'
 type QLine={id:string;productName:string;spec:string;uomCode:string;requestedQty:string;qualifiedQty:string;unresolvedQty:string;finalResult:string;approvedReleaseQty:string}
 type RoundLine={taskLineId:string;result:string;inspectedQty:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string;handlingSuggestion?:string}
 type RoundEntry = {
@@ -288,7 +288,7 @@ type RoundEntry = {
   issueDescription: string
   handlingSuggestion: string
 }
-type QAttachment={id:string;roundId?:string;category?:QualityFileCategory;fileName:string;contentType:string;sizeBytes:string;uploadedByName:string;uploadedAt:string;downloadUrl:string}
+type QAttachment={id:string;roundId?:string;category?:QualityFileCategory;fileName:string;contentType:string;sizeBytes:string;uploadedByName:string;uploadedAt:string}
 type QTask={id:string;deletable:boolean;taskNo:string;poNo:string;supplierName:string;batchNo:number;status:string;expectedDate:string;inspectionLocation:string;contactName:string;contactPhone:string;remark:string;purchaseOrderRemark?:string;requestedByName:string;requestedAt:string;lines:QLine[];rounds:{id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:RoundLine[]}[];files:QAttachment[]}
 const { t, locale }=useI18n(); const route=useRoute(); const auth=useAuthStore(); const canWrite=auth.can('quality:task:write'); const canUpload=auth.can('quality:file:upload')
 type SourceOrder={id:string;poNo:string;supplierName:string;existingTaskId:string;lines?:{productName:string;spec:string;uomCode:string;qty:string}[]}
@@ -572,13 +572,9 @@ async function readFile(row:QAttachment, download:boolean){
  if(!id||fileAction.value)return
  fileAction.value=row.id
  try{
-  // The original detail may have been open longer than the presigned URL.
-  const {task:latest}=await get<{task:QTask}>(`/quality/tasks/${id}`,{},quietErrors)
-  const file=latest.files?.find(item=>item.id===row.id)
-  if(!file?.downloadUrl)throw new Error(t('quality.fileUnavailable'))
-  const blob=await fetchViaRelay(file.downloadUrl)
-  if(download)saveBlob(blob,file.fileName)
-  else if(detailOpen.value&&task.value?.id===id)preview.value={name:file.fileName,type:file.contentType,blob}
+  const {data:blob}=await http.get<Blob>(qualityAttachmentPath(id,row.id),{...quietErrors,responseType:'blob',timeout:RELAY_DOWNLOAD_TIMEOUT_MS})
+  if(download)saveBlob(blob,row.fileName)
+  else if(detailOpen.value&&task.value?.id===id)preview.value={name:row.fileName,type:blob.type,blob}
  }catch(err){ElMessage.error(`${t('quality.openFailed')}：${relayFailureReason(err)||t('common.networkError')}`)}
  finally{fileAction.value=''}
 }

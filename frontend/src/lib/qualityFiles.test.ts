@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zh from '../locales/zh'
-import { qualityFileRound, stageQualityFiles } from './qualityFiles'
+import { qualityAttachmentPath, qualityFileRound, stageQualityFiles } from './qualityFiles'
+
+it('addresses quality attachments by record ID in the existing permission context', () => {
+  expect(qualityAttachmentPath('11', '12')).toBe('/quality/tasks/11/files/12')
+  expect(qualityAttachmentPath('11', '12', '13')).toBe('/purchase-orders/13/quality-inspections/11/files/12')
+})
 
 describe('inspection attachment staging', () => {
   const file = (name: string, lastModified = 1) => ({ name, size: 10, type: 'image/png', lastModified }) as File

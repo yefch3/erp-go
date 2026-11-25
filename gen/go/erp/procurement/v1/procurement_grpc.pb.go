@@ -3172,6 +3172,7 @@ const (
 	PurchaseOrderService_PresignQualityInspectionFile_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/PresignQualityInspectionFile"
 	PurchaseOrderService_RegisterQualityInspectionFile_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/RegisterQualityInspectionFile"
 	PurchaseOrderService_DeleteQualityInspectionFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/DeleteQualityInspectionFile"
+	PurchaseOrderService_ReadQualityInspectionFile_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/ReadQualityInspectionFile"
 	PurchaseOrderService_GetOrderQualityInspections_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/GetOrderQualityInspections"
 	PurchaseOrderService_ListQualityProcurementTodos_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListQualityProcurementTodos"
 	PurchaseOrderService_RecordQualityProcurementHandling_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/RecordQualityProcurementHandling"
@@ -3321,6 +3322,7 @@ type PurchaseOrderServiceClient interface {
 	PresignQualityInspectionFile(ctx context.Context, in *PresignQualityInspectionFileRequest, opts ...grpc.CallOption) (*PresignQualityInspectionFileResponse, error)
 	RegisterQualityInspectionFile(ctx context.Context, in *RegisterQualityInspectionFileRequest, opts ...grpc.CallOption) (*RegisterQualityInspectionFileResponse, error)
 	DeleteQualityInspectionFile(ctx context.Context, in *DeleteQualityInspectionFileRequest, opts ...grpc.CallOption) (*DeleteQualityInspectionFileResponse, error)
+	ReadQualityInspectionFile(ctx context.Context, in *ReadQualityInspectionFileRequest, opts ...grpc.CallOption) (*ReadQualityInspectionFileResponse, error)
 	// Procurement-facing read-only result and exception handling. These calls do
 	// not grant access to the Quality workspace.
 	GetOrderQualityInspections(ctx context.Context, in *GetOrderQualityInspectionsRequest, opts ...grpc.CallOption) (*GetOrderQualityInspectionsResponse, error)
@@ -3992,6 +3994,16 @@ func (c *purchaseOrderServiceClient) DeleteQualityInspectionFile(ctx context.Con
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteQualityInspectionFileResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_DeleteQualityInspectionFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReadQualityInspectionFile(ctx context.Context, in *ReadQualityInspectionFileRequest, opts ...grpc.CallOption) (*ReadQualityInspectionFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadQualityInspectionFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReadQualityInspectionFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4676,6 +4688,7 @@ type PurchaseOrderServiceServer interface {
 	PresignQualityInspectionFile(context.Context, *PresignQualityInspectionFileRequest) (*PresignQualityInspectionFileResponse, error)
 	RegisterQualityInspectionFile(context.Context, *RegisterQualityInspectionFileRequest) (*RegisterQualityInspectionFileResponse, error)
 	DeleteQualityInspectionFile(context.Context, *DeleteQualityInspectionFileRequest) (*DeleteQualityInspectionFileResponse, error)
+	ReadQualityInspectionFile(context.Context, *ReadQualityInspectionFileRequest) (*ReadQualityInspectionFileResponse, error)
 	// Procurement-facing read-only result and exception handling. These calls do
 	// not grant access to the Quality workspace.
 	GetOrderQualityInspections(context.Context, *GetOrderQualityInspectionsRequest) (*GetOrderQualityInspectionsResponse, error)
@@ -4967,6 +4980,9 @@ func (UnimplementedPurchaseOrderServiceServer) RegisterQualityInspectionFile(con
 }
 func (UnimplementedPurchaseOrderServiceServer) DeleteQualityInspectionFile(context.Context, *DeleteQualityInspectionFileRequest) (*DeleteQualityInspectionFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteQualityInspectionFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReadQualityInspectionFile(context.Context, *ReadQualityInspectionFileRequest) (*ReadQualityInspectionFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadQualityInspectionFile not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrderQualityInspections(context.Context, *GetOrderQualityInspectionsRequest) (*GetOrderQualityInspectionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrderQualityInspections not implemented")
@@ -6152,6 +6168,24 @@ func _PurchaseOrderService_DeleteQualityInspectionFile_Handler(srv interface{}, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).DeleteQualityInspectionFile(ctx, req.(*DeleteQualityInspectionFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReadQualityInspectionFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadQualityInspectionFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReadQualityInspectionFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReadQualityInspectionFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReadQualityInspectionFile(ctx, req.(*ReadQualityInspectionFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -7444,6 +7478,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteQualityInspectionFile",
 			Handler:    _PurchaseOrderService_DeleteQualityInspectionFile_Handler,
+		},
+		{
+			MethodName: "ReadQualityInspectionFile",
+			Handler:    _PurchaseOrderService_ReadQualityInspectionFile_Handler,
 		},
 		{
 			MethodName: "GetOrderQualityInspections",

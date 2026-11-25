@@ -36,7 +36,7 @@
           <el-table-column prop="fileName" label="文件名" min-width="250"/>
           <el-table-column label="对应检验" width="130"><template #default="{row}">{{Number(row.roundId)?`第 ${task.rounds.find(r=>r.id===row.roundId)?.roundNo||'—'} 次检验`:'整单资料'}}</template></el-table-column>
           <el-table-column prop="uploadedByName" label="上传人" width="150"/>
-          <el-table-column label="操作" width="135"><template #default="{row}"><el-button link type="primary" :loading="fileLoading===row.id" @click="readReport(task.id,row.id,false)">预览</el-button><el-button link type="primary" @click="readReport(task.id,row.id,true)">下载</el-button></template></el-table-column>
+          <el-table-column label="操作" width="135"><template #default="{row}"><el-button link type="primary" :loading="fileLoading===row.id" @click="readReport(task.id,row,false)">预览</el-button><el-button link type="primary" @click="readReport(task.id,row,true)">下载</el-button></template></el-table-column>
         </el-table>
         <div v-if="canHandle && task.procurementHandlingStatus==='PENDING'" class="handling">
           <el-alert title="请记录供应商处理结果；返工或换货完成后仍需质检复检合格，不能先交货。" type="warning" :closable="false"/>
@@ -52,16 +52,17 @@
 import {computed,onUnmounted,ref,watch,reactive} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {ElMessage} from 'element-plus'
-import {get,post,quietErrors,saveBlob} from '../api'
+import {get,post,http,quietErrors,saveBlob} from '../api'
 import {hasPassedDeliveryInspection,type DeliveryQualityTask} from '../lib/deliveryQuality'
-import {fetchViaRelay} from '../lib/storageRelay'
+import {RELAY_DOWNLOAD_TIMEOUT_MS,relayFailureReason} from '../lib/storageRelay'
+import {qualityAttachmentPath} from '../lib/qualityFiles'
 import {useAuthStore} from '../stores/auth'
 import FilePreviewDialog from './FilePreviewDialog.vue'
 const props=withDefaults(defineProps<{orderId:string;allowHandling?:boolean;canRequest?:boolean;requestHint?:string;autoRefresh?:boolean;showRefresh?:boolean}>(),{allowHandling:true,canRequest:false,autoRefresh:true,showRefresh:true})
 const emit=defineEmits<{(event:'request'):void;(event:'release-change',allowed:boolean):void;(event:'state-change',state:{passed:boolean;status:string;failed:boolean;loading:boolean}):void}>(),{t}=useI18n(),auth=useAuthStore()
 type Line=DeliveryQualityTask['lines'][number]&{id:string;productName:string;uomCode:string;unresolvedQty:string;issueDescription:string}
 type Round={id:string;roundNo:number;inspectedAt:string;inspectorName:string;remark:string;lines:{taskLineId:string;result:string;qualifiedQty:string;unqualifiedQty:string;issueDescription:string;handlingSuggestion:string}[]}
-type QualityFile={id:string;roundId:string;fileName:string;downloadUrl:string;uploadedByName:string}
+type QualityFile={id:string;roundId:string;fileName:string;uploadedByName:string}
 type Task=Omit<DeliveryQualityTask,'lines'>&{id:string;taskNo:string;lines:Line[];rounds:Round[];files:QualityFile[];procurementHandlingAction:string;procurementHandlingNote:string;procurementHandledByName:string}
 const tasks=ref<Task[]>([]),loading=ref(false),failed=ref(false),detailOpen=ref(false),saving=ref(false),fileLoading=ref('')
 const actions=reactive<Record<string,string>>({}),notes=reactive<Record<string,string>>({})
@@ -76,7 +77,18 @@ const actionLabel=(value:string)=>({REWORK:'返工',REPLACEMENT:'换货',CANCEL_
 const taskStatus=(task:Task)=>hasPassedDeliveryInspection([task])?'整单质检合格':({WAITING:'待质检',IN_PROGRESS:'质检中',REINSPECTION:'待复检',COMPLETED:'尚未全部合格'}[task.status]||task.status)
 let generation=0,alive=true
 async function load(){const request=++generation;loading.value=true;try{const d=await get<{tasks:Task[]}>(`/purchase-orders/${props.orderId}/quality-inspections`,{},quietErrors);if(!alive||request!==generation)return;tasks.value=d.tasks||[];failed.value=false;emit('release-change',hasPassedDeliveryInspection(tasks.value))}catch{if(alive&&request===generation){failed.value=true;emit('release-change',false)}}finally{if(alive&&request===generation)loading.value=false}}
-async function readReport(taskId:string,fileId:string,download:boolean){fileLoading.value=fileId;try{const d=await get<{tasks:Task[]}>(`/purchase-orders/${props.orderId}/quality-inspections`);const file=d.tasks.find(task=>task.id===taskId)?.files.find(file=>file.id===fileId);if(!file?.downloadUrl)throw new Error('报告地址不可用');const blob=await fetchViaRelay(file.downloadUrl);if(download)saveBlob(blob,file.fileName);else{previewName.value=file.fileName;previewBlob.value=blob;previewOpen.value=true}}catch{ElMessage.error('报告读取失败，请刷新重试')}finally{fileLoading.value=''}}
+async function readReport(taskId:string,file:QualityFile,download:boolean){
+ if(fileLoading.value)return
+ const orderId=props.orderId
+ fileLoading.value=file.id
+ try{
+  const {data:blob}=await http.get<Blob>(qualityAttachmentPath(taskId,file.id,orderId),{...quietErrors,responseType:'blob',timeout:RELAY_DOWNLOAD_TIMEOUT_MS})
+  if(!alive||props.orderId!==orderId)return
+  if(download)saveBlob(blob,file.fileName)
+  else{previewName.value=file.fileName;previewBlob.value=blob;previewOpen.value=true}
+ }catch(err){ElMessage.error(`${t('quality.openFailed')}：${relayFailureReason(err)||t('common.networkError')}`)}
+ finally{fileLoading.value=''}
+}
 async function saveHandling(task:Task){if(!canHandle.value||saving.value)return;const action=actions[task.id],note=notes[task.id]?.trim();if(!action||!note){ElMessage.warning('请选择处理方式并填写供应商处理结果');return}saving.value=true;try{await post(`/purchase-orders/${props.orderId}/quality-inspections/handling`,{task_id:Number(task.id),action,result_note:note});ElMessage.success('供应商处理结果已保存，等待质检复检');await load()}finally{saving.value=false}}
 watch(()=>props.orderId,()=>{tasks.value=[];failed.value=false;detailOpen.value=false;void load()},{immediate:true})
 watch([passed,status,failed,loading],()=>emit('state-change',{passed:passed.value,status:status.value,failed:failed.value,loading:loading.value}),{immediate:true})
