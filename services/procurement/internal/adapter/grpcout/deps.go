@@ -14,6 +14,7 @@ import (
 	inv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 	"github.com/shopspring/decimal"
 )
@@ -97,6 +98,12 @@ func (s *Suppliers) Get(ctx context.Context, id int64) (app.Supplier, error) {
 		ID: supplier.GetId(), Code: supplier.GetCode(), Name: supplier.GetName(),
 		Currency: supplier.GetCurrency(), Status: supplier.GetStatus(),
 	}, nil
+}
+
+func (s *Suppliers) IsActive(ctx context.Context, tenantID, id int64) (bool, error) {
+	ctx = grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenantID})
+	resp, err := s.client.CheckSupplierAvailability(ctx, &mdv1.CheckSupplierAvailabilityRequest{SupplierId: id})
+	return resp.GetActive(), err
 }
 
 type Warehouses struct{ client inv1.StockServiceClient }

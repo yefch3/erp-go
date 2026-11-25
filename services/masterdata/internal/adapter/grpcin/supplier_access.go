@@ -16,6 +16,10 @@ import (
 // SupplierAccess applies tenant-scoped supplier ownership to every supplier RPC.
 func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
+		if info.FullMethod == mdv1.SupplierService_CheckSupplierAvailability_FullMethodName {
+			// This status-only RPC checks for a signed service identity in its handler.
+			return next(ctx, req)
+		}
 		partyReq, isPartyReq := req.(interface {
 			GetPartyType() string
 			GetPartyId() int64
@@ -101,4 +105,16 @@ func (h *Handler) SupplierAccess(access iamv1.AccessServiceClient) grpc.UnarySer
 		detail.CanMaintain = proto.Bool(canMaintain)
 		return detail, nil
 	}
+}
+
+func (h *Handler) CheckSupplierAvailability(ctx context.Context, req *mdv1.CheckSupplierAvailabilityRequest) (*mdv1.CheckSupplierAvailabilityResponse, error) {
+	op, ok := grpcx.OperatorFromContext(ctx)
+	if !ok || op.TenantID <= 0 || op.EmployeeID != 0 {
+		return nil, apierr.Permission("MD_SUPPLIER_AVAILABILITY_INTERNAL", "供应商状态检查仅供业务服务调用")
+	}
+	active, err := h.svc.IsSupplierActive(ctx, op.TenantID, req.GetSupplierId())
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.CheckSupplierAvailabilityResponse{Active: active}, nil
 }

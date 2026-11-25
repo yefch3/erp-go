@@ -120,6 +120,16 @@ func TestSupplierAccessLifecycleIntegration(t *testing.T) {
 	}
 	created := must(tenant, 1, "CreateSupplier", &mdv1.CreateSupplierRequest{Code: "OWNER-SCOPE", NameZh: "Owner scoped supplier", CountryCode: "CN", BusinessTypes: []string{"GENERAL", "FORWARDER"}}).(*mdv1.CreateSupplierResponse).Supplier
 	id := created.Id
+	availability := &mdv1.CheckSupplierAvailabilityRequest{SupplierId: id}
+	if _, err := call(tenant, 1, "CheckSupplierAvailability", availability); err == nil {
+		t.Fatal("interactive caller reached the internal supplier status lookup")
+	}
+	if got := must(tenant, 0, "CheckSupplierAvailability", availability).(*mdv1.CheckSupplierAvailabilityResponse); !got.GetActive() {
+		t.Fatal("service could not confirm an active supplier without an owner role")
+	}
+	if got := must(tenant+1, 0, "CheckSupplierAvailability", availability).(*mdv1.CheckSupplierAvailabilityResponse); got.GetActive() {
+		t.Fatal("internal status lookup leaked a supplier from another tenant")
+	}
 	owners := must(tenant, 1, "ListSupplierOwners", &mdv1.ListSupplierOwnersRequest{SupplierId: id}).(*mdv1.ListSupplierOwnersResponse).Owners
 	if len(owners) != 1 || owners[0].EmployeeId != 1 || !owners[0].IsPrimary {
 		t.Fatalf("creator not assigned: %v", owners)
@@ -193,4 +203,7 @@ func TestSupplierAccessLifecycleIntegration(t *testing.T) {
 		t.Fatal("ordinary owner deleted supplier")
 	}
 	must(tenant, 99, "DeactivateSupplier", &mdv1.DeactivateSupplierRequest{Id: id, Reason: "test"})
+	if got := must(tenant, 0, "CheckSupplierAvailability", availability).(*mdv1.CheckSupplierAvailabilityResponse); got.GetActive() {
+		t.Fatal("inactive supplier was reported as active")
+	}
 }

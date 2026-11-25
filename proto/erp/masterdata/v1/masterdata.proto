@@ -161,6 +161,8 @@ service SupplierService {
   // URL, the returned key goes into the certificate's file_key on create.
   rpc PresignFactoryCertificateFile(PresignFactoryCertificateFileRequest) returns (PresignFactoryCertificateFileResponse);
   rpc ListFactoryChanges(ListFactoryChangesRequest) returns (ListFactoryChangesResponse);
+  // Internal tenant-scoped check for submitting an existing business document.
+  rpc CheckSupplierAvailability(CheckSupplierAvailabilityRequest) returns (CheckSupplierAvailabilityResponse);
   rpc ImportFactories(ImportFactoriesRequest) returns (ImportFactoriesResponse);
   rpc CheckFactoryDuplicates(CheckFactoryDuplicatesRequest) returns (CheckFactoryDuplicatesResponse);
   rpc GetFactoryDeactivationImpact(GetFactoryDeactivationImpactRequest) returns (GetFactoryDeactivationImpactResponse);
@@ -1494,3 +1496,6 @@ message SaveMailCustomerResponse {
   Contact contact = 2;
   string email = 3;
 }
+
+message CheckSupplierAvailabilityRequest { int64 supplier_id = 1; }
+message CheckSupplierAvailabilityResponse { bool active = 1; }

@@ -110,42 +110,51 @@
     <el-dialog
       v-model="createOpen"
       :title="editing ? t('orders.editFor', { no: editing.poNo }) : t('orders.create')"
-      :class="{ 'negotiated-draft-dialog': negotiatedDraftItems }"
-      :width="negotiatedDraftItems ? 'min(940px, calc(100vw - 32px))' : '900px'"
-      :top="negotiatedDraftItems ? '5vh' : undefined"
+      class="purchase-draft-dialog"
+      :width="negotiatedDraftItems ? 'min(940px, calc(100vw - 32px))' : 'min(900px, calc(100vw - 32px))'"
+      top="5vh"
     >
-      <el-alert v-if="!negotiatedDraftItems" type="info" :closable="false" show-icon class="alert">
+      <el-alert v-if="editing?.status === 'REJECTED' && editing.rejectReason" :title="t('orders.returnedReason', { reason: editing.rejectReason })" type="error" :closable="false" show-icon class="alert" />
+      <el-alert v-if="!editing" type="info" :closable="false" show-icon class="alert">
         {{ t('orders.createHint') }}
       </el-alert>
-      <el-form
-        label-width="90px" class="head-form" :class="{ 'negotiated-draft-form': negotiatedDraftItems }"
-        :label-position="negotiatedDraftItems ? 'top' : undefined" :size="negotiatedDraftItems ? 'small' : undefined"
-      >
+      <el-form class="purchase-draft-form" label-position="top" size="small">
         <el-form-item class="draft-supplier" :label="t('orders.supplier')" required>
-          <el-input v-if="negotiatedDraftItems" :model-value="negotiatedSupplierLabel" readonly aria-label="供应商" />
+          <el-input v-if="negotiatedDraftItems || (editing && !canReadSuppliers)" :model-value="existingSupplierLabel" readonly :aria-label="t('orders.supplier')" />
           <div v-else class="supplier-row">
-            <el-select v-model="form.supplierId" filterable :disabled="supplierLocked" style="width: 420px">
-              <el-option
-                v-for="s in suppliers"
-                :key="s.id"
-                :value="Number(s.id)"
-                :label="`${s.code} · ${s.name}`"
-              />
-            </el-select>
+            <SupplierSelect
+              :key="editing?.id || 'new-purchase-order'"
+              :model-value="form.supplierId"
+              :pinned-option="pinnedSupplier"
+              :disabled="supplierLocked || !canReadSuppliers"
+              :aria-label="t('orders.supplier')"
+              @update:model-value="form.supplierId = String($event || '')"
+              @selected="selectedSupplierName = $event?.name || ''"
+            />
             <el-button v-if="approvalEntry && scenarioSupplierName" link type="primary" @click="toggleSupplierSwitch">
               {{ switchSupplier ? `改回${scenarioSupplierName}` : '改向其他供应商' }}
             </el-button>
+          </div>
+          <div v-if="draftSupplierActive === false && editing?.supplierId === form.supplierId" class="form-note">
+            {{ t('orders.originalSupplierInactive') }}
           </div>
           <div v-if="scenarioSupplierName" class="form-note">
             比价确认的方案定的是「{{ scenarioSupplierName }}」<template v-if="switchSupplier">，换一家要在下面写明原因</template>
           </div>
         </el-form-item>
         <el-form-item class="draft-date" :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
-          <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
+          <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item class="draft-date" :label="t('orders.payableDue')">
           <el-date-picker v-model="form.payableDueDate" type="date" value-format="YYYY-MM-DD" clearable
-                          :placeholder="negotiatedDraftItems ? 'YYYY-MM-DD' : t('orders.payableDueHint')" style="width: 200px" />
+                          placeholder="YYYY-MM-DD" :aria-label="t('orders.payableDue')" />
+        </el-form-item>
+        <el-form-item class="draft-note draft-note-full" :label="t('orders.paymentTerms')">
+          <div class="payment-terms-picker" @keydown.shift.enter.capture.stop>
+            <el-autocomplete v-model="form.paymentTerms" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }"
+                             :fetch-suggestions="purchasePaymentSuggestions" :debounce="0" fit-input-width
+                             :placeholder="t('orders.paymentTermsHint')" :aria-label="t('orders.paymentTerms')" />
+          </div>
         </el-form-item>
         <el-form-item class="draft-fulfillment" label="履约方式" required>
           <el-select v-if="negotiatedDraftItems" v-model="form.fulfillmentMode" aria-label="履约方式">
@@ -180,7 +189,7 @@
                 :value="form.deliveryPortId" :label="form.deliveryPortName || form.deliveryPortCode || String(form.deliveryPortId)"
               />
             </el-select>
-            <el-select v-else v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
+            <el-select v-else v-model="form.deliveryPortId" filterable @change="selectDeliveryPort">
               <el-option
                 v-for="p in deliveryPorts"
                 :key="p.id"
@@ -192,7 +201,7 @@
           <el-form-item v-else class="draft-destination" label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
         </template>
         <el-form-item v-else class="draft-destination draft-warehouse" label="入库仓库" required>
-          <el-select v-model="form.warehouseId" style="width: 420px" @change="selectOrderWarehouse">
+          <el-select v-model="form.warehouseId" @change="selectOrderWarehouse">
             <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
@@ -203,7 +212,7 @@
           </div>
         </el-form-item>
         <el-form-item class="draft-note" :class="{ 'draft-note-full': !showAdjustmentReason }" :label="t('orders.remark')">
-          <el-input v-model="form.remark" type="textarea" :rows="2" :autosize="negotiatedDraftItems ? { minRows: 1, maxRows: 4 } : false" />
+          <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" />
         </el-form-item>
       </el-form>
 
@@ -247,7 +256,7 @@
         </el-table-column>
         <el-table-column :label="t('orders.open')" width="110" align="right">
           <template #default="{ row }">
-            <span class="num">{{ trim(openOf(row)) }}</span> {{ row.uomCode }}
+            <span class="num">{{ openOf(row) === '' ? '—' : trim(openOf(row)) }}</span> {{ row.uomCode }}
           </template>
         </el-table-column>
         <el-table-column :label="t('orders.requiredDate')" width="110">
@@ -311,6 +320,7 @@
           <div><dt>{{ t('orders.expected') }}</dt><dd>{{ detail.expectedDate || '—' }}</dd></div>
           <div><dt>{{ t('orders.payableDue') }}</dt><dd>{{ detail.payableDueDate || '—' }}</dd></div>
           <div><dt>{{ t('orders.amount') }}</dt><dd class="num">{{ draftTotalFormat.format(Number(detail.totalAmount)) }} {{ detail.currency }}</dd></div>
+          <div class="draft-payment-terms"><dt>{{ t('orders.paymentTerms') }}</dt><dd>{{ detail.paymentTerms || '—' }}</dd></div>
         </dl>
       </section>
       <el-descriptions v-else :column="detail?.historical ? 2 : 3" :label-width="detail?.historical ? 110 : undefined" border size="small" class="desc">
@@ -324,6 +334,7 @@
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.payableDue')">{{ detail?.payableDueDate || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('orders.paymentTerms')">{{ detail?.paymentTerms || '—' }}</el-descriptions-item>
         <template v-if="detail?.historical"><el-descriptions-item :label="t('historicalShipping.contract')">{{ detail.exportContractNo || '—' }}</el-descriptions-item><el-descriptions-item :label="t('historicalShipping.port')">{{ detail.destinationPort || '—' }}</el-descriptions-item></template>
         <template v-if="detail?.historical"><el-descriptions-item label="来源">历史补录</el-descriptions-item><el-descriptions-item label="原下单日期">{{detail.originalDate}}</el-descriptions-item><el-descriptions-item label="录入人 / 时间">{{detail.recordedBy}} / {{formatTime(detail.recordedAt||'')}}</el-descriptions-item></template><el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.confirmations')">
@@ -335,7 +346,6 @@
       <section v-if="detail?.signedContractUploadedAt" class="order-draft-files">
         <div class="side-title">双方签署的采购合同</div>
         <p><a v-if="detail.signedContractUrl" :href="detail.signedContractUrl" target="_blank" rel="noopener noreferrer">{{detail.signedContractName}} · 查看合同附件</a><span v-else>{{detail.signedContractName}}（附件链接暂不可用，请刷新）</span></p>
-        <p class="sub">付款条件：{{detail.paymentTerms||'—'}}</p>
         <p v-if="detail.remark && detail.remark !== detail.paymentTerms" class="sub">{{ t('orders.remark') }}：{{ detail.remark }}</p>
         <p class="sub">{{detail.contractVerifiedAt?'已完成财务核验':'等待财务在“出账 → 待合同核验”中核验签署合同。'}}</p>
         <p v-if="detail.contractVerifiedAt" class="sub">核验人：{{detail.contractVerifiedByName||'—'}}；核验时间：{{formatTime(detail.contractVerifiedAt)}}</p>
@@ -589,7 +599,7 @@
       <el-alert type="info" :closable="false" class="alert">采购方案批准后上传双方签署合同；上传后仍在本页显示“待财务审核”，财务通过后转为“已下单”。</el-alert>
       <el-form label-position="top">
         <el-form-item label="采购合同号" required><el-input v-model="contractForm.contractNo" /></el-form-item>
-        <el-form-item label="付款条件" required><el-input v-model="contractForm.paymentTerms" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('orders.paymentTerms')" required><el-input v-model="contractForm.paymentTerms" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="双方签署合同" required><el-upload :auto-upload="false" :limit="1" :on-change="selectContractFile" :file-list="contractFiles"><el-button>选择文件</el-button></el-upload></el-form-item>
       </el-form>
       <div v-if="contractOrder?.signedContractName" class="contract-state">当前文件：<a v-if="contractOrder.signedContractUrl" :href="contractOrder.signedContractUrl" target="_blank">{{contractOrder.signedContractName}}</a><span v-else>{{contractOrder.signedContractName}}</span></div>
@@ -635,6 +645,8 @@ import { hasPassedDeliveryInspection } from '../lib/deliveryQuality'
 import { getPurchaseOrderApprovalActions } from '../lib/approvalAction'
 import { useAuthStore } from '../stores/auth'
 import HistoricalPurchaseOrderDialog from '../components/HistoricalPurchaseOrderDialog.vue'
+import SupplierSelect from '../components/masterdata/SupplierSelect.vue'
+import { paymentTermOptions } from '../lib/paymentTermOptions'
 import HistoricalShippingContextDialog from '../components/HistoricalShippingContextDialog.vue'
 import OrderBuyerDialog from '../components/OrderBuyerDialog.vue'
 import WorkflowPageHeader from '../components/WorkflowPageHeader.vue'
@@ -753,7 +765,6 @@ interface Requirement {
   sourceIncoterm: string
   sourceValidUntil: string
 }
-interface Supplier { id: string; code: string; name: string }
 interface ApiFailure { code?: string; message?: string }
 interface Warehouse { id: string; code: string; name: string; whType: string }
 interface SupplierConfirmationLine { poItemId: string; confirmedQty: string; confirmedUnitPrice: string }
@@ -789,6 +800,7 @@ const canProduction = auth.can('procurement:production:write')
 const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
+const canReadSuppliers = auth.can('masterdata:supplier:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
 function qualityRequestHint(order:Order){
  if(order.businessType!=='PROCUREMENT')return t('quality.purchaseOnly')
@@ -831,16 +843,17 @@ const approvalEntry = ref(false)
 // 明确要求换一家供应商——不是随手改下拉框，是一次要留痕的偏离。
 const switchSupplier = ref(false)
 const editing = ref<Order | null>(null)
+const draftSupplierActive = ref<boolean>()
+const selectedSupplierName = ref('')
 const pending = ref<Requirement[]>([])
 const negotiatedDraftItems = ref<OrderItem[] | null>(null)
 const draftAdjustmentShown = ref(false)
 const draftAdjustmentRequired = ref(false)
 const editedDraftCell = ref('')
-const negotiatedSupplierLabel = computed(() => [editing.value?.supplierCode, editing.value?.supplierName].filter(Boolean).join(' · '))
+const existingSupplierLabel = computed(() => [editing.value?.supplierCode, editing.value?.supplierName].filter(Boolean).join(' · '))
 const editorRequirementIds = computed(() => negotiatedDraftItems.value
   ? negotiatedDraftItems.value.map(item => item.requirementId)
   : pending.value.map(requirement => requirement.id))
-const suppliers = ref<Supplier[]>([])
 const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
 const draftTotalFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -859,7 +872,8 @@ function updateDraftCell(field: 'qty' | 'price', id: string, value: string) {
   values[id] = value
   editedDraftCell.value = `${field}:${id}`
 }
-const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', payableDueDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
+const form = reactive({ supplierId: '', currency: 'CNY', expectedDate: '', payableDueDate: '', paymentTerms: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
+const purchasePaymentSuggestions = paymentTermOptions.map(value => ({ value }))
 const deliveryPorts = ref<{ id: string; unLocode: string; nameZh: string; nameEn: string }[]>([])
 
 const detailOpen = ref(false)
@@ -964,6 +978,16 @@ const quotationLines = computed(() =>
   pending.value.filter((r) => r.source === 'CUSTOMER_QUOTATION' && Number(qtyOf[r.id] ?? 0) > 0),
 )
 const scenarioSupplierName = computed(() => quotationLines.value[0]?.supplierName || '')
+const pinnedSupplier = computed(() => {
+  const order = editing.value
+  if (order?.supplierId && order.supplierId !== '0') {
+    return { id: order.supplierId, code: order.supplierCode, name: order.supplierName }
+  }
+  const quote = quotationLines.value[0]
+  if (quote?.supplierId && quote.supplierId !== '0') {
+    return { id: quote.supplierId, code: '', name: quote.supplierName }
+  }
+})
 // 这批之前已经下过单，本次买的是剩下的数量。
 const isReorder = computed(() => quotationLines.value.some((r) => Number(r.orderedQty ?? 0) > 0))
 const supplierLocked = computed(() => approvalEntry.value && !switchSupplier.value)
@@ -984,7 +1008,7 @@ function toggleSupplierSwitch() {
   if (!switchSupplier.value) {
     // 改回原厂：把成本方案里的供应商和单价一并还原，免得留下半改不改的单子。
     const line = quotationLines.value[0]
-    if (line) form.supplierId = Number(line.supplierId)
+    if (line) form.supplierId = String(line.supplierId || '')
     quotationLines.value.forEach((r) => { priceOf[r.id] = r.sourceUnitPrice || '0' })
   }
 }
@@ -1213,18 +1237,21 @@ function reload() {
 
 function openOf(r: Requirement): string {
   // 编辑已有草稿时要把该草稿自己的数量留给员工修改；新建采购单才扣除所有草稿预占。
-  if (editing.value) return String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
+  if (editing.value) return r.requiredQty === '' ? '' : String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
   return r.availableQty ?? String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
 }
 
 async function openCreate(preselect?: string[]) {
 	editing.value = null
+  draftSupplierActive.value = undefined
+  selectedSupplierName.value = ''
   negotiatedDraftItems.value = null
 	approvalEntry.value = Boolean(preselect?.length)
-  form.supplierId = 0
+  form.supplierId = ''
   form.currency = 'CNY'
   form.expectedDate = ''
   form.payableDueDate = ''
+  form.paymentTerms = ''
   form.remark = ''
   form.fulfillmentMode = 'DIRECT_SHIP'
   form.deliveryLocationType = canReadPorts ? 'PORT' : 'CUSTOM'
@@ -1238,9 +1265,8 @@ async function openCreate(preselect?: string[]) {
   switchSupplier.value = false
   Object.keys(qtyOf).forEach((k) => delete qtyOf[k])
   Object.keys(priceOf).forEach((k) => delete priceOf[k])
-  const [reqs, sups, ports, whs] = await Promise.all([
+  const [reqs, ports, whs] = await Promise.all([
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
-    get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
     canReadPorts
       ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
       : Promise.resolve({ ports: [] }),
@@ -1254,7 +1280,6 @@ async function openCreate(preselect?: string[]) {
   })
   pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
     .filter((r) => Number(r.availableQty ?? 0) > 0)
-  suppliers.value = sups.suppliers ?? []
   deliveryPorts.value = ports.ports ?? []
   warehouses.value = whs.warehouses ?? []
   // Arriving from the requirements page with lines already chosen: pre-fill
@@ -1267,7 +1292,7 @@ async function openCreate(preselect?: string[]) {
     pending.value.forEach((r) => {
       qtyOf[r.id] = openOf(r)
       if (r.source === 'CUSTOMER_QUOTATION') {
-		if (r.status !== 'WAITING_REQUOTE') form.supplierId = Number(r.supplierId)
+		if (r.status !== 'WAITING_REQUOTE' && r.supplierId !== '0') form.supplierId = String(r.supplierId || '')
         form.currency = r.sourceCurrency || 'USD'
         priceOf[r.id] = r.sourceUnitPrice || '0'
       }
@@ -1283,25 +1308,41 @@ async function openCreate(preselect?: string[]) {
 }
 
 function selectContractFile(file:any){contractFile.value=file.raw as File;contractFiles.value=[file]}
-function openContract(row:Order){contractOrder.value=row;contractForm.contractNo=row.businessDocumentNo||row.poNo;contractForm.paymentTerms=row.paymentTerms||row.remark||'';contractFile.value=null;contractFiles.value=[];contractOpen.value=true}
+function openContract(row:Order){contractOrder.value=row;contractForm.contractNo=row.businessDocumentNo||row.poNo;contractForm.paymentTerms=row.paymentTerms||'';contractFile.value=null;contractFiles.value=[];contractOpen.value=true}
 async function saveContract(){const row=contractOrder.value,file=contractFile.value;if(!row||!file){ElMessage.warning('请选择双方签署合同文件');return}if(!contractForm.contractNo.trim()||!contractForm.paymentTerms.trim()){ElMessage.warning('请填写采购合同号和付款条件');return}saving.value=true;try{const signed=await post<{fileKey:string;uploadUrl:string}>(`/purchase-orders/${row.id}/contract/presign`,{file_name:file.name});const putResult=await fetch(signed.uploadUrl,{method:'PUT',body:file});if(!putResult.ok)throw new Error('合同文件上传失败');await post(`/purchase-orders/${row.id}/contract`,{contract_no:contractForm.contractNo,payment_terms:contractForm.paymentTerms,file_key:signed.fileKey,file_name:file.name});ElMessage.success('签署合同已保存，等待财务审核');contractOpen.value=false;status.value='PENDING_CONTRACT';await router.replace({path:'/purchase-orders',query:{status:'PENDING_CONTRACT',order:row.id}});await reload()}finally{saving.value=false}}
+async function loadDraftRequirements(items: OrderItem[]) {
+  const pages = await Promise.all(['PENDING', 'PARTIALLY_ORDERED'].map(status =>
+    get<{ requirements: Requirement[] }>('/requirements', { status, page_size: 200 }, quietErrors)
+      .catch(() => ({ requirements: [] })),
+  ))
+  const requirements = new Map(pages.flatMap(page => page.requirements ?? []).map(row => [row.id, row]))
+  await Promise.all(items.filter(item => !requirements.has(item.requirementId)).map(async item => {
+    // The draft's saved lines must survive even if the requirements list omits them.
+    const result = await get<{ requirement: Requirement }>(`/requirements/${item.requirementId}`, undefined, quietErrors)
+      .catch(() => undefined)
+    requirements.set(item.requirementId, result?.requirement ?? {
+      id: item.requirementId, productName: item.productName, spec: item.spec, uomCode: item.uomCode,
+      contractNo: item.contractNo, customerName: item.customerName, source: item.source,
+      requiredQty: '', orderedQty: '', reservedQty: '', availableQty: '', requiredDate: '', status: '',
+      quotationId: '', supplierId: '', supplierName: '', sourceCurrency: '', sourceUnitPrice: '',
+      sourcePaymentTerms: '', sourceIncoterm: '', sourceValidUntil: '',
+    })
+  }))
+  return [...requirements.values()]
+}
+
 async function openEdit(row: Order) {
  if(row.historical){historyId.value=row.id;historyOpen.value=true;return}
-  const { order: current, items = [], fromExecutionNegotiation, sourceChangeReason } = await get<{
-    order: Order; items?: OrderItem[]; fromExecutionNegotiation?: boolean; sourceChangeReason?: string
+  const { order: current, items = [], fromExecutionNegotiation, sourceChangeReason, supplierActive } = await get<{
+    order: Order; items?: OrderItem[]; fromExecutionNegotiation?: boolean; sourceChangeReason?: string; supplierActive?: boolean
   }>(`/purchase-orders/${row.id}`)
   if (!['DRAFT', 'REJECTED'].includes(current.status)) {
     ElMessage.warning(t('orders.notEditable'))
     await load()
     return
   }
-  const [requirements, sups, ports, whs] = await Promise.all([
-    fromExecutionNegotiation ? Promise.resolve([]) : Promise.all([
-      get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
-      get<{ requirements: Requirement[] }>('/requirements', { status: 'PARTIALLY_ORDERED', page_size: 200 }),
-    ]).then(pages => pages.flatMap(page => page.requirements ?? [])),
-    fromExecutionNegotiation ? Promise.resolve({ suppliers: [] })
-      : get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
+  const [requirements, ports, whs] = await Promise.all([
+    fromExecutionNegotiation ? Promise.resolve([]) : loadDraftRequirements(items),
     canReadPorts
       ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
       : Promise.resolve({ ports: [] }),
@@ -1310,12 +1351,15 @@ async function openEdit(row: Order) {
       : Promise.resolve({ warehouses: [] }),
   ])
   editing.value = current
+  draftSupplierActive.value = supplierActive
+  selectedSupplierName.value = ''
   negotiatedDraftItems.value = fromExecutionNegotiation ? items : null
-  if (fromExecutionNegotiation) approvalEntry.value = false
-  form.supplierId = Number(current.supplierId)
+  approvalEntry.value = false
+  form.supplierId = current.supplierId === '0' ? '' : current.supplierId
   form.currency = current.currency || 'CNY'
   form.expectedDate = current.expectedDate || ''
   form.payableDueDate = current.payableDueDate || ''
+  form.paymentTerms = current.paymentTerms || ''
   form.remark = current.remark || ''
   form.fulfillmentMode = current.fulfillmentMode || 'DIRECT_SHIP'
   form.deliveryLocationType = current.deliveryLocationType || 'PORT'
@@ -1325,7 +1369,7 @@ async function openEdit(row: Order) {
   form.warehouseId = Number(current.warehouseId || 0)
   form.warehouseName = current.warehouseName || ''
   form.deliveryAddress = current.deliveryAddress || ''
-  form.sourceChangeReason = fromExecutionNegotiation ? sourceChangeReason ?? '' : ''
+  form.sourceChangeReason = sourceChangeReason ?? ''
   draftAdjustmentShown.value = Boolean(form.sourceChangeReason.trim())
   draftAdjustmentRequired.value = false
   editedDraftCell.value = ''
@@ -1333,7 +1377,6 @@ async function openEdit(row: Order) {
   Object.keys(qtyOf).forEach((key) => delete qtyOf[key])
   Object.keys(priceOf).forEach((key) => delete priceOf[key])
   pending.value = requirements
-  suppliers.value = sups.suppliers ?? []
   deliveryPorts.value = ports.ports ?? []
   warehouses.value = whs.warehouses ?? []
   for (const item of items) {
@@ -1345,10 +1388,8 @@ async function openEdit(row: Order) {
 
 async function submitCreate() {
   const wasApprovalEntry = approvalEntry.value
-  const supplier = negotiatedDraftItems.value && editing.value
-    ? { id: editing.value.supplierId, name: editing.value.supplierName }
-    : suppliers.value.find((s) => Number(s.id) === form.supplierId)
-  if (!supplier) {
+  const supplierId = form.supplierId
+  if (!supplierId || supplierId === '0') {
     ElMessage.warning(t('orders.supplierRequired'))
     return
   }
@@ -1391,10 +1432,11 @@ async function submitCreate() {
   saving.value = true
   try {
     const payload = {
-      supplier_id: Number(supplier.id),
+      supplier_id: supplierId,
       currency: form.currency,
       expected_date: form.expectedDate,
-  payable_due_date: form.payableDueDate,
+      payable_due_date: form.payableDueDate,
+      payment_terms: form.paymentTerms.trim(),
       remark: form.remark,
       fulfillment_mode: form.fulfillmentMode,
       delivery_location_type: form.fulfillmentMode === 'WAREHOUSE' ? 'WAREHOUSE' : form.deliveryLocationType,
@@ -1410,7 +1452,10 @@ async function submitCreate() {
     let res: { id?: string; poNo: string }
     if (editing.value) {
       try {
-        res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
+        res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, {
+          ...payload,
+          keep_current_supplier: supplierId === editing.value.supplierId,
+        })
       } catch (error) {
         const code = (error as ApiFailure).code
         if (negotiatedDraftItems.value && (code === 'PO_SOURCE_CHANGE_REASON_REQUIRED' || code === 'PO_SUPPLIER_CHANGE_REASON_REQUIRED')) {
@@ -1434,17 +1479,23 @@ async function submitCreate() {
         const quotationID = Number(pending.value.find((item) => Number(item.quotationId) > 0)?.quotationId || 0)
         const existingLists = await Promise.all(['DRAFT', 'REJECTED'].map((draftStatus) =>
           get<{ orders: Order[] }>('/purchase-orders', {
-            status: draftStatus, keyword: supplier.name, page_size: 200,
+            status: draftStatus,
+            keyword: pinnedSupplier.value?.id === supplierId ? pinnedSupplier.value.name : selectedSupplierName.value,
+            page_size: 200,
           }, quietErrors),
         ))
         const existing = existingLists
           .flatMap((item) => item.orders ?? [])
-          .find((order) => Number(order.sourceQuotationId) === quotationID && Number(order.supplierId) === Number(supplier.id))
+          .find((order) => Number(order.sourceQuotationId) === quotationID && order.supplierId === supplierId)
         if (!existing) {
           ElMessage.error(apiFailure.message || t('common.requestFailed'))
           throw failure
         }
-        const updated = await put<{ poNo: string }>(`/purchase-orders/${existing.id}`, payload)
+        const updated = await put<{ poNo: string }>(`/purchase-orders/${existing.id}`, {
+          ...payload,
+          payment_terms: payload.payment_terms || undefined,
+          keep_current_supplier: true,
+        })
         res = { id: existing.id, poNo: updated.poNo }
       }
     }
@@ -1969,13 +2020,12 @@ onMounted(async () => {
 .alert {
   margin-bottom: 14px;
 }
-.head-form {
-  margin-bottom: 6px;
-}
 .supplier-row {
   display: flex;
+  flex-wrap: wrap;
+  width: 100%;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 .form-note {
   margin-top: 2px;
@@ -1998,46 +2048,49 @@ onMounted(async () => {
   margin-left: 8px;
   font-size: 16px;
 }
-:global(.negotiated-draft-dialog) {
+:global(.purchase-draft-dialog) {
   --el-dialog-padding-primary: 18px;
   border-radius: 10px;
 }
-:global(.negotiated-draft-dialog .el-dialog__body) {
+:global(.purchase-draft-dialog .el-dialog__body) {
   max-height: calc(90dvh - 108px);
   overflow-y: auto;
 }
-:global(.negotiated-draft-dialog .el-dialog__footer) {
+:global(.purchase-draft-dialog .el-dialog__footer) {
   padding-top: 12px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
-.negotiated-draft-form {
+.purchase-draft-form {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 10px 14px;
   margin-bottom: 0;
 }
-.negotiated-draft-form :deep(.el-form-item) {
+.purchase-draft-form :deep(.el-form-item) {
   min-width: 0;
   margin-bottom: 0;
 }
-.negotiated-draft-form :deep(.el-form-item__label) {
+.purchase-draft-form :deep(.el-form-item__label) {
   margin-bottom: 4px;
   line-height: 1.35;
   font-weight: 600;
 }
-.negotiated-draft-form .supplier-row,
-.negotiated-draft-form :deep(.el-date-editor),
-.negotiated-draft-form :deep(.el-select) {
-  width: 100% !important;
+.purchase-draft-form :deep(.el-date-editor.el-input),
+.purchase-draft-form :deep(.el-select) {
+  width: 100%;
 }
-.negotiated-draft-form .draft-supplier,
-.negotiated-draft-form .draft-note { grid-column: span 6; }
-.negotiated-draft-form .draft-note-full { grid-column: 1 / -1; }
-.negotiated-draft-form .draft-date,
-.negotiated-draft-form .draft-location { grid-column: span 3; }
-.negotiated-draft-form .draft-fulfillment { grid-column: span 5; }
-.negotiated-draft-form .draft-destination { grid-column: span 4; }
-.negotiated-draft-form .draft-warehouse { grid-column: span 7; }
+.payment-terms-picker,
+.payment-terms-picker :deep(.el-autocomplete) { width: 100%; }
+.draft-location :deep(.el-radio-group) { gap: 4px 12px; }
+.draft-location :deep(.el-radio) { margin-inline-end: 0; }
+.purchase-draft-form .draft-supplier,
+.purchase-draft-form .draft-note { grid-column: span 6; }
+.purchase-draft-form .draft-note-full { grid-column: 1 / -1; }
+.purchase-draft-form .draft-date,
+.purchase-draft-form .draft-location { grid-column: span 3; }
+.purchase-draft-form .draft-fulfillment { grid-column: span 5; }
+.purchase-draft-form .draft-destination { grid-column: span 4; }
+.purchase-draft-form .draft-warehouse { grid-column: span 7; }
 .negotiated-draft-heading {
   margin-top: 14px;
   padding-top: 10px;
@@ -2056,18 +2109,18 @@ onMounted(async () => {
   text-align: left;
 }
 @media (max-width: 800px) {
-  .negotiated-draft-form .draft-fulfillment,
-  .negotiated-draft-form .draft-location { grid-column: span 6; }
-  .negotiated-draft-form .draft-destination { grid-column: 1 / -1; }
-  .negotiated-draft-form .draft-warehouse { grid-column: span 6; }
+  .purchase-draft-form .draft-fulfillment,
+  .purchase-draft-form .draft-location { grid-column: span 6; }
+  .purchase-draft-form .draft-destination { grid-column: 1 / -1; }
+  .purchase-draft-form .draft-warehouse { grid-column: span 6; }
 }
 @media (max-width: 560px) {
-  .negotiated-draft-form .draft-supplier,
-  .negotiated-draft-form .draft-fulfillment,
-  .negotiated-draft-form .draft-location,
-  .negotiated-draft-form .draft-destination,
-  .negotiated-draft-form .draft-note { grid-column: 1 / -1; }
-  .negotiated-draft-form .draft-date { grid-column: span 6; }
+  .purchase-draft-form .draft-supplier,
+  .purchase-draft-form .draft-fulfillment,
+  .purchase-draft-form .draft-location,
+  .purchase-draft-form .draft-destination,
+  .purchase-draft-form .draft-note { grid-column: 1 / -1; }
+  .purchase-draft-form .draft-date { grid-column: span 6; }
 }
 .desc {
   margin-bottom: 14px;
@@ -2109,6 +2162,11 @@ onMounted(async () => {
 .draft-detail-facts dd {
   margin: 2px 0 0;
   color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.draft-payment-terms {
+  grid-column: 1 / -1;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .draft-detail-remark,

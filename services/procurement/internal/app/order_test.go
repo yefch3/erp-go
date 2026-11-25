@@ -12,12 +12,12 @@ import (
 func TestOrderSummaryContainsApprovalFacts(t *testing.T) {
 	raw := orderSummary(store.GetPurchaseOrderRow{
 		SupplierName: "测试钢厂", Currency: "USD", TotalAmount: "1250.00", ExpectedDate: "2026-09-30",
-	}, []store.PurchaseOrderItemsRow{{ProductName: "钢卷", Qty: "5", UnitPrice: "250", Amount: "1250"}})
+	}, []store.PurchaseOrderItemsRow{{ProductName: "钢卷", Qty: "5", UnitPrice: "250", Amount: "1250"}}, "30%预付")
 	var summary map[string]any
 	if err := json.Unmarshal([]byte(raw), &summary); err != nil {
 		t.Fatalf("审批摘要不是合法 JSON: %v", err)
 	}
-	if summary["supplier"] != "测试钢厂" || summary["amount"] != "1250.00" {
+	if summary["supplier"] != "测试钢厂" || summary["amount"] != "1250.00" || summary["payment_terms"] != "30%预付" {
 		t.Fatalf("审批摘要缺少关键事实: %#v", summary)
 	}
 }
@@ -29,6 +29,10 @@ type supplierDirectoryStub struct {
 
 func (s supplierDirectoryStub) Get(context.Context, int64) (Supplier, error) {
 	return s.supplier, s.err
+}
+
+func (s supplierDirectoryStub) IsActive(context.Context, int64, int64) (bool, error) {
+	return s.supplier.Status == "ACTIVE", s.err
 }
 
 type warehouseDirectoryStub struct{ warehouse Warehouse }

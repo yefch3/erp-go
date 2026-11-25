@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ func (assignmentTestAccess) Employee(_ context.Context, id int64) (EmployeeIdent
 
 type assignmentTestApproval struct {
 	next, withdrawn int64
+	summary         string
 }
 
 func (a *assignmentTestApproval) Withdraw(_ context.Context, instanceID int64, _ string) error {
@@ -39,9 +41,22 @@ func (a *assignmentTestApproval) Withdraw(_ context.Context, instanceID int64, _
 	return nil
 }
 
-func (a *assignmentTestApproval) Submit(context.Context, ApprovalSubmission) (int64, error) {
+func (a *assignmentTestApproval) Submit(_ context.Context, submission ApprovalSubmission) (int64, error) {
+	a.summary = submission.Summary
 	a.next++
 	return a.next, nil
+}
+
+type restrictedDraftSupplierDirectory struct {
+	active bool
+}
+
+func (d *restrictedDraftSupplierDirectory) Get(context.Context, int64) (Supplier, error) {
+	return Supplier{}, apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或无权访问")
+}
+
+func (d *restrictedDraftSupplierDirectory) IsActive(_ context.Context, _, id int64) (bool, error) {
+	return id == 6 && d.active, nil
 }
 
 func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
@@ -231,16 +246,43 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	if len(returned) != 1 || returned[0].OrderID != po || returned[0].OrderStatus != "REJECTED" {
 		t.Fatalf("return inbox: %+v", returned)
 	}
-	if _, err := svc.UpdateOrder(ctx, tenant, po, CreateOrderInput{
-		SupplierID: 6, Currency: "CNY", ExpectedDate: "2027-01-02",
+	directory := &restrictedDraftSupplierDirectory{active: true}
+	svc.suppliers = directory
+	blankTerms := ""
+	update := CreateOrderInput{
+		SupplierID: 6, SupplierCode: "untrusted", SupplierName: "untrusted", KeepCurrentSupplier: true,
+		Currency: "CNY", ExpectedDate: "2027-01-02", PaymentTerms: &blankTerms,
 		FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "PORT", DeliveryPortName: "自填测试港",
 		Lines: []OrderLine{{RequirementID: requirement, Qty: "100", UnitPrice: "3.6"}},
-	}, buyer); err != nil {
+	}
+	stale := update
+	stale.SupplierID = 7
+	if _, err := svc.UpdateOrder(ctx, tenant, po, stale, buyer); apierr.CodeFromError(err) != "PO_SUPPLIER_CHANGED" {
+		t.Fatalf("stale supplier: %v", err)
+	}
+	if _, err := svc.UpdateOrder(ctx, tenant, po, update, buyer); err != nil {
 		t.Fatalf("save returned draft: %v", err)
+	}
+	if _, _, err := svc.SubmitOrder(ctx, tenant, po, buyer); apierr.CodeFromError(err) != "PO_PAYMENT_TERMS_REQUIRED" {
+		t.Fatalf("submitted without payment terms: %v", err)
+	}
+	terms = "30%预付款，70%发货前付清"
+	update.PaymentTerms = &terms
+	if _, err := svc.UpdateOrder(ctx, tenant, po, update, buyer); err != nil {
+		t.Fatalf("save payment terms: %v", err)
+	}
+	update.PaymentTerms = nil
+	if _, err := svc.UpdateOrder(ctx, tenant, po, update, buyer); err != nil {
+		t.Fatalf("save without changing payment terms: %v", err)
 	}
 	if updated, err := svc.GetOrder(ctx, tenant, po); err != nil || updated.DeliveryPortID != 0 ||
 		updated.DeliveryPortName != "自填测试港" || updated.DeliveryLocationType != "PORT" {
 		t.Fatalf("saved manual port: id=%d name=%q type=%q err=%v", updated.DeliveryPortID, updated.DeliveryPortName, updated.DeliveryLocationType, err)
+	} else if updated.SupplierID != 6 || updated.SupplierCode != "S6" || updated.SupplierName != "工厂" {
+		t.Fatalf("draft supplier snapshot or terms changed unexpectedly: %+v", updated)
+	}
+	if state, err := svc.OrderContractState(ctx, tenant, po); err != nil || state.PaymentTerms != terms {
+		t.Fatalf("draft payment terms: %q, %v", state.PaymentTerms, err)
 	}
 	if items, err := svc.OrderItems(ctx, tenant, po); err != nil || len(items) != 1 ||
 		items[0].RequirementID != requirement || items[0].UnitPrice != "3.6000" {
@@ -250,9 +292,17 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 	if _, err = svc.UploadOrderDraftFile(ctx, tenant, po, "extra.pdf", "application/pdf", []byte("extra"), buyer); err != nil {
 		t.Fatal(err)
 	}
+	directory.active = false
+	if _, _, err := svc.SubmitOrder(ctx, tenant, po, buyer); apierr.CodeFromError(err) != "PO_SUPPLIER_INACTIVE" {
+		t.Fatalf("submitted with an inactive supplier: %v", err)
+	}
+	directory.active = true
 	next, nextInstance, err := svc.SubmitOrder(ctx, tenant, po, buyer)
 	if err != nil || next != "PENDING_APPROVAL" || nextInstance == instance {
 		t.Fatalf("resubmit: %s %d %v", next, nextInstance, err)
+	}
+	if !strings.Contains(approval.summary, terms) {
+		t.Fatalf("approval did not include updated payment terms: %s", approval.summary)
 	}
 	checkDraftList("", "")
 }

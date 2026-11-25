@@ -1944,6 +1944,7 @@ const (
 	SupplierService_DeleteFactoryCertificate_FullMethodName          = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
 	SupplierService_PresignFactoryCertificateFile_FullMethodName     = "/erp.masterdata.v1.SupplierService/PresignFactoryCertificateFile"
 	SupplierService_ListFactoryChanges_FullMethodName                = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
+	SupplierService_CheckSupplierAvailability_FullMethodName         = "/erp.masterdata.v1.SupplierService/CheckSupplierAvailability"
 	SupplierService_ImportFactories_FullMethodName                   = "/erp.masterdata.v1.SupplierService/ImportFactories"
 	SupplierService_CheckFactoryDuplicates_FullMethodName            = "/erp.masterdata.v1.SupplierService/CheckFactoryDuplicates"
 	SupplierService_GetFactoryDeactivationImpact_FullMethodName      = "/erp.masterdata.v1.SupplierService/GetFactoryDeactivationImpact"
@@ -2002,6 +2003,8 @@ type SupplierServiceClient interface {
 	// URL, the returned key goes into the certificate's file_key on create.
 	PresignFactoryCertificateFile(ctx context.Context, in *PresignFactoryCertificateFileRequest, opts ...grpc.CallOption) (*PresignFactoryCertificateFileResponse, error)
 	ListFactoryChanges(ctx context.Context, in *ListFactoryChangesRequest, opts ...grpc.CallOption) (*ListFactoryChangesResponse, error)
+	// Internal tenant-scoped check for submitting an existing business document.
+	CheckSupplierAvailability(ctx context.Context, in *CheckSupplierAvailabilityRequest, opts ...grpc.CallOption) (*CheckSupplierAvailabilityResponse, error)
 	ImportFactories(ctx context.Context, in *ImportFactoriesRequest, opts ...grpc.CallOption) (*ImportFactoriesResponse, error)
 	CheckFactoryDuplicates(ctx context.Context, in *CheckFactoryDuplicatesRequest, opts ...grpc.CallOption) (*CheckFactoryDuplicatesResponse, error)
 	GetFactoryDeactivationImpact(ctx context.Context, in *GetFactoryDeactivationImpactRequest, opts ...grpc.CallOption) (*GetFactoryDeactivationImpactResponse, error)
@@ -2485,6 +2488,16 @@ func (c *supplierServiceClient) ListFactoryChanges(ctx context.Context, in *List
 	return out, nil
 }
 
+func (c *supplierServiceClient) CheckSupplierAvailability(ctx context.Context, in *CheckSupplierAvailabilityRequest, opts ...grpc.CallOption) (*CheckSupplierAvailabilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckSupplierAvailabilityResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CheckSupplierAvailability_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *supplierServiceClient) ImportFactories(ctx context.Context, in *ImportFactoriesRequest, opts ...grpc.CallOption) (*ImportFactoriesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportFactoriesResponse)
@@ -2568,6 +2581,8 @@ type SupplierServiceServer interface {
 	// URL, the returned key goes into the certificate's file_key on create.
 	PresignFactoryCertificateFile(context.Context, *PresignFactoryCertificateFileRequest) (*PresignFactoryCertificateFileResponse, error)
 	ListFactoryChanges(context.Context, *ListFactoryChangesRequest) (*ListFactoryChangesResponse, error)
+	// Internal tenant-scoped check for submitting an existing business document.
+	CheckSupplierAvailability(context.Context, *CheckSupplierAvailabilityRequest) (*CheckSupplierAvailabilityResponse, error)
 	ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error)
 	CheckFactoryDuplicates(context.Context, *CheckFactoryDuplicatesRequest) (*CheckFactoryDuplicatesResponse, error)
 	GetFactoryDeactivationImpact(context.Context, *GetFactoryDeactivationImpactRequest) (*GetFactoryDeactivationImpactResponse, error)
@@ -2721,6 +2736,9 @@ func (UnimplementedSupplierServiceServer) PresignFactoryCertificateFile(context.
 }
 func (UnimplementedSupplierServiceServer) ListFactoryChanges(context.Context, *ListFactoryChangesRequest) (*ListFactoryChangesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryChanges not implemented")
+}
+func (UnimplementedSupplierServiceServer) CheckSupplierAvailability(context.Context, *CheckSupplierAvailabilityRequest) (*CheckSupplierAvailabilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckSupplierAvailability not implemented")
 }
 func (UnimplementedSupplierServiceServer) ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportFactories not implemented")
@@ -3598,6 +3616,24 @@ func _SupplierService_ListFactoryChanges_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SupplierService_CheckSupplierAvailability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckSupplierAvailabilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CheckSupplierAvailability(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CheckSupplierAvailability_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CheckSupplierAvailability(ctx, req.(*CheckSupplierAvailabilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SupplierService_ImportFactories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportFactoriesRequest)
 	if err := dec(in); err != nil {
@@ -3846,6 +3882,10 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListFactoryChanges",
 			Handler:    _SupplierService_ListFactoryChanges_Handler,
+		},
+		{
+			MethodName: "CheckSupplierAvailability",
+			Handler:    _SupplierService_CheckSupplierAvailability_Handler,
 		},
 		{
 			MethodName: "ImportFactories",
