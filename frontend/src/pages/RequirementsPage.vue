@@ -38,6 +38,7 @@
               <el-tag v-if="row.quoteStatus" :type="quoteStatusTone(row.quoteStatus)" effect="light" size="small">{{ t(`requirements.quoteStatus.${row.quoteStatus}`) }}</el-tag>
               <span v-else>—</span>
             </template>
+            <span v-else-if="column.key==='receivedDate'">{{ row.receivedDate || '—' }}</span>
             <span v-else-if="column.key==='requiredDate'">{{ row.requiredDate || '—' }}</span>
           </template>
         </el-table-column>
@@ -595,6 +596,7 @@ interface Requirement {
   reservedQty: string
   availableQty: string
   requiredDate: string
+  createdAt?: string
   source: string
   status: string
   ownerName: string
@@ -635,6 +637,7 @@ interface PurchaseBatch {
   customerName: string
   supplierNames: string
   supplierCount: number
+  receivedDate: string
   requiredDate: string
   quoteStatus?: ExecutionQuoteStatus
   additionalContractNos: string
@@ -676,6 +679,7 @@ const requirementColumnDefaults=computed<TableColumnDefinition[]>(()=>[
  {key:'customer',label:t('requirements.customer'),minWidth:145,showOverflowTooltip:true},
  {key:'products',label:t('requirements.batchProducts'),minWidth:240},
  {key:'progress',label:t('requirements.quoteStatus.label'),minWidth:136},
+ {key:'receivedDate',label:t('requirements.executionReceivedDate'),width:116,align:'center'},
  {key:'requiredDate',label:t('requirements.earliestArrival'),width:138},
 ])
 const requirementColumns=useTableColumnOrder('purchase-requirement-list',requirementColumnDefaults)
@@ -696,6 +700,7 @@ const rows = ref<Requirement[]>([])
 const batchTotal = ref(0)
 const executionQuoteStatuses = ref<Partial<Record<string, ExecutionQuoteStatus>>>({})
 const quoteStatusFilter = ref<ExecutionQuoteStatus | 'ALL'>('ALL')
+const receivedDateFormat = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
 // 同一客户报价是一批采购业务；批次内仍保留产品行，便于按供应商拆分审批。
 const displayRows = computed(() => [...rows.value].sort((a, b) => {
   const batch = purchaseBatchKey(a).localeCompare(purchaseBatchKey(b))
@@ -713,12 +718,17 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
     const supplierNames = [...new Set(lines.map((line) => line.supplierName).filter(Boolean))]
     const productGroups = groupBatchProducts(lines)
     const label = lines[0]?.contractNo || lines[0]?.quotationNo || t('requirements.manualBatch')
+    const receivedAt = lines.reduce((first, line) => {
+      const createdAt = Date.parse(line.createdAt ?? '')
+      return Number.isFinite(createdAt) ? Math.min(first, createdAt) : first
+    }, Infinity)
     return {
       key,
       label,
       customerName: lines[0]?.customerName?.trim() ?? '',
       supplierNames: supplierNames.join('、'),
       supplierCount: supplierNames.length,
+      receivedDate: Number.isFinite(receivedAt) ? receivedDateFormat.format(receivedAt) : '',
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
       quoteStatus: executionQuoteStatuses.value[key],
       additionalContractNos: [...new Set(lines.map(line => line.contractNo).filter(no => no && no !== label))].join('、'),
