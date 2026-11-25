@@ -29,6 +29,18 @@ describe('procurement quote selection', () => {
     })
   })
 
+  it('keeps remarks with their specification IDs across draft and submission', () => {
+    const first = { ...row('1', '37.50'), remark: 'Moisture-proof packaging' }
+    const second = { ...row('2', ''), remark: 'Separate pallet' }
+    expect(procurementPricesForSave([second, first], new Set(['1']), true)).toEqual({
+      prices: [first],
+      draftPrices: [second],
+    })
+    const completedSecond = { ...second, price: '42' }
+    expect(procurementPricesForSave([completedSecond, first], new Set(['1', '2']), false).prices)
+      .toEqual([first, completedSecond])
+  })
+
   it('pastes price and delivery values without including any unchecked row in submission', () => {
     const products = ids.map(id => ({ ...blankProduct(), id }))
     const rows = pastePrices('12\t2027-01-01\n15\t2027-01-02', products, [], '1')

@@ -364,7 +364,7 @@
     <el-dialog :model-value="!!presalePreview" title="售前参考" width="min(850px,94vw)" destroy-on-close @close="presalePreview=null">
       <template v-if="presalePreview">
         <ComparisonSpecification :product-name="presalePreview.productName" :text="requirementProductDescription(presalePreview)" hide-name />
-        <PresaleReference v-if="presalePreview.presaleReferenceJson" :json="presalePreview.presaleReferenceJson" />
+        <PresaleReference v-if="presalePreview.presaleReferenceJson" :json="presalePreview.presaleReferenceJson" show-specification-remarks />
         <div v-else class="presale-reference">
           <span>售前供应商</span><strong>{{ presalePreview.supplierName || '无售前供应商' }}</strong>
           <span>{{ displaySourcePrice(presalePreview) }}</span><span>{{ presalePreview.sourcePaymentTerms || '未填写付款条件' }}</span>
