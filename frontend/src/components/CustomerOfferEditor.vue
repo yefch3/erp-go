@@ -41,6 +41,12 @@
            <strong>{{supplierChoiceName(candidate)}}</strong>
            <el-button link type="primary" size="small" @click.stop="preview=candidate.quote">{{t('inquiryWorkspace.offer.view')}}</el-button>
           </div>
+          <small v-if="candidate.price.remark?.trim()" class="supplier-choice-remark" :title="candidate.price.remark.trim()">
+           <strong>{{t('inquiryWorkspace.quotes.specificationRemark')}}</strong> {{candidate.price.remark.trim()}}
+          </small>
+          <small v-if="candidate.quote.body.remark?.trim()" class="supplier-choice-remark" :title="candidate.quote.body.remark.trim()">
+           <strong>{{t('inquiryWorkspace.quotes.overallRemark')}}</strong> {{candidate.quote.body.remark.trim()}}
+          </small>
           <small>{{t('inquiryWorkspace.offer.deliveryDate')}}: {{candidate.price.delivery||candidate.quote.body.delivery||'—'}}<template v-if="candidate.category==='REPROCESSING_CNY'"> · {{t('inquiryWorkspace.offer.exFactoryUnitPrice')}}: {{formatCfrUnitPrice(candidate.price.factoryPrice)||'—'}}</template></small>
          </el-option>
         </el-select>
@@ -144,18 +150,18 @@
      <el-descriptions-item :label="t('inquiryWorkspace.offer.paymentMethod')">{{preview.body.paymentTerms||'—'}}</el-descriptions-item>
      <el-descriptions-item :label="t('inquiryWorkspace.offer.validUntil')">{{preview.body.validUntil||'—'}}</el-descriptions-item>
      <el-descriptions-item :label="t('inquiryWorkspace.offer.submittedBy')">{{preview.author||'—'}}</el-descriptions-item>
-     <el-descriptions-item :label="t('inquiryWorkspace.offer.remark')" :span="3">{{preview.body.remark||'—'}}</el-descriptions-item>
+     <el-descriptions-item :label="t(preview.kind==='PROCUREMENT'?'inquiryWorkspace.quotes.overallRemark':'inquiryWorkspace.offer.remark')" :span="3"><span class="supplier-original-remark">{{preview.body.remark||'—'}}</span></el-descriptions-item>
     </el-descriptions>
     <el-table v-if="preview.kind==='PROCUREMENT'" :data="preview.body.prices" max-height="420">
-     <el-table-column :label="t('inquiryWorkspace.offer.product')"><template #default="{row}">{{productName(row.productId)}}</template></el-table-column>
+     <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="280"><template #default="{row}"><ComparisonSpecification :product-name="productName(row.productId)" :text="sourceProductDescription(row.productId)" hide-name/></template></el-table-column>
      <el-table-column :label="t('inquiryWorkspace.offer.originalPrice')"><template #default="{row}">{{preview.body.currency}} {{priceOf(row)}}</template></el-table-column>
      <el-table-column prop="delivery" :label="t('inquiryWorkspace.offer.delivery')"/>
-     <el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/>
+     <el-table-column :label="t('inquiryWorkspace.quotes.specificationRemark')" min-width="160"><template #default="{row}"><span class="supplier-original-remark">{{row.remark}}</span></template></el-table-column>
     </el-table>
     <template v-else>
      <div class="detail-section-title">{{t('inquiryWorkspace.quotes.productOceanFreight')}}</div>
      <el-table :data="preview.body.freightRates||[]" max-height="300">
-      <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="280"><template #default="{row}"><ComparisonSpecification :product-name="productName(row.productId)" :text="logisticsProductDescription(row.productId)" hide-name/></template></el-table-column>
+      <el-table-column :label="t('inquiryWorkspace.offer.productDescription')" min-width="280"><template #default="{row}"><ComparisonSpecification :product-name="productName(row.productId)" :text="sourceProductDescription(row.productId)" hide-name/></template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.originalPrice')" min-width="180"><template #default="{row}">{{row.currency}} {{formatCfrUnitPrice(row.price)||'—'}} / {{row.unit}}</template></el-table-column>
       <el-table-column :label="t('inquiryWorkspace.offer.usdUnitPrice')" min-width="180"><template #default="{row}">USD {{formatCfrUnitPrice(row.usdPrice||row.price)||'—'}} / {{row.unit}}</template></el-table-column>
       <el-table-column prop="remark" :label="t('inquiryWorkspace.offer.remark')"/>
@@ -233,7 +239,7 @@ function selectProductFreight(group:ProductCandidateGroup,id?:string){
  if(!applyProductFreight(products,selections.value,quote))return
  productFreightChoices.value[freightProductKey(products[0])]={id:quote?.id||'',version:quote?.version}
 }
-function logisticsProductDescription(id:string){const product=offer.value?.source.body.products.find(p=>p.id===id);return product?comparisonSpecificationSentence(product):productName(id)}
+function sourceProductDescription(id:string){const product=offer.value?.source.body.products.find(p=>p.id===id);return product?comparisonSpecificationSentence(product):productName(id)}
 function comparisonSpecificationSentence(product:Product){
  const keys:Record<string,string>={specification:'specification',delivery:'deliveryDate',weight:'productWeight',volume:'productVolume',packaging:'productPackaging',package_quantity:'productPackageQuantity',remarks:'remark'}
  const fields=comparisonProductFields(product,offer.value?.source.body.template?.fields||[],key=>keys[key]?t('inquiryWorkspace.offer.'+keys[key]):key)
@@ -504,11 +510,14 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .logistics-reference-chevron{width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);margin-right:3px;transition:transform .15s}
 .logistics-panel[open] .logistics-reference-chevron{transform:rotate(225deg)}
 .supplier-reselect{display:block;font-size:11px;margin-top:4px}.single-cfr{font-size:12px;color:#176d82;font-variant-numeric:tabular-nums;white-space:nowrap}
+.supplier-original-remark{white-space:pre-wrap;overflow-wrap:anywhere}
 .supplier-choice-option{height:auto;min-height:52px;max-width:640px;padding-top:7px;padding-bottom:7px;line-height:1.5;white-space:normal}
 .supplier-choice-line{display:flex;align-items:center;gap:12px;padding-right:18px}
 .supplier-choice-line>strong{flex:1;min-width:0;overflow-wrap:anywhere}
 .supplier-choice-line>span{color:#176d82;white-space:nowrap;font-variant-numeric:tabular-nums}
 .supplier-choice-option>small{display:block;color:#70828d;font-size:11px;margin-top:3px}
+.supplier-choice-option>.supplier-choice-remark{overflow:hidden;color:#496575;text-overflow:ellipsis;white-space:nowrap}
+.supplier-choice-remark strong{margin-right:4px;font-weight:600}
 .specification-comparison-table :deep(td.el-table__cell){vertical-align:middle;padding:9px 0}
 .specification-comparison-table :deep(.cell){padding:0 9px}
 .specification-comparison-table :deep(td.el-table__cell[rowspan]){border-bottom:1px solid #dce6ef}
