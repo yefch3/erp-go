@@ -3,10 +3,13 @@ package grpcout
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"time"
 
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/blobstore"
+	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
 
 // Files adapts blobstore to the app's Files port, same shape as product's.
@@ -54,4 +57,18 @@ func (f *Files) Read(ctx context.Context, key string) ([]byte, error) {
 	}
 	defer r.Close()
 	return io.ReadAll(r)
+}
+
+func (f *Files) OpenQualityObject(ctx context.Context, key string) (io.ReadCloser, error) {
+	size, _, err := f.store.Stat(ctx, key)
+	if errors.Is(err, blobstore.ErrNotFound) {
+		return nil, apierr.NotFound("QUALITY_FILE_OBJECT_MISSING", "存储中找不到这份附件，请联系上传人核对")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if size > app.MaxQualityFileBytes {
+		return nil, apierr.Invalid("QUALITY_FILE_TOO_LARGE", "附件超过 64 MB，无法读取")
+	}
+	return f.store.Get(ctx, key)
 }

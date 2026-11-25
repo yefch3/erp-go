@@ -710,6 +710,7 @@ func (s *Server) Router() http.Handler {
 		// D5 出厂前质检是采购交接给独立质检部门的业务任务，不走审批流。
 		r.With(s.perm("procurement:order:read")).Post("/api/purchase-orders/{id}/quality-inspections", s.applyQualityInspection)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/quality-inspections", s.getOrderQualityInspections)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/quality-inspections/{taskID}/files/{fileID}", s.readOrderQualityFile)
 		r.With(s.perm("procurement:order:read")).Get("/api/quality/procurement-todos", s.listQualityProcurementTodos)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/quality-inspections/handling", s.recordQualityProcurementHandling)
 
@@ -726,6 +727,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("quality:task:write")).Post("/api/quality/tasks/{id}/rounds", s.submitQualityRound)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files/presign", s.presignQualityFile)
 		r.With(s.perm("quality:file:upload")).Post("/api/quality/tasks/{id}/files", s.registerQualityFile)
+		r.With(s.perm("quality:task:read")).Get("/api/quality/tasks/{id}/files/{fileID}", s.readQualityTaskFile)
 		r.With(s.perm("quality:file:upload"), s.perm("quality:task:write")).Delete("/api/quality/tasks/{id}/files/{fileID}", s.deleteQualityFile)
 
 		// 供应商这边只剩「供应商对账」一个界面：一张采购单一行，员工手填

@@ -697,6 +697,7 @@ service PurchaseOrderService {
   rpc PresignQualityInspectionFile(PresignQualityInspectionFileRequest) returns (PresignQualityInspectionFileResponse);
   rpc RegisterQualityInspectionFile(RegisterQualityInspectionFileRequest) returns (RegisterQualityInspectionFileResponse);
   rpc DeleteQualityInspectionFile(DeleteQualityInspectionFileRequest) returns (DeleteQualityInspectionFileResponse);
+  rpc ReadQualityInspectionFile(ReadQualityInspectionFileRequest) returns (ReadQualityInspectionFileResponse);
   // Procurement-facing read-only result and exception handling. These calls do
   // not grant access to the Quality workspace.
   rpc GetOrderQualityInspections(GetOrderQualityInspectionsRequest) returns (GetOrderQualityInspectionsResponse);
@@ -3407,4 +3408,16 @@ message GetDailyPurchaseActivityRequest {
 }
 message GetDailyPurchaseActivityResponse {
   repeated erp.common.v1.DailyActivityRow rows = 1;
+}
+
+message ReadQualityInspectionFileRequest {
+  int64 id = 1;
+  int64 file_id = 2;
+  // When set, authorize the purchase-order view and require the task to belong to it.
+  int64 po_id = 3;
+}
+message ReadQualityInspectionFileResponse {
+  string file_name = 1;
+  string content_type = 2;
+  bytes content = 3;
 }

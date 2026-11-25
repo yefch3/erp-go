@@ -3,6 +3,14 @@ type Round = { id: string | number; roundNo: number }
 export type QualityFileCategory = 'PHOTO' | 'VIDEO' | 'REPORT' | 'THIRD_PARTY' | 'OTHER'
 export interface PendingQualityFile { file: File; category: QualityFileCategory; fileKey?: string }
 
+export function qualityAttachmentPath(taskId: string, fileId: string, orderId?: string): string {
+  const task = encodeURIComponent(taskId)
+  const file = encodeURIComponent(fileId)
+  return orderId
+    ? `/purchase-orders/${encodeURIComponent(orderId)}/quality-inspections/${task}/files/${file}`
+    : `/quality/tasks/${task}/files/${file}`
+}
+
 // Keep the category selected when each file was added, including files waiting for a retry.
 export function stageQualityFiles(
   queued: readonly PendingQualityFile[], incoming: readonly File[], category: QualityFileCategory,
