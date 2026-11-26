@@ -137,7 +137,9 @@ SELECT
     required_qty::text AS required_qty,
     ordered_qty::text  AS ordered_qty,
     draft.reserved_qty::text AS reserved_qty,
-    greatest(contract_requirement_open(tenant_id,id) - draft.reserved_qty, 0)::text AS available_qty,
+    greatest(demand.open_qty - draft.reserved_qty, 0)::text AS available_qty,
+    (CASE WHEN demand.open_qty > 0 AND draft.draft_qty >= demand.open_qty
+      THEN draft.draft_qty ELSE 0 END)::text AS blocking_draft_qty,
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
@@ -151,8 +153,10 @@ SELECT
     source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until, source_sales_remark, contract_item_remark, presale_reference_json,
     count(*) OVER () AS total
 FROM purchase_requirements
+CROSS JOIN LATERAL (SELECT contract_requirement_open(tenant_id,id) AS open_qty) demand
 LEFT JOIN LATERAL (
-    SELECT coalesce(sum(i.qty), 0) AS reserved_qty
+    SELECT coalesce(sum(i.qty), 0) AS reserved_qty,
+           coalesce(sum(i.qty) FILTER (WHERE o.status = 'DRAFT'), 0) AS draft_qty
     FROM purchase_order_items i
     JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
     WHERE i.tenant_id = purchase_requirements.tenant_id
