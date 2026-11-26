@@ -119,7 +119,11 @@
      <div class="negotiation-scroll">
       <table class="negotiation-grid">
        <thead><tr>
-        <th>{{t('inquiryWorkspace.offer.customerSelectedPlan')}}</th>
+        <th scope="col">
+          <el-checkbox class="customer-plan-all" :model-value="group.allSelected" :indeterminate="group.partiallySelected"
+            :disabled="!editable" :aria-label="t('inquiryWorkspace.offer.selectAllCustomerPlans',{group:group.label})"
+            @change="chooseAllAccepted(group.rows,!!$event)">{{t('inquiryWorkspace.offer.customerSelectedPlan')}}</el-checkbox>
+        </th>
         <th>{{t('inquiryWorkspace.offer.productDescription')}}</th>
         <th>{{t('inquiryWorkspace.offer.qtyUnit')}}</th>
         <th>{{t('inquiryWorkspace.offer.selectedSupplier')}}</th>
@@ -127,7 +131,7 @@
         <th>{{t('inquiryWorkspace.offer.customerQuotePrice')}}</th>
        </tr></thead>
        <tbody><tr v-for="row in group.rows" :key="selectionKey({productId:row.product.id,category:row.category,quoteId:row.quote.id})">
-        <td :data-label="t('inquiryWorkspace.offer.customerSelectedPlan')"><el-checkbox :aria-label="t('inquiryWorkspace.offer.customerSelectedPlan')+' · '+row.product.product" :model-value="negotiationFor(row).status==='AGREED'" :disabled="!editable" @change="chooseAccepted(row,!!$event)">{{t(negotiationFor(row).status==='AGREED'?'inquiryWorkspace.offer.planSelected':'inquiryWorkspace.offer.planPending')}}</el-checkbox></td>
+        <td :data-label="t('inquiryWorkspace.offer.customerSelectedPlan')"><el-checkbox :aria-label="t('inquiryWorkspace.offer.customerSelectedPlan')+' · '+row.product.product" :model-value="customerPlanAccepted(row)" :disabled="!editable" @change="chooseAccepted(row,!!$event)">{{t(customerPlanAccepted(row)?'inquiryWorkspace.offer.planSelected':'inquiryWorkspace.offer.planPending')}}</el-checkbox></td>
         <td :data-label="t('inquiryWorkspace.offer.productDescription')"><ComparisonSpecification :product-name="row.product.product" :text="comparisonSpecificationSentence(row.product)" hide-name/></td>
         <td :data-label="t('inquiryWorkspace.offer.qtyUnit')">{{formatQuantity(row.product.quantity)}} {{row.product.unit}}</td>
         <td :data-label="t('inquiryWorkspace.offer.selectedSupplier')">
@@ -287,13 +291,22 @@ function selectedCount(category:string){return selections.value.filter(s=>s.cate
 function selectedProductCount(category:string){return new Set(rowsFor(category).filter(isSelected).map(row=>freightProductKey(row.product))).size}
 function snapshotRow(s:OfferSelectionSnapshot):Candidate{return{product:s.product,quote:s.quote,category:s.category,price:s.quote.body.prices?.find(p=>p.productId===s.productId)||{productId:s.productId,price:'',delivery:'',remark:''}}}
 const customerRows=computed(()=>offer.value?.body.customerSelections?.map(snapshotRow)||[])
+const acceptedCustomerPlans=computed(()=>new Set(offer.value?.body.negotiations?.filter(n=>n.status==='AGREED').map(selectionKey)))
+function customerPlanAccepted(row:Candidate){
+ return acceptedCustomerPlans.value.has(selectionKey({productId:row.product.id,category:row.category,quoteId:row.quote.id}))
+}
 const customerSelectionCounts=computed(()=>{
  const rows=customerRows.value
- const agreed=new Set(offer.value?.body.negotiations?.filter(n=>n.status==='AGREED').map(selectionKey))
- const selected=rows.filter(r=>agreed.has(selectionKey({productId:r.product.id,category:r.category,quoteId:r.quote.id})))
+ const selected=rows.filter(customerPlanAccepted)
  return {count:new Set(selected.map(r=>r.product.id)).size,total:new Set(rows.map(r=>r.product.id)).size}
 })
-const customerGroups=computed(()=>groups.value.map(g=>({...g,rows:customerRows.value.filter(r=>r.category===g.value)})).filter(g=>g.rows.length))
+const customerGroups=computed(()=>groups.value.flatMap(group=>{
+ const rows=customerRows.value.filter(row=>row.category===group.value)
+ if (!rows.length) return []
+ const total=new Set(rows.map(row=>row.product.id)).size
+ const selected=new Set(rows.filter(customerPlanAccepted).map(row=>row.product.id)).size
+ return [{...group,rows,allSelected:selected===total,partiallySelected:selected>0&&selected<total}]
+}))
 function customerSupplierCount(rows:Candidate[]){return new Set(rows.map(row=>row.quote.id)).size}
 const hasCustomer=computed(()=>Number(offer.value?.body.customerId||0)>0)
 const canGenerateDocument=computed(()=>hasCustomer.value&&customerRows.value.length>0&&customerRows.value.every(row=>{const value=effectiveCustomerPrice(row);return value!==''&&Number.isFinite(Number(value))&&Number(value)>=0}))
@@ -329,6 +342,20 @@ function chooseAccepted(row:Candidate,yes:boolean){
  if(!offer.value)return
  if(yes)for(const n of offer.value.body.negotiations||[])if(n.productId===row.product.id&&n.status==='AGREED')n.status='QUOTED'
  negotiationFor(row).status=yes?'AGREED':'QUOTED'
+}
+function chooseAllAccepted(rows:Candidate[],yes:boolean){
+ if(!editable.value)return
+ if(!yes){
+  rows.filter(customerPlanAccepted).forEach(row=>chooseAccepted(row,false))
+  return
+ }
+ const choices=new Map<string,Candidate>()
+ for(const row of rows){
+  if(!choices.has(row.product.id)||customerPlanAccepted(row))choices.set(row.product.id,row)
+ }
+ for(const row of choices.values()){
+  if(!customerPlanAccepted(row))chooseAccepted(row,true)
+ }
 }
 async function confirmCustomerContract(){
  if(!offer.value||busy.value)return
@@ -575,6 +602,7 @@ watch(()=>props.sourceVersion,()=>{void refreshSources()})
 .negotiation-grid th,.negotiation-grid td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .negotiation-grid th{background:#f4f8fa;color:#365c6e}.negotiation-grid th:first-child{width:9em}.negotiation-grid th:nth-child(3){width:9%}.negotiation-grid th:nth-child(4){width:15%}.negotiation-grid th:nth-child(5){width:14%}.negotiation-grid th:last-child{width:17%}
 .negotiation-grid :deep(.el-checkbox__label){padding-left:5px;font-size:12px}
+.customer-plan-all :deep(.el-checkbox__label){color:inherit;font-weight:600}
 .negotiation-grid :deep(.el-input-group__prepend){padding:0 6px}
 .customer-factory-remark-trigger{display:flex;height:auto;margin-top:4px;padding:0;line-height:1.4}
 .customer-factory-remark-details{max-height:50vh;overflow:auto;margin:0;line-height:1.5}
