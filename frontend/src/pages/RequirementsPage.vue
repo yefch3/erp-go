@@ -156,26 +156,39 @@
                     :disabled="!pendingSelections.length || dispatchingSelections"
                     @click="selectionReviewOpen = true"
                   >确认选定</el-button>
+                  <small v-if="factoryQuoteRows.some(row => row.selectableCount > 1 && !row.selectable)">
+                    多家报价的规格请先在下拉框里选择工厂
+                  </small>
                 </div>
                 <el-table
                   v-if="tab === 'quotes'"
                   class="execution-quote-grid"
                   v-loading="loading"
                   :data="factoryQuoteRows"
-                  :row-class-name="factoryQuoteRowClass"
-                  :span-method="factoryQuoteCellSpan"
-                  row-key="key"
+                  row-key="line.id"
                   size="small"
                   border
                 >
-                  <el-table-column v-if="canAssign" label="选厂" width="62" fixed align="center">
-                    <template #default="{row}">
-                      <span v-if="row.quote" :title="hasSelectableQuantity(row.line) ? undefined : '该规格没有可派发的剩余数量'">
+                  <el-table-column v-if="canAssign" label="选厂" width="80" fixed align="center">
+                    <template #header>
+                      <span class="execution-select-all">
                         <el-checkbox
-                          :model-value="isDispatched(row.quote.id) || quoteSelections[row.line.id]?.quote.id === row.quote.id"
-                          :disabled="!canSelectQuote(row.line, row.quote)"
-                          :aria-label="`选择 ${row.quote.supplierName} · ${row.line.productName} ${row.line.spec} · ${row.quote.createdByName || '采购员'}`"
-                          @change="toggleQuoteSelection(row.line, row.quote, $event === true)"
+                          :model-value="bulkQuoteRows.length > 0 && selectedBulkQuoteCount === bulkQuoteRows.length"
+                          :indeterminate="selectedBulkQuoteCount > 0 && selectedBulkQuoteCount < bulkQuoteRows.length"
+                          :disabled="loading || !bulkQuoteRows.length"
+                          aria-label="全选可选工厂报价"
+                          @change="toggleAllFactoryQuotes($event === true)"
+                        />
+                        <span>选厂</span>
+                      </span>
+                    </template>
+                    <template #default="{row}">
+                      <span v-if="row.quotes.length" :title="!row.quote ? '请先选择工厂报价' : !hasSelectableQuantity(row.line) ? '该规格没有可派发的剩余数量' : undefined">
+                        <el-checkbox
+                          :model-value="row.quote ? isDispatched(row.quote.id) || quoteSelections[row.line.id]?.quote.id === row.quote.id : false"
+                          :disabled="loading || !row.selectable"
+                          :aria-label="`选厂 ${row.line.productName} ${row.line.spec}`"
+                          @change="row.quote && toggleQuoteSelection(row.line, row.quote, $event === true)"
                         />
                       </span>
                     </template>
@@ -189,25 +202,42 @@
                   <el-table-column prop="line.requiredQty" label="采购需求量" width="105" align="right">
                     <template #default="{row}">{{ formatQtyTwo(row.line.requiredQty) }} {{ row.line.uomCode }}</template>
                   </el-table-column>
-                  <el-table-column label="报价工厂" min-width="122">
+                  <el-table-column label="工厂报价" min-width="360">
                     <template #default="{row}">
-                      <template v-if="row.quote">
-                        {{ row.quote.supplierName }}<small v-if="row.quote.createdByName" class="assignment-author">{{ row.quote.createdByName }}</small>
-                        <el-tag v-if="row.quote.selected" size="small" type="success" effect="light" class="execution-selected-tag">已选定</el-tag>
+                      <template v-if="row.quotes.length">
+                        <el-select
+                          class="execution-factory-select"
+                          popper-class="execution-factory-popper"
+                          fit-input-width
+                          :model-value="row.quote?.id"
+                          :placeholder="`请选择工厂报价（${row.quotes.length} 条）`"
+                          :aria-label="`工厂报价 ${row.line.productName} ${row.line.spec}`"
+                          :disabled="loading || dispatchingSelections"
+                          @change="chooseFactoryQuote(row, $event)"
+                        >
+                          <template #label="{label}">
+                            <span v-if="row.quote" :title="label" class="execution-factory-option">
+                              <strong>{{ factoryQuotePrice(row.line, row.quote) }}</strong>
+                              <span>{{ row.quote.supplierName }}</span>
+                              <time>{{ row.quote.expectedDate || '交期未填' }}</time>
+                              <small v-if="row.quote.createdByName" class="execution-factory-author">录入人：{{ row.quote.createdByName }}</small>
+                            </span>
+                          </template>
+                          <el-option
+                            v-for="quote in row.quotes" :key="quote.id" :value="quote.id"
+                            :label="`${factoryQuotePrice(row.line, quote)} · ${quote.supplierName} · ${quote.expectedDate || '交期未填'}${quote.createdByName ? ` · 录入人：${quote.createdByName}` : ''}`"
+                          >
+                            <span class="execution-factory-option">
+                              <strong>{{ factoryQuotePrice(row.line, quote) }}</strong>
+                              <span :title="quote.supplierName">{{ quote.supplierName }}</span>
+                              <time>{{ quote.expectedDate || '交期未填' }}</time>
+                              <small v-if="quote.createdByName" :title="quote.createdByName" class="execution-factory-author">录入人：{{ quote.createdByName }}</small>
+                            </span>
+                          </el-option>
+                        </el-select>
                       </template>
                       <el-tag v-else size="small" type="info" effect="plain">{{ canAssign ? '待报价' : '我未报价' }}</el-tag>
                     </template>
-                  </el-table-column>
-                  <el-table-column label="报价单价" width="139" align="right">
-                    <template #default="{row}">
-                      <span v-if="row.quote" class="execution-quote-price">
-                        {{ row.quote.currency }} {{ formatMoney(row.quote.unitPrice) }}<small v-if="row.line.uomCode"> / {{ row.line.uomCode }}</small>
-                      </span>
-                      <span v-else>—</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="预计交货日" width="115" align="center">
-                    <template #default="{row}">{{ row.quote?.expectedDate || '—' }}</template>
                   </el-table-column>
                   <el-table-column label="操作" width="104" align="center">
                     <template #default="{row}">
@@ -490,7 +520,6 @@
         <el-descriptions :column="2" border class="quote-preview-details">
           <el-descriptions-item :label="t('inquiryWorkspace.list.productDetails')" :span="2"><ComparisonSpecification :product-name="quotePreview.line.productName" :text="requirementProductDescription(quotePreview.line)" hide-name/></el-descriptions-item>
           <el-descriptions-item label="采购需求量">{{ formatQtyTwo(quotePreview.line.requiredQty) }} {{ quotePreview.line.uomCode }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ !quotePreview.quote ? '待报价' : quotePreview.quote.selected ? '已选定' : '已报价' }}</el-descriptions-item>
           <el-descriptions-item label="报价工厂">{{ quotePreview.quote?.supplierName || '待录入报价' }}</el-descriptions-item>
           <el-descriptions-item label="报价单价" :span="2">{{ quotePreview.quote ? `${quotePreview.quote.currency} ${formatMoney(quotePreview.quote.unitPrice)} / ${quotePreview.line.uomCode}` : '—' }}</el-descriptions-item>
           <el-descriptions-item label="交期">{{ quotePreview.quote?.expectedDate || '—' }}</el-descriptions-item>
@@ -983,29 +1012,45 @@ const savingQuote = ref(false)
 const quoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', unitPrice:'', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
 
 interface FactoryQuoteRow {
-  key: string
   line: Requirement
+  quotes: ExecutionQuote[]
   quote: ExecutionQuote | null
-  specificationRows: number
+  selectable: boolean
+  selectableCount: number
 }
-// List each specification's quotes together, including specifications awaiting a quote.
-const factoryQuoteRows = computed(() => (activeBatch.value?.lines ?? []).flatMap<FactoryQuoteRow>(line => {
+const chosenFactoryQuotes = ref<Record<string, string>>({})
+const factoryQuoteRows = computed(() => (activeBatch.value?.lines ?? []).map<FactoryQuoteRow>(line => {
   const quotes = quotesFor(line.id)
-  if (!quotes.length) return [{key:`${line.id}:empty`,line,quote:null,specificationRows:1}]
-  return quotes.map((quote, index) => ({
-    key: `${line.id}:${quote.id}`,
-    line,
-    quote,
-    specificationRows: index === 0 ? quotes.length : 0,
-  }))
+  const selectableQuotes = quotes.filter(quote => canSelectQuote(line, quote))
+  const quote = quotes.find(item => item.id === chosenFactoryQuotes.value[line.id])
+    ?? (selectableQuotes.length === 1 ? selectableQuotes[0] : undefined)
+    ?? quotes.find(item => isDispatched(item.id))
+    ?? (selectableQuotes.length ? null : quotes[0] ?? null)
+  return {line, quotes, quote, selectable: quote !== null && selectableQuotes.includes(quote), selectableCount: selectableQuotes.length}
 }))
+const bulkQuoteRows = computed(() => factoryQuoteRows.value.filter(row => row.selectable))
+const selectedBulkQuoteCount = computed(() => bulkQuoteRows.value.filter(row =>
+  quoteSelections.value[row.line.id]?.quote.id === row.quote?.id,
+).length)
 
-function factoryQuoteRowClass({ row }: { row: FactoryQuoteRow }) {
-  return row.specificationRows > 0 ? 'execution-spec-start' : ''
+function factoryQuotePrice(line: Requirement, quote: ExecutionQuote) {
+  return `${quote.currency} ${formatMoney(quote.unitPrice)}${line.uomCode ? ` / ${line.uomCode}` : ''}`
 }
-function factoryQuoteCellSpan({ row, column }: { row: FactoryQuoteRow; column: { property?: string } }) {
-  if (column.property !== 'line.productName' && column.property !== 'line.requiredQty') return
-  return row.specificationRows > 0 ? [row.specificationRows, 1] : [0, 0]
+
+function chooseFactoryQuote(row: FactoryQuoteRow, quoteId: string) {
+  const quote = row.quotes.find(item => item.id === quoteId)
+  if (!quote) return
+  chosenFactoryQuotes.value[row.line.id] = quote.id
+  const selection = quoteSelections.value[row.line.id]
+  if (!selection || selection.quote.id === quote.id) return
+  delete quoteSelections.value[row.line.id]
+  toggleQuoteSelection(row.line, quote, true)
+}
+
+function toggleAllFactoryQuotes(checked: boolean) {
+  for (const row of bulkQuoteRows.value) {
+    if (row.quote) toggleQuoteSelection(row.line, row.quote, checked)
+  }
 }
 
 const quotedLineCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => quotesFor(line.id).length > 0).length)
@@ -1377,6 +1422,8 @@ async function saveQuote() {
     })
     const list = quotesFor(quoteLine.value.id).filter((item) => item.id !== result.quote.id)
     executionQuotes[quoteLine.value.id] = [result.quote, ...list]
+    const selection = quoteSelections.value[quoteLine.value.id]
+    if (selection?.quote.id === result.quote.id) selection.quote = result.quote
     quoteOpen.value = false
     ElMessage.success('实单工厂报价已保存')
   } finally { savingQuote.value = false }
@@ -1441,7 +1488,9 @@ async function loadAssignments(batch: PurchaseBatch) {
 function toggleQuoteSelection(line: Requirement, quote: ExecutionQuote, checked: boolean) {
   if (!canSelectQuote(line, quote)) return
   if (checked) {
-    quoteSelections.value[line.id] = {line, quote, instructions: '', error: ''}
+    if (quoteSelections.value[line.id]?.quote.id !== quote.id) {
+      quoteSelections.value[line.id] = {line, quote, instructions: '', error: ''}
+    }
   } else if (quoteSelections.value[line.id]?.quote.id === quote.id) {
     delete quoteSelections.value[line.id]
   }
@@ -1578,6 +1627,8 @@ async function removeQuote(line: Requirement, quote: ExecutionQuote) {
   await ElMessageBox.confirm(`删除「${quote.supplierName}」的这条报价？`, '删除报价', { type:'warning' })
   await del(`/requirements/${line.id}/execution-quotes/${quote.id}`)
   executionQuotes[line.id] = quotesFor(line.id).filter((item) => item.id !== quote.id)
+  if (quoteSelections.value[line.id]?.quote.id === quote.id) delete quoteSelections.value[line.id]
+  if (chosenFactoryQuotes.value[line.id] === quote.id) delete chosenFactoryQuotes.value[line.id]
   ElMessage.success('报价已删除')
 }
 
@@ -1784,6 +1835,7 @@ watch(detailBatchKey, () => {
   negotiationEdits.value = {}
   activeNegotiationId.value = ''
   quoteSelections.value = {}
+  chosenFactoryQuotes.value = {}
   selectionReviewOpen.value = false
   void load()
 })
@@ -2147,8 +2199,15 @@ onMounted(load)
 .execution-quote-grid :deep(th.el-table__cell) { padding: 7px 0; color: #294b60; font-size: 12px; }
 .execution-quote-grid :deep(td.el-table__cell) { padding: 5px 0; font-size: 13px; vertical-align: middle; }
 .execution-quote-grid :deep(.cell) { padding: 0 8px; line-height: 19px; word-break: normal; overflow-wrap: anywhere; }
-.execution-quote-grid :deep(.execution-spec-start:not(:first-child) td) { border-top: 1px solid #bfd5e1; }
- .execution-selected-tag { margin-left: 4px; }
+.execution-select-all { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.execution-factory-select { width: 100%; }
+.execution-factory-select :deep(.el-select__placeholder) { position: static; transform: none; }
+.execution-factory-option { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; white-space: normal; line-height: 19px; }
+.execution-factory-option > * { max-width: 100%; overflow-wrap: anywhere; }
+.execution-factory-option strong { color: #18516b; font-variant-numeric: tabular-nums; }
+.execution-factory-option time { color: #607787; font-size: 12px; }
+.execution-factory-author { color: #607787; font-size: 11px; }
+:global(.execution-factory-popper .el-select-dropdown__item) { height: auto; min-height: 34px; padding-block: 5px; white-space: normal; line-height: 19px; }
 .assignment-author { display:block;color:#607787; }
 .assignment-workspace { padding-top:4px; }
 .negotiation-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -2176,8 +2235,6 @@ onMounted(load)
 .assignment-fields :deep(.el-form-item) { margin-bottom: 0; }
 @media (max-width: 650px) { .assignment-fields { grid-template-columns: 1fr; } }
 .assignment-file-row { display:flex;justify-content:space-between;gap:12px; }
-.execution-quote-price { font-variant-numeric: tabular-nums; }
-.execution-quote-price small { color: #607787; white-space: nowrap; }
 .execution-menu-arrow { margin-left: 3px; }
 .presale-reference-link { display: flex; min-height: 0; width: max-content; padding: 0; color: #557b90; font-size: 11px; }
 .execution-quote-grid :deep(.el-checkbox) { height:22px; }
