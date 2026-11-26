@@ -32,7 +32,7 @@
             <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
             <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked">
               <span class="batch-product-summary__main"><span class="batch-product-summary__text" :title="row.productGroups[0]?.name">{{ row.productGroups[0]?.name || '—' }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span>
-              <small>{{ t('requirements.batchDemand', { products: row.productGroups.length, specs: row.lines.length, quantity: row.availableQuantity }) }}</small>
+              <small>{{ t('requirements.batchDemand', { products: row.productGroups.length, specs: row.lines.length, quantity: row.requiredQuantity }) }}</small>
             </div>
             <template v-else-if="column.key==='progress'">
               <el-tag v-if="row.quoteStatus" :type="quoteStatusTone(row.quoteStatus)" effect="light" size="small">{{ t(`requirements.quoteStatus.${row.quoteStatus}`) }}</el-tag>
@@ -73,7 +73,7 @@
         <dl class="inquiry-detail-summary">
           <div><dt>客户</dt><dd>{{ activeBatch.customerName || '—' }}</dd></div>
           <div><dt>采购内容</dt><dd>{{ activeBatch.productGroups.length }} 种产品 · {{ activeBatch.lines.length }} 种规格</dd></div>
-          <div><dt>待采购量</dt><dd>{{ activeBatch.availableQuantity }}</dd></div>
+          <div><dt>采购需求量</dt><dd>{{ activeBatch.requiredQuantity }}</dd></div>
           <div><dt>最早要求到货</dt><dd>{{ activeBatch.requiredDate || '—' }}</dd></div>
           <div><dt>报价进度</dt><dd title="按当前账号可见的工厂报价统计">{{ loading ? '—' : `${quotedLineCount} / ${activeBatch.lines.length} 个规格` }}</dd></div>
           <div><dt>待处理任务</dt><dd>{{ loading ? '—' : `${pendingTaskCount} 项` }}</dd></div>
@@ -119,8 +119,8 @@
                   <ComparisonSpecification :product-name="row.productName" :text="requirementProductDescription(row)" hide-name />
                 </template>
               </el-table-column>
-              <el-table-column label="待采购量" width="125" align="right">
-                <template #default="{row}">{{ formatQtyTwo(row.availableQty) }} {{ row.uomCode }}</template>
+              <el-table-column label="采购需求量" width="125" align="right">
+                <template #default="{row}">{{ formatQtyTwo(row.requiredQty) }} {{ row.uomCode }}</template>
               </el-table-column>
               <el-table-column label="报价单价" min-width="180">
                 <template #default="{row}">
@@ -139,7 +139,7 @@
 
         <div v-else class="inquiry-detail-tabs">
           <div v-if="activeInquiryTab === 'quotes'" class="execution-quote-actions">
-            <el-button :disabled="loading || !activeBatch.lines.some(line => Number(line.availableQty) > 0)" @click="openExecutionRFQExport">导出 Excel</el-button>
+            <el-button :disabled="loading || !activeBatch.lines.some(line => Number(line.requiredQty) > 0)" @click="openExecutionRFQExport">导出 Excel</el-button>
             <el-button v-if="canOrder" type="primary" @click="openBatchQuoteEditor">添加工厂报价</el-button>
           </div>
           <el-tabs v-model="activeInquiryTab" class="inquiry-tabs" :class="{ 'has-quote-action': activeInquiryTab === 'quotes' }" @tab-change="onInquiryTabChange">
@@ -186,8 +186,8 @@
                       <el-button v-if="row.line.presaleReferenceJson || row.line.supplierName || Number(row.line.sourceUnitPrice) > 0" link size="small" class="presale-reference-link" @click="presalePreview=row.line">查看售前参考</el-button>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="line.availableQty" label="待采购量" width="105" align="right">
-                    <template #default="{row}">{{ formatQtyTwo(row.line.availableQty) }} {{ row.line.uomCode }}</template>
+                  <el-table-column prop="line.requiredQty" label="采购需求量" width="105" align="right">
+                    <template #default="{row}">{{ formatQtyTwo(row.line.requiredQty) }} {{ row.line.uomCode }}</template>
                   </el-table-column>
                   <el-table-column label="报价工厂" min-width="122">
                     <template #default="{row}">
@@ -431,8 +431,8 @@
       <template v-if="executionRFQExport">
         <div class="rfq-export-toolbar">
           <p class="rfq-export-hint">
-            <strong>本次导出 {{ executionRFQExport.rows.length }} 条待采购规格</strong>
-            <span v-if="executionRFQExport.omittedCount"> · 另有 {{ executionRFQExport.omittedCount }} 条待采购量为 0</span>
+            <strong>本次导出 {{ executionRFQExport.rows.length }} 条采购规格</strong>
+            <span v-if="executionRFQExport.omittedCount"> · 另有 {{ executionRFQExport.omittedCount }} 条采购需求量为 0</span>
           </p>
           <div v-if="executionRFQOptionalColumns.some(column => !executionRFQExport?.columns[column.key])" class="rfq-export-add-fields">
             <template v-for="column in executionRFQOptionalColumns" :key="column.key">
@@ -450,8 +450,8 @@
           <el-table-column v-if="executionRFQExport.columns.specification" label="规格" min-width="235">
             <template #default="{row}"><el-input v-model="row.line.specification" aria-label="规格" placeholder="—" type="textarea" resize="none" :autosize="{minRows:1,maxRows:6}"/></template>
           </el-table-column>
-          <el-table-column label="采购数量" width="108" align="right">
-            <template #default="{row}"><span class="rfq-export-qty">{{formatCompactDecimal(row.line.available_qty)}}</span></template>
+          <el-table-column label="采购需求量" width="108" align="right">
+            <template #default="{row}"><span class="rfq-export-qty">{{formatCompactDecimal(row.line.required_qty)}}</span></template>
           </el-table-column>
           <el-table-column v-if="executionRFQExport.hasUnit" label="单位" width="66">
             <template #default="{row}"><span class="rfq-export-unit">{{row.unit}}</span></template>
@@ -489,7 +489,7 @@
       <template v-if="quotePreview">
         <el-descriptions :column="2" border class="quote-preview-details">
           <el-descriptions-item :label="t('inquiryWorkspace.list.productDetails')" :span="2"><ComparisonSpecification :product-name="quotePreview.line.productName" :text="requirementProductDescription(quotePreview.line)" hide-name/></el-descriptions-item>
-          <el-descriptions-item label="数量">{{ formatQtyTwo(quotePreview.line.availableQty) }} {{ quotePreview.line.uomCode }}</el-descriptions-item>
+          <el-descriptions-item label="采购需求量">{{ formatQtyTwo(quotePreview.line.requiredQty) }} {{ quotePreview.line.uomCode }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ !quotePreview.quote ? '待报价' : quotePreview.quote.selected ? '已选定' : '已报价' }}</el-descriptions-item>
           <el-descriptions-item label="报价工厂">{{ quotePreview.quote?.supplierName || '待录入报价' }}</el-descriptions-item>
           <el-descriptions-item label="报价单价" :span="2">{{ quotePreview.quote ? `${quotePreview.quote.currency} ${formatMoney(quotePreview.quote.unitPrice)} / ${quotePreview.line.uomCode}` : '—' }}</el-descriptions-item>
@@ -754,7 +754,7 @@ interface PurchaseBatch {
   requiredDate: string
   quoteStatus?: ExecutionQuoteStatus
   additionalContractNos: string
-  availableQuantity: string
+  requiredQuantity: string
   statusLabels: string
   waitingRequote: boolean
   productGroups: PurchaseProductGroup[]
@@ -845,7 +845,7 @@ const purchaseBatches = computed<PurchaseBatch[]>(() => {
       requiredDate: [...lines.map((line) => line.requiredDate).filter(Boolean)].sort()[0] ?? '',
       quoteStatus: executionQuoteStatuses.value[key],
       additionalContractNos: [...new Set(lines.map(line => line.contractNo).filter(no => no && no !== label))].join('、'),
-      availableQuantity: requirementQuantitySummary(lines, ' + '),
+      requiredQuantity: requirementQuantitySummary(lines, ' + '),
       statusLabels: [...new Set(lines.map((line) => t(`requirements.statuses.${line.status}`)))].join('、'),
       waitingRequote: lines.some((line) => line.status === 'WAITING_REQUOTE'),
       productGroups,
@@ -880,10 +880,10 @@ function requirementQuantitySummary(lines: Requirement[], separator?: string): s
   const totals = new Map<string, number>()
   const unstructured: string[] = []
   for (const line of lines) {
-    const quantity = Number(line.availableQty)
+    const quantity = Number(line.requiredQty)
     const unit = line.uomCode.trim()
     if (Number.isFinite(quantity)) totals.set(unit, (totals.get(unit) || 0) + quantity)
-    else if (line.availableQty) unstructured.push(`${line.availableQty}${unit ? ` ${unit}` : ''}`)
+    else if (line.requiredQty) unstructured.push(`${line.requiredQty}${unit ? ` ${unit}` : ''}`)
   }
   return [...totals].map(([unit, total]) => `${separator ? trimQty(total.toFixed(2)) : total.toFixed(2)}${unit ? ` ${unit}` : ''}`).concat(unstructured).join(separator ?? '；') || '—'
 }
@@ -1004,7 +1004,7 @@ function factoryQuoteRowClass({ row }: { row: FactoryQuoteRow }) {
   return row.specificationRows > 0 ? 'execution-spec-start' : ''
 }
 function factoryQuoteCellSpan({ row, column }: { row: FactoryQuoteRow; column: { property?: string } }) {
-  if (column.property !== 'line.productName' && column.property !== 'line.availableQty') return
+  if (column.property !== 'line.productName' && column.property !== 'line.requiredQty') return
   return row.specificationRows > 0 ? [row.specificationRows, 1] : [0, 0]
 }
 
@@ -1222,7 +1222,7 @@ async function load() {
         return
       }
     }
-    rows.value = (data.requirements ?? []).filter(line => batchKey || Number(line.availableQty ?? 0) > 0)
+    rows.value = data.requirements ?? []
     executionQuoteStatuses.value = data.executionQuoteStatuses ?? {}
     await hydrateActiveBatchFromRoute()
   } catch {
