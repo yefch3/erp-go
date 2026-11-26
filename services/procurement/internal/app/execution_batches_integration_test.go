@@ -23,6 +23,8 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_order_items WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_orders WHERE tenant_id=$1`, tenantID)
 		_, _ = pool.Exec(ctx, `DELETE FROM purchase_execution_supplier_quotes WHERE tenant_id=$1`, tenantID)
 		_, _ = pool.Exec(ctx, `DELETE FROM purchase_requirements WHERE tenant_id=$1`, tenantID)
 	}()
@@ -61,6 +63,17 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 	line(3, 301, me, "CT-THREE", "Plate", "MT", "2027-06-04", 0)
 	hidden := line(3, 302, colleague, "CT-THREE", "Hidden product", "MT", "2027-06-04", 0)
 	line(4, 401, me, "CT-COVERED", "Covered", "MT", "2027-05-01", 10)
+	var draftID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO purchase_orders
+		(tenant_id,po_no,supplier_id,supplier_name,currency,total_amount,status,buyer_id,buyer_name)
+		VALUES ($1,'PO-RFQ-RESERVED',9,'Factory','CNY',500,'DRAFT',$2,'Buyer') RETURNING id`, tenantID, me).Scan(&draftID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO purchase_order_items
+		(tenant_id,po_id,requirement_id,product_id,product_name,uom_code,qty,unit_price,amount)
+		VALUES ($1,$2,$3,102,'Search Target','PCS',10,50,500)`, tenantID, draftID, second); err != nil {
+		t.Fatal(err)
+	}
 	quote(first, me)
 	quote(second, colleague)
 	quote(other, colleague)

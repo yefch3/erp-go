@@ -12,7 +12,7 @@ import (
 
 type executionRFQExportLine struct {
 	RequirementID         string `json:"requirement_id"`
-	AvailableQty          string `json:"available_qty"`
+	RequiredQty           string `json:"required_qty"`
 	ProductName           string `json:"product_name"`
 	MaterialStandard      string `json:"material_standard"`
 	Specification         string `json:"specification"`
@@ -29,7 +29,7 @@ func (s *Server) exportExecutionRFQ(w http.ResponseWriter, r *http.Request) {
 	}
 	batchKey := strings.TrimSpace(input.BatchKey)
 	if batchKey == "" || len(input.Lines) == 0 || len(input.Lines) >= xlsx.MaxRows {
-		s.writeError(w, http.StatusBadRequest, "EXECUTION_RFQ_EXPORT_LINES", "请选择包含 1 至 999 条待采购规格的实单")
+		s.writeError(w, http.StatusBadRequest, "EXECUTION_RFQ_EXPORT_LINES", "请选择包含 1 至 999 条采购规格的实单")
 		return
 	}
 	batch, err := s.Requirements.ListRequirements(r.Context(), &prv1.ListRequirementsRequest{
@@ -43,23 +43,23 @@ func (s *Server) exportExecutionRFQ(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "EXECUTION_RFQ_EXPORT_BATCH", "找不到可查看的实单")
 		return
 	}
-	available := make(map[string]*prv1.Requirement)
+	required := make(map[string]*prv1.Requirement)
 	for _, requirement := range batch.GetRequirements() {
-		if qty, err := strconv.ParseFloat(requirement.GetAvailableQty(), 64); err == nil && qty > 0 {
-			available[strconv.FormatInt(requirement.GetId(), 10)] = requirement
+		if qty, err := strconv.ParseFloat(requirement.GetRequiredQty(), 64); err == nil && qty > 0 {
+			required[strconv.FormatInt(requirement.GetId(), 10)] = requirement
 		}
 	}
-	if len(available) != len(input.Lines) {
-		s.writeError(w, http.StatusConflict, "EXECUTION_RFQ_EXPORT_CHANGED", "待采购规格已变化，请刷新实单后重新导出")
+	if len(required) != len(input.Lines) {
+		s.writeError(w, http.StatusConflict, "EXECUTION_RFQ_EXPORT_CHANGED", "采购规格已变化，请刷新实单后重新导出")
 		return
 	}
 	for _, line := range input.Lines {
-		requirement := available[line.RequirementID]
-		if requirement == nil || requirement.GetAvailableQty() != line.AvailableQty {
-			s.writeError(w, http.StatusConflict, "EXECUTION_RFQ_EXPORT_CHANGED", "待采购规格或数量已变化，请刷新实单后重新导出")
+		requirement := required[line.RequirementID]
+		if requirement == nil || requirement.GetRequiredQty() != line.RequiredQty {
+			s.writeError(w, http.StatusConflict, "EXECUTION_RFQ_EXPORT_CHANGED", "采购规格或数量已变化，请刷新实单后重新导出")
 			return
 		}
-		delete(available, line.RequirementID)
+		delete(required, line.RequirementID)
 		if strings.TrimSpace(line.ProductName) == "" {
 			s.writeError(w, http.StatusBadRequest, "EXECUTION_RFQ_EXPORT_PRODUCT", "请填写每条规格的产品名称")
 			return
@@ -88,7 +88,7 @@ func buildExecutionRFQWorkbook(lines []executionRFQExportLine, requirements []*p
 		{"产品名称", 28, false, func(line executionRFQExportLine) string { return line.ProductName }},
 		{"材质/标准", 25, false, func(line executionRFQExportLine) string { return line.MaterialStandard }},
 		{"规格", 68, false, func(line executionRFQExportLine) string { return line.Specification }},
-		{"采购数量", 14, true, func(line executionRFQExportLine) string { return line.AvailableQty }},
+		{"采购需求量", 14, true, func(line executionRFQExportLine) string { return line.RequiredQty }},
 		{"单位", 10, false, func(line executionRFQExportLine) string { return units[line.RequirementID] }},
 		{"备注", 66, false, func(line executionRFQExportLine) string { return line.TechnicalRequirements }},
 	}
