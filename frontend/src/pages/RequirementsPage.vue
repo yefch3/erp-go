@@ -266,9 +266,15 @@
                   <template #empty>暂无可选定的工厂报价</template>
                 </el-table>
                 <section v-else class="assignment-workspace" v-loading="loading">
-                  <section v-if="negotiation && negotiationForm" class="negotiation-terms">
-                    <header><strong>议价资料</strong></header>
-                    <el-form class="assignment-fields" label-position="top" size="small" @submit.prevent>
+                  <section v-if="negotiationRows.length" class="negotiation-terms">
+                    <header>
+                      <strong>议价资料</strong>
+                      <span v-if="activeNegotiationTask" class="negotiation-current-spec" aria-live="polite">
+                        {{ activeNegotiationTask.productName }}<template v-if="activeNegotiationTask.specification"> · {{ activeNegotiationTask.specification }}</template>
+                      </span>
+                      <span v-else class="negotiation-start-hint">点击下方产品规格编辑议价资料</span>
+                    </header>
+                    <el-form v-if="negotiation && negotiationForm" class="assignment-fields" label-position="top" size="small" @submit.prevent>
                       <el-form-item label="交货日期" required>
                         <el-date-picker v-model="negotiationForm.date" :disabled="assignmentBusy" value-format="YYYY-MM-DD" />
                       </el-form-item>
@@ -278,6 +284,23 @@
                       <el-form-item label="议价备注">
                         <el-input v-model="negotiationForm.remark" :disabled="assignmentBusy" type="textarea" :autosize="{minRows:1,maxRows:4}" />
                       </el-form-item>
+                      <div class="negotiation-attachments">
+                        <template v-if="negotiation.files?.length">
+                          <span class="negotiation-files-label">议价附件</span>
+                          <ul class="negotiation-file-list" aria-label="当前规格的议价附件">
+                            <li v-for="file in negotiation.files" :key="file.id">
+                              <el-button link size="small" :aria-label="`下载 ${file.fileName}`" @click="downloadNegotiationFile(file.id)">
+                                {{ file.fileName }}
+                              </el-button>
+                            </li>
+                          </ul>
+                        </template>
+                        <label class="negotiation-upload" :class="{ 'negotiation-upload-disabled': assignmentBusy }">
+                          <Paperclip class="negotiation-upload-icon" aria-hidden="true" />
+                          <span>上传议价附件</span>
+                          <input type="file" multiple :disabled="assignmentBusy" @change="uploadNegotiationFiles" />
+                        </label>
+                      </div>
                     </el-form>
                   </section>
                   <h3 v-if="negotiationRows.length" class="negotiation-detail-heading">议价明细</h3>
@@ -729,6 +752,7 @@ import {suggestPaymentTerms} from "../lib/paymentTermOptions"
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, download, get, post, postDownload, quietErrors, saveBlob } from '../api'
@@ -1084,7 +1108,7 @@ interface ExecutionAssignment {
   id: string; requirementId: string; quoteId: string; buyerId: string; buyerName: string; supplierName: string
   productName: string; specification: string; currency: string; initialPrice: string; negotiatedPrice: string
   quantity: string; uomCode: string; instructions: string; expectedDate: string; paymentTerms: string
-  remark: string; poId: string; orderStatus: string; files?: { id: string }[]
+  remark: string; poId: string; orderStatus: string; files?: { id: string; fileName: string }[]
 }
 const assignments = ref<ExecutionAssignment[]>([])
 const selectedNegotiationTasks = ref<Record<string, string>>({})
@@ -1666,6 +1690,49 @@ async function saveNegotiation() {
     ElMessage.success('已保存议价结果')
   } finally { assignmentBusy.value = false }
 }
+
+async function uploadNegotiationFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = [...(input.files ?? [])]
+  input.value = ''
+  const task = negotiation.value
+  const batch = activeBatch.value
+  if (!task || !batch || !files.length || assignmentBusy.value) return
+  assignmentBusy.value = true
+  let uploaded = 0
+  try {
+    for (const file of files) {
+      if (!file.size || file.size > 10 * 1024 * 1024) {
+        ElMessage.warning(`请选择非空且不超过 10 MB 的附件：${file.name}`)
+        continue
+      }
+      try {
+        await post('/execution-assignments', {
+          action:'upload', requirement_id:task.requirementId, id:task.id,
+          file_name:file.name, content_type:file.type, file_data:await fileBase64(file),
+        }, quietErrors)
+        uploaded++
+      } catch {
+        ElMessage.error(`附件上传失败：${file.name}`)
+      }
+    }
+    if (uploaded && detailBatchKey.value === batch.key) {
+      await loadAssignments(batch)
+      ElMessage.success(`已上传 ${uploaded} 个议价附件`)
+    }
+  } finally { assignmentBusy.value = false }
+}
+
+async function downloadNegotiationFile(fileId: string) {
+  const task = negotiation.value
+  if (!task) return
+  const data = await post<{fileData: string; fileName: string; contentType: string}>('/execution-assignments', {
+    action:'download', requirement_id:task.requirementId, id:task.id, file_id:fileId,
+  })
+  const bytes = Uint8Array.from(atob(data.fileData), character => character.charCodeAt(0))
+  saveBlob(new Blob([bytes], {type:data.contentType}), data.fileName)
+}
+
 async function deletePreviewQuote() {
   const preview = quotePreview.value
   if (!preview?.quote) return
@@ -2267,7 +2334,21 @@ onMounted(load)
 .negotiation-table :deep(td.el-table__cell) { cursor: pointer; }
 .negotiation-product { padding: 0; border: 0; background: none; color: #284e60; font: inherit; font-weight: 600; cursor: pointer; }
 .negotiation-product:hover { text-decoration: underline; }
-.negotiation-terms header { padding: 8px 10px 0; color: #284e60; font-size: 13px; }
+.negotiation-terms header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 10px; color: #284e60; font-size: 13px; }
+.negotiation-current-spec { min-width: 0; overflow-wrap: anywhere; color: #345367; }
+.negotiation-start-hint { color: #526a7b; font-size: 12px; }
+.negotiation-attachments { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 7px; border-top: 1px solid #edf2f6; }
+.negotiation-files-label { flex: none; color: #526a7b; font-size: 12px; }
+.negotiation-upload { position: relative; display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 26px; margin-left: auto; padding: 1px 8px; border: 1px solid #bfd5e1; border-radius: 4px; background: #f7fbfd; color: #17647c; cursor: pointer; font-size: 12px; line-height: 18px; }
+.negotiation-upload:not(.negotiation-upload-disabled):hover { border-color: #6495ae; background: #edf7fb; }
+.negotiation-upload:focus-within { outline: 2px solid #187992; outline-offset: 2px; }
+.negotiation-upload-icon { width: 14px; height: 14px; }
+.negotiation-upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: inherit; }
+.negotiation-upload-disabled { opacity: .55; cursor: not-allowed; }
+.negotiation-file-list { display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.negotiation-file-list li { max-width: 100%; }
+.negotiation-file-list .el-button { max-width: 100%; height: auto; padding: 2px 6px; border-radius: 4px; background: #eff5f8; color: #345367; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.negotiation-file-list .el-button :deep(span) { display: block; min-width: 0; }
 .negotiation-detail-heading { margin: 8px 0 0; padding: 7px 10px; color: #284e60; border-top: 1px solid #e1e8ed; font-size: 14px; }
 .negotiation-table :deep(.el-input-group__prepend) { padding: 0 6px; }
 .negotiation-editor-actions { display: flex; justify-content: flex-end; padding: 10px; border-top: 1px solid #e1e8ed; }
