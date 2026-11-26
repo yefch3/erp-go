@@ -124,10 +124,10 @@ type parsedOrderLine struct {
 }
 
 type preparedOrder struct {
-	in           CreateOrderInput
-	want         map[int64]parsedOrderLine
-	ids          []int64
-	assignmentID int64
+	in                      CreateOrderInput
+	want                    map[int64]parsedOrderLine
+	ids                     []int64
+	fromExecutionAssignment bool
 }
 
 // prepareOrder 统一校验采购单和解析明细。
@@ -279,7 +279,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		} else if executionContractNo != r.ContractNo {
 			return head, apierr.Invalid("PO_EXECUTION_CONTRACT_MIXED", "实单重新询价一次只能处理一份外销合同")
 		}
-		if r.Status == "WAITING_REQUOTE" && prepared.assignmentID == 0 {
+		if r.Status == "WAITING_REQUOTE" && !prepared.fromExecutionAssignment {
 			var assigned bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM purchase_execution_assignments WHERE tenant_id=$1 AND requirement_id=$2 AND NOT cancelled)`, tenantID, r.ID).Scan(&assigned); err != nil {
 				return head, err
@@ -374,7 +374,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	if in.PaymentTerms != nil {
 		paymentTerms = strings.TrimSpace(*in.PaymentTerms)
 	}
-	if allExecutionRequote && executionContractID > 0 && prepared.assignmentID == 0 {
+	if allExecutionRequote && executionContractID > 0 && !prepared.fromExecutionAssignment {
 		var existingID int64
 		var existingStatus string
 		err := tx.QueryRow(ctx, `SELECT id,status FROM purchase_orders
@@ -568,16 +568,36 @@ func (s *Service) UpdateOrder(
 			}
 			in.SupplierCode, in.SupplierName = head.SupplierCode, head.SupplierName
 		}
-		var assignedRequirement, assignedQuote, assignedSupplier int64
-		var assignedQuantity string
-		assignmentErr := tx.QueryRow(ctx, `SELECT a.requirement_id,a.quote_id,a.quantity::text,q.supplier_id
+		type assignedLine struct {
+			quoteID, supplierID int64
+			quantity            string
+		}
+		assigned := make(map[int64]assignedLine)
+		assignmentRows, assignmentErr := tx.Query(ctx, `SELECT a.requirement_id,a.quote_id,a.quantity::text,q.supplier_id
 			FROM purchase_execution_assignments a JOIN purchase_execution_supplier_quotes q ON q.id=a.quote_id AND q.tenant_id=a.tenant_id
-			WHERE a.tenant_id=$1 AND a.po_id=$2`, tenantID, id).Scan(&assignedRequirement, &assignedQuote, &assignedQuantity, &assignedSupplier)
-		if assignmentErr != nil && assignmentErr != pgx.ErrNoRows {
+			WHERE a.tenant_id=$1 AND a.po_id=$2`, tenantID, id)
+		if assignmentErr != nil {
 			return assignmentErr
 		}
-		if assignmentErr == nil && (len(ids) != 1 || ids[0] != assignedRequirement || in.SupplierID != assignedSupplier || want[assignedRequirement].qty.GreaterThan(decimal.RequireFromString(assignedQuantity))) {
-			return apierr.Conflict("PO_ASSIGNMENT_CONDITIONS", "草稿须使用指定工厂和规格，数量不得超过议价任务的数量")
+		var requirementID int64
+		var assignment assignedLine
+		if _, assignmentErr := pgx.ForEachRow(assignmentRows, []any{&requirementID, &assignment.quoteID, &assignment.quantity, &assignment.supplierID}, func() error {
+			assigned[requirementID] = assignment
+			return nil
+		}); assignmentErr != nil {
+			return assignmentErr
+		}
+		if len(assigned) > 0 {
+			conditions := apierr.Conflict("PO_ASSIGNMENT_CONDITIONS", "草稿须使用指定工厂和规格，数量不得超过议价任务的数量")
+			if len(ids) != len(assigned) {
+				return conditions
+			}
+			for _, id := range ids {
+				line, ok := assigned[id]
+				if !ok || in.SupplierID != line.supplierID || want[id].qty.GreaterThan(decimal.RequireFromString(line.quantity)) {
+					return conditions
+				}
+			}
 		}
 
 		reqs, reqErr := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
@@ -600,7 +620,7 @@ func (s *Service) UpdateOrder(
 			if parseErr != nil {
 				return parseErr
 			}
-			if assignmentErr == nil {
+			if len(assigned) > 0 {
 				open, parseErr = unreservedExecutionQuantity(ctx, tx, tenantID, requirement.ID, id)
 				if parseErr != nil {
 					return parseErr
@@ -666,18 +686,18 @@ func (s *Service) UpdateOrder(
 				ProductCode: requirement.ProductCode, ProductName: requirement.ProductName,
 				Spec: requirement.Spec, UomID: requirement.UomID, UomCode: requirement.UomCode,
 				Qty: line.qty.String(), UnitPrice: line.price.String(),
-				Amount: line.qty.Mul(line.price).StringFixed(2),
+				Amount: line.qty.Mul(line.price).StringFixed(2), ContractItemRemark: requirement.ContractItemRemark,
 			})
 			if itemErr != nil {
 				return itemErr
 			}
-			if assignedQuote > 0 {
+			if assignedQuote := assigned[requirement.ID].quoteID; assignedQuote > 0 {
 				if _, itemErr = tx.Exec(ctx, `UPDATE purchase_order_items SET execution_quote_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, itemID, assignedQuote); itemErr != nil {
 					return itemErr
 				}
 			}
 		}
-		if assignedQuote > 0 {
+		if len(assigned) > 0 {
 			_, reqErr = tx.Exec(ctx, `UPDATE purchase_execution_assignments SET changed_by=$3,updated_at=now() WHERE tenant_id=$1 AND po_id=$2`, tenantID, id, op.ID)
 			if reqErr != nil {
 				return reqErr

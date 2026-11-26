@@ -32,6 +32,8 @@ type ExecutionAssignmentInput struct {
 	FileName, ContentType                                      string
 	FileData                                                   []byte
 	FileIDs                                                    []int64
+	BatchKey, DraftPreviewToken                                string
+	DraftLines                                                 []ExecutionDraftInput
 }
 
 type ExecutionAssignmentResult struct {
@@ -39,6 +41,8 @@ type ExecutionAssignmentResult struct {
 	ID, OrderID           int64
 	FileName, ContentType string
 	FileData              []byte
+	DraftGroups           []ExecutionDraftGroup
+	DraftPreviewToken     string
 }
 
 func (s *Service) CanSelectFactoryQuote(ctx context.Context, op Operator) (bool, error) {
@@ -133,7 +137,7 @@ func (s *Service) ManageExecutionAssignment(ctx context.Context, tenant int64, o
 			}
 		}
 		return ExecutionAssignmentResult{Assignments: rows}, err
-	case "assign", "cancel", "negotiate", "upload", "download", "draft":
+	case "assign", "cancel", "negotiate", "upload", "download", "draft", "preview_drafts", "draft_batch":
 	default:
 		return ExecutionAssignmentResult{}, apierr.Invalid("ASSIGNMENT_ACTION_INVALID", "无效的议价操作")
 	}
@@ -145,6 +149,9 @@ func (s *Service) ManageExecutionAssignment(ctx context.Context, tenant int64, o
 		if !ok {
 			return ExecutionAssignmentResult{}, apierr.Permission("ASSIGNMENT_WRITE_REQUIRED", "没有处理议价任务的权限")
 		}
+	}
+	if in.Action == "preview_drafts" || in.Action == "draft_batch" {
+		return s.manageExecutionDraftBatch(ctx, tenant, op, in, canActForOthers)
 	}
 	if in.RequirementID <= 0 {
 		return ExecutionAssignmentResult{}, apierr.Invalid("ASSIGNMENT_REQUIREMENT_REQUIRED", "请选择采购需求")
@@ -327,7 +334,7 @@ func (s *Service) createAssignmentDraft(ctx context.Context, tx pgx.Tx, tenant i
 	if err != nil {
 		return 0, err
 	}
-	prepared.assignmentID = in.ID
+	prepared.fromExecutionAssignment = true
 	head, err := s.createPreparedOrder(ctx, tx, tenant, prepared, Operator{ID: task.BuyerID, Name: task.BuyerName})
 	if err != nil {
 		return 0, err

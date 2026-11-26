@@ -3391,6 +3391,9 @@ message ManageExecutionAssignmentRequest {
   bytes file_data = 14;
   repeated int64 file_ids = 15;
   int64 file_id = 16;
+  string batch_key = 17;
+  repeated ExecutionDraftInput draft_lines = 18;
+  string draft_preview_token = 19;
 }
 message ManageExecutionAssignmentResponse {
   repeated ExecutionAssignment assignments = 1;
@@ -3399,6 +3402,8 @@ message ManageExecutionAssignmentResponse {
   string file_name = 4;
   string content_type = 5;
   bytes file_data = 6;
+  repeated ExecutionDraftGroup draft_groups = 7;
+  string draft_preview_token = 8;
 }
 
 message GetDailyPurchaseActivityRequest {
@@ -3420,4 +3425,33 @@ message ReadQualityInspectionFileResponse {
   string file_name = 1;
   string content_type = 2;
   bytes content = 3;
+}
+
+message ExecutionDraftInput {
+  int64 assignment_id = 1;
+  string negotiated_price = 2;
+  string expected_date = 3;
+  string payment_terms = 4;
+  string remark = 5;
+  repeated int64 file_ids = 6;
+}
+
+message ExecutionDraftPreviewLine {
+  int64 assignment_id = 1;
+  string product_name = 2;
+  string specification = 3;
+  string quantity = 4;
+  string uom_code = 5;
+  string negotiated_price = 6;
+}
+
+message ExecutionDraftGroup {
+  int64 buyer_id = 1;
+  string buyer_name = 2;
+  string supplier_name = 3;
+  string currency = 4;
+  string expected_date = 5;
+  string payment_terms = 6;
+  repeated ExecutionDraftPreviewLine lines = 7;
+  int64 order_id = 8;
 }

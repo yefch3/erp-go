@@ -10,16 +10,34 @@ import (
 
 func (h *Handler) ManageExecutionAssignment(ctx context.Context, req *prv1.ManageExecutionAssignmentRequest) (*prv1.ManageExecutionAssignmentResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
+	var draftLines []app.ExecutionDraftInput
+	for _, line := range req.GetDraftLines() {
+		draftLines = append(draftLines, app.ExecutionDraftInput{
+			AssignmentID: line.GetAssignmentId(), Price: line.GetNegotiatedPrice(), Date: line.GetExpectedDate(),
+			Terms: line.GetPaymentTerms(), Remark: line.GetRemark(), FileIDs: line.GetFileIds(),
+		})
+	}
 	result, err := h.svc.ManageExecutionAssignment(ctx, grpcx.TenantID(ctx), app.Operator{ID: op.EmployeeID, Name: op.Name}, app.ExecutionAssignmentInput{
 		Action: req.GetAction(), ID: req.GetId(), RequirementID: req.GetRequirementId(), QuoteID: req.GetQuoteId(), BuyerID: req.GetBuyerId(),
 		Quantity: req.GetQuantity(), Instructions: req.GetInstructions(), Price: req.GetNegotiatedPrice(), Date: req.GetExpectedDate(),
 		Terms: req.GetPaymentTerms(), Remark: req.GetRemark(), FileName: req.GetFileName(), ContentType: req.GetContentType(),
 		FileData: req.GetFileData(), FileIDs: req.GetFileIds(), FileID: req.GetFileId(),
+		BatchKey: req.GetBatchKey(), DraftLines: draftLines, DraftPreviewToken: req.GetDraftPreviewToken(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	response := &prv1.ManageExecutionAssignmentResponse{Id: result.ID, OrderId: result.OrderID, FileName: result.FileName, ContentType: result.ContentType, FileData: result.FileData}
+	response := &prv1.ManageExecutionAssignmentResponse{Id: result.ID, OrderId: result.OrderID, FileName: result.FileName,
+		ContentType: result.ContentType, FileData: result.FileData, DraftPreviewToken: result.DraftPreviewToken}
+	for _, group := range result.DraftGroups {
+		item := &prv1.ExecutionDraftGroup{BuyerId: group.BuyerID, BuyerName: group.BuyerName, OrderId: group.OrderID,
+			SupplierName: group.SupplierName, Currency: group.Currency, ExpectedDate: group.Date, PaymentTerms: group.Terms}
+		for _, line := range group.Lines {
+			item.Lines = append(item.Lines, &prv1.ExecutionDraftPreviewLine{AssignmentId: line.AssignmentID, ProductName: line.ProductName,
+				Specification: line.Specification, Quantity: line.Quantity, UomCode: line.UomCode, NegotiatedPrice: line.Price})
+		}
+		response.DraftGroups = append(response.DraftGroups, item)
+	}
 	for _, a := range result.Assignments {
 		item := &prv1.ExecutionAssignment{
 			Id: a.ID, RequirementId: a.RequirementID, QuoteId: a.QuoteID, BuyerId: a.BuyerID, BuyerName: a.BuyerName,
