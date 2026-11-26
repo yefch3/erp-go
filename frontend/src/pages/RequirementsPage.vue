@@ -305,15 +305,15 @@
                       <el-button link type="primary" @click="downloadNegotiationFile(file)">下载</el-button>
                     </div>
                   </el-checkbox-group>
-                  <footer v-if="activeNegotiationTask && (negotiation || activeOrderAction || canCancelActiveNegotiation)" class="negotiation-editor-actions">
+                  <footer v-if="draftBatchRows.length || (activeNegotiationTask && (negotiation || activeOrderAction || canCancelActiveNegotiation))" class="negotiation-editor-actions">
                     <div class="negotiation-footer-buttons">
-                      <el-button v-if="canCancelActiveNegotiation" link type="danger" :disabled="assignmentBusy" @click="cancelAssignment(activeNegotiationTask)">取消指派</el-button>
-                      <el-button v-if="activeOrderAction" size="small" type="primary" @click="openAssignmentOrder(activeNegotiationTask)">{{ activeOrderAction }}</el-button>
+                      <el-button v-if="activeNegotiationTask && canCancelActiveNegotiation" link type="danger" :disabled="assignmentBusy" @click="cancelAssignment(activeNegotiationTask)">取消指派</el-button>
+                      <el-button v-if="activeNegotiationTask && activeOrderAction" size="small" type="primary" @click="openAssignmentOrder(activeNegotiationTask)">{{ activeOrderAction }}</el-button>
                       <template v-if="negotiation">
                         <label class="file-pick"><input type="file" multiple :disabled="assignmentBusy" @change="uploadNegotiationFiles" />上传附件</label>
-                        <el-button size="small" :disabled="assignmentBusy" @click="saveNegotiation(false)">保存议价</el-button>
-                        <el-button size="small" type="primary" :loading="assignmentBusy" @click="saveNegotiation(true)">生成采购草稿</el-button>
+                        <el-button size="small" :disabled="assignmentBusy" @click="saveNegotiation">保存议价</el-button>
                       </template>
+                      <el-button v-if="draftBatchRows.length" size="small" type="primary" :disabled="loading || assignmentBusy" @click="openExecutionDraftBatch">生成采购草稿（{{ draftBatchRows.length }} 条）</el-button>
                     </div>
                   </footer>
                 </section>
@@ -364,6 +364,69 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="draftBatchOpen" title="批量生成采购草稿" width="min(1120px,94vw)" destroy-on-close
+      :close-on-click-modal="!assignmentBusy" :close-on-press-escape="!assignmentBusy" :show-close="!assignmentBusy">
+      <template v-if="!draftBatchPreview">
+        <el-form class="draft-batch-common" label-position="top" size="small">
+          <el-form-item label="统一交货日期（补齐空白）">
+            <el-date-picker v-model="draftBatchDate" value-format="YYYY-MM-DD" aria-label="统一交货日期" :disabled="assignmentBusy"/>
+          </el-form-item>
+          <el-form-item label="统一付款条件（补齐空白）">
+            <el-autocomplete v-model="draftBatchTerms" :fetch-suggestions="suggestPaymentTerms" :debounce="0" :disabled="assignmentBusy" aria-label="统一付款条件"/>
+          </el-form-item>
+        </el-form>
+        <p class="draft-batch-summary">将处理当前实单的 {{ draftBatchRows.length }} 条可生成规格。</p>
+        <el-table :data="draftBatchRows" max-height="45vh" row-key="task.id" size="small" class="draft-batch-table">
+          <el-table-column label="产品规格" min-width="230">
+            <template #default="{row}"><ComparisonSpecification :product-name="row.task.productName" :text="row.task.specification || row.task.productName"/></template>
+          </el-table-column>
+          <el-table-column prop="task.buyerName" label="负责采购员" width="108"/>
+          <el-table-column prop="task.supplierName" label="工厂" min-width="105"/>
+          <el-table-column label="议价单价" width="135">
+            <template #default="{row}"><el-input v-model="row.form.price" size="small" inputmode="decimal" aria-label="议价单价" :disabled="assignmentBusy"><template #prepend>{{row.task.currency}}</template></el-input></template>
+          </el-table-column>
+          <el-table-column label="交货日期" width="148">
+            <template #default="{row}"><el-date-picker v-model="row.form.date" size="small" value-format="YYYY-MM-DD" :placeholder="draftBatchDate || '选择日期'" :disabled="assignmentBusy" aria-label="该规格交货日期"/></template>
+          </el-table-column>
+          <el-table-column label="付款条件" min-width="135">
+            <template #default="{row}"><el-input v-model="row.form.terms" size="small" :placeholder="draftBatchTerms || '填写付款条件'" :disabled="assignmentBusy" aria-label="该规格付款条件"/></template>
+          </el-table-column>
+          <el-table-column v-if="draftBatchIncomplete" label="待补齐" width="155">
+            <template #default="{row}"><span class="draft-batch-missing">{{draftBatchMissing(row.form).join('、')}}</span></template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template v-else>
+        <p class="draft-batch-summary">{{draftBatchCreated ? '已生成' : '将生成'}} {{draftBatchPreview.draftGroups.length}} 张采购草稿</p>
+        <div class="draft-batch-groups">
+          <section v-for="(group,index) in draftBatchPreview.draftGroups" :key="index" class="draft-batch-group">
+            <header>
+              <strong>{{group.buyerName}} · {{group.supplierName}}</strong>
+              <span>{{group.currency}} · {{group.expectedDate}} · {{group.paymentTerms}}</span>
+              <el-button v-if="canReadOrder && auth.owns(group.buyerId) && Number(group.orderId)>0" link type="primary" @click="router.push({path:'/purchase-orders',query:{status:'DRAFT',order:group.orderId}})">打开草稿</el-button>
+            </header>
+            <el-table :data="group.lines" row-key="assignmentId" size="small">
+              <el-table-column label="产品规格" min-width="280">
+                <template #default="{row}"><ComparisonSpecification :product-name="row.productName" :text="row.specification || row.productName"/></template>
+              </el-table-column>
+              <el-table-column label="数量 / 单位" width="140" align="right">
+                <template #default="{row}">{{formatCompactDecimal(row.quantity)}} {{row.uomCode}}</template>
+              </el-table-column>
+              <el-table-column label="议价单价" width="140" align="right">
+                <template #default="{row}">{{group.currency}} {{formatCompactDecimal(row.negotiatedPrice)}}</template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </div>
+      </template>
+      <template #footer>
+        <el-button :disabled="assignmentBusy" @click="draftBatchOpen=false">{{draftBatchCreated ? '关闭' : '取消'}}</el-button>
+        <el-button v-if="draftBatchPreview && !draftBatchCreated" :disabled="assignmentBusy" @click="draftBatchPreview=null">返回修改</el-button>
+        <el-button v-if="!draftBatchPreview" type="primary" :loading="assignmentBusy" :disabled="!draftBatchRows.length || !!draftBatchIncomplete" @click="previewExecutionDraftBatch">预览草稿</el-button>
+        <el-button v-else-if="!draftBatchCreated" type="primary" :loading="assignmentBusy" @click="confirmExecutionDraftBatch">确认生成</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog :model-value="!!executionRFQExport" title="导出工厂询价 Excel" width="min(1120px,94vw)" destroy-on-close @close="executionRFQExport=null">
       <template v-if="executionRFQExport">
         <div class="rfq-export-toolbar">
@@ -388,7 +451,7 @@
             <template #default="{row}"><el-input v-model="row.line.specification" aria-label="规格" placeholder="—" type="textarea" resize="none" :autosize="{minRows:1,maxRows:6}"/></template>
           </el-table-column>
           <el-table-column label="采购数量" width="108" align="right">
-            <template #default="{row}"><span class="rfq-export-qty">{{formatExportQuantity(row.line.available_qty)}}</span></template>
+            <template #default="{row}"><span class="rfq-export-qty">{{formatCompactDecimal(row.line.available_qty)}}</span></template>
           </el-table-column>
           <el-table-column v-if="executionRFQExport.hasUnit" label="单位" width="66">
             <template #default="{row}"><span class="rfq-export-unit">{{row.unit}}</span></template>
@@ -854,7 +917,7 @@ const executionRFQExport = ref<{
 } | null>(null)
 const exportingExecutionRFQ = ref(false)
 
-function formatExportQuantity(value: string) {
+function formatCompactDecimal(value: string) {
   return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
 }
 
@@ -1029,6 +1092,94 @@ const activeOrderAction = computed(() => {
 })
 const canCancelActiveNegotiation = computed(() => canAssign && !!activeNegotiationTask.value && !hasOrder(activeNegotiationTask.value))
 const negotiationForm = computed(() => negotiationEdits.value[activeNegotiationId.value])
+interface DraftBatchLine {
+  assignment_id: string
+  negotiated_price: string
+  expected_date: string
+  payment_terms: string
+  remark: string
+  file_ids: string[]
+}
+interface DraftBatchResponse {
+  draftPreviewToken: string
+  draftGroups: {
+    buyerId: string; buyerName: string; supplierName: string; currency: string; expectedDate: string; paymentTerms: string; orderId?: string
+    lines: {assignmentId: string; productName: string; specification: string; quantity: string; uomCode: string; negotiatedPrice: string}[]
+  }[]
+}
+const draftBatchOpen = ref(false)
+const draftBatchDate = ref('')
+const draftBatchTerms = ref('')
+const draftBatchPreview = ref<DraftBatchResponse | null>(null)
+const draftBatchCreated = ref(false)
+const draftBatchRows = computed(() => {
+  const pending = new Set(activeBatch.value?.lines.filter(line => line.status === 'WAITING_REQUOTE').map(line => line.id))
+  return assignments.value.flatMap(task => {
+    const form = negotiationEdits.value[task.id]
+    return form && pending.has(task.requirementId) && canHandleNegotiation(task) ? [{task, form}] : []
+  })
+})
+const draftBatchIncomplete = computed(() => draftBatchRows.value.filter(row => draftBatchMissing(row.form).length).length)
+let previewDraftLines: DraftBatchLine[] = []
+
+function draftBatchMissing(form: NegotiationEdit) {
+  const missing: string[] = []
+  const price = Number(negotiationUnitPrice(form))
+  if (!Number.isFinite(price) || price <= 0) missing.push('议价单价')
+  if (!form.date && !draftBatchDate.value) missing.push('交货日期')
+  if (!form.terms.trim() && !draftBatchTerms.value.trim()) missing.push('付款条件')
+  return missing
+}
+
+function openExecutionDraftBatch() {
+  draftBatchDate.value = ''
+  draftBatchTerms.value = ''
+  draftBatchPreview.value = null
+  draftBatchCreated.value = false
+  draftBatchOpen.value = true
+}
+
+async function previewExecutionDraftBatch() {
+  const batch = activeBatch.value
+  if (!batch || !draftBatchRows.value.length || draftBatchIncomplete.value || assignmentBusy.value) return
+  const lines = draftBatchRows.value.map(({task, form}) => ({
+    assignment_id: task.id,
+    negotiated_price: negotiationUnitPrice(form),
+    expected_date: form.date || draftBatchDate.value,
+    payment_terms: form.terms.trim() || draftBatchTerms.value.trim(),
+    remark: form.remark,
+    file_ids: [...form.fileIds],
+  }))
+  assignmentBusy.value = true
+  try {
+    const preview = await post<DraftBatchResponse>('/execution-assignments', {action:'preview_drafts', batch_key:batch.key, draft_lines:lines})
+    if (activeBatch.value?.key !== batch.key || !draftBatchOpen.value) return
+    previewDraftLines = lines
+    draftBatchPreview.value = preview
+  } catch {
+    // The request error is shown by the API client.
+  } finally { assignmentBusy.value = false }
+}
+
+async function confirmExecutionDraftBatch() {
+  const batch = activeBatch.value
+  const draft = draftBatchPreview.value
+  if (!batch || !draft || assignmentBusy.value || draftBatchCreated.value) return
+  assignmentBusy.value = true
+  try {
+    const result = await post<DraftBatchResponse>('/execution-assignments', {
+      action:'draft_batch', batch_key:batch.key, draft_preview_token:draft.draftPreviewToken, draft_lines:previewDraftLines,
+    })
+    if (activeBatch.value?.key !== batch.key || !draftBatchOpen.value) return
+    draftBatchPreview.value = result
+    draftBatchCreated.value = true
+    ElMessage.success(`已生成 ${result.draftGroups.length} 张采购草稿`)
+    await loadAssignments(batch)
+  } catch {
+    // The request error is shown by the API client.
+  } finally { assignmentBusy.value = false }
+}
+
 function negotiationRowClass({row}: {row: {task: ExecutionAssignment}}) {
   return row.task.id === activeNegotiationId.value ? 'negotiation-current-row' : ''
 }
@@ -1238,7 +1389,7 @@ function needsNegotiationAction(task: ExecutionAssignment) {
   return !hasOrder(task) || task.orderStatus === 'DRAFT' || task.orderStatus === 'REJECTED'
 }
 function canHandleNegotiation(task: ExecutionAssignment) {
-  return !hasOrder(task) && canOrder && (canManageQuotes || auth.owns(task.buyerId))
+  return !hasOrder(task) && (canManageQuotes || (canOrder && auth.owns(task.buyerId)))
 }
 function formatNegotiationPrice(value: string) {
   const price = value.trim()
@@ -1285,11 +1436,7 @@ async function loadAssignments(batch: PurchaseBatch) {
   for (const id of Object.keys(negotiationEdits.value)) {
     if (!editableIds.has(id)) delete negotiationEdits.value[id]
   }
-  if (!activeNegotiationTask.value) {
-    const first = negotiationRows.value.find(row => canHandleNegotiation(row.task))?.task ?? editable[0] ?? negotiationRows.value[0]?.task
-    activeNegotiationId.value = first?.id ?? ''
-    if (first) selectedNegotiationTasks.value[first.requirementId] = first.id
-  }
+  if (!activeNegotiationTask.value) activeNegotiationId.value = ''
 }
 function toggleQuoteSelection(line: Requirement, quote: ExecutionQuote, checked: boolean) {
   if (!canSelectQuote(line, quote)) return
@@ -1371,27 +1518,25 @@ function focusLinkedNegotiation() {
 function openAssignmentOrder(task: ExecutionAssignment) {
   return router.push({path:'/purchase-orders', query:{order:task.poId, status:task.orderStatus || 'DRAFT'}})
 }
-async function saveNegotiation(createDraft: boolean) {
+function negotiationUnitPrice(form: NegotiationEdit) {
+  const displayedPrice = formatNegotiationPrice(form.price)
+  return displayedPrice === formatNegotiationPrice(form.storedPrice) ? form.storedPrice : displayedPrice
+}
+
+async function saveNegotiation() {
   const task = negotiation.value
   const form = negotiationForm.value
   if (!task || !form || assignmentBusy.value) return
-  const displayedPrice = formatNegotiationPrice(form.price)
-  const unitPrice = displayedPrice === formatNegotiationPrice(form.storedPrice) ? form.storedPrice : displayedPrice
+  const unitPrice = negotiationUnitPrice(form)
   assignmentBusy.value = true
   try {
     const target = {id:task.id, requirement_id:task.requirementId}
     await post('/execution-assignments', {...target, action:'negotiate', negotiated_price:unitPrice,
       expected_date:form.date, payment_terms:form.terms, remark:form.remark})
     form.storedPrice = unitPrice
-    form.price = displayedPrice
-    if (createDraft) {
-      const result = await post<{orderId:string}>('/execution-assignments', {...target, action:'draft', file_ids:form.fileIds})
-      ElMessage.success('采购草稿已生成')
-      await router.push({path:'/purchase-orders',query:{status:'DRAFT',order:result.orderId}})
-    } else {
-      if (activeBatch.value) await loadAssignments(activeBatch.value)
-      ElMessage.success('已保存议价结果')
-    }
+    form.price = formatNegotiationPrice(unitPrice)
+    if (activeBatch.value) await loadAssignments(activeBatch.value)
+    ElMessage.success('已保存议价结果')
   } finally { assignmentBusy.value = false }
 }
 async function uploadNegotiationFiles(event: Event) {
@@ -1631,6 +1776,7 @@ onUnmounted(stopListening)
 
 watch(detailBatchKey, () => {
   batchQuoteOpen.value = false
+  draftBatchOpen.value = false
   executionRFQExport.value = null
   presalePreview.value = null
   assignments.value = []
@@ -1836,6 +1982,14 @@ onMounted(load)
 .execution-quote-actions { position: absolute; top: 5px; right: 0; z-index: 1; display: flex; }
 .inquiry-tabs.has-quote-action :deep(.el-tabs__header) { padding-right: 245px; }
 .rfq-export-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+.draft-batch-common { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.draft-batch-common :deep(.el-form-item) { min-width: 215px; margin-bottom: 12px; }
+.draft-batch-table :deep(.el-date-editor.el-input) { width: 100%; }
+.draft-batch-summary { margin: 0 0 10px; color: #315667; font-weight: 600; }
+.draft-batch-missing { color: var(--el-color-warning-dark-2); }
+.draft-batch-groups { display: grid; gap: 10px; max-height: 55vh; overflow: auto; }
+.draft-batch-group { overflow: hidden; border: 1px solid #dce7ed; border-radius: 8px; }
+.draft-batch-group header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 15px; padding: 8px 12px; background: #edf6f8; color: #315667; }
 .rfq-export-hint { margin: 0; color: #526c7a; font-size: 13px; }
 .rfq-export-hint strong { color: #243f50; font-weight: 600; }
 .rfq-export-add-fields { display: flex; flex-wrap: wrap; gap: 6px; }
