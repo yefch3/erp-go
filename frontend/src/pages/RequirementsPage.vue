@@ -199,8 +199,17 @@
                       <el-button v-if="row.line.presaleReferenceJson || row.line.supplierName || Number(row.line.sourceUnitPrice) > 0" link size="small" class="presale-reference-link" @click="presalePreview=row.line">查看售前参考</el-button>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="line.requiredQty" label="采购需求量" width="105" align="right">
-                    <template #default="{row}">{{ formatQtyTwo(row.line.requiredQty) }} {{ row.line.uomCode }}</template>
+                  <el-table-column prop="line.requiredQty" label="采购需求量" width="142" align="right">
+                    <template #default="{row}">
+                      {{ formatQtyTwo(row.line.requiredQty) }} {{ row.line.uomCode }}
+                      <div v-if="Number(row.line.blockingDraftQty) > 0" class="execution-draft-reservation">
+                        <small>采购草稿已占用 {{ trimQty(row.line.blockingDraftQty) }} {{ row.line.uomCode }}，暂不可选厂</small>
+                        <router-link v-for="draft in blockingDraftOrders[row.line.id]" :key="draft.poId"
+                          :to="{path:'/purchase-orders', query:{order:draft.poId, status:'DRAFT'}}">
+                          查看原草稿<span v-if="blockingDraftOrders[row.line.id]?.length > 1"> {{ draft.poNo }}</span>
+                        </router-link>
+                      </div>
+                    </template>
                   </el-table-column>
                   <el-table-column label="工厂报价" min-width="360">
                     <template #default="{row}">
@@ -272,12 +281,37 @@
                     </el-form>
                   </section>
                   <h3 v-if="negotiationRows.length" class="negotiation-detail-heading">议价明细</h3>
+                  <div v-if="canAssign && cancellableNegotiationRows.length" class="quote-selection-toolbar">
+                    <el-button size="small" type="danger" plain :disabled="loading || assignmentBusy || !selectedCancellations.length"
+                      @click="cancelAssignments(selectedCancellations)">取消所选指派（{{ selectedCancellations.length }}）</el-button>
+                  </div>
                   <el-table
                     v-if="negotiationRows.length" :data="negotiationRows" row-key="requirementId"
                     :row-class-name="negotiationRowClass"
                     @row-click="selectNegotiationRow"
                     size="small" class="execution-quote-grid negotiation-table"
                   >
+                    <el-table-column v-if="canAssign && cancellableNegotiationRows.length" label="选择" width="58" align="center">
+                      <template #header>
+                        <el-checkbox
+                          :model-value="cancellableNegotiationRows.length > 0 && selectedCancellations.length === cancellableNegotiationRows.length"
+                          :indeterminate="selectedCancellations.length > 0 && selectedCancellations.length < cancellableNegotiationRows.length"
+                          :disabled="loading || assignmentBusy || !cancellableNegotiationRows.length"
+                          aria-label="全选可取消的议价任务"
+                          @change="checkedCancellationIds = $event === true ? cancellableNegotiationRows.map(task => task.id) : []"
+                        />
+                      </template>
+                      <template #default="{row}">
+                        <span @click.stop :title="hasOrder(row.task) ? '已生成采购草稿或采购单' : undefined">
+                          <el-checkbox
+                            :model-value="!hasOrder(row.task) && checkedCancellationIds.includes(row.task.id)"
+                            :disabled="loading || assignmentBusy || hasOrder(row.task)"
+                            :aria-label="`选择取消指派 ${row.task.productName} ${row.task.specification}`"
+                            @change="toggleCancellation(row.task.id, $event === true)"
+                          />
+                        </span>
+                      </template>
+                    </el-table-column>
                     <el-table-column label="产品规格" min-width="185">
                       <template #default="{row}">
                         <button type="button" class="negotiation-product" :disabled="assignmentBusy" :aria-pressed="row.task.id === activeNegotiationId" @click.stop="openNegotiation(row.task)">
@@ -329,20 +363,10 @@
                     <span>领导选定工厂并派发后，议价任务会显示在这里。</span>
                     <el-button v-if="canAssign" link type="primary" @click="replaceInquiryStep('quotes')">前往选厂</el-button>
                   </div>
-                  <el-checkbox-group v-if="negotiation?.files?.length && negotiationForm" v-model="negotiationForm.fileIds" :disabled="assignmentBusy" class="negotiation-files" aria-label="随草稿带入的附件">
-                    <div v-for="file in negotiation.files" :key="file.id" class="assignment-file-row">
-                      <el-checkbox :value="file.id">{{ file.fileName }}</el-checkbox>
-                      <el-button link type="primary" @click="downloadNegotiationFile(file)">下载</el-button>
-                    </div>
-                  </el-checkbox-group>
-                  <footer v-if="draftBatchRows.length || (activeNegotiationTask && (negotiation || activeOrderAction || canCancelActiveNegotiation))" class="negotiation-editor-actions">
+                  <footer v-if="draftBatchRows.length || negotiation || activeOrderAction" class="negotiation-editor-actions">
                     <div class="negotiation-footer-buttons">
-                      <el-button v-if="activeNegotiationTask && canCancelActiveNegotiation" link type="danger" :disabled="assignmentBusy" @click="cancelAssignment(activeNegotiationTask)">取消指派</el-button>
                       <el-button v-if="activeNegotiationTask && activeOrderAction" size="small" type="primary" @click="openAssignmentOrder(activeNegotiationTask)">{{ activeOrderAction }}</el-button>
-                      <template v-if="negotiation">
-                        <label class="file-pick"><input type="file" multiple :disabled="assignmentBusy" @change="uploadNegotiationFiles" />上传附件</label>
-                        <el-button size="small" :disabled="assignmentBusy" @click="saveNegotiation">保存议价</el-button>
-                      </template>
+                      <el-button v-if="negotiation" size="small" :disabled="assignmentBusy" @click="saveNegotiation">保存议价</el-button>
                       <el-button v-if="draftBatchRows.length" size="small" type="primary" :disabled="loading || assignmentBusy" @click="openExecutionDraftBatch">生成采购草稿（{{ draftBatchRows.length }} 条）</el-button>
                     </div>
                   </footer>
@@ -737,6 +761,7 @@ interface Requirement {
   orderedQty: string
   reservedQty: string
   availableQty: string
+  blockingDraftQty?: string
   requiredDate: string
   createdAt?: string
   source: string
@@ -998,6 +1023,7 @@ const suppliers = ref<Supplier[]>([])
 const currencyOptions = ['CNY','USD','EUR','GBP','HKD','JPY','AUD','CAD','AED','SAR']
 
 const executionQuotes = reactive<Record<string, ExecutionQuote[]>>({})
+const blockingDraftOrders = ref<Record<string, CoveringOrder[]>>({})
 const batchQuoteOpen = ref(false)
 const savingBatchQuote = ref(false)
 const batchQuoteForm = reactive({ supplierId:null as number|string|null, currency:'CNY', expectedDate:'', paymentTerms:'', validUntil:'', remark:'' })
@@ -1054,12 +1080,11 @@ function toggleAllFactoryQuotes(checked: boolean) {
 }
 
 const quotedLineCount = computed(() => (activeBatch.value?.lines ?? []).filter((line) => quotesFor(line.id).length > 0).length)
-type AssignmentFile = { id: string; fileName: string; contentType: string }
 interface ExecutionAssignment {
   id: string; requirementId: string; quoteId: string; buyerId: string; buyerName: string; supplierName: string
   productName: string; specification: string; currency: string; initialPrice: string; negotiatedPrice: string
   quantity: string; uomCode: string; instructions: string; expectedDate: string; paymentTerms: string
-  remark: string; poId: string; orderStatus: string; files?: AssignmentFile[]
+  remark: string; poId: string; orderStatus: string; files?: { id: string }[]
 }
 const assignments = ref<ExecutionAssignment[]>([])
 const selectedNegotiationTasks = ref<Record<string, string>>({})
@@ -1122,7 +1147,6 @@ interface NegotiationEdit {
   date: string
   terms: string
   remark: string
-  fileIds: string[]
 }
 const negotiationEdits = ref<Record<string, NegotiationEdit>>({})
 const activeNegotiationId = ref('')
@@ -1135,7 +1159,9 @@ const activeOrderAction = computed(() => {
   const task = activeNegotiationTask.value
   return task && hasOrder(task) && canReadOrder ? assignmentOrderAction(task) : ''
 })
-const canCancelActiveNegotiation = computed(() => canAssign && !!activeNegotiationTask.value && !hasOrder(activeNegotiationTask.value))
+const checkedCancellationIds = ref<string[]>([])
+const cancellableNegotiationRows = computed(() => negotiationRows.value.map(row => row.task).filter(task => !hasOrder(task)))
+const selectedCancellations = computed(() => cancellableNegotiationRows.value.filter(task => checkedCancellationIds.value.includes(task.id)))
 const negotiationForm = computed(() => negotiationEdits.value[activeNegotiationId.value])
 interface DraftBatchLine {
   assignment_id: string
@@ -1193,7 +1219,7 @@ async function previewExecutionDraftBatch() {
     expected_date: form.date || draftBatchDate.value,
     payment_terms: form.terms.trim() || draftBatchTerms.value.trim(),
     remark: form.remark,
-    file_ids: [...form.fileIds],
+    file_ids: (task.files ?? []).map(file => file.id),
   }))
   assignmentBusy.value = true
   try {
@@ -1314,8 +1340,25 @@ async function hydrateActiveBatchFromRoute() {
   activeBatch.value = batch
   if (!batch) return
   activeInquiryTab.value = routeInquiryStep()
+  void loadBlockingDraftOrders(batch)
   await Promise.all([loadBatchQuotes(batch), loadAssignments(batch)])
   focusLinkedNegotiation()
+}
+
+async function loadBlockingDraftOrders(batch: PurchaseBatch) {
+  const request = requirementsRequest
+  blockingDraftOrders.value = {}
+  if (!canReadOrder) return
+  const entries = await Promise.all(batch.lines.filter(line => Number(line.blockingDraftQty) > 0).map(async line => {
+    const result = await get<{orders: CoveringOrder[]}>(`/requirements/${line.id}/orders`, undefined, quietErrors).catch(() => null)
+    const orders = result?.orders ?? []
+    const drafts = await Promise.all(orders.filter(order => order.status === 'DRAFT').map(async order => {
+      const details = await get<{order?: {status: string}}>(`/purchase-orders/${order.poId}`, undefined, quietErrors).catch(() => null)
+      return details?.order?.status === 'DRAFT' ? order : null
+    }))
+    return [line.id, drafts.filter(draft => draft !== null)] as const
+  }))
+  if (request === requirementsRequest && detailBatchKey.value === batch.key) blockingDraftOrders.value = Object.fromEntries(entries)
 }
 
 async function loadBatchQuotes(batch: PurchaseBatch) {
@@ -1476,7 +1519,6 @@ async function loadAssignments(batch: PurchaseBatch) {
       date: task.expectedDate || '',
       terms: task.paymentTerms || '',
       remark: task.remark || '',
-      fileIds: (task.files ?? []).map(file => file.id),
     }
   }
   const editableIds = new Set(editable.map(task => task.id))
@@ -1541,10 +1583,46 @@ async function dispatchSelections() {
     dispatchingSelections.value = false
   }
 }
-async function cancelAssignment(task: ExecutionAssignment) {
-  try { await ElMessageBox.confirm('取消后可为这个规格重新选厂。', '取消议价任务', {type:'warning'}) } catch { return }
-  await post('/execution-assignments', {action:'cancel', requirement_id:task.requirementId, id:task.id})
-  if (activeBatch.value) await loadAssignments(activeBatch.value)
+function toggleCancellation(id: string, checked: boolean) {
+  checkedCancellationIds.value = checked
+    ? [...checkedCancellationIds.value, id]
+    : checkedCancellationIds.value.filter(item => item !== id)
+}
+
+async function cancelAssignments(tasks: ExecutionAssignment[]) {
+  const batch = activeBatch.value
+  if (!batch || !canAssign || assignmentBusy.value || !tasks.length) return
+  assignmentBusy.value = true
+  try {
+    try {
+      await ElMessageBox.confirm(
+        `确定取消 ${tasks.length} 项指派？取消后可以为这些规格重新选厂。`,
+        '取消议价任务',
+        {type:'warning', confirmButtonText:'确认取消', cancelButtonText:'返回'},
+      )
+    } catch { return }
+    if (batch.key !== detailBatchKey.value) return
+    const cancelled = new Set<string>()
+    for (const task of tasks) {
+      try {
+        await post('/execution-assignments', {action:'cancel', requirement_id:task.requirementId, id:task.id}, quietErrors)
+        cancelled.add(task.id)
+      } catch {
+        // A failed cancellation must not prevent the other tasks from being processed.
+      }
+    }
+    if (batch.key === detailBatchKey.value) {
+      assignments.value = assignments.value.filter(task => !cancelled.has(task.id))
+      checkedCancellationIds.value = checkedCancellationIds.value.filter(id => !cancelled.has(id))
+      if (cancelled.has(activeNegotiationId.value)) activeNegotiationId.value = ''
+    }
+    const failed = tasks.length - cancelled.size
+    if (failed) ElMessage.warning(`已取消 ${cancelled.size} 项指派，${failed} 项未取消，请刷新后重试。`)
+    else ElMessage.success(`已取消 ${cancelled.size} 项指派`)
+    if (batch.key === detailBatchKey.value) await loadAssignments(batch)
+  } finally {
+    assignmentBusy.value = false
+  }
 }
 function openNegotiation(task: ExecutionAssignment) {
   if (assignmentBusy.value) return
@@ -1588,35 +1666,6 @@ async function saveNegotiation() {
     ElMessage.success('已保存议价结果')
   } finally { assignmentBusy.value = false }
 }
-async function uploadNegotiationFiles(event: Event) {
-  const input=event.target as HTMLInputElement
-  const files = [...(input.files ?? [])]
-  input.value = ''
-  const task = negotiation.value
-  const form = negotiationForm.value
-  if (!task || !form || !files.length || assignmentBusy.value) return
-  assignmentBusy.value = true
-  try {
-    for (const file of files) {
-      if (file.size > 10*1024*1024) { ElMessage.warning(`${file.name} 超过 10 MB`); continue }
-      const {id} = await post<{id:string}>('/execution-assignments', { action:'upload', requirement_id:task.requirementId, id:task.id,
-        file_name:file.name, content_type:file.type, file_data:await fileBase64(file) })
-      form.fileIds.push(id)
-    }
-  } finally {
-    assignmentBusy.value = false
-    if (activeBatch.value) await loadAssignments(activeBatch.value)
-  }
-}
-async function downloadNegotiationFile(file: AssignmentFile) {
-  const task = negotiation.value
-  if (!task) return
-  const data = await post<{fileData:string;fileName:string;contentType:string}>('/execution-assignments',
-    {action:'download',requirement_id:task.requirementId,id:task.id,file_id:file.id})
-  const bytes = Uint8Array.from(atob(data.fileData), character=>character.charCodeAt(0))
-  saveBlob(new Blob([bytes],{type:data.contentType}),data.fileName)
-}
-
 async function deletePreviewQuote() {
   const preview = quotePreview.value
   if (!preview?.quote) return
@@ -1831,6 +1880,8 @@ watch(detailBatchKey, () => {
   executionRFQExport.value = null
   presalePreview.value = null
   assignments.value = []
+  blockingDraftOrders.value = {}
+  checkedCancellationIds.value = []
   selectedNegotiationTasks.value = {}
   negotiationEdits.value = {}
   activeNegotiationId.value = ''
@@ -2111,8 +2162,6 @@ onMounted(load)
 .execution-files>header span { color:#708591; font-size:11px; }
 .execution-file-toolbar { display:flex; align-items:center; gap:9px; white-space:nowrap; }
 .execution-file-toolbar small { color:#708591; font-size:11px; }
-.file-pick { padding:5px 10px; border:1px solid #75b9d8; border-radius:6px; color:#0879aa; cursor:pointer; white-space:nowrap; background:#fff; font-size:12px; line-height:1.2; }
-.file-pick input { display:none; }
 .supplier-factories {
   margin-left: 10px;
 }
@@ -2200,6 +2249,9 @@ onMounted(load)
 .execution-quote-grid :deep(td.el-table__cell) { padding: 5px 0; font-size: 13px; vertical-align: middle; }
 .execution-quote-grid :deep(.cell) { padding: 0 8px; line-height: 19px; word-break: normal; overflow-wrap: anywhere; }
 .execution-select-all { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.execution-draft-reservation { margin-top: 3px; color: #84520e; font-size: 11px; line-height: 1.4; }
+.execution-draft-reservation small { font-size: inherit; }
+.execution-draft-reservation a { display: block; color: #176f85; text-decoration: underline; }
 .execution-factory-select { width: 100%; }
 .execution-factory-select :deep(.el-select__placeholder) { position: static; transform: none; }
 .execution-factory-option { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; white-space: normal; line-height: 19px; }
@@ -2218,7 +2270,6 @@ onMounted(load)
 .negotiation-terms header { padding: 8px 10px 0; color: #284e60; font-size: 13px; }
 .negotiation-detail-heading { margin: 8px 0 0; padding: 7px 10px; color: #284e60; border-top: 1px solid #e1e8ed; font-size: 14px; }
 .negotiation-table :deep(.el-input-group__prepend) { padding: 0 6px; }
-.negotiation-files { padding: 4px 10px; }
 .negotiation-editor-actions { display: flex; justify-content: flex-end; padding: 10px; border-top: 1px solid #e1e8ed; }
 .negotiation-footer-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .negotiation-footer-buttons .el-button { margin-left: 0; }
@@ -2234,7 +2285,6 @@ onMounted(load)
 .assignment-fields :deep(.el-date-editor),.assignment-fields :deep(.el-autocomplete) { width:100%; }
 .assignment-fields :deep(.el-form-item) { margin-bottom: 0; }
 @media (max-width: 650px) { .assignment-fields { grid-template-columns: 1fr; } }
-.assignment-file-row { display:flex;justify-content:space-between;gap:12px; }
 .execution-menu-arrow { margin-left: 3px; }
 .presale-reference-link { display: flex; min-height: 0; width: max-content; padding: 0; color: #557b90; font-size: 11px; }
 .execution-quote-grid :deep(.el-checkbox) { height:22px; }

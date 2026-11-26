@@ -552,6 +552,8 @@ message Requirement {
   string source_sales_remark = 47;
   string contract_item_remark = 48;
   string presale_reference_json = 49;
+  // Draft-only reservation quantity when drafts cover all remaining demand.
+  string blocking_draft_qty = 50;
 }
 
 message ListRequirementsRequest {

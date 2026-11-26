@@ -74,6 +74,27 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 		VALUES ($1,$2,$3,102,'Search Target','PCS',10,50,500)`, tenantID, draftID, second); err != nil {
 		t.Fatal(err)
 	}
+	checkDraftBlocker := func(want string) {
+		t.Helper()
+		rows, _, _, err := svc.ListExecutionBatchRequirements(ctx, tenantID, Operator{ID: me}, "", "CONTRACT-ID:1", "", 1, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range rows {
+			if row.ID == second {
+				if row.BlockingDraftQty != want {
+					t.Fatalf("blocking draft quantity = %q, want %q", row.BlockingDraftQty, want)
+				}
+				return
+			}
+		}
+		t.Fatal("reserved requirement missing")
+	}
+	checkDraftBlocker("10.0000")
+	if _, err := pool.Exec(ctx, `UPDATE purchase_orders SET status='PENDING_APPROVAL' WHERE tenant_id=$1 AND id=$2`, tenantID, draftID); err != nil {
+		t.Fatal(err)
+	}
+	checkDraftBlocker("0")
 	quote(first, me)
 	quote(second, colleague)
 	quote(other, colleague)
