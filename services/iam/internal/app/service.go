@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"slices"
 	"strings"
 	"time"
 
@@ -865,6 +866,8 @@ func (s *Service) ListPermissions(ctx context.Context) ([]store.Permission, erro
 }
 
 // GrantRolePermissions 原子替换角色权限，并记录修改前后权限及操作人。
+const reimbursementApprovalPermission = "finance:reimbursement:approve"
+
 func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int64, codes []string, operatorIDs ...int64) error {
 	role, err := s.q.GetRole(ctx, store.GetRoleParams{TenantID: tenantID, ID: roleID})
 	if err != nil {
@@ -907,9 +910,28 @@ func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int
 	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if _, err := tx.Exec(ctx, `SELECT id FROM roles WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, roleID); err != nil {
+			return err
+		}
 		before, err := q.ListRolePermissionCodes(ctx, store.ListRolePermissionCodesParams{TenantID: tenantID, RoleID: roleID})
 		if err != nil {
 			return err
+		}
+		if slices.Contains(before, reimbursementApprovalPermission) != slices.Contains(codes, reimbursementApprovalPermission) {
+			operatorRoles, err := q.ListEmployeeRoleIDs(ctx, store.ListEmployeeRoleIDsParams{TenantID: tenantID, EmployeeID: operatorID})
+			if err != nil {
+				return err
+			}
+			roles, err := q.ListRoles(ctx, tenantID)
+			if err != nil {
+				return err
+			}
+			isAdmin := slices.ContainsFunc(roles, func(role store.Role) bool {
+				return role.Code == "SUPER_ADMIN" && role.Status == "ACTIVE" && slices.Contains(operatorRoles, role.ID)
+			})
+			if !isAdmin {
+				return apierr.Permission("IAM_REIMBURSEMENT_GRANT_FORBIDDEN", "只有超级管理员可以调整报销审批权限")
+			}
 		}
 		if err := q.ReplaceRolePermissions(ctx, store.ReplaceRolePermissionsParams{TenantID: tenantID, RoleID: roleID}); err != nil {
 			return err

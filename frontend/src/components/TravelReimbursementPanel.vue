@@ -54,7 +54,8 @@
   <el-dialog v-model="payOpen" title="登记报销付款" width="min(480px,94vw)"><el-form label-position="top"><el-form-item label="付款日期" required><el-date-picker v-model="pay.paidAt" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item><el-form-item label="付款账户" required><el-input v-model="pay.paymentAccount" /></el-form-item><el-form-item label="付款流水号"><el-input v-model="pay.paymentReference" /></el-form-item></el-form><template #footer><el-button @click="payOpen=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePay">确认付款</el-button></template></el-dialog>
 </template>
 <script setup lang="ts">
-import {computed,onMounted,reactive,ref} from 'vue'
+import {computed,onMounted,onUnmounted,reactive,ref} from 'vue'
+import { onLive } from '../live'
 import {useI18n} from 'vue-i18n'
 import {claimExpenseType,expenseTypes,expensePayload,missingExpenseFields} from '../lib/reimbursementExpense'
 import {ElMessage,ElMessageBox} from 'element-plus'
@@ -70,7 +71,7 @@ const expenseLabel=(value:unknown)=>{const kind=claimExpenseType(value);return e
 const auth=useAuthStore(),rows=ref<Claim[]>([]),approvalTasks=ref<Record<string,string>>({}),approvalOverrides=ref<Record<string,boolean>>({}),loading=ref(false),saving=ref(false),formOpen=ref(false),payOpen=ref(false),editing=ref<Claim|null>(null),paying=ref<Claim|null>(null),picked=ref<PendingUpload[]>([])
 const myID=computed(()=>String(auth.employeeId||localStorage.getItem('employeeId')||'')),canManage=auth.can('procurement:reimbursement:manage'),currencies=['CNY','USD','EUR','GBP','JPY','HKD','CAD','AUD']
 const form=reactive({expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''}),pay=reactive({paidAt:new Date().toISOString().slice(0,10),paymentAccount:'',paymentReference:''})
-const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务负责人审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
+const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
 const fileType:Record<string,string>={INVOICE:'发票',RECEIPT:'收据',ITINERARY:'行程单',PAYMENT_PROOF:'付款凭证',OTHER:'其他'}
 const deletingId = ref<string | null>(null)
 const canDelete = (row: Claim) => row.claimantId === myID.value && ['DRAFT', 'REJECTED'].includes(row.status)
@@ -136,12 +137,20 @@ await uploadFiles(result.reimbursement)
 // 清单里还有东西：先以服务器上的单子为准对一遍——登记那一步没等到回音的，多半其实已经记上了。
 if(picked.value.length){await load();const fresh=rows.value.find(row=>String(row.id)===String(result.reimbursement.id));if(fresh){editing.value=fresh;picked.value=dropRegistered(picked.value,new Set<string>((fresh.files||[]).map((f:Claim)=>String(f.objectKey||''))))}}
 if(picked.value.length){const failed=picked.value.some(item=>item.status==='failed');ElMessage.error({message:`还有 ${picked.value.length} 个文件没传上去${failed?'，原因写在标红的那一行':'（网络太慢，中途停下了）'}。报销单已保存为草稿${submitAfterSave?'，还没有提交审批':''}；再点一次保存，会接着传剩下的。`,duration:8000});return}
-if(submitAfterSave){await post(`/travel-reimbursements/${result.reimbursement.id}/submit`,{});ElMessage.success('报销已提交，等待部门负责人确认')}else{ElMessage.success('报销草稿已保存')}formOpen.value=false;await load()}finally{saving.value=false}}
-async function submit(row:Claim){await post(`/travel-reimbursements/${row.id}/submit`,{});ElMessage.success('已提交，等待部门负责人确认');await load()}
+if(submitAfterSave){await submitClaim(result.reimbursement.id)}else{ElMessage.success('报销草稿已保存')}formOpen.value=false;await load()}finally{saving.value=false}}
+async function submitClaim(id: string){
+  const { reimbursement } = await post<{reimbursement:Claim}>(`/travel-reimbursements/${id}/submit`,{})
+  ElMessage.success(`报销已提交，${statusLabel[reimbursement.status] || '等待审批'}`)
+}
+async function submit(row:Claim){await submitClaim(row.id);await load()}
 function openPay(row:Claim){paying.value=row;Object.assign(pay,{paidAt:new Date().toISOString().slice(0,10),paymentAccount:row.paymentAccount,paymentReference:''});payOpen.value=true}
 async function savePay(){if(!paying.value||!pay.paidAt||!pay.paymentAccount.trim()){ElMessage.warning('请填写付款日期和账户');return}saving.value=true;try{await post(`/travel-reimbursements/${paying.value.id}/pay`,pay);payOpen.value=false;ElMessage.success('付款已登记');await load()}finally{saving.value=false}}
 async function reverse(row:Claim){const {value}=await ElMessageBox.prompt('请输入冲销原因','冲销报销付款').catch(()=>({value:''}));if(!value)return;await post(`/travel-reimbursements/${row.id}/payment/reverse`,{reason:value});ElMessage.success('付款已冲销');await load()}
 onMounted(load)
+const stopListening = onLive((event) => {
+  if ((event.type === 'todo.changed' || event.type === 'doc.changed') && event.subject?.startsWith('TRAVEL_REIMBURSEMENT:')) void load()
+})
+onUnmounted(stopListening)
 </script>
 <style scoped>
 :global(.expense-dialog .el-dialog__body){max-height:calc(90vh - 140px);overflow-y:auto}

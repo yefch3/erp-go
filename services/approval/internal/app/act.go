@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -49,8 +50,14 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
-	if inst.BizType == "TRAVEL_REIMBURSEMENT" && actorID == inst.SubmitterID {
-		return store.ApprovalInstance{}, nil, apierr.Permission("AP_REIMBURSEMENT_SELF", "报销申请不能由本人审批")
+	if inst.BizType == reimbursementBizType && actorID == inst.SubmitterID {
+		admin, err := s.isSuperAdmin(ctx, actorID)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
+		}
+		if !admin {
+			return store.ApprovalInstance{}, nil, apierr.Permission("AP_REIMBURSEMENT_SELF", "只有超级管理员可以审批自己的报销")
+		}
 	}
 	if inst.BizType == "CONTRACT" {
 		if actorID == inst.SubmitterID {
@@ -72,7 +79,19 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	// The gateway still requires approval:task:act, self-approval rules above
 	// still apply, and the event records actorID rather than pretending the
 	// original assignee acted.
-	if task.AssigneeID != actorID {
+	sharedFinanceTask := inst.BizType == reimbursementBizType && task.AssigneeID == 0
+	var financeApprovers []int64
+	if sharedFinanceTask {
+		financeApprovers, err = s.reimbursementApprovers(ctx)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
+		}
+		if !slices.Contains(financeApprovers, actorID) {
+			return store.ApprovalInstance{}, nil, apierr.Permission("AP_REIMBURSEMENT_APPROVAL_FORBIDDEN", "你没有报销审批权限")
+		}
+	} else if inst.BizType == reimbursementBizType && inst.Status != statusRunning {
+		return store.ApprovalInstance{}, nil, apierr.Conflict("AP_INSTANCE_FINISHED", "该审批已结束")
+	} else if task.AssigneeID != actorID {
 		override, err := s.canSuperAdminOverride(ctx, inst.BizType, actorID)
 		if err != nil {
 			return store.ApprovalInstance{}, nil, err
@@ -84,7 +103,7 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 
 	var nextNode *store.ApprovalNode
 	var nextAssignees []int64
-	if action == ActionApprove && inst.BizType != "CONTRACT" {
+	if action == ActionApprove && inst.BizType != "CONTRACT" && !sharedFinanceTask {
 		nodes, err := s.q.ListNodes(ctx, store.ListNodesParams{
 			TenantID: tenantID, DefinitionID: inst.DefinitionID,
 		})
@@ -117,8 +136,13 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 		}
 		out = locked
 
+		var sharedActorID int64
+		if sharedFinanceTask {
+			sharedActorID = actorID
+		}
 		acted, err := q.ActOnTask(ctx, store.ActOnTaskParams{
 			TenantID: tenantID, ID: taskID, Status: taskStatusFor(action), Comment: comment,
+			SharedActorID: sharedActorID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -203,7 +227,12 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	}
 	// After the commit, never inside it: a hint about a change that rolled
 	// back would send browsers to read something that never happened.
-	s.nudge(ctx, tenantID, append(append(stale, task.AssigneeID), assigneesOf(created)...), livefeed.TodoChanged, subjectOf(inst))
+	if sharedFinanceTask {
+		stale = append(stale, financeApprovers...)
+	} else {
+		stale = append(stale, task.AssigneeID)
+	}
+	s.nudge(ctx, tenantID, append(stale, assigneesOf(created)...), livefeed.TodoChanged, subjectOf(inst))
 	// The submitter is told on EVERY decision, not only the one that ends the
 	// flow. They are the person watching hardest, and until now a contract
 	// could move from the first approver to the second while their page still

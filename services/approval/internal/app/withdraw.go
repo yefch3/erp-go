@@ -60,6 +60,11 @@ func (s *Service) Withdraw(ctx context.Context, tenant, id, actor int64, reason 
 		return err
 	})
 	if err == nil && withdrawn.ID != 0 {
+		if withdrawn.BizType == reimbursementBizType && slices.Contains(pendingAssignees, int64(0)) {
+			if approvers, lookupErr := s.reimbursementApprovers(ctx); lookupErr == nil {
+				pendingAssignees = approvers
+			}
+		}
 		s.nudge(ctx, tenant, pendingAssignees, livefeed.TodoChanged, subjectOf(withdrawn))
 		s.nudge(ctx, tenant, []int64{withdrawn.SubmitterID}, livefeed.DocChanged, subjectOf(withdrawn))
 	}

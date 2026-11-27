@@ -171,9 +171,22 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	}
 	// Approvers are resolved over gRPC, so it happens before the transaction
 	// opens: a database transaction must never wait on another service.
-	firstNode, assignees, err := s.firstStaffedNode(ctx, nodes, 0, in.SubmitterID)
+	directFinance, summary, financeApprovers, err := s.reimbursementRoute(ctx, in)
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
+	}
+	var firstNode *store.ApprovalNode
+	var assignees []int64
+	if directFinance {
+		node := nodes[0]
+		node.Name = "财务审批"
+		// A shared task stays unassigned until someone with the current grant acts.
+		firstNode, assignees = &node, []int64{0}
+	} else {
+		firstNode, assignees, err = s.firstStaffedNode(ctx, nodes, 0, in.SubmitterID)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
+		}
 	}
 	if in.BizType == "CONTRACT" {
 		canSelfConfirm, err := s.canContractSelfConfirm(ctx, in.SubmitterID)
@@ -257,7 +270,6 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 		firstNode, assignees = &node, fallback
 	}
 
-	summary := in.BizSummary
 	if summary == "" {
 		summary = "{}"
 	}
@@ -318,7 +330,10 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
-	s.nudge(ctx, tenantID, assigneesOf(tasks), livefeed.TodoChanged, subjectOf(inst))
+	if !directFinance {
+		financeApprovers = assigneesOf(tasks)
+	}
+	s.nudge(ctx, tenantID, financeApprovers, livefeed.TodoChanged, subjectOf(inst))
 	return inst, tasks, nil
 }
 
@@ -422,6 +437,13 @@ func (s *Service) assigneesFor(ctx context.Context, node store.ApprovalNode, sub
 			return nil, fmt.Errorf("approval: resolve department leader of %d: %w", submitterID, err)
 		}
 		if leaderID == submitterID {
+			admin, err := s.isSuperAdmin(ctx, submitterID)
+			if err != nil {
+				return nil, err
+			}
+			if admin {
+				return []int64{leaderID}, nil
+			}
 			managers, err := s.dir.ManagersOf(ctx, submitterID, 1)
 			if err != nil {
 				return nil, err
@@ -451,13 +473,19 @@ func (s *Service) assigneesFor(ctx context.Context, node store.ApprovalNode, sub
 		if !found {
 			return nil, apierr.Invalid("AP_FINANCE_MANAGER_MISSING", "请先配置财务负责人角色")
 		}
-		ids = excludeEmployee(members, submitterID)
+		ids, err = s.reimbursementCandidates(ctx, members, submitterID)
+		if err != nil {
+			return nil, err
+		}
 		if len(ids) == 0 {
 			bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
 			if err != nil {
 				return nil, err
 			}
-			ids = excludeEmployee(bosses, submitterID)
+			ids, err = s.reimbursementCandidates(ctx, bosses, submitterID)
+			if err != nil {
+				return nil, err
+			}
 		}
 	default:
 		return nil, apierr.Invalid("AP_APPROVER_TYPE_INVALID", "不支持的审批人类型").

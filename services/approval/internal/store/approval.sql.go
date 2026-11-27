@@ -12,16 +12,18 @@ import (
 )
 
 const actOnTask = `-- name: ActOnTask :one
-UPDATE approval_tasks SET status = $3, comment = $4, acted_at = now()
+UPDATE approval_tasks SET status = $3, comment = $4, acted_at = now(),
+    assignee_id = CASE WHEN assignee_id = 0 THEN $5::bigint ELSE assignee_id END
 WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'
 RETURNING id, tenant_id, instance_id, node_seq, node_name, assignee_id, status, comment, acted_at, created_at
 `
 
 type ActOnTaskParams struct {
-	TenantID int64
-	ID       int64
-	Status   string
-	Comment  string
+	TenantID      int64
+	ID            int64
+	Status        string
+	Comment       string
+	SharedActorID int64
 }
 
 func (q *Queries) ActOnTask(ctx context.Context, arg ActOnTaskParams) (ApprovalTask, error) {
@@ -30,6 +32,7 @@ func (q *Queries) ActOnTask(ctx context.Context, arg ActOnTaskParams) (ApprovalT
 		arg.ID,
 		arg.Status,
 		arg.Comment,
+		arg.SharedActorID,
 	)
 	var i ApprovalTask
 	err := row.Scan(
@@ -881,37 +884,43 @@ SELECT
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = $1::bigint
-  AND (t.assignee_id = $2::bigint OR (
+  AND (t.status <> 'PENDING' OR i.biz_type <> 'TRAVEL_REIMBURSEMENT'
+       OR i.submitter_id <> $2::bigint OR $3::boolean)
+  AND (
+    (t.assignee_id = 0 AND i.biz_type = 'TRAVEL_REIMBURSEMENT'
+       AND $4::boolean
+       AND i.status = 'RUNNING' AND t.status = 'PENDING') OR
+    (t.assignee_id <> 0 AND (t.assignee_id = $2::bigint OR (
        $3::boolean
        AND i.status = 'RUNNING' AND t.node_seq = i.current_seq AND t.status = 'PENDING'
-       AND (i.biz_type <> 'TRAVEL_REIMBURSEMENT' OR i.submitter_id <> $2::bigint)
        AND t.id = (SELECT candidate.id FROM approval_tasks candidate
                    WHERE candidate.tenant_id = t.tenant_id AND candidate.instance_id = t.instance_id
                      AND candidate.node_seq = t.node_seq AND candidate.status = 'PENDING'
                    ORDER BY (candidate.assignee_id = $2::bigint) DESC, candidate.id LIMIT 1)
-  ))
-  AND ($4::text = '' OR i.biz_type = $4::text)
-  AND ($5::text = ''
-       OR i.biz_no ILIKE '%' || $5::text || '%'
-       OR i.biz_summary::text ILIKE '%' || $5::text || '%'
-       OR i.submitter_name ILIKE '%' || $5::text || '%'
-       OR t.node_name ILIKE '%' || $5::text || '%')
+  ))))
+  AND ($5::text = '' OR i.biz_type = $5::text)
+  AND ($6::text = ''
+       OR i.biz_no ILIKE '%' || $6::text || '%'
+       OR i.biz_summary::text ILIKE '%' || $6::text || '%'
+       OR i.submitter_name ILIKE '%' || $6::text || '%'
+       OR t.node_name ILIKE '%' || $6::text || '%')
   AND CASE
-        WHEN $6::text = ''        THEN t.status = 'PENDING'
-        WHEN $6::text = 'HANDLED' THEN t.status <> 'PENDING'
-        ELSE t.status = $6::text
+        WHEN $7::text = ''        THEN t.status = 'PENDING'
+        WHEN $7::text = 'HANDLED' THEN t.status <> 'PENDING'
+        ELSE t.status = $7::text
       END
 ORDER BY
-  CASE WHEN $6::text = '' THEN t.created_at END ASC,
-  CASE WHEN $6::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
+  CASE WHEN $7::text = '' THEN t.created_at END ASC,
+  CASE WHEN $7::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
   t.id DESC
-LIMIT $8::int OFFSET $7::int
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListMyTasksParams struct {
 	TenantID        int64
 	AssigneeID      int64
 	IncludeOverride bool
+	IncludeFinance  bool
 	BizType         string
 	Keyword         string
 	Status          string
@@ -950,6 +959,7 @@ func (q *Queries) ListMyTasks(ctx context.Context, arg ListMyTasksParams) ([]Lis
 		arg.TenantID,
 		arg.AssigneeID,
 		arg.IncludeOverride,
+		arg.IncludeFinance,
 		arg.BizType,
 		arg.Keyword,
 		arg.Status,
@@ -1080,21 +1090,31 @@ const myInvolvedBizIds = `-- name: MyInvolvedBizIds :many
 SELECT DISTINCT i.biz_id
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
-WHERE t.tenant_id = $1 AND t.assignee_id = $2
-  AND ($3::text = '' OR i.biz_type = $3::text)
+WHERE t.tenant_id = $1
+  AND (t.assignee_id = $2::bigint OR
+       (t.assignee_id = 0 AND i.biz_type = 'TRAVEL_REIMBURSEMENT'
+        AND $3::boolean AND i.submitter_id <> $2::bigint
+        AND i.status = 'RUNNING' AND t.status = 'PENDING'))
+  AND ($4::text = '' OR i.biz_type = $4::text)
 `
 
 type MyInvolvedBizIdsParams struct {
-	TenantID   int64
-	AssigneeID int64
-	BizType    string
+	TenantID       int64
+	EmployeeID     int64
+	IncludeFinance bool
+	BizType        string
 }
 
 // Documents this person has been asked to act on, whatever became of the
 // task. Business services union this with their own visibility rules: being
 // asked to approve something has to imply being allowed to read it.
 func (q *Queries) MyInvolvedBizIds(ctx context.Context, arg MyInvolvedBizIdsParams) ([]int64, error) {
-	rows, err := q.db.Query(ctx, myInvolvedBizIds, arg.TenantID, arg.AssigneeID, arg.BizType)
+	rows, err := q.db.Query(ctx, myInvolvedBizIds,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.IncludeFinance,
+		arg.BizType,
+	)
 	if err != nil {
 		return nil, err
 	}
