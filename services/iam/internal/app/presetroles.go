@@ -26,7 +26,7 @@ import (
 var presetRoles = []presetRole{
 	{Code: "BOSS", Name: "老板", Description: "查看本公司业务并处理审批", Permissions: []string{"report:business:read", "sales:inquiry:read", "sales:inquiry:delete", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act", "procurement:order:read",
 		"masterdata:supplier:read", "procurement:requirement:read", "procurement:sourcing:read", "procurement:sourcing:write",
-		"procurement:sourcing:price", "procurement:sourcing:approve", "procurement:execution-quote:select", "procurement:order:write", "procurement:order:submit",
+		"procurement:sourcing:price", "procurement:sourcing:approve", "procurement:execution-quote:select", "procurement:execution-rfq:delete", "procurement:order:write", "procurement:order:submit",
 		// 员工邮箱监管（迁移 00074）。给 BOSS，不给别人——读自己的邮件和读
 		// 别人的邮件是两件事。两条分开：看信箱，和看"谁看过谁的信箱"。
 		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"business_report", "ALL"}, {"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
@@ -168,7 +168,7 @@ var presetRoles = []presetRole{
 			"procurement:requirement:exception", "procurement:requirement:read",
 			"procurement:requirement:write",
 			"procurement:daily-price:read", "procurement:daily-price:write", "procurement:daily-price:manage",
-			"procurement:sourcing:approve", "procurement:sourcing:price", "procurement:execution-quote:select",
+			"procurement:sourcing:approve", "procurement:sourcing:price", "procurement:execution-quote:select", "procurement:execution-rfq:delete",
 			"procurement:sourcing:read", "procurement:sourcing:send",
 			"procurement:sourcing:write",
 			"product:product:read",

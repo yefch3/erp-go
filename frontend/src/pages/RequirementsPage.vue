@@ -44,7 +44,19 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" min-width="125" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openBatchReview(row)">{{ t('requirements.openInquiry') }}</el-button>
+            <el-dropdown trigger="click">
+              <el-button type="primary" plain size="small" :loading="deletingBatchKey === row.key">
+                {{ t('orders.moreActions') }} <span aria-hidden="true" class="execution-menu-arrow">▾</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openBatchReview(row)">{{ t('requirements.openInquiry') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="canDeleteInquiry" divided :disabled="!!deletingBatchKey" @click="deleteBatchInquiry(row)">
+                    <span class="batch-delete-action">{{ t('requirements.deleteInquiry') }}</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <template #empty>{{ t('requirements.empty') }}</template>
@@ -902,6 +914,8 @@ const canWrite = auth.can('procurement:requirement:write')
 const canOrder = auth.can('procurement:order:write')
 const canReadOrder = auth.can('procurement:order:read')
 const canAssign = auth.can('procurement:execution-quote:select')
+const canDeleteInquiry = auth.can('procurement:execution-rfq:delete')
+const deletingBatchKey = ref('')
 const canManageQuotes = auth.can('procurement:sourcing:approve')
 const detailBatchKey = computed(() => String(route.params.batchKey ?? ''))
 const inquirySteps = ['quotes', 'negotiation'] as const
@@ -1353,6 +1367,26 @@ async function openBatchReview(batch: PurchaseBatch) {
   activeBatch.value = batch
   activeInquiryTab.value = 'quotes'
   await router.push({ path: `/requirements/${encodeURIComponent(batch.key)}` })
+}
+
+async function deleteBatchInquiry(batch: PurchaseBatch) {
+  if (!canDeleteInquiry || deletingBatchKey.value) return
+  deletingBatchKey.value = batch.key
+  try {
+    await ElMessageBox.confirm(t('requirements.deleteInquiryConfirm', { no: batch.label }), t('requirements.deleteInquiry'), {
+      type: 'warning',
+      confirmButtonText: t('requirements.confirmDeleteInquiry'),
+      cancelButtonText: t('common.back'),
+      confirmButtonClass: 'el-button--danger',
+    })
+    await post('/execution-assignments', { action: 'delete_batch', batch_key: batch.key })
+    ElMessage.success(t('requirements.inquiryDeleted'))
+    await load()
+  } catch {
+    // Dismissing the confirmation needs no message. The API client shows failures.
+  } finally {
+    deletingBatchKey.value = ''
+  }
 }
 
 function routeInquiryStep(): 'quotes'|'negotiation' {
@@ -1989,6 +2023,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.batch-delete-action { color: var(--el-color-danger); }
 .requirements-page {
   --proc-blue: #4ac1ff;
   --proc-green: #1fbf6c;

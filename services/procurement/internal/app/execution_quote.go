@@ -104,14 +104,6 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	if _, err := s.GetRequirement(ctx, tenantID, in.RequirementID); err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
-	var eligible bool
-	if err := s.pool.QueryRow(ctx, `SELECT `+executionRFQOpenSQL+`
-		FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2`, tenantID, in.RequirementID).Scan(&eligible); err != nil {
-		return ExecutionSupplierQuote{}, err
-	}
-	if !eligible {
-		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能保存实单报价")
-	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
 	if err != nil {
 		return ExecutionSupplierQuote{}, err
@@ -141,40 +133,44 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 		return ExecutionSupplierQuote{}, apierr.Invalid("EXECUTION_QUOTE_PAYMENT_TERMS_REQUIRED", "请填写付款条件")
 	}
 	var id int64
-	if in.ID == 0 {
-		err = s.pool.QueryRow(ctx, `INSERT INTO purchase_execution_supplier_quotes
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var eligible bool
+		if err := tx.QueryRow(ctx, `SELECT `+executionRFQOpenSQL+`
+			FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE`, tenantID, in.RequirementID).Scan(&eligible); err != nil {
+			return err
+		}
+		if !eligible {
+			return apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能保存实单报价")
+		}
+		if in.ID == 0 {
+			return tx.QueryRow(ctx, `INSERT INTO purchase_execution_supplier_quotes
 			(tenant_id,requirement_id,supplier_id,supplier_code,supplier_name,currency,unit_price,expected_date,payment_terms,valid_until,remark,created_by_id,created_by_name,quote_category,incoterm)
 			VALUES($1,$2,$3,$4,$5,$6,$7::numeric,nullif($8,'')::date,$9,nullif($10,'')::date,$11,$12,$13,$14,$15) RETURNING id`,
-			tenantID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), op.ID, op.Name, in.QuoteCategory, strings.TrimSpace(in.Incoterm)).Scan(&id)
-	} else {
-		err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-			var supplierID int64
-			var currency string
-			var assigned bool
-			if err := tx.QueryRow(ctx, `SELECT id FROM purchase_requirements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, in.RequirementID).Scan(&id); err != nil {
-				return err
-			}
-			err := tx.QueryRow(ctx, `SELECT q.supplier_id, q.currency,
+				tenantID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), op.ID, op.Name, in.QuoteCategory, strings.TrimSpace(in.Incoterm)).Scan(&id)
+		}
+		var supplierID int64
+		var currency string
+		var assigned bool
+		err := tx.QueryRow(ctx, `SELECT q.supplier_id, q.currency,
 				EXISTS (SELECT 1 FROM purchase_execution_assignments a WHERE a.tenant_id=q.tenant_id AND a.quote_id=q.id AND NOT a.cancelled)
 				FROM purchase_execution_supplier_quotes q WHERE q.tenant_id=$1 AND q.id=$2 AND q.requirement_id=$3`,
-				tenantID, in.ID, in.RequirementID).Scan(&supplierID, &currency, &assigned)
-			if err == pgx.ErrNoRows {
-				return apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
-			}
-			if err != nil {
-				return err
-			}
-			if assigned && (supplierID != supplier.ID || currency != in.Currency) {
-				return apierr.Conflict("EXECUTION_QUOTE_ASSIGNED", "已选定的报价不可更换工厂或币种")
-			}
-			_, err = tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET supplier_id=$4,supplier_code=$5,supplier_name=$6,currency=$7,unit_price=$8::numeric,
+			tenantID, in.ID, in.RequirementID).Scan(&supplierID, &currency, &assigned)
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if assigned && (supplierID != supplier.ID || currency != in.Currency) {
+			return apierr.Conflict("EXECUTION_QUOTE_ASSIGNED", "已选定的报价不可更换工厂或币种")
+		}
+		_, err = tx.Exec(ctx, `UPDATE purchase_execution_supplier_quotes SET supplier_id=$4,supplier_code=$5,supplier_name=$6,currency=$7,unit_price=$8::numeric,
 			expected_date=nullif($9,'')::date,payment_terms=$10,valid_until=nullif($11,'')::date,remark=$12,quote_category=$13,incoterm=$14,
 			calculated_unit_price=NULL,calculation_input='{}',calculated_at=NULL,calculated_by_id=0,calculated_by_name='',updated_at=now()
 			WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, in.ID, in.RequirementID, supplier.ID, supplier.Code, supplier.Name, in.Currency, price.String(), in.ExpectedDate, strings.TrimSpace(in.PaymentTerms), in.ValidUntil, strings.TrimSpace(in.Remark), in.QuoteCategory, strings.TrimSpace(in.Incoterm))
-			id = in.ID
-			return err
-		})
-	}
+		id = in.ID
+		return err
+	})
 	if err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
@@ -183,21 +179,34 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 }
 
 func (s *Service) DeleteExecutionSupplierQuote(ctx context.Context, tenantID, requirementID, quoteID int64) error {
-	var used bool
-	if err := s.pool.QueryRow(ctx, `SELECT
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var active bool
+		if err := tx.QueryRow(ctx, `SELECT `+executionRFQNotDeletedSQL+` FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE`, tenantID, requirementID).Scan(&active); err != nil {
+			return err
+		}
+		if !active {
+			return apierr.Conflict("EXECUTION_RFQ_DELETED", "这批实单询价已删除")
+		}
+		var used bool
+		if err := tx.QueryRow(ctx, `SELECT
 		EXISTS(SELECT 1 FROM purchase_order_items WHERE tenant_id=$1 AND execution_quote_id=$2)
 		OR EXISTS(SELECT 1 FROM purchase_execution_assignments WHERE tenant_id=$1 AND quote_id=$2)`, tenantID, quoteID).Scan(&used); err != nil {
-		return err
-	}
-	if used {
-		return apierr.Conflict("EXECUTION_QUOTE_IN_USE", "该报价已有议价指派或采购订单，需保留作为采购记录")
-	}
-	command, err := s.pool.Exec(ctx, `DELETE FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, quoteID, requirementID)
+			return err
+		}
+		if used {
+			return apierr.Conflict("EXECUTION_QUOTE_IN_USE", "该报价已有议价指派或采购订单，需保留作为采购记录")
+		}
+		command, err := tx.Exec(ctx, `DELETE FROM purchase_execution_supplier_quotes WHERE tenant_id=$1 AND id=$2 AND requirement_id=$3`, tenantID, quoteID, requirementID)
+		if err != nil {
+			return err
+		}
+		if command.RowsAffected() == 0 {
+			return apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
+		}
+		return nil
+	})
 	if err != nil {
 		return err
-	}
-	if command.RowsAffected() == 0 {
-		return apierr.NotFound("EXECUTION_QUOTE_NOT_FOUND", "实单报价不存在")
 	}
 	s.nudge(ctx, tenantID)
 	return nil

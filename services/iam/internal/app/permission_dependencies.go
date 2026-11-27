@@ -45,6 +45,7 @@ var permissionDependencies = map[string][]string{
 	"procurement:daily-price:manage":     {"procurement:daily-price:read"},
 	"procurement:daily-price:write":      {"procurement:daily-price:read"},
 	"procurement:exception:write":        {"procurement:order:read"},
+	"procurement:execution-rfq:delete":   {"procurement:requirement:read"},
 	"procurement:execution-quote:select": {"procurement:requirement:read"},
 	"procurement:invoice:write":          {"procurement:invoice:read"},
 	"procurement:order:cancel":           {"procurement:order:read"},
