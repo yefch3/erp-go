@@ -21,7 +21,36 @@
         <el-button v-if="requirementColumns.customized.value" link @click="requirementColumns.reset">{{ t('common.restoreColumnOrder') }}</el-button>
       </div>
 
-      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" v-loading="loading" @row-dblclick="openBatchReview">
+      <el-table class="batch-hierarchy-table" :data="purchaseBatches" row-key="key" :expand-row-keys="expandedBatchKeys" v-loading="loading" @row-dblclick="openBatchReview">
+        <el-table-column type="expand" width="1" class-name="hidden-native-expander">
+          <template #default="{ row }">
+            <div class="batch-product-hierarchy" @dblclick.stop>
+              <details v-for="group in row.productGroups" :key="group.key" class="batch-product-group" open>
+                <summary class="batch-product-heading">
+                  <el-icon class="batch-product-chevron" aria-hidden="true"><ArrowDown /></el-icon>
+                  <strong>{{ group.name }}</strong>
+                  <span>{{ t('inquiryWorkspace.list.specificationCount', { count: group.lines.length }) }}</span>
+                  <span class="batch-product-total">{{ t('inquiryWorkspace.list.totalQuantity') }} {{ requirementQuantitySummary(group.lines) }}</span>
+                </summary>
+                <table class="batch-specifications">
+                  <colgroup><col /><col class="batch-specification-quantity" /></colgroup>
+                  <thead>
+                    <tr class="batch-specification-header">
+                      <th scope="col">{{ t('inquiryWorkspace.list.productDetails') }}</th>
+                      <th scope="col">{{ t('inquiryWorkspace.list.quantityUnit') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="line in group.lines" :key="line.id" class="batch-specification-row">
+                      <td>{{ requirementProductDescription(line) }}</td>
+                      <td>{{ formatQtyTwo(line.requiredQty) }} {{ line.uomCode }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </details>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column v-for="column in requirementColumns.columns.value" :key="column.key" :min-width="column.minWidth" :width="column.width" :align="column.align" :class-name="column.className" :label-class-name="column.className" :show-overflow-tooltip="column.showOverflowTooltip">
           <template #header><ReorderableTableHeader :label="column.label" :hint="t('common.dragColumnHint')" :move-left-label="t('common.moveColumnLeft')" :move-right-label="t('common.moveColumnRight')" :can-move-left="requirementColumns.canMoveLeft(column.key)" :can-move-right="requirementColumns.canMoveRight(column.key)" @move-left="requirementColumns.moveBy(column.key,-1)" @move-right="requirementColumns.moveBy(column.key,1)" /></template>
           <template #default="{ row }">
@@ -30,10 +59,14 @@
               <div v-if="row.additionalContractNos" class="sub">{{ t('requirements.fromContract') }} {{ row.additionalContractNos }}</div>
             </template>
             <span v-else-if="column.key==='customer'">{{ row.customerName || '—' }}</span>
-            <div v-else-if="column.key==='products'" class="batch-product-summary batch-product-summary--stacked">
-              <span class="batch-product-summary__main"><span class="batch-product-summary__text" :title="row.productGroups[0]?.name">{{ row.productGroups[0]?.name || '—' }}</span><span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span></span>
+            <button v-else-if="column.key==='products'" type="button" class="batch-product-summary batch-product-summary--stacked" :aria-expanded="expandedBatchKeys.includes(row.key)" @click.stop="toggleBatchSpecifications(row.key)" @dblclick.stop>
+              <span class="batch-product-summary__main">
+                <span class="batch-product-summary__text" :title="row.productGroups[0]?.name">{{ row.productGroups[0]?.name || '—' }}</span>
+                <span v-if="row.productGroups.length > 1" class="batch-product-summary__count">+{{ row.productGroups.length - 1 }}</span>
+                <el-icon class="batch-product-chevron" :class="{ 'is-expanded': expandedBatchKeys.includes(row.key) }" aria-hidden="true"><ArrowDown /></el-icon>
+              </span>
               <small>{{ t('requirements.batchDemand', { products: row.productGroups.length, specs: row.lines.length, quantity: row.requiredQuantity }) }}</small>
-            </div>
+            </button>
             <template v-else-if="column.key==='progress'">
               <el-tag v-if="row.quoteStatus" :type="quoteStatusTone(row.quoteStatus)" effect="light" size="small">{{ t(`requirements.quoteStatus.${row.quoteStatus}`) }}</el-tag>
               <span v-else>—</span>
@@ -783,7 +816,7 @@ import {suggestPaymentTerms} from "../lib/paymentTermOptions"
 import PresaleReference from '../components/PresaleReference.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Paperclip } from '@element-plus/icons-vue'
+import { ArrowDown, Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, download, get, post, postDownload, quietErrors, saveBlob } from '../api'
@@ -1001,6 +1034,12 @@ function requirementQuantitySummary(lines: Requirement[], separator?: string): s
 }
 const page = ref(1)
 const pageSize = 100
+const expandedBatchKeys = ref<string[]>([])
+function toggleBatchSpecifications(key: string) {
+  expandedBatchKeys.value = expandedBatchKeys.value.includes(key)
+    ? expandedBatchKeys.value.filter(expanded => expanded !== key)
+    : [...expandedBatchKeys.value, key]
+}
 // Outstanding work is what a buyer opens this page for; everything else is
 // history they go looking for deliberately.
 const keyword = ref('')
@@ -2103,8 +2142,9 @@ onMounted(load)
 .batch-product-summary:focus-visible {
   color: #0f719b;
   background: #edf8fd;
-  outline: none;
 }
+.batch-product-summary:focus-visible,
+.batch-product-heading:focus-visible { outline: 2px solid #0f719b; outline-offset: -2px; }
 .batch-product-summary--stacked { align-items: stretch; flex-direction: column; }
 .batch-product-summary__main { display: flex; align-items: center; min-width: 0; }
 .batch-product-summary__mobile-meta { display: none; margin-top: 3px; color: #718390; font-size: 11px; line-height: 1.35; }
@@ -2132,13 +2172,16 @@ onMounted(load)
   color: #648395;
   transition: transform .2s ease;
 }
-.batch-product-chevron.is-expanded { transform: rotate(180deg); }
+.batch-product-chevron.is-expanded,
+.batch-product-group[open] > summary .batch-product-chevron { transform: rotate(180deg); }
 .batch-product-hierarchy { padding: 10px 14px 12px; background: #f7fbfd; }
 .batch-product-group { overflow: hidden; margin-bottom: 8px; background: #fff; border: 1px solid #dbe8ef; border-radius: 9px; }
 .batch-product-group:last-child { margin-bottom: 0; }
 .batch-product-heading {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: 20px minmax(220px, 2fr) minmax(100px, .65fr) minmax(170px, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr) auto minmax(0, 24%);
+  gap: 12px;
   align-items: center;
   width: 100%;
   min-height: 46px;
@@ -2150,28 +2193,24 @@ onMounted(load)
   text-align: left;
   cursor: pointer;
 }
+.batch-product-heading::marker { content: ''; }
+.batch-product-heading::-webkit-details-marker { display: none; }
 .batch-product-heading:hover,
-.batch-product-heading:focus-visible { background: #f1f8fb; outline: none; }
+.batch-product-heading:focus-visible { background: #f1f8fb; }
 .batch-product-heading .batch-product-chevron { margin-left: 0; }
-.batch-product-heading strong { overflow: hidden; color: #143d56; text-overflow: ellipsis; white-space: nowrap; }
+.batch-product-heading strong { color: #143d56; overflow-wrap: anywhere; }
 .batch-product-heading > span { color: #6b7f8d; font-size: 13px; }
 .batch-product-total { text-align: right; }
-.batch-specifications { border-top: 1px solid #e2edf2; }
-.batch-specification-header,
-.batch-specification-row {
-  display: grid;
-  grid-template-columns: minmax(110px, .6fr) minmax(240px, 1.4fr) minmax(130px, .7fr) minmax(170px, 1fr) minmax(150px, .9fr);
-  gap: 18px;
-  align-items: center;
-  padding: 0 34px;
-}
-.batch-specification-header { min-height: 34px; color: #7a8b98; background: #f8fbfc; font-size: 12px; font-weight: 650; }
-.batch-specification-row { min-height: 58px; padding-top: 9px; padding-bottom: 9px; border-top: 1px solid #edf2f5; color: #426273; }
-.batch-specification-header + .batch-specification-row { border-top: 0; }
-.batch-specification-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.batch-specification-row strong { color: #173f56; text-align: right; }
-.batch-specification-code { color: #607784; }
-.batch-specification-size { color: #334b5c; }
+.batch-specifications { width: 100%; table-layout: fixed; border-collapse: collapse; border-top: 1px solid #e2edf2; }
+.batch-specification-quantity { width: 145px; }
+.batch-specifications th,
+.batch-specifications td { padding: 9px 14px; text-align: left; }
+.batch-specification-header { color: #496575; background: #f1f8fb; font-size: 12px; }
+.batch-specification-row + .batch-specification-row { border-top: 1px solid #edf2f5; }
+.batch-specification-row td:first-child { color: #334f62; overflow-wrap: anywhere; }
+.batch-specifications th:last-child,
+.batch-specifications td:last-child { text-align: right; }
+.batch-specifications td:last-child { color: #173f56; font-weight: 650; font-variant-numeric: tabular-nums; }
 .supplier-group {
   padding: 14px;
   margin-top: 14px;
@@ -2318,11 +2357,11 @@ onMounted(load)
 @media (max-width: 480px) {
   .batch-common-grid { grid-template-columns: 1fr; }
 }
-@media(max-width:1100px){.category-calculation{grid-template-columns:1fr}.category-inputs{grid-template-columns:repeat(2,minmax(150px,1fr))}.batch-product-heading{grid-template-columns:20px minmax(150px,1.4fr) 90px minmax(130px,1fr)}.batch-specification-header,.batch-specification-row{grid-template-columns:minmax(100px,.6fr) minmax(190px,1.2fr) minmax(120px,.7fr) minmax(150px,1fr) minmax(130px,.9fr);padding-left:26px;padding-right:26px;gap:12px}}
+@media(max-width:1100px){.category-calculation{grid-template-columns:1fr}.category-inputs{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 @media(max-width:900px){.requirements-page :deep(.batch-hierarchy-table .batch-secondary-column){display:none}.batch-product-summary__mobile-meta,.batch-mobile-source{display:block}.requirements-page :deep(.batch-hierarchy-table .el-table__body),.requirements-page :deep(.batch-hierarchy-table .el-table__header){width:100%!important}}
 @media(min-width:801px){.batch-mobile-stage{display:none}}
 @media(max-width:800px){.requirements-page :deep(.batch-hierarchy-table .batch-status-column){display:none}.batch-mobile-stage{display:inline-flex;margin-top:5px}}
-@media(max-width:800px){.pricing-category__head{align-items:flex-start;flex-direction:column;gap:8px}.pricing-category__head>div{align-items:flex-start;flex-direction:column;gap:4px}.category-calculation{grid-template-columns:1fr;padding:12px}.category-inputs{grid-template-columns:1fr}.execution-files>header{align-items:flex-start;flex-direction:column}.calculation-result{justify-content:flex-start}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:20px minmax(120px,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-header{display:none}.batch-specification-row{grid-template-columns:1fr 1fr;padding:10px 18px}.batch-specification-row strong{text-align:left}.batch-specification-row>span:nth-last-child(-n+2){font-size:12px}}
+@media(max-width:800px){.pricing-category__head{align-items:flex-start;flex-direction:column;gap:8px}.pricing-category__head>div{align-items:flex-start;flex-direction:column;gap:4px}.category-calculation{grid-template-columns:1fr;padding:12px}.category-inputs{grid-template-columns:1fr}.execution-files>header{align-items:flex-start;flex-direction:column}.calculation-result{justify-content:flex-start}.batch-product-hierarchy{padding:8px}.batch-product-heading{grid-template-columns:16px minmax(0,1fr) auto;gap:8px;padding-left:10px;padding-right:10px}.batch-product-total{grid-column:2/-1;margin-top:-4px;text-align:left}.batch-specification-quantity{width:105px}.batch-specifications th,.batch-specifications td{padding:8px 10px}}
 .qty {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
