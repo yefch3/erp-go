@@ -176,6 +176,7 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			Amount: it.Amount, ReceivedQty: it.ReceivedQty,
 			ContractNo: it.ContractNo, CustomerName: it.CustomerName, Source: it.Source,
 			ContractOwner: it.ContractOwner, ContractItemRemark: it.ContractItemRemark,
+			NegotiationRemark: it.NegotiationRemark,
 		})
 	}
 	receiptDetails, err := h.svc.ReceiptDetails(ctx, grpcx.TenantID(ctx), req.GetId())

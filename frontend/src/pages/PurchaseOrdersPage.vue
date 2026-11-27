@@ -221,6 +221,7 @@
         <el-table-column label="产品规格" min-width="220">
           <template #default="{ row }">
             <ComparisonSpecification :product-name="row.productName" :text="orderProductDescription(row)" hide-name />
+            <div v-if="row.negotiationRemark" class="sub specification-remark">规格备注：{{ row.negotiationRemark }}</div>
           </template>
         </el-table-column>
         <el-table-column label="数量 / 单位" width="155">
@@ -367,6 +368,7 @@
               <template v-if="row.source === 'MANUAL'">{{ t('orders.manual') }}</template>
               <template v-else>{{ row.contractNo }} · {{ row.customerName }}<template v-if="row.contractOwner"> · {{ t('orders.contractOwner') }} {{ row.contractOwner }}</template></template>
             </div>
+            <div v-if="row.negotiationRemark" class="sub specification-remark">规格备注：{{ row.negotiationRemark }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="t('orders.orderQty')" width="100" align="right">
@@ -732,6 +734,7 @@ interface OrderItem {
   customerName: string
   source: string
   contractItemRemark?:string
+  negotiationRemark?: string
   contractOwner: string
 }
 interface Receipt {
@@ -1902,6 +1905,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.specification-remark {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 :global(.historical-order-detail .el-dialog__body){max-height:calc(90vh - 90px);overflow:auto}
 .confirmation-section h3 { margin:0; }
 .confirmation-section { border:1px solid var(--el-border-color-light); border-radius:8px; padding:14px; margin-bottom:18px; }

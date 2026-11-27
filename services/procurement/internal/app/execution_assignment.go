@@ -328,7 +328,7 @@ func (s *Service) createAssignmentDraft(ctx context.Context, tx pgx.Tx, tenant i
 	if selected != len(in.FileIDs) {
 		return 0, apierr.Invalid("ASSIGNMENT_FILES_INVALID", "所选资料不属于此议价任务")
 	}
-	prepared, err := s.prepareOrder(ctx, CreateOrderInput{SupplierID: supplierID, Currency: task.Currency, ExpectedDate: task.ExpectedDate, Remark: task.Remark,
+	prepared, err := s.prepareOrder(ctx, CreateOrderInput{SupplierID: supplierID, Currency: task.Currency, ExpectedDate: task.ExpectedDate,
 		FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "CUSTOM", DeliveryAddress: "按外销合同约定",
 		Lines: []OrderLine{{RequirementID: in.RequirementID, Qty: task.Quantity, UnitPrice: task.NegotiatedPrice, ExecutionQuoteID: task.QuoteID}}}, true)
 	if err != nil {
