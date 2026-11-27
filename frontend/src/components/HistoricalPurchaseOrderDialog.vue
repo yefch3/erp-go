@@ -3,7 +3,17 @@
     <el-alert :closable="false" type="info" title="补录以前已下达、仍需继续执行的采购单。供应商可留空，建单后可在“补齐资料 / 价格”中补填。确认后进入已下单；不会自动登记收货或付款。采购员默认是你自己，也可以选真正负责这张单的同事，保存后这张单就归对方。" />
     <el-form label-position="top" size="small" class="history-form" v-loading="loading">
       <el-form-item label="原采购单号"><el-input v-model="form.poNo" :disabled="!!savedId" maxlength="50" placeholder="留空自动生成" /></el-form-item>
-      <el-form-item label="供应商（选填）"><el-select v-model="form.supplierId" filterable clearable :disabled="confirmed && !!savedSupplierId" placeholder="可留空，建单后补填" style="width:100%"><el-option v-if="savedSupplierId && !suppliers.some(s=>s.id===savedSupplierId)" :value="savedSupplierId" :label="savedSupplierName" /><el-option v-for="s in suppliers" :key="s.id" :value="s.id" :label="`${s.code} · ${s.name}`" /></el-select></el-form-item>
+      <el-form-item label="供应商（选填）">
+        <SupplierSelect
+          v-if="props.modelValue"
+          :model-value="form.supplierId"
+          :pinned-option="pinnedSupplier"
+          :disabled="loading || !canReadSuppliers || (confirmed && !!savedSupplierId)"
+          placeholder="可留空，建单后补填"
+          aria-label="供应商（选填）"
+          @update:model-value="form.supplierId = String($event || '')"
+        />
+      </el-form-item>
       <el-form-item label="原下单日期" required><el-date-picker v-model="form.originalDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       <el-form-item label="币种"><el-select v-model="form.currency" filterable allow-create :disabled="confirmed" style="width:100%"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY']" :key="c" :value="c" /></el-select></el-form-item>
       <el-form-item label="预计到货日期"><el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
@@ -47,9 +57,11 @@ import { buyerChangeFailure, buyerOptions, isBuyerChange, type BuyerCandidate } 
 import { historicalLineHeaders, parseHistoricalLines } from '../lib/historicalLineImport'
 import { useAuthStore } from '../stores/auth'
 import ColumnFillRegion from './ColumnFillRegion.vue'
+import SupplierSelect from './masterdata/SupplierSelect.vue'
 import { hasId } from '../lib/protoId'
 const excelInput=ref<HTMLInputElement>(),importing=ref(false),importMessage=ref(''),importErrors=ref<string[]>([])
 const auth=useAuthStore(),buyerName=ref(auth.employeeName)
+const canReadSuppliers = auth.can('masterdata:supplier:read')
 // 采购员可选（#643）：补录常常是一个人统一录、再分给真正负责的采购。单子先照旧存在录入人名下——
 // 后面传附件、确认都要用到她对这张单的权限——全部存好之后，最后一步才换给选中的同事。
 // savedBuyerId 是单子上现在写着的那位；buyerId 是下拉里选的。候选名单取不到就退回原来的只读框。
@@ -62,14 +74,17 @@ const emit=defineEmits<{ 'update:modelValue':[boolean];saved:[string] }>()
 type Line={id:string;productId:string;productName:string;spec:string;uom:string;qty:string;unitPrice:string}
 const blankLine=():Line=>({id:'0',productId:'0',productName:'',spec:'',uom:'',qty:'',unitPrice:''})
 const empty=()=>({supplierId:'',poNo:'',originalDate:'',currency:'CNY',expectedDate:'',payableDueDate:'',remark:'',exportContractNo:'',destinationPort:'',lines:[blankLine()]})
-const form=reactive(empty()), suppliers=ref<{id:string;code:string;name:string}[]>([])
+const form=reactive(empty())
 const files=ref<{id:string;fileName:string}[]>([]),pendingFiles=ref<File[]>([]),savedId=ref(''),confirmed=ref(false),loading=ref(false),saving=ref(false)
 const savedSupplierId=ref(''),savedSupplierName=ref('')
+const pinnedSupplier = computed(() => savedSupplierId.value
+  ? { id: savedSupplierId.value, code: '', name: savedSupplierName.value }
+  : undefined)
 watch(()=>props.modelValue,async open=>{if(!open)return;importMessage.value='';importErrors.value=[];loading.value=true;Object.assign(form,empty());files.value=[];pendingFiles.value=[];savedId.value=props.orderId||'';confirmed.value=false;savedSupplierId.value='';savedSupplierName.value=''
  // 采购员这几项和表单一起、在任何请求之前就归位：下面哪一步加载失败，都不能把上一次打开时选的人留在下拉里——
  // 那样一保存，这张单就悄悄交给了上一张单选的那位。
  buyerName.value=auth.employeeName;savedBuyerId.value=String(auth.employeeId||'');buyerId.value=savedBuyerId.value;buyers.value=[]
- try{buyers.value=(await get<{candidates:BuyerCandidate[]}>('/purchase-orders/buyer-candidates',undefined,quietErrors).catch(()=>({candidates:[] as BuyerCandidate[]}))).candidates||[];if(auth.can('product:product:read'))products.value=(await get<{products:typeof products.value}>('/products',{page_size:200,status:'ACTIVE'})).products||[];const s=await get<{suppliers:{id:string;code:string;name:string}[]}>('/suppliers',{page_size:200,status:'ACTIVE'});suppliers.value=s.suppliers||[]
+ try{buyers.value=(await get<{candidates:BuyerCandidate[]}>('/purchase-orders/buyer-candidates',undefined,quietErrors).catch(()=>({candidates:[] as BuyerCandidate[]}))).candidates||[];if(auth.can('product:product:read'))products.value=(await get<{products:typeof products.value}>('/products',{page_size:200,status:'ACTIVE'})).products||[]
  if(props.orderId){const d=await get<{order:any;items:any[]}>(`/purchase-orders/${props.orderId}`);for(const key of Object.keys(empty()) as (keyof ReturnType<typeof empty>)[]){if(key!=='lines')form[key]=d.order[key]||''}form.supplierId=hasId(d.order.supplierId)?String(d.order.supplierId):'';savedSupplierId.value=form.supplierId;savedSupplierName.value=d.order.supplierName||'';buyerName.value=d.order.buyerName||auth.employeeName;savedBuyerId.value=hasId(d.order.buyerId)?String(d.order.buyerId):'';form.lines=d.items.map(l=>({id:l.id,productId:String(l.productId||'0'),productName:l.productName,spec:l.spec,uom:l.uomCode,qty:l.qty,unitPrice:l.unitPrice}));confirmed.value=d.order.status!=='DRAFT';files.value=(await get<{files:typeof files.value}>(`/purchase-orders/${savedId.value}/draft-files`)).files||[]}
  buyerId.value=savedBuyerId.value
  }finally{loading.value=false}})
