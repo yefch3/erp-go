@@ -202,12 +202,15 @@
                   <el-table-column prop="line.requiredQty" label="采购需求量" width="142" align="right">
                     <template #default="{row}">
                       {{ formatQtyTwo(row.line.requiredQty) }} {{ row.line.uomCode }}
-                      <div v-if="Number(row.line.blockingDraftQty) > 0" class="execution-draft-reservation">
-                        <small>采购草稿已占用 {{ trimQty(row.line.blockingDraftQty) }} {{ row.line.uomCode }}，暂不可选厂</small>
+                      <div v-if="Number(row.line.blockingDraftQty) > 0" class="execution-order-note">
+                        <small>已生成草稿单不可继续选厂</small>
                         <router-link v-for="draft in blockingDraftOrders[row.line.id]" :key="draft.poId"
                           :to="{path:'/purchase-orders', query:{order:draft.poId, status:'DRAFT'}}">
                           查看原草稿<span v-if="blockingDraftOrders[row.line.id]?.length > 1"> {{ draft.poNo }}</span>
                         </router-link>
+                      </div>
+                      <div v-else-if="row.line.status === 'ORDERED'" class="execution-order-note">
+                        <small>已下单不可继续选厂</small>
                       </div>
                     </template>
                   </el-table-column>
@@ -2316,9 +2319,9 @@ onMounted(load)
 .execution-quote-grid :deep(td.el-table__cell) { padding: 5px 0; font-size: 13px; vertical-align: middle; }
 .execution-quote-grid :deep(.cell) { padding: 0 8px; line-height: 19px; word-break: normal; overflow-wrap: anywhere; }
 .execution-select-all { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.execution-draft-reservation { margin-top: 3px; color: #84520e; font-size: 11px; line-height: 1.4; }
-.execution-draft-reservation small { font-size: inherit; }
-.execution-draft-reservation a { display: block; color: #176f85; text-decoration: underline; }
+.execution-order-note { margin-top: 3px; color: #84520e; font-size: 11px; line-height: 1.4; }
+.execution-order-note small { font-size: inherit; }
+.execution-order-note a { display: block; color: #176f85; text-decoration: underline; }
 .execution-factory-select { width: 100%; }
 .execution-factory-select :deep(.el-select__placeholder) { position: static; transform: none; }
 .execution-factory-option { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; white-space: normal; line-height: 19px; }
