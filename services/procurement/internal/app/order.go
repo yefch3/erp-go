@@ -1065,9 +1065,7 @@ func approvalRequirementConflict(
 // list. Only before anything has arrived: once goods are in the warehouse the
 // order happened, and unwinding it is a return, not a cancellation.
 func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason string, op Operator) error {
-	if reason == "" {
-		return apierr.Invalid("PO_REASON_REQUIRED", "请填写取消原因")
-	}
+	reason = strings.TrimSpace(reason)
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
@@ -1082,6 +1080,9 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 		if head.Status != poDraft && head.Status != poOrdered && head.Status != "REJECTED" {
 			return apierr.Conflict("PO_NOT_CANCELLABLE", "该状态的采购单不能取消").
 				WithMeta("status", head.Status)
+		}
+		if head.Status == poOrdered && reason == "" {
+			return apierr.Invalid("PO_REASON_REQUIRED", "请填写取消原因")
 		}
 		items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
 			TenantID: tenantID, PoID: id,
