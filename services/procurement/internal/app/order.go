@@ -272,6 +272,15 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		}
 		total = total.Add(p.qty.Mul(p.price))
 		executionRequote := r.Status == "WAITING_REQUOTE" || prepared.fromExecutionAssignment || p.executionQuoteID > 0
+		if executionRequote {
+			var active bool
+			if err := tx.QueryRow(ctx, `SELECT `+executionRFQNotDeletedSQL+` FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2`, tenantID, r.ID).Scan(&active); err != nil {
+				return head, err
+			}
+			if !active {
+				return head, apierr.Conflict("EXECUTION_RFQ_DELETED", "这批实单询价已删除")
+			}
+		}
 		if !executionRequote {
 			allExecutionRequote = false
 		} else if executionContractNo == "" {

@@ -3,39 +3,53 @@ package app
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
 
+const executionRFQBatchKeySQL = `CASE
+    WHEN r.contract_id <> 0 THEN 'CONTRACT-ID:' || r.contract_id
+    WHEN btrim(r.contract_no) <> '' THEN 'CONTRACT-NO:' || btrim(r.contract_no)
+    WHEN r.quotation_id <> 0 THEN 'QUOTATION-ID:' || r.quotation_id
+    WHEN btrim(r.quotation_no) <> '' THEN 'QUOTATION-NO:' || btrim(r.quotation_no)
+    ELSE 'MANUAL:' || r.id END`
+
+// A replay of the same version can supply another line. It remains part of
+// the deleted batch, while a newly effective contract version can be quoted.
+var executionRFQNotDeletedSQL = `(r.execution_rfq_deleted_at IS NULL AND NOT EXISTS (
+    SELECT 1 FROM purchase_requirements marker
+    WHERE marker.tenant_id=r.tenant_id AND marker.execution_rfq_deleted_at IS NOT NULL
+      AND (r.contract_id=0 OR marker.version_no=r.version_no)
+      AND (` + strings.ReplaceAll(executionRFQBatchKeySQL, "r.", "marker.") + `)=(` + executionRFQBatchKeySQL + `)))`
+
 // A released contract can still need factory selection after an order has
 // claimed or released part of its demand. Older releases may be PENDING.
-const executionRFQStateSQL = `(r.status = 'WAITING_REQUOTE' OR
-    (r.contract_id > 0 AND r.contract_version_id > 0 AND r.status IN ('PENDING', 'PARTIALLY_ORDERED')))`
-const executionRFQOpenSQL = `(` + executionRFQStateSQL + ` AND contract_requirement_open(r.tenant_id, r.id) > 0)`
+var executionRFQStateSQL = `(` + executionRFQNotDeletedSQL + ` AND (r.status = 'WAITING_REQUOTE' OR
+    (r.contract_id > 0 AND r.contract_version_id > 0 AND r.status IN ('PENDING', 'PARTIALLY_ORDERED'))))`
+var executionRFQOpenSQL = `(` + executionRFQStateSQL + ` AND contract_requirement_open(r.tenant_id, r.id) > 0)`
+
+const executionRFQVisibleStateSQL = `(r.status = 'WAITING_REQUOTE' OR
+    (r.contract_id > 0 AND r.contract_version_id > 0 AND r.status IN ('PENDING', 'PARTIALLY_ORDERED')) OR
+    (r.contract_id > 0 AND r.contract_version_id > 0 AND r.status IN ('ORDERED', 'RECEIVED')) OR
+    (r.status IN ('PENDING', 'PARTIALLY_ORDERED', 'ORDERED', 'RECEIVED') AND EXISTS (
+      SELECT 1 FROM purchase_execution_assignments a WHERE a.tenant_id=r.tenant_id AND a.requirement_id=r.id AND NOT a.cancelled)))`
+const executionRFQCurrentVersionSQL = `(r.contract_id = 0 OR NOT EXISTS (
+    SELECT 1 FROM purchase_requirements newer
+    WHERE newer.tenant_id=r.tenant_id AND newer.contract_id=r.contract_id AND newer.version_no>r.version_no))`
 
 // Eligibility, search and pagination work at batch level. Quotes from an
 // inaccessible line never contribute to a batch's status for this operator.
 // The batch key matches the existing detail URLs in the procurement UI.
-const executionBatchPageSQL = `
+var executionBatchPageSQL = `
 WITH scoped AS (
   SELECT r.id, r.tenant_id, r.required_date, r.contract_no, r.product_name, r.product_code,
-    ` + executionRFQOpenSQL + ` AS open_for_rfq, CASE
-    WHEN contract_id <> 0 THEN 'CONTRACT-ID:' || contract_id
-    WHEN btrim(contract_no) <> '' THEN 'CONTRACT-NO:' || btrim(contract_no)
-    WHEN quotation_id <> 0 THEN 'QUOTATION-ID:' || quotation_id
-    WHEN btrim(quotation_no) <> '' THEN 'QUOTATION-NO:' || btrim(quotation_no)
-    ELSE 'MANUAL:' || id END AS batch_key
+    ` + executionRFQOpenSQL + ` AS open_for_rfq, ` + executionRFQBatchKeySQL + ` AS batch_key
   FROM purchase_requirements r
   WHERE r.tenant_id = $1 AND ($2::bool OR r.owner_id = ANY($3::bigint[]))
-    AND (` + executionRFQStateSQL + ` OR
-         (r.contract_id > 0 AND r.contract_version_id > 0 AND r.status IN ('ORDERED', 'RECEIVED')) OR
-         (r.status IN ('PENDING', 'PARTIALLY_ORDERED', 'ORDERED', 'RECEIVED') AND EXISTS (
-           SELECT 1 FROM purchase_execution_assignments a WHERE a.tenant_id=r.tenant_id AND a.requirement_id=r.id AND NOT a.cancelled)))
-    AND (r.contract_id = 0 OR NOT EXISTS (
-      SELECT 1 FROM purchase_requirements newer
-      WHERE newer.tenant_id=r.tenant_id AND newer.contract_id=r.contract_id AND newer.version_no>r.version_no))
+    AND ` + executionRFQNotDeletedSQL + ` AND ` + executionRFQVisibleStateSQL + ` AND ` + executionRFQCurrentVersionSQL + `
 ), candidates AS (
   SELECT batch_key, min(required_date) FILTER (WHERE open_for_rfq) AS earliest, array_agg(id ORDER BY id) AS ids
   FROM scoped

@@ -92,6 +92,9 @@ func (s *Service) authorizeOwnExecutionQuote(ctx context.Context, tenantID, id i
 }
 
 func (s *Service) ManageExecutionAssignment(ctx context.Context, tenant int64, op Operator, in ExecutionAssignmentInput) (ExecutionAssignmentResult, error) {
+	if in.Action == "delete_batch" {
+		return ExecutionAssignmentResult{}, s.deleteExecutionRFQBatch(ctx, tenant, op, in.BatchKey)
+	}
 	if in.RequirementID > 0 && in.Action != "inbox" {
 		if err := s.AuthorizeRequirement(ctx, tenant, in.RequirementID, op); err != nil {
 			return ExecutionAssignmentResult{}, err
