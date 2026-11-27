@@ -1,29 +1,75 @@
 <template>
   <section class="claim-panel">
-    <div class="toolbar">
-      <el-button type="primary" @click="openCreate">{{t('reimbursementExpense.create')}}</el-button>
-    </div>
-    <el-table v-loading="loading" :data="rows" row-key="id">
-      <el-table-column type="expand" width="40"><template #default="{row}"><div class="details">
-        <div class="detail-grid"><span>{{t('reimbursementExpense.type')}}：{{expenseLabel(row.expenseType)}}</span><template v-if="claimExpenseType(row.expenseType)==='TRAVEL'"><span>出差：{{row.tripStart}} 至 {{row.tripEnd}}</span><span>路线：{{row.origin}} → {{row.destination}}</span></template><span v-else>{{t('reimbursementExpense.date')}}：{{row.expenseDate}}</span><span>{{t('reimbursementExpense.purpose')}}：{{row.purpose}}</span><span>收款账户：{{row.paymentAccount}}</span><span v-if="row.note">备注：{{row.note}}</span></div>
-        <el-alert v-if="row.rejectionReason" type="error" :closable="false" :title="`退回原因：${row.rejectionReason}`" />
-        <h4>报销凭证</h4><div class="files"><a v-for="f in row.files" :key="f.id" href="#" @click.prevent="openFile(f)">{{fileType[f.category]||f.category}} · {{f.fileName}}</a><span v-if="!row.files?.length">暂无凭证</span></div>
-      </div></template></el-table-column>
-      <el-table-column prop="claimNo" label="报销单号" width="150" />
-      <el-table-column prop="claimantName" label="报销人" width="80" /><el-table-column prop="departmentName" label="部门" width="90" />
-      <el-table-column :label="t('reimbursementExpense.type')" width="80"><template #default="{row}">{{expenseLabel(row.expenseType)}}</template></el-table-column>
-      <el-table-column :label="t('reimbursementExpense.purpose')" min-width="130"><template #default="{row}">{{row.purpose}}<div class="sub">{{claimExpenseType(row.expenseType)==='TRAVEL'?row.destination:row.expenseDate}}</div></template></el-table-column>
-      <el-table-column label="金额" width="110" align="right"><template #default="{row}"><strong>{{row.currency}} {{row.amount}}</strong></template></el-table-column>
-      <el-table-column label="状态" width="140"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{statusLabel[row.status]||row.status}}</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="168" fixed="right"><template #default="{row}">
-        <el-button v-if="['DRAFT','REJECTED','PENDING_PAYMENT'].includes(row.status) && row.claimantId===myID" :disabled="deletingId===row.id" link @click="openEdit(row)">编辑</el-button>
-        <el-button v-if="canDelete(row)" :disabled="deletingId===row.id" link type="primary" @click="submit(row)">提交审批</el-button>
-        <el-button v-if="canDelete(row)" :loading="deletingId===row.id" link type="danger" @click="deleteClaim(row)">{{t('common.delete')}}</el-button>
-        <el-button v-if="taskFor(row)" link type="success" @click="act(row,'APPROVE')">同意</el-button>
-        <el-button v-if="taskFor(row)" link type="danger" @click="act(row,'RETURN')">退回</el-button>
-        <el-button v-if="canManage && row.status==='PENDING_PAYMENT'" link type="success" @click="openPay(row)">登记付款</el-button>
-        <el-button v-if="canManage && row.status==='PAID'" link type="danger" @click="reverse(row)">冲销付款</el-button>
-      </template></el-table-column>
+    <el-table v-loading="loading" :data="rows" row-key="id" class="claim-table">
+      <el-table-column type="expand" width="32">
+        <template #default="{ row }">
+          <div class="details">
+            <el-alert v-if="row.rejectionReason" type="error" :closable="false" :title="`退回原因：${row.rejectionReason}`" />
+            <dl class="detail-grid">
+              <div><dt>{{ t('reimbursementExpense.type') }}</dt><dd>{{ expenseLabel(row.expenseType) }}</dd></div>
+              <template v-if="claimExpenseType(row.expenseType) === 'TRAVEL'">
+                <div><dt>出差</dt><dd>{{ row.tripStart }} 至 {{ row.tripEnd }}</dd></div>
+                <div><dt>路线</dt><dd>{{ row.origin }} → {{ row.destination }}</dd></div>
+              </template>
+              <div v-else><dt>{{ t('reimbursementExpense.date') }}</dt><dd>{{ row.expenseDate }}</dd></div>
+              <div class="detail-wide"><dt>{{ t('reimbursementExpense.purpose') }}</dt><dd>{{ row.purpose }}</dd></div>
+              <div><dt>收款账户</dt><dd>{{ row.paymentAccount }}</dd></div>
+              <div v-if="row.note" class="detail-wide"><dt>备注</dt><dd>{{ row.note }}</dd></div>
+            </dl>
+            <h4>报销凭证</h4>
+            <div class="files">
+              <a v-for="f in row.files" :key="f.id" href="#" @click.prevent="openFile(f)">{{ fileType[f.category] || f.category }} · {{ f.fileName }}</a>
+              <span v-if="!row.files?.length" class="sub">暂无凭证</span>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="claimNo" label="报销单号" width="150" align="left" class-name="claim-number" />
+      <el-table-column prop="claimantName" label="报销人" width="116" align="left" show-overflow-tooltip />
+      <el-table-column prop="departmentName" label="部门" width="76" align="left" show-overflow-tooltip />
+      <el-table-column :label="t('reimbursementExpense.type')" width="78" align="left">
+        <template #default="{ row }">{{ expenseLabel(row.expenseType) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('reimbursementExpense.purpose')" min-width="172" align="left">
+        <template #default="{ row }">
+          <div class="claim-purpose">{{ row.purpose }}</div>
+          <div class="sub">{{ claimExpenseType(row.expenseType) === 'TRAVEL' ? row.destination : row.expenseDate }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="金额" width="100" align="right" class-name="claim-amount">
+        <template #default="{ row }"><strong>{{ row.currency }} {{ row.amount }}</strong></template>
+      </el-table-column>
+      <el-table-column label="状态" width="126" align="center">
+        <template #default="{ row }">
+          <el-tag class="claim-status" size="small" :type="statusType(row.status)" effect="plain">{{ statusLabel[row.status] || row.status }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('common.actions')" width="115" align="center" fixed="right">
+        <template #default="{ row }">
+          <div class="row-actions">
+            <el-dropdown
+              v-if="canEdit(row) || taskFor(row) || canPay(row) || canReversePayment(row)"
+              trigger="click"
+              @command="handleClaimMenu(row, $event)"
+            >
+              <el-button class="more-actions-trigger" :disabled="deletingId === row.id" size="small" type="primary" plain>
+                {{ t('orders.moreActions') }}<span class="drop-arrow" aria-hidden="true">▼</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="canSubmit(row)" command="submit">提交审批</el-dropdown-item>
+                  <el-dropdown-item v-if="taskFor(row)" command="approve">同意</el-dropdown-item>
+                  <el-dropdown-item v-if="canPay(row)" command="pay">登记付款</el-dropdown-item>
+                  <el-dropdown-item v-if="canEdit(row)" command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="taskFor(row)" command="return"><span class="menu-danger">退回</span></el-dropdown-item>
+                  <el-dropdown-item v-if="canSubmit(row)" command="delete" divided><span class="menu-danger">{{ t('common.delete') }}</span></el-dropdown-item>
+                  <el-dropdown-item v-if="canReversePayment(row)" command="reverse"><span class="menu-danger">冲销付款</span></el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </template>
+      </el-table-column>
       <template #empty>{{t('reimbursementExpense.empty')}}</template>
     </el-table>
   </section>
@@ -74,7 +120,22 @@ const form=reactive({expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:''
 const statusLabel:Record<string,string>={DRAFT:'草稿',PENDING_DEPARTMENT_CONFIRMATION:'待部门负责人确认',PENDING_FINANCE_APPROVAL:'待财务审批',REJECTED:'已退回',PENDING_PAYMENT:'待付款',PAID:'已付款'}
 const fileType:Record<string,string>={INVOICE:'发票',RECEIPT:'收据',ITINERARY:'行程单',PAYMENT_PROOF:'付款凭证',OTHER:'其他'}
 const deletingId = ref<string | null>(null)
-const canDelete = (row: Claim) => row.claimantId === myID.value && ['DRAFT', 'REJECTED'].includes(row.status)
+const canSubmit = (row: Claim) => row.claimantId === myID.value && ['DRAFT', 'REJECTED'].includes(row.status)
+const canEdit = (row: Claim) => canSubmit(row) || (row.claimantId === myID.value && row.status === 'PENDING_PAYMENT')
+const canPay = (row: Claim) => canManage && row.status === 'PENDING_PAYMENT'
+const canReversePayment = (row: Claim) => canManage && row.status === 'PAID'
+
+function handleClaimMenu(row: Claim, command: string) {
+  switch (command) {
+    case 'submit': void submit(row); break
+    case 'approve': void act(row, 'APPROVE'); break
+    case 'pay': openPay(row); break
+    case 'edit': openEdit(row); break
+    case 'return': void act(row, 'RETURN'); break
+    case 'delete': void deleteClaim(row); break
+    case 'reverse': void reverse(row); break
+  }
+}
 
 async function deleteClaim(row: Claim) {
   if (deletingId.value !== null) return
@@ -107,6 +168,7 @@ const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 async function reloadUntilStatusChanges(id:string,previousStatus:string){for(let attempt=0;attempt<8;attempt++){await load();if(rows.value.find(item=>String(item.id)===String(id))?.status!==previousStatus)return;await delay(300)}}
 async function act(row:Claim,action:'APPROVE'|'RETURN'){let comment='';if(!overrideFor(row)&&action==='RETURN'){const answer=await ElMessageBox.prompt('请填写退回原因','退回报销').catch(()=>({value:''}));comment=answer.value;if(!comment)return}await post(`/approvals/tasks/${taskFor(row)}/act`,{action,comment});ElMessage.success(action==='APPROVE'?'已确认':'已退回申请人');await reloadUntilStatusChanges(row.id,row.status)}
 function openCreate(){editing.value=null;picked.value=[];Object.assign(form,{expenseType:'TRAVEL',expenseDate:'',tripStart:'',tripEnd:'',origin:'',destination:'',purpose:'',amount:'',currency:'CNY',paymentAccount:'',note:''});formOpen.value=true}
+defineExpose({ openCreate })
 function openEdit(row:Claim){editing.value=row;picked.value=[];Object.assign(form,{expenseType:claimExpenseType(row.expenseType),expenseDate:row.expenseDate||'',tripStart:row.tripStart||'',tripEnd:row.tripEnd||'',origin:row.origin||'',destination:row.destination||'',purpose:row.purpose,amount:row.amount,currency:row.currency,paymentAccount:row.paymentAccount,note:row.note});formOpen.value=true}
 // 一趟差常有好几张发票（#591）：待传的文件是一张清单（PendingUploadList），一份一行、各选各的类型，
 // 每次「添加文件」是往后加。原来是一个选择框配一个类型，再选一次就把上一次的换掉。
@@ -154,5 +216,52 @@ onUnmounted(stopListening)
 </script>
 <style scoped>
 :global(.expense-dialog .el-dialog__body){max-height:calc(90vh - 140px);overflow-y:auto}
-.claim-panel{border:1px solid #dceaf0;border-radius:12px;background:#fff;padding:16px}.toolbar{display:flex;justify-content:flex-end;gap:12px;margin-bottom:14px}.details{padding:4px 24px 18px}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:14px}.files{display:flex;gap:10px;flex-wrap:wrap}.files a{color:#159fdc}.details h4{margin:18px 0 8px}.sub{font-size:12px;color:#80909f}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.claim-files{display:grid;gap:8px;width:100%}.uploaded-files{display:flex;flex-wrap:wrap;gap:2px 12px;color:#52646f;font-size:13px;line-height:1.7}.uploaded-files a{color:#159fdc}.module-tabs{margin-bottom:14px}@media(max-width:700px){.grid,.detail-grid{grid-template-columns:1fr}.toolbar{align-items:flex-start;flex-direction:column}}
+.claim-table :deep(:is(.el-table__header, .el-table__body) .el-table__cell.is-left > .cell) {
+  text-align: left;
+}
+.claim-table :deep(:is(.el-table__header, .el-table__body) .el-table__cell.is-right > .cell) {
+  text-align: right;
+}
+.claim-table :deep(.el-table__body td.el-table__cell:not(.el-table__expanded-cell)) {
+  padding: 6px 0;
+}
+.claim-table :deep(.el-table__body :is(.claim-number, .claim-amount) > .cell) {
+  font-variant-numeric: tabular-nums;
+}
+.claim-purpose { color: var(--el-text-color-primary); }
+.claim-status {
+  height: auto;
+  min-height: 20px;
+  line-height: 1.35;
+  white-space: normal;
+}
+.row-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  white-space: nowrap;
+}
+.more-actions-trigger { min-width: 92px; font-weight: 500; }
+.drop-arrow { margin-inline-start: 5px; font-size: 9px; }
+.menu-danger { color: var(--el-color-danger-dark-2); }
+.details {
+  padding: 12px 20px 14px;
+  background: #f6fafc;
+  text-align: left;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+  margin: 0;
+}
+.details .el-alert + .detail-grid { margin-top: 10px; }
+.detail-wide { grid-column: 1 / -1; }
+.detail-grid dt { color: var(--el-text-color-secondary); font-size: 12px; }
+.detail-grid dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.details h4 { margin: 12px 0 6px; }
+.files { display: flex; gap: 8px 14px; flex-wrap: wrap; }
+.files a { color: #08769d; overflow-wrap: anywhere; }
+.sub{font-size:12px;color:#80909f}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.claim-files{display:grid;gap:8px;width:100%}.uploaded-files{display:flex;flex-wrap:wrap;gap:2px 12px;color:#52646f;font-size:13px;line-height:1.7}.uploaded-files a{color:#159fdc}
+@media(max-width:700px){.grid,.detail-grid{grid-template-columns:1fr}}
 </style>

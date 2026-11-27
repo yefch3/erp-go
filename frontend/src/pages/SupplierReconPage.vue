@@ -4,18 +4,23 @@
       <template #actions><el-button v-if="!isReimbursement && canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button></template>
     </WorkflowPageHeader>
 
-    <div v-if="canReadRecon" class="finance-navigation">
-      <el-radio-group :model-value="isReimbursement ? 'travel' : 'payables'" :aria-label="t('supplierRecon.title')" @update:model-value="switchSection">
-        <el-radio-button value="payables">{{ t('supplierRecon.supplierPaymentsTab') }}</el-radio-button>
-        <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
-      </el-radio-group>
-      <el-radio-group v-if="!isReimbursement" :model-value="isContractReview ? 'contracts' : isDone ? 'done' : 'open'" :aria-label="t('supplierRecon.supplierPaymentsTab')" size="small" @update:model-value="switchTab">
-        <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
-        <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
-        <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
-      </el-radio-group>
+    <div :class="{ 'reimbursement-workspace': isReimbursement }">
+      <div class="finance-navigation" :class="{ 'reimbursement-toolbar': isReimbursement }">
+        <el-radio-group v-if="canReadRecon" :model-value="isReimbursement ? 'travel' : 'payables'" :aria-label="t('supplierRecon.title')" @update:model-value="switchSection">
+          <el-radio-button value="payables">{{ t('supplierRecon.supplierPaymentsTab') }}</el-radio-button>
+          <el-radio-button value="travel">{{ t('supplierRecon.travelTab') }}</el-radio-button>
+        </el-radio-group>
+        <el-radio-group v-if="!isReimbursement" :model-value="isContractReview ? 'contracts' : isDone ? 'done' : 'open'" :aria-label="t('supplierRecon.supplierPaymentsTab')" size="small" @update:model-value="switchTab">
+          <el-radio-button v-if="canReviewContracts" value="contracts">待合同核验</el-radio-button>
+          <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
+          <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
+        </el-radio-group>
+        <el-button v-if="isReimbursement" type="primary" class="reimbursement-create" @click="reimbursementPanel?.openCreate()">
+          {{ t('reimbursementExpense.create') }}
+        </el-button>
+      </div>
+      <TravelReimbursementPanel v-if="isReimbursement" ref="reimbursementPanel" />
     </div>
-    <TravelReimbursementPanel v-if="isReimbursement" />
     <PurchaseContractReviewPanel v-if="!isReimbursement&&isContractReview" :order-id="String(route.query.order||'')" :initial-keyword="String(route.query.keyword||'')" @verified="reload"/>
     <div v-show="!isReimbursement&&!isContractReview" class="legacy-recon">
 
@@ -428,6 +433,7 @@ const canReadRecon = auth.can('procurement:recon:read')
 const canReviewContracts=auth.can('procurement:recon:write')&&auth.can('procurement:order:read')
 const isContractReview=computed(()=>route.query.view==='contracts')
 const isReimbursement = computed(() => route.query.section === 'travel' || !canReadRecon)
+const reimbursementPanel = ref<InstanceType<typeof TravelReimbursementPanel> | null>(null)
 function switchSection(value: string | number | boolean | undefined) {
   void router.push({ path: route.path, query: value === 'travel' ? { section: 'travel' } : {} })
 }
@@ -1011,6 +1017,19 @@ onMounted(reload)
   padding-bottom: 10px;
   border-bottom: 1px solid #dce8ed;
 }
+.reimbursement-workspace {
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid #dceaf0;
+  border-radius: 12px;
+  background: #fff;
+}
+.reimbursement-toolbar {
+  margin-bottom: 12px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.reimbursement-create { margin-inline-start: auto; }
 .due-filters {
   display: flex;
   gap: 6px;
