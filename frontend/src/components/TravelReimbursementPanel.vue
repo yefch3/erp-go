@@ -25,8 +25,8 @@
         </template>
       </el-table-column>
       <el-table-column prop="claimNo" label="报销单号" width="150" align="left" class-name="claim-number" />
-      <el-table-column prop="claimantName" label="报销人" width="116" align="left" show-overflow-tooltip />
-      <el-table-column prop="departmentName" label="部门" width="76" align="left" show-overflow-tooltip />
+      <el-table-column prop="claimantName" label="报销人" min-width="128" align="left" show-overflow-tooltip />
+      <el-table-column prop="departmentName" label="部门" min-width="76" align="left" show-overflow-tooltip />
       <el-table-column :label="t('reimbursementExpense.type')" width="78" align="left">
         <template #default="{ row }">{{ expenseLabel(row.expenseType) }}</template>
       </el-table-column>
