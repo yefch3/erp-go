@@ -7,7 +7,7 @@
     :remote-method="load"
     :loading="loading"
     :disabled="disabled"
-    :placeholder="t('common.selectSupplier')"
+    :placeholder="placeholder ?? t('common.selectSupplier')"
     @update:model-value="change"
   >
     <el-option
@@ -25,7 +25,7 @@ import { useI18n } from 'vue-i18n'
 import { get } from '../../api'
 
 interface SupplierOption { id:string; code:string; name:string; nameZh?:string; nameEn?:string; status?:string }
-const props = defineProps<{ modelValue:string|number; pinnedOption?:SupplierOption; disabled?: boolean }>()
+const props = defineProps<{ modelValue:string|number; pinnedOption?:SupplierOption; disabled?: boolean; placeholder?: string }>()
 const emit = defineEmits<{ 'update:modelValue':[string|number]; selected:[SupplierOption|undefined] }>()
 const { t } = useI18n()
 const suppliers = ref<SupplierOption[]>([])
