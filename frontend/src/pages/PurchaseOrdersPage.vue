@@ -427,14 +427,14 @@
 
 
 
-    <el-dialog v-model="cancelOpen" :title="t('orders.cancelTitle')" width="460px">
+    <el-dialog v-model="cancelOpen" :title="t(cancellingDraft ? 'orders.withdrawDraft' : 'orders.cancelTitle')" width="min(460px, calc(100vw - 32px))">
       <el-alert type="warning" :closable="false" show-icon class="alert">
-        {{ t('orders.cancelWarning') }}
+        {{ t(cancellingDraft ? 'orders.withdrawDraftWarning' : 'orders.cancelWarning') }}
       </el-alert>
-      <el-input v-model="cancelReason" type="textarea" :rows="3" :placeholder="t('orders.cancelReason')" />
+      <el-input v-if="!cancellingDraft" v-model="cancelReason" type="textarea" :rows="3" :placeholder="t('orders.cancelReason')" />
       <template #footer>
-        <el-button @click="cancelOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="danger" :loading="saving" @click="submitCancel">{{ common('confirm') }}</el-button>
+        <el-button @click="cancelOpen = false">{{ common(cancellingDraft ? 'back' : 'cancel') }}</el-button>
+        <el-button type="danger" :loading="saving" @click="submitCancel">{{ cancellingDraft ? t('orders.withdrawDraft') : common('confirm') }}</el-button>
       </template>
     </el-dialog>
 
@@ -899,6 +899,7 @@ const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType ==
 const cancelOpen = ref(false)
 const cancelling = ref<Order | null>(null)
 const cancelReason = ref('')
+const cancellingDraft = computed(() => Boolean(cancelling.value && isOrderDraft(cancelling.value)))
 
 const executionOpen = ref(false)
 const executionTab = ref('overview')
@@ -1082,6 +1083,10 @@ async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
   await router.replace({ path: '/purchase-orders', query: { status: nextStatus, order: row.id } })
   await reload()
 }
+function isOrderDraft(row: Order) {
+  return row.status === 'DRAFT' || row.status === 'REJECTED'
+}
+
 function moreActions(row: Order): { key: string; label: string }[] {
   const primary = primaryAction(row)?.key
   const out: { key: string; label: string }[] = []
@@ -1099,7 +1104,7 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
-  add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
+  add('cancel', isOrderDraft(row) ? t('orders.withdrawDraft') : common('cancel'), canCancel && (isOrderDraft(row) || row.status === 'ORDERED'))
   return out
 }
 
@@ -1781,14 +1786,18 @@ function openCancel(row: Order) {
 }
 
 async function submitCancel() {
-  if (!cancelReason.value.trim()) {
+  const row = cancelling.value
+  if (!row) return
+  const withdrawingDraft = isOrderDraft(row)
+  const reason = cancelReason.value.trim()
+  if (!withdrawingDraft && !reason) {
     ElMessage.warning(t('orders.cancelReasonRequired'))
     return
   }
   saving.value = true
   try {
-    await post(`/purchase-orders/${cancelling.value?.id}/cancel`, { reason: cancelReason.value })
-    ElMessage.success(t('orders.cancelled'))
+    await post(`/purchase-orders/${row.id}/cancel`, withdrawingDraft ? {} : { reason })
+    ElMessage.success(t(withdrawingDraft ? 'orders.draftWithdrawn' : 'orders.cancelled'))
     cancelOpen.value = false
     load()
   } finally {

@@ -169,8 +169,12 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 	if _, err := svc.ManageExecutionAssignment(ctx, tenant, manager, batch); err == nil {
 		t.Fatal("reusing the preview token created duplicate drafts")
 	}
-	if err := svc.CancelOrder(ctx, tenant, firstID, "重新选厂", buyer); err != nil {
+	if err := svc.CancelOrder(ctx, tenant, firstID, "", buyer); err != nil {
 		t.Fatal(err)
+	}
+	head, err = svc.GetOrder(ctx, tenant, firstID)
+	if err != nil || head.Status != "CANCELLED" || head.CancelReason != "" {
+		t.Fatalf("withdrawn draft status = %q, reason = %q, err = %v", head.Status, head.CancelReason, err)
 	}
 	for _, line := range result.DraftGroups[0].Lines {
 		list := ExecutionAssignmentInput{Action: "list", RequirementID: line.RequirementID}
