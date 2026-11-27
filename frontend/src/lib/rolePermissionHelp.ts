@@ -211,6 +211,7 @@ const permissionNotes: Readonly<Partial<Record<string, HelpText>>> = {
     'Crea o edita cuentas por pagar manuales, registra o revierte pagos, cierra o reabre la conciliación, cambia vencimientos y añade o quita comprobantes. También verifica contratos de compra y logística.',
   ],
   'procurement:reimbursement:manage': ['将已通过审批的报销标记为已付款，或撤销付款登记。', 'Mark approved reimbursements as paid or reverse the payment entry.', 'Marca reembolsos aprobados como pagados o revierte el registro de pago.'],
+  'finance:reimbursement:approve': ['审批直接送交财务的报销。只有超级管理员可以审批自己的报销和调整此授权。', 'Decide on reimbursements sent directly to Finance. Only super administrators can decide their own claims or change this grant.', 'Aprueba o devuelve reembolsos enviados directamente a Finanzas. Solo los superadministradores pueden decidir sobre sus propias solicitudes o cambiar este permiso.'],
   'procurement:requirement:exception': ['手工建立例外采购需求，用于需要独立登记的采购事项。', 'Manually create exceptional purchase requirements for purchases that need a separate record.', 'Crea manualmente necesidades de compra excepcionales que requieren un registro independiente.'],
   'procurement:requirement:read': ['进入实单询价并查看采购需求。能看谁的需求由「采购需求可见范围」决定，页面还按需求状态筛选。', 'Open execution sourcing and view purchase requirements. Results follow the requirement scope and the page’s status filters.', 'Abre la cotización de ejecución y consulta necesidades de compra según su alcance y los filtros de estado.'],
   'procurement:requirement:write': [

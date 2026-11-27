@@ -112,10 +112,11 @@ def main() -> int:
             errors.append(f"{name} references unknown permissions: {', '.join(unknown)}")
 
     # Every operation must deliberately say which readable surface leads to
-    # it. These two are complete standalone workflows on the unguarded Todos
-    # page; all other non-read capabilities need an explicit dependency.
+    # it. Standalone workflows use pages that require only a signed-in user.
+    # All other non-read capabilities need an explicit dependency.
     standalone_actions = {
         "approval:task:act",
+        "finance:reimbursement:approve",
         "mail:export:audit",
         "procurement:reimbursement:manage",
     }

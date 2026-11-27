@@ -4,6 +4,7 @@ package grpcout
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"google.golang.org/grpc"
@@ -141,33 +142,52 @@ func NewApprovals(conn *grpc.ClientConn) *Approvals {
 }
 
 func (a *Approvals) Submit(ctx context.Context, in app.ApprovalSubmission) (int64, error) {
+	instance, err := a.submit(ctx, in)
+	return instance.GetId(), err
+}
+
+func (a *Approvals) SubmitReimbursement(ctx context.Context, in app.ApprovalSubmission) (int64, bool, error) {
+	instance, err := a.submit(ctx, in)
+	if err != nil {
+		return 0, false, err
+	}
+	var summary struct {
+		DirectFinance bool `json:"direct_finance_approval"`
+	}
+	if err := json.Unmarshal([]byte(instance.GetBizSummary()), &summary); err != nil {
+		return 0, false, err
+	}
+	return instance.GetId(), summary.DirectFinance, nil
+}
+
+func (a *Approvals) submit(ctx context.Context, in app.ApprovalSubmission) (*apv1.Instance, error) {
 	resp, err := a.client.Submit(ctx, &apv1.SubmitRequest{
 		BizType: in.BizType, BizId: in.BizID, BizNo: in.BizNo, BizSummary: in.Summary,
 		SubmitterId: in.SubmitterID, SubmitterName: in.SubmitterName,
 		Amount: in.Amount,
 	})
 	if err == nil {
-		return resp.GetInstance().GetId(), nil
+		return resp.GetInstance(), nil
 	}
 	// A flow already running for this document means an earlier submit got as
 	// far as the approval service but not as far as our own commit. Reusing it
 	// is what makes the retry converge instead of dead-ending on a document
 	// that can never be submitted again.
 	if apierr.CodeFromStatus(err) != "AP_ALREADY_RUNNING" {
-		return 0, err
+		return nil, err
 	}
 	running, lookupErr := a.client.ListInstances(ctx, &apv1.ListInstancesRequest{
 		BizType: in.BizType, BizId: in.BizID,
 	})
 	if lookupErr != nil {
-		return 0, err
+		return nil, err
 	}
 	for _, inst := range running.GetInstances() {
 		if inst.GetStatus() == "RUNNING" {
-			return inst.GetId(), nil
+			return inst, nil
 		}
 	}
-	return 0, err
+	return nil, err
 }
 
 func (a *Approvals) Withdraw(ctx context.Context, instanceID int64, reason string) error {

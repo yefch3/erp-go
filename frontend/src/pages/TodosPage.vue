@@ -804,7 +804,7 @@ function summaryText(raw: string): string {
   const preferred = ['customer', 'supplier', 'forwarder', 'amount', 'laycan', 'etd', 'eta', 'carrier', 'payment_terms', 'expected_date', 'delivery_date', 'lines']
   const keys = [...preferred.filter((key) => key in summary), ...Object.keys(summary).filter((key) => !preferred.includes(key))]
   return keys
-    .filter((key) => key !== 'approval_request_key' && !(key === 'currency' && 'amount' in summary))
+    .filter((key) => key !== 'approval_request_key' && key !== 'direct_finance_approval' && !(key === 'currency' && 'amount' in summary))
     .map((key) => {
       const value = key === 'amount' && summary.currency
         ? `${summaryValueText('currency', summary.currency)} ${summaryValueText(key, summary[key])}`

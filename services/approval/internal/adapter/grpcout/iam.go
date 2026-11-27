@@ -4,11 +4,53 @@ package grpcout
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc"
 
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 )
+
+func (c *IAM) DirectReimbursementDepartment(ctx context.Context, employeeID int64) (bool, error) {
+	employee, err := c.directory.GetEmployee(ctx, &iamv1.GetEmployeeRequest{Id: employeeID})
+	if err != nil {
+		return false, err
+	}
+	departments, err := c.directory.ListDepartments(ctx, &iamv1.ListDepartmentsRequest{})
+	if err != nil {
+		return false, err
+	}
+	for _, department := range departments.GetDepartments() {
+		if department.GetId() != employee.GetEmployee().GetDepartmentId() || department.GetStatus() != "ACTIVE" {
+			continue
+		}
+		switch strings.ToUpper(strings.TrimSpace(department.GetCode())) {
+		case "SHIPPING", "OCEAN_SHIPPING", "PROCUREMENT", "QUALITY":
+			return true, nil
+		}
+		// Existing organizations may have assigned numeric department codes.
+		switch strings.TrimSpace(department.GetName()) {
+		case "海运部", "海运", "采购部", "采购", "质检部", "质检":
+			return true, nil
+		}
+		break
+	}
+	return false, nil
+}
+
+func (c *IAM) ReimbursementApprovers(ctx context.Context) ([]int64, error) {
+	resp, err := c.client.ListPermissionHolders(ctx, &iamv1.ListPermissionHoldersRequest{
+		PermissionCode: "finance:reimbursement:approve",
+	})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(resp.GetHolders()))
+	for _, member := range resp.GetHolders() {
+		ids = append(ids, member.GetEmployeeId())
+	}
+	return ids, nil
+}
 
 // IAM answers "who holds this role" for flow nodes that name a role.
 type IAM struct {

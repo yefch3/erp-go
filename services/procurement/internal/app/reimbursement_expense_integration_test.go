@@ -17,6 +17,59 @@ type expenseApprovalStub struct {
 	submissions []ApprovalSubmission
 }
 
+type directExpenseApprovalStub struct{ expenseApprovalStub }
+
+func (d *directExpenseApprovalStub) SubmitReimbursement(ctx context.Context, in ApprovalSubmission) (int64, bool, error) {
+	id, err := d.Submit(ctx, in)
+	return id, true, err
+}
+
+func TestSubmitExistingExpenseDraftDirectlyToFinance(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	tenant := time.Now().UnixNano()
+	t.Cleanup(func() {
+		for _, table := range []string{"travel_reimbursement_history", "travel_reimbursement_files", "travel_reimbursements"} {
+			if _, err := pool.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id=$1", tenant); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	svc := New(pool, Deps{Approvals: &directExpenseApprovalStub{}, People: d7PeopleStub{}, Files: d7FilesStub{}})
+	for index, department := range []string{"海运部", "采购部", "质检部"} {
+		t.Run(department, func(t *testing.T) {
+			owner := Operator{ID: int64(index + 1), Name: department + "测试员工"}
+			draft, err := svc.CreateTravelReimbursement(ctx, tenant, TravelReimbursementInput{
+				ExpenseType: "OTHER", ExpenseDate: "2026-11-17", Purpose: department + "测试报销",
+				Amount: "100", Currency: "CNY", PaymentAccount: "测试账户",
+			}, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := fmt.Sprintf("travel-reimbursements/%d/%d/expense.pdf", tenant, draft.ID)
+			if _, err := svc.AttachTravelFile(ctx, tenant, draft.ID, key, "expense.pdf", "INVOICE", owner); err != nil {
+				t.Fatal(err)
+			}
+			claim, err := svc.SubmitTravelReimbursement(ctx, tenant, draft.ID, owner)
+			if err != nil || claim.ClaimNo != draft.ClaimNo || claim.Status != "PENDING_FINANCE_APPROVAL" || len(claim.Files) != 1 {
+				t.Fatalf("submitted claim=%+v err=%v", claim, err)
+			}
+			next, err := svc.ApplyTravelApproval(ctx, tenant, claim.ID, claim.ApprovalInstanceID, "APPROVED", "", 100)
+			if err != nil || next != "PENDING_PAYMENT" {
+				t.Fatalf("finance decision: status=%q err=%v", next, err)
+			}
+		})
+	}
+}
+
 func (d *expenseApprovalStub) Submit(_ context.Context, in ApprovalSubmission) (int64, error) {
 	d.submissions = append(d.submissions, in)
 	return int64(7100 + len(d.submissions)), nil

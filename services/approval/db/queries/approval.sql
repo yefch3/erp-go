@@ -55,7 +55,8 @@ RETURNING *;
 SELECT * FROM approval_tasks WHERE tenant_id = $1 AND id = $2 FOR UPDATE;
 
 -- name: ActOnTask :one
-UPDATE approval_tasks SET status = $3, comment = $4, acted_at = now()
+UPDATE approval_tasks SET status = $3, comment = $4, acted_at = now(),
+    assignee_id = CASE WHEN assignee_id = 0 THEN sqlc.arg(shared_actor_id)::bigint ELSE assignee_id END
 WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'
 RETURNING *;
 
@@ -92,15 +93,20 @@ SELECT
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
-  AND (t.assignee_id = sqlc.arg(assignee_id)::bigint OR (
+  AND (t.status <> 'PENDING' OR i.biz_type <> 'TRAVEL_REIMBURSEMENT'
+       OR i.submitter_id <> sqlc.arg(assignee_id)::bigint OR sqlc.arg(include_override)::boolean)
+  AND (
+    (t.assignee_id = 0 AND i.biz_type = 'TRAVEL_REIMBURSEMENT'
+       AND sqlc.arg(include_finance)::boolean
+       AND i.status = 'RUNNING' AND t.status = 'PENDING') OR
+    (t.assignee_id <> 0 AND (t.assignee_id = sqlc.arg(assignee_id)::bigint OR (
        sqlc.arg(include_override)::boolean
        AND i.status = 'RUNNING' AND t.node_seq = i.current_seq AND t.status = 'PENDING'
-       AND (i.biz_type <> 'TRAVEL_REIMBURSEMENT' OR i.submitter_id <> sqlc.arg(assignee_id)::bigint)
        AND t.id = (SELECT candidate.id FROM approval_tasks candidate
                    WHERE candidate.tenant_id = t.tenant_id AND candidate.instance_id = t.instance_id
                      AND candidate.node_seq = t.node_seq AND candidate.status = 'PENDING'
                    ORDER BY (candidate.assignee_id = sqlc.arg(assignee_id)::bigint) DESC, candidate.id LIMIT 1)
-  ))
+  ))))
   AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text)
   AND (sqlc.arg(keyword)::text = ''
        OR i.biz_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -202,7 +208,11 @@ RETURNING *;
 SELECT DISTINCT i.biz_id
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
-WHERE t.tenant_id = $1 AND t.assignee_id = $2
+WHERE t.tenant_id = $1
+  AND (t.assignee_id = sqlc.arg(employee_id)::bigint OR
+       (t.assignee_id = 0 AND i.biz_type = 'TRAVEL_REIMBURSEMENT'
+        AND sqlc.arg(include_finance)::boolean AND i.submitter_id <> sqlc.arg(employee_id)::bigint
+        AND i.status = 'RUNNING' AND t.status = 'PENDING'))
   AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text);
 
 -- 下面四条只服务「新公司开张时补一套默认审批流」，见 app/defaults.go。

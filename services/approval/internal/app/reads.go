@@ -35,15 +35,22 @@ func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizTy
 	}
 	page, size = normalizePage(page, size)
 	var includeOverride bool
+	var includeFinance bool
 	if status == "" {
 		var err error
 		includeOverride, err = s.isSuperAdmin(ctx, assigneeID)
 		if err != nil {
 			return nil, 0, err
 		}
+		if bizType == "" || bizType == reimbursementBizType {
+			includeFinance, err = s.canApproveReimbursement(ctx, assigneeID)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
 	}
 	rows, err := s.q.ListMyTasks(ctx, store.ListMyTasksParams{
-		TenantID: tenantID, AssigneeID: assigneeID, IncludeOverride: includeOverride, BizType: bizType,
+		TenantID: tenantID, AssigneeID: assigneeID, IncludeOverride: includeOverride, IncludeFinance: includeFinance, BizType: bizType,
 		Status: status, Keyword: keyword,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
@@ -80,10 +87,11 @@ func (s *Service) ActionableTask(ctx context.Context, tenantID, actorID int64, b
 	if running.ID == 0 {
 		return store.ApprovalTask{}, store.ApprovalInstance{}, false, nil
 	}
-	// A reimbursement submitter never gets an approval action for their own
-	// claim, including when they also hold SUPER_ADMIN.
-	if running.BizType == "TRAVEL_REIMBURSEMENT" && running.SubmitterID == actorID {
-		return store.ApprovalTask{}, store.ApprovalInstance{}, false, nil
+	if running.BizType == reimbursementBizType && running.SubmitterID == actorID {
+		admin, err := s.isSuperAdmin(ctx, actorID)
+		if err != nil || !admin {
+			return store.ApprovalTask{}, store.ApprovalInstance{}, false, err
+		}
 	}
 	tasks, err := s.q.ListTasksByInstance(ctx, store.ListTasksByInstanceParams{
 		TenantID: tenantID, InstanceID: running.ID,
@@ -95,6 +103,13 @@ func (s *Service) ActionableTask(ctx context.Context, tenantID, actorID int64, b
 	for _, task := range tasks {
 		if task.Status != taskPending {
 			continue
+		}
+		if running.BizType == reimbursementBizType && task.AssigneeID == 0 {
+			allowed, err := s.canApproveReimbursement(ctx, actorID)
+			if err != nil || !allowed {
+				return store.ApprovalTask{}, store.ApprovalInstance{}, false, err
+			}
+			return task, running, false, nil
 		}
 		if firstPending.ID == 0 {
 			firstPending = task
@@ -176,7 +191,15 @@ func normalizePage(page, size int32) (int32, int32) {
 // visibility rules: an approver who cannot open the document they are asked
 // to approve has been handed an impossible job.
 func (s *Service) MyInvolvedDocuments(ctx context.Context, tenantID, employeeID int64, bizType string) ([]int64, error) {
+	var includeFinance bool
+	if bizType == "" || bizType == reimbursementBizType {
+		var err error
+		includeFinance, err = s.canApproveReimbursement(ctx, employeeID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return s.q.MyInvolvedBizIds(ctx, store.MyInvolvedBizIdsParams{
-		TenantID: tenantID, AssigneeID: employeeID, BizType: bizType,
+		TenantID: tenantID, EmployeeID: employeeID, IncludeFinance: includeFinance, BizType: bizType,
 	})
 }

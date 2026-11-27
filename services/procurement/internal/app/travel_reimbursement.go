@@ -193,15 +193,28 @@ func (s *Service) SubmitTravelReimbursement(ctx context.Context, tenantID, id in
 		return TravelReimbursement{}, apierr.Internal("PR_APPROVAL_UNAVAILABLE", "审批服务暂不可用")
 	}
 	summary := fmt.Sprintf(`{"claim_no":%q,"claimant":%q,"amount":%q,"currency":%q,"purpose":%q,"expense_type":%q,"expense_date":%q}`, current.ClaimNo, current.ClaimantName, current.Amount, current.Currency, current.Purpose, current.ExpenseType, current.ExpenseDate)
-	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{BizType: BizTypeTravelReimbursement, BizID: id, BizNo: current.ClaimNo, Summary: summary, SubmitterID: op.ID, SubmitterName: op.Name, Amount: current.Amount})
+	submission := ApprovalSubmission{BizType: BizTypeTravelReimbursement, BizID: id, BizNo: current.ClaimNo, Summary: summary, SubmitterID: op.ID, SubmitterName: op.Name, Amount: current.Amount}
+	nextStatus := "PENDING_DEPARTMENT_CONFIRMATION"
+	var instanceID int64
+	if approval, ok := s.approvals.(interface {
+		SubmitReimbursement(context.Context, ApprovalSubmission) (int64, bool, error)
+	}); ok {
+		var directFinance bool
+		instanceID, directFinance, err = approval.SubmitReimbursement(ctx, submission)
+		if directFinance {
+			nextStatus = "PENDING_FINANCE_APPROVAL"
+		}
+	} else {
+		instanceID, err = s.approvals.Submit(ctx, submission)
+	}
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE travel_reimbursements SET status='PENDING_DEPARTMENT_CONFIRMATION',approval_instance_id=$3,rejection_reason='',updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, instanceID)
+	_, err = tx.Exec(ctx, `UPDATE travel_reimbursements SET status=$4,approval_instance_id=$3,rejection_reason='',updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, id, instanceID, nextStatus)
 	if err != nil {
 		return TravelReimbursement{}, err
 	}
-	if err = insertTravelHistory(ctx, tx, tenantID, id, "SUBMITTED", current.Status, "PENDING_DEPARTMENT_CONFIRMATION", "", op); err != nil {
+	if err = insertTravelHistory(ctx, tx, tenantID, id, "SUBMITTED", current.Status, nextStatus, "", op); err != nil {
 		return TravelReimbursement{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {

@@ -29,7 +29,7 @@ var presetRoles = []presetRole{
 		"procurement:sourcing:price", "procurement:sourcing:approve", "procurement:execution-quote:select", "procurement:execution-rfq:delete", "procurement:order:write", "procurement:order:submit",
 		// 员工邮箱监管（迁移 00074）。给 BOSS，不给别人——读自己的邮件和读
 		// 别人的邮件是两件事。两条分开：看信箱，和看"谁看过谁的信箱"。
-		"mail:supervision:read", "mail:supervision:audit"}, Scopes: []presetScope{{"business_report", "ALL"}, {"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
+		"mail:supervision:read", "mail:supervision:audit", reimbursementApprovalPermission}, Scopes: []presetScope{{"business_report", "ALL"}, {"procurement_sourcing", "ALL"}, {factoryQuoteScopeModule, "ALL"}, {"procurement_order", "ALL"}, {"procurement_requirement", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -120,7 +120,7 @@ var presetRoles = []presetRole{
 	{
 		Code: "FINANCE_MANAGER", Name: "财务负责人",
 		Description: "审批全公司报销并管理收付款",
-		Permissions: []string{"report:business:read",
+		Permissions: []string{"report:business:read", reimbursementApprovalPermission,
 			"approval:task:act", "export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read", "fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
