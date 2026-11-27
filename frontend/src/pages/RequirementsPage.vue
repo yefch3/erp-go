@@ -444,7 +444,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="draftBatchOpen" title="批量生成采购草稿" width="min(1120px,94vw)" destroy-on-close
+    <el-dialog v-model="draftBatchOpen" title="批量生成采购草稿" width="min(1360px, 96vw)" top="5vh" destroy-on-close
       :close-on-click-modal="!assignmentBusy" :close-on-press-escape="!assignmentBusy" :show-close="!assignmentBusy">
       <template v-if="!draftBatchPreview">
         <el-form class="draft-batch-common" label-position="top" size="small">
@@ -456,7 +456,7 @@
           </el-form-item>
         </el-form>
         <p class="draft-batch-summary">将处理当前实单的 {{ draftBatchRows.length }} 条可生成规格。</p>
-        <el-table :data="draftBatchRows" max-height="45vh" row-key="task.id" size="small" class="draft-batch-table">
+        <el-table :data="draftBatchRows" max-height="55vh" row-key="task.id" size="small" class="draft-batch-table">
           <el-table-column label="产品规格" min-width="230">
             <template #default="{row}"><ComparisonSpecification :product-name="row.task.productName" :text="row.task.specification || row.task.productName"/></template>
           </el-table-column>
@@ -471,8 +471,12 @@
           <el-table-column label="付款条件" min-width="135">
             <template #default="{row}"><el-input v-model="row.form.terms" size="small" :placeholder="draftBatchTerms || '填写付款条件'" :disabled="assignmentBusy" aria-label="该规格付款条件"/></template>
           </el-table-column>
-          <el-table-column v-if="draftBatchIncomplete" label="待补齐" width="155">
-            <template #default="{row}"><span class="draft-batch-missing">{{draftBatchMissing(row.form).join('、')}}</span></template>
+          <el-table-column label="备注" min-width="200">
+            <template #default="{row}">
+              <el-input v-model="row.form.remark" type="textarea" :autosize="{minRows:1,maxRows:3}"
+                resize="none" placeholder="填写备注（选填）" :disabled="assignmentBusy"
+                :aria-label="`备注 ${row.task.productName} ${row.task.specification}`" />
+            </template>
           </el-table-column>
         </el-table>
       </template>
@@ -502,7 +506,10 @@
       <template #footer>
         <el-button :disabled="assignmentBusy" @click="draftBatchOpen=false">{{draftBatchCreated ? '关闭' : '取消'}}</el-button>
         <el-button v-if="draftBatchPreview && !draftBatchCreated" :disabled="assignmentBusy" @click="draftBatchPreview=null">返回修改</el-button>
-        <el-button v-if="!draftBatchPreview" type="primary" :loading="assignmentBusy" :disabled="!draftBatchRows.length || !!draftBatchIncomplete" @click="previewExecutionDraftBatch">预览草稿</el-button>
+        <span v-if="!draftBatchPreview" class="draft-batch-preview-action"
+          :title="draftBatchIncomplete ? '请填写有效的议价单价、交货日期和付款条件' : undefined">
+          <el-button type="primary" :loading="assignmentBusy" :disabled="!draftBatchRows.length || draftBatchIncomplete" @click="previewExecutionDraftBatch">预览草稿</el-button>
+        </span>
         <el-button v-else-if="!draftBatchCreated" type="primary" :loading="assignmentBusy" @click="confirmExecutionDraftBatch">确认生成</el-button>
       </template>
     </el-dialog>
@@ -1217,17 +1224,13 @@ const draftBatchRows = computed(() => {
     return form && pending.has(task.requirementId) && canHandleNegotiation(task) ? [{task, form}] : []
   })
 })
-const draftBatchIncomplete = computed(() => draftBatchRows.value.filter(row => draftBatchMissing(row.form).length).length)
-let previewDraftLines: DraftBatchLine[] = []
-
-function draftBatchMissing(form: NegotiationEdit) {
-  const missing: string[] = []
+const draftBatchIncomplete = computed(() => draftBatchRows.value.some(({form}) => {
   const price = Number(negotiationUnitPrice(form))
-  if (!Number.isFinite(price) || price <= 0) missing.push('议价单价')
-  if (!form.date && !draftBatchDate.value) missing.push('交货日期')
-  if (!form.terms.trim() && !draftBatchTerms.value.trim()) missing.push('付款条件')
-  return missing
-}
+  return !Number.isFinite(price) || price <= 0
+    || !(form.date || draftBatchDate.value)
+    || !(form.terms.trim() || draftBatchTerms.value.trim())
+}))
+let previewDraftLines: DraftBatchLine[] = []
 
 function openExecutionDraftBatch() {
   draftBatchDate.value = ''
@@ -2159,8 +2162,8 @@ onMounted(load)
 .draft-batch-common :deep(.el-form-item) { min-width: 215px; margin-bottom: 12px; }
 .draft-batch-table :deep(.el-date-editor.el-input) { width: 100%; }
 .draft-batch-summary { margin: 0 0 10px; color: #315667; font-weight: 600; }
-.draft-batch-missing { color: var(--el-color-warning-dark-2); }
-.draft-batch-groups { display: grid; gap: 10px; max-height: 55vh; overflow: auto; }
+.draft-batch-preview-action { margin-inline-start: 12px; }
+.draft-batch-groups { display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
 .draft-batch-group { overflow: hidden; border: 1px solid #dce7ed; border-radius: 8px; }
 .draft-batch-group header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 15px; padding: 8px 12px; background: #edf6f8; color: #315667; }
 .rfq-export-hint { margin: 0; color: #526c7a; font-size: 13px; }
