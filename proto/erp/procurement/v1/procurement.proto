@@ -1194,6 +1194,7 @@ message PurchaseOrderItem {
   // 合同负责人：单归执行采购员，但每一行都记得这单生意是谁谈的。
   string contract_owner = 16;
   string contract_item_remark = 17;
+  string negotiation_remark = 18;
 }
 
 message PurchaseReceipt {

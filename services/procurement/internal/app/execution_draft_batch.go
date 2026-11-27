@@ -194,15 +194,11 @@ func groupExecutionDraftLines(tasks []ExecutionDraftLine) []ExecutionDraftGroup 
 
 func (s *Service) createExecutionDraftGroup(ctx context.Context, tx pgx.Tx, tenant int64, op Operator, group ExecutionDraftGroup) (int64, error) {
 	lines := make([]OrderLine, 0, len(group.Lines))
-	var remarks []string
 	for _, task := range group.Lines {
 		lines = append(lines, OrderLine{RequirementID: task.RequirementID, Qty: task.Quantity, UnitPrice: task.Price, ExecutionQuoteID: task.QuoteID})
-		if task.Remark != "" && !slices.Contains(remarks, task.Remark) {
-			remarks = append(remarks, task.Remark)
-		}
 	}
 	prepared, err := s.prepareOrder(ctx, CreateOrderInput{
-		SupplierID: group.SupplierID, Currency: group.Currency, ExpectedDate: group.Date, Remark: strings.Join(remarks, "\n"),
+		SupplierID: group.SupplierID, Currency: group.Currency, ExpectedDate: group.Date,
 		FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "CUSTOM", DeliveryAddress: "按外销合同约定",
 		PaymentTerms: &group.Terms, Lines: lines,
 	}, true)

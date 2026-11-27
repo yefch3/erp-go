@@ -306,7 +306,7 @@ UPDATE purchase_orders SET
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: PurchaseOrderItems :many
-SELECT i.contract_item_remark,
+SELECT i.contract_item_remark, coalesce(a.remark, '')::text AS negotiation_remark,
     i.id, i.requirement_id, i.product_id, coalesce(i.sku_id, 0)::bigint AS sku_id,
     i.product_code, i.product_name, i.spec, i.uom_id, i.uom_code,
     i.qty::text          AS qty,
@@ -318,6 +318,9 @@ SELECT i.contract_item_remark,
     r.owner_name AS contract_owner
 FROM purchase_order_items i
 JOIN purchase_requirements r ON r.id = i.requirement_id
+LEFT JOIN purchase_execution_assignments a
+    ON a.tenant_id = i.tenant_id AND a.po_id = i.po_id AND a.requirement_id = i.requirement_id
+    AND NOT a.cancelled
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint AND i.po_id = sqlc.arg(po_id)::bigint
 ORDER BY i.id;
 

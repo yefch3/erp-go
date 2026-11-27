@@ -182,8 +182,12 @@ func TestExecutionAssignmentDispatchAndDraft(t *testing.T) {
 		t.Fatalf("unexpected draft source for another tenant: linked=%v err=%v", linked, err)
 	}
 	head, err := svc.GetOrder(ctx, tenant, po)
-	if err != nil || head.BuyerID != buyer.ID || head.Remark != "议价备注" {
+	if err != nil || head.BuyerID != buyer.ID || head.Remark != "" {
 		t.Fatalf("owner=%d remark=%q err=%v", head.BuyerID, head.Remark, err)
+	}
+	items, err := svc.OrderItems(ctx, tenant, po)
+	if err != nil || len(items) != 1 || items[0].NegotiationRemark != "议价备注" {
+		t.Fatalf("specification remarks = %+v, error = %v", items, err)
 	}
 	var terms string
 	if err := pool.QueryRow(ctx, "SELECT payment_terms FROM purchase_orders WHERE tenant_id=$1 AND id=$2", tenant, po).Scan(&terms); err != nil || terms != "T/T" {

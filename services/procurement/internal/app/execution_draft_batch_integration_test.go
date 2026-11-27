@@ -52,6 +52,7 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 	}
 	batch := ExecutionAssignmentInput{Action: "preview_drafts", BatchKey: "CONTRACT-ID:1201"}
 	var orderLines []OrderLine
+	remarksByRequirement := make(map[int64]string)
 	var lastRequirementID int64
 	for index := 1; index <= 5; index++ {
 		var requirementID int64
@@ -75,6 +76,13 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 		}
 		task := run(manager, ExecutionAssignmentInput{Action: "assign", RequirementID: requirementID, QuoteID: quote.ID})
 		line := ExecutionDraftInput{AssignmentID: task.ID, Price: "3.5", Date: "2027-01-02", Terms: "T/T"}
+		switch index {
+		case 1:
+			line.Remark = "按首件样品验收\n随货附材质单"
+		case 2:
+			line.Remark = "每捆单独贴标"
+		}
+		remarksByRequirement[requirementID] = line.Remark
 		if index == 1 {
 			file := run(buyer, ExecutionAssignmentInput{Action: "upload", ID: task.ID, RequirementID: requirementID, FileName: "quote.pdf", FileData: []byte("quote")})
 			line.FileIDs = []int64{file.ID}
@@ -115,8 +123,8 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 		owner := []Operator{buyer, other}[index]
 		peer := []Operator{other, buyer}[index]
 		head, err := svc.GetOrder(ctx, tenant, group.OrderID)
-		if err != nil || head.BuyerID != owner.ID {
-			t.Fatalf("draft owner = %d, expected %d, err = %v", head.BuyerID, owner.ID, err)
+		if err != nil || head.BuyerID != owner.ID || head.Remark != "" {
+			t.Fatalf("draft owner = %d, expected %d, order remark = %q, err = %v", head.BuyerID, owner.ID, head.Remark, err)
 		}
 		if err := svc.AuthorizeOrder(ctx, tenant, group.OrderID, peer); err == nil {
 			t.Fatal("peer gained access to another buyer's draft")
@@ -136,10 +144,23 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 		t.Fatalf("attachments = %+v, error = %v", files, err)
 	}
 	terms := "T/T"
-	input := CreateOrderInput{SupplierID: 6, Currency: "CNY", ExpectedDate: "2027-01-02", PaymentTerms: &terms,
+	input := CreateOrderInput{SupplierID: 6, Currency: "CNY", ExpectedDate: "2027-01-02", PaymentTerms: &terms, Remark: "订单统一交货要求",
 		FulfillmentMode: "DIRECT_SHIP", DeliveryLocationType: "CUSTOM", DeliveryAddress: "按合同交货", Lines: orderLines}
 	if _, err := svc.UpdateOrder(ctx, tenant, firstID, input, buyer); err != nil {
 		t.Fatalf("could not edit the three-specification draft: %v", err)
+	}
+	head, err := svc.GetOrder(ctx, tenant, firstID)
+	if err != nil || head.Remark != input.Remark {
+		t.Fatalf("edited order remark = %q, error = %v", head.Remark, err)
+	}
+	items, err := svc.OrderItems(ctx, tenant, firstID)
+	if err != nil || len(items) != len(orderLines) {
+		t.Fatalf("edited draft has %d items, expected %d, error = %v", len(items), len(orderLines), err)
+	}
+	for _, item := range items {
+		if want := remarksByRequirement[item.RequirementID]; item.NegotiationRemark != want {
+			t.Errorf("requirement %d remark = %q, expected %q", item.RequirementID, item.NegotiationRemark, want)
+		}
 	}
 	input.Lines = orderLines[:2]
 	if _, err := svc.UpdateOrder(ctx, tenant, firstID, input, buyer); err == nil {
