@@ -296,7 +296,7 @@
 
     <el-dialog
       v-model="detailOpen" :title="detail?.poNo"
-      :width="detail?.historical ? 'min(1040px,94vw)' : compactDraftDetail ? 'min(880px, calc(100vw - 32px))' : '820px'"
+      :width="detail?.historical ? 'min(1040px,94vw)' : compactDraftDetail ? 'min(1120px, calc(100vw - 32px))' : '820px'"
       :top="detail?.historical || compactDraftDetail ? '5vh' : '15vh'"
       :class="{ 'historical-order-detail': detail?.historical, 'compact-draft-detail': compactDraftDetail }"
     >

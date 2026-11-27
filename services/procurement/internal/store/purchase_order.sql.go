@@ -1020,7 +1020,6 @@ FROM purchase_order_items i
 JOIN purchase_requirements r ON r.id = i.requirement_id
 LEFT JOIN purchase_execution_assignments a
     ON a.tenant_id = i.tenant_id AND a.po_id = i.po_id AND a.requirement_id = i.requirement_id
-    AND NOT a.cancelled
 WHERE i.tenant_id = $1::bigint AND i.po_id = $2::bigint
 ORDER BY i.id
 `
