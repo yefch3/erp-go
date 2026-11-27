@@ -113,7 +113,7 @@
               </el-form-item>
             </div>
             <div class="batch-entry-caption"><strong>产品报价</strong><span>不供应的规格可留空</span></div>
-            <el-table :data="activeBatch.lines" row-key="id" border stripe size="small" class="execution-quote-grid">
+            <el-table :data="quotableBatchLines" row-key="id" border stripe size="small" class="execution-quote-grid">
               <el-table-column :label="t('inquiryWorkspace.list.productDetails')" min-width="270">
                 <template #default="{row}">
                   <ComparisonSpecification :product-name="row.productName" :text="requirementProductDescription(row)" hide-name />
@@ -140,7 +140,7 @@
         <div v-else class="inquiry-detail-tabs">
           <div v-if="activeInquiryTab === 'quotes'" class="execution-quote-actions">
             <el-button :disabled="loading || !activeBatch.lines.some(line => Number(line.requiredQty) > 0)" @click="openExecutionRFQExport">导出 Excel</el-button>
-            <el-button v-if="canOrder" type="primary" @click="openBatchQuoteEditor">添加工厂报价</el-button>
+            <el-button v-if="canOrder" :disabled="loading || !quotableBatchLines.length" type="primary" @click="openBatchQuoteEditor">添加工厂报价</el-button>
           </div>
           <el-tabs v-model="activeInquiryTab" class="inquiry-tabs" :class="{ 'has-quote-action': activeInquiryTab === 'quotes' }" @tab-change="onInquiryTabChange">
             <el-tab-pane v-for="tab in inquirySteps" :key="tab" :name="tab" :label="inquiryTabLabels[tab]">
@@ -185,7 +185,7 @@
                     <template #default="{row}">
                       <span v-if="row.quotes.length" :title="!row.quote ? '请先选择工厂报价' : !hasSelectableQuantity(row.line) ? '该规格没有可派发的剩余数量' : undefined">
                         <el-checkbox
-                          :model-value="row.quote ? isDispatched(row.quote.id) || quoteSelections[row.line.id]?.quote.id === row.quote.id : false"
+                          :model-value="row.quote ? (!row.selectable && isDispatched(row.quote.id)) || quoteSelections[row.line.id]?.quote.id === row.quote.id : false"
                           :disabled="loading || !row.selectable"
                           :aria-label="`选厂 ${row.line.productName} ${row.line.spec}`"
                           @change="row.quote && toggleQuoteSelection(row.line, row.quote, $event === true)"
@@ -209,8 +209,16 @@
                           查看原草稿<span v-if="blockingDraftOrders[row.line.id]?.length > 1"> {{ draft.poNo }}</span>
                         </router-link>
                       </div>
-                      <div v-else-if="row.line.status === 'ORDERED'" class="execution-order-note">
-                        <small>已下单不可继续选厂</small>
+                      <div v-else-if="!hasSelectableQuantity(row.line)" class="execution-order-note">
+                        <small v-if="row.line.status === 'RECEIVED'">已收货不可继续选厂</small>
+                        <small v-else-if="Number(row.line.reservedQty) > 0">审批中的采购单已占用需求</small>
+                        <small v-else>已下单不可继续选厂</small>
+                      </div>
+                      <div v-else-if="hasOpenAssignment(row.line.id)" class="execution-order-note">
+                        <small>已有议价任务</small>
+                      </div>
+                      <div v-else-if="Number(row.line.availableQty) < Number(row.line.requiredQty)" class="execution-order-note">
+                        <small>还可采购 {{ formatQtyTwo(row.line.availableQty) }} {{ row.line.uomCode }}</small>
                       </div>
                     </template>
                   </el-table-column>
@@ -248,7 +256,8 @@
                           </el-option>
                         </el-select>
                       </template>
-                      <el-tag v-else size="small" type="info" effect="plain">{{ canAssign ? '待报价' : '我未报价' }}</el-tag>
+                      <el-tag v-else-if="canQuoteRequirement(row.line)" size="small" type="info" effect="plain">{{ canAssign ? '待报价' : '我未报价' }}</el-tag>
+                      <span v-else>—</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="操作" width="104" align="center">
@@ -258,7 +267,7 @@
                         <template #dropdown>
                           <el-dropdown-menu>
                             <el-dropdown-item command="view">查看</el-dropdown-item>
-                            <el-dropdown-item v-if="canOrder && (canManageQuotes || auth.owns(row.quote.createdById))" command="edit">编辑</el-dropdown-item>
+                            <el-dropdown-item v-if="canOrder && canQuoteRequirement(row.line) && (canManageQuotes || auth.owns(row.quote.createdById))" command="edit">编辑</el-dropdown-item>
                             <el-dropdown-item v-if="canOrder && (canManageQuotes || auth.owns(row.quote.createdById))" command="delete">删除</el-dropdown-item>
                           </el-dropdown-menu>
                         </template>
@@ -784,6 +793,7 @@ function requirementProductDescription(line:Requirement){
 interface Requirement {
   id: string
   contractId: string
+  contractVersionId?: string
   contractNo: string
   versionNo: number
   customerName: string
@@ -1079,6 +1089,7 @@ interface FactoryQuoteRow {
   selectableCount: number
 }
 const chosenFactoryQuotes = ref<Record<string, string>>({})
+const quotableBatchLines = computed(() => (activeBatch.value?.lines ?? []).filter(canQuoteRequirement))
 const factoryQuoteRows = computed(() => (activeBatch.value?.lines ?? []).map<FactoryQuoteRow>(line => {
   const quotes = quotesFor(line.id)
   const selectableQuotes = quotes.filter(quote => canSelectQuote(line, quote))
@@ -1218,7 +1229,7 @@ const draftBatchTerms = ref('')
 const draftBatchPreview = ref<DraftBatchResponse | null>(null)
 const draftBatchCreated = ref(false)
 const draftBatchRows = computed(() => {
-  const pending = new Set(activeBatch.value?.lines.filter(line => line.status === 'WAITING_REQUOTE').map(line => line.id))
+  const pending = new Set(quotableBatchLines.value.map(line => line.id))
   return assignments.value.flatMap(task => {
     const form = negotiationEdits.value[task.id]
     return form && pending.has(task.requirementId) && canHandleNegotiation(task) ? [{task, form}] : []
@@ -1382,9 +1393,9 @@ async function loadBlockingDraftOrders(batch: PurchaseBatch) {
   const entries = await Promise.all(batch.lines.filter(line => Number(line.blockingDraftQty) > 0).map(async line => {
     const result = await get<{orders: CoveringOrder[]}>(`/requirements/${line.id}/orders`, undefined, quietErrors).catch(() => null)
     const orders = result?.orders ?? []
-    const drafts = await Promise.all(orders.filter(order => order.status === 'DRAFT').map(async order => {
+    const drafts = await Promise.all(orders.filter(order => ['DRAFT', 'REJECTED'].includes(order.status)).map(async order => {
       const details = await get<{order?: {status: string}}>(`/purchase-orders/${order.poId}`, undefined, quietErrors).catch(() => null)
-      return details?.order?.status === 'DRAFT' ? order : null
+      return details?.order && ['DRAFT', 'REJECTED'].includes(details.order.status) ? order : null
     }))
     return [line.id, drafts.filter(draft => draft !== null)] as const
   }))
@@ -1407,10 +1418,10 @@ function displaySourcePrice(line: Requirement) {
   return Number(line.sourceUnitPrice) > 0 ? `${line.sourceCurrency || ''} ${trimQty(line.sourceUnitPrice)}/${line.uomCode}` : '未带入售前价格'
 }
 function openBatchQuoteEditor() {
-  if (!canOrder || savingBatchQuote.value) return
+  if (!canOrder || savingBatchQuote.value || !quotableBatchLines.value.length) return
   Object.assign(batchQuoteForm, { supplierId:null,currency:'CNY',expectedDate:'',paymentTerms:'',validUntil:'',remark:'' })
   for (const key of Object.keys(batchQuotePrices)) delete batchQuotePrices[key]
-  for (const line of activeBatch.value?.lines ?? []) batchQuotePrices[line.id] = ''
+  for (const line of quotableBatchLines.value) batchQuotePrices[line.id] = ''
   batchQuoteOpen.value = true
 }
 async function resolveSupplier(value: number|string|null, currency: string, paymentTerms: string): Promise<number> {
@@ -1425,7 +1436,7 @@ async function resolveSupplier(value: number|string|null, currency: string, paym
 }
 async function saveBatchQuote() {
   if (!canOrder || savingBatchQuote.value) return
-  const pricedLines = (activeBatch.value?.lines ?? []).filter((line) => String(batchQuotePrices[line.id] ?? '').trim() !== '')
+  const pricedLines = quotableBatchLines.value.filter((line) => String(batchQuotePrices[line.id] ?? '').trim() !== '')
   if (!batchQuoteForm.supplierId || !batchQuoteForm.paymentTerms.trim() || !pricedLines.length) {
     ElMessage.warning('请选择工厂，填写付款条件，并至少填写一个产品单价')
     return
@@ -1530,11 +1541,17 @@ function hasOpenAssignment(requirementId: string) {
   return assignments.value.some(task => task.requirementId === requirementId && !hasOrder(task))
 }
 function hasSelectableQuantity(line: Requirement) {
-  return Number(line.availableQty) > 0
+  return canQuoteRequirement(line) && Number(line.availableQty) > 0
+}
+function canQuoteRequirement(line: Requirement) {
+  const releasedContract = Number(line.contractId) > 0 && Number(line.contractVersionId) > 0
+  const eligible = line.status === 'WAITING_REQUOTE'
+    || (releasedContract && ['PENDING', 'PARTIALLY_ORDERED'].includes(line.status))
+  return eligible && Number(line.availableQty || 0) + Number(line.reservedQty || 0) > 0
 }
 function canSelectQuote(line: Requirement, quote: ExecutionQuote) {
   return canAssign && !dispatchingSelections.value && hasSelectableQuantity(line)
-    && !isDispatched(quote.id) && !hasOpenAssignment(line.id)
+    && quote.requirementId === line.id && !hasOpenAssignment(line.id)
 }
 async function loadAssignments(batch: PurchaseBatch) {
   const pages = await Promise.all(batch.lines.map(line => post<{assignments?: ExecutionAssignment[]}>('/execution-assignments', {action:'list', requirement_id:line.id})))
@@ -1595,7 +1612,7 @@ async function dispatchSelections() {
       await loadAssignments(batch)
       // A response can be lost after the task was created. Confirm against the refreshed list.
       for (const selection of selections) {
-        if (isDispatched(selection.quote.id)) sent.add(selection.line.id)
+        if (assignments.value.some(task => task.quoteId === selection.quote.id && !hasOrder(task))) sent.add(selection.line.id)
       }
     } catch {
       ElMessage.warning('议价任务未能刷新，可重新打开详情查看派发结果')

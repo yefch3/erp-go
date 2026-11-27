@@ -159,11 +159,12 @@ func (s *Service) ManageExecutionAssignment(ctx context.Context, tenant int64, o
 	var result ExecutionAssignmentResult
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if in.Action == "assign" || in.Action == "draft" {
-			var status string
-			if err := tx.QueryRow(ctx, `SELECT status FROM purchase_requirements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant, in.RequirementID).Scan(&status); err != nil {
+			var eligible bool
+			if err := tx.QueryRow(ctx, `SELECT `+executionRFQStateSQL+`
+				FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE`, tenant, in.RequirementID).Scan(&eligible); err != nil {
 				return err
 			}
-			if in.Action == "assign" && status != "WAITING_REQUOTE" {
+			if in.Action == "assign" && !eligible {
 				return apierr.Conflict("ASSIGNMENT_REQUIREMENT_CLOSED", "该需求已停止实单询价")
 			}
 		}
@@ -309,19 +310,11 @@ func (s *Service) createAssignmentDraft(ctx context.Context, tx pgx.Tx, tenant i
 	if task.NegotiatedPrice == "" {
 		return 0, apierr.Invalid("ASSIGNMENT_NEGOTIATION_REQUIRED", "先保存议价结果再生成草稿")
 	}
-	var remaining string
-	err := tx.QueryRow(ctx, `SELECT (CASE WHEN r.status='WAITING_REQUOTE' THEN contract_requirement_open(r.tenant_id,r.id) ELSE 0 END -
-		coalesce((SELECT sum(i.qty) FROM purchase_order_items i JOIN purchase_orders o ON o.tenant_id=i.tenant_id AND o.id=i.po_id
-		WHERE i.tenant_id=r.tenant_id AND i.requirement_id=r.id AND o.status IN ('DRAFT','REJECTED','PENDING_APPROVAL')),0))::text
-		FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2`, tenant, in.RequirementID).Scan(&remaining)
-	if err != nil {
+	if err := checkExecutionDraftQuantity(ctx, tx, tenant, in.RequirementID, decimal.RequireFromString(task.Quantity)); err != nil {
 		return 0, err
 	}
-	if decimal.RequireFromString(task.Quantity).GreaterThan(decimal.RequireFromString(remaining)) {
-		return 0, apierr.Conflict("ASSIGNMENT_QUANTITY_CHANGED", "剩余待采购量已变化，请领导重新确认选厂任务")
-	}
 	var selected int
-	err = tx.QueryRow(ctx, `SELECT count(*) FROM purchase_execution_assignment_files WHERE tenant_id=$1 AND assignment_id=$2 AND id=ANY($3::bigint[])`, tenant, in.ID, in.FileIDs).Scan(&selected)
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM purchase_execution_assignment_files WHERE tenant_id=$1 AND assignment_id=$2 AND id=ANY($3::bigint[])`, tenant, in.ID, in.FileIDs).Scan(&selected)
 	if err != nil {
 		return 0, err
 	}
@@ -352,6 +345,23 @@ func (s *Service) createAssignmentDraft(ctx context.Context, tx pgx.Tx, tenant i
 	return head.ID, err
 }
 
+// The requirement row is locked by the caller. Reserve the existing drafts
+// here before converting the current assignments into new draft lines.
+func checkExecutionDraftQuantity(ctx context.Context, tx pgx.Tx, tenant, requirementID int64, qty decimal.Decimal) error {
+	var remaining string
+	err := tx.QueryRow(ctx, `SELECT (CASE WHEN `+executionRFQStateSQL+` THEN contract_requirement_open(r.tenant_id,r.id) ELSE 0 END -
+		coalesce((SELECT sum(i.qty) FROM purchase_order_items i JOIN purchase_orders o ON o.tenant_id=i.tenant_id AND o.id=i.po_id
+		WHERE i.tenant_id=r.tenant_id AND i.requirement_id=r.id AND o.status IN ('DRAFT','REJECTED','PENDING_APPROVAL')),0))::text
+		FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2`, tenant, requirementID).Scan(&remaining)
+	if err != nil {
+		return err
+	}
+	if qty.GreaterThan(decimal.RequireFromString(remaining)) {
+		return apierr.Conflict("ASSIGNMENT_QUANTITY_CHANGED", "剩余待采购量已变化，请领导重新确认选厂任务")
+	}
+	return nil
+}
+
 func (s *Service) OrderFromExecutionNegotiation(ctx context.Context, tenantID, orderID int64) (bool, error) {
 	var linked bool
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
@@ -375,7 +385,7 @@ func (s *Service) listExecutionAssignments(ctx context.Context, tenant, buyer, r
 		JOIN purchase_execution_supplier_quotes q ON q.tenant_id=a.tenant_id AND q.id=a.quote_id
 		LEFT JOIN purchase_orders o ON o.tenant_id=a.tenant_id AND o.id=a.po_id
 		WHERE a.tenant_id=$1 AND NOT a.cancelled AND ($2 OR a.buyer_id=$3)
-		AND (($4::bigint=0 AND (o.status='REJECTED' OR (a.po_id IS NULL AND r.status='WAITING_REQUOTE'))) OR a.requirement_id=$4)
+		AND (($4::bigint=0 AND (o.status='REJECTED' OR (a.po_id IS NULL AND `+executionRFQOpenSQL+`))) OR a.requirement_id=$4)
 		AND ($5 OR r.owner_id=ANY($6::bigint[])) ORDER BY a.id`, tenant, manager, buyer, requirement, visible.All, visible.EmployeeIDs)
 	if err != nil {
 		return nil, err

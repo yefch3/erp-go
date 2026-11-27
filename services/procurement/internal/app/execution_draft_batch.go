@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
+
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
@@ -60,7 +62,9 @@ func (s *Service) manageExecutionDraftBatch(ctx context.Context, tenant int64, o
 		if err != nil {
 			return err
 		}
+		quantities := make(map[int64]decimal.Decimal)
 		for _, task := range tasks {
+			quantities[task.RequirementID] = quantities[task.RequirementID].Add(decimal.RequireFromString(task.Quantity))
 			var count int
 			if len(task.FileIDs) == 0 {
 				continue
@@ -71,6 +75,11 @@ func (s *Service) manageExecutionDraftBatch(ctx context.Context, tenant int64, o
 			}
 			if count != len(task.FileIDs) {
 				return apierr.Invalid("ASSIGNMENT_FILES_INVALID", "所选资料不属于此议价任务")
+			}
+		}
+		for requirementID, quantity := range quantities {
+			if err := checkExecutionDraftQuantity(ctx, tx, tenant, requirementID, quantity); err != nil {
+				return err
 			}
 		}
 		groups := groupExecutionDraftLines(tasks)
@@ -110,7 +119,7 @@ func executionDraftTasks(ctx context.Context, tx pgx.Tx, tenant, buyerID int64, 
 		FROM purchase_execution_assignments a
 		JOIN purchase_execution_supplier_quotes q ON q.tenant_id=a.tenant_id AND q.id=a.quote_id AND q.requirement_id=a.requirement_id
 		JOIN purchase_requirements r ON r.tenant_id=a.tenant_id AND r.id=a.requirement_id
-		WHERE a.tenant_id=$1 AND a.requirement_id=ANY($2::bigint[]) AND r.status='WAITING_REQUOTE'
+		WHERE a.tenant_id=$1 AND a.requirement_id=ANY($2::bigint[]) AND `+executionRFQOpenSQL+`
 		  AND a.po_id IS NULL AND NOT a.cancelled AND ($3 OR a.buyer_id=$4)
 		ORDER BY a.requirement_id,a.id FOR UPDATE OF a`, tenant, requirements, canActForOthers, buyerID)
 	if err != nil {

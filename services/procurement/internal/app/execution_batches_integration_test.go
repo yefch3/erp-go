@@ -62,7 +62,7 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 	other := line(2, 201, me, "CT-TWO", "Sheet", "MT", "2027-06-03", 0)
 	line(3, 301, me, "CT-THREE", "Plate", "MT", "2027-06-04", 0)
 	hidden := line(3, 302, colleague, "CT-THREE", "Hidden product", "MT", "2027-06-04", 0)
-	line(4, 401, me, "CT-COVERED", "Covered", "MT", "2027-05-01", 10)
+	covered := line(4, 401, me, "CT-COVERED", "Covered", "MT", "2027-05-01", 10)
 	var draftID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO purchase_orders
 		(tenant_id,po_no,supplier_id,supplier_name,currency,total_amount,status,buyer_id,buyer_name)
@@ -89,6 +89,10 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 			}
 		}
 		t.Fatal("reserved requirement missing")
+	}
+	checkDraftBlocker("10.0000")
+	if _, err := pool.Exec(ctx, `UPDATE purchase_orders SET status='REJECTED' WHERE tenant_id=$1 AND id=$2`, tenantID, draftID); err != nil {
+		t.Fatal(err)
 	}
 	checkDraftBlocker("10.0000")
 	if _, err := pool.Exec(ctx, `UPDATE purchase_orders SET status='PENDING_APPROVAL' WHERE tenant_id=$1 AND id=$2`, tenantID, draftID); err != nil {
@@ -120,4 +124,15 @@ func TestExecutionBatchListQuoteStatuses(t *testing.T) {
 	check(me, "Hidden product", "", "", 1, 20, 0, 0, nil)
 	check(me, "", firstKey, "", 1, 20, 1, 2, map[string]string{firstKey: "MY_QUOTED"})
 	check(colleague, "", thirdKey, "", 1, 20, 1, 2, map[string]string{thirdKey: "COLLEAGUE_QUOTED"})
+	if _, err := pool.Exec(ctx, `UPDATE purchase_requirements SET status='ORDERED' WHERE tenant_id=$1 AND id=$2`, tenantID, covered); err != nil {
+		t.Fatal(err)
+	}
+	check(me, "", "CONTRACT-ID:4", "", 1, 20, 1, 1, map[string]string{"CONTRACT-ID:4": "WAITING"})
+
+	current := line(1, 103, me, "CT-ONE", "Revised product", "MT", "2027-07-01", 0)
+	if _, err := pool.Exec(ctx, `UPDATE purchase_requirements SET version_no=2,contract_version_id=2,status='PENDING' WHERE tenant_id=$1 AND id=$2`, tenantID, current); err != nil {
+		t.Fatal(err)
+	}
+	check(me, "", firstKey, "", 1, 20, 1, 1, map[string]string{firstKey: "WAITING"})
+	check(me, "Revised product", "", "WAITING", 1, 20, 1, 1, map[string]string{firstKey: "WAITING"})
 }

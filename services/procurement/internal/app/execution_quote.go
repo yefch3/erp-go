@@ -64,13 +64,14 @@ func (s *Service) SelectExecutionSupplierQuote(ctx context.Context, tenantID, re
 		return ExecutionSupplierQuote{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var status string
-	if err := tx.QueryRow(ctx, `SELECT status FROM purchase_requirements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, requirementID).Scan(&status); err == pgx.ErrNoRows {
+	var eligible bool
+	if err := tx.QueryRow(ctx, `SELECT `+executionRFQOpenSQL+`
+		FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE`, tenantID, requirementID).Scan(&eligible); err == pgx.ErrNoRows {
 		return ExecutionSupplierQuote{}, apierr.NotFound("REQUIREMENT_NOT_FOUND", "采购需求不存在")
 	} else if err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
-	if status != "WAITING_REQUOTE" {
+	if !eligible {
 		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能再选择实单报价")
 	}
 	var alreadySelected bool
@@ -103,12 +104,13 @@ func (s *Service) SaveExecutionSupplierQuote(ctx context.Context, tenantID int64
 	if _, err := s.GetRequirement(ctx, tenantID, in.RequirementID); err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
-	var requirementStatus string
-	if err := s.pool.QueryRow(ctx, `SELECT status FROM purchase_requirements WHERE tenant_id=$1 AND id=$2`, tenantID, in.RequirementID).Scan(&requirementStatus); err != nil {
+	var eligible bool
+	if err := s.pool.QueryRow(ctx, `SELECT `+executionRFQOpenSQL+`
+		FROM purchase_requirements r WHERE r.tenant_id=$1 AND r.id=$2`, tenantID, in.RequirementID).Scan(&eligible); err != nil {
 		return ExecutionSupplierQuote{}, err
 	}
-	if requirementStatus != "WAITING_REQUOTE" {
-		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "只有待重新询价的产品可以保存实单报价")
+	if !eligible {
+		return ExecutionSupplierQuote{}, apierr.Conflict("EXECUTION_QUOTE_REQUIREMENT_STATE", "当前采购需求不能保存实单报价")
 	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
 	if err != nil {

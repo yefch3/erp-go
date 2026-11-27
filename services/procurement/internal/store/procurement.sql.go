@@ -374,12 +374,12 @@ FROM purchase_requirements
 CROSS JOIN LATERAL (SELECT contract_requirement_open(tenant_id,id) AS open_qty) demand
 LEFT JOIN LATERAL (
     SELECT coalesce(sum(i.qty), 0) AS reserved_qty,
-           coalesce(sum(i.qty) FILTER (WHERE o.status = 'DRAFT'), 0) AS draft_qty
+           coalesce(sum(i.qty) FILTER (WHERE o.status IN ('DRAFT', 'REJECTED')), 0) AS draft_qty
     FROM purchase_order_items i
     JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
     WHERE i.tenant_id = purchase_requirements.tenant_id
       AND i.requirement_id = purchase_requirements.id
-      AND o.status IN ('DRAFT', 'PENDING_APPROVAL')
+      AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
 ) draft ON true
 WHERE tenant_id = $1::bigint
   -- 数据范围（A1）：属主是合同负责人（手工需求是创建人）。owner_id=0 的
