@@ -271,7 +271,8 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				WithMeta("open", available.String())
 		}
 		total = total.Add(p.qty.Mul(p.price))
-		if r.Status != "WAITING_REQUOTE" {
+		executionRequote := r.Status == "WAITING_REQUOTE" || prepared.fromExecutionAssignment || p.executionQuoteID > 0
+		if !executionRequote {
 			allExecutionRequote = false
 		} else if executionContractNo == "" {
 			executionContractNo = r.ContractNo
@@ -279,14 +280,21 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		} else if executionContractNo != r.ContractNo {
 			return head, apierr.Invalid("PO_EXECUTION_CONTRACT_MIXED", "实单重新询价一次只能处理一份外销合同")
 		}
-		if r.Status == "WAITING_REQUOTE" && !prepared.fromExecutionAssignment {
+		if !prepared.fromExecutionAssignment && (executionRequote || r.ContractID > 0) {
 			var assigned bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM purchase_execution_assignments WHERE tenant_id=$1 AND requirement_id=$2 AND NOT cancelled)`, tenantID, r.ID).Scan(&assigned); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (
+				SELECT 1 FROM purchase_execution_assignments a
+				LEFT JOIN purchase_orders o ON o.tenant_id=a.tenant_id AND o.id=a.po_id
+				WHERE a.tenant_id=$1 AND a.requirement_id=$2 AND NOT a.cancelled
+				AND (a.po_id IS NULL OR o.status IN ('DRAFT','REJECTED','PENDING_APPROVAL'))
+			)`, tenantID, r.ID).Scan(&assigned); err != nil {
 				return head, err
 			}
 			if assigned {
 				return head, apierr.Conflict("PO_ASSIGNMENT_REQUIRED", "该规格已进入议价分配流程，请从对应议价任务生成草稿")
 			}
+		}
+		if executionRequote && !prepared.fromExecutionAssignment {
 			if p.executionQuoteID == 0 {
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_REQUIRED", "请先在实单询价中选择工厂报价")
 			}
@@ -303,7 +311,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				return head, apierr.Invalid("PO_EXECUTION_QUOTE_MISMATCH", "采购订单草稿必须使用实单询价中选定的工厂、币种和单价")
 			}
 		}
-		if r.Source == "CUSTOMER_QUOTATION" && r.Status != "WAITING_REQUOTE" {
+		if r.Source == "CUSTOMER_QUOTATION" && !executionRequote {
 			if quoteID == 0 {
 				quoteID, quoteNo, scenarioID = r.QuotationID, r.QuotationNo, r.CostScenarioID
 				inheritedSupplierID = r.InheritedSupplierID
@@ -630,7 +638,7 @@ func (s *Service) UpdateOrder(
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
-			if requirement.Source == "CUSTOMER_QUOTATION" && requirement.Status != "WAITING_REQUOTE" {
+			if requirement.Source == "CUSTOMER_QUOTATION" && requirement.Status != "WAITING_REQUOTE" && len(assigned) == 0 {
 				// 换成另一份报价始终不行——那已经是另一笔生意了。换供应商
 				// 则与新建单一个规矩：写明原因就放行。
 				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID {
