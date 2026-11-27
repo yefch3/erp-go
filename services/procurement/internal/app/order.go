@@ -1107,9 +1107,15 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 				}
 			}
 		}
-		return q.SetPurchaseOrderCancelled(ctx, store.SetPurchaseOrderCancelledParams{
+		if err := q.SetPurchaseOrderCancelled(ctx, store.SetPurchaseOrderCancelledParams{
 			TenantID: tenantID, ID: id, Reason: reason,
-		})
+		}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE purchase_execution_assignments
+			SET cancelled=true, changed_by=$3, updated_at=now()
+			WHERE tenant_id=$1 AND po_id=$2 AND NOT cancelled`, tenantID, id, op.ID)
+		return err
 	})
 	if err != nil {
 		return err

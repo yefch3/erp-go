@@ -169,4 +169,31 @@ func TestExecutionDraftBatchCreatesBuyerOwnedEditableOrders(t *testing.T) {
 	if _, err := svc.ManageExecutionAssignment(ctx, tenant, manager, batch); err == nil {
 		t.Fatal("reusing the preview token created duplicate drafts")
 	}
+	if err := svc.CancelOrder(ctx, tenant, firstID, "重新选厂", buyer); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range result.DraftGroups[0].Lines {
+		list := ExecutionAssignmentInput{Action: "list", RequirementID: line.RequirementID}
+		if got := run(buyer, list); len(got.Assignments) != 0 {
+			t.Fatalf("cancelled draft still has visible tasks for requirement %d: %+v", line.RequirementID, got.Assignments)
+		}
+		selected := run(manager, ExecutionAssignmentInput{Action: "assign", RequirementID: line.RequirementID, QuoteID: line.QuoteID})
+		got := run(buyer, list)
+		if len(got.Assignments) != 1 || got.Assignments[0].ID != selected.ID || selected.ID == line.AssignmentID || got.Assignments[0].Remark != "" || got.Assignments[0].Quantity != line.Quantity {
+			t.Fatalf("reselecting did not create a fresh task for requirement %d: %+v", line.RequirementID, got.Assignments)
+		}
+	}
+	items, err = svc.OrderItems(ctx, tenant, firstID)
+	if err != nil || len(items) != len(orderLines) {
+		t.Fatalf("cancelled draft items = %+v, error = %v", items, err)
+	}
+	for _, item := range items {
+		if want := remarksByRequirement[item.RequirementID]; item.NegotiationRemark != want {
+			t.Errorf("cancelled draft requirement %d remark = %q, expected %q", item.RequirementID, item.NegotiationRemark, want)
+		}
+	}
+	otherLine := result.DraftGroups[1].Lines[0]
+	if got := run(other, ExecutionAssignmentInput{Action: "list", RequirementID: otherLine.RequirementID}); len(got.Assignments) != 1 || got.Assignments[0].OrderID != result.DraftGroups[1].OrderID {
+		t.Fatalf("cancelling one draft changed another draft's tasks: %+v", got.Assignments)
+	}
 }
